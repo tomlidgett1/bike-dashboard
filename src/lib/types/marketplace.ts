@@ -76,5 +76,6 @@ export interface MarketplaceFilters {
   sortBy?: 'price_asc' | 'price_desc' | 'newest' | 'oldest';
   page?: number;
   pageSize?: number;
+  storeId?: string;
 }
 

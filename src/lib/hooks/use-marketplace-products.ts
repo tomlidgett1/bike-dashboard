@@ -59,13 +59,22 @@ export function useMarketplaceProducts(
         params.set('page', (filters.page || 1).toString());
         params.set('pageSize', (filters.pageSize || 24).toString());
 
-        const response = await fetch(`/api/marketplace/products?${params}`);
+        // Use store-specific endpoint if storeId is provided
+        const endpoint = filters.storeId
+          ? `/api/marketplace/store/${filters.storeId}`
+          : '/api/marketplace/products';
+
+        console.log(`[HOOK] Fetching from: ${endpoint}?${params}`);
+        
+        const response = await fetch(`${endpoint}?${params}`);
         
         if (!response.ok) {
+          console.error(`[HOOK] API error: ${response.status} ${response.statusText}`);
           throw new Error('Failed to fetch products');
         }
 
         const data = await response.json();
+        console.log(`[HOOK] Received ${data.products?.length || 0} products`);
 
         if (append) {
           setProducts((prev) => [...prev, ...data.products]);

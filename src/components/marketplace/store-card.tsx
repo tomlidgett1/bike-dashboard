@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { Store, Package } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 // ============================================================
 // Store Card
-// Displays bike store information
+// Displays bike store information with navigation
 // ============================================================
 
 interface StoreCardProps {
@@ -39,8 +40,9 @@ export function StoreCard({ store, priority = false }: StoreCardProps) {
       whileHover={{ y: -4 }}
       className="group"
     >
-      <Card className="overflow-hidden rounded-md border-gray-200 bg-white hover:shadow-lg transition-shadow duration-200">
-        <CardContent className="p-6">
+      <Link href={`/marketplace/store/${store.id}`} prefetch={true}>
+        <Card className="overflow-hidden rounded-md border-gray-200 bg-white hover:shadow-lg transition-shadow duration-200 cursor-pointer">
+          <CardContent className="p-6">
           {/* Store Logo */}
           <div className="flex items-start gap-4 mb-4">
             <div className="flex-shrink-0 h-16 w-16 rounded-md bg-gray-100 overflow-hidden border border-gray-200">
@@ -95,6 +97,7 @@ export function StoreCard({ store, priority = false }: StoreCardProps) {
           </div>
         </CardContent>
       </Card>
+      </Link>
     </motion.div>
   );
 }

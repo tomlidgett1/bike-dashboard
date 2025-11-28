@@ -329,6 +329,11 @@ const ProductTableHeader = React.memo(({
             <SortIcon column="qoh" />
           </button>
         </TableHead>
+        <TableHead className="h-10 px-4 font-semibold">
+          <span className="text-xs uppercase tracking-wider">
+            Source
+          </span>
+        </TableHead>
         <TableHead className="h-10 px-4 text-center font-semibold">
           <button
             onClick={() => onSort('is_active')}
@@ -726,22 +731,9 @@ export default function ProductsPage() {
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {product.description}
-                              </p>
-                              {product.lightspeed_item_id && (
-                                <div className="flex-shrink-0 h-4 w-4 rounded bg-white dark:bg-gray-800 ring-1 ring-gray-200 dark:ring-gray-700 overflow-hidden" title="Synced from Lightspeed">
-                                  <Image
-                                    src="/ls.png"
-                                    alt="Lightspeed"
-                                    width={16}
-                                    height={16}
-                                    className="object-contain w-full h-full"
-                                  />
-                                </div>
-                              )}
-                            </div>
+                            <p className="text-sm font-medium text-foreground truncate">
+                              {product.description}
+                            </p>
                             {product.canonical_product_id && product.resolved_image_url && (
                               <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 mt-0.5">
                                 <span className="inline-block w-1 h-1 rounded-full bg-green-600 dark:bg-green-400"></span>
@@ -784,36 +776,56 @@ export default function ProductsPage() {
                         </span>
                       </TableCell>
 
-                      {/* Stock Column */}
-                      <TableCell className="py-2.5 px-4 text-right">
-                        <div className="inline-flex items-center gap-1.5">
-                          <span
-                            className={cn(
-                              "inline-block w-1.5 h-1.5 rounded-full",
-                              product.qoh > product.reorder_point
-                                ? "bg-green-500"
-                                : product.qoh > 0
-                                ? "bg-yellow-500"
-                                : "bg-red-500"
-                            )}
-                          />
-                          <span
-                            className={cn(
-                              "text-sm font-semibold tabular-nums",
-                              product.qoh > product.reorder_point
-                                ? "text-green-600 dark:text-green-400"
-                                : product.qoh > 0
-                                ? "text-yellow-600 dark:text-yellow-400"
-                                : "text-red-600 dark:text-red-400"
-                            )}
-                          >
-                            {product.qoh}
-                          </span>
-                        </div>
-                      </TableCell>
+                        {/* Stock Column */}
+                        <TableCell className="py-2.5 px-4 text-right">
+                          <div className="inline-flex items-center gap-1.5">
+                            <span
+                              className={cn(
+                                "inline-block w-1.5 h-1.5 rounded-full",
+                                product.qoh > product.reorder_point
+                                  ? "bg-green-500"
+                                  : product.qoh > 0
+                                  ? "bg-yellow-500"
+                                  : "bg-red-500"
+                              )}
+                            />
+                            <span
+                              className={cn(
+                                "text-sm font-semibold tabular-nums",
+                                product.qoh > product.reorder_point
+                                  ? "text-green-600 dark:text-green-400"
+                                  : product.qoh > 0
+                                  ? "text-yellow-600 dark:text-yellow-400"
+                                  : "text-red-600 dark:text-red-400"
+                              )}
+                            >
+                              {product.qoh}
+                            </span>
+                          </div>
+                        </TableCell>
 
-                      {/* Status Column */}
-                      <TableCell className="py-2.5 px-4">
+                        {/* Source Column */}
+                        <TableCell className="py-2.5 px-4">
+                          {product.lightspeed_item_id && (
+                            <div className="flex items-center gap-1.5">
+                              <div className="flex-shrink-0 h-4 w-4 rounded bg-white dark:bg-gray-800 ring-1 ring-gray-200 dark:ring-gray-700 overflow-hidden">
+                                <Image
+                                  src="/ls.png"
+                                  alt="Lightspeed"
+                                  width={16}
+                                  height={16}
+                                  className="object-contain w-full h-full"
+                                />
+                              </div>
+                              <span className="text-xs text-muted-foreground font-medium">
+                                Lightspeed
+                              </span>
+                            </div>
+                          )}
+                        </TableCell>
+
+                        {/* Status Column */}
+                        <TableCell className="py-2.5 px-4">
                         <div className="flex items-center justify-center gap-2">
                           <Switch
                             checked={product.is_active}
