@@ -1,0 +1,225 @@
+# Cursor AI Rules for Bike Dashboard Project
+
+## Database Migration Rules
+
+### CRITICAL: All SQL Changes Must Use Supabase CLI
+
+**NEVER** instruct the user to run SQL directly in the Supabase Dashboard SQL Editor.
+
+**ALWAYS** follow this workflow for database changes:
+
+1. **Create Migration File**
+   ```bash
+   supabase migration new descriptive_name
+   ```
+
+2. **Write SQL in Migration File**
+   - Edit the generated file in `supabase/migrations/`
+   - Include all DDL statements (CREATE, ALTER, DROP, etc.)
+   - Include RLS policies
+   - Include indexes and constraints
+
+3. **Apply Migration via CLI**
+   ```bash
+   supabase db push
+   ```
+
+### Why This Approach?
+
+- ✅ **Version Control**: All schema changes tracked in Git
+- ✅ **Repeatability**: Can recreate database anywhere
+- ✅ **Team Collaboration**: Everyone has the same schema
+- ✅ **Rollback Capability**: Can revert changes if needed
+- ✅ **CI/CD Ready**: Migrations can be automated
+- ✅ **Documentation**: Migration files serve as schema history
+
+### Examples
+
+#### ❌ WRONG - Don't Do This:
+```
+"Go to Supabase Dashboard → SQL Editor and run this SQL..."
+"Copy this SQL and paste it into Supabase..."
+"Run this in the Supabase SQL Editor..."
+```
+
+#### ✅ CORRECT - Do This Instead:
+```
+"Let me create a migration file for this change..."
+"I'll add this to a new migration..."
+"Run: supabase migration new add_feature_name"
+"Then apply with: supabase db push"
+```
+
+### Exception Cases
+
+The ONLY time to suggest manual SQL is:
+
+1. **Emergency Debugging**: When investigating a production issue
+2. **One-Time Data Fixes**: When correcting data (not schema)
+3. **Quick Verification**: When checking if something exists
+
+Even in these cases, always mention:
+- This is a one-time operation
+- Schema changes should still use migrations
+- Document what was done manually
+
+### Migration File Best Practices
+
+When creating migrations:
+
+1. **Descriptive Names**: `add_logo_url_to_users.sql` not `update.sql`
+2. **Idempotent**: Use `IF NOT EXISTS` and `IF EXISTS` clauses
+3. **Complete**: Include all related changes (table, indexes, RLS, etc.)
+4. **Documented**: Add comments explaining complex logic
+5. **Tested**: Verify migration works on clean database
+
+### Example Migration Template
+
+```sql
+-- Description: Add logo support to user profiles
+-- Date: YYYY-MM-DD
+
+-- Add column
+ALTER TABLE users ADD COLUMN IF NOT EXISTS logo_url TEXT;
+
+-- Create storage bucket
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('logo', 'logo', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Add RLS policies
+DROP POLICY IF EXISTS "policy_name" ON storage.objects;
+CREATE POLICY "policy_name"
+ON storage.objects
+FOR SELECT
+USING (bucket_id = 'logo');
+
+-- Add indexes if needed
+CREATE INDEX IF NOT EXISTS idx_users_logo_url ON users(logo_url) WHERE logo_url IS NOT NULL;
+```
+
+## Storage Bucket Rules
+
+When creating storage buckets:
+
+1. **Always use migrations** to create buckets
+2. **Include RLS policies** in the same migration
+3. **Use idempotent SQL** (ON CONFLICT, IF NOT EXISTS)
+4. **Document bucket purpose** in migration comments
+
+## Code Style Rules
+
+### File Uploads
+
+- Use React `useRef` for file inputs, not `document.getElementById()`
+- Always validate file type and size
+- Show preview before upload
+- Handle errors gracefully
+
+### Next.js Images
+
+- Always configure `remotePatterns` in `next.config.ts` for external images
+- Use Next.js `Image` component for optimization
+- Include proper alt text for accessibility
+
+### Supabase Client
+
+- Use `createClient()` from `@/lib/supabase/client` for client-side
+- Use `createClient()` from `@/lib/supabase/server` for server-side
+- Never expose service role key in client code
+
+## Documentation Rules
+
+When implementing features:
+
+1. **Create feature documentation** explaining what was built
+2. **Include troubleshooting guides** for common issues
+3. **Provide step-by-step setup** instructions
+4. **Document all environment variables** needed
+5. **Include examples** of usage
+
+## Error Handling Rules
+
+When user reports errors:
+
+1. **Identify root cause** before providing solutions
+2. **Provide multiple solutions** (quick fix + proper fix)
+3. **Explain why** the error occurred
+4. **Create documentation** for the fix
+5. **Update code** to prevent future occurrences
+
+## Git Workflow Rules
+
+- Never commit directly to main/master
+- Create descriptive commit messages
+- Include migration files in commits
+- Don't commit `.env.local` or secrets
+- Keep migrations in chronological order
+
+## Testing Rules
+
+After implementing features:
+
+1. Test in multiple browsers (Chrome, Safari, Firefox)
+2. Test on mobile devices
+3. Test with different user roles
+4. Test error cases
+5. Verify database constraints work
+
+## Security Rules
+
+- Always use RLS policies on tables
+- Never expose sensitive data in client code
+- Validate all user inputs
+- Use parameterized queries
+- Follow principle of least privilege
+
+## Performance Rules
+
+- Use indexes for frequently queried columns
+- Optimize images before upload
+- Use Next.js Image optimization
+- Implement proper caching strategies
+- Minimize database queries
+
+---
+
+## Quick Reference Commands
+
+### Supabase CLI Commands
+```bash
+# Link project (one time)
+supabase link --project-ref YOUR_PROJECT_REF
+
+# Create new migration
+supabase migration new descriptive_name
+
+# Apply migrations
+supabase db push
+
+# Check migration status
+supabase migration list
+
+# Generate TypeScript types
+supabase gen types typescript --local > src/types/supabase.ts
+```
+
+### Development Commands
+```bash
+# Start dev server
+npm run dev
+
+# Build for production
+npm run build
+
+# Run linter
+npm run lint
+
+# Type check
+npx tsc --noEmit
+```
+
+---
+
+**Remember**: Migrations are the single source of truth for database schema. Always use them!
+
