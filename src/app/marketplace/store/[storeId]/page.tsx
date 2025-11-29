@@ -27,64 +27,39 @@ export default function StoreProfilePage() {
   const [error, setError] = React.useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [isContactModalOpen, setIsContactModalOpen] = React.useState(false);
-  const [searchQuery, setSearchQuery] = React.useState("");
 
   // Fetch store profile
-  const fetchStore = React.useCallback(async (search?: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const url = search 
-        ? `/api/marketplace/store/${storeId}?search=${encodeURIComponent(search)}`
-        : `/api/marketplace/store/${storeId}`;
-
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          setError('Store not found');
-        } else {
-          setError('Failed to load store profile');
-        }
-        return;
-      }
-
-      const data = await response.json();
-      setStore(data.store);
-    } catch (err) {
-      console.error('Error fetching store:', err);
-      setError('Failed to load store profile');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
-
-  // Initial fetch
   React.useEffect(() => {
+    const fetchStore = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const response = await fetch(`/api/marketplace/store/${storeId}`);
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            setError('Store not found');
+          } else {
+            setError('Failed to load store profile');
+          }
+          return;
+        }
+
+        const data = await response.json();
+        setStore(data.store);
+      } catch (err) {
+        console.error('Error fetching store:', err);
+        setError('Failed to load store profile');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     if (storeId) {
       fetchStore();
     }
-  }, [storeId, fetchStore]);
-
-  // Refetch when search query changes
-  React.useEffect(() => {
-    if (storeId && searchQuery) {
-      fetchStore(searchQuery);
-    } else if (storeId && !searchQuery) {
-      // Clear search - refetch all products
-      fetchStore();
-    }
-  }, [searchQuery, storeId, fetchStore]);
-
-  // Handle search query change
-  const handleSearchChange = React.useCallback((query: string) => {
-    setSearchQuery(query);
-    // Reset category filter when searching
-    if (query) {
-      setSelectedCategory(null);
-    }
-  }, []);
+  }, [storeId]);
 
   // Loading state
   if (loading) {
@@ -157,25 +132,12 @@ export default function StoreProfilePage() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        {/* Search Bar - Enterprise level search within store */}
+        {/* Search Bar - Instant search with dropdown */}
         <div className="mb-6">
           <StoreSearchBar 
-            onSearchChange={handleSearchChange}
-            placeholder={`Search ${store.store_name}'s inventory...`}
+            storeId={storeId}
+            storeName={store.store_name}
           />
-          {searchQuery && (
-            <div className="mt-3 flex items-center justify-between">
-              <p className="text-sm text-gray-600">
-                {displayedCategories.reduce((acc, cat) => acc + cat.products.length, 0)} results for "{searchQuery}"
-              </p>
-              <button
-                onClick={() => setSearchQuery("")}
-                className="text-sm text-gray-600 hover:text-gray-900 underline"
-              >
-                Clear search
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Services Section */}
@@ -199,21 +161,11 @@ export default function StoreProfilePage() {
                 <StoreIcon className="h-12 w-12 text-gray-400" />
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                {searchQuery ? `No results for "${searchQuery}"` : "No products available"}
+                No products available
               </h3>
               <p className="text-sm text-gray-600">
-                {searchQuery 
-                  ? "Try a different search term or clear your search to see all products."
-                  : "This store hasn't added any products yet."}
+                This store hasn't added any products yet.
               </p>
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="mt-4 text-sm text-gray-600 hover:text-gray-900 underline"
-                >
-                  Clear search
-                </button>
-              )}
             </div>
           </div>
         )}

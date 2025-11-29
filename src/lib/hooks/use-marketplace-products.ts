@@ -94,7 +94,13 @@ export function useMarketplaceProducts(
         params.set('page', page.toString());
         params.set('pageSize', (filters.pageSize || 24).toString());
 
-        console.log(`🚀 Fetching page ${page}...`);
+        console.log(`🚀 [MARKETPLACE] Fetching page ${page} with filters:`, {
+          level1: filters.level1,
+          level2: filters.level2,
+          level3: filters.level3,
+          search: filters.search,
+          sortBy: filters.sortBy
+        });
         const startTime = Date.now();
 
         const response = await fetch(`/api/marketplace/products?${params}`);
@@ -125,7 +131,7 @@ export function useMarketplaceProducts(
         isLoadingRef.current = false;
       }
     },
-    [filters.category, filters.subcategory, filters.search, filters.minPrice, filters.maxPrice, filters.sortBy, filters.pageSize, filters.createdAfter]
+    [filters.level1, filters.level2, filters.level3, filters.category, filters.subcategory, filters.search, filters.minPrice, filters.maxPrice, filters.sortBy, filters.pageSize, filters.createdAfter]
   );
 
   // Stable loadMore function that doesn't recreate on every render
