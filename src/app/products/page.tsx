@@ -93,6 +93,7 @@ interface Product {
   canonical_product_id: string | null;
   last_synced_at: string;
   is_active: boolean;
+  listing_source: string | null;
 }
 
 interface PaginationInfo {
@@ -813,7 +814,7 @@ export default function ProductsPage() {
 
                         {/* Source Column */}
                         <TableCell className="py-2.5 px-4">
-                          {product.lightspeed_item_id && (
+                          {product.listing_source === "lightspeed" ? (
                             <div className="flex items-center gap-1.5">
                               <div className="flex-shrink-0 h-4 w-4 rounded bg-white dark:bg-gray-800 ring-1 ring-gray-200 dark:ring-gray-700 overflow-hidden">
                                 <Image
@@ -828,7 +829,13 @@ export default function ProductsPage() {
                                 Lightspeed
                               </span>
                             </div>
-                          )}
+                          ) : product.listing_source === "manual" ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-muted-foreground font-medium">
+                                Manual
+                              </span>
+                            </div>
+                          ) : null}
                         </TableCell>
 
                         {/* Status Column */}

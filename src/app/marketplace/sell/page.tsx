@@ -2,12 +2,17 @@
 
 import * as React from "react";
 import { SellWizard } from "@/components/marketplace/sell/sell-wizard";
+import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 
 // ============================================================
 // Sell Your Bike Page
-// No layout wrapper - wizard handles its own layout without footer
+// Now includes marketplace layout for mobile bottom nav
 // ============================================================
 
 export default function SellPage() {
-  return <SellWizard />;
+  return (
+    <MarketplaceLayout showFooter={false}>
+      <SellWizard />
+    </MarketplaceLayout>
+  );
 }

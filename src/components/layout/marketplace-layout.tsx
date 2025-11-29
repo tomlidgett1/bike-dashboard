@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { MarketplaceSidebar } from "./marketplace-sidebar";
+import { MobileBottomNav } from "./mobile-nav";
 import { Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -18,12 +19,15 @@ interface MarketplaceLayoutProps {
 
 export function MarketplaceLayout({ children, showFooter = true, showStoreCTA = false }: MarketplaceLayoutProps) {
   return (
-    <div className={`min-h-screen bg-gray-50 ${showStoreCTA ? 'pb-32' : ''}`}>
+    <div className="min-h-screen bg-gray-50">
       {/* Sidebar - starts below header */}
       <MarketplaceSidebar />
       
       {/* Header is included in each marketplace page for more control */}
-      <main className="w-full lg:pl-[200px]">{children}</main>
+      <main className={`w-full lg:pl-[200px] pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0 ${showStoreCTA ? 'mb-32' : ''}`}>{children}</main>
+
+      {/* Mobile Bottom Navigation */}
+      <MobileBottomNav />
 
       {/* Call to Action & Simple Footer - Only for Stores Page */}
       {showStoreCTA && (
@@ -41,12 +45,12 @@ export function MarketplaceLayout({ children, showFooter = true, showStoreCTA = 
                       Are you a bike store?
                     </h3>
                     <p className="text-xs text-gray-600">
-                      Join Velo Market and reach thousands of cycling enthusiasts
+                      Join Yellow Jersey and reach thousands of cycling enthusiasts
                     </p>
                   </div>
                 </div>
                 <Button
-                  className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
+                  className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
                   onClick={() => window.location.href = '/connect-lightspeed'}
                 >
                   Sign Up Now
@@ -59,7 +63,7 @@ export function MarketplaceLayout({ children, showFooter = true, showStoreCTA = 
           <footer className="w-full bg-gray-50 border-t border-gray-200 py-3">
             <div className="max-w-[1920px] mx-auto px-6">
               <p className="text-center text-xs text-gray-600">
-                &copy; 2025 Velo Market. All Rights Reserved.
+                &copy; 2025 Yellow Jersey. All Rights Reserved.
               </p>
             </div>
           </footer>
@@ -73,7 +77,7 @@ export function MarketplaceLayout({ children, showFooter = true, showStoreCTA = 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
               {/* Company */}
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">BikeMarket</h3>
+                <h3 className="font-semibold text-gray-900 mb-3">Yellow Jersey</h3>
                 <p className="text-sm text-gray-600">
                   The world's largest marketplace for bicycles, parts, and cycling gear.
                 </p>
@@ -142,7 +146,7 @@ export function MarketplaceLayout({ children, showFooter = true, showStoreCTA = 
             </div>
 
             <div className="mt-8 pt-8 border-t border-gray-200 text-center text-sm text-gray-600">
-              <p>&copy; {new Date().getFullYear()} BikeMarket. All rights reserved.</p>
+              <p>&copy; {new Date().getFullYear()} Yellow Jersey. All rights reserved.</p>
             </div>
           </div>
         </footer>

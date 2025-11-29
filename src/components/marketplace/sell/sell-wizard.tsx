@@ -3,6 +3,7 @@
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { useListingForm } from "@/lib/hooks/use-listing-form";
 import { UploadMethodChoice } from "./upload-method-choice";
 import { SmartUploadFlow } from "./smart-upload-flow";
@@ -388,7 +389,13 @@ export function SellWizard() {
         {/* Header */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
           <div className="max-w-[1920px] mx-auto px-6 py-4 flex items-center justify-between">
-            <h1 className="text-xl font-bold text-gray-900">VeloMarket</h1>
+            <Image 
+              src="/yj.svg" 
+              alt="Yellow Jersey" 
+              width={150} 
+              height={30}
+              className="h-7"
+            />
             <Button
               variant="ghost"
               onClick={() => router.push('/marketplace')}
@@ -442,7 +449,13 @@ export function SellWizard() {
         {/* Header */}
         <header className="bg-white border-b border-gray-200">
           <div className="max-w-[1920px] mx-auto px-6 py-4 flex items-center justify-between">
-            <h1 className="text-xl font-bold text-gray-900">VeloMarket</h1>
+            <Image 
+              src="/yj.svg" 
+              alt="Yellow Jersey" 
+              width={150} 
+              height={30}
+              className="h-7"
+            />
             <Button
               variant="ghost"
               onClick={() => router.push('/marketplace')}
@@ -472,7 +485,7 @@ export function SellWizard() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-[1920px] mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-900">VeloMarket</h1>
+          <h1 className="text-xl font-bold text-gray-900">Yellow Jersey</h1>
           <Button
             variant="ghost"
             onClick={() => router.push('/marketplace')}

@@ -106,8 +106,14 @@ export async function POST(request: NextRequest) {
 
     if (conversationError || !conversation) {
       console.error('Error creating conversation:', conversationError);
+      console.error('Conversation data:', conversation);
+      console.error('Insert payload:', {
+        product_id: productId || null,
+        subject: productSubject,
+        status: 'active',
+      });
       return NextResponse.json(
-        { error: 'Failed to create conversation' },
+        { error: conversationError?.message || 'Failed to create conversation' },
         { status: 500 }
       );
     }

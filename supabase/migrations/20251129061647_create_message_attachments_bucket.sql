@@ -19,8 +19,6 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
-COMMENT ON TABLE storage.buckets IS 'Storage bucket for message image attachments';
-
 -- ============================================================
 -- 2. STORAGE RLS POLICIES
 -- ============================================================

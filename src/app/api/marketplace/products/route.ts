@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
     const maxPrice = searchParams.get('maxPrice');
     const createdAfter = searchParams.get('createdAfter');
     const listingType = searchParams.get('listingType'); // Filter by listing type
+    const excludeBicycleStores = searchParams.get('excludeBicycleStores') === 'true';
     const sortBy = searchParams.get('sortBy') || 'newest';
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '24');
@@ -106,7 +107,8 @@ export async function GET(request: NextRequest) {
         primary_image_url,
         users!user_id (
           business_name,
-          logo_url
+          logo_url,
+          account_type
         ),
         canonical_products!canonical_product_id (
           id,
@@ -161,6 +163,9 @@ export async function GET(request: NextRequest) {
     if (listingType) {
       query = query.eq('listing_type', listingType);
     }
+
+    // Note: We'll filter out bicycle store products after fetching
+    // because Supabase client doesn't easily support filtering on joined table columns
 
     // Apply enterprise-level search (multi-field fuzzy search with relevance)
     // Note: We'll handle search separately using our enterprise search function
@@ -248,6 +253,16 @@ export async function GET(request: NextRequest) {
     });
     let uniqueData = Array.from(uniqueProductsMap.values());
 
+    // Exclude products from bicycle stores if requested
+    if (excludeBicycleStores) {
+      uniqueData = uniqueData.filter((product: any) => {
+        // Check if the user's account_type is 'bicycle_store'
+        const userAccountType = product.users?.account_type;
+        return userAccountType !== 'bicycle_store';
+      });
+      console.log(`🚫 [FILTER] Excluded bicycle store products. Remaining: ${uniqueData.length}`);
+    }
+
     // If search results exist, sort by relevance order
     if (search && searchResults && searchResults.length > 0) {
       const orderMap = new Map(searchResults.map((id, index) => [id, index]));
@@ -307,6 +322,13 @@ export async function GET(request: NextRequest) {
               return `${baseUrl}/storage/v1/object/public/product-images/${img.storage_path}`;
             })
             .filter(Boolean);
+        }
+        
+        // Priority 3: Use placeholder if no image available
+        if (!primaryImageUrl) {
+          primaryImageUrl = '/placeholder-product.svg';
+          allImages = ['/placeholder-product.svg'];
+          console.log(`🖼️ [IMAGE] Using placeholder for product ${product.id} (no image available)`);
         }
       
         return {
@@ -383,14 +405,6 @@ export async function GET(request: NextRequest) {
           // Raw images field (for listings)
           images: product.images,
         } as MarketplaceProduct;
-      })
-      // FILTER OUT products without a primary image
-      .filter((product) => {
-        const hasImage = !!product.primary_image_url;
-        if (!hasImage) {
-          console.log(`🚫 [FILTER] Excluding product ${product.id} - no primary image`);
-        }
-        return hasImage;
       });
 
     const response: MarketplaceProductsResponse = {

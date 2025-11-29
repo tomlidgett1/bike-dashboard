@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useMarketplaceProducts, useMarketplaceCategories } from "@/lib/hooks/use-marketplace-products";
 import type { MarketplaceCategory } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,9 @@ export default function MarketplacePage() {
   const [sortBy, setSortBy] = React.useState<string>(
     searchParams.get('sortBy') || 'newest'
   );
+  const [hideBikeStores, setHideBikeStores] = React.useState<boolean>(
+    searchParams.get('hideStores') === 'true'
+  );
 
   // Stores state
   const [stores, setStores] = React.useState<any[]>([]);
@@ -62,7 +66,8 @@ export default function MarketplacePage() {
     search: search || undefined,
     sortBy: sortBy as any,
     pageSize: 24,
-  }), [level1, level2, level3, search, sortBy]);
+    excludeBicycleStores: hideBikeStores || undefined,
+  }), [level1, level2, level3, search, sortBy, hideBikeStores]);
 
   // Fetch products with filters (no page state - handled by hook)
   const { products, loading, pagination, refetch, loadMore } = useMarketplaceProducts(filters);
@@ -70,16 +75,50 @@ export default function MarketplacePage() {
   // Fetch category stats
   const { categories: categoryStats } = useMarketplaceCategories();
 
-  // Build category counts for badges
-  const categoryCounts = React.useMemo(() => {
-    if (!categoryStats) return {} as Record<MarketplaceCategory, number>;
-    
-    const counts: Record<string, number> = {};
-    categoryStats.categories.forEach((cat) => {
-      counts[cat.category] = cat.totalProducts;
-    });
-    return counts as Record<MarketplaceCategory, number>;
-  }, [categoryStats]);
+  // Build comprehensive category counts for all levels
+  // Fetch all products to calculate accurate counts
+  const [categoryCountsData, setCategoryCountsData] = React.useState<Record<string, number>>({});
+  React.useEffect(() => {
+    const fetchCategoryCounts = async () => {
+      try {
+        // Fetch all products without filters to get accurate counts
+        const response = await fetch('/api/marketplace/products?pageSize=10000');
+        if (response.ok) {
+          const data = await response.json();
+          const products = data.products || [];
+          
+          const counts: Record<string, number> = {};
+          
+          // Count Level 1 categories
+          products.forEach((product: any) => {
+            if (product.marketplace_category) {
+              counts[product.marketplace_category] = (counts[product.marketplace_category] || 0) + 1;
+            }
+            
+            // Count Level 2 categories (Level1 > Level2)
+            if (product.marketplace_category && product.marketplace_subcategory) {
+              const level2Key = `${product.marketplace_category} > ${product.marketplace_subcategory}`;
+              counts[level2Key] = (counts[level2Key] || 0) + 1;
+            }
+            
+            // Count Level 3 categories (Level1 > Level2 > Level3)
+            if (product.marketplace_category && product.marketplace_subcategory && product.marketplace_level_3_category) {
+              const level3Key = `${product.marketplace_category} > ${product.marketplace_subcategory} > ${product.marketplace_level_3_category}`;
+              counts[level3Key] = (counts[level3Key] || 0) + 1;
+            }
+          });
+          
+          setCategoryCountsData(counts);
+        }
+      } catch (error) {
+        console.error('Error fetching category counts:', error);
+      }
+    };
+    fetchCategoryCounts();
+  }, []);
+
+  // Use the fetched category counts
+  const categoryCounts = categoryCountsData;
 
   // Fetch stores when stores tab is active
   React.useEffect(() => {
@@ -111,13 +150,14 @@ export default function MarketplacePage() {
     if (level3) params.set('level3', level3);
     if (search) params.set('search', search);
     if (sortBy && sortBy !== 'newest') params.set('sortBy', sortBy);
+    if (hideBikeStores) params.set('hideStores', 'true');
 
     const newUrl = params.toString()
       ? `/marketplace?${params.toString()}`
       : '/marketplace';
 
     router.replace(newUrl, { scroll: false });
-  }, [activeTab, level1, level2, level3, search, sortBy, router]);
+  }, [activeTab, level1, level2, level3, search, sortBy, hideBikeStores, router]);
 
   const handleLoadMore = () => {
     loadMore();
@@ -157,13 +197,30 @@ export default function MarketplacePage() {
         showFooter={activeTab !== 'products' && activeTab !== 'stores'}
       >
         {/* Main Content - Add top padding to account for fixed header */}
-        <div className="max-w-[1920px] mx-auto px-6 py-8 pt-20">
+        <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
           className="space-y-6"
         >
+          {/* Hide Bike Stores Switch - Only show for products view */}
+          {activeTab === 'products' && (
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={hideBikeStores}
+                onCheckedChange={setHideBikeStores}
+                id="hide-bike-stores"
+              />
+              <label
+                htmlFor="hide-bike-stores"
+                className="text-sm text-gray-700 cursor-pointer select-none"
+              >
+                Hide bike stores
+              </label>
+            </div>
+          )}
+
           {/* Category Filters - Only show for products view */}
           {activeTab === 'products' && (
             <AdvancedCategoryFilter
@@ -173,26 +230,27 @@ export default function MarketplacePage() {
               onLevel1Change={handleLevel1Change}
               onLevel2Change={handleLevel2Change}
               onLevel3Change={handleLevel3Change}
+              counts={categoryCounts}
             />
           )}
 
           {/* Products View */}
           {activeTab === 'products' && (
             <>
-              {/* Sort and Filter Bar */}
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">
-                    {pagination.total.toLocaleString()} products
-                  </span>
-                </div>
+            {/* Sort and Filter Bar */}
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="hidden sm:flex items-center gap-2">
+                <span className="text-sm text-gray-700 font-medium">
+                  {pagination.total.toLocaleString()} products
+                </span>
+              </div>
 
                 <div className="flex items-center gap-3">
                   {/* Sort Dropdown */}
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">Sort:</span>
+                    <span className="text-sm text-gray-700 font-medium">Sort:</span>
                     <Select value={sortBy} onValueChange={setSortBy}>
-                      <SelectTrigger className="w-[160px] rounded-md">
+                      <SelectTrigger className="w-[160px] rounded-md border-gray-300">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -208,7 +266,7 @@ export default function MarketplacePage() {
                   <Button
                     variant="outline"
                     size="icon"
-                    className="rounded-md border-gray-300"
+                    className="rounded-md border-gray-300 hover:bg-gray-50"
                     disabled
                   >
                     <SlidersHorizontal className="h-4 w-4" />
@@ -230,7 +288,7 @@ export default function MarketplacePage() {
           {activeTab === 'stores' && (
             <>
               <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-gray-700 font-medium">
                   {stores.length} {stores.length === 1 ? 'store' : 'stores'} found
                 </p>
               </div>

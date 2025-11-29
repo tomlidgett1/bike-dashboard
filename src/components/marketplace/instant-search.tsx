@@ -195,7 +195,7 @@ export function InstantSearch() {
     <div className="relative w-full">
       {/* Search Input */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <Search className="absolute left-3 sm:left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         
         <Input
           ref={inputRef}
@@ -209,12 +209,12 @@ export function InstantSearch() {
             }
           }}
           placeholder="Search bikes, parts, stores..."
-          className="pl-10 pr-20 h-10 rounded-md border-gray-300 focus:border-gray-400 focus:ring-gray-400"
+          className="pl-10 pr-16 sm:pl-11 sm:pr-20 h-10 rounded-md border-gray-300 focus:border-gray-400 focus:ring-gray-400 text-sm bg-white"
         />
 
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+        <div className="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
           {loading && (
-            <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+            <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin text-gray-400" />
           )}
           
           {query && !loading && (
@@ -223,7 +223,7 @@ export function InstantSearch() {
               className="p-1 rounded-md hover:bg-gray-100 transition-colors"
               aria-label="Clear search"
             >
-              <X className="h-3.5 w-3.5 text-gray-400" />
+              <X className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-gray-400" />
             </button>
           )}
 

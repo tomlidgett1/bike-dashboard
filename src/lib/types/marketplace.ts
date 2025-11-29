@@ -44,6 +44,7 @@ export interface MarketplaceProduct {
   user_id: string;
   store_name: string;
   store_logo_url: string | null;
+  store_account_type?: string | null;
   
   // Extended fields for private listings
   listing_type?: 'store_inventory' | 'private_listing';
@@ -145,5 +146,6 @@ export interface MarketplaceFilters {
   pageSize?: number;
   createdAfter?: string | null; // ISO date string to filter products created after this date
   listingType?: 'store_inventory' | 'private_listing'; // Filter by listing type
+  excludeBicycleStores?: boolean; // Exclude products from users with account_type = 'bicycle_store'
 }
 

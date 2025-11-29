@@ -241,4 +241,48 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+  
+  /* Mobile app-like behavior */
+  @media (max-width: 768px) {
+    /* Prevent text selection on UI elements */
+    button, a, nav {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+    }
+    
+    /* Prevent pull-to-refresh on mobile */
+    body {
+      overscroll-behavior-y: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Prevent double-tap zoom */
+    * {
+      touch-action: manipulation;
+    }
+    
+    /* Remove iOS input zoom */
+    input, textarea, select {
+      font-size: 16px !important;
+    }
+    
+    /* Ensure proper box-sizing on all elements */
+    * {
+      box-sizing: border-box;
+    }
+    
+    /* Prevent horizontal overflow */
+    body, html {
+      overflow-x: hidden;
+      width: 100%;
+      max-width: 100vw;
+    }
+    
+    /* Hide bottom nav when in conversation view */
+    body.hide-bottom-nav nav[class*="fixed bottom"] {
+      display: none !important;
+    }
+  }
 }

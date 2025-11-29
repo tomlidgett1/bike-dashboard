@@ -9,6 +9,7 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
 import { EnhancedImageGallery } from "./product-detail/enhanced-image-gallery";
 import { OverviewCard } from "./product-detail/overview-card";
+import { ProductInquiryButton } from "./product-inquiry-button";
 import { 
   ConditionSection, 
   SpecificationsSection, 
@@ -246,12 +247,16 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
 
                       {/* Action Buttons */}
                       <div className="flex gap-2">
-                        <Button
-                          onClick={handleContact}
-                          className="flex-1 bg-gray-900 hover:bg-gray-800 text-white rounded-md h-11"
-                        >
-                          Contact Seller
-                        </Button>
+                        <div className="flex-1">
+                          <ProductInquiryButton
+                            productId={product.id}
+                            productName={(product as any).display_name || product.description}
+                            sellerId={product.user_id}
+                            variant="default"
+                            fullWidth
+                            className="bg-gray-900 hover:bg-gray-800 text-white rounded-md h-11"
+                          />
+                        </div>
                         <Button
                           variant="outline"
                           size="icon"

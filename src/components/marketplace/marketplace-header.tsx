@@ -87,81 +87,76 @@ export function MarketplaceHeader() {
       }}
       className="fixed top-0 z-50 w-full border-b border-gray-200 backdrop-blur-sm"
     >
-      <div className="max-w-[1920px] mx-auto px-6">
-        <div className="flex h-16 items-center gap-4">
+      <div className="max-w-[1920px] mx-auto px-4 sm:px-6">
+        <div className="flex h-14 sm:h-16 items-center gap-2 sm:gap-4">
           {/* Logo - Fixed on left */}
           <button
             onClick={() => router.push('/marketplace')}
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0"
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 -ml-2"
           >
-            <div className="hidden sm:flex items-center gap-2">
-              <Image 
-                src="/chain.png" 
-                alt="Chain" 
-                width={24} 
-                height={24}
-                className="rotate-90"
-              />
-              <span className="text-lg text-gray-900 whitespace-nowrap">
-                <span className="font-bold">Velo</span> Market
-              </span>
-            </div>
+            <Image 
+              src="/yj.svg" 
+              alt="Yellow Jersey" 
+              width={180} 
+              height={36}
+              className="h-9"
+            />
           </button>
 
-          {/* Desktop Search Bar - Starts where sidebar ends (200px) */}
-          <div className="hidden lg:block flex-1 max-w-2xl lg:ml-[50px]">
+          {/* Mobile + Desktop Search Bar */}
+          <div className="flex-[2] ml-[50px]">
             <InstantSearch />
           </div>
 
-          {/* Desktop Actions - Fixed on right */}
+          {/* Desktop Actions - Fixed on far right */}
           <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
             {mounted && user ? (
               <>
-              <DropdownMenu modal={false}>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0">
-                    {shouldShowLogo() ? (
-                      <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
-                        <Image
-                          src={profile!.logo_url!}
-                          alt={getDisplayName()}
-                          fill
-                          className="object-cover"
-                        />
-                      </div>
-                    ) : (
-                      <UserAvatar name={getDisplayName()} size="default" />
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0">
+                      {shouldShowLogo() ? (
+                        <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
+                          <Image
+                            src={profile!.logo_url!}
+                            alt={getDisplayName()}
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <UserAvatar name={getDisplayName()} size="default" />
+                      )}
+                      <span className="text-sm font-medium text-gray-700 max-w-[150px] truncate">
+                        {getDisplayName()}
+                      </span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48 bg-white rounded-md">
+                    {canAccessSettings() && (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => router.push('/settings')}
+                          className="cursor-pointer rounded-md"
+                        >
+                          <Settings className="mr-2 h-4 w-4" />
+                          <span>Settings</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
                     )}
-                    <span className="text-sm font-medium text-gray-700 max-w-[150px] truncate">
-                      {getDisplayName()}
-                    </span>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48 bg-white rounded-md">
-                  {canAccessSettings() && (
-                    <>
-                      <DropdownMenuItem
-                        onClick={() => router.push('/settings')}
-                        className="cursor-pointer rounded-md"
-                      >
-                        <Settings className="mr-2 h-4 w-4" />
-                        <span>Settings</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                    </>
-                  )}
-                  <DropdownMenuItem
-                    onClick={handleSignOut}
-                    className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Sign Out</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
+                    <DropdownMenuItem
+                      onClick={handleSignOut}
+                      className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>Sign Out</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
                 </DropdownMenu>
                 <Button
                   onClick={() => router.push('/marketplace/sell')}
-                  className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
+                  className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
                 >
                   Sell Item
                 </Button>
@@ -171,13 +166,13 @@ export function MarketplaceHeader() {
                 <Button
                   variant="outline"
                   onClick={() => router.push('/login')}
-                  className="rounded-md border-gray-300 hover:bg-gray-50"
+                  className="rounded-md border-[#FFE8B3] hover:bg-[#FFF8E5] hover:border-[#FFC72C]"
                 >
                   Sign In
                 </Button>
                 <Button
                   onClick={() => router.push('/marketplace/sell')}
-                  className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
+                  className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
                 >
                   Sell Item
                 </Button>
@@ -188,7 +183,7 @@ export function MarketplaceHeader() {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2 rounded-md hover:bg-gray-100 transition-colors ml-auto"
+            className="lg:hidden p-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0"
             aria-label="Toggle menu"
           >
             {mobileMenuOpen ? (
@@ -197,11 +192,6 @@ export function MarketplaceHeader() {
               <Menu className="h-5 w-5 text-gray-700" />
             )}
           </button>
-        </div>
-
-        {/* Mobile Search (always visible on mobile) */}
-        <div className="lg:hidden pb-3">
-          <InstantSearch />
         </div>
       </div>
 
@@ -215,13 +205,13 @@ export function MarketplaceHeader() {
             duration: 0.4,
             ease: [0.04, 0.62, 0.23, 0.98],
           }}
-          className="lg:hidden border-t border-gray-200 overflow-hidden"
+          className="lg:hidden border-t border-gray-200 overflow-hidden bg-white"
         >
           <div className="max-w-[1920px] mx-auto px-6 py-4 space-y-3">
             {mounted && user ? (
               <>
                 {/* User Info */}
-                <div className="flex items-center gap-3 px-3 py-2 bg-white rounded-md border border-gray-200">
+                <div className="flex items-center gap-3 px-3 py-2 bg-white rounded-md border border-gray-200 shadow-sm">
                   {shouldShowLogo() ? (
                     <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
                       <Image
@@ -249,7 +239,7 @@ export function MarketplaceHeader() {
                     router.push('/marketplace/sell');
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full rounded-md bg-gray-900 hover:bg-gray-800 text-white"
+                  className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
                 >
                   Sell Item
                 </Button>
@@ -288,7 +278,7 @@ export function MarketplaceHeader() {
                     router.push('/login');
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full rounded-md border-gray-300 hover:bg-gray-50"
+                  className="w-full rounded-md border-[#FFE8B3] hover:bg-[#FFF8E5] hover:border-[#FFC72C]"
                 >
                   Sign In
                 </Button>
@@ -297,7 +287,7 @@ export function MarketplaceHeader() {
                     router.push('/marketplace/sell');
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full rounded-md bg-gray-900 hover:bg-gray-800 text-white"
+                  className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
                 >
                   Sell Item
                 </Button>

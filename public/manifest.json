@@ -1,0 +1,14 @@
+{
+  "name": "Bike Marketplace",
+  "short_name": "Bike Market",
+  "description": "Bicycle Marketplace - Buy and sell bikes and parts",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f2937",
+  "orientation": "portrait-primary",
+  "categories": ["shopping", "marketplace", "business"],
+  "scope": "/",
+  "prefer_related_applications": false
+}
+

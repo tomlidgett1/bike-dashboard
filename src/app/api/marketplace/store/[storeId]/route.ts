@@ -206,6 +206,12 @@ export async function GET(
             else if (product.primary_image_url) {
               primaryImageUrl = product.primary_image_url;
             }
+            
+            // Priority 4: Use placeholder if no image available
+            if (!primaryImageUrl) {
+              primaryImageUrl = '/placeholder-product.svg';
+              console.log(`🖼️ [IMAGE] Using placeholder for store product ${product.id} (no image available)`);
+            }
 
             return {
               id: product.id,
@@ -227,14 +233,6 @@ export async function GET(
               user_id: product.user_id,
               listing_type: 'store_inventory' as const,
             };
-          })
-          // FILTER OUT products without a primary image
-          .filter((product) => {
-            const hasImage = !!product.primary_image_url;
-            if (!hasImage) {
-              console.log(`🚫 [STORE FILTER] Excluding product ${product.id} from ${storeUser.business_name} - no primary image`);
-            }
-            return hasImage;
           });
 
         // Only add category if it has products with images

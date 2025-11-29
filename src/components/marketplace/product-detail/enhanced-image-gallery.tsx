@@ -60,109 +60,23 @@ export function EnhancedImageGallery({
 
   return (
     <>
-      {/* Main Gallery */}
-      <div className="flex flex-col gap-3 h-full">
-        {/* Main Image */}
-        <div className="relative flex-1 w-full bg-gray-50 rounded-md overflow-hidden border border-gray-200 group">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentIndex}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="relative w-full h-full"
-            >
-              {!imageError ? (
-                <Image
-                  src={images[currentIndex]}
-                  alt={`${productName} - Image ${currentIndex + 1}`}
-                  fill
-                  className="object-contain"
-                  priority={currentIndex === 0}
-                  onError={() => setImageError(true)}
-                  sizes="(max-width: 1024px) 100vw, 60vw"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-gray-400">Image unavailable</p>
-                </div>
-              )}
-            </motion.div>
-          </AnimatePresence>
-
-          {/* Image Counter */}
-          <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-full text-sm">
-            {currentIndex + 1} / {images.length}
-          </div>
-
-          {/* Like Button */}
-          {onLikeToggle && (
-            <button
-              onClick={onLikeToggle}
-              className="absolute top-4 left-4 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
-            >
-              <Heart
-                className={cn(
-                  "h-5 w-5 transition-colors",
-                  isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
-                )}
+      {/* Scrollable Image Stack */}
+      <div className="w-full max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-hide">
+        <div className="flex flex-col gap-3">
+          {images.map((image, index) => (
+            <div key={index} className="relative w-full border border-gray-200">
+              <Image
+                src={image}
+                alt={`${productName} - Image ${index + 1}`}
+                width={1200}
+                height={1200}
+                className="w-full h-auto"
+                priority={index === 0}
+                sizes="(max-width: 1024px) 100vw, 60vw"
               />
-            </button>
-          )}
-
-          {/* Fullscreen Button */}
-          <button
-            onClick={() => setIsFullscreen(true)}
-            className="absolute bottom-4 right-4 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-all opacity-0 group-hover:opacity-100"
-          >
-            <Maximize2 className="h-4 w-4 text-gray-700" />
-          </button>
-
-          {/* Navigation Arrows */}
-          {images.length > 1 && (
-            <>
-              <button
-                onClick={handlePrev}
-                className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-all opacity-0 group-hover:opacity-100"
-              >
-                <ChevronLeft className="h-5 w-5 text-gray-700" />
-              </button>
-              <button
-                onClick={handleNext}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-all opacity-0 group-hover:opacity-100"
-              >
-                <ChevronRight className="h-5 w-5 text-gray-700" />
-              </button>
-            </>
-          )}
+            </div>
+          ))}
         </div>
-
-        {/* Thumbnail Strip */}
-        {images.length > 1 && (
-          <div className="flex gap-2 h-[88px] overflow-x-auto scrollbar-hide">
-            {images.map((image, index) => (
-              <button
-                key={index}
-                onClick={() => onIndexChange(index)}
-                className={cn(
-                  "relative flex-shrink-0 w-20 h-20 rounded-md overflow-hidden border-2 transition-all",
-                  index === currentIndex
-                    ? "border-gray-900 ring-2 ring-gray-900 ring-offset-2"
-                    : "border-gray-200 hover:border-gray-400 opacity-60 hover:opacity-100"
-                )}
-              >
-                <Image
-                  src={image}
-                  alt={`Thumbnail ${index + 1}`}
-                  fill
-                  className="object-cover"
-                  sizes="80px"
-                />
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Fullscreen Modal */}

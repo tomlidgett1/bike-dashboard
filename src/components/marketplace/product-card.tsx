@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { Package, Store, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ProductDetailModal } from "@/components/marketplace/product-detail-modal";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 
 // ============================================================
@@ -24,7 +24,6 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
   const [logoError, setLogoError] = React.useState(false);
   const [isLiked, setIsLiked] = React.useState(false);
   const [isHovered, setIsHovered] = React.useState(false);
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
   const imageRef = React.useRef<HTMLDivElement>(null);
 
   // Intersection Observer for lazy loading
@@ -88,14 +87,13 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
   const imageUrl = getImageUrl();
 
   return (
-    <>
+    <Link href={`/marketplace/product/${product.id}`}>
       <motion.div
         id={`product-${product.id}`}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
         transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
         className="cursor-pointer transition-all"
-        onClick={() => setIsModalOpen(true)}
       >
         {/* Image Container - Separate with thin border */}
         <div 
@@ -180,27 +178,27 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
       </div>
 
       {/* Product Info - Below image, separate */}
-      <div className="space-y-1">
+      <div className="space-y-0.5 sm:space-y-1">
         {/* Price - Bold and prominent */}
-        <p className="text-lg font-semibold text-gray-900">
+        <p className="text-base sm:text-lg font-semibold text-gray-900">
           AU${product.price.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
         </p>
 
         {/* Product Title - Single line only */}
-        <h3 className="text-sm text-gray-700 truncate leading-tight">
+        <h3 className="text-xs sm:text-sm text-gray-700 truncate leading-tight">
           {(product as any).display_name || product.description}
         </h3>
 
         {/* Store Info - Minimal */}
         <div 
-          className="flex items-center gap-1.5 pt-0.5 cursor-pointer hover:opacity-70 transition-opacity"
+          className="flex items-center gap-1 sm:gap-1.5 pt-0.5 cursor-pointer hover:opacity-70 transition-opacity"
           onClick={(e) => {
             e.stopPropagation();
             window.location.href = `/marketplace/store/${product.user_id}`;
           }}
         >
           {/* Store Logo */}
-          <div className="relative h-5 w-5 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
+          <div className="relative h-4 w-4 sm:h-5 sm:w-5 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
             {product.store_logo_url && !logoError ? (
               <Image
                 src={product.store_logo_url}
@@ -211,13 +209,13 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center">
-                <Store className="h-3 w-3 text-gray-400" />
+                <Store className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-gray-400" />
               </div>
             )}
           </div>
 
           {/* Store Name */}
-          <span className="text-xs text-gray-500 truncate">
+          <span className="text-[10px] sm:text-xs text-gray-500 truncate">
             {product.store_name}
           </span>
           
@@ -225,21 +223,14 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
           <Image
             src="/verified.png"
             alt="Verified"
-            width={13}
-            height={13}
-            className="flex-shrink-0"
+            width={11}
+            height={11}
+            className="flex-shrink-0 sm:w-[13px] sm:h-[13px]"
           />
         </div>
       </div>
       </motion.div>
-
-      {/* Product Detail Modal */}
-      <ProductDetailModal
-        product={product}
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-      />
-    </>
+    </Link>
   );
 }
 

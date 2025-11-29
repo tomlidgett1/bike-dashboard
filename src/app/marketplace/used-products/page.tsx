@@ -93,7 +93,7 @@ export default function UsedProductsPage() {
 
       <MarketplaceLayout showFooter={false}>
         {/* Main Content - Add top padding to account for fixed header */}
-        <div className="max-w-[1920px] mx-auto px-6 py-8 pt-20">
+        <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -125,7 +125,7 @@ export default function UsedProductsPage() {
 
             {/* Sort and Filter Bar */}
             <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-2">
                 <span className="text-sm text-gray-600">
                   {pagination.total.toLocaleString()} used products
                 </span>

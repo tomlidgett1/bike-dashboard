@@ -58,6 +58,8 @@ export function useMarketplaceProducts(
     sortBy: filters.sortBy,
     pageSize: filters.pageSize,
     createdAfter: filters.createdAfter,
+    listingType: filters.listingType,
+    excludeBicycleStores: filters.excludeBicycleStores,
   });
 
   const prevFilterKey = useRef(filterKey);
@@ -92,6 +94,7 @@ export function useMarketplaceProducts(
         if (filters.sortBy) params.set('sortBy', filters.sortBy);
         if (filters.createdAfter) params.set('createdAfter', filters.createdAfter);
         if (filters.listingType) params.set('listingType', filters.listingType);
+        if (filters.excludeBicycleStores) params.set('excludeBicycleStores', 'true');
         params.set('page', page.toString());
         params.set('pageSize', (filters.pageSize || 24).toString());
 
@@ -132,7 +135,7 @@ export function useMarketplaceProducts(
         isLoadingRef.current = false;
       }
     },
-    [filters.level1, filters.level2, filters.level3, filters.category, filters.subcategory, filters.search, filters.minPrice, filters.maxPrice, filters.sortBy, filters.pageSize, filters.createdAfter]
+    [filters.level1, filters.level2, filters.level3, filters.category, filters.subcategory, filters.search, filters.minPrice, filters.maxPrice, filters.sortBy, filters.pageSize, filters.createdAfter, filters.listingType, filters.excludeBicycleStores]
   );
 
   // Stable loadMore function that doesn't recreate on every render
