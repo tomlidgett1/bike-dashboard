@@ -205,6 +205,13 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <p className="font-semibold text-gray-900 truncate">{product.store_name}</p>
+                            <Image
+                              src="/verified.png"
+                              alt="Verified"
+                              width={16}
+                              height={16}
+                              className="flex-shrink-0"
+                            />
                             {hasTrustBadges && (
                               <BadgeCheck className="h-4 w-4 text-green-600 flex-shrink-0" title="Verified seller" />
                             )}

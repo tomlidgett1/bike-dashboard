@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useTheme } from "next-themes";
 import {
@@ -81,12 +82,14 @@ const itemVariants = {
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
+  const router = useRouter();
   const [mounted, setMounted] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [logoFile, setLogoFile] = React.useState<File | null>(null);
   const [logoPreview, setLogoPreview] = React.useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = React.useState(false);
+  const [isAuthorized, setIsAuthorized] = React.useState<boolean | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   
   const { profile, loading, saving, isFirstTime, saveProfile, refreshProfile } = useUserProfile();
@@ -129,6 +132,28 @@ export default function SettingsPage() {
   React.useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Check access permissions immediately when profile loads
+  React.useEffect(() => {
+    if (!loading) {
+      if (!profile) {
+        // No profile yet, redirect to marketplace
+        router.replace('/marketplace');
+        return;
+      }
+      
+      // Check if user is authorized (account_type = bicycle_store AND bicycle_store = true)
+      const authorized = profile.account_type === 'bicycle_store' && profile.bicycle_store === true;
+      
+      if (!authorized) {
+        // Redirect unauthorized users immediately
+        router.replace('/marketplace');
+      } else {
+        // Only set authorized after confirming
+        setIsAuthorized(true);
+      }
+    }
+  }, [profile, loading, router]);
 
   // Load profile data when available
   React.useEffect(() => {
@@ -345,17 +370,21 @@ export default function SettingsPage() {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  if (loading) {
+  // Check authorization synchronously during render
+  const checkAuth = () => {
+    if (loading) return 'loading';
+    if (!profile) return 'unauthorized';
+    return (profile.account_type === 'bicycle_store' && profile.bicycle_store === true) ? 'authorized' : 'unauthorized';
+  };
+
+  const authStatus = checkAuth();
+
+  // Don't render ANYTHING until authorized
+  if (authStatus !== 'authorized') {
     return (
-      <>
-        <Header
-          title="Settings"
-          description="Manage your account and preferences"
-        />
-        <div className="flex items-center justify-center p-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </>
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 

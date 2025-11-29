@@ -26,13 +26,31 @@ export default function LoginPage() {
 
     try {
       if (mode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data: authData, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
         if (error) throw error
-        router.push('/')
-        router.refresh()
+        
+        // Fetch user profile to determine redirect
+        if (authData.user) {
+          const { data: profile } = await supabase
+            .from('users')
+            .select('bicycle_store, account_type')
+            .eq('user_id', authData.user.id)
+            .single()
+          
+          // Redirect based on account type and verification status
+          // Only verified bicycle stores (account_type = 'bicycle_store' AND bicycle_store = true) go to settings
+          if (profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true) {
+            // Verified bike store -> go to settings/dashboard
+            router.push('/settings')
+          } else {
+            // Individual users OR unverified stores -> go to marketplace
+            router.push('/marketplace')
+          }
+          router.refresh()
+        }
       } else {
         // Sign up the user
         const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -85,7 +103,7 @@ export default function LoginPage() {
             <Bike className="w-8 h-8 text-gray-900 dark:text-white" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Bike Dashboard
+            Velo Market 
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
             {mode === 'login' ? 'Welcome back' : 'Create your account'}

@@ -9,16 +9,52 @@ import { ListingFormData, ItemType } from '@/lib/types/listing';
 const DRAFT_STORAGE_KEY = 'listing_draft';
 const AUTOSAVE_INTERVAL = 30000; // 30 seconds
 
-export const useListingForm = (listingId?: string) => {
+export const useListingForm = (listingId?: string, draftId?: string) => {
   const [formData, setFormData] = useState<ListingFormData>({
     itemType: 'bike',
     listingStatus: 'draft',
   });
   const [currentStep, setCurrentStep] = useState(1);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(draftId || null);
 
-  // Load draft from localStorage on mount
+  // Load draft from database or localStorage on mount
   useEffect(() => {
+    // If draftId is provided, load that specific draft
+    if (draftId) {
+      const loadSpecificDraft = async () => {
+        try {
+          console.log('📂 [HOOK] Loading draft with ID:', draftId);
+          const response = await fetch(`/api/marketplace/drafts/${draftId}`);
+          if (response.ok) {
+            const { draft } = await response.json();
+            console.log('✅ [HOOK] Loaded draft from database:', draft.id);
+            console.log('📋 [HOOK] Draft form data:', draft.form_data);
+            console.log('📍 [HOOK] Current step:', draft.current_step);
+            
+            // Ensure form_data is properly structured
+            const loadedFormData = {
+              ...draft.form_data,
+              listingStatus: 'draft', // Ensure draft status is set
+            };
+            
+            setFormData(loadedFormData);
+            setCurrentStep(draft.current_step || 1);
+            setCurrentDraftId(draft.id);
+            setLastSaved(new Date(draft.last_saved_at));
+            
+            console.log('✅ [HOOK] Draft loaded successfully, step:', draft.current_step);
+          } else {
+            console.error('❌ [HOOK] Failed to fetch draft, status:', response.status);
+          }
+        } catch (error) {
+          console.error('❌ [HOOK] Error loading specific draft:', error);
+        }
+      };
+      loadSpecificDraft();
+      return;
+    }
+    
     if (!listingId) {
       // Check for AI-generated data first
       const aiData = localStorage.getItem('ai_listing_data');
@@ -50,19 +86,13 @@ export const useListingForm = (listingId?: string) => {
         console.log('🎯 [HOOK] No AI data found in localStorage');
       }
       
-      // Load regular draft
-      const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (savedDraft) {
-        try {
-          const parsed = JSON.parse(savedDraft);
-          setFormData(parsed.formData || {});
-          setCurrentStep(parsed.currentStep || 1);
-        } catch (error) {
-          console.error('Failed to load draft:', error);
-        }
-      }
+      // Don't auto-load any drafts
+      // User must explicitly click "Continue" on a draft to load it
+      // Clear any old localStorage data to ensure fresh start
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+      console.log('🎯 [HOOK] Starting with fresh form (no auto-load)');
     }
-  }, [listingId]);
+  }, [listingId, draftId]);
 
   // Auto-save to localStorage
   useEffect(() => {
@@ -73,26 +103,61 @@ export const useListingForm = (listingId?: string) => {
     return () => clearInterval(interval);
   }, [formData, currentStep]);
 
-  const saveDraft = useCallback(() => {
+  const saveDraft = useCallback(async () => {
     try {
-      localStorage.setItem(
-        DRAFT_STORAGE_KEY,
-        JSON.stringify({
+      console.log('💾 [HOOK] Saving draft...');
+      console.log('💾 [HOOK] Form data to save:', formData);
+      console.log('💾 [HOOK] Current step:', currentStep);
+      console.log('💾 [HOOK] Draft ID:', currentDraftId);
+
+      // Save to Supabase database (primary storage)
+      const response = await fetch('/api/marketplace/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draftId: currentDraftId,
           formData,
           currentStep,
-          savedAt: new Date().toISOString(),
-        })
-      );
-      setLastSaved(new Date());
-    } catch (error) {
-      console.error('Failed to save draft:', error);
-    }
-  }, [formData, currentStep]);
+        }),
+      });
 
-  const clearDraft = useCallback(() => {
-    localStorage.removeItem(DRAFT_STORAGE_KEY);
+      if (response.ok) {
+        const { draft } = await response.json();
+        setCurrentDraftId(draft.id);
+        setLastSaved(new Date());
+        console.log('✅ [HOOK] Draft saved to database:', draft.id);
+        console.log('✅ [HOOK] Saved draft name:', draft.draft_name);
+      } else {
+        console.error('❌ [HOOK] Failed to save draft to database, status:', response.status);
+        const errorData = await response.text();
+        console.error('❌ [HOOK] Error response:', errorData);
+      }
+    } catch (error) {
+      console.error('❌ [HOOK] Error saving draft:', error);
+    }
+  }, [formData, currentStep, currentDraftId]);
+
+  const clearDraft = useCallback(async () => {
+    // Mark draft as completed in database if we have a draft ID
+    if (currentDraftId) {
+      try {
+        await fetch(`/api/marketplace/drafts/${currentDraftId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            completed: true,
+            completed_at: new Date().toISOString()
+          }),
+        });
+        console.log('✅ Draft marked as completed:', currentDraftId);
+      } catch (error) {
+        console.error('Failed to mark draft as completed:', error);
+      }
+      setCurrentDraftId(null);
+    }
+    
     setLastSaved(null);
-  }, []);
+  }, [currentDraftId]);
 
   const updateFormData = useCallback((updates: Partial<ListingFormData>) => {
     setFormData(prev => ({ ...prev, ...updates }));
@@ -128,6 +193,7 @@ export const useListingForm = (listingId?: string) => {
     formData,
     currentStep,
     lastSaved,
+    currentDraftId,
     updateFormData,
     setItemType,
     nextStep,

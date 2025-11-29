@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles, RefreshCw, FileText, DollarSign } from "lucide-react";
+import { RefreshCw, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ListingAnalysisResult } from "@/lib/ai/schemas";
 import { InlineEditField } from "./inline-edit-field";
@@ -63,11 +63,7 @@ export function AIResultsReview({
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="text-center space-y-3">
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-full">
-          <Sparkles className="h-4 w-4" />
-          <span className="font-semibold">AI Analysis Complete</span>
-        </div>
-        <h2 className="text-2xl font-bold text-gray-900">Review AI Suggestions</h2>
+        <h2 className="text-2xl font-bold text-gray-900">Review Detected Information</h2>
         <p className="text-gray-600">
           Check the details below and edit anything that needs adjustment
         </p>
@@ -75,12 +71,9 @@ export function AIResultsReview({
       </div>
 
       {/* Detected Product */}
-      <div className="bg-white rounded-xl border-2 border-gray-900 p-6">
-        <h3 className="text-xl font-bold text-gray-900 mb-2">
-          {editedData.item_type === 'bike' && '🚴 '}
-          {editedData.item_type === 'part' && '🔧 '}
-          {editedData.item_type === 'apparel' && '👕 '}
-          Detected: {editedData.model_year} {editedData.brand} {editedData.model}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h3 className="text-base font-bold text-gray-900 mb-1">
+          {editedData.model_year} {editedData.brand} {editedData.model}
         </h3>
         <p className="text-sm text-gray-600">
           {editedData.item_type === 'bike' && editedData.bike_details?.bike_type || ''}
@@ -90,8 +83,8 @@ export function AIResultsReview({
       </div>
 
       {/* Basic Information */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900">Basic Information</h3>
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <h3 className="text-base font-semibold text-gray-900">Basic Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <InlineEditField
             label="Brand"
@@ -116,8 +109,8 @@ export function AIResultsReview({
 
       {/* Type-Specific Fields */}
       {editedData.item_type === 'bike' && editedData.bike_details && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900">Bike Specifications</h3>
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+          <h3 className="text-base font-semibold text-gray-900">Bike Specifications</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <InlineEditField
               label="Bike Type"
@@ -160,15 +153,15 @@ export function AIResultsReview({
       )}
 
       {/* Condition Assessment */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900">AI Condition Assessment</h3>
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <h3 className="text-base font-semibold text-gray-900">Condition Assessment</h3>
         <div className="space-y-4">
           <div>
             <label className="text-sm font-semibold text-gray-900 mb-2 block">
               Condition Rating
             </label>
             <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-gray-900">{editedData.condition_rating}</span>
+              <span className="text-base font-bold text-gray-900">{editedData.condition_rating}</span>
               <ConfidenceBadge confidence={getConfidence('condition')} size="sm" />
             </div>
           </div>
@@ -209,20 +202,19 @@ export function AIResultsReview({
 
       {/* Price Suggestion */}
       {editedData.price_estimate && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <DollarSign className="h-5 w-5" />
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+          <h3 className="text-base font-semibold text-gray-900">
             Suggested Pricing
           </h3>
           <div className="space-y-3">
             <div>
-              <p className="text-3xl font-bold text-gray-900">
+              <p className="text-xl font-bold text-gray-900">
                 ${editedData.price_estimate.min_aud.toLocaleString()} - $
                 {editedData.price_estimate.max_aud.toLocaleString()} AUD
               </p>
               <ConfidenceBadge confidence={getConfidence('pricing')} size="sm" />
             </div>
-            <div className="bg-gray-50 rounded-md p-4 border border-gray-200">
+            <div className="bg-white rounded-md p-4 border border-gray-200">
               <p className="text-sm text-gray-700">{editedData.price_estimate.reasoning}</p>
             </div>
           </div>
@@ -233,22 +225,22 @@ export function AIResultsReview({
       <div className="flex flex-col md:flex-row gap-3">
         <Button
           onClick={() => onContinue(editedData)}
-          className="flex-1 bg-gray-900 hover:bg-gray-800 text-white rounded-md h-12 text-base"
+          className="flex-1 bg-gray-900 hover:bg-gray-800 text-white rounded-md h-11"
         >
-          ✨ Looks Good - Continue to Listing
+          Continue to Listing
         </Button>
         <Button
           onClick={onReanalyze}
           variant="outline"
-          className="rounded-md h-12"
+          className="rounded-md h-11"
         >
           <RefreshCw className="h-4 w-4 mr-2" />
-          Re-analyze
+          Re-analyse
         </Button>
         <Button
           onClick={onSwitchToManual}
           variant="outline"
-          className="rounded-md h-12"
+          className="rounded-md h-11"
         >
           <FileText className="h-4 w-4 mr-2" />
           Switch to Manual
@@ -258,7 +250,7 @@ export function AIResultsReview({
       {/* Info */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
         <p className="text-sm text-gray-700">
-          <span className="font-semibold">💡 Tip:</span> You can edit any field inline. Click "Continue" to proceed to the full listing form where you can add more details like photos, history, and delivery options.
+          <span className="font-semibold">Tip:</span> You can edit any field inline. Click "Continue" to proceed to the full listing form where you can add more details.
         </p>
       </div>
     </div>

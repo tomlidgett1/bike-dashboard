@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
-import { Package, Store, User } from "lucide-react";
+import { Package, Store, User, Clock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useUserProfile } from "@/components/providers/profile-provider";
 
 interface NavItem {
   title: string;
@@ -33,6 +35,11 @@ const navItems: NavItem[] = [
 export function MarketplaceSidebar() {
   const searchParams = useSearchParams();
   const activeView = searchParams.get("view") || "products";
+  const { user } = useAuth();
+  const { profile } = useUserProfile();
+
+  // Check if user is a bicycle store waiting for admin approval
+  const isWaitingForApproval = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === false;
 
   return (
     <aside
@@ -81,6 +88,20 @@ export function MarketplaceSidebar() {
             );
           })}
         </nav>
+
+        {/* Verification Status Message - Below navigation */}
+        {isWaitingForApproval && (
+          <div className="px-2 pt-4 pb-2">
+            <div className="bg-white rounded-md border border-gray-200 p-3 shadow-sm">
+              <div className="flex items-start gap-2">
+                <Clock className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-gray-700 leading-tight">
+                  Account awaiting admin approval
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </ScrollArea>
     </aside>
   );

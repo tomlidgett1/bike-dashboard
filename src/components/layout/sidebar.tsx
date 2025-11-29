@@ -9,6 +9,8 @@ import {
   Bike,
   Menu,
   Package,
+  Store,
+  Edit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,7 @@ interface NavItem {
   title: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  requiresStore?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -37,9 +40,25 @@ const navItems: NavItem[] = [
     icon: Package,
   },
   {
+    title: "Store Settings",
+    href: "/settings/store",
+    icon: Store,
+    requiresStore: true,
+  },
+  {
+    title: "My Listings",
+    href: "/settings/my-listings",
+    icon: Edit,
+  },
+  {
     title: "Settings",
     href: "/settings",
     icon: Settings,
+  },
+  {
+    title: "Draft Listings",
+    href: "/settings/drafts",
+    icon: Edit,
   },
   {
     title: "Connect Lightspeed",
@@ -51,6 +70,15 @@ const navItems: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const { profile } = useUserProfile();
+
+  // Check if user is verified bicycle store
+  const isVerifiedStore =
+    profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
+
+  // Filter nav items based on user type
+  const filteredNavItems = navItems.filter(
+    (item) => !item.requiresStore || isVerifiedStore
+  );
 
   return (
     <aside
@@ -91,7 +119,7 @@ export function Sidebar() {
       {/* Navigation */}
       <ScrollArea className="flex-1 px-3 py-4">
         <nav className="flex flex-col gap-1">
-          {navItems.map((item) => {
+          {filteredNavItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
 
@@ -120,6 +148,21 @@ export function Sidebar() {
               </Link>
             );
           })}
+
+          {/* Go to Marketplace Button */}
+          <div className="mt-4 pt-4 border-t border-sidebar-border">
+            <Link
+              href="/marketplace"
+              className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            >
+              <Store
+                className="h-[18px] w-[18px] shrink-0 transition-colors text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+              />
+              <span className="overflow-hidden whitespace-nowrap">
+                Go to Marketplace
+              </span>
+            </Link>
+          </div>
         </nav>
       </ScrollArea>
     </aside>
@@ -131,6 +174,15 @@ export function MobileSidebar() {
   const pathname = usePathname();
   const { profile } = useUserProfile();
   const [open, setOpen] = React.useState(false);
+
+  // Check if user is verified bicycle store
+  const isVerifiedStore =
+    profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
+
+  // Filter nav items based on user type
+  const filteredNavItems = navItems.filter(
+    (item) => !item.requiresStore || isVerifiedStore
+  );
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -174,7 +226,7 @@ export function MobileSidebar() {
 
         <ScrollArea className="flex-1 px-3 py-4">
           <nav className="flex flex-col gap-1">
-            {navItems.map((item) => {
+            {filteredNavItems.map((item) => {
               const isActive = pathname === item.href;
               const Icon = item.icon;
 
@@ -202,6 +254,20 @@ export function MobileSidebar() {
                 </Link>
               );
             })}
+
+            {/* Go to Marketplace Button */}
+            <div className="mt-4 pt-4 border-t border-sidebar-border">
+              <Link
+                href="/marketplace"
+                onClick={() => setOpen(false)}
+                className="group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-150 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              >
+                <Store
+                  className="h-[18px] w-[18px] shrink-0 transition-colors text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                />
+                <span>Go to Marketplace</span>
+              </Link>
+            </div>
           </nav>
         </ScrollArea>
       </SheetContent>

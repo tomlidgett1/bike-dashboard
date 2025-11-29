@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, Camera, AlertCircle } from "lucide-react";
+import { Upload, X, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -104,15 +104,15 @@ export function PhotoUploadSmart({
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold text-gray-900">Upload Photos for AI Analysis</h2>
+        <h2 className="text-2xl font-bold text-gray-900">Upload Photos for Analysis</h2>
         <p className="text-gray-600">
-          Upload {minPhotos}-{maxPhotos} clear photos • AI works best with multiple angles
+          Upload {minPhotos}-{maxPhotos} clear photos from multiple angles for best results
         </p>
       </div>
 
       {/* Guidelines */}
       <div className="bg-white border border-gray-200 rounded-xl p-5">
-        <h3 className="font-semibold text-gray-900 mb-3">📸 Photo Tips</h3>
+        <h3 className="font-semibold text-gray-900 mb-3">Photo Tips</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div className="space-y-1">
             <p className="font-medium text-gray-900">For Bikes:</p>
@@ -252,7 +252,7 @@ export function PhotoUploadSmart({
             size="lg"
             className="px-8 bg-gray-900 hover:bg-gray-800 text-white rounded-md"
           >
-            ✨ Analyze with AI
+            Smart Upload
           </Button>
         </div>
       )}

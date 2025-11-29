@@ -1,0 +1,215 @@
+/**
+ * Public Store Profile API
+ * 
+ * Fetches public store profile including:
+ * - Store info (name, logo, type, address, phone, opening_hours)
+ * - Active categories with products
+ * - Active services
+ * - Product counts per category
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
+import type { StoreProfile, StoreCategoryWithProducts } from '@/lib/types/store';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ storeId: string }> }
+) {
+  try {
+    const supabase = await createClient();
+    const { storeId } = await params;
+
+    if (!storeId) {
+      return NextResponse.json(
+        { error: 'Store ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Fetch store profile (must be verified bicycle store)
+    const { data: storeUser, error: storeError } = await supabase
+      .from('users')
+      .select('user_id, business_name, logo_url, store_type, address, phone, opening_hours, account_type, bicycle_store')
+      .eq('user_id', storeId)
+      .single();
+
+    if (storeError || !storeUser) {
+      return NextResponse.json(
+        { error: 'Store not found' },
+        { status: 404 }
+      );
+    }
+
+    // Verify this is a verified bicycle store
+    if (storeUser.account_type !== 'bicycle_store' || !storeUser.bicycle_store) {
+      return NextResponse.json(
+        { error: 'Store not found' },
+        { status: 404 }
+      );
+    }
+
+    // Fetch active services
+    const { data: services, error: servicesError } = await supabase
+      .from('store_services')
+      .select('*')
+      .eq('user_id', storeId)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true });
+
+    if (servicesError) {
+      console.error('Error fetching services:', servicesError);
+    }
+
+    // Fetch display name overrides
+    const { data: displayOverrides } = await supabase
+      .from('store_categories')
+      .select('lightspeed_category_id, name')
+      .eq('user_id', storeId)
+      .eq('source', 'display_override');
+
+    const displayNamesMap = new Map(
+      displayOverrides?.map(o => [o.lightspeed_category_id, o.name]) || []
+    );
+
+    // Fetch all active products for this store with image optimization
+    const { data: allProducts, error: productsError } = await supabase
+      .from('products')
+      .select(`
+        id,
+        description,
+        price,
+        primary_image_url,
+        images,
+        category_name,
+        qoh,
+        lightspeed_category_id,
+        canonical_product_id,
+        canonical_products!canonical_product_id (
+          id,
+          product_images!canonical_product_id (
+            id,
+            storage_path,
+            is_primary,
+            variants
+          )
+        )
+      `)
+      .eq('user_id', storeId)
+      .eq('is_active', true)
+      .gt('qoh', 0)
+      .limit(10000);
+
+    if (productsError) {
+      console.error('Error fetching products:', productsError);
+    }
+
+    // Group products by their category_name (same as Products page)
+    const categoriesWithProducts: StoreCategoryWithProducts[] = [];
+
+    if (allProducts && allProducts.length > 0) {
+      // Group products by category
+      const productsByCategory = new Map<string, any[]>();
+      
+      allProducts.forEach((product) => {
+        const categoryName = product.category_name || 'Uncategorized';
+        if (!productsByCategory.has(categoryName)) {
+          productsByCategory.set(categoryName, []);
+        }
+        productsByCategory.get(categoryName)!.push(product);
+      });
+
+      // Convert to array and sort by product count (descending)
+      const sortedCategories = Array.from(productsByCategory.entries())
+        .sort((a, b) => b[1].length - a[1].length);
+
+      // Build categories with products using optimized image loading
+      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+      
+      sortedCategories.forEach(([categoryName, products], index) => {
+        const marketplaceProducts = products.map((product) => {
+          // Optimized image URL selection (same as marketplace products API)
+          let primaryImageUrl = null;
+          let imageVariants = null;
+
+          // Priority 1: Canonical product images (optimized)
+          if (product.canonical_products?.product_images?.length > 0) {
+            const images = product.canonical_products.product_images;
+            const primaryImage = images.find((img: any) => img.is_primary) || images[0];
+            
+            if (primaryImage) {
+              // Use thumbnail variant for fast loading
+              if (primaryImage.variants?.thumbnail) {
+                primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.variants.thumbnail}`;
+              } else if (primaryImage.variants?.small) {
+                primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.variants.small}`;
+              } else if (primaryImage.storage_path) {
+                primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
+              }
+              imageVariants = primaryImage.variants;
+            }
+          }
+          // Priority 2: Direct image URLs
+          else if (product.primary_image_url) {
+            primaryImageUrl = product.primary_image_url;
+          }
+
+          return {
+            id: product.id,
+            description: product.description,
+            price: parseFloat(product.price),
+            primary_image_url: primaryImageUrl,
+            image_variants: imageVariants,
+            store_name: storeUser.business_name,
+            store_logo_url: storeUser.logo_url,
+            store_id: storeId,
+            category: product.category_name,
+            qoh: product.qoh,
+            listing_type: 'store_inventory' as const,
+          };
+        });
+
+        // Use display override name if exists
+        const displayName = displayNamesMap.get(categoryName) || categoryName;
+
+        categoriesWithProducts.push({
+          id: `category-${index}`,
+          name: displayName,
+          display_order: index,
+          products: marketplaceProducts,
+          product_count: marketplaceProducts.length,
+        });
+      });
+    }
+
+    // Build store profile response
+    const storeProfile: StoreProfile = {
+      id: storeId,
+      store_name: storeUser.business_name,
+      logo_url: storeUser.logo_url,
+      store_type: storeUser.store_type,
+      address: storeUser.address,
+      phone: storeUser.phone,
+      opening_hours: storeUser.opening_hours || {
+        monday: { open: '09:00', close: '17:00', closed: false },
+        tuesday: { open: '09:00', close: '17:00', closed: false },
+        wednesday: { open: '09:00', close: '17:00', closed: false },
+        thursday: { open: '09:00', close: '17:00', closed: false },
+        friday: { open: '09:00', close: '17:00', closed: false },
+        saturday: { open: '10:00', close: '16:00', closed: false },
+        sunday: { open: '10:00', close: '16:00', closed: true },
+      },
+      categories: categoriesWithProducts,
+      services: services || [],
+    };
+
+    return NextResponse.json({ store: storeProfile });
+  } catch (error) {
+    console.error('Error in GET /api/marketplace/store/[storeId]:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+

@@ -189,7 +189,13 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
         </h3>
 
         {/* Store Info - Minimal */}
-        <div className="flex items-center gap-1.5 pt-0.5">
+        <div 
+          className="flex items-center gap-1.5 pt-0.5 cursor-pointer hover:opacity-70 transition-opacity"
+          onClick={(e) => {
+            e.stopPropagation();
+            window.location.href = `/marketplace/store/${product.store_id}`;
+          }}
+        >
           {/* Store Logo */}
           <div className="relative h-5 w-5 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
             {product.store_logo_url && !logoError ? (
@@ -211,6 +217,15 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
           <span className="text-xs text-gray-500 truncate">
             {product.store_name}
           </span>
+          
+          {/* Verified Badge */}
+          <Image
+            src="/verified.png"
+            alt="Verified"
+            width={13}
+            height={13}
+            className="flex-shrink-0"
+          />
         </div>
       </div>
       </motion.div>

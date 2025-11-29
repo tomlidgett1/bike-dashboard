@@ -10,9 +10,10 @@ import { MarketplaceSidebar } from "./marketplace-sidebar";
 
 interface MarketplaceLayoutProps {
   children: React.ReactNode;
+  showFooter?: boolean;
 }
 
-export function MarketplaceLayout({ children }: MarketplaceLayoutProps) {
+export function MarketplaceLayout({ children, showFooter = true }: MarketplaceLayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar - starts below header */}
@@ -22,6 +23,7 @@ export function MarketplaceLayout({ children }: MarketplaceLayoutProps) {
       <main className="w-full lg:pl-[200px]">{children}</main>
 
       {/* Footer */}
+      {showFooter && (
       <footer className="w-full border-t border-gray-200 bg-white mt-12">
         <div className="max-w-[1920px] mx-auto px-6 py-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
@@ -100,6 +102,7 @@ export function MarketplaceLayout({ children }: MarketplaceLayoutProps) {
           </div>
         </div>
       </footer>
+      )}
     </div>
   );
 }

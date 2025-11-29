@@ -47,8 +47,8 @@ export function InlineEditField({
 
   return (
     <div className={cn(
-      "group rounded-md border-2 transition-colors p-4",
-      confidence && confidence < 70 ? "border-yellow-300 bg-yellow-50" : "border-gray-200 bg-white"
+      "group rounded-md border transition-colors p-4",
+      confidence && confidence < 70 ? "border-gray-300 bg-gray-50" : "border-gray-200 bg-white"
     )}>
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">

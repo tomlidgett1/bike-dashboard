@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useListingForm } from "@/lib/hooks/use-listing-form";
 import { UploadMethodChoice } from "./upload-method-choice";
 import { SmartUploadFlow } from "./smart-upload-flow";
-import { WizardNavigation, StepProgress } from "./wizard-navigation";
+import { WizardNavigation } from "./wizard-navigation";
 import { Step1ItemType } from "./step-1-item-type";
 import { Step2ABikeDetails } from "./step-2a-bike-details";
 import { Step2BPartDetails } from "./step-2b-part-details";
@@ -16,6 +16,8 @@ import { Step4Photos } from "./step-4-photos";
 import { Step5History } from "./step-5-history";
 import { Step6Pricing } from "./step-6-pricing";
 import { Step7Review } from "./step-7-review";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   validateItemType,
   validateBikeDetails,
@@ -37,6 +39,7 @@ export function SellWizard() {
   const searchParams = useSearchParams();
   const mode = searchParams?.get('mode'); // 'smart' or null (default manual)
   const hasAiData = searchParams?.get('ai') === 'true';
+  const draftId = searchParams?.get('draftId') || undefined;
   
   const {
     formData,
@@ -49,20 +52,22 @@ export function SellWizard() {
     goToStep,
     saveDraft,
     clearDraft,
-  } = useListingForm();
+  } = useListingForm(undefined, draftId);
 
   const [errors, setErrors] = React.useState<ValidationError[]>([]);
   const [isPublishing, setIsPublishing] = React.useState(false);
-  const [showMethodChoice, setShowMethodChoice] = React.useState(!mode && !hasAiData);
+  // Don't show method choice if we have a draftId (loading existing draft)
+  const [showMethodChoice, setShowMethodChoice] = React.useState(!mode && !hasAiData && !draftId);
 
   // Debug logging
   React.useEffect(() => {
     console.log('🎯 [WIZARD DEBUG] mode:', mode);
     console.log('🎯 [WIZARD DEBUG] hasAiData:', hasAiData);
+    console.log('🎯 [WIZARD DEBUG] draftId:', draftId);
     console.log('🎯 [WIZARD DEBUG] currentStep:', currentStep);
     console.log('🎯 [WIZARD DEBUG] showMethodChoice:', showMethodChoice);
     console.log('🎯 [WIZARD DEBUG] formData:', formData);
-  }, [mode, hasAiData, currentStep, showMethodChoice, formData]);
+  }, [mode, hasAiData, draftId, currentStep, showMethodChoice, formData]);
 
   // Step labels for progress indicator
   const stepLabels = [
@@ -379,45 +384,75 @@ export function SellWizard() {
   // Handle Smart Upload mode
   if (mode === 'smart') {
     return (
-      <SmartUploadFlow
-        onComplete={(aiFormData, imageUrls) => {
-          console.log('🎯 [WIZARD] AI Complete - Form data:', aiFormData);
-          console.log('🎯 [WIZARD] AI Complete - Images:', imageUrls);
-          
-          // Update form data directly (no redirect needed)
-          updateFormData({
-            ...aiFormData,
-            images: imageUrls.map((url, index) => ({
-              id: `ai-${index}`,
-              url,
-              order: index,
-              isPrimary: index === 0,
-            })),
-          });
-          
-          console.log('🎯 [WIZARD] Form data updated, navigating to step 1');
-          
-          // Navigate to step 1 (Item Type) so user starts from beginning
-          goToStep(1);
-          
-          // Don't show method choice again
-          setShowMethodChoice(false);
-          
-          // Change URL without reload
-          window.history.pushState({}, '', '/marketplace/sell?mode=manual&ai=true');
-        }}
-        onSwitchToManual={() => {
-          window.history.pushState({}, '', '/marketplace/sell?mode=manual');
-          setShowMethodChoice(false);
-        }}
-      />
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        {/* Header */}
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+          <div className="max-w-[1920px] mx-auto px-6 py-4 flex items-center justify-between">
+            <h1 className="text-xl font-bold text-gray-900">VeloMarket</h1>
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/marketplace')}
+              className="rounded-md"
+            >
+              Back to Marketplace
+            </Button>
+          </div>
+        </header>
+
+        <SmartUploadFlow
+          onComplete={(aiFormData, imageUrls) => {
+            console.log('🎯 [WIZARD] AI Complete - Form data:', aiFormData);
+            console.log('🎯 [WIZARD] AI Complete - Images:', imageUrls);
+            
+            // Update form data directly (no redirect needed)
+            updateFormData({
+              ...aiFormData,
+              images: imageUrls.map((url, index) => ({
+                id: `ai-${index}`,
+                url,
+                order: index,
+                isPrimary: index === 0,
+              })),
+            });
+            
+            console.log('🎯 [WIZARD] Form data updated, navigating to step 1');
+            
+            // Navigate to step 1 (Item Type) so user starts from beginning
+            goToStep(1);
+            
+            // Don't show method choice again
+            setShowMethodChoice(false);
+            
+            // Change URL without reload
+            window.history.pushState({}, '', '/marketplace/sell?mode=manual&ai=true');
+          }}
+          onSwitchToManual={() => {
+            window.history.pushState({}, '', '/marketplace/sell?mode=manual');
+            setShowMethodChoice(false);
+          }}
+        />
+      </div>
     );
   }
 
-  // Show method choice (Step 0) - but not if coming from AI
-  if (showMethodChoice && currentStep === 1 && !hasAiData) {
+  // Show method choice (Step 0) - but not if coming from AI or loading a draft
+  if (showMethodChoice && currentStep === 1 && !hasAiData && !draftId) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
+        {/* Header */}
+        <header className="bg-white border-b border-gray-200">
+          <div className="max-w-[1920px] mx-auto px-6 py-4 flex items-center justify-between">
+            <h1 className="text-xl font-bold text-gray-900">VeloMarket</h1>
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/marketplace')}
+              className="rounded-md"
+            >
+              Back to Marketplace
+            </Button>
+          </div>
+        </header>
+
         <div className="flex-1 py-12 px-6">
           <UploadMethodChoice
             onSelectSmart={() => {
@@ -434,19 +469,25 @@ export function SellWizard() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Progress Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-[1920px] mx-auto px-6 py-4">
-          <StepProgress
-            currentStep={currentStep}
-            totalSteps={7}
-            stepLabels={stepLabels}
-          />
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div className="max-w-[1920px] mx-auto px-6 py-4 flex items-center justify-between">
+          <h1 className="text-xl font-bold text-gray-900">VeloMarket</h1>
+          <Button
+            variant="ghost"
+            onClick={() => router.push('/marketplace')}
+            className="rounded-md"
+          >
+            Back to Marketplace
+          </Button>
         </div>
-      </div>
+      </header>
 
       {/* Main Content */}
-      <div className="flex-1 py-8 px-6">
+      <div className={cn(
+        "flex-1 py-8 px-6",
+        currentStep !== 7 && "pb-32" // Extra bottom padding for fixed footer, except on review step
+      )}>
         <AnimatePresence mode="wait">
           <motion.div
             key={currentStep}
@@ -460,9 +501,9 @@ export function SellWizard() {
         </AnimatePresence>
       </div>
 
-      {/* Navigation Footer */}
+      {/* Navigation Footer - Fixed at bottom */}
       {currentStep !== 7 && (
-        <div className="sticky bottom-0 z-40">
+        <div className="fixed bottom-0 left-0 right-0 z-40">
           <WizardNavigation
             currentStep={currentStep}
             totalSteps={7}

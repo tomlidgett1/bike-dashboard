@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { Menu, X, Bike, Settings, LogOut } from "lucide-react";
+import { Menu, X, Settings, LogOut } from "lucide-react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,16 @@ export function MarketplaceHeader() {
     }
   };
 
+  // Check if user can access settings (verified bicycle store only)
+  const canAccessSettings = () => {
+    return profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
+  };
+
+  // Check if user is a bicycle store with logo
+  const shouldShowLogo = () => {
+    return profile?.account_type === 'bicycle_store' && profile?.logo_url;
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/login');
@@ -83,16 +94,13 @@ export function MarketplaceHeader() {
             onClick={() => router.push('/marketplace')}
             className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-gray-900">
-              <Bike className="h-5 w-5 text-white" />
-            </div>
-            <span className="hidden sm:inline-block text-lg font-semibold text-gray-900 whitespace-nowrap">
-              VeloMarket
+            <span className="hidden sm:inline-block text-lg text-gray-900 whitespace-nowrap">
+              <span className="font-bold">Velo</span> Market
             </span>
           </button>
 
           {/* Desktop Search Bar - Starts where sidebar ends (200px) */}
-          <div className="hidden lg:block flex-1 max-w-2xl lg:ml-[80px]">
+          <div className="hidden lg:block flex-1 max-w-2xl lg:ml-[50px]">
             <InstantSearch />
           </div>
 
@@ -100,32 +108,47 @@ export function MarketplaceHeader() {
           <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
             {mounted && user ? (
               <>
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0">
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0">
+                    {shouldShowLogo() ? (
+                      <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
+                        <Image
+                          src={profile!.logo_url!}
+                          alt={getDisplayName()}
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                    ) : (
                       <UserAvatar name={getDisplayName()} size="default" />
-                      <span className="text-sm font-medium text-gray-700 max-w-[150px] truncate">
-                        {getDisplayName()}
-                      </span>
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48 bg-white rounded-md">
-                    <DropdownMenuItem
-                      onClick={() => router.push('/settings')}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Settings className="mr-2 h-4 w-4" />
-                      <span>Settings</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={handleSignOut}
-                      className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      <span>Sign Out</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
+                    )}
+                    <span className="text-sm font-medium text-gray-700 max-w-[150px] truncate">
+                      {getDisplayName()}
+                    </span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48 bg-white rounded-md">
+                  {canAccessSettings() && (
+                    <>
+                      <DropdownMenuItem
+                        onClick={() => router.push('/settings')}
+                        className="cursor-pointer rounded-md"
+                      >
+                        <Settings className="mr-2 h-4 w-4" />
+                        <span>Settings</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  <DropdownMenuItem
+                    onClick={handleSignOut}
+                    className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Sign Out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
                 </DropdownMenu>
                 <Button
                   onClick={() => router.push('/marketplace/sell')}
@@ -190,7 +213,18 @@ export function MarketplaceHeader() {
               <>
                 {/* User Info */}
                 <div className="flex items-center gap-3 px-3 py-2 bg-white rounded-md border border-gray-200">
-                  <UserAvatar name={getDisplayName()} size="default" />
+                  {shouldShowLogo() ? (
+                    <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
+                      <Image
+                        src={profile!.logo_url!}
+                        alt={getDisplayName()}
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <UserAvatar name={getDisplayName()} size="default" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">
                       {getDisplayName()}
@@ -211,17 +245,19 @@ export function MarketplaceHeader() {
                   Sell Item
                 </Button>
                 
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    router.push('/settings');
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full rounded-md border-gray-300 hover:bg-gray-50"
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
-                </Button>
+                {canAccessSettings() && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      router.push('/settings');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full rounded-md border-gray-300 hover:bg-gray-50"
+                  >
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </Button>
+                )}
                 
                 <Button
                   variant="outline"

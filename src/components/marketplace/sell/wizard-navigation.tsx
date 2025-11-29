@@ -35,7 +35,7 @@ export function WizardNavigation({
   lastSaved,
 }: WizardNavigationProps) {
   return (
-    <div className="border-t border-gray-200 bg-white px-6 py-4">
+    <div className="border-t border-gray-200 bg-white px-6 py-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
       <div className="max-w-4xl mx-auto flex items-center justify-between">
         {/* Back Button */}
         <div className="flex-1">
