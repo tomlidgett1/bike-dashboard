@@ -33,6 +33,8 @@ export interface UserProfile {
   website: string
   logo_url?: string
   opening_hours?: OpeningHours
+  account_type: string
+  bicycle_store: boolean
   email_notifications: boolean
   order_alerts: boolean
   inventory_alerts: boolean
@@ -78,6 +80,8 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
         address: '',
         website: '',
         logo_url: serverProfile.logo_url || undefined,
+        account_type: 'individual',
+        bicycle_store: false,
         email_notifications: true,
         order_alerts: true,
         inventory_alerts: true,
@@ -117,6 +121,8 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
             store_type: '',
             address: '',
             website: '',
+            account_type: 'individual',
+            bicycle_store: false,
             email_notifications: true,
             order_alerts: true,
             inventory_alerts: true,

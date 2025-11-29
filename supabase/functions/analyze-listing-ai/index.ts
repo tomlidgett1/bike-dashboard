@@ -1,0 +1,324 @@
+// ============================================================
+// AI Listing Analyzer - Supabase Edge Function
+// Analyzes cycling product photos using OpenAI Responses API
+// ============================================================
+
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+
+const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+// ============================================================
+// System Prompt - Human-like output style
+// ============================================================
+
+const SYSTEM_PROMPT = `You are an experienced cyclist selling your own gear on a marketplace. Write descriptions that sound natural and personal - like you're chatting with another cyclist about your bike.
+
+WRITING STYLE FOR DESCRIPTIONS:
+- Sound like a real person, not AI or a product catalog
+- Be casual and conversational
+- Use natural phrasing: "It's in great condition", "Shifts perfectly", "A few light scratches but nothing major"
+- Be honest without being negative: "Some normal wear on the crank arms from use" not "Significant deterioration"
+- Skip flowery language - just be real
+- Use Australian English (colour, tyre, aluminium)
+- Avoid phrases like "I'm pleased to", "I'm happy to", "delighted to offer"
+- Don't apologise for wear - it's expected on used gear
+
+GOOD DESCRIPTION EXAMPLES:
+
+Bike: "This bike is in excellent condition. I've looked after it really well and it's been regularly serviced. The paint has a few minor scratches from general use but nothing that affects performance. Everything works perfectly - shifts smoothly, brakes are strong, and the drivetrain is clean. It's been a great bike but I'm upgrading to something else."
+
+Part: "Used but in good working order. There's some light wear on the finish but it's purely cosmetic. All the threads are clean and it mounts up perfectly. Been reliable for me."
+
+Apparel: "Worn a handful of times but still in excellent condition. No stains, tears, or issues. The fabric is still crisp and the zippers work smoothly. Just doesn't fit my new riding style."
+
+WHAT TO AVOID:
+- "I'm excited to present..."
+- "This exceptional piece..."
+- "Professional-grade performance characteristics..."
+- Over-explaining every detail
+- Marketing speak
+
+Just be real, honest, and helpful.`;
+
+// ============================================================
+// Analysis Schema
+// ============================================================
+
+const LISTING_SCHEMA = {
+  item_type: "string (bike/part/apparel)",
+  overall_confidence: "number 0-100",
+  brand: "string",
+  model: "string",
+  model_year: "string or null",
+  
+  // Bike fields
+  bike_type: "string or null",
+  frame_size: "string or null",
+  frame_material: "string or null",
+  groupset: "string or null",
+  wheel_size: "string or null",
+  suspension_type: "string or null",
+  color_primary: "string or null",
+  color_secondary: "string or null",
+  
+  // Part fields
+  part_category: "string or null",
+  part_type: "string or null",
+  compatibility: "string or null",
+  material: "string or null",
+  weight: "string or null",
+  
+  // Apparel fields
+  apparel_category: "string or null",
+  size: "string or null",
+  gender_fit: "string or null",
+  apparel_material: "string or null",
+  
+  // Condition (written naturally for customers)
+  condition_rating: "string (New/Like New/Excellent/Good/Fair/Well Used)",
+  condition_details: "string - natural, conversational description",
+  wear_notes: "string - honest but casual tone",
+  usage_estimate: "string",
+  
+  // Pricing
+  price_min_aud: "number",
+  price_max_aud: "number",
+  price_reasoning: "string - brief, natural explanation",
+  
+  // Confidence scores
+  brand_confidence: "number 0-100",
+  model_confidence: "number 0-100",
+  condition_confidence: "number 0-100",
+};
+
+// ============================================================
+// Main Handler
+// ============================================================
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    console.log('🤖 [AI EDGE FUNCTION] === Request started ===');
+
+    // Get auth header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Verify user with Supabase
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      global: {
+        headers: { Authorization: authHeader },
+      },
+    });
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      console.error('❌ [AI EDGE FUNCTION] Auth error:', authError);
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log('✓ [AI EDGE FUNCTION] User authenticated:', user.id);
+
+    // Parse request body
+    const { imageUrls, userHints } = await req.json();
+    console.log('✓ [AI EDGE FUNCTION] Analyzing', imageUrls.length, 'images');
+    console.log('✓ [AI EDGE FUNCTION] Original URLs:', imageUrls);
+
+    if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
+      return new Response(JSON.stringify({ error: 'Image URLs required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Download images and convert to base64 for reliable OpenAI access
+    console.log('✓ [AI EDGE FUNCTION] Downloading images as base64...');
+    
+    const imageData = await Promise.all(
+      imageUrls.map(async (url: string, index: number) => {
+        try {
+          // Extract storage path
+          const match = url.match(/\/storage\/v1\/object\/public\/product-images\/(.+)$/);
+          if (match) {
+            const path = match[1];
+            console.log(`✓ [AI EDGE FUNCTION] Downloading image ${index + 1}:`, path);
+            
+            // Download from Supabase storage
+            const { data, error } = await supabase.storage
+              .from('product-images')
+              .download(path);
+            
+            if (error) {
+              console.error('❌ [AI EDGE FUNCTION] Download error:', error);
+              throw error;
+            }
+            
+            // Convert to base64 (proper method for large files)
+            const arrayBuffer = await data.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            
+            // Use Deno's built-in base64 encoding
+            const base64 = btoa(
+              Array.from(bytes, (byte) => String.fromCharCode(byte)).join('')
+            );
+            
+            const mimeType = data.type || 'image/jpeg';
+            
+            console.log(`✓ [AI EDGE FUNCTION] Image ${index + 1} converted to base64, size:`, base64.length);
+            
+            return `data:${mimeType};base64,${base64}`;
+          }
+          return url;
+        } catch (err) {
+          console.error(`❌ [AI EDGE FUNCTION] Error processing image ${index + 1}:`, err);
+          throw err;
+        }
+      })
+    );
+
+    console.log('✓ [AI EDGE FUNCTION] All images ready for OpenAI');
+
+    // Build analysis prompt
+    const prompt = `Analyze these ${imageUrls.length} photo(s) of a cycling product. 
+
+Examine the photos carefully and provide:
+1. Item type (bike, part, or apparel)
+2. Brand and model identification
+3. Specifications and details
+4. Honest condition assessment (write naturally, like you're describing it to a buyer)
+5. Realistic price range for the Australian market
+
+${userHints?.itemType ? `The user thinks this is a ${userHints.itemType}.` : ''}
+
+For the condition description, write like a real person selling their own gear:
+- Be conversational and honest
+- Mention what you see in a natural way
+- Don't over-sell or use marketing language
+- Be specific about any wear or issues
+
+Return your analysis as a JSON object with this structure:
+${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
+
+    // Call OpenAI Responses API
+    console.log('🤖 [AI EDGE FUNCTION] Calling OpenAI...');
+    
+    const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4.1-mini',
+        input: [{
+          role: 'user',
+          content: [
+            { type: 'input_text', text: prompt },
+            ...imageData.map((dataUrl: string) => ({
+              type: 'input_image',
+              image_url: dataUrl,
+            })),
+          ],
+        }],
+      }),
+    });
+
+    if (!openaiResponse.ok) {
+      const errorText = await openaiResponse.text();
+      console.error('❌ [AI EDGE FUNCTION] OpenAI error:', errorText);
+      throw new Error(`OpenAI API error: ${openaiResponse.status} - ${errorText}`);
+    }
+
+    const openaiData = await openaiResponse.json();
+    console.log('✓ [AI EDGE FUNCTION] OpenAI response received');
+    console.log('✓ [AI EDGE FUNCTION] Full response structure:', JSON.stringify(openaiData, null, 2).substring(0, 1000));
+
+    // Parse the Responses API output structure
+    let outputText = null;
+    
+    // Responses API returns: output[0].content[0].text
+    if (Array.isArray(openaiData.output) && openaiData.output.length > 0) {
+      const message = openaiData.output[0];
+      if (message.type === 'message' && Array.isArray(message.content)) {
+        const textContent = message.content.find((item: any) => item.type === 'output_text');
+        if (textContent && textContent.text) {
+          outputText = textContent.text;
+        }
+      }
+    }
+    
+    console.log('✓ [AI EDGE FUNCTION] Extracted output text length:', outputText?.length);
+    console.log('✓ [AI EDGE FUNCTION] Output text preview:', outputText?.substring(0, 200));
+    
+    if (!outputText) {
+      console.error('❌ [AI EDGE FUNCTION] No output text found in response');
+      console.error('❌ [AI EDGE FUNCTION] Response structure:', JSON.stringify(openaiData, null, 2).substring(0, 500));
+      throw new Error('No output text in OpenAI response');
+    }
+
+    let analysis;
+    try {
+      // Try to parse as JSON
+      analysis = JSON.parse(outputText);
+    } catch (parseError) {
+      console.error('❌ [AI EDGE FUNCTION] JSON parse error:', parseError);
+      console.log('Raw output:', outputText);
+      
+      // Try to extract JSON from markdown code blocks
+      const jsonMatch = outputText.match(/```json\n([\s\S]*?)\n```/) || outputText.match(/```\n([\s\S]*?)\n```/);
+      if (jsonMatch) {
+        analysis = JSON.parse(jsonMatch[1]);
+      } else {
+        throw new Error('Failed to parse AI response as JSON');
+      }
+    }
+
+    console.log('✅ [AI EDGE FUNCTION] Analysis complete');
+    console.log('✅ [AI EDGE FUNCTION] Detected:', analysis.item_type, '-', analysis.brand, analysis.model);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        analysis,
+        meta: {
+          model: openaiData.model,
+          tokensUsed: openaiData.usage?.total_tokens,
+        },
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  } catch (error) {
+    console.error('❌ [AI EDGE FUNCTION] Error:', error);
+    return new Response(
+      JSON.stringify({
+        error: 'AI analysis failed',
+        details: error.message,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  }
+});

@@ -3,10 +3,9 @@
 import * as React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { SlidersHorizontal, Package, Store } from "lucide-react";
+import { SlidersHorizontal, Package, Store, User, Bike, Settings, Shirt, Apple } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
-import { CategoryFilters } from "@/components/marketplace/category-filters";
 import { ProductGrid } from "@/components/marketplace/product-grid";
 import { StoresGrid } from "@/components/marketplace/stores-grid";
 import { Button } from "@/components/ui/button";
@@ -30,9 +29,9 @@ export default function MarketplacePage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Tab state - products or stores
-  const [activeTab, setActiveTab] = React.useState<'products' | 'stores'>(
-    (searchParams.get('view') as 'products' | 'stores') || 'products'
+  // Tab state - products, stores, or individual sellers
+  const [activeTab, setActiveTab] = React.useState<'products' | 'stores' | 'sellers'>(
+    (searchParams.get('view') as 'products' | 'stores' | 'sellers') || 'products'
   );
 
   // Get filters from URL
@@ -46,21 +45,22 @@ export default function MarketplacePage() {
   const [sortBy, setSortBy] = React.useState<string>(
     searchParams.get('sortBy') || 'newest'
   );
-  const [page, setPage] = React.useState(1);
 
   // Stores state
   const [stores, setStores] = React.useState<any[]>([]);
   const [storesLoading, setStoresLoading] = React.useState(false);
 
-  // Fetch products with filters
-  const { products, loading, pagination, refetch } = useMarketplaceProducts({
+  // Memoize filters to prevent recreating object on every render
+  const filters = React.useMemo(() => ({
     category: category || undefined,
     subcategory: subcategory || undefined,
     search: search || undefined,
     sortBy: sortBy as any,
-    page,
     pageSize: 24,
-  });
+  }), [category, subcategory, search, sortBy]);
+
+  // Fetch products with filters (no page state - handled by hook)
+  const { products, loading, pagination, refetch, loadMore } = useMarketplaceProducts(filters);
 
   // Fetch category stats
   const { categories: categoryStats } = useMarketplaceCategories();
@@ -113,15 +113,8 @@ export default function MarketplacePage() {
     router.replace(newUrl, { scroll: false });
   }, [activeTab, category, subcategory, search, sortBy, router]);
 
-  // Reset page when filters change
-  React.useEffect(() => {
-    setPage(1);
-  }, [category, subcategory, search, sortBy]);
-
   const handleLoadMore = () => {
-    if (pagination.hasMore && !loading) {
-      setPage((prev) => prev + 1);
-    }
+    loadMore();
   };
 
   const handleSearchChange = (value: string) => {
@@ -133,125 +126,124 @@ export default function MarketplacePage() {
     setSubcategory(null); // Reset subcategory when category changes
   };
 
-  return (
-    <MarketplaceLayout>
-      {/* Header */}
-      <MarketplaceHeader
-        searchValue={search}
-        onSearchChange={handleSearchChange}
-        searchLoading={loading}
-      />
+  // Category icons mapping
+  const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+    Bicycles: Bike,
+    Parts: Settings,
+    Apparel: Shirt,
+    Nutrition: Apple,
+  };
 
-      {/* Main Content */}
-      <div className="max-w-[1920px] mx-auto px-6 py-8">
+  return (
+    <>
+      {/* Header - Full Width, Fixed with Enterprise Search */}
+      <MarketplaceHeader />
+
+      <MarketplaceLayout>
+        {/* Main Content - Add top padding to account for fixed header */}
+        <div className="max-w-[1920px] mx-auto px-6 py-8 pt-20">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
           className="space-y-6"
         >
-          {/* View Tabs */}
-          <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-            <button
-              onClick={() => setActiveTab('products')}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                activeTab === 'products'
-                  ? "text-gray-800 bg-white shadow-sm"
-                  : "text-gray-600 hover:bg-gray-200/70"
-              )}
-            >
-              <Package size={15} />
-              Products
-            </button>
-            <button
-              onClick={() => setActiveTab('stores')}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                activeTab === 'stores'
-                  ? "text-gray-800 bg-white shadow-sm"
-                  : "text-gray-600 hover:bg-gray-200/70"
-              )}
-            >
-              <Store size={15} />
-              Stores
-            </button>
-          </div>
+          {/* Category Tabs - Only show for products view */}
+          {activeTab === 'products' && (
+            <div className="space-y-3">
+              {/* Header */}
+              <h2 className="text-lg font-medium text-gray-900">
+                What are you looking for?
+              </h2>
+              
+              {/* Category Filters */}
+              <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
+                <button
+                  onClick={() => handleCategoryChange(null)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
+                    !category
+                      ? "text-gray-800 bg-white shadow-sm border border-gray-200"
+                      : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
+                  )}
+                >
+                  All Products
+                </button>
 
-          {/* Page Title */}
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold text-gray-900">
-              {activeTab === 'stores' 
-                ? 'Browse All Stores'
-                : category ? `${category}` : 'Browse All Products'
-              }
-            </h1>
-            <p className="text-gray-600">
-              {activeTab === 'stores'
-                ? `${stores.length} bike stores on the platform`
-                : categoryStats
-                  ? `${categoryStats.totalProducts.toLocaleString()} products available`
-                  : 'Discover bikes, parts, apparel, and more'
-              }
-            </p>
-          </div>
+                {(['Bicycles', 'Parts', 'Apparel', 'Nutrition'] as MarketplaceCategory[]).map((cat) => {
+                  const Icon = CATEGORY_ICONS[cat];
+                  const count = categoryCounts[cat] || 0;
+                  const isActive = category === cat;
+
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => handleCategoryChange(cat)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
+                        isActive
+                          ? "text-gray-800 bg-white shadow-sm border border-gray-200"
+                          : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
+                      )}
+                    >
+                      <Icon size={15} />
+                      {cat}
+                      {count > 0 && (
+                        <span className="ml-1 text-xs text-gray-500">
+                          ({count})
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Products View */}
           {activeTab === 'products' && (
             <>
-              {/* Filters Section */}
-              <div className="space-y-4">
-                {/* Category Filters */}
-                <CategoryFilters
-                  selectedCategory={category}
-                  selectedSubcategory={subcategory}
-                  onCategoryChange={handleCategoryChange}
-                  onSubcategoryChange={setSubcategory}
-                  categoryCounts={categoryCounts}
-                />
+              {/* Sort and Filter Bar */}
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">
+                    {pagination.total.toLocaleString()} products
+                  </span>
+                </div>
 
-                {/* Sort and Filter Bar */}
-                <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-3">
+                  {/* Sort Dropdown */}
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">
-                      {pagination.total.toLocaleString()} products
-                    </span>
+                    <span className="text-sm text-gray-600">Sort:</span>
+                    <Select value={sortBy} onValueChange={setSortBy}>
+                      <SelectTrigger className="w-[160px] rounded-md">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="newest">Newest First</SelectItem>
+                        <SelectItem value="oldest">Oldest First</SelectItem>
+                        <SelectItem value="price_asc">Price: Low to High</SelectItem>
+                        <SelectItem value="price_desc">Price: High to Low</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    {/* Sort Dropdown */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">Sort:</span>
-                      <Select value={sortBy} onValueChange={setSortBy}>
-                        <SelectTrigger className="w-[160px] rounded-md">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="newest">Newest First</SelectItem>
-                          <SelectItem value="oldest">Oldest First</SelectItem>
-                          <SelectItem value="price_asc">Price: Low to High</SelectItem>
-                          <SelectItem value="price_desc">Price: High to Low</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Advanced Filters Button (Future) */}
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="rounded-md border-gray-300"
-                      disabled
-                    >
-                      <SlidersHorizontal className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  {/* Advanced Filters Button (Future) */}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="rounded-md border-gray-300"
+                    disabled
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
 
               {/* Products Grid */}
               <ProductGrid
                 products={products}
-                loading={loading && page === 1}
+                loading={loading}
                 hasMore={pagination.hasMore}
                 onLoadMore={handleLoadMore}
               />
@@ -260,11 +252,33 @@ export default function MarketplacePage() {
 
           {/* Stores View */}
           {activeTab === 'stores' && (
-            <StoresGrid stores={stores} loading={storesLoading} />
+            <>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-600">
+                  {stores.length} {stores.length === 1 ? 'store' : 'stores'} found
+                </p>
+              </div>
+              <StoresGrid stores={stores} loading={storesLoading} />
+            </>
+          )}
+
+          {/* Individual Sellers View */}
+          {activeTab === 'sellers' && (
+            <div className="bg-white rounded-md border border-gray-200 p-12 text-center">
+              <User className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                Individual Sellers Coming Soon
+              </h3>
+              <p className="text-gray-600 max-w-md mx-auto">
+                We're working on bringing individual sellers to the marketplace. 
+                Check back soon to discover unique products from the cycling community.
+              </p>
+            </div>
           )}
         </motion.div>
       </div>
-    </MarketplaceLayout>
+      </MarketplaceLayout>
+    </>
   );
 }
 

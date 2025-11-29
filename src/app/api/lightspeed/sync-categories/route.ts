@@ -55,8 +55,11 @@ export async function POST(request: NextRequest) {
         // Filter items with positive stock
         const itemsWithStock = [];
         for (const item of items) {
-          const itemShops = await client.getItemShops(item.itemID);
-          const totalStock = itemShops.reduce((sum, shop) => sum + parseInt(shop.qoh || '0'), 0);
+          const itemShopsResponse = await client.getItemShops({ itemID: item.itemID });
+          const itemShopsArray = Array.isArray(itemShopsResponse.ItemShop) 
+            ? itemShopsResponse.ItemShop 
+            : itemShopsResponse.ItemShop ? [itemShopsResponse.ItemShop] : [];
+          const totalStock = itemShopsArray.reduce((sum, shop) => sum + parseInt(shop.qoh || '0'), 0);
           
           if (totalStock > 0) {
             itemsWithStock.push({ ...item, stock: totalStock });
@@ -167,4 +170,8 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+
+
+
 

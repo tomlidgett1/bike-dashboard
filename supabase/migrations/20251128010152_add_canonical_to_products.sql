@@ -158,3 +158,7 @@ COMMENT ON COLUMN products.use_custom_image IS 'If true, use custom_image_url in
 COMMENT ON COLUMN products.custom_image_url IS 'Store-specific custom image URL (overrides canonical)';
 COMMENT ON FUNCTION get_product_image_url IS 'Returns the appropriate image URL for a product (custom or canonical)';
 
+
+
+
+

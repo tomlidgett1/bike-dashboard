@@ -191,3 +191,7 @@ SELECT
 FROM pg_matviews
 WHERE matviewname = 'marketplace_products_fast';
 
+
+
+
+

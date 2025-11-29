@@ -198,7 +198,8 @@ Deno.serve(async (req) => {
           }
           
           nextUrl = data['@attributes']?.next || null
-          await new Promise(r => setTimeout(r, 20))
+          // Minimal delay to avoid rate limits
+          await new Promise(r => setTimeout(r, 10))
         }
         return { type: 'inventory', data: inventoryMap }
       })()
@@ -237,7 +238,8 @@ Deno.serve(async (req) => {
             }
             
             nextUrl = data['@attributes']?.next || null
-            await new Promise(r => setTimeout(r, 20))
+            // Minimal delay to avoid rate limits
+            await new Promise(r => setTimeout(r, 10))
           }
           return { type: 'items', data: allItems }
         })()
@@ -278,7 +280,8 @@ Deno.serve(async (req) => {
               }
               
               nextUrl = data['@attributes']?.next || null
-              await new Promise(r => setTimeout(r, 20))
+              // Minimal delay to avoid rate limits
+              await new Promise(r => setTimeout(r, 10))
             }
             
             sendProgress({ 
@@ -405,22 +408,72 @@ Deno.serve(async (req) => {
       progress: 70 
     })
 
-    // Match products to canonical catalog in bulk
-    const canonicalMap = await matchProductsBulk(supabaseAdmin, productsToInsert.map(p => ({
-      user_id: p.user_id,
-      upc: p.upc,
-      description: p.description,
-      category_name: p.category_name,
-      manufacturer_name: p.manufacturer_id || null,
-    })))
+    // CRITICAL: First, check which products already have canonical matches
+    const existingLightspeedIds = productsToInsert.map(p => p.lightspeed_item_id).filter(Boolean)
+    const { data: existingProducts } = await supabaseAdmin
+      .from('products')
+      .select('lightspeed_item_id, canonical_product_id')
+      .eq('user_id', user.id)
+      .in('lightspeed_item_id', existingLightspeedIds)
+      .not('canonical_product_id', 'is', null)
 
-    // Add canonical_product_id to each product
+    // Create map of lightspeed_item_id -> canonical_product_id for existing matches
+    const existingMatches = new Map<string, string>()
+    if (existingProducts) {
+      existingProducts.forEach((p: any) => {
+        if (p.canonical_product_id) {
+          existingMatches.set(p.lightspeed_item_id, p.canonical_product_id)
+        }
+      })
+    }
+
+    console.log(`✅ [MATCHING] Preserving ${existingMatches.size} existing canonical matches`)
+
+    // Only match NEW products (without existing canonical_product_id)
+    const productsNeedingMatch = productsToInsert
+      .map((p, index) => ({ ...p, originalIndex: index }))
+      .filter(p => !existingMatches.has(p.lightspeed_item_id))
+
+    console.log(`🔍 [MATCHING] Need to match ${productsNeedingMatch.length} new products`)
+
+    let canonicalMap = new Map<number, string>()
+
+    // Only run matching for products that need it
+    if (productsNeedingMatch.length > 0) {
+      canonicalMap = await matchProductsBulk(supabaseAdmin, productsNeedingMatch.map(p => ({
+        user_id: p.user_id,
+        upc: p.upc,
+        description: p.description,
+        category_name: p.category_name,
+        manufacturer_name: p.manufacturer_id || null,
+      })))
+
+      // Map the results back to original indexes
+      canonicalMap.forEach((canonicalId, matchIndex) => {
+        const originalIndex = productsNeedingMatch[matchIndex]?.originalIndex
+        if (originalIndex !== undefined) {
+          canonicalMap.set(originalIndex, canonicalId)
+        }
+      })
+    }
+
+    // Add canonical_product_id to each product (preserve existing or use new match)
     productsToInsert.forEach((product, index) => {
-      const canonicalId = canonicalMap.get(index)
-      if (canonicalId) {
-        product.canonical_product_id = canonicalId
+      // First check if this product already has a canonical match
+      if (product.lightspeed_item_id && existingMatches.has(product.lightspeed_item_id)) {
+        product.canonical_product_id = existingMatches.get(product.lightspeed_item_id)
+      } 
+      // Otherwise use newly matched ID
+      else {
+        const canonicalId = canonicalMap.get(index)
+        if (canonicalId) {
+          product.canonical_product_id = canonicalId
+        }
       }
     })
+
+    const matchedCount = productsToInsert.filter(p => p.canonical_product_id).length
+    console.log(`✅ [MATCHING] Final result: ${matchedCount}/${productsToInsert.length} products have canonical matches`)
 
     await sendProgress({ 
       phase: 'insert', 
@@ -428,36 +481,49 @@ Deno.serve(async (req) => {
       progress: 75 
     })
 
-    // Insert in chunks of 50
+    // Insert in parallel batches for much faster processing
+    const CHUNK_SIZE = 100 // Larger chunks for faster processing
+    const PARALLEL_BATCHES = 5 // Number of chunks to process in parallel
+    
     let inserted = 0
-    const totalChunks = Math.ceil(productsToInsert.length / 50)
-    for (let i = 0; i < productsToInsert.length; i += 50) {
-      const chunk = productsToInsert.slice(i, i + 50)
-      await supabaseAdmin.from('products').upsert(chunk, { onConflict: 'user_id,lightspeed_item_id' })
-      inserted += chunk.length
+    const chunks: any[][] = []
+    
+    // Split into chunks
+    for (let i = 0; i < productsToInsert.length; i += CHUNK_SIZE) {
+      chunks.push(productsToInsert.slice(i, i + CHUNK_SIZE))
+    }
+    
+    // Process chunks in parallel batches
+    for (let i = 0; i < chunks.length; i += PARALLEL_BATCHES) {
+      const batch = chunks.slice(i, i + PARALLEL_BATCHES)
       
-      const chunkNum = Math.floor(i / 50) + 1
-      const insertProgress = 75 + (chunkNum / totalChunks) * 25
+      // Insert all chunks in this batch in parallel
+      await Promise.all(
+        batch.map(chunk => 
+          supabaseAdmin.from('products').upsert(chunk, { onConflict: 'user_id,lightspeed_item_id' })
+        )
+      )
       
-      // Only await progress update every 5 chunks to avoid slowdown
-      if (chunkNum % 5 === 0 || chunkNum === totalChunks) {
-        await sendProgress({ 
-          phase: 'insert', 
-          message: `Saved ${inserted}/${productsToInsert.length} products...`, 
-          progress: insertProgress,
-          details: { inserted, total: productsToInsert.length }
-        })
-      }
+      inserted += batch.reduce((sum, chunk) => sum + chunk.length, 0)
       
-      await new Promise(r => setTimeout(r, 30))
+      const progress = 75 + ((i + batch.length) / chunks.length) * 25
+      
+      await sendProgress({ 
+        phase: 'insert', 
+        message: `Saved ${inserted}/${productsToInsert.length} products...`, 
+        progress: Math.min(progress, 99),
+        details: { inserted, total: productsToInsert.length }
+      })
     }
 
-    // Update connection
-    await supabaseAdmin.from('lightspeed_connections').update({ last_sync_at: new Date().toISOString() }).eq('user_id', user.id)
+    // Update connection and category preferences in parallel
+    const finalUpdates: Promise<any>[] = [
+      supabaseAdmin.from('lightspeed_connections').update({ last_sync_at: new Date().toISOString() }).eq('user_id', user.id)
+    ]
 
-    // Update category sync preferences
+    // Update category sync preferences in parallel
     if (!syncAll && categoryIds.length > 0) {
-      for (const categoryId of categoryIds) {
+      categoryIds.forEach(categoryId => {
         let categoryProducts: any[]
         
         if (categoryId === '__UNCATEGORIZED__') {
@@ -470,16 +536,21 @@ Deno.serve(async (req) => {
           categoryProducts = productsToInsert.filter(p => p.lightspeed_category_id === categoryId)
         }
         
-        await supabaseAdmin
-          .from('lightspeed_category_sync_preferences')
-          .update({
-            last_synced_at: new Date().toISOString(),
-            product_count: categoryProducts.length,
-          })
-          .eq('user_id', user.id)
-          .eq('category_id', categoryId)
-      }
+        finalUpdates.push(
+          supabaseAdmin
+            .from('lightspeed_category_sync_preferences')
+            .update({
+              last_synced_at: new Date().toISOString(),
+              product_count: categoryProducts.length,
+            })
+            .eq('user_id', user.id)
+            .eq('category_id', categoryId)
+        )
+      })
     }
+    
+    // Execute all final updates in parallel
+    await Promise.all(finalUpdates)
 
     const duration = Date.now() - startTime
 

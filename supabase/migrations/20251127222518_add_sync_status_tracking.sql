@@ -62,3 +62,7 @@ CREATE TRIGGER update_active_syncs_updated_at
 
 COMMENT ON TABLE public.active_syncs IS 'Tracks ongoing sync operations so progress persists across page navigation';
 
+
+
+
+

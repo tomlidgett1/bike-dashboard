@@ -167,3 +167,7 @@ COMMENT ON COLUMN product_images.variants IS 'JSONB containing paths to differen
 COMMENT ON COLUMN product_images.formats IS 'JSONB containing paths to different format variants (webp, avif, jpeg) for each size';
 COMMENT ON COLUMN product_images.is_primary IS 'Only one image per canonical product can be primary';
 
+
+
+
+

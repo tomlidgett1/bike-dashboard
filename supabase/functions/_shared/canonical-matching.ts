@@ -128,6 +128,7 @@ export async function findCanonicalMatch(
 /**
  * Creates a new canonical product
  * Uses UPSERT to avoid duplicates
+ * For products without UPC, checks existing by normalized_name first
  */
 export async function createCanonicalProduct(
   supabase: SupabaseClient,
@@ -136,47 +137,75 @@ export async function createCanonicalProduct(
   const normalizedUpc = normalizeUPC(product.upc);
   const normalizedName = normalizeProductName(product.description);
   
-  // If no UPC, generate a deterministic one based on normalized name
-  // This ensures the same product gets the same temp UPC
-  const upc = normalizedUpc || `TEMP-${normalizedName.replace(/\s/g, '-').substring(0, 50)}`;
+  // If product has a real UPC, use it
+  if (normalizedUpc) {
+    console.log(`[CREATE CANONICAL] Upserting canonical product with UPC: ${normalizedUpc}`);
+    
+    const { data, error } = await supabase
+      .from('canonical_products')
+      .upsert({
+        upc: normalizedUpc,
+        normalized_name: normalizedName,
+        category: product.category_name || null,
+        manufacturer: product.manufacturer_name || null,
+      }, {
+        onConflict: 'upc',
+        ignoreDuplicates: false,
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      // Try to fetch existing
+      const { data: existing } = await supabase
+        .from('canonical_products')
+        .select('id')
+        .eq('upc', normalizedUpc)
+        .single();
+      
+      if (existing) {
+        return existing.id;
+      }
+      throw error;
+    }
+
+    return data.id;
+  }
   
-  console.log(`[CREATE CANONICAL] Upserting canonical product with UPC: ${upc}`);
+  // No UPC: Check if a canonical product with this normalized_name already exists
+  console.log(`[CREATE CANONICAL] No UPC - searching by normalized_name: "${normalizedName}"`);
   
-  // Use upsert to handle duplicates gracefully
-  const { data, error } = await supabase
+  const { data: existing, error: searchError } = await supabase
     .from('canonical_products')
-    .upsert({
-      upc: upc,
+    .select('id')
+    .eq('normalized_name', normalizedName)
+    .maybeSingle();
+  
+  if (existing) {
+    console.log(`[CREATE CANONICAL] Found existing canonical by name: ${existing.id}`);
+    return existing.id;
+  }
+  
+  // Create new with NULL UPC (no TEMP prefix!)
+  console.log(`[CREATE CANONICAL] Creating new canonical without UPC`);
+  
+  const { data: newCanonical, error: insertError } = await supabase
+    .from('canonical_products')
+    .insert({
+      upc: null, // No UPC
       normalized_name: normalizedName,
       category: product.category_name || null,
       manufacturer: product.manufacturer_name || null,
-    }, {
-      onConflict: 'upc',
-      ignoreDuplicates: false, // Return existing if duplicate
     })
     .select('id')
     .single();
 
-  if (error) {
-    console.error(`[CREATE CANONICAL] Error upserting:`, error);
-    
-    // If upsert failed, try to fetch existing by UPC
-    const { data: existing } = await supabase
-      .from('canonical_products')
-      .select('id')
-      .eq('upc', upc)
-      .single();
-    
-    if (existing) {
-      console.log(`[CREATE CANONICAL] Found existing canonical by UPC: ${upc}`);
-      return existing.id;
-    }
-    
-    throw new Error(`Failed to create canonical product: ${error.message}`);
+  if (insertError) {
+    throw new Error(`Failed to create canonical product: ${insertError.message}`);
   }
 
-  console.log(`[CREATE CANONICAL] Success! ID: ${data.id}`);
-  return data.id;
+  console.log(`[CREATE CANONICAL] Created new canonical: ${newCanonical.id}`);
+  return newCanonical.id;
 }
 
 /**
@@ -207,34 +236,39 @@ export async function matchProductsBulk(
   
   console.log(`📊 [CANONICAL MATCHING] Found ${upcMap.size} unique UPCs to match`);
 
-  // Bulk fetch existing canonical products by UPC
+  // Bulk fetch existing canonical products by UPC in batches
   if (upcMap.size > 0) {
     const upcs = Array.from(upcMap.keys());
     console.log(`🔎 [CANONICAL MATCHING] Searching for existing canonical products with UPCs:`, upcs.slice(0, 5), '...');
     
-    const { data: existingCanonical, error: fetchError } = await supabase
-      .from('canonical_products')
-      .select('id, upc')
-      .in('upc', upcs);
-
-    if (fetchError) {
-      console.error(`❌ [CANONICAL MATCHING] Error fetching canonical products:`, fetchError);
-    } else if (existingCanonical) {
-      console.log(`✅ [CANONICAL MATCHING] Found ${existingCanonical.length} existing canonical products`);
+    // Process UPC lookups in batches of 1000 to avoid query limits
+    const UPC_BATCH_SIZE = 1000;
+    const allExistingCanonical: any[] = [];
+    
+    for (let i = 0; i < upcs.length; i += UPC_BATCH_SIZE) {
+      const upcBatch = upcs.slice(i, i + UPC_BATCH_SIZE);
+      const { data: batchData } = await supabase
+        .from('canonical_products')
+        .select('id, upc')
+        .in('upc', upcBatch);
       
-      existingCanonical.forEach((canonical) => {
-        const productIndexes = upcMap.get(canonical.upc);
-        if (productIndexes) {
-          productIndexes.forEach((index) => {
-            canonicalMap.set(index, canonical.id);
-          });
-        }
-      });
-      
-      console.log(`🔗 [CANONICAL MATCHING] Matched ${canonicalMap.size} products to existing canonical`);
-    } else {
-      console.log(`⚠️  [CANONICAL MATCHING] No existing canonical products found`);
+      if (batchData) {
+        allExistingCanonical.push(...batchData);
+      }
     }
+
+    console.log(`✅ [CANONICAL MATCHING] Found ${allExistingCanonical.length} existing canonical products`);
+    
+    allExistingCanonical.forEach((canonical) => {
+      const productIndexes = upcMap.get(canonical.upc);
+      if (productIndexes) {
+        productIndexes.forEach((index) => {
+          canonicalMap.set(index, canonical.id);
+        });
+      }
+    });
+    
+    console.log(`🔗 [CANONICAL MATCHING] Matched ${canonicalMap.size} products to existing canonical`);
   }
 
   // For products without UPC match, try name matching or create new
@@ -244,34 +278,42 @@ export async function matchProductsBulk(
   
   console.log(`🔄 [CANONICAL MATCHING] Processing ${products.length - canonicalMap.size} unmatched products...`);
   
-  for (let i = 0; i < products.length; i++) {
-    if (canonicalMap.has(i)) continue; // Already matched by UPC
-
-    const product = products[i]!;
-
-    // Try name matching
-    try {
-      const nameMatch = await matchByName(supabase, product.description, 0.85);
-      if (nameMatch && nameMatch.confidence >= 85) {
-        console.log(`✓ [CANONICAL MATCHING] Name matched product ${i}: "${product.description}" (${nameMatch.confidence}% confidence)`);
-        canonicalMap.set(i, nameMatch.id);
-        nameMatched++;
-        continue;
-      }
-    } catch (error) {
-      console.error(`⚠️  [CANONICAL MATCHING] Name match failed for product ${i}:`, error);
+  // Get all unmatched product indexes
+  const unmatchedIndexes = products
+    .map((_, index) => index)
+    .filter(index => !canonicalMap.has(index));
+  
+  if (unmatchedIndexes.length === 0) {
+    console.log(`✅ [CANONICAL MATCHING] All products matched by UPC!`);
+  } else {
+    // Process unmatched products individually (safer for deduplication)
+    console.log(`🔄 [CANONICAL MATCHING] Processing ${unmatchedIndexes.length} unmatched products...`);
+    
+    // Process in parallel batches
+    const BATCH_SIZE = 20;
+    
+    for (let i = 0; i < unmatchedIndexes.length; i += BATCH_SIZE) {
+      const batchIndexes = unmatchedIndexes.slice(i, i + BATCH_SIZE);
+      
+      await Promise.all(
+        batchIndexes.map(async (index) => {
+          const product = products[index]!;
+          
+          try {
+            const canonicalId = await createCanonicalProduct(supabase, product);
+            canonicalMap.set(index, canonicalId);
+            newCreated++;
+          } catch (error) {
+            console.error(`❌ [CANONICAL MATCHING] Failed to create canonical for product ${index}:`, error);
+            errors++;
+          }
+        })
+      );
+      
+      console.log(`📊 Progress: ${Math.min(i + BATCH_SIZE, unmatchedIndexes.length)}/${unmatchedIndexes.length} processed`);
     }
-
-    // Create new canonical product if no match found
-    try {
-      console.log(`+ [CANONICAL MATCHING] Creating new canonical for product ${i}: "${product.description}"`);
-      const newCanonicalId = await createCanonicalProduct(supabase, product);
-      canonicalMap.set(i, newCanonicalId);
-      newCreated++;
-    } catch (error) {
-      console.error(`❌ [CANONICAL MATCHING] Failed to create canonical for product ${i}:`, error);
-      errors++;
-    }
+    
+    console.log(`✅ [CANONICAL MATCHING] Created/matched ${newCreated} canonical products`);
   }
 
   console.log(`\n📈 [CANONICAL MATCHING] Summary:`);

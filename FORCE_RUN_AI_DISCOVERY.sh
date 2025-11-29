@@ -57,3 +57,7 @@ echo -e "   - Queue processes 10 items at a time"
 echo -e "   - Each product takes 30-90 seconds"
 echo -e "${BLUE}════════════════════════════════════════════════════════${NC}\n"
 
+
+
+
+

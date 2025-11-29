@@ -7,9 +7,9 @@ import type { MarketplaceProduct, MarketplaceProductsResponse } from '@/lib/type
 // Enterprise-grade with caching, pagination, and optimization
 // ============================================================
 
-// Enterprise-grade caching strategy
+// Force dynamic for development (disable caching while building features)
 export const dynamic = 'force-dynamic';
-export const revalidate = 300; // ISR: Revalidate every 5 minutes for better CDN hit rate
+// export const revalidate = 300; // Re-enable ISR caching after development
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     // Create Supabase client (public access, no auth required)
     const supabase = await createClient();
 
-    // Start building query - join with canonical products and images
+    // Start building query - join with canonical products, images, and store info
     let query = supabase
       .from('products')
       .select(`
@@ -44,6 +44,50 @@ export async function GET(request: NextRequest) {
         canonical_product_id,
         use_custom_image,
         custom_image_url,
+        listing_type,
+        listing_source,
+        listing_status,
+        frame_size,
+        frame_material,
+        bike_type,
+        groupset,
+        wheel_size,
+        suspension_type,
+        bike_weight,
+        color_primary,
+        color_secondary,
+        part_type_detail,
+        compatibility_notes,
+        material,
+        weight,
+        size,
+        gender_fit,
+        apparel_material,
+        condition_rating,
+        condition_details,
+        wear_notes,
+        usage_estimate,
+        purchase_location,
+        purchase_date,
+        service_history,
+        upgrades_modifications,
+        reason_for_selling,
+        is_negotiable,
+        shipping_available,
+        shipping_cost,
+        pickup_location,
+        included_accessories,
+        seller_contact_preference,
+        seller_phone,
+        seller_email,
+        published_at,
+        expires_at,
+        images,
+        primary_image_url,
+        users!user_id (
+          business_name,
+          logo_url
+        ),
         canonical_products!canonical_product_id (
           id,
           upc,
@@ -56,7 +100,8 @@ export async function GET(request: NextRequest) {
           )
         )
       `, { count: 'exact' })
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .or('listing_status.is.null,listing_status.eq.active');
 
     // Apply category filter
     if (category) {
@@ -117,6 +162,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Deduplicate the data first (JOIN with product_images can create duplicates)
+    const uniqueProductsMap = new Map<string, any>();
+    (data || []).forEach((product: any) => {
+      if (!uniqueProductsMap.has(product.id)) {
+        uniqueProductsMap.set(product.id, product);
+      }
+    });
+    const uniqueData = Array.from(uniqueProductsMap.values());
+
+    console.log(`📊 [MARKETPLACE API] Raw results: ${data?.length || 0}, Unique: ${uniqueData.length}`);
+
     // Calculate pagination metadata
     const total = count || 0;
     const totalPages = Math.ceil(total / pageSize);
@@ -125,26 +181,50 @@ export async function GET(request: NextRequest) {
     // Transform data to marketplace product format with optimized images
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     
-    const products: MarketplaceProduct[] = (data || []).map((product: any) => {
+    const products: MarketplaceProduct[] = uniqueData.map((product: any) => {
+      console.log('🖼️ [IMAGE DEBUG] Processing product:', product.id);
+      console.log('🖼️ [IMAGE DEBUG] listing_type:', product.listing_type);
+      console.log('🖼️ [IMAGE DEBUG] images field:', product.images);
+      console.log('🖼️ [IMAGE DEBUG] primary_image_url:', product.primary_image_url);
+      
       let primaryImageUrl = null;
       let imageVariants = null;
       let imageFormats = null;
+      let allImages: string[] = [];
       
       // Priority 1: Custom store image
       if (product.use_custom_image && product.custom_image_url) {
         primaryImageUrl = product.custom_image_url;
+        allImages.push(product.custom_image_url);
       }
       // Priority 2: Canonical product images
       else if (product.canonical_products?.product_images) {
-        const primaryImage = product.canonical_products.product_images.find(
-          (img: any) => img.is_primary
-        );
+        const images = product.canonical_products.product_images;
         
+        // Get primary image first
+        const primaryImage = images.find((img: any) => img.is_primary);
         if (primaryImage) {
           primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
           imageVariants = primaryImage.variants;
           imageFormats = primaryImage.formats;
         }
+        
+        // Get ALL images for the gallery (primary first, then others)
+        const sortedImages = [...images].sort((a: any, b: any) => {
+          if (a.is_primary) return -1;
+          if (b.is_primary) return 1;
+          return 0;
+        });
+        
+        allImages = sortedImages
+          .map((img: any) => {
+            // Try to use the 'large' variant if available, otherwise original
+            if (img.variants?.large) {
+              return `${baseUrl}/storage/v1/object/public/product-images/${img.variants.large}`;
+            }
+            return `${baseUrl}/storage/v1/object/public/product-images/${img.storage_path}`;
+          })
+          .filter(Boolean);
       }
       
       return {
@@ -156,11 +236,71 @@ export async function GET(request: NextRequest) {
         primary_image_url: primaryImageUrl,
         image_variants: imageVariants,
         image_formats: imageFormats,
+        all_images: allImages,
         qoh: product.qoh || 0,
         model_year: product.model_year,
         created_at: product.created_at,
         user_id: product.user_id,
-      };
+        store_name: product.users?.business_name || 'Bike Store',
+        store_logo_url: product.users?.logo_url || null,
+        
+        // Extended listing fields
+        listing_type: product.listing_type,
+        listing_source: product.listing_source,
+        listing_status: product.listing_status,
+        
+        // Bike fields
+        frame_size: product.frame_size,
+        frame_material: product.frame_material,
+        bike_type: product.bike_type,
+        groupset: product.groupset,
+        wheel_size: product.wheel_size,
+        suspension_type: product.suspension_type,
+        bike_weight: product.bike_weight,
+        color_primary: product.color_primary,
+        color_secondary: product.color_secondary,
+        
+        // Part fields
+        part_type_detail: product.part_type_detail,
+        compatibility_notes: product.compatibility_notes,
+        material: product.material,
+        weight: product.weight,
+        
+        // Apparel fields
+        size: product.size,
+        gender_fit: product.gender_fit,
+        apparel_material: product.apparel_material,
+        
+        // Condition & history
+        condition_rating: product.condition_rating,
+        condition_details: product.condition_details,
+        wear_notes: product.wear_notes,
+        usage_estimate: product.usage_estimate,
+        purchase_location: product.purchase_location,
+        purchase_date: product.purchase_date,
+        service_history: product.service_history,
+        upgrades_modifications: product.upgrades_modifications,
+        
+        // Selling details
+        reason_for_selling: product.reason_for_selling,
+        is_negotiable: product.is_negotiable,
+        shipping_available: product.shipping_available,
+        shipping_cost: product.shipping_cost,
+        pickup_location: product.pickup_location,
+        included_accessories: product.included_accessories,
+        
+        // Contact
+        seller_contact_preference: product.seller_contact_preference,
+        seller_phone: product.seller_phone,
+        seller_email: product.seller_email,
+        
+        // Dates
+        published_at: product.published_at,
+        expires_at: product.expires_at,
+        
+        // Raw images field (for listings)
+        images: product.images,
+      } as MarketplaceProduct;
     });
 
     const response: MarketplaceProductsResponse = {

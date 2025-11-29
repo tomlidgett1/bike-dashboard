@@ -152,3 +152,7 @@ If `supabase db push` doesn't work:
 
 Run `supabase db push` and the error will be fixed! 🎉
 
+
+
+
+

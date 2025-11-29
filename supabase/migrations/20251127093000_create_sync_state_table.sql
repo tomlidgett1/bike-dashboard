@@ -51,3 +51,7 @@ CREATE POLICY "Users can insert own sync state" ON lightspeed_sync_state FOR INS
 CREATE POLICY "Users can update own sync state" ON lightspeed_sync_state FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can delete own sync state" ON lightspeed_sync_state FOR DELETE USING (auth.uid() = user_id);
 
+
+
+
+

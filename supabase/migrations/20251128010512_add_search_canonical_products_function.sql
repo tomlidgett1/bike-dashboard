@@ -43,3 +43,7 @@ GRANT EXECUTE ON FUNCTION search_canonical_products_by_name TO authenticated;
 
 COMMENT ON FUNCTION search_canonical_products_by_name IS 'Searches canonical products using trigram similarity matching on product names';
 
+
+
+
+

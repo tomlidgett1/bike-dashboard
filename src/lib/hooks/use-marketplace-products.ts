@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   MarketplaceProduct,
   MarketplaceFilters,
@@ -33,6 +33,7 @@ export function useMarketplaceProducts(
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: 24,
@@ -41,8 +42,22 @@ export function useMarketplaceProducts(
     hasMore: false,
   });
 
+  // Create a stable string key from filters for comparison
+  const filterKey = JSON.stringify({
+    category: filters.category,
+    subcategory: filters.subcategory,
+    search: filters.search,
+    minPrice: filters.minPrice,
+    maxPrice: filters.maxPrice,
+    sortBy: filters.sortBy,
+    pageSize: filters.pageSize,
+  });
+
+  const prevFilterKey = useRef(filterKey);
+
+  // Fetch products function (no dependencies on filters object)
   const fetchProducts = useCallback(
-    async (append: boolean = false) => {
+    async (page: number, append: boolean = false) => {
       try {
         setLoading(true);
         setError(null);
@@ -56,25 +71,18 @@ export function useMarketplaceProducts(
         if (filters.maxPrice !== undefined)
           params.set('maxPrice', filters.maxPrice.toString());
         if (filters.sortBy) params.set('sortBy', filters.sortBy);
-        params.set('page', (filters.page || 1).toString());
+        params.set('page', page.toString());
         params.set('pageSize', (filters.pageSize || 24).toString());
 
-        // Use store-specific endpoint if storeId is provided
-        const endpoint = filters.storeId
-          ? `/api/marketplace/store/${filters.storeId}`
-          : '/api/marketplace/products';
-
-        console.log(`[HOOK] Fetching from: ${endpoint}?${params}`);
-        
-        const response = await fetch(`${endpoint}?${params}`);
+        const response = await fetch(`/api/marketplace/products?${params}`);
         
         if (!response.ok) {
-          console.error(`[HOOK] API error: ${response.status} ${response.statusText}`);
-          throw new Error('Failed to fetch products');
+          const errorData = await response.json().catch(() => null);
+          const errorMessage = errorData?.error || `Failed to fetch products (${response.status})`;
+          throw new Error(errorMessage);
         }
 
         const data = await response.json();
-        console.log(`[HOOK] Received ${data.products?.length || 0} products`);
 
         if (append) {
           setProducts((prev) => [...prev, ...data.products]);
@@ -83,6 +91,7 @@ export function useMarketplaceProducts(
         }
 
         setPagination(data.pagination);
+        setCurrentPage(page);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
         console.error('Error fetching marketplace products:', err);
@@ -90,22 +99,31 @@ export function useMarketplaceProducts(
         setLoading(false);
       }
     },
-    [filters]
+    [filters.category, filters.subcategory, filters.search, filters.minPrice, filters.maxPrice, filters.sortBy, filters.pageSize]
   );
-
-  const refetch = useCallback(async () => {
-    await fetchProducts(false);
-  }, [fetchProducts]);
 
   const loadMore = useCallback(async () => {
     if (pagination.hasMore && !loading) {
-      await fetchProducts(true);
+      await fetchProducts(currentPage + 1, true);
     }
-  }, [pagination.hasMore, loading, fetchProducts]);
+  }, [pagination.hasMore, loading, fetchProducts, currentPage]);
 
-  useEffect(() => {
-    fetchProducts(false);
+  const refetch = useCallback(async () => {
+    setCurrentPage(1);
+    await fetchProducts(1, false);
   }, [fetchProducts]);
+
+  // Initial fetch and refetch when filters change
+  useEffect(() => {
+    if (filterKey !== prevFilterKey.current) {
+      prevFilterKey.current = filterKey;
+      setCurrentPage(1);
+      fetchProducts(1, false);
+    } else if (currentPage === 1 && products.length === 0) {
+      // Initial load
+      fetchProducts(1, false);
+    }
+  }, [filterKey, fetchProducts, currentPage, products.length]);
 
   return {
     products,
@@ -141,7 +159,10 @@ export function useMarketplaceCategories(): UseMarketplaceCategoriesReturn {
       const response = await fetch('/api/marketplace/categories');
       
       if (!response.ok) {
-        throw new Error('Failed to fetch categories');
+        // Try to get detailed error message from response
+        const errorData = await response.json().catch(() => null);
+        const errorMessage = errorData?.error || `Failed to fetch categories (${response.status})`;
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();

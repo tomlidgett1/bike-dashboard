@@ -168,7 +168,7 @@ async function main() {
             canonicalId = newCanonical.id;
             
             // Add to map for future matches in this batch
-            if (product.upc) {
+            if (product.upc && canonicalId) {
               canonicalByUPC.set(normalizeUPC(product.upc), canonicalId);
             }
 
@@ -248,4 +248,8 @@ main()
     console.error('❌ Migration failed:', error);
     process.exit(1);
   });
+
+
+
+
 

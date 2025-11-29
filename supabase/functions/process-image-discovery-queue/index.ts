@@ -40,175 +40,191 @@ Deno.serve(async (req) => {
 
     console.log(`📋 [QUEUE PROCESSOR] Found ${queueItems.length} items to process`)
 
-    // Process each item directly (no HTTP calls, avoids JWT issues)
+    // Process items in parallel for much faster execution
     const results: any[] = []
+    const PARALLEL_ITEMS = 3 // Process 3 products simultaneously
 
-    for (let i = 0; i < queueItems.length; i++) {
-      const item = queueItems[i]
-      console.log(`\n[${i + 1}/${queueItems.length}] Processing: "${item.product_name}"`)
+    for (let i = 0; i < queueItems.length; i += PARALLEL_ITEMS) {
+      const batch = queueItems.slice(i, i + PARALLEL_ITEMS)
+      console.log(`\n⚡ Processing batch ${Math.floor(i / PARALLEL_ITEMS) + 1}/${Math.ceil(queueItems.length / PARALLEL_ITEMS)} (${batch.length} items)`)
 
-      try {
-        // Call OpenAI to discover images
-        console.log(`🤖 [${i + 1}/${queueItems.length}] Calling AI for image discovery...`)
-        const aiResult = await discoverProductImages(item.product_name, {
-          upc: item.upc,
-          category: item.category,
-          manufacturer: item.manufacturer,
-          maxImages: 5,
-        })
-
-        console.log(`✅ [${i + 1}/${queueItems.length}] AI found ${aiResult.images.length} images`)
-
-        if (aiResult.images.length === 0) {
-          console.log(`⚠️  [${i + 1}/${queueItems.length}] No images found`)
-          
-          await supabase.rpc('mark_discovery_complete', {
-            p_queue_id: item.id,
-            p_images_found: 0,
-            p_images_downloaded: 0,
-            p_openai_response: { reasoning: aiResult.reasoning },
-            p_search_query: aiResult.searchQuery,
-          })
-
-          results.push({
-            productName: item.product_name,
-            success: true,
-            imagesDownloaded: 0,
-            noResults: true,
-          })
-          continue
-        }
-
-        // Download and upload each image
-        const uploadedImages: any[] = []
-        let primaryImageId: string | null = null
-
-        for (let j = 0; j < aiResult.images.length; j++) {
-          const imageInfo = aiResult.images[j]
-          console.log(`📥 [${i + 1}/${queueItems.length}] Downloading image ${j + 1}/${aiResult.images.length}: ${imageInfo.url}`)
+      // Process this batch in parallel
+      const batchResults = await Promise.all(
+        batch.map(async (item, batchIndex) => {
+          const itemIndex = i + batchIndex + 1
+          console.log(`\n[${itemIndex}/${queueItems.length}] Processing: "${item.product_name}"`)
 
           try {
-            // Download image
-            const downloadResult = await downloadImage(imageInfo.url)
-
-            if (!downloadResult.success || !downloadResult.blob) {
-              console.error(`❌ Download failed: ${downloadResult.error}`)
-              continue
-            }
-
-            // Validate image
-            const validation = await validateImage(downloadResult.blob)
-            if (!validation.valid) {
-              console.error(`❌ Validation failed: ${validation.error}`)
-              continue
-            }
-
-            console.log(`✓ Image valid: ${validation.mimeType}, ${(validation.fileSize! / 1024).toFixed(0)}KB`)
-
-            // Generate storage path
-            const filename = generateFilename(imageInfo.url, j)
-            const storagePath = `canonical/${item.canonical_product_id}/original/${filename}`
-
-            console.log(`📤 Uploading to: ${storagePath}`)
-
-            // Upload to Supabase Storage
-            const { data: uploadData, error: uploadError } = await supabase.storage
-              .from('product-images')
-              .upload(storagePath, downloadResult.blob, {
-                cacheControl: '31536000',
-                contentType: validation.mimeType,
-                upsert: false,
-              })
-
-            if (uploadError) {
-              console.error(`❌ Upload failed: ${uploadError.message}`)
-              continue
-            }
-
-            console.log(`✅ Uploaded successfully`)
-
-            // Create product_images record
-            const { data: imageRecord, error: recordError } = await supabase
-              .from('product_images')
-              .insert({
-                canonical_product_id: item.canonical_product_id,
-                storage_path: storagePath,
-                is_primary: imageInfo.isPrimary,
-                sort_order: imageInfo.rank,
-                variants: { original: storagePath },
-                formats: { jpeg: { original: storagePath } },
-                width: validation.width || 800,
-                height: validation.height || 800,
-                file_size: validation.fileSize,
-                mime_type: validation.mimeType,
-                uploaded_by: null,
-              })
-              .select('id')
-              .single()
-
-            if (recordError) {
-              console.error(`❌ Failed to create image record: ${recordError.message}`)
-              continue
-            }
-
-            console.log(`✅ Image record created: ${imageRecord.id}`)
-
-            if (imageInfo.isPrimary) {
-              primaryImageId = imageRecord.id
-              console.log(`⭐ Marked as primary image`)
-            }
-
-            uploadedImages.push({
-              id: imageRecord.id,
-              url: imageInfo.url,
-              storagePath,
-              isPrimary: imageInfo.isPrimary,
+            // Call OpenAI to discover images
+            console.log(`🤖 [${itemIndex}/${queueItems.length}] Calling AI for image discovery...`)
+            const aiResult = await discoverProductImages(item.product_name, {
+              upc: item.upc,
+              category: item.category,
+              manufacturer: item.manufacturer,
+              maxImages: 5,
             })
+
+            console.log(`✅ [${itemIndex}/${queueItems.length}] AI found ${aiResult.images.length} images`)
+
+            if (aiResult.images.length === 0) {
+              console.log(`⚠️  [${itemIndex}/${queueItems.length}] No images found`)
+              
+              const { error: completeError } = await supabase.rpc('mark_discovery_complete', {
+                p_queue_id: item.id,
+                p_images_found: 0,
+                p_images_downloaded: 0,
+                p_openai_response: { reasoning: aiResult.reasoning },
+                p_search_query: aiResult.searchQuery,
+              })
+
+              if (completeError) {
+                console.error(`⚠️ Failed to mark discovery complete: ${completeError.message}`)
+              }
+
+              return {
+                productName: item.product_name,
+                success: true,
+                imagesDownloaded: 0,
+                noResults: true,
+              }
+            }
+
+            // Download and upload images IN PARALLEL for much faster processing
+            console.log(`📥 [${itemIndex}/${queueItems.length}] Downloading ${aiResult.images.length} images in parallel...`)
+            
+            const imageUploadPromises = aiResult.images.map(async (imageInfo, j) => {
+              try {
+                // Download image
+                const downloadResult = await downloadImage(imageInfo.url)
+
+                if (!downloadResult || !downloadResult.success || !downloadResult.blob) {
+                  console.error(`❌ Image ${j + 1} download failed: ${downloadResult?.error || 'Unknown error'}`)
+                  return null
+                }
+
+                // Validate image
+                const validation = await validateImage(downloadResult.blob)
+                if (!validation || !validation.valid) {
+                  console.error(`❌ Image ${j + 1} validation failed: ${validation?.error || 'Unknown error'}`)
+                  return null
+                }
+
+                // Generate storage path
+                const filename = generateFilename(imageInfo.url, j)
+                const storagePath = `canonical/${item.canonical_product_id}/original/${filename}`
+
+                // Upload to Supabase Storage
+                const uploadResponse = await supabase.storage
+                  .from('product-images')
+                  .upload(storagePath, downloadResult.blob, {
+                    cacheControl: '31536000',
+                    contentType: validation.mimeType,
+                    upsert: false,
+                  })
+
+                if (!uploadResponse || uploadResponse.error) {
+                  console.error(`❌ Image ${j + 1} upload failed: ${uploadResponse?.error?.message || 'Unknown error'}`)
+                  return null
+                }
+
+                // Create product_images record
+                const imageRecordResponse = await supabase
+                  .from('product_images')
+                  .insert({
+                    canonical_product_id: item.canonical_product_id,
+                    storage_path: storagePath,
+                    is_primary: imageInfo.isPrimary,
+                    sort_order: imageInfo.rank,
+                    variants: { original: storagePath },
+                    formats: { jpeg: { original: storagePath } },
+                    width: validation.width || 800,
+                    height: validation.height || 800,
+                    file_size: validation.fileSize,
+                    mime_type: validation.mimeType,
+                    uploaded_by: null,
+                  })
+                  .select('id')
+                  .single()
+
+                if (!imageRecordResponse || imageRecordResponse.error || !imageRecordResponse.data) {
+                  console.error(`❌ Image ${j + 1} record creation failed`)
+                  return null
+                }
+
+                console.log(`✅ Image ${j + 1} uploaded: ${imageRecordResponse.data.id}`)
+
+                return {
+                  id: imageRecordResponse.data.id,
+                  url: imageInfo.url,
+                  storagePath,
+                  isPrimary: imageInfo.isPrimary,
+                }
+              } catch (error) {
+                console.error(`❌ Error processing image ${j + 1}:`, error)
+                return null
+              }
+            })
+
+            // Wait for all images to upload in parallel
+            const imageResults = await Promise.all(imageUploadPromises)
+            const uploadedImages = imageResults.filter(img => img !== null)
+            const primaryImageId = uploadedImages.find(img => img.isPrimary)?.id || null
+
+            console.log(`✅ [${itemIndex}/${queueItems.length}] Success: ${uploadedImages.length}/${aiResult.images.length} images uploaded`)
+
+            // Update queue status
+            const { error: completeError } = await supabase.rpc('mark_discovery_complete', {
+              p_queue_id: item.id,
+              p_images_found: aiResult.images.length,
+              p_images_downloaded: uploadedImages.length,
+              p_openai_response: {
+                reasoning: aiResult.reasoning,
+                uploadedImages,
+                primaryImageId,
+              },
+              p_search_query: aiResult.searchQuery,
+            })
+
+            if (completeError) {
+              console.error(`⚠️ Failed to mark discovery complete: ${completeError.message}`)
+            }
+
+            return {
+              productName: item.product_name,
+              success: true,
+              imagesDownloaded: uploadedImages.length,
+            }
           } catch (error) {
-            console.error(`❌ Error processing image ${j + 1}:`, error)
-            continue
+            console.error(`❌ [${itemIndex}/${queueItems.length}] Failed:`, error)
+
+            // Mark as failed and handle retry logic
+            try {
+              const { error: failError } = await supabase.rpc('mark_discovery_failed', {
+                p_queue_id: item.id,
+                p_error_message: error instanceof Error ? error.message : 'Unknown error',
+              })
+
+              if (failError) {
+                console.error(`⚠️ Failed to mark discovery as failed: ${failError.message}`)
+              }
+            } catch (rpcError) {
+              console.error(`⚠️ RPC call failed:`, rpcError)
+            }
+
+            return {
+              productName: item.product_name,
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            }
           }
-        }
-
-        console.log(`✅ [${i + 1}/${queueItems.length}] Success: ${uploadedImages.length} images uploaded`)
-
-        // Update queue status
-        await supabase.rpc('mark_discovery_complete', {
-          p_queue_id: item.id,
-          p_images_found: aiResult.images.length,
-          p_images_downloaded: uploadedImages.length,
-          p_openai_response: {
-            reasoning: aiResult.reasoning,
-            uploadedImages,
-            primaryImageId,
-          },
-          p_search_query: aiResult.searchQuery,
         })
+      )
 
-        results.push({
-          productName: item.product_name,
-          success: true,
-          imagesDownloaded: uploadedImages.length,
-        })
-      } catch (error) {
-        console.error(`❌ [${i + 1}/${queueItems.length}] Failed:`, error)
+      results.push(...batchResults)
 
-        // Mark as failed and handle retry logic
-        await supabase.rpc('mark_discovery_failed', {
-          p_queue_id: item.id,
-          p_error_message: error instanceof Error ? error.message : 'Unknown error',
-        })
-
-        results.push({
-          productName: item.product_name,
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        })
-      }
-
-      // Rate limit: Wait 2 seconds between items to avoid overwhelming APIs
-      if (i < queueItems.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000))
+      // Small delay between batches (not between individual items)
+      if (i + PARALLEL_ITEMS < queueItems.length) {
+        await new Promise(resolve => setTimeout(resolve, 500))
       }
     }
 

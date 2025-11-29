@@ -273,3 +273,7 @@ const handleResetPassword = async (email: string) => {
 
 Your authentication system is production-ready and follows best practices. Just add your Supabase anon key and you're good to go! 🎉
 
+
+
+
+

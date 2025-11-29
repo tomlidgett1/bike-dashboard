@@ -330,18 +330,22 @@ CRITICAL: Only include URLs you found via web search. Must be direct image URLs 
     }
 
     const data = await response.json();
+    if (!data) {
+      throw new Error('OpenAI returned empty response');
+    }
+
     console.log(`✅ [OPENAI] Response received (${data.usage?.total_tokens || '?'} tokens)`);
 
-    // Extract output text
+    // Extract output text with safety checks
     let outputText = '';
     if (data.output && Array.isArray(data.output)) {
       for (const item of data.output) {
-        if (item.type === 'web_search_call') {
-          console.log(`🔍 [OPENAI] Web search executed: ${item.status}`);
+        if (item && item.type === 'web_search_call') {
+          console.log(`🔍 [OPENAI] Web search executed: ${item.status || 'unknown'}`);
         }
-        if (item.type === 'message' && item.content) {
+        if (item && item.type === 'message' && item.content && Array.isArray(item.content)) {
           for (const content of item.content) {
-            if (content.type === 'output_text') {
+            if (content && content.type === 'output_text' && content.text) {
               outputText = content.text;
             }
           }
@@ -350,7 +354,7 @@ CRITICAL: Only include URLs you found via web search. Must be direct image URLs 
     }
 
     if (!outputText) {
-      throw new Error('No output from OpenAI');
+      throw new Error('No output text found in OpenAI response');
     }
 
     // Parse JSON
@@ -448,8 +452,16 @@ Return JSON:
       }),
     });
 
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
     const data = await response.json();
-    const parsed = JSON.parse(data.choices[0]?.message?.content || '{}');
+    if (!data || !data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error('Invalid OpenAI API response structure');
+    }
+
+    const parsed = JSON.parse(data.choices[0].message.content || '{}');
 
     const results: ImageSearchResult[] = [];
     for (const selection of parsed.selections || []) {

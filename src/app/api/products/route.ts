@@ -110,11 +110,20 @@ export async function GET(request: NextRequest) {
       let resolvedImageUrl = product.primary_image_url; // Default to Lightspeed image
       
       // If product has canonical product with images, use those
-      if (product.canonical_products?.product_images) {
-        const primaryImage = product.canonical_products.product_images.find((img: any) => img.is_primary);
-        if (primaryImage) {
+      if (product.canonical_products?.product_images && Array.isArray(product.canonical_products.product_images)) {
+        const images = product.canonical_products.product_images;
+        
+        // Find primary image or use first available
+        const primaryImage = images.find((img: any) => img.is_primary) || images[0];
+        
+        if (primaryImage && primaryImage.storage_path) {
           const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-          resolvedImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
+          
+          // Use storage_path directly (variants aren't being generated yet)
+          // TODO: When image processing is added, use: variants.thumbnail || variants.medium || storage_path
+          const imagePath = primaryImage.storage_path;
+          
+          resolvedImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${imagePath}`;
         }
       }
       

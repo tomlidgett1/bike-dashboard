@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { MarketplaceSidebar } from "./marketplace-sidebar";
 
 // ============================================================
 // Marketplace Layout
-// Minimal layout for public marketplace (no dashboard sidebar)
+// Layout with sidebar for marketplace navigation
 // ============================================================
 
 interface MarketplaceLayoutProps {
@@ -14,8 +15,11 @@ interface MarketplaceLayoutProps {
 export function MarketplaceLayout({ children }: MarketplaceLayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Sidebar - starts below header */}
+      <MarketplaceSidebar />
+      
       {/* Header is included in each marketplace page for more control */}
-      <main className="w-full">{children}</main>
+      <main className="w-full lg:pl-[200px]">{children}</main>
 
       {/* Footer */}
       <footer className="w-full border-t border-gray-200 bg-white mt-12">

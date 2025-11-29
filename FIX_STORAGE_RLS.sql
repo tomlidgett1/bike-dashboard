@@ -107,3 +107,7 @@ WHERE schemaname = 'storage'
   AND policyname LIKE '%logo%'
 ORDER BY info_type, name;
 
+
+
+
+

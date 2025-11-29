@@ -189,3 +189,7 @@ Added columns to `products` table:
 4. **Conflict Resolution:** Handle products that change categories
 5. **Partial Sync:** Sync only changed products within categories
 
+
+
+
+

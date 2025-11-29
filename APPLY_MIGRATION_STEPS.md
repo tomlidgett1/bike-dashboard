@@ -56,3 +56,7 @@ After running the SQL, your settings will save successfully with opening hours! 
 
 **The SQL is also in:** `RUN_THIS_SQL_NOW.sql`
 
+
+
+
+

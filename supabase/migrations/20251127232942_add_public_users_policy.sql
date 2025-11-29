@@ -19,3 +19,7 @@ CREATE POLICY "Public can view store listings"
 
 COMMENT ON POLICY "Public can view store listings" ON users IS 'Allows public access to view all stores for marketplace browsing';
 
+
+
+
+

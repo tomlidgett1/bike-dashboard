@@ -209,3 +209,7 @@ The image upload system is now **fully integrated** and ready for testing!
 
 **Note:** Products need a `canonical_product_id` to upload images. This is automatically set during Lightspeed sync when products are matched by UPC or name.
 
+
+
+
+

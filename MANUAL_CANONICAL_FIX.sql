@@ -131,3 +131,7 @@ GROUP BY cp.id, cp.upc, cp.normalized_name
 ORDER BY product_count DESC
 LIMIT 20;
 
+
+
+
+

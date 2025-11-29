@@ -150,3 +150,7 @@ COMMENT ON FUNCTION get_image_public_url IS 'Returns the public CDN URL for a st
 COMMENT ON FUNCTION generate_image_storage_path IS 'Generates a unique storage path for image upload';
 COMMENT ON VIEW product_images_with_urls IS 'Product images with resolved public URLs for easy access';
 
+
+
+
+

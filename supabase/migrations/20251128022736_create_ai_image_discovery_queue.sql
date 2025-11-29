@@ -68,6 +68,10 @@ ALTER TABLE ai_image_discovery_queue ENABLE ROW LEVEL SECURITY;
 -- RLS Policies
 -- ============================================================
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Authenticated users can view discovery queue" ON ai_image_discovery_queue;
+DROP POLICY IF EXISTS "Service role has full access to discovery queue" ON ai_image_discovery_queue;
+
 -- Authenticated users can view queue items
 CREATE POLICY "Authenticated users can view discovery queue"
   ON ai_image_discovery_queue FOR SELECT
@@ -84,6 +88,7 @@ CREATE POLICY "Service role has full access to discovery queue"
 -- ============================================================
 -- Trigger for updated_at
 -- ============================================================
+DROP TRIGGER IF EXISTS update_ai_image_discovery_queue_updated_at ON ai_image_discovery_queue;
 CREATE TRIGGER update_ai_image_discovery_queue_updated_at
   BEFORE UPDATE ON ai_image_discovery_queue
   FOR EACH ROW
@@ -127,6 +132,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger on canonical_products INSERT
+DROP TRIGGER IF EXISTS trigger_auto_queue_ai_discovery ON canonical_products;
 CREATE TRIGGER trigger_auto_queue_ai_discovery
   AFTER INSERT ON canonical_products
   FOR EACH ROW

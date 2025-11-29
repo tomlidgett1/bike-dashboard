@@ -205,3 +205,7 @@ supabase db push
 
 **Never manually create tables in Supabase UI again!** Always use migrations. 🎉
 
+
+
+
+

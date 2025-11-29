@@ -37,6 +37,19 @@ export function ProductGrid({
 }: ProductGridProps) {
   const observerTarget = React.useRef<HTMLDivElement>(null);
 
+  // Deduplicate products (safety check)
+  const uniqueProducts = React.useMemo(() => {
+    const seen = new Set<string>();
+    return products.filter((product) => {
+      if (seen.has(product.id)) {
+        console.warn(`Duplicate product detected: ${product.id}`);
+        return false;
+      }
+      seen.add(product.id);
+      return true;
+    });
+  }, [products]);
+
   // Intersection Observer for infinite scroll
   React.useEffect(() => {
     if (!hasMore || loading || !onLoadMore) return;
@@ -62,8 +75,25 @@ export function ProductGrid({
     };
   }, [hasMore, loading, onLoadMore]);
 
+  // Loading skeleton for initial load
+  if (loading && uniqueProducts.length === 0) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+        {Array.from({ length: 24 }).map((_, i) => (
+          <div key={i} className="bg-white rounded-md border border-gray-200 overflow-hidden animate-pulse">
+            <div className="aspect-square bg-gray-200" />
+            <div className="p-3 space-y-2">
+              <div className="h-4 bg-gray-200 rounded w-3/4" />
+              <div className="h-4 bg-gray-200 rounded w-1/2" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   // Empty state
-  if (!loading && products.length === 0) {
+  if (!loading && uniqueProducts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 px-4">
         <div className="rounded-full bg-gray-100 p-6 mb-4">
@@ -81,14 +111,14 @@ export function ProductGrid({
 
   return (
     <div className="space-y-8">
-      {/* Products Grid */}
+      {/* Products Grid - 6 items per row on large screens */}
       <motion.div
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4"
+        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"
       >
-        {products.map((product, index) => (
+        {uniqueProducts.map((product, index) => (
           <ProductCard
             key={product.id}
             product={product}
@@ -100,11 +130,15 @@ export function ProductGrid({
       {/* Infinite Scroll Trigger */}
       {hasMore && (
         <div ref={observerTarget} className="flex justify-center py-8">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          {loading ? (
+            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          ) : (
+            <div className="h-8" /> // Invisible trigger area
+          )}
         </div>
       )}
 
-      {/* Load More Button (fallback for when intersection observer doesn't work) */}
+      {/* Load More Button (fallback) */}
       {hasMore && !loading && (
         <div className="flex justify-center">
           <Button

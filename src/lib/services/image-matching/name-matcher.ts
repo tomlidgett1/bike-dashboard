@@ -185,3 +185,7 @@ export function calculateSimilarityPercentage(str1: string, str2: string): numbe
   return Math.round(((maxLength - distance) / maxLength) * 100);
 }
 
+
+
+
+

@@ -129,3 +129,7 @@ supabase secrets set SERPER_API_KEY=your-key-here
 
 **TL;DR**: Add Serper API key to get real, working Google Images instead of broken URLs. Takes 2 minutes, free tier is generous.
 
+
+
+
+

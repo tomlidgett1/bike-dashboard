@@ -325,3 +325,7 @@ For issues or questions:
 2. Review match queue: `SELECT * FROM image_match_queue WHERE status = 'failed'`
 3. Verify migrations: `npx supabase migration list`
 
+
+
+
+

@@ -3,7 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
-// Token decryption functions (same as sync function)
+// Token encryption/decryption functions
 function decryptToken(encryptedToken: string, keyHex: string): Promise<string> {
   const parts = encryptedToken.split(':')
   if (parts.length !== 3) {
@@ -37,12 +37,113 @@ function decryptToken(encryptedToken: string, keyHex: string): Promise<string> {
   })
 }
 
+async function encryptToken(token: string, keyHex: string): Promise<string> {
+  const key = hexToBytes(keyHex)
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  
+  const importedKey = await crypto.subtle.importKey(
+    'raw',
+    key,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  )
+  
+  const encrypted = await crypto.subtle.encrypt(
+    {
+      name: 'AES-GCM',
+      iv: iv,
+      tagLength: 128,
+    },
+    importedKey,
+    new TextEncoder().encode(token)
+  )
+  
+  const encryptedArray = new Uint8Array(encrypted)
+  const ciphertext = encryptedArray.slice(0, -16)
+  const authTag = encryptedArray.slice(-16)
+  
+  return `${bytesToHex(iv)}:${bytesToHex(authTag)}:${bytesToHex(ciphertext)}`
+}
+
 function hexToBytes(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2)
   for (let i = 0; i < hex.length; i += 2) {
     bytes[i / 2] = parseInt(hex.substr(i, 2), 16)
   }
   return bytes
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+// Token refresh function
+async function refreshAccessToken(
+  userId: string,
+  refreshToken: string,
+  supabaseAdmin: any,
+  encryptionKey: string
+): Promise<string | null> {
+  try {
+    const clientId = Deno.env.get('LIGHTSPEED_CLIENT_ID')
+    const clientSecret = Deno.env.get('LIGHTSPEED_CLIENT_SECRET')
+    
+    if (!clientId || !clientSecret) {
+      console.error('Missing Lightspeed credentials')
+      return null
+    }
+    
+    console.log('🔄 Refreshing access token...')
+    
+    const response = await fetch('https://cloud.lightspeedapp.com/auth/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      }),
+    })
+    
+    if (!response.ok) {
+      console.error(`❌ Token refresh failed: ${response.status}`)
+      await supabaseAdmin
+        .from('lightspeed_connections')
+        .update({ 
+          status: 'error',
+          last_error: 'Token refresh failed'
+        })
+        .eq('user_id', userId)
+      return null
+    }
+    
+    const tokenData = await response.json()
+    
+    // Encrypt and store new tokens
+    const encryptedAccessToken = await encryptToken(tokenData.access_token, encryptionKey)
+    const encryptedRefreshToken = await encryptToken(tokenData.refresh_token, encryptionKey)
+    const tokenExpiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+    
+    await supabaseAdmin
+      .from('lightspeed_connections')
+      .update({
+        access_token_encrypted: encryptedAccessToken,
+        refresh_token_encrypted: encryptedRefreshToken,
+        token_expires_at: tokenExpiresAt,
+        last_token_refresh_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+    
+    console.log('✅ Token refreshed successfully')
+    return tokenData.access_token
+  } catch (error) {
+    console.error('❌ Error refreshing token:', error)
+    return null
+  }
 }
 
 console.log('Function "update-inventory-stock" up and running!')
@@ -64,7 +165,7 @@ Deno.serve(async (req) => {
     // Get all active Lightspeed connections
     const { data: connections, error: connError } = await supabaseAdmin
       .from('lightspeed_connections')
-      .select('user_id, access_token_encrypted, account_id, last_sync_at')
+      .select('user_id, access_token_encrypted, refresh_token_encrypted, token_expires_at, account_id, last_sync_at')
       .eq('status', 'connected')
 
     if (connError || !connections || connections.length === 0) {
@@ -84,9 +185,47 @@ Deno.serve(async (req) => {
       try {
         console.log(`\n👤 Processing user: ${connection.user_id}`)
 
-        // Decrypt access token
-        const accessToken = await decryptToken(connection.access_token_encrypted, encryptionKey)
+        // Decrypt tokens
+        let accessToken = await decryptToken(connection.access_token_encrypted, encryptionKey)
         const accountId = connection.account_id
+        
+        // Check if token is expired or about to expire (within 5 minutes)
+        const tokenExpiresAt = new Date(connection.token_expires_at)
+        const now = new Date()
+        const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000)
+        
+        if (tokenExpiresAt <= fiveMinutesFromNow) {
+          console.log('⏰ Token expired or expiring soon, refreshing...')
+          const refreshToken = await decryptToken(connection.refresh_token_encrypted, encryptionKey)
+          const newAccessToken = await refreshAccessToken(connection.user_id, refreshToken, supabaseAdmin, encryptionKey)
+          
+          if (newAccessToken) {
+            accessToken = newAccessToken
+          } else {
+            console.error('❌ Failed to refresh token, skipping user')
+            continue
+          }
+        }
+
+        // Get enabled categories for this user
+        const { data: categoryPrefs, error: catError } = await supabaseAdmin
+          .from('lightspeed_category_sync_preferences')
+          .select('category_id')
+          .eq('user_id', connection.user_id)
+          .eq('is_enabled', true)
+
+        if (catError) {
+          console.error(`❌ Error fetching category preferences:`, catError)
+          continue
+        }
+
+        if (!categoryPrefs || categoryPrefs.length === 0) {
+          console.log('ℹ️ No enabled categories found for this user, skipping')
+          continue
+        }
+
+        const enabledCategoryIds = categoryPrefs.map(p => p.category_id)
+        console.log(`✅ Found ${enabledCategoryIds.length} enabled categories`)
 
         // Get timestamp for changes since last sync (or last 15 minutes)
         const lastSyncTime = connection.last_sync_at 
@@ -102,12 +241,30 @@ Deno.serve(async (req) => {
         let nextUrl: string | null = `https://api.lightspeedapp.com/API/V3/Account/${accountId}/InventoryLog.json?createTime=%3E%2C${encodeURIComponent(sinceTimestamp)}&limit=100`
         
         while (nextUrl && inventoryLogs.length < 1000) { // Safety limit
-          const response = await fetch(nextUrl, {
+          let response = await fetch(nextUrl, {
             headers: {
               'Authorization': `Bearer ${accessToken}`,
               'Accept': 'application/json',
             },
           })
+
+          // If 401, try refreshing token once and retry
+          if (response.status === 401) {
+            console.log('🔄 Got 401, attempting token refresh...')
+            const refreshToken = await decryptToken(connection.refresh_token_encrypted, encryptionKey)
+            const newAccessToken = await refreshAccessToken(connection.user_id, refreshToken, supabaseAdmin, encryptionKey)
+            
+            if (newAccessToken) {
+              accessToken = newAccessToken
+              // Retry the request with new token
+              response = await fetch(nextUrl, {
+                headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Accept': 'application/json',
+                },
+              })
+            }
+          }
 
           if (!response.ok) {
             console.error(`❌ Failed to fetch inventory logs: ${response.status}`)
@@ -155,7 +312,7 @@ Deno.serve(async (req) => {
           const batch = changedItemIds.slice(i, i + 100)
           const itemIdsParam = batch.join(',')
           
-          const response = await fetch(
+          let response = await fetch(
             `https://api.lightspeedapp.com/API/V3/Account/${accountId}/ItemShop.json?shopID=0&itemID=IN%2C%5B${itemIdsParam}%5D&limit=100`,
             {
               headers: {
@@ -164,6 +321,27 @@ Deno.serve(async (req) => {
               },
             }
           )
+
+          // If 401, try refreshing token once and retry
+          if (response.status === 401) {
+            console.log('🔄 Got 401 on ItemShop fetch, attempting token refresh...')
+            const refreshToken = await decryptToken(connection.refresh_token_encrypted, encryptionKey)
+            const newAccessToken = await refreshAccessToken(connection.user_id, refreshToken, supabaseAdmin, encryptionKey)
+            
+            if (newAccessToken) {
+              accessToken = newAccessToken
+              // Retry the request
+              response = await fetch(
+                `https://api.lightspeedapp.com/API/V3/Account/${accountId}/ItemShop.json?shopID=0&itemID=IN%2C%5B${itemIdsParam}%5D&limit=100`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Accept': 'application/json',
+                  },
+                }
+              )
+            }
+          }
 
           if (response.ok) {
             const data = await response.json()
@@ -182,21 +360,29 @@ Deno.serve(async (req) => {
 
         console.log(`✅ Fetched current stock for ${itemStockMap.size} items`)
 
-        // Update products in database (in chunks of 15)
+        // Update products in database (only for enabled categories)
         const updates: any[] = []
         
         for (const [itemId, stock] of itemStockMap) {
           const { data: product } = await supabaseAdmin
             .from('products')
-            .select('id, qoh')
+            .select('id, qoh, lightspeed_category_id')
             .eq('user_id', connection.user_id)
             .eq('lightspeed_item_id', itemId)
             .single()
 
+          // Only update if product exists, stock changed, and category is enabled
           if (product && product.qoh !== stock.qoh) {
+            // Check if this product's category is enabled for syncing
+            if (!enabledCategoryIds.includes(product.lightspeed_category_id)) {
+              console.log(`   ⏭️  Skipping product ${product.id} - category ${product.lightspeed_category_id} not enabled`)
+              continue
+            }
+
             updates.push({
               id: product.id,
-              qoh: stock.qoh,
+              oldQoh: product.qoh,
+              newQoh: stock.qoh,
               sellable: stock.sellable,
               last_synced_at: new Date().toISOString(),
             })
@@ -213,13 +399,26 @@ Deno.serve(async (req) => {
           const chunk = updates.slice(i, i + CHUNK_SIZE)
           
           for (const update of chunk) {
+            const updateData: any = {
+              qoh: update.newQoh,
+              sellable: update.sellable,
+              last_synced_at: update.last_synced_at,
+            }
+            
+            // Update is_active based on stock transitions
+            if (update.oldQoh > 0 && update.newQoh === 0) {
+              // Product went out of stock - deactivate
+              updateData.is_active = false
+              console.log(`   📦 Product ${update.id}: Stock went from ${update.oldQoh} → 0, setting is_active = false`)
+            } else if (update.oldQoh === 0 && update.newQoh > 0) {
+              // Product came back in stock - activate
+              updateData.is_active = true
+              console.log(`   📦 Product ${update.id}: Stock went from 0 → ${update.newQoh}, setting is_active = true`)
+            }
+            
             const { error } = await supabaseAdmin
               .from('products')
-              .update({
-                qoh: update.qoh,
-                sellable: update.sellable,
-                last_synced_at: update.last_synced_at,
-              })
+              .update(updateData)
               .eq('id', update.id)
 
             if (!error) {
@@ -272,4 +471,3 @@ Deno.serve(async (req) => {
     )
   }
 })
-

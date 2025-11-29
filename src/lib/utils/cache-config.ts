@@ -38,7 +38,7 @@ export function getCacheHeaders(
   type: keyof typeof CACHE_HEADERS,
   version?: string
 ): Record<string, string> {
-  const headers = { ...CACHE_HEADERS[type] };
+  const headers: Record<string, string> = { ...CACHE_HEADERS[type] };
 
   if (version) {
     headers['ETag'] = `"${version}"`;
@@ -126,4 +126,8 @@ export function createLazyLoadObserver(
     ...options,
   });
 }
+
+
+
+
 

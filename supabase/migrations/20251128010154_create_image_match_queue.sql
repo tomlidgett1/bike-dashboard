@@ -287,3 +287,7 @@ COMMENT ON COLUMN image_match_queue.status IS 'pending: awaiting processing, mat
 COMMENT ON COLUMN image_match_queue.match_confidence IS 'Confidence score from 0.00 to 100.00 for suggested match';
 COMMENT ON FUNCTION process_match_queue_item IS 'Attempts to find canonical product match using UPC and fuzzy name matching';
 
+
+
+
+

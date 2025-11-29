@@ -295,3 +295,7 @@ After running the fix:
 
 **TL;DR**: Run `MANUAL_CANONICAL_FIX.sql` in Supabase SQL Editor to create canonical products for existing products. Future syncs will work automatically!
 
+
+
+
+

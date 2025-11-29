@@ -320,3 +320,7 @@ SELECT '🎉 AI Image Discovery Queue Created Successfully!' as message;
 SELECT 'Next Step: Set up pg_cron to process the queue automatically' as next_step;
 SELECT 'See: DIAGNOSE_AND_FIX_AUTO_DISCOVERY.md' as documentation;
 
+
+
+
+

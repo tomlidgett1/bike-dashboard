@@ -59,3 +59,7 @@ export function normalizeUPC(upc: string): string {
   return upc.trim().replace(/\s/g, '').toUpperCase();
 }
 
+
+
+
+

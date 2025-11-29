@@ -80,3 +80,7 @@ COMMENT ON COLUMN public.lightspeed_category_sync_preferences.category_id IS 'Li
 COMMENT ON COLUMN public.lightspeed_category_sync_preferences.category_name IS 'Display name - can change in Lightspeed, updated on sync';
 COMMENT ON COLUMN public.lightspeed_category_sync_preferences.is_enabled IS 'Whether this category should be synced';
 
+
+
+
+

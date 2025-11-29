@@ -159,3 +159,7 @@ RETURNING id;
 
 -- 3. Then try uploading an image for that product
 
+
+
+
+

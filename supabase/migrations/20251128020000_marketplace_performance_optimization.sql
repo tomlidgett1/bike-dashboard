@@ -7,22 +7,22 @@
 -- ============================================================
 
 -- Composite index for marketplace filtering with images
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_marketplace_with_images
+CREATE INDEX IF NOT EXISTS idx_products_marketplace_with_images
 ON products (is_active, marketplace_category, marketplace_subcategory, canonical_product_id)
 WHERE is_active = true;
 
 -- Index for price sorting
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_marketplace_price
+CREATE INDEX IF NOT EXISTS idx_products_marketplace_price
 ON products (is_active, marketplace_category, price DESC)
 WHERE is_active = true;
 
 -- Index for date sorting (newest first)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_marketplace_newest
+CREATE INDEX IF NOT EXISTS idx_products_marketplace_newest
 ON products (is_active, created_at DESC)
 WHERE is_active = true;
 
 -- Covering index for marketplace list queries (includes all columns needed)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_marketplace_covering
+CREATE INDEX IF NOT EXISTS idx_products_marketplace_covering
 ON products (
   is_active,
   marketplace_category,
@@ -99,7 +99,7 @@ RETURNS void
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  REFRESH MATERIALIZED VIEW CONCURRENTLY marketplace_products_optimized;
+  REFRESH MATERIALIZED VIEW marketplace_products_optimized;
   RAISE NOTICE 'Marketplace products view refreshed at %', NOW();
 END;
 $$;

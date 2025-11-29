@@ -176,3 +176,7 @@ export function getCategoryColor(category: MarketplaceCategory): string {
   return colors[category] || 'bg-gray-50 text-gray-700 border-gray-200';
 }
 
+
+
+
+

@@ -364,3 +364,7 @@ Opening hours feature is now complete:
 
 **Next step:** Run `supabase db push` to apply the migration!
 
+
+
+
+

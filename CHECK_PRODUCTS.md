@@ -109,3 +109,7 @@ Create a test product with canonical_product_id:
 5. Refresh products page
 6. Try clicking "Images" button on that product
 
+
+
+
+

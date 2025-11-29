@@ -36,3 +36,7 @@ WHERE table_name = 'users'
 -- column_name    | data_type | has_default
 -- opening_hours  | jsonb     | true
 
+
+
+
+

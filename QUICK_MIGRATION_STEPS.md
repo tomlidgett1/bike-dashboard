@@ -64,3 +64,7 @@ We've created helper scripts for you:
 
 **For full documentation, see:** `SUPABASE_CLI_GUIDE.md`
 
+
+
+
+

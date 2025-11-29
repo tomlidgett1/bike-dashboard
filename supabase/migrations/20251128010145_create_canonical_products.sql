@@ -125,3 +125,7 @@ COMMENT ON COLUMN canonical_products.normalized_name IS 'Lowercase, normalized p
 COMMENT ON COLUMN canonical_products.image_count IS 'Number of images associated with this product';
 COMMENT ON COLUMN canonical_products.product_count IS 'Number of store products linked to this canonical product';
 
+
+
+
+

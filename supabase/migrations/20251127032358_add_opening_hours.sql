@@ -16,3 +16,7 @@ COMMENT ON COLUMN users.opening_hours IS 'Store opening hours in JSONB format. S
 -- Create index for JSONB queries (optional, for future queries)
 CREATE INDEX IF NOT EXISTS users_opening_hours_idx ON users USING GIN (opening_hours);
 
+
+
+
+

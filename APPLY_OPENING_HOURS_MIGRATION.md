@@ -97,3 +97,7 @@ See `OPENING_HOURS_FEATURE.md` for:
 
 Run `supabase db push` and you're done! 🎉
 
+
+
+
+

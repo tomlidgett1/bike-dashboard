@@ -103,3 +103,7 @@ This is the correct professional workflow - migrations must be explicitly applie
 
 Run the SQL and the error is fixed! 🚀
 
+
+
+
+

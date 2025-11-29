@@ -218,3 +218,7 @@ FROM ai_image_discovery_queue;
 -- DELETE FROM ai_image_discovery_queue
 -- WHERE status = 'completed' AND completed_at < NOW() - INTERVAL '30 days';
 
+
+
+
+

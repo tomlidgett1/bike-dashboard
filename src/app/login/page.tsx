@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Bike, Mail, Lock, Loader2 } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Bike, Mail, Lock, Loader2, Store, User } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [accountType, setAccountType] = useState<'individual' | 'bicycle_store'>('individual')
   const router = useRouter()
   const supabase = createClient()
 
@@ -32,11 +34,39 @@ export default function LoginPage() {
         router.push('/')
         router.refresh()
       } else {
-        const { error } = await supabase.auth.signUp({
+        // Sign up the user
+        const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
           password,
         })
-        if (error) throw error
+        if (authError) throw authError
+        
+        // Create user profile with account type (bicycle_store always false initially)
+        if (authData.user) {
+          const { error: profileError } = await supabase
+            .from('users')
+            .insert({
+              user_id: authData.user.id,
+              email: email,
+              account_type: accountType,
+              bicycle_store: false, // Always false until admin approves
+              name: '',
+              phone: '',
+              business_name: '',
+              store_type: '',
+              address: '',
+              website: '',
+              email_notifications: true,
+              order_alerts: true,
+              inventory_alerts: true,
+              marketing_emails: false,
+            })
+          
+          if (profileError) {
+            console.error('Error creating profile:', profileError)
+          }
+        }
+        
         setError('Check your email for the confirmation link!')
       }
     } catch (error: any) {
@@ -105,6 +135,39 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* Account Type Selection (Signup Only) */}
+            {mode === 'signup' && (
+              <div className="space-y-2">
+                <Label htmlFor="accountType" className="text-sm font-medium">
+                  Account Type
+                </Label>
+                <Select value={accountType} onValueChange={(value: 'individual' | 'bicycle_store') => setAccountType(value)} disabled={loading}>
+                  <SelectTrigger className="h-12 rounded-md bg-white">
+                    <SelectValue placeholder="Select account type" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white rounded-md">
+                    <SelectItem value="individual" className="rounded-md">
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        <span>Individual Seller</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="bicycle_store" className="rounded-md">
+                      <div className="flex items-center gap-2">
+                        <Store className="h-4 w-4" />
+                        <span>Bicycle Store</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  {accountType === 'bicycle_store' 
+                    ? 'Store accounts require admin verification before approval'
+                    : 'Perfect for selling your personal bikes'}
+                </p>
+              </div>
+            )}
+
             {/* Error Message */}
             {error && (
               <div className="bg-white border border-gray-200 dark:border-gray-700 dark:bg-gray-900 rounded-xl p-4">
@@ -165,4 +228,8 @@ export default function LoginPage() {
     </div>
   )
 }
+
+
+
+
 
