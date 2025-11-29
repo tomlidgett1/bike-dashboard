@@ -89,7 +89,7 @@ export async function GET(
 
       if (!searchError && searchResults) {
         searchProductIds = searchResults.map((r: any) => r.product_id);
-        console.log(`[STORE SEARCH] Found ${searchProductIds.length} matching products`);
+        console.log(`[STORE SEARCH] Found ${searchProductIds?.length || 0} matching products`);
       } else if (searchError) {
         console.error('[STORE SEARCH] Error:', searchError);
       }

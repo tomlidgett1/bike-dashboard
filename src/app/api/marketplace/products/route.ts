@@ -12,6 +12,8 @@ export const dynamic = 'force-dynamic';
 // export const revalidate = 300; // Re-enable ISR caching after development
 
 export async function GET(request: NextRequest) {
+  const startTime = Date.now();
+  
   try {
     const searchParams = request.nextUrl.searchParams;
 
@@ -28,13 +30,21 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'newest';
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '24');
+    
+    console.log(`📊 [MARKETPLACE API] Request received:`, {
+      level1, level2, level3, page, pageSize, sortBy
+    });
 
     // Create Supabase client (public access, no auth required)
     const supabase = await createClient();
 
     // Start building query - join with canonical products, images, and store info
     // Use estimated count for better performance on large datasets
+    // For enterprise scale (10M+ users), we use estimated counts more aggressively
     const useEstimatedCount = page > 1; // Only use exact count on first page
+    
+    // Optimize: Use count planning hint for better performance
+    const countType = useEstimatedCount ? 'planned' : 'exact';
     
     let query = supabase
       .from('products')
@@ -105,26 +115,31 @@ export async function GET(request: NextRequest) {
             variants
           )
         )
-      `, { count: useEstimatedCount ? 'estimated' : 'exact', head: false })
+      `, { count: countType, head: false })
       .eq('is_active', true)
       .or('listing_status.is.null,listing_status.eq.active');
 
     // Apply new 3-level taxonomy filters (takes precedence)
     if (level1) {
+      console.log(`🔍 [FILTER] Applying level1 filter: "${level1}"`);
       query = query.eq('marketplace_category', level1);
     } else if (category) {
       // Legacy category support
+      console.log(`🔍 [FILTER] Applying legacy category filter: "${category}"`);
       query = query.eq('marketplace_category', category);
     }
 
     if (level2) {
+      console.log(`🔍 [FILTER] Applying level2 filter: "${level2}"`);
       query = query.eq('marketplace_subcategory', level2);
     } else if (subcategory && subcategory !== 'All') {
       // Legacy subcategory support
+      console.log(`🔍 [FILTER] Applying legacy subcategory filter: "${subcategory}"`);
       query = query.eq('marketplace_subcategory', subcategory);
     }
 
     if (level3) {
+      console.log(`🔍 [FILTER] Applying level3 filter: "${level3}"`);
       query = query.eq('marketplace_level_3_category', level3);
     }
 
@@ -383,13 +398,22 @@ export async function GET(request: NextRequest) {
       },
     };
 
+    const totalTime = Date.now() - startTime;
+    console.log(`✅ [MARKETPLACE API] Request completed in ${totalTime}ms`, {
+      productsReturned: products.length,
+      total,
+      hasMore
+    });
+
     // Set aggressive caching headers for enterprise performance
+    // Cache filtered results for 5 minutes, allow stale content while revalidating
     return NextResponse.json(response, {
       headers: {
         'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
         'CDN-Cache-Control': 'public, s-maxage=300',
         'Vercel-CDN-Cache-Control': 'public, s-maxage=300',
         'Vary': 'Accept-Encoding',
+        'X-Response-Time': `${totalTime}ms`, // Track performance
       },
     });
   } catch (error) {

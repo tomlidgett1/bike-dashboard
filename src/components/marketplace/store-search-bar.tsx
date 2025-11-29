@@ -166,7 +166,7 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
   return (
     <div className={cn("relative", className)}>
       {/* Search Input */}
-      <div className="relative max-w-md">
+      <div className="relative max-w-xl">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         
         <Input
@@ -209,7 +209,7 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
       {showDropdown && query.length >= 2 && (
         <div
           ref={dropdownRef}
-          className="absolute top-full left-0 mt-2 bg-white rounded-md border border-gray-200 shadow-2xl z-50 w-full max-w-md max-h-[400px] overflow-y-auto animate-in fade-in slide-in-from-top-4 duration-200"
+          className="absolute top-full left-0 mt-2 bg-white rounded-md border border-gray-200 shadow-2xl z-50 w-full max-w-xl max-h-[400px] overflow-y-auto animate-in fade-in slide-in-from-top-4 duration-200"
         >
           {loading && results.length === 0 ? (
             <div className="p-8 text-center">

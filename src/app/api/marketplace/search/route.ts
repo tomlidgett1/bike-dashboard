@@ -204,10 +204,11 @@ export async function GET(request: NextRequest) {
 
     // Sort products by relevance order from search function
     if (productIds.length > 0) {
-      const orderMap = new Map(productIds.map((id, index) => [id, index]));
+      const orderMap = new Map<string, number>(productIds.map((id: string, index: number) => [id, index]));
       products.sort((a, b) => {
-        const orderA = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-        const orderB = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        if (!a || !b) return 0;
+        const orderA: number = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const orderB: number = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
         return orderA - orderB;
       });
       console.log('[INSTANT SEARCH] Products sorted by relevance');
