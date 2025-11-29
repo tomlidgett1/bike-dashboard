@@ -2,35 +2,49 @@
 
 import * as React from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import { Package, Store, User, Clock, AlertCircle, Sparkles } from "lucide-react";
+import { Package, Store, User, Clock, Sparkles, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 
 interface NavItem {
-  title: string;
-  value: string;
-  icon: React.ComponentType<{ className?: string }>;
+  type: 'item' | 'separator';
+  title?: string;
+  value?: string;
+  icon?: React.ComponentType<{ className?: string }>;
 }
 
 const navItems: NavItem[] = [
   {
+    type: 'item',
     title: "All Products",
     value: "products",
     icon: Package,
   },
   {
+    type: 'item',
     title: "New Products",
     value: "new-products",
     icon: Sparkles,
   },
   {
+    type: 'item',
+    title: "Used Products",
+    value: "used-products",
+    icon: RefreshCw,
+  },
+  {
+    type: 'separator',
+  },
+  {
+    type: 'item',
     title: "Stores",
     value: "stores",
     icon: Store,
   },
   {
+    type: 'item',
     title: "Individual Sellers",
     value: "sellers",
     icon: User,
@@ -46,6 +60,7 @@ export function MarketplaceSidebar() {
   // Determine active view based on pathname and search params
   const getActiveView = () => {
     if (pathname === "/marketplace/new-products") return "new-products";
+    if (pathname === "/marketplace/used-products") return "used-products";
     return searchParams.get("view") || "products";
   };
   
@@ -63,9 +78,19 @@ export function MarketplaceSidebar() {
       {/* Navigation */}
       <ScrollArea className="flex-1 px-2 py-4">
         <nav className="flex flex-col gap-1">
-          {navItems.map((item) => {
+          {navItems.map((item, index) => {
+            // Render separator
+            if (item.type === 'separator') {
+              return (
+                <div key={`separator-${index}`} className="my-2 px-2.5">
+                  <div className="h-px bg-gray-200" />
+                </div>
+              );
+            }
+
+            // Render nav item
             const isActive = activeView === item.value;
-            const Icon = item.icon;
+            const Icon = item.icon!;
 
             const handleClick = () => {
               // Use full page navigation to ensure proper state updates
@@ -74,6 +99,8 @@ export function MarketplaceSidebar() {
                 url = "/marketplace";
               } else if (item.value === "new-products") {
                 url = "/marketplace/new-products";
+              } else if (item.value === "used-products") {
+                url = "/marketplace/used-products";
               } else {
                 url = `/marketplace?view=${item.value}`;
               }

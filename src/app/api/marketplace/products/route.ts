@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     const minPrice = searchParams.get('minPrice');
     const maxPrice = searchParams.get('maxPrice');
     const createdAfter = searchParams.get('createdAfter');
+    const listingType = searchParams.get('listingType'); // Filter by listing type
     const sortBy = searchParams.get('sortBy') || 'newest';
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '24');
@@ -154,6 +155,11 @@ export async function GET(request: NextRequest) {
     // Apply date filter (created after)
     if (createdAfter) {
       query = query.gte('created_at', createdAfter);
+    }
+
+    // Apply listing type filter
+    if (listingType) {
+      query = query.eq('listing_type', listingType);
     }
 
     // Apply enterprise-level search (multi-field fuzzy search with relevance)

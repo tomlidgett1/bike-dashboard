@@ -212,6 +212,8 @@ export async function GET(
               description: product.description,
               display_name: product.display_name, // Include cleaned AI name
               price: parseFloat(product.price),
+              marketplace_category: product.marketplace_category || null,
+              marketplace_subcategory: product.marketplace_subcategory || null,
               primary_image_url: primaryImageUrl,
               image_variants: imageVariants,
               image_formats: imageFormats,
@@ -220,6 +222,9 @@ export async function GET(
               store_id: storeId,
               category: product.category_name,
               qoh: product.qoh,
+              model_year: product.model_year,
+              created_at: product.created_at,
+              user_id: product.user_id,
               listing_type: 'store_inventory' as const,
             };
           })

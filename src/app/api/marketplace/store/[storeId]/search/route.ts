@@ -125,10 +125,10 @@ export async function GET(
 
     // Sort by relevance order from search function
     if (productIds.length > 0) {
-      const orderMap = new Map(productIds.map((id, index) => [id, index]));
+      const orderMap = new Map<string, number>(productIds.map((id: string, index: number) => [id, index]));
       products.sort((a, b) => {
-        const orderA = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-        const orderB = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        const orderA: number = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const orderB: number = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
         return orderA - orderB;
       });
     }

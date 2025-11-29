@@ -91,6 +91,7 @@ export function useMarketplaceProducts(
           params.set('maxPrice', filters.maxPrice.toString());
         if (filters.sortBy) params.set('sortBy', filters.sortBy);
         if (filters.createdAfter) params.set('createdAfter', filters.createdAfter);
+        if (filters.listingType) params.set('listingType', filters.listingType);
         params.set('page', page.toString());
         params.set('pageSize', (filters.pageSize || 24).toString());
 

@@ -144,5 +144,6 @@ export interface MarketplaceFilters {
   page?: number;
   pageSize?: number;
   createdAfter?: string | null; // ISO date string to filter products created after this date
+  listingType?: 'store_inventory' | 'private_listing'; // Filter by listing type
 }
 
