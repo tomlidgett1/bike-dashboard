@@ -154,10 +154,10 @@ export async function GET(request: NextRequest) {
 
       if (!searchError && searchData) {
         searchResults = searchData.map((r: any) => r.product_id);
-        console.log(`🔍 [SEARCH] Found ${searchResults.length} results for "${search.trim()}"`);
+        console.log(`🔍 [SEARCH] Found ${searchResults?.length || 0} results for "${search.trim()}"`);
         
         // If we have search results, filter by those IDs
-        if (searchResults.length > 0) {
+        if (searchResults && searchResults.length > 0) {
           query = query.in('id', searchResults);
         } else {
           // No results found - return empty set

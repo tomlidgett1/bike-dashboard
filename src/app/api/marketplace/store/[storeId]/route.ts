@@ -19,6 +19,10 @@ export async function GET(
   try {
     const supabase = await createClient();
     const { storeId } = await params;
+    
+    // Get search query from URL
+    const searchParams = request.nextUrl.searchParams;
+    const searchQuery = searchParams.get('search');
 
     if (!storeId) {
       return NextResponse.json(
@@ -26,6 +30,8 @@ export async function GET(
         { status: 400 }
       );
     }
+
+    console.log(`[STORE API] Fetching store ${storeId}${searchQuery ? ` with search: "${searchQuery}"` : ''}`);
 
     // Fetch store profile (must be verified bicycle store)
     const { data: storeUser, error: storeError } = await supabase
@@ -72,8 +78,25 @@ export async function GET(
       displayOverrides?.map(o => [o.lightspeed_category_id, o.name]) || []
     );
 
+    // If search query provided, use enterprise search to get filtered product IDs
+    let searchProductIds: string[] | null = null;
+    if (searchQuery && searchQuery.trim()) {
+      const { data: searchResults, error: searchError } = await supabase
+        .rpc('search_marketplace_products', { 
+          search_query: searchQuery.trim(),
+          similarity_threshold: 0.15
+        });
+
+      if (!searchError && searchResults) {
+        searchProductIds = searchResults.map((r: any) => r.product_id);
+        console.log(`[STORE SEARCH] Found ${searchProductIds.length} matching products`);
+      } else if (searchError) {
+        console.error('[STORE SEARCH] Error:', searchError);
+      }
+    }
+
     // Fetch all active products for this store with image optimization
-    const { data: allProducts, error: productsError } = await supabase
+    let productsQuery = supabase
       .from('products')
       .select(`
         id,
@@ -101,8 +124,19 @@ export async function GET(
       `)
       .eq('user_id', storeId)
       .eq('is_active', true)
-      .gt('qoh', 0)
-      .limit(10000);
+      .gt('qoh', 0);
+
+    // Apply search filter if we have search results
+    if (searchQuery && searchProductIds) {
+      if (searchProductIds.length > 0) {
+        productsQuery = productsQuery.in('id', searchProductIds);
+      } else {
+        // No results found - return empty
+        productsQuery = productsQuery.in('id', ['00000000-0000-0000-0000-000000000000']);
+      }
+    }
+
+    const { data: allProducts, error: productsError } = await productsQuery.limit(10000);
 
     if (productsError) {
       console.error('Error fetching products:', productsError);
@@ -112,10 +146,22 @@ export async function GET(
     const categoriesWithProducts: StoreCategoryWithProducts[] = [];
 
     if (allProducts && allProducts.length > 0) {
+      // Sort products by relevance if search is active
+      let sortedProducts = allProducts;
+      if (searchQuery && searchProductIds && searchProductIds.length > 0) {
+        const orderMap = new Map(searchProductIds.map((id, index) => [id, index]));
+        sortedProducts = [...allProducts].sort((a, b) => {
+          const orderA = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+          const orderB = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+          return orderA - orderB;
+        });
+        console.log('[STORE SEARCH] Products sorted by relevance');
+      }
+
       // Group products by category
       const productsByCategory = new Map<string, any[]>();
       
-      allProducts.forEach((product) => {
+      sortedProducts.forEach((product) => {
         const categoryName = product.category_name || 'Uncategorized';
         if (!productsByCategory.has(categoryName)) {
           productsByCategory.set(categoryName, []);
@@ -164,6 +210,7 @@ export async function GET(
             return {
               id: product.id,
               description: product.description,
+              display_name: product.display_name, // Include cleaned AI name
               price: parseFloat(product.price),
               primary_image_url: primaryImageUrl,
               image_variants: imageVariants,
