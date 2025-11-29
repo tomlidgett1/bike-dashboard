@@ -46,12 +46,6 @@ export default async function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        {/* Preload logo for instant display */}
-        {serverProfile?.logo_url && (
-          <link rel="preload" as="image" href={serverProfile.logo_url} type="image/webp" />
-        )}
-      </head>
       <body
         className={`${sora.variable} ${jetbrainsMono.variable} font-sans antialiased`}
       >

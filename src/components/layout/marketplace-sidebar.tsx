@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
-import { Package, Store, User, Clock, AlertCircle } from "lucide-react";
+import { useSearchParams, usePathname } from "next/navigation";
+import { Package, Store, User, Clock, AlertCircle, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -21,6 +21,11 @@ const navItems: NavItem[] = [
     icon: Package,
   },
   {
+    title: "New Products",
+    value: "new-products",
+    icon: Sparkles,
+  },
+  {
     title: "Stores",
     value: "stores",
     icon: Store,
@@ -34,9 +39,17 @@ const navItems: NavItem[] = [
 
 export function MarketplaceSidebar() {
   const searchParams = useSearchParams();
-  const activeView = searchParams.get("view") || "products";
+  const pathname = usePathname();
   const { user } = useAuth();
   const { profile } = useUserProfile();
+
+  // Determine active view based on pathname and search params
+  const getActiveView = () => {
+    if (pathname === "/marketplace/new-products") return "new-products";
+    return searchParams.get("view") || "products";
+  };
+  
+  const activeView = getActiveView();
 
   // Check if user is a bicycle store waiting for admin approval
   const isWaitingForApproval = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === false;
@@ -56,9 +69,14 @@ export function MarketplaceSidebar() {
 
             const handleClick = () => {
               // Use full page navigation to ensure proper state updates
-              const url = item.value === "products" 
-                ? "/marketplace" 
-                : `/marketplace?view=${item.value}`;
+              let url: string;
+              if (item.value === "products") {
+                url = "/marketplace";
+              } else if (item.value === "new-products") {
+                url = "/marketplace/new-products";
+              } else {
+                url = `/marketplace?view=${item.value}`;
+              }
               window.location.href = url;
             };
 

@@ -28,9 +28,11 @@ export const MARKETPLACE_SUBCATEGORIES: MarketplaceSubcategories = {
 export interface MarketplaceProduct {
   id: string;
   description: string;
+  display_name?: string; // AI-cleaned product name for display
   price: number;
   marketplace_category: string;
   marketplace_subcategory: string;
+  marketplace_level_3_category?: string | null; // Third level categorization (e.g., XC, Trail, Enduro)
   primary_image_url: string | null;
   image_variants?: any;
   image_formats?: any;
@@ -130,13 +132,17 @@ export interface MarketplaceCategoriesResponse {
 }
 
 export interface MarketplaceFilters {
-  category?: MarketplaceCategory;
-  subcategory?: string;
+  category?: MarketplaceCategory; // Legacy support
+  subcategory?: string; // Legacy support
+  level1?: string; // New 3-level taxonomy
+  level2?: string;
+  level3?: string;
   search?: string;
   minPrice?: number;
   maxPrice?: number;
   sortBy?: 'price_asc' | 'price_desc' | 'newest' | 'oldest';
   page?: number;
   pageSize?: number;
+  createdAfter?: string | null; // ISO date string to filter products created after this date
 }
 

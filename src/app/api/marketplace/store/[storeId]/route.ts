@@ -78,8 +78,11 @@ export async function GET(
       .select(`
         id,
         description,
+        display_name,
         price,
         primary_image_url,
+        use_custom_image,
+        custom_image_url,
         images,
         category_name,
         qoh,
@@ -91,7 +94,8 @@ export async function GET(
             id,
             storage_path,
             is_primary,
-            variants
+            variants,
+            formats
           )
         )
       `)
@@ -127,58 +131,73 @@ export async function GET(
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
       
       sortedCategories.forEach(([categoryName, products], index) => {
-        const marketplaceProducts = products.map((product) => {
-          // Optimized image URL selection (same as marketplace products API)
-          let primaryImageUrl = null;
-          let imageVariants = null;
+        const marketplaceProducts = products
+          .map((product) => {
+            // Optimized image URL selection (SAME as marketplace products API)
+            let primaryImageUrl = null;
+            let imageVariants = null;
+            let imageFormats = null;
 
-          // Priority 1: Canonical product images (optimized)
-          if (product.canonical_products?.product_images?.length > 0) {
-            const images = product.canonical_products.product_images;
-            const primaryImage = images.find((img: any) => img.is_primary) || images[0];
-            
-            if (primaryImage) {
-              // Use thumbnail variant for fast loading
-              if (primaryImage.variants?.thumbnail) {
-                primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.variants.thumbnail}`;
-              } else if (primaryImage.variants?.small) {
-                primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.variants.small}`;
-              } else if (primaryImage.storage_path) {
-                primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
-              }
-              imageVariants = primaryImage.variants;
+            // Priority 1: Custom store image
+            if (product.use_custom_image && product.custom_image_url) {
+              primaryImageUrl = product.custom_image_url;
             }
-          }
-          // Priority 2: Direct image URLs
-          else if (product.primary_image_url) {
-            primaryImageUrl = product.primary_image_url;
-          }
+            // Priority 2: Canonical product images (MUST have is_primary set)
+            else if (product.canonical_products?.product_images?.length > 0) {
+              const images = product.canonical_products.product_images;
+              // ONLY use image if it has is_primary flag set
+              const primaryImage = images.find((img: any) => img.is_primary);
+              
+              if (primaryImage) {
+                // Use the storage_path as primary (ProductCard will choose the right variant)
+                primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
+                // Pass ALL variants so ProductCard can choose the appropriate size
+                imageVariants = primaryImage.variants;
+                imageFormats = primaryImage.formats;
+              }
+            }
+            // Priority 3: Direct image URLs
+            else if (product.primary_image_url) {
+              primaryImageUrl = product.primary_image_url;
+            }
 
-          return {
-            id: product.id,
-            description: product.description,
-            price: parseFloat(product.price),
-            primary_image_url: primaryImageUrl,
-            image_variants: imageVariants,
-            store_name: storeUser.business_name,
-            store_logo_url: storeUser.logo_url,
-            store_id: storeId,
-            category: product.category_name,
-            qoh: product.qoh,
-            listing_type: 'store_inventory' as const,
-          };
-        });
+            return {
+              id: product.id,
+              description: product.description,
+              price: parseFloat(product.price),
+              primary_image_url: primaryImageUrl,
+              image_variants: imageVariants,
+              image_formats: imageFormats,
+              store_name: storeUser.business_name,
+              store_logo_url: storeUser.logo_url,
+              store_id: storeId,
+              category: product.category_name,
+              qoh: product.qoh,
+              listing_type: 'store_inventory' as const,
+            };
+          })
+          // FILTER OUT products without a primary image
+          .filter((product) => {
+            const hasImage = !!product.primary_image_url;
+            if (!hasImage) {
+              console.log(`🚫 [STORE FILTER] Excluding product ${product.id} from ${storeUser.business_name} - no primary image`);
+            }
+            return hasImage;
+          });
 
-        // Use display override name if exists
-        const displayName = displayNamesMap.get(categoryName) || categoryName;
+        // Only add category if it has products with images
+        if (marketplaceProducts.length > 0) {
+          // Use display override name if exists
+          const displayName = displayNamesMap.get(categoryName) || categoryName;
 
-        categoriesWithProducts.push({
-          id: `category-${index}`,
-          name: displayName,
-          display_order: index,
-          products: marketplaceProducts,
-          product_count: marketplaceProducts.length,
-        });
+          categoriesWithProducts.push({
+            id: `category-${index}`,
+            name: displayName,
+            display_order: index,
+            products: marketplaceProducts,
+            product_count: marketplaceProducts.length,
+          });
+        }
       });
     }
 

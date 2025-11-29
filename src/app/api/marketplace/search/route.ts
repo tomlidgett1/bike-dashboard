@@ -26,15 +26,34 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const searchTerm = query.trim();
 
-    // Search products - top 5 most relevant
-    const productsQuery = supabase
+    // Use enterprise search function for better results
+    const { data: searchResults, error: searchError } = await supabase
+      .rpc('search_marketplace_products', { 
+        search_query: searchTerm,
+        similarity_threshold: 0.15
+      });
+
+    // Get top 10 product IDs from search results (increased from 5)
+    const productIds = searchResults?.slice(0, 10).map((r: any) => r.product_id) || [];
+
+    console.log(`[INSTANT SEARCH] Enterprise search found ${searchResults?.length || 0} results, showing top ${productIds.length}`);
+
+    // If no results or error, return empty
+    if (searchError || !productIds.length) {
+      console.log('[INSTANT SEARCH] No products found or search error:', searchError);
+    }
+
+    // Fetch full product details for the search results
+    let productsQuery = supabase
       .from('products')
       .select(`
         id,
         description,
+        display_name,
         price,
         marketplace_category,
         marketplace_subcategory,
+        marketplace_level_3_category,
         qoh,
         user_id,
         canonical_product_id,
@@ -99,11 +118,7 @@ export async function GET(request: NextRequest) {
       `)
       .eq('is_active', true)
       .or('listing_status.is.null,listing_status.eq.active')
-      .textSearch('description', searchTerm, {
-        type: 'websearch',
-        config: 'english',
-      })
-      .limit(5);
+      .in('id', productIds.length > 0 ? productIds : ['00000000-0000-0000-0000-000000000000']);
 
     // Search stores - match business name
     const storesQuery = supabase
@@ -138,36 +153,65 @@ export async function GET(request: NextRequest) {
 
     // Transform products data
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const products = (productsResult.data || []).map((product: any) => {
-      // Determine image URL
-      let imageUrl = '/placeholder-product.svg';
-      
-      if (product.use_custom_image && product.custom_image_url) {
-        imageUrl = product.custom_image_url;
-      } else if (product.canonical_products?.product_images?.length > 0) {
-        const primaryImage = product.canonical_products.product_images.find(
-          (img: any) => img.is_primary
-        ) || product.canonical_products.product_images[0];
+    let products = (productsResult.data || [])
+      .map((product: any) => {
+        // Determine image URL (same logic as marketplace products API)
+        let imageUrl = null;
         
-        if (primaryImage?.formats?.thumbnail) {
-          imageUrl = `${baseUrl}/storage/v1/object/public/${primaryImage.formats.thumbnail}`;
-        } else if (primaryImage?.variants?.small) {
-          imageUrl = `${baseUrl}/storage/v1/object/public/${primaryImage.variants.small}`;
-        } else if (primaryImage?.storage_path) {
-          imageUrl = `${baseUrl}/storage/v1/object/public/${primaryImage.storage_path}`;
+        // Priority 1: Custom store image
+        if (product.use_custom_image && product.custom_image_url) {
+          imageUrl = product.custom_image_url;
+        } 
+        // Priority 2: Canonical product images (MUST have is_primary set)
+        else if (product.canonical_products?.product_images) {
+          const images = product.canonical_products.product_images;
+          // ONLY use image if it has is_primary flag set
+          const primaryImage = images.find((img: any) => img.is_primary);
+          
+          if (primaryImage) {
+            // Use thumbnail variant for fast loading in dropdown
+            if (primaryImage.variants?.thumbnail) {
+              imageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.variants.thumbnail}`;
+            } else if (primaryImage.variants?.small) {
+              imageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.variants.small}`;
+            } else if (primaryImage.storage_path) {
+              imageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
+            }
+          }
         }
-      }
+        // Priority 3: Direct image URLs
+        else if (product.primary_image_url) {
+          imageUrl = product.primary_image_url;
+        }
 
-      return {
-        id: product.id,
-        name: product.description,
-        price: product.price,
-        category: product.marketplace_category,
-        imageUrl,
-        storeName: product.users?.business_name || 'Unknown Store',
-        inStock: (product.qoh || 0) > 0,
-      };
-    });
+        // If no primary image found, return null (will be filtered out)
+        if (!imageUrl) {
+          console.log(`🚫 [SEARCH FILTER] Excluding product ${product.id} - no primary image`);
+          return null;
+        }
+
+        return {
+          id: product.id,
+          name: product.display_name || product.description, // Use cleaned display_name first
+          price: product.price,
+          category: product.marketplace_category,
+          imageUrl,
+          storeName: product.users?.business_name || 'Unknown Store',
+          inStock: (product.qoh || 0) > 0,
+        };
+      })
+      .filter(Boolean); // Remove products without images
+
+    // Sort products by relevance order from search function
+    if (productIds.length > 0) {
+      const orderMap = new Map(productIds.map((id, index) => [id, index]));
+      products.sort((a, b) => {
+        const orderA = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const orderB = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        return orderA - orderB;
+      });
+      console.log('[INSTANT SEARCH] Products sorted by relevance');
+    }
 
     // Transform stores data - only include stores that have products
     const storesWithProducts = await Promise.all(

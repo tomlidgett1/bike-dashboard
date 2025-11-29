@@ -8,6 +8,7 @@ import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductGrid } from "@/components/marketplace/product-grid";
 import { StoresGrid } from "@/components/marketplace/stores-grid";
+import { AdvancedCategoryFilter } from "@/components/marketplace/advanced-category-filter";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -36,11 +37,14 @@ export default function MarketplacePage() {
 
   // Get filters from URL
   const [search, setSearch] = React.useState(searchParams.get('search') || '');
-  const [category, setCategory] = React.useState<MarketplaceCategory | null>(
-    (searchParams.get('category') as MarketplaceCategory) || null
+  const [level1, setLevel1] = React.useState<string | null>(
+    searchParams.get('level1') || null
   );
-  const [subcategory, setSubcategory] = React.useState<string | null>(
-    searchParams.get('subcategory') || null
+  const [level2, setLevel2] = React.useState<string | null>(
+    searchParams.get('level2') || null
+  );
+  const [level3, setLevel3] = React.useState<string | null>(
+    searchParams.get('level3') || null
   );
   const [sortBy, setSortBy] = React.useState<string>(
     searchParams.get('sortBy') || 'newest'
@@ -52,12 +56,13 @@ export default function MarketplacePage() {
 
   // Memoize filters to prevent recreating object on every render
   const filters = React.useMemo(() => ({
-    category: category || undefined,
-    subcategory: subcategory || undefined,
+    level1: level1 || undefined,
+    level2: level2 || undefined,
+    level3: level3 || undefined,
     search: search || undefined,
     sortBy: sortBy as any,
     pageSize: 24,
-  }), [category, subcategory, search, sortBy]);
+  }), [level1, level2, level3, search, sortBy]);
 
   // Fetch products with filters (no page state - handled by hook)
   const { products, loading, pagination, refetch, loadMore } = useMarketplaceProducts(filters);
@@ -101,8 +106,9 @@ export default function MarketplacePage() {
   React.useEffect(() => {
     const params = new URLSearchParams();
     if (activeTab !== 'products') params.set('view', activeTab);
-    if (category) params.set('category', category);
-    if (subcategory) params.set('subcategory', subcategory);
+    if (level1) params.set('level1', level1);
+    if (level2) params.set('level2', level2);
+    if (level3) params.set('level3', level3);
     if (search) params.set('search', search);
     if (sortBy && sortBy !== 'newest') params.set('sortBy', sortBy);
 
@@ -111,7 +117,7 @@ export default function MarketplacePage() {
       : '/marketplace';
 
     router.replace(newUrl, { scroll: false });
-  }, [activeTab, category, subcategory, search, sortBy, router]);
+  }, [activeTab, level1, level2, level3, search, sortBy, router]);
 
   const handleLoadMore = () => {
     loadMore();
@@ -121,9 +127,16 @@ export default function MarketplacePage() {
     setSearch(value);
   };
 
-  const handleCategoryChange = (newCategory: MarketplaceCategory | null) => {
-    setCategory(newCategory);
-    setSubcategory(null); // Reset subcategory when category changes
+  const handleLevel1Change = (newLevel1: string | null) => {
+    setLevel1(newLevel1);
+  };
+
+  const handleLevel2Change = (newLevel2: string | null) => {
+    setLevel2(newLevel2);
+  };
+
+  const handleLevel3Change = (newLevel3: string | null) => {
+    setLevel3(newLevel3);
   };
 
   // Category icons mapping
@@ -139,7 +152,10 @@ export default function MarketplacePage() {
       {/* Header - Full Width, Fixed with Enterprise Search */}
       <MarketplaceHeader />
 
-      <MarketplaceLayout>
+      <MarketplaceLayout 
+        showStoreCTA={activeTab === 'stores'}
+        showFooter={activeTab !== 'products' && activeTab !== 'stores'}
+      >
         {/* Main Content - Add top padding to account for fixed header */}
         <div className="max-w-[1920px] mx-auto px-6 py-8 pt-20">
         <motion.div
@@ -148,56 +164,16 @@ export default function MarketplacePage() {
           transition={{ duration: 0.5 }}
           className="space-y-6"
         >
-          {/* Category Tabs - Only show for products view */}
+          {/* Category Filters - Only show for products view */}
           {activeTab === 'products' && (
-            <div className="space-y-3">
-              {/* Header */}
-              <h2 className="text-lg font-medium text-gray-900">
-                What are you looking for?
-              </h2>
-              
-              {/* Category Filters */}
-              <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
-                <button
-                  onClick={() => handleCategoryChange(null)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                    !category
-                      ? "text-gray-800 bg-white shadow-sm border border-gray-200"
-                      : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
-                  )}
-                >
-                  All Products
-                </button>
-
-                {(['Bicycles', 'Parts', 'Apparel', 'Nutrition'] as MarketplaceCategory[]).map((cat) => {
-                  const Icon = CATEGORY_ICONS[cat];
-                  const count = categoryCounts[cat] || 0;
-                  const isActive = category === cat;
-
-                  return (
-                    <button
-                      key={cat}
-                      onClick={() => handleCategoryChange(cat)}
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                        isActive
-                          ? "text-gray-800 bg-white shadow-sm border border-gray-200"
-                          : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
-                      )}
-                    >
-                      <Icon size={15} />
-                      {cat}
-                      {count > 0 && (
-                        <span className="ml-1 text-xs text-gray-500">
-                          ({count})
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <AdvancedCategoryFilter
+              selectedLevel1={level1}
+              selectedLevel2={level2}
+              selectedLevel3={level3}
+              onLevel1Change={handleLevel1Change}
+              onLevel2Change={handleLevel2Change}
+              onLevel3Change={handleLevel3Change}
+            />
           )}
 
           {/* Products View */}

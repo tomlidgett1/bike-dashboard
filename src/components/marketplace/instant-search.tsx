@@ -22,6 +22,28 @@ interface SearchProduct {
   inStock: boolean;
 }
 
+// Product Image Thumbnail with error handling
+function ProductImageThumbnail({ imageUrl, name }: { imageUrl: string; name: string }) {
+  const [imageError, setImageError] = React.useState(false);
+
+  return (
+    <div className="relative h-12 w-12 rounded-md bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200 flex items-center justify-center">
+      {!imageError && imageUrl ? (
+        <Image
+          src={imageUrl}
+          alt={name}
+          fill
+          className="object-contain"
+          sizes="48px"
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <Package className="h-6 w-6 text-gray-300" />
+      )}
+    </div>
+  );
+}
+
 interface SearchStore {
   id: string;
   name: string;
@@ -252,15 +274,7 @@ export function InstantSearch() {
                         )}
                       >
                         {/* Product Image */}
-                        <div className="relative h-12 w-12 rounded-md bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200">
-                          <Image
-                            src={product.imageUrl}
-                            alt={product.name}
-                            fill
-                            className="object-cover"
-                            sizes="48px"
-                          />
-                        </div>
+                        <ProductImageThumbnail imageUrl={product.imageUrl} name={product.name} />
 
                         {/* Product Info */}
                         <div className="flex-1 min-w-0">

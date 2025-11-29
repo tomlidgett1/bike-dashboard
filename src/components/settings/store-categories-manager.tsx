@@ -626,7 +626,7 @@ export function StoreCategoriesManager() {
                             />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-900 truncate">
-                                {product.description}
+                                {(product as any).display_name || product.description}
                               </p>
                               <p className="text-xs text-gray-600">
                                 ${product.price} • Stock: {product.qoh}
@@ -709,7 +709,7 @@ export function StoreCategoriesManager() {
                             />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-900 truncate">
-                                {product.description}
+                                {(product as any).display_name || product.description}
                               </p>
                               <p className="text-xs text-gray-600">
                                 ${product.price} • Stock: {product.qoh}

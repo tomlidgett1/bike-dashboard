@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Bike, Mail, Lock, Loader2, Store, User } from 'lucide-react'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -102,9 +103,18 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white dark:bg-gray-800 rounded-2xl shadow-lg mb-4">
             <Bike className="w-8 h-8 text-gray-900 dark:text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Velo Market 
-          </h1>
+          <div className="flex items-center justify-center gap-3">
+            <Image 
+              src="/chain.png" 
+              alt="Chain" 
+              width={32} 
+              height={32}
+              className="rotate-90"
+            />
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              Velo Market
+            </h1>
+          </div>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
             {mode === 'login' ? 'Welcome back' : 'Create your account'}
           </p>

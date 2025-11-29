@@ -105,7 +105,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
     if (navigator.share) {
       try {
         await navigator.share({
-          title: product.description,
+          title: (product as any).display_name || product.description,
           text: `Check out this ${product.marketplace_category} - $${product.price}`,
           url: window.location.href,
         });
@@ -173,7 +173,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                   <div className="bg-white p-6 lg:p-8 border-r border-gray-200">
                     <EnhancedImageGallery
                       images={images}
-                      productName={product.description}
+                      productName={(product as any).display_name || product.description}
                       currentIndex={currentImageIndex}
                       onIndexChange={setCurrentImageIndex}
                       onLikeToggle={() => setIsLiked(!isLiked)}
@@ -230,7 +230,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                       {/* Title & Price */}
                       <div className="mb-4">
                         <h1 className="text-xl lg:text-2xl font-bold text-gray-900 mb-2 line-clamp-2 leading-tight">
-                          {product.description}
+                          {(product as any).display_name || product.description}
                         </h1>
                         <div className="flex items-baseline gap-2">
                           <p className="text-3xl lg:text-4xl font-black text-gray-900">

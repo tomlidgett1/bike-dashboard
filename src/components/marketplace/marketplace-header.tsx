@@ -94,9 +94,18 @@ export function MarketplaceHeader() {
             onClick={() => router.push('/marketplace')}
             className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0"
           >
-            <span className="hidden sm:inline-block text-lg text-gray-900 whitespace-nowrap">
-              <span className="font-bold">Velo</span> Market
-            </span>
+            <div className="hidden sm:flex items-center gap-2">
+              <Image 
+                src="/chain.png" 
+                alt="Chain" 
+                width={24} 
+                height={24}
+                className="rotate-90"
+              />
+              <span className="text-lg text-gray-900 whitespace-nowrap">
+                <span className="font-bold">Velo</span> Market
+              </span>
+            </div>
           </button>
 
           {/* Desktop Search Bar - Starts where sidebar ends (200px) */}

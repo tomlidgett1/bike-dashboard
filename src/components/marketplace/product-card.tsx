@@ -99,7 +99,8 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
         {/* Image Container - Separate with thin border */}
         <div 
           ref={imageRef}
-          className="relative aspect-square w-full overflow-hidden bg-gray-50 rounded-md border border-gray-200 mb-2"
+          className="relative w-full overflow-hidden bg-gray-50 rounded-md border border-gray-200 mb-2"
+          style={{ aspectRatio: '1 / 1' }}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
@@ -109,7 +110,8 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
             alt={product.description}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 20vw"
-            className="object-cover"
+            className="object-contain"
+            style={{ width: '100%', height: '100%' }}
             loading={priority ? 'eager' : 'lazy'}
             priority={priority}
             quality={85}
@@ -185,7 +187,7 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
 
         {/* Product Title - Single line only */}
         <h3 className="text-sm text-gray-700 truncate leading-tight">
-          {product.description}
+          {(product as any).display_name || product.description}
         </h3>
 
         {/* Store Info - Minimal */}
@@ -193,7 +195,7 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
           className="flex items-center gap-1.5 pt-0.5 cursor-pointer hover:opacity-70 transition-opacity"
           onClick={(e) => {
             e.stopPropagation();
-            window.location.href = `/marketplace/store/${product.store_id}`;
+            window.location.href = `/marketplace/store/${product.user_id}`;
           }}
         >
           {/* Store Logo */}
@@ -248,7 +250,10 @@ export function ProductCardSkeleton() {
   return (
     <div>
       {/* Image Skeleton - Separate container */}
-      <div className="relative aspect-square w-full bg-gray-100 animate-pulse rounded-md border border-gray-200 mb-2" />
+      <div 
+        className="relative w-full bg-gray-100 animate-pulse rounded-md border border-gray-200 mb-2" 
+        style={{ aspectRatio: '1 / 1' }}
+      />
 
       {/* Content Skeleton */}
       <div className="space-y-1">

@@ -150,11 +150,7 @@ export function ProductCarousel({
                 {displayedProducts.map((product, index) => (
                   <div
                     key={product.id}
-                    className="flex-shrink-0"
-                    style={{
-                      width: 'calc((100vw - 3rem) / 2)',
-                      maxWidth: '240px',
-                    }}
+                    className="flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] lg:w-[220px] xl:w-[240px]"
                   >
                     <ProductCard product={product} priority={index < 6} />
                   </div>

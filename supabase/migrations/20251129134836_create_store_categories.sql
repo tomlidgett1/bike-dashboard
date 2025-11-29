@@ -34,6 +34,13 @@ ALTER TABLE store_categories ENABLE ROW LEVEL SECURITY;
 -- RLS Policies
 -- ============================================================
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own categories" ON store_categories;
+DROP POLICY IF EXISTS "Users can insert own categories" ON store_categories;
+DROP POLICY IF EXISTS "Users can update own categories" ON store_categories;
+DROP POLICY IF EXISTS "Users can delete own categories" ON store_categories;
+DROP POLICY IF EXISTS "Public can view active store categories" ON store_categories;
+
 -- Users can view their own categories
 CREATE POLICY "Users can view own categories"
   ON store_categories
@@ -75,6 +82,7 @@ CREATE POLICY "Public can view active store categories"
 -- ============================================================
 -- Trigger for updated_at
 -- ============================================================
+DROP TRIGGER IF EXISTS update_store_categories_updated_at ON store_categories;
 CREATE TRIGGER update_store_categories_updated_at
   BEFORE UPDATE ON store_categories
   FOR EACH ROW

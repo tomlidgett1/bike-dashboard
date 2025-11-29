@@ -31,6 +31,13 @@ ALTER TABLE store_services ENABLE ROW LEVEL SECURITY;
 -- RLS Policies
 -- ============================================================
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own services" ON store_services;
+DROP POLICY IF EXISTS "Users can insert own services" ON store_services;
+DROP POLICY IF EXISTS "Users can update own services" ON store_services;
+DROP POLICY IF EXISTS "Users can delete own services" ON store_services;
+DROP POLICY IF EXISTS "Public can view active store services" ON store_services;
+
 -- Users can view their own services
 CREATE POLICY "Users can view own services"
   ON store_services
@@ -72,6 +79,7 @@ CREATE POLICY "Public can view active store services"
 -- ============================================================
 -- Trigger for updated_at
 -- ============================================================
+DROP TRIGGER IF EXISTS update_store_services_updated_at ON store_services;
 CREATE TRIGGER update_store_services_updated_at
   BEFORE UPDATE ON store_services
   FOR EACH ROW
