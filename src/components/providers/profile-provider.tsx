@@ -21,12 +21,22 @@ export interface OpeningHours {
   sunday: DayHours
 }
 
+export interface UserPreferences {
+  riding_styles?: string[]
+  preferred_brands?: string[]
+  experience_level?: string
+  budget_range?: string
+  interests?: string[]
+}
+
 export interface UserProfile {
   id?: string
   user_id: string
   name: string
   email: string
   phone: string
+  first_name: string
+  last_name: string
   business_name: string
   store_type: string
   address: string
@@ -35,6 +45,8 @@ export interface UserProfile {
   opening_hours?: OpeningHours
   account_type: string
   bicycle_store: boolean
+  preferences: UserPreferences
+  onboarding_completed: boolean
   email_notifications: boolean
   order_alerts: boolean
   inventory_alerts: boolean
@@ -66,36 +78,6 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
   const [saving, setSaving] = useState(false)
   const [isFirstTime, setIsFirstTime] = useState(false)
 
-  // Initialize with server profile data
-  useEffect(() => {
-    if (serverProfile && user) {
-      // We have server data, use it immediately
-      setProfile({
-        user_id: user.id,
-        name: serverProfile.name || '',
-        email: user.email || '',
-        phone: '',
-        business_name: serverProfile.business_name || '',
-        store_type: '',
-        address: '',
-        website: '',
-        logo_url: serverProfile.logo_url || undefined,
-        account_type: 'individual',
-        bicycle_store: false,
-        email_notifications: true,
-        order_alerts: true,
-        inventory_alerts: true,
-        marketing_emails: false,
-      })
-      
-      // Fetch full profile in background
-      fetchFullProfile()
-    } else if (user) {
-      // No server profile, fetch from client
-      fetchFullProfile()
-    }
-  }, [user, serverProfile])
-
   const fetchFullProfile = useCallback(async () => {
     if (!user) return
 
@@ -117,12 +99,16 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
             name: '',
             email: user.email || '',
             phone: '',
+            first_name: '',
+            last_name: '',
             business_name: '',
             store_type: '',
             address: '',
             website: '',
             account_type: 'individual',
             bicycle_store: false,
+            preferences: {},
+            onboarding_completed: false,
             email_notifications: true,
             order_alerts: true,
             inventory_alerts: true,
@@ -139,6 +125,44 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
       setLoading(false)
     }
   }, [user])
+
+  // Initialize with server profile data
+  useEffect(() => {
+    if (serverProfile && user) {
+      // Use account_type from serverProfile if available, otherwise infer from business_name
+      const hasBusinessName = serverProfile.business_name && serverProfile.business_name.trim().length > 0;
+      const accountType = serverProfile.account_type || (hasBusinessName ? 'bicycle_store' : 'individual');
+      
+      // We have server data, use it immediately
+      setProfile({
+        user_id: user.id,
+        name: serverProfile.name || '',
+        email: user.email || '',
+        phone: '',
+        first_name: serverProfile.first_name || '',
+        last_name: serverProfile.last_name || '',
+        business_name: serverProfile.business_name || '',
+        store_type: '',
+        address: '',
+        website: '',
+        logo_url: serverProfile.logo_url || undefined,
+        account_type: accountType,
+        bicycle_store: false,
+        preferences: {},
+        onboarding_completed: false,
+        email_notifications: true,
+        order_alerts: true,
+        inventory_alerts: true,
+        marketing_emails: false,
+      })
+      
+      // Fetch full profile in background
+      fetchFullProfile()
+    } else if (user) {
+      // No server profile, fetch from client
+      fetchFullProfile()
+    }
+  }, [user, serverProfile, fetchFullProfile])
 
   const saveProfile = async (profileData: Partial<UserProfile>) => {
     if (!user) return { success: false, error: 'No user logged in' }

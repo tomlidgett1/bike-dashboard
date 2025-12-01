@@ -33,6 +33,117 @@ interface SerperImageResult {
 }
 
 /**
+ * Extract brand name from product using GPT-4o-mini
+ */
+async function extractBrandName(productName: string, manufacturer?: string | null): Promise<string | null> {
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+  
+  if (!OPENAI_API_KEY) {
+    return manufacturer || null;
+  }
+
+  try {
+    console.log(`🏷️ [BRAND EXTRACT] Extracting brand from: "${productName}"`);
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { 
+            role: 'system', 
+            content: 'Extract the bicycle brand/manufacturer name from product names. Output ONLY the brand name, nothing else. Examples: "Shimano", "SRAM", "Trek", "Specialized", "Giant"' 
+          },
+          { 
+            role: 'user', 
+            content: `Product: "${productName}"\nManufacturer field: ${manufacturer || 'Unknown'}\n\nOutput only the brand name.` 
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 20,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('❌ [BRAND EXTRACT] API error:', response.status);
+      return manufacturer || null;
+    }
+
+    const data = await response.json();
+    const brandName = data.choices?.[0]?.message?.content?.trim() || null;
+    
+    console.log(`✅ [BRAND EXTRACT] Brand identified: "${brandName}"`);
+    return brandName;
+  } catch (error) {
+    console.error('❌ [BRAND EXTRACT] Error:', error);
+    return manufacturer || null;
+  }
+}
+
+/**
+ * Clean product name for e-commerce search using GPT-4o-mini
+ */
+async function cleanProductName(rawName: string, manufacturer?: string | null, category?: string | null): Promise<string> {
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+  
+  if (!OPENAI_API_KEY) {
+    console.log('⚠️ [CLEAN NAME] No OpenAI key, using raw name');
+    return rawName;
+  }
+
+  try {
+    console.log(`🧹 [CLEAN NAME] Starting cleanup for: "${rawName}"`);
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { 
+            role: 'system', 
+            content: 'You clean bicycle product names for e-commerce image search. Remove SKUs, internal codes, sizes, colors unless critical for identification. Keep brand, model, key features. Output ONLY the cleaned name, nothing else. Be concise.' 
+          },
+          { 
+            role: 'user', 
+            content: `Clean this bicycle product name for Google Image search:\n\nRaw: "${rawName}"\nBrand: ${manufacturer || 'Unknown'}\nCategory: ${category || 'Unknown'}\n\nOutput only the cleaned name suitable for finding product photos.` 
+          }
+        ],
+        temperature: 0.2,
+        max_tokens: 80,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ [CLEAN NAME] API error:', response.status, errorText);
+      return rawName;
+    }
+
+    const data = await response.json();
+    const cleanedName = data.choices?.[0]?.message?.content?.trim() || rawName;
+    
+    if (!cleanedName || cleanedName === '') {
+      console.log('⚠️ [CLEAN NAME] Empty result, using raw name');
+      return rawName;
+    }
+    
+    console.log(`✅ [CLEAN NAME] "${rawName}" → "${cleanedName}"`);
+    return cleanedName;
+  } catch (error) {
+    console.error('❌ [CLEAN NAME] Exception:', error);
+    return rawName;
+  }
+}
+
+/**
  * Uses Google Images (via Serper) to find REAL, accessible product images
  * Falls back to OpenAI Responses API if Serper not available
  */
@@ -45,17 +156,33 @@ export async function discoverProductImages(
     maxImages?: number;
   }
 ): Promise<AIImageDiscoveryResult> {
-  const { upc, category, manufacturer, maxImages = 5 } = options;
+  const { upc, category, manufacturer, maxImages = 15 } = options;
   
-  // Build search query - emphasize CYCLING/BICYCLE products
-  const searchParts = ['bicycle', productName]; // Start with 'bicycle' to ensure cycling context
-  if (manufacturer) searchParts.push(manufacturer);
-  if (category && !productName.toLowerCase().includes(category.toLowerCase())) {
-    searchParts.push(category);
+  console.log(`🔍 [IMAGE SEARCH] Original product name: "${productName}"`);
+  console.log(`🔍 [IMAGE SEARCH] UPC received: "${upc}"`);
+  
+  // Extract brand name for domain prioritization
+  const brandName = await extractBrandName(productName, manufacturer);
+  console.log(`🏷️ [IMAGE SEARCH] Brand name: "${brandName}"`);
+  
+  // Clean product name for better e-commerce search results
+  const cleanedProductName = await cleanProductName(productName, manufacturer, category);
+  
+  console.log(`🧹 [IMAGE SEARCH] Cleaned product name: "${cleanedProductName}"`);
+  
+  // Strategy: Two searches for better coverage
+  // Search 1: UPC + product name (7 images) - most precise
+  // Search 2: Product name only (8 images) - broader coverage
+  const hasValidUPC = upc && upc !== '' && !upc.startsWith('TEMP-');
+  
+  let allImages: any[] = [];
+  
+  if (hasValidUPC) {
+    console.log(`✅ [IMAGE SEARCH] Valid UPC found: "${upc}" - Using dual search strategy`);
+    console.log(`   Strategy: 7 images with UPC + 8 images without UPC = 15 total`);
+  } else {
+    console.log(`⚠️ [IMAGE SEARCH] No valid UPC - Using single search strategy (15 images)`);
   }
-  
-  const searchQuery = searchParts.join(' ') + ' cycling product';
-  console.log(`🔍 [IMAGE SEARCH] Query: "${searchQuery}"`);
 
   // ============================================================
   // METHOD 1: Serper API (Google Images) - BEST RESULTS
@@ -63,197 +190,287 @@ export async function discoverProductImages(
   const SERPER_API_KEY = Deno.env.get('SERPER_API_KEY');
   
   if (SERPER_API_KEY) {
-    console.log(`🌐 [SERPER] Using Google Image Search for guaranteed working URLs...`);
-    console.log(`🔑 [SERPER] API Key present: Yes (length: ${SERPER_API_KEY.length} chars)`);
-    console.log(`🔑 [SERPER] API Key first 8 chars: ${SERPER_API_KEY.substring(0, 8)}...`);
-    
-    try {
-      const serperResponse = await fetch('https://google.serper.dev/images', {
-        method: 'POST',
-        headers: {
-          'X-API-KEY': SERPER_API_KEY,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          q: searchQuery,
-          num: 30, // Get more to filter for square images
-          gl: 'au', // Australia
-          hl: 'en',
-          // Note: Serper doesn't have direct square filter, we'll filter after
-        }),
-      });
-
-      if (!serperResponse.ok) {
-        const error = await serperResponse.text();
-        console.error(`❌ [SERPER] API error: ${serperResponse.status} - ${error}`);
-        console.error(`❌ [SERPER] Request URL: https://google.serper.dev/images`);
-        console.error(`❌ [SERPER] Request body: ${JSON.stringify({ q: searchQuery, num: 20, gl: 'au', hl: 'en' })}`);
-        throw new Error('Serper API failed - check your API key at https://serper.dev/dashboard');
-      }
-
-      const serperData = await serperResponse.json();
-      const images: SerperImageResult[] = serperData.images || [];
-      
-      console.log(`✅ [SERPER] Found ${images.length} images from Google`);
-
-      if (images.length === 0) {
-        console.log(`⚠️  [SERPER] No images found for "${searchQuery}"`);
-        return {
-          images: [],
-          searchQuery,
-          totalFound: 0,
-          reasoning: 'No images found in Google Image Search',
-        };
-      }
-
-      // Filter and score images (prioritize square aspect ratios)
-      const scoredImages = images
-        .filter(img => {
-          // Must have an image URL
-          if (!img.imageUrl) {
-            console.log(`   ⚠️ Skipping: no imageUrl`);
-            return false;
-          }
-          
-          // Must be a valid image URL format
-          if (!isValidImageUrl(img.imageUrl)) {
-            console.log(`   ⚠️ Skipping: invalid URL format - ${img.imageUrl}`);
-            return false;
-          }
-          
-          // Skip tiny images (likely thumbnails)
-          if (img.imageWidth && img.imageWidth < 400) {
-            console.log(`   ⚠️ Skipping: too small (${img.imageWidth}px)`);
-            return false;
-          }
-          if (img.imageHeight && img.imageHeight < 400) {
-            console.log(`   ⚠️ Skipping: too small (${img.imageHeight}px)`);
-            return false;
-          }
-          
-          // Skip sketchy domains that often block downloads
-          const domain = img.domain?.toLowerCase() || '';
-          if (domain.includes('aliexpress') || 
-              domain.includes('wish.com') ||
-              domain.includes('alibaba') ||
-              domain.includes('pinterest')) {
-            console.log(`   ⚠️ Skipping: blocked domain - ${domain}`);
-            return false;
-          }
-
-          // Skip data URLs and blob URLs
-          if (img.imageUrl.startsWith('data:') || img.imageUrl.startsWith('blob:')) {
-            console.log(`   ⚠️ Skipping: data/blob URL`);
-            return false;
-          }
-          
-          return true;
-        })
-        .map(img => {
-          // Calculate aspect ratio score (1.0 = perfect square)
-          const aspectRatio = img.imageWidth && img.imageHeight 
-            ? img.imageWidth / img.imageHeight 
-            : 1;
-          
-          // Score: closer to 1:1 = higher score
-          // Perfect square (1:1) = 1.0
-          // 4:3 or 3:4 = ~0.75
-          // 16:9 or 9:16 = ~0.56
-          const aspectScore = 1 - Math.abs(1 - aspectRatio);
-          
-          // Size score: larger images preferred
-          const sizeScore = (img.imageWidth || 0) * (img.imageHeight || 0) / 1000000; // Normalize to ~1.0 for 1000x1000
-          
-          // Combined score: 60% aspect ratio, 40% size
-          const totalScore = (aspectScore * 0.6) + (Math.min(sizeScore, 1) * 0.4);
-          
-          const isSquareish = aspectRatio >= 0.8 && aspectRatio <= 1.2;
-          
-          console.log(`   ${isSquareish ? '🟩' : '⬜'} ${img.imageWidth}x${img.imageHeight} (${aspectRatio.toFixed(2)}:1) score: ${totalScore.toFixed(2)} - ${img.imageUrl.substring(0, 60)}...`);
-          
-          return {
-            ...img,
-            aspectRatio,
-            aspectScore,
-            sizeScore,
-            totalScore,
-            isSquareish,
-          };
-        })
-        .sort((a, b) => b.totalScore - a.totalScore) // Sort by score (best first)
-        .slice(0, 15); // Top 15 candidates
-      
-      const validImages = scoredImages;
-
-      console.log(`📊 [SERPER] ${validImages.length} valid images after filtering`);
-      
-      // Count square images
-      const squareCount = validImages.filter((img: any) => img.isSquareish).length;
-      console.log(`🟩 [SERPER] ${squareCount} square/near-square images (aspect ratio 0.8-1.2)`);
-
-      if (validImages.length === 0) {
-        console.log(`⚠️  [SERPER] All images filtered out, trying OpenAI fallback...`);
-        return await discoverImagesWithOpenAI(productName, options);
-      }
-
-      // Use GPT-4 to intelligently select the best images (already sorted by score)
-      const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-      if (OPENAI_API_KEY && validImages.length > maxImages) {
-        console.log(`🤖 [GPT-4] Curating best ${maxImages} images from ${validImages.length} candidates...`);
-        console.log(`💡 [GPT-4] Images already sorted by square preference`);
-        const curatedImages = await curateImagesWithAI(
-          productName,
-          validImages,
-          OPENAI_API_KEY,
-          maxImages
-        );
-        
-        return {
-          images: curatedImages,
-          searchQuery,
-          totalFound: curatedImages.length,
-          reasoning: `Selected ${curatedImages.length} best images (prioritized square aspect ratios) from ${images.length} Google results`,
-        };
-      }
-
-      // Return top images (already sorted by square preference + size)
-      const topImages: ImageSearchResult[] = validImages
-        .slice(0, maxImages)
-        .map((img, idx) => ({
-          url: img.imageUrl,
-          description: img.title || `${productName} - ${img.source}`,
-          source: img.domain || extractDomain(img.imageUrl),
-          isPrimary: idx === 0,
-          rank: idx + 1,
-        }));
-
-      console.log(`✅ [SERPER] Returning ${topImages.length} images`);
-
-      return {
-        images: topImages,
-        searchQuery,
-        totalFound: topImages.length,
-        reasoning: `Selected top ${topImages.length} images (prioritized square/near-square aspect ratios) from Google Image Search`,
-      };
-    } catch (error) {
-      console.error(`❌ [SERPER] Error:`, error);
-      console.log(`🔄 [SERPER] Falling back to OpenAI Responses API...`);
-      // Fall through to OpenAI fallback
+    // If we have a valid UPC, do TWO searches for better results
+    if (hasValidUPC) {
+      return await dualSearchWithUPC(
+        upc!,
+        cleanedProductName,
+        manufacturer,
+        category,
+        SERPER_API_KEY,
+        maxImages,
+        brandName
+      );
     }
-  } else {
-    console.log(`⚠️  [SERPER] SERPER_API_KEY not set`);
-    console.log(`💡 [SERPER] Get free API key at https://serper.dev (2,500 searches/month free)`);
+    
+    // Otherwise do single search
+    const searchParts = ['bicycle', cleanedProductName];
+    if (manufacturer) searchParts.push(manufacturer);
+    if (category && !cleanedProductName.toLowerCase().includes(category.toLowerCase())) {
+      searchParts.push(category);
+    }
+    const searchQuery = searchParts.join(' ') + ' product photo white background e-commerce';
+    
+    return await singleSearch(searchQuery, SERPER_API_KEY, maxImages);
   }
-
-  // ============================================================
-  // METHOD 2: OpenAI Responses API - Fallback
-  // ============================================================
+  
+  // Fallback to OpenAI if no Serper key
   return await discoverImagesWithOpenAI(productName, options);
 }
 
 /**
- * Uses OpenAI Responses API with web_search_preview (fallback method)
+ * Dual search strategy: UPC-based + general for comprehensive results
  */
+async function dualSearchWithUPC(
+  upc: string,
+  cleanedName: string,
+  manufacturer: string | null | undefined,
+  category: string | null | undefined,
+  apiKey: string,
+  maxImages: number,
+  brandName?: string | null
+): Promise<AIImageDiscoveryResult> {
+  console.log(`🔍 [DUAL SEARCH] Strategy: 7 with UPC + 8 without UPC = 15 total`);
+  
+  // Search 1: UPC + Product Name (precise)
+  const upcSearchParts = [upc, 'bicycle', cleanedName];
+  if (manufacturer) upcSearchParts.push(manufacturer);
+  const upcQuery = upcSearchParts.join(' ') + ' product photo white background';
+  
+  console.log(`🔍 [SEARCH 1] UPC Query: "${upcQuery}"`);
+  
+  // Search 2: Product Name Only (broader)
+  const nameSearchParts = ['bicycle', cleanedName];
+  if (manufacturer) nameSearchParts.push(manufacturer);
+  if (category && !cleanedName.toLowerCase().includes(category.toLowerCase())) {
+    nameSearchParts.push(category);
+  }
+  const nameQuery = nameSearchParts.join(' ') + ' product photo white background e-commerce';
+  
+  console.log(`🔍 [SEARCH 2] Name Query: "${nameQuery}"`);
+  
+  try {
+    // Execute both searches in parallel
+    const [upcResults, nameResults] = await Promise.all([
+      fetch('https://google.serper.dev/images', {
+        method: 'POST',
+        headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: upcQuery, num: 20, gl: 'au', hl: 'en', tbs: 'isz:l' }),
+      }),
+      fetch('https://google.serper.dev/images', {
+        method: 'POST',
+        headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: nameQuery, num: 20, gl: 'au', hl: 'en', tbs: 'isz:l' }),
+      }),
+    ]);
+    
+    if (!upcResults.ok || !nameResults.ok) {
+      console.error('❌ [DUAL SEARCH] One or both searches failed');
+      throw new Error('Serper API failed');
+    }
+    
+    const upcData = await upcResults.json();
+    const nameData = await nameResults.json();
+    
+    const upcImages = upcData.images || [];
+    const nameImages = nameData.images || [];
+    
+    console.log(`✅ [SEARCH 1] UPC search found ${upcImages.length} images`);
+    console.log(`✅ [SEARCH 2] Name search found ${nameImages.length} images`);
+    
+    // Process and score images from both searches with brand awareness
+    const processedUpcImages = processAndScoreImages(upcImages, cleanedName, brandName);
+    const processedNameImages = processAndScoreImages(nameImages, cleanedName, brandName);
+    
+    // Take top 7 from UPC search, top 8 from name search
+    const top7UPC = processedUpcImages.slice(0, 7);
+    const top8Name = processedNameImages.slice(0, 8);
+    
+    // Merge and deduplicate by URL
+    const seenUrls = new Set();
+    const mergedImages: any[] = [];
+    
+    for (const img of [...top7UPC, ...top8Name]) {
+      if (!seenUrls.has(img.imageUrl)) {
+        seenUrls.add(img.imageUrl);
+        mergedImages.push(img);
+      }
+    }
+    
+    console.log(`🔍 [DUAL SEARCH] Merged results: ${mergedImages.length} unique images`);
+    console.log(`   - From UPC search: ${top7UPC.length}`);
+    console.log(`   - From name search: ${top8Name.length}`);
+    console.log(`   - After deduplication: ${mergedImages.length}`);
+    
+    // Convert to final format
+    const finalImages: ImageSearchResult[] = mergedImages
+      .slice(0, maxImages)
+      .map((img, idx) => ({
+        url: img.imageUrl,
+        description: img.title || `${cleanedName} - ${img.source}`,
+        source: img.domain || extractDomain(img.imageUrl),
+        isPrimary: idx === 0,
+        rank: idx + 1,
+      }));
+    
+    return {
+      images: finalImages,
+      searchQuery: `[UPC: "${upcQuery}"] + [Name: "${nameQuery}"]`,
+      totalFound: finalImages.length,
+      reasoning: `Dual search: ${top7UPC.length} from UPC search + ${top8Name.length} from name search = ${finalImages.length} total`,
+    };
+  } catch (error) {
+    console.error('❌ [DUAL SEARCH] Error:', error);
+    // Fallback to single search
+    const fallbackQuery = `bicycle ${cleanedName} product photo`;
+    return await singleSearch(fallbackQuery, apiKey, maxImages);
+  }
+}
+
+/**
+ * Process and score images with brand awareness
+ */
+function processAndScoreImages(images: SerperImageResult[], productName: string, brandName?: string | null): any[] {
+  return images
+    .filter(img => {
+      // Basic validation
+      if (!img.imageUrl || !isValidImageUrl(img.imageUrl)) return false;
+      if (img.imageWidth && img.imageWidth < 400) return false;
+      if (img.imageHeight && img.imageHeight < 400) return false;
+      
+      // Block bad domains
+      const domain = img.domain?.toLowerCase() || '';
+      if (domain.includes('aliexpress') || 
+          domain.includes('wish.com') ||
+          domain.includes('alibaba') ||
+          domain.includes('pinterest') ||
+          domain.includes('instagram') ||
+          domain.includes('facebook') ||
+          domain.includes('ebay.com.au') ||
+          domain.includes('gumtree')) {
+        return false;
+      }
+      
+      if (img.imageUrl.startsWith('data:') || img.imageUrl.startsWith('blob:')) return false;
+      
+      return true;
+    })
+    .map(img => {
+      // Score images
+      const aspectRatio = img.imageWidth && img.imageHeight ? img.imageWidth / img.imageHeight : 1;
+      const aspectScore = 1 - Math.abs(1 - aspectRatio);
+      const sizeScore = (img.imageWidth || 0) * (img.imageHeight || 0) / 1000000;
+      
+      const domain = img.domain?.toLowerCase() || '';
+      const fullUrl = img.link?.toLowerCase() || '';
+      
+      // Check for e-commerce domains
+      const isEcommerceDomain = 
+        domain.includes('amazon') ||
+        domain.includes('rei.com') ||
+        domain.includes('99bikes') ||
+        domain.includes('pushys');
+      
+      // Check for official brand website/domain with highest priority
+      let brandScore = 0.5; // Default
+      
+      if (brandName) {
+        const brandLower = brandName.toLowerCase();
+        
+        // HIGHEST PRIORITY: Official brand domains like bike.shimano.com, shimano.com
+        const isOfficialBrandDomain = 
+          domain === `${brandLower}.com` ||
+          domain === `bike.${brandLower}.com` ||
+          domain === `www.${brandLower}.com` ||
+          domain.startsWith(`bike.${brandLower}`) ||
+          domain.endsWith(`.${brandLower}.com`);
+        
+        if (isOfficialBrandDomain) {
+          brandScore = 2.0; // MAXIMUM boost for official brand site
+          console.log(`   ⭐⭐ OFFICIAL BRAND: ${domain} (${brandName} official)`);
+        } else if (domain.includes(brandLower) || fullUrl.includes(brandLower)) {
+          brandScore = 1.5; // HIGH boost for brand in domain/URL
+          console.log(`   🌟 BRAND MATCH: ${domain} contains "${brandName}"`);
+        } else if (isEcommerceDomain) {
+          brandScore = 1.0; // Medium for general e-commerce
+        }
+      } else {
+        brandScore = isEcommerceDomain ? 1.0 : 0.5;
+      }
+      
+      // Title quality score
+      const title = img.title?.toLowerCase() || '';
+      const hasQualityKeywords = 
+        title.includes('official') ||
+        title.includes('product photo') ||
+        title.includes('stock');
+      const titleScore = hasQualityKeywords ? 1.0 : 0.7;
+      
+      // Combined score: aspect 25%, size 20%, brand 40%, title 15%
+      const totalScore = 
+        (aspectScore * 0.25) + 
+        (Math.min(sizeScore, 1) * 0.20) + 
+        (brandScore * 0.40) + 
+        (titleScore * 0.15);
+      
+      return {
+        ...img,
+        totalScore,
+        brandScore,
+      };
+    })
+    .sort((a, b) => b.totalScore - a.totalScore);
+}
+
+/**
+ * Single search strategy
+ */
+async function singleSearch(
+  searchQuery: string,
+  apiKey: string,
+  maxImages: number
+): Promise<AIImageDiscoveryResult> {
+  console.log(`🔍 [SINGLE SEARCH] Query: "${searchQuery}"`);
+  
+  try {
+    const response = await fetch('https://google.serper.dev/images', {
+      method: 'POST',
+      headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: searchQuery, num: 50, gl: 'au', hl: 'en', tbs: 'isz:l' }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Serper API failed: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const images = data.images || [];
+    
+    console.log(`✅ [SINGLE SEARCH] Found ${images.length} images`);
+    
+    const processedImages = processAndScoreImages(images, searchQuery, null);
+    const topImages = processedImages.slice(0, maxImages);
+    
+    const finalImages: ImageSearchResult[] = topImages.map((img, idx) => ({
+      url: img.imageUrl,
+      description: img.title || searchQuery,
+      source: img.domain || extractDomain(img.imageUrl),
+      isPrimary: idx === 0,
+      rank: idx + 1,
+    }));
+    
+    return {
+      images: finalImages,
+      searchQuery,
+      totalFound: finalImages.length,
+      reasoning: `Found ${finalImages.length} images via single search`,
+    };
+  } catch (error) {
+    console.error('❌ [SINGLE SEARCH] Error:', error);
+    return { images: [], searchQuery, totalFound: 0, reasoning: 'Search failed' };
+  }
+}
+
 async function discoverImagesWithOpenAI(
   productName: string,
   options: {
@@ -412,24 +629,32 @@ async function curateImagesWithAI(
     source: img.domain,
   }));
 
-  const prompt = `Select the ${maxImages} best product images for e-commerce: "${productName}"
+  const prompt = `Select the ${maxImages} best HERO PRODUCT PHOTOS for e-commerce: "${productName}"
 
 Available images:
 ${JSON.stringify(imageDescriptions, null, 2)}
 
-Prioritise:
-1. Clear product visibility (not lifestyle shots)
-2. Professional quality (white/neutral backgrounds)
-3. High resolution (larger = better)
-4. Multiple angles
-5. Reputable sources (Amazon, manufacturer sites)
+CRITICAL REQUIREMENTS for e-commerce hero photos:
+1. Clean white or neutral background (NO lifestyle shots, NO in-use photos)
+2. Product-only shot (NO people, NO scenery, NO action shots)
+3. Professional studio quality (clear, well-lit, sharp focus)
+4. Square or near-square aspect ratio (800x800+)
+5. High resolution from reputable retailers (Amazon, manufacturer sites preferred)
+6. Front/main view showing entire product clearly
 
-Identify the PRIMARY (hero) image - the best main product shot.
+REJECT these types:
+- Lifestyle shots (person riding bike, outdoor scenes)
+- In-use photos (being worn, being ridden)
+- Catalog pages or multi-product layouts
+- Low quality or blurry images
+- Images with text overlays or watermarks
+
+Identify the PRIMARY (hero) image - the absolute best clean product shot on white/neutral background.
 
 Return JSON:
 {
   "selections": [
-    { "index": 0, "isPrimary": true, "reason": "Clear front view" }
+    { "index": 0, "isPrimary": true, "reason": "Clean white background, front view, high-res" }
   ]
 }`;
 

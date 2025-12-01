@@ -1,0 +1,10 @@
+RUN THIS IN BROWSER CONSOLE (F12):
+
+// Clear browser cache for API responses
+caches.keys().then(names => names.forEach(name => caches.delete(name)));
+
+// Hard reload
+location.reload(true);
+
+THAT'S IT. This clears the browser's cache of API responses.
+

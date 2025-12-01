@@ -1,0 +1,15 @@
+Run this in browser console to see what data is being returned:
+
+fetch('/api/marketplace/trending?limit=3')
+  .then(r => r.json())
+  .then(data => {
+    console.log('Full response:', data);
+    console.log('First product:', data.products[0]);
+    console.log('Image fields:', {
+      primary_image_url: data.products[0]?.primary_image_url,
+      image_variants: data.products[0]?.image_variants,
+      images: data.products[0]?.images,
+      listing_type: data.products[0]?.listing_type
+    });
+  });
+

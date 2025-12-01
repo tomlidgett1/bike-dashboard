@@ -71,10 +71,14 @@ export default function LoginPage() {
               bicycle_store: false, // Always false until admin approves
               name: '',
               phone: '',
+              first_name: '',
+              last_name: '',
               business_name: '',
               store_type: '',
               address: '',
               website: '',
+              preferences: {},
+              onboarding_completed: false,
               email_notifications: true,
               order_alerts: true,
               inventory_alerts: true,
@@ -84,9 +88,12 @@ export default function LoginPage() {
           if (profileError) {
             console.error('Error creating profile:', profileError)
           }
+          
+          // Redirect to onboarding immediately (no email verification required)
+          router.push(`/onboarding?type=${accountType}`)
+          router.refresh()
+          return
         }
-        
-        setError('Check your email for the confirmation link!')
       }
     } catch (error: any) {
       setError(error.message)

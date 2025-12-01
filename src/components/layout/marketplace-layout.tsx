@@ -5,6 +5,8 @@ import { MarketplaceSidebar } from "./marketplace-sidebar";
 import { MobileBottomNav } from "./mobile-nav";
 import { Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useSidebarState, SidebarStateProvider } from "@/lib/hooks/use-sidebar-state";
+import { cn } from "@/lib/utils";
 
 // ============================================================
 // Marketplace Layout
@@ -17,21 +19,41 @@ interface MarketplaceLayoutProps {
   showStoreCTA?: boolean;
 }
 
-export function MarketplaceLayout({ children, showFooter = true, showStoreCTA = false }: MarketplaceLayoutProps) {
+function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = false }: MarketplaceLayoutProps) {
+  const { isCollapsed, mounted } = useSidebarState();
+
+  // Log state for debugging
+  React.useEffect(() => {
+    console.log('MarketplaceLayout - isCollapsed:', isCollapsed, 'mounted:', mounted);
+  }, [isCollapsed, mounted]);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar - starts below header */}
       <MarketplaceSidebar />
       
       {/* Header is included in each marketplace page for more control */}
-      <main className={`w-full lg:pl-[200px] pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0 ${showStoreCTA ? 'mb-32' : ''}`}>{children}</main>
+      <main 
+        className={cn(
+          "w-full pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0 transition-all duration-[400ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
+          isCollapsed ? "lg:pl-[72px]" : "lg:pl-[200px]",
+          showStoreCTA && "mb-32"
+        )}
+      >
+        {children}
+      </main>
 
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav />
 
       {/* Call to Action & Simple Footer - Only for Stores Page */}
       {showStoreCTA && (
-        <div className="fixed bottom-0 left-0 right-0 lg:left-[200px] z-10">
+        <div 
+          className={cn(
+            "fixed bottom-0 left-0 right-0 z-10 transition-all duration-[400ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
+            isCollapsed ? "lg:left-[72px]" : "lg:left-[200px]"
+          )}
+        >
           {/* Call to Action for Bike Stores */}
           <div className="bg-white border-t border-gray-200 py-4">
             <div className="max-w-[1920px] mx-auto px-6">
@@ -152,6 +174,14 @@ export function MarketplaceLayout({ children, showFooter = true, showStoreCTA = 
         </footer>
       )}
     </div>
+  );
+}
+
+export function MarketplaceLayout(props: MarketplaceLayoutProps) {
+  return (
+    <SidebarStateProvider>
+      <MarketplaceLayoutContent {...props} />
+    </SidebarStateProvider>
   );
 }
 

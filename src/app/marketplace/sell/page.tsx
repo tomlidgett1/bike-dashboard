@@ -3,6 +3,7 @@
 import * as React from "react";
 import { SellWizard } from "@/components/marketplace/sell/sell-wizard";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
+import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 
 // ============================================================
 // Sell Your Bike Page
@@ -12,6 +13,7 @@ import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 export default function SellPage() {
   return (
     <MarketplaceLayout showFooter={false}>
+      <MarketplaceHeader />
       <SellWizard />
     </MarketplaceLayout>
   );

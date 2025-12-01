@@ -2,127 +2,156 @@
 
 import * as React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { SlidersHorizontal, Package, Store, User, Bike, Settings, Shirt, Apple } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
-import { ProductGrid } from "@/components/marketplace/product-grid";
+import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
+import { ViewModePills, ViewMode } from "@/components/marketplace/view-mode-pills";
+import { CascadingCategoryFilter } from "@/components/marketplace/cascading-category-filter";
 import { StoresGrid } from "@/components/marketplace/stores-grid";
-import { AdvancedCategoryFilter } from "@/components/marketplace/advanced-category-filter";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { useMarketplaceProducts, useMarketplaceCategories } from "@/lib/hooks/use-marketplace-products";
-import type { MarketplaceCategory } from "@/lib/types/marketplace";
-import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useInteractionTracker } from "@/lib/tracking/interaction-tracker";
+import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import { useMarketplaceData, useCategoryCounts } from "@/lib/hooks/use-marketplace-data";
 
 // ============================================================
-// Marketplace Page
-// Main marketplace with filters, search, and products
+// Marketplace Page - Discovery-Focused Homepage
+// Default view: Trending products with pill filters
+// Can also show stores or individual sellers
 // ============================================================
+
+interface Store {
+  id: string;
+  store_name: string;
+  store_type: string;
+  logo_url: string | null;
+  product_count: number;
+  joined_date: string;
+}
 
 export default function MarketplacePage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { user } = useAuth();
+  const tracker = useInteractionTracker(user?.id);
 
-  // Tab state - products, stores, or individual sellers
-  const [activeTab, setActiveTab] = React.useState<'products' | 'stores' | 'sellers'>(
-    (searchParams.get('view') as 'products' | 'stores' | 'sellers') || 'products'
-  );
+  // Detect if we're in stores or sellers view from URL
+  const urlView = searchParams.get('view');
+  const isStoresView = urlView === 'stores';
+  const isSellersView = urlView === 'sellers';
 
-  // Get filters from URL
-  const [search, setSearch] = React.useState(searchParams.get('search') || '');
-  const [level1, setLevel1] = React.useState<string | null>(
-    searchParams.get('level1') || null
-  );
-  const [level2, setLevel2] = React.useState<string | null>(
-    searchParams.get('level2') || null
-  );
-  const [level3, setLevel3] = React.useState<string | null>(
-    searchParams.get('level3') || null
-  );
-  const [sortBy, setSortBy] = React.useState<string>(
-    searchParams.get('sortBy') || 'newest'
-  );
-  const [hideBikeStores, setHideBikeStores] = React.useState<boolean>(
-    searchParams.get('hideStores') === 'true'
+  // View mode state (trending, for-you, all) - only for products view
+  const [viewMode, setViewMode] = React.useState<ViewMode>(
+    (!isStoresView && !isSellersView && urlView as ViewMode) || 'trending'
   );
 
   // Stores state
-  const [stores, setStores] = React.useState<any[]>([]);
+  const [stores, setStores] = React.useState<Store[]>([]);
   const [storesLoading, setStoresLoading] = React.useState(false);
 
-  // Memoize filters to prevent recreating object on every render
-  const filters = React.useMemo(() => ({
-    level1: level1 || undefined,
-    level2: level2 || undefined,
-    level3: level3 || undefined,
-    search: search || undefined,
-    sortBy: sortBy as any,
-    pageSize: 24,
-    excludeBicycleStores: hideBikeStores || undefined,
-  }), [level1, level2, level3, search, sortBy, hideBikeStores]);
+  // Search state
+  const [searchQuery, setSearchQuery] = React.useState<string | null>(
+    searchParams.get('search') || null
+  );
 
-  // Fetch products with filters (no page state - handled by hook)
-  const { products, loading, pagination, refetch, loadMore } = useMarketplaceProducts(filters);
+  // Category filter state (3 levels)
+  const [selectedLevel1, setSelectedLevel1] = React.useState<string | null>(
+    searchParams.get('level1') || null
+  );
+  const [selectedLevel2, setSelectedLevel2] = React.useState<string | null>(
+    searchParams.get('level2') || null
+  );
+  const [selectedLevel3, setSelectedLevel3] = React.useState<string | null>(
+    searchParams.get('level3') || null
+  );
 
-  // Fetch category stats
-  const { categories: categoryStats } = useMarketplaceCategories();
+  // Products state (for pagination accumulation)
+  const [accumulatedProducts, setAccumulatedProducts] = React.useState<MarketplaceProduct[]>([]);
+  const [currentPage, setCurrentPage] = React.useState(1);
 
-  // Build comprehensive category counts for all levels
-  // Fetch all products to calculate accurate counts
-  const [categoryCountsData, setCategoryCountsData] = React.useState<Record<string, number>>({});
+  // Track filter changes to know when to reset
+  const filterKey = React.useMemo(() => 
+    `${viewMode}-${selectedLevel1}-${selectedLevel2}-${selectedLevel3}-${searchQuery}`,
+    [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery]
+  );
+  const prevFilterKeyRef = React.useRef(filterKey);
+  const processedDataRef = React.useRef<Set<string>>(new Set());
+
+  // Create stable params object
+  const marketplaceParams = React.useMemo(() => ({
+    viewMode,
+    page: currentPage,
+    pageSize: 50,
+    level1: selectedLevel1,
+    level2: selectedLevel2,
+    level3: selectedLevel3,
+    search: searchQuery,
+  }), [viewMode, currentPage, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery]);
+
+  // Use SWR for products data with intelligent caching
+  const { 
+    products: fetchedProducts, 
+    pagination, 
+    isLoading, 
+    isValidating 
+  } = useMarketplaceData(
+    marketplaceParams,
+    {
+      enabled: !isStoresView && !isSellersView,
+      revalidateOnFocus: false,
+      dedupingInterval: 5000,
+    }
+  );
+
+  // Use SWR for category counts
+  const { counts: categoryCounts } = useCategoryCounts();
+
+  // Handle filter changes and product accumulation
   React.useEffect(() => {
-    const fetchCategoryCounts = async () => {
-      try {
-        // Fetch all products without filters to get accurate counts
-        const response = await fetch('/api/marketplace/products?pageSize=10000');
-        if (response.ok) {
-          const data = await response.json();
-          const products = data.products || [];
-          
-          const counts: Record<string, number> = {};
-          
-          // Count Level 1 categories
-          products.forEach((product: any) => {
-            if (product.marketplace_category) {
-              counts[product.marketplace_category] = (counts[product.marketplace_category] || 0) + 1;
-            }
-            
-            // Count Level 2 categories (Level1 > Level2)
-            if (product.marketplace_category && product.marketplace_subcategory) {
-              const level2Key = `${product.marketplace_category} > ${product.marketplace_subcategory}`;
-              counts[level2Key] = (counts[level2Key] || 0) + 1;
-            }
-            
-            // Count Level 3 categories (Level1 > Level2 > Level3)
-            if (product.marketplace_category && product.marketplace_subcategory && product.marketplace_level_3_category) {
-              const level3Key = `${product.marketplace_category} > ${product.marketplace_subcategory} > ${product.marketplace_level_3_category}`;
-              counts[level3Key] = (counts[level3Key] || 0) + 1;
-            }
+    // Check if filters changed
+    const filtersChanged = filterKey !== prevFilterKeyRef.current;
+    
+    if (filtersChanged) {
+      // Filters changed - reset everything and start fresh
+      prevFilterKeyRef.current = filterKey;
+      processedDataRef.current = new Set();
+      setCurrentPage(1);
+      setAccumulatedProducts(fetchedProducts);
+      // Mark these products as processed
+      fetchedProducts.forEach(p => processedDataRef.current.add(p.id));
+    } else if (fetchedProducts.length > 0) {
+      // Check if we have genuinely new data (not already processed)
+      const hasNewData = fetchedProducts.some(p => !processedDataRef.current.has(p.id));
+      
+      if (hasNewData) {
+        if (currentPage === 1) {
+          setAccumulatedProducts(fetchedProducts);
+        } else {
+          setAccumulatedProducts(prev => {
+            // Only add products we haven't seen before
+            const newProducts = fetchedProducts.filter(
+              p => !processedDataRef.current.has(p.id)
+            );
+            return [...prev, ...newProducts];
           });
-          
-          setCategoryCountsData(counts);
         }
-      } catch (error) {
-        console.error('Error fetching category counts:', error);
+        // Mark these products as processed
+        fetchedProducts.forEach(p => processedDataRef.current.add(p.id));
       }
-    };
-    fetchCategoryCounts();
-  }, []);
+    }
+  }, [fetchedProducts, currentPage, filterKey]);
 
-  // Use the fetched category counts
-  const categoryCounts = categoryCountsData;
+  // Derive display state
+  const products = accumulatedProducts;
+  const loading = isLoading && currentPage === 1;
+  const hasMore = pagination?.hasMore || false;
+  const totalCount = pagination?.total || 0;
 
-  // Fetch stores when stores tab is active
+  // Fetch stores when in stores view
   React.useEffect(() => {
-    if (activeTab === 'stores') {
+    if (isStoresView) {
       const fetchStores = async () => {
         setStoresLoading(true);
         try {
@@ -132,185 +161,449 @@ export default function MarketplacePage() {
             setStores(data.stores || []);
           }
         } catch (error) {
-          console.error('Error fetching stores:', error);
+          console.error('[Marketplace] Error fetching stores:', error);
         } finally {
           setStoresLoading(false);
         }
       };
       fetchStores();
     }
-  }, [activeTab]);
+  }, [isStoresView]);
 
   // Update URL when filters change
   React.useEffect(() => {
     const params = new URLSearchParams();
-    if (activeTab !== 'products') params.set('view', activeTab);
-    if (level1) params.set('level1', level1);
-    if (level2) params.set('level2', level2);
-    if (level3) params.set('level3', level3);
-    if (search) params.set('search', search);
-    if (sortBy && sortBy !== 'newest') params.set('sortBy', sortBy);
-    if (hideBikeStores) params.set('hideStores', 'true');
+    
+    // Handle stores/sellers view
+    if (isStoresView) {
+      params.set('view', 'stores');
+    } else if (isSellersView) {
+      params.set('view', 'sellers');
+    } else {
+      // Handle product view modes
+      if (viewMode !== 'trending') params.set('view', viewMode);
+      if (selectedLevel1) params.set('level1', selectedLevel1);
+      if (selectedLevel2) params.set('level2', selectedLevel2);
+      if (selectedLevel3) params.set('level3', selectedLevel3);
+      if (searchQuery) params.set('search', searchQuery);
+    }
 
     const newUrl = params.toString()
       ? `/marketplace?${params.toString()}`
       : '/marketplace';
 
     router.replace(newUrl, { scroll: false });
-  }, [activeTab, level1, level2, level3, search, sortBy, hideBikeStores, router]);
+  }, [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, isStoresView, isSellersView, router]);
 
   const handleLoadMore = () => {
-    loadMore();
+    if (!isValidating && hasMore) {
+      setCurrentPage(prev => prev + 1);
+    }
   };
 
-  const handleSearchChange = (value: string) => {
-    setSearch(value);
+  const handleViewModeChange = (mode: ViewMode) => {
+    // Don't reset if clicking the same tab
+    if (mode === viewMode) return;
+    
+    setViewMode(mode);
+    setCurrentPage(1);
+    setAccumulatedProducts([]);
+    
+    // Clear category filters when switching to Trending or For You
+    if (mode === 'trending' || mode === 'for-you') {
+      setSelectedLevel1(null);
+      setSelectedLevel2(null);
+      setSelectedLevel3(null);
+    }
+    
+    // Track mode change
+    tracker.trackClick(undefined, {
+      action: 'view_mode_change',
+      from: viewMode,
+      to: mode,
+    });
   };
 
-  const handleLevel1Change = (newLevel1: string | null) => {
-    setLevel1(newLevel1);
+  const handleLevel1Change = (category: string | null) => {
+    // Don't reset if clicking the same category
+    if (category === selectedLevel1) return;
+    
+    setSelectedLevel1(category);
+    setSelectedLevel2(null);
+    setSelectedLevel3(null);
+    setCurrentPage(1);
+    setAccumulatedProducts([]);
+    
+    if (category) {
+      tracker.trackClick(undefined, {
+        action: 'category_filter_l1',
+        category: category,
+        view_mode: viewMode,
+      });
+    }
   };
 
-  const handleLevel2Change = (newLevel2: string | null) => {
-    setLevel2(newLevel2);
+  const handleLevel2Change = (subcategory: string | null) => {
+    // Don't reset if clicking the same subcategory
+    if (subcategory === selectedLevel2) return;
+    
+    setSelectedLevel2(subcategory);
+    setSelectedLevel3(null);
+    setCurrentPage(1);
+    setAccumulatedProducts([]);
+    
+    if (subcategory) {
+      tracker.trackClick(undefined, {
+        action: 'category_filter_l2',
+        category: `${selectedLevel1} > ${subcategory}`,
+        view_mode: viewMode,
+      });
+    }
   };
 
-  const handleLevel3Change = (newLevel3: string | null) => {
-    setLevel3(newLevel3);
+  const handleLevel3Change = (level3: string | null) => {
+    // Don't reset if clicking the same level3 category
+    if (level3 === selectedLevel3) return;
+    
+    setSelectedLevel3(level3);
+    setCurrentPage(1);
+    setAccumulatedProducts([]);
+    
+    if (level3) {
+      tracker.trackClick(undefined, {
+        action: 'category_filter_l3',
+        category: `${selectedLevel1} > ${selectedLevel2} > ${level3}`,
+        view_mode: viewMode,
+      });
+    }
   };
 
-  // Category icons mapping
-  const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
-    Bicycles: Bike,
-    Parts: Settings,
-    Apparel: Shirt,
-    Nutrition: Apple,
+  const handleClearSearch = () => {
+    setSearchQuery(null);
+    setCurrentPage(1);
+    setAccumulatedProducts([]);
   };
 
   return (
     <>
-      {/* Header - Full Width, Fixed with Enterprise Search */}
       <MarketplaceHeader />
 
-      <MarketplaceLayout 
-        showStoreCTA={activeTab === 'stores'}
-        showFooter={activeTab !== 'products' && activeTab !== 'stores'}
-      >
-        {/* Main Content - Add top padding to account for fixed header */}
+      <MarketplaceLayout showFooter={false} showStoreCTA={isStoresView}>
         <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="space-y-6"
-        >
-          {/* Hide Bike Stores Switch - Only show for products view */}
-          {activeTab === 'products' && (
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={hideBikeStores}
-                onCheckedChange={setHideBikeStores}
-                id="hide-bike-stores"
-              />
-              <label
-                htmlFor="hide-bike-stores"
-                className="text-sm text-gray-700 cursor-pointer select-none"
-              >
-                Hide bike stores
-              </label>
-            </div>
-          )}
-
-          {/* Category Filters - Only show for products view */}
-          {activeTab === 'products' && (
-            <AdvancedCategoryFilter
-              selectedLevel1={level1}
-              selectedLevel2={level2}
-              selectedLevel3={level3}
-              onLevel1Change={handleLevel1Change}
-              onLevel2Change={handleLevel2Change}
-              onLevel3Change={handleLevel3Change}
-              counts={categoryCounts}
-            />
-          )}
-
-          {/* Products View */}
-          {activeTab === 'products' && (
-            <>
-            {/* Sort and Filter Bar */}
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div className="hidden sm:flex items-center gap-2">
-                <span className="text-sm text-gray-700 font-medium">
-                  {pagination.total.toLocaleString()} products
-                </span>
-              </div>
-
-                <div className="flex items-center gap-3">
-                  {/* Sort Dropdown */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-700 font-medium">Sort:</span>
-                    <Select value={sortBy} onValueChange={setSortBy}>
-                      <SelectTrigger className="w-[160px] rounded-md border-gray-300">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="newest">Newest First</SelectItem>
-                        <SelectItem value="oldest">Oldest First</SelectItem>
-                        <SelectItem value="price_asc">Price: Low to High</SelectItem>
-                        <SelectItem value="price_desc">Price: High to Low</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Advanced Filters Button (Future) */}
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="rounded-md border-gray-300 hover:bg-gray-50"
-                    disabled
-                  >
-                    <SlidersHorizontal className="h-4 w-4" />
-                  </Button>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="space-y-6"
+          >
+            {/* Stores View */}
+            {isStoresView && (
+              <>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <h1 className="text-2xl font-bold text-gray-900">Bike Stores</h1>
+                  {!storesLoading && (
+                    <div className="hidden sm:flex items-center gap-2">
+                      <span className="text-sm text-gray-700 font-medium">
+                        {stores.length.toLocaleString()} {stores.length === 1 ? 'store' : 'stores'}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              </div>
+                
+                <StoresGrid stores={stores} loading={storesLoading} />
+              </>
+            )}
 
-              {/* Products Grid */}
-              <ProductGrid
-                products={products}
-                loading={loading}
-                hasMore={pagination.hasMore}
-                onLoadMore={handleLoadMore}
-              />
-            </>
-          )}
-
-          {/* Stores View */}
-          {activeTab === 'stores' && (
-            <>
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-700 font-medium">
-                  {stores.length} {stores.length === 1 ? 'store' : 'stores'} found
+            {/* Sellers View */}
+            {isSellersView && (
+              <div className="flex flex-col items-center justify-center py-24 px-4">
+                <div className="rounded-full bg-gray-100 p-6 mb-4">
+                  <StoreIcon className="h-12 w-12 text-gray-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  Individual Sellers Coming Soon
+                </h3>
+                <p className="text-sm text-gray-600 text-center max-w-md">
+                  We're working on adding individual seller profiles. Check back soon!
                 </p>
               </div>
-              <StoresGrid stores={stores} loading={storesLoading} />
-            </>
-          )}
+            )}
 
-          {/* Individual Sellers View */}
-          {activeTab === 'sellers' && (
-            <div className="bg-white rounded-md border border-gray-200 p-12 text-center">
-              <User className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                Individual Sellers Coming Soon
-              </h3>
-              <p className="text-gray-600 max-w-md mx-auto">
-                We're working on bringing individual sellers to the marketplace. 
-                Check back soon to discover unique products from the cycling community.
-              </p>
-            </div>
-          )}
-        </motion.div>
-      </div>
+            {/* Products View */}
+            {!isStoresView && !isSellersView && (
+              <>
+                {/* View Mode Pills */}
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <ViewModePills
+                    activeMode={viewMode}
+                    onModeChange={handleViewModeChange}
+                    showForYouBadge={!user && viewMode !== 'for-you'}
+                  />
+
+                  {/* Product Count */}
+                  {!searchQuery && (
+                    <div className="hidden sm:flex items-center gap-2">
+                      <span className="text-sm text-gray-700 font-medium">
+                        {totalCount.toLocaleString()} {viewMode === 'trending' ? 'trending' : ''} products
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Active Search Display */}
+                {searchQuery && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                    className="bg-white rounded-md border border-gray-200 p-3 flex items-center justify-between gap-4 shadow-sm"
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Search className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                      <span className="text-sm text-gray-600">
+                        Search results for:
+                      </span>
+                      <span className="text-sm font-semibold text-gray-900 truncate">
+                        "{searchQuery}"
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleClearSearch}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+                      aria-label="Clear search"
+                    >
+                      <X className="h-4 w-4" />
+                      Clear
+                    </button>
+                  </motion.div>
+                )}
+
+                {/* Cascading Category Filter - Only show on All Products tab */}
+                {viewMode === 'all' && (
+                  <CascadingCategoryFilter
+                    selectedLevel1={selectedLevel1}
+                    selectedLevel2={selectedLevel2}
+                    selectedLevel3={selectedLevel3}
+                    onLevel1Change={handleLevel1Change}
+                    onLevel2Change={handleLevel2Change}
+                    onLevel3Change={handleLevel3Change}
+                    counts={categoryCounts}
+                  />
+                )}
+
+                {/* Loading State - Amazon-style instant skeletons */}
+                {loading && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4">
+                    {Array.from({ length: 24 }).map((_, i) => (
+                      <ProductCardSkeleton key={i} />
+                    ))}
+                  </div>
+                )}
+
+                {/* Anonymous user on For You - Show sign-in message */}
+                {!user && viewMode === 'for-you' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white rounded-md border border-gray-200 p-4 flex items-center justify-between gap-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Heart className="h-5 w-5 text-gray-400" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          Sign in for personalised recommendations
+                        </p>
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          Showing trending products for now
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => router.push('/login')}
+                      className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium flex items-center gap-2"
+                    >
+                      <LogIn className="h-4 w-4" />
+                      Sign In
+                    </Button>
+                  </motion.div>
+                )}
+
+                  {/* Empty State - No Products */}
+                  {!loading && products.length === 0 && (
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key="empty-state"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ duration: 0.3 }}
+                        className="bg-white rounded-md border border-gray-200 p-12 text-center"
+                      >
+                        {searchQuery ? (
+                          <>
+                            <Search className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                              No results found for "{searchQuery}"
+                            </h3>
+                            <p className="text-gray-600 max-w-md mx-auto mb-6">
+                              We couldn't find any products matching your search. Try different keywords or browse all products.
+                            </p>
+                            <Button
+                              onClick={handleClearSearch}
+                              className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
+                            >
+                              Clear Search
+                            </Button>
+                          </>
+                        ) : !searchQuery && viewMode === 'trending' ? (
+                          <>
+                            <TrendingUp className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                              No trending products yet
+                            </h3>
+                            <p className="text-gray-600 max-w-md mx-auto mb-6">
+                              {selectedLevel1 
+                                ? `No trending ${selectedLevel1.toLowerCase()} products right now. Try browsing all products or check back soon!`
+                                : 'Products will appear here as they gain popularity. Check back soon or browse all products!'}
+                            </p>
+                            <Button
+                              onClick={() => setViewMode('all')}
+                              className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
+                            >
+                              Browse All Products
+                            </Button>
+                          </>
+                        ) : !searchQuery && viewMode === 'for-you' ? (
+                          <>
+                            <Heart className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                              {user ? "We're learning your preferences" : "Sign in for personalised recommendations"}
+                            </h3>
+                            <p className="text-gray-600 max-w-md mx-auto mb-6">
+                              {user 
+                                ? 'Browse products to help us understand what you like. Your personalised feed will appear here!'
+                                : 'Sign in to get recommendations based on your browsing history and preferences.'}
+                            </p>
+                            <Button
+                              onClick={() => user ? setViewMode('trending') : router.push('/login')}
+                              className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
+                            >
+                              {user ? 'Browse Trending' : 'Sign In'}
+                            </Button>
+                          </>
+                        ) : null}
+
+                        {!searchQuery && viewMode === 'all' && (
+                          <>
+                            <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                              No products found
+                            </h3>
+                            <p className="text-gray-600 max-w-md mx-auto mb-6">
+                              {selectedLevel1 
+                                ? `No ${selectedLevel1.toLowerCase()} products available. Try a different category!`
+                                : 'No products available at the moment.'}
+                            </p>
+                            {selectedLevel1 && (
+                              <Button
+                                onClick={() => {
+                                  setSelectedLevel1(null);
+                                  setSelectedLevel2(null);
+                                  setSelectedLevel3(null);
+                                }}
+                                variant="outline"
+                                className="rounded-md"
+                              >
+                                Clear Filters
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </motion.div>
+                    </AnimatePresence>
+                  )}
+
+                  {/* Products Grid - Progressive Loading */}
+                  {products.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4">
+                      {products.map((product, index) => (
+                        <ProductCard 
+                          key={product.id} 
+                          product={product}
+                          priority={index < 6} 
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Load More Button */}
+                  {!loading && hasMore && products.length > 0 && (
+                    <div className="flex justify-center pt-6">
+                      <Button
+                        onClick={handleLoadMore}
+                        variant="outline"
+                        className="rounded-md px-8"
+                      >
+                        Load More Products
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Info Section for Trending/For You */}
+                  {!loading && products.length > 0 && viewMode !== 'all' && (
+                    <div className="bg-white rounded-md border border-gray-200 p-6 mt-8">
+                      {viewMode === 'trending' && (
+                        <>
+                          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4" />
+                            About Trending
+                          </h3>
+                          <ul className="space-y-2 text-sm text-gray-600">
+                            <li className="flex items-start gap-2">
+                              <span className="text-[#FFC72C] mt-1">•</span>
+                              <span>Products getting the most attention right now</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <span className="text-[#FFC72C] mt-1">•</span>
+                              <span>Updated every 15 minutes based on real user activity</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <span className="text-[#FFC72C] mt-1">•</span>
+                              <span>Discover what the cycling community is browsing</span>
+                            </li>
+                          </ul>
+                        </>
+                      )}
+
+                      {viewMode === 'for-you' && user && (
+                        <>
+                          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                            <Heart className="h-4 w-4" />
+                            Your Personalised Feed
+                          </h3>
+                          <ul className="space-y-2 text-sm text-gray-600">
+                            <li className="flex items-start gap-2">
+                              <span className="text-[#FFC72C] mt-1">•</span>
+                              <span>Based on products you've viewed and clicked</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <span className="text-[#FFC72C] mt-1">•</span>
+                              <span>Matches keywords from your browsing history</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <span className="text-[#FFC72C] mt-1">•</span>
+                              <span>Gets smarter as you browse more products</span>
+                            </li>
+                          </ul>
+                        </>
+                      )}
+                    </div>
+                  )}
+              </>
+            )}
+          </motion.div>
+        </div>
       </MarketplaceLayout>
     </>
   );

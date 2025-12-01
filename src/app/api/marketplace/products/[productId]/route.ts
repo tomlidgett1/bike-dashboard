@@ -96,7 +96,9 @@ export async function GET(
           product_images!canonical_product_id (
             storage_path,
             is_primary,
-            variants
+            variants,
+            approval_status,
+            is_downloaded
           )
         )
       `)
@@ -229,13 +231,15 @@ export async function GET(
       primaryImageUrl = product.custom_image_url;
       allImages = [product.custom_image_url];
     }
-    // Priority 3: Canonical product images
+    // Priority 3: Canonical product images (only approved AND downloaded ones)
     else if (productImages.length > 0) {
+      // Already filtered for approved & downloaded in query
       const primaryImage = productImages.find((img: any) => img.is_primary) || productImages[0];
       primaryImageUrl = primaryImage ? `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}` : null;
       allImages = productImages.map((img: any) => 
         `${baseUrl}/storage/v1/object/public/product-images/${img.storage_path}`
       );
+      console.log(`🖼️ [PRODUCT API] Using ${productImages.length} approved & downloaded canonical images`);
     }
     // Priority 4: Use placeholder if no images available
     else {

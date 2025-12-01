@@ -6,6 +6,8 @@ import { Search, X, Loader2, Package, Store, ArrowRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
+import type { AISearchResult } from "@/types/ai-search";
+import { AISearchResponseDisplay } from "./ai-search-response";
 
 // ============================================================
 // Enterprise-Level Instant Search
@@ -57,42 +59,304 @@ interface SearchResults {
   query: string;
 }
 
+// Helper function to detect if query is a question
+function isQuestion(query: string): boolean {
+  const trimmed = query.trim().toLowerCase();
+  
+  // Minimum length for AI search (reduced to 8 characters)
+  if (trimmed.length < 8) return false;
+  
+  // 1. ALWAYS show AI if there's a question mark
+  if (trimmed.includes('?')) return true;
+  
+  // 2. Question words at the START of the query
+  const startsWithQuestionWord = /^(what|how|why|when|where|which|who|whose|whom|should|can|could|will|would|is|are|do|does|did|has|have|had|may|might|must)\b/i;
+  if (startsWithQuestionWord.test(trimmed)) return true;
+  
+  // 3. Action/help-seeking keywords (anywhere in query)
+  const helpKeywords = [
+    'explain',
+    'tell me',
+    'help me',
+    'teach me',
+    'show me',
+    'advice',
+    'recommend',
+    'suggest',
+    'comparison',
+    'compare',
+    'look up',
+    'find out',
+    'learn about',
+  ];
+  if (helpKeywords.some(keyword => trimmed.includes(keyword))) return true;
+  
+  // 4. Comparative/decision patterns
+  const comparativePatterns = [
+    /\bbest\s+\w+/i,                    // "best groupset", "best bike"
+    /\bdifference\s+between\b/i,        // "difference between"
+    /\bwhich\s+is\s+better\b/i,         // "which is better"
+    /\bshould\s+i\b/i,                  // "should I"
+    /\bvs\b/i,                          // "shimano vs sram"
+    /\bversus\b/i,                      // "versus"
+    /\bor\b.*\bor\b/i,                  // "X or Y or Z"
+    /\bbetter\s+than\b/i,               // "better than"
+    /\bworth\s+it\b/i,                  // "worth it"
+    /\bgood\s+for\b/i,                  // "good for"
+  ];
+  if (comparativePatterns.some(pattern => pattern.test(trimmed))) return true;
+  
+  // 5. Cycling-specific question indicators
+  const cyclingQuestionPatterns = [
+    /\bwhat('s| is)\s+(the\s+)?(best|difference|point|advantage|benefit)\b/i,
+    /\bhow\s+(do|to|can|does|much|many|long|often)\b/i,
+    /\bwhy\s+(is|are|do|does|should|would)\b/i,
+    /\bcan\s+i\b/i,
+    /\bshould\s+i\b/i,
+    /\bdo\s+i\s+need\b/i,
+    /\bis\s+it\s+worth\b/i,
+    /\bare\s+they\s+worth\b/i,
+  ];
+  if (cyclingQuestionPatterns.some(pattern => pattern.test(trimmed))) return true;
+  
+  return false;
+}
+
 export function InstantSearch() {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResults | null>(null);
+  const [aiResponse, setAiResponse] = React.useState<AISearchResult | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [aiLoading, setAiLoading] = React.useState(false);
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [selectedIndex, setSelectedIndex] = React.useState(-1);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const cacheRef = React.useRef<Map<string, SearchResults>>(new Map());
+  const aiCacheRef = React.useRef<Map<string, AISearchResult>>(new Map());
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+  const aiAbortControllerRef = React.useRef<AbortController | null>(null);
+  
+  // Typewriter effect for placeholder
+  const [placeholder, setPlaceholder] = React.useState("");
+  const placeholderTexts = [
+    "Shimano 12 speed cassette...",
+    "used road bicycle...",
+    "Wahoo Elemnt Roam V2...",
+    "Search bikes, parts, stores..."
+  ];
+  
+  React.useEffect(() => {
+    let currentTextIndex = 0;
+    let currentCharIndex = 0;
+    let isDeleting = false;
+    let timeoutId: NodeJS.Timeout;
 
-  // Debounced search
+    const type = () => {
+      const currentText = placeholderTexts[currentTextIndex];
+      
+      if (!isDeleting) {
+        // Typing
+        setPlaceholder(currentText.substring(0, currentCharIndex + 1));
+        currentCharIndex++;
+        
+        if (currentCharIndex === currentText.length) {
+          // Finished typing current text
+          if (currentTextIndex === placeholderTexts.length - 1) {
+            // Last text - keep it static
+            return;
+          }
+          // Wait 1 second before deleting
+          timeoutId = setTimeout(() => {
+            isDeleting = true;
+            type();
+          }, 1000);
+          return;
+        }
+        
+        timeoutId = setTimeout(type, 50); // Typing speed (2x faster)
+      } else {
+        // Deleting
+        setPlaceholder(currentText.substring(0, currentCharIndex - 1));
+        currentCharIndex--;
+        
+        if (currentCharIndex === 0) {
+          // Finished deleting, move to next text
+          isDeleting = false;
+          currentTextIndex++;
+          timeoutId = setTimeout(type, 200); // Small pause before next text
+          return;
+        }
+        
+        timeoutId = setTimeout(type, 30); // Fast deleting speed
+      }
+    };
+
+    // Start the typewriter effect
+    timeoutId = setTimeout(type, 500); // Initial delay
+
+    return () => clearTimeout(timeoutId);
+  }, []);
+
+  // ULTRA-FAST search with instant dropdown + client-side caching + request deduplication + AI search
   React.useEffect(() => {
     if (query.length < 2) {
       setResults(null);
+      setAiResponse(null);
       setShowDropdown(false);
+      setLoading(false);
+      setAiLoading(false);
+      // Cancel any pending requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      if (aiAbortControllerRef.current) {
+        aiAbortControllerRef.current.abort();
+        aiAbortControllerRef.current = null;
+      }
       return;
     }
 
-    setLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/marketplace/search?q=${encodeURIComponent(query)}`);
-        if (response.ok) {
-          const data = await response.json();
-          setResults(data);
-          setShowDropdown(true);
-          setSelectedIndex(-1);
-        }
-      } catch (error) {
-        console.error('Search error:', error);
-      } finally {
-        setLoading(false);
-      }
-    }, 200); // 200ms debounce for instant feel
+    // Check if this is a question
+    const shouldUseAI = isQuestion(query);
+    
+    // Debug logging
+    if (shouldUseAI) {
+      console.log(`🤖 [AI SEARCH] Question detected: "${query}"`);
+    }
+    
+    // Check cache first for instant results (before showing loading state)
+    const cached = cacheRef.current.get(query.toLowerCase());
+    const aiCached = shouldUseAI ? aiCacheRef.current.get(query.toLowerCase()) : null;
+    
+    if (cached) {
+      setResults(cached);
+      setShowDropdown(true);
+      setLoading(false);
+      setSelectedIndex(-1);
+    } else {
+      // Show dropdown IMMEDIATELY with loading state
+      // Clear old results to prevent showing stale data
+      setResults(null);
+      setShowDropdown(true);
+      setLoading(true);
+    }
+    
+    if (aiCached) {
+      setAiResponse(aiCached);
+      setAiLoading(false);
+    } else if (shouldUseAI) {
+      setAiResponse(null);
+      setAiLoading(true);
+    } else {
+      setAiResponse(null);
+      setAiLoading(false);
+    }
+    
+    // If both are cached, no need to fetch
+    if (cached && (!shouldUseAI || aiCached)) {
+      return;
+    }
 
-    return () => clearTimeout(timer);
+    // Cancel previous requests if still pending
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    if (aiAbortControllerRef.current) {
+      aiAbortControllerRef.current.abort();
+    }
+
+    // Aggressive 75ms debounce for instant feel
+    const timer = setTimeout(async () => {
+      // Create abort controllers
+      const productAbortController = new AbortController();
+      const aiAbortController = new AbortController();
+      
+      abortControllerRef.current = productAbortController;
+      aiAbortControllerRef.current = aiAbortController;
+      
+      // Fetch product search and AI search in parallel
+      const promises = [];
+      
+      // Product search (always)
+      if (!cached) {
+        promises.push(
+          fetch(
+            `/api/marketplace/search?q=${encodeURIComponent(query)}`,
+            { signal: productAbortController.signal }
+          )
+            .then(async (response) => {
+              if (response.ok) {
+                const data = await response.json();
+                setResults(data);
+                setSelectedIndex(-1);
+                
+                // Cache the result
+                cacheRef.current.set(query.toLowerCase(), data);
+                if (cacheRef.current.size > 50) {
+                  const firstKey = cacheRef.current.keys().next().value;
+                  cacheRef.current.delete(firstKey);
+                }
+              }
+            })
+            .catch((error) => {
+              if ((error as Error).name !== 'AbortError') {
+                console.error('Product search error:', error);
+              }
+            })
+            .finally(() => {
+              setLoading(false);
+            })
+        );
+      }
+      
+      // AI search (if question detected and not cached)
+      if (shouldUseAI && !aiCached) {
+        promises.push(
+          fetch(
+            `/api/ai-search?q=${encodeURIComponent(query)}`,
+            { signal: aiAbortController.signal }
+          )
+            .then(async (response) => {
+              if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                  setAiResponse(data);
+                  
+                  // Cache the AI result
+                  aiCacheRef.current.set(query.toLowerCase(), data);
+                  if (aiCacheRef.current.size > 20) {
+                    const firstKey = aiCacheRef.current.keys().next().value;
+                    aiCacheRef.current.delete(firstKey);
+                  }
+                }
+              }
+            })
+            .catch((error) => {
+              if ((error as Error).name !== 'AbortError') {
+                console.error('AI search error:', error);
+                // Silently fail - just show products
+              }
+            })
+            .finally(() => {
+              setAiLoading(false);
+            })
+        );
+      }
+      
+      // Wait for all promises
+      await Promise.allSettled(promises);
+      
+      abortControllerRef.current = null;
+      aiAbortControllerRef.current = null;
+    }, 75); // 75ms debounce - instant feel while preventing request spam
+
+    return () => {
+      clearTimeout(timer);
+      // Don't abort here - let the effect cleanup handle it
+    };
   }, [query]);
 
   // Click outside to close
@@ -115,6 +379,27 @@ export function InstantSearch() {
   const totalItems = (results?.products.length || 0) + (results?.stores.length || 0);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Handle Enter key immediately - works even if dropdown isn't loaded yet
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (showDropdown && results && selectedIndex !== -1) {
+        // Navigate to selected item if dropdown is open and item is selected
+        handleSelectItem(selectedIndex);
+      } else if (query.trim()) {
+        // Otherwise, just search with the current query
+        handleFullSearch();
+      }
+      return;
+    }
+
+    // Handle Escape key - close dropdown
+    if (e.key === "Escape") {
+      setShowDropdown(false);
+      setSelectedIndex(-1);
+      return;
+    }
+
+    // For arrow keys, only work when dropdown is visible
     if (!showDropdown || !results) return;
 
     switch (e.key) {
@@ -125,20 +410,6 @@ export function InstantSearch() {
       case "ArrowUp":
         e.preventDefault();
         setSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (selectedIndex === -1) {
-          // Enter with no selection - go to search results page
-          handleFullSearch();
-        } else {
-          // Navigate to selected item
-          handleSelectItem(selectedIndex);
-        }
-        break;
-      case "Escape":
-        setShowDropdown(false);
-        setSelectedIndex(-1);
         break;
     }
   };
@@ -208,7 +479,7 @@ export function InstantSearch() {
               setShowDropdown(true);
             }
           }}
-          placeholder="Search bikes, parts, stores..."
+          placeholder={placeholder}
           className="pl-10 pr-16 sm:pl-11 sm:pr-20 h-10 rounded-md border-gray-300 focus:border-gray-400 focus:ring-gray-400 text-sm bg-white"
         />
 
@@ -233,18 +504,19 @@ export function InstantSearch() {
         </div>
       </div>
 
-      {/* Dropdown Results */}
+      {/* Dropdown Results - Shows INSTANTLY */}
       {showDropdown && query.length >= 2 && (
         <div
           ref={dropdownRef}
-          className="absolute top-full left-0 right-0 mt-2 bg-white rounded-md border border-gray-200 shadow-2xl z-50 max-h-[500px] overflow-y-auto animate-in fade-in slide-in-from-top-4 duration-200"
+          className="absolute top-full left-0 right-0 mt-2 bg-white rounded-md border border-gray-200 shadow-2xl z-50 max-h-[600px] overflow-y-auto animate-in fade-in duration-100"
         >
-          {loading && !hasResults ? (
-            <div className="p-8 text-center">
-              <Loader2 className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-3" />
-              <p className="text-sm text-gray-500">Searching...</p>
+          {loading && !results ? (
+            // Minimal loading state - appears instantly while searching
+            <div className="p-6 text-center">
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 mx-auto" />
             </div>
-          ) : !hasResults ? (
+          ) : !hasResults && !aiResponse && !aiLoading ? (
+            // No results state - only shows when ALL loading is complete
             <div className="p-8 text-center">
               <Search className="h-8 w-8 text-gray-300 mx-auto mb-3" />
               <p className="text-sm font-medium text-gray-900 mb-1">No results found</p>
@@ -252,8 +524,18 @@ export function InstantSearch() {
             </div>
           ) : (
             <>
+              {/* AI Response Section */}
+              {(aiLoading || aiResponse) && (
+                <div className="border-b border-gray-200">
+                  <AISearchResponseDisplay 
+                    response={aiResponse?.response!} 
+                    isLoading={aiLoading}
+                  />
+                </div>
+              )}
+
               {/* Products Section */}
-              {results.products.length > 0 && (
+              {results?.products && results.products.length > 0 && (
                 <div className="border-b border-gray-100">
                   <div className="px-4 py-2 bg-gray-50">
                     <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
@@ -303,7 +585,7 @@ export function InstantSearch() {
               )}
 
               {/* Stores Section */}
-              {results.stores.length > 0 && (
+              {results?.stores && results.stores.length > 0 && (
                 <div>
                   <div className="px-4 py-2 bg-gray-50">
                     <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
@@ -356,15 +638,17 @@ export function InstantSearch() {
               )}
 
               {/* View All Results */}
-              <div className="border-t border-gray-100 p-2">
-                <button
-                  onClick={handleFullSearch}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-                >
-                  View all results for "{query}"
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
+              {query && (
+                <div className="border-t border-gray-100 p-2">
+                  <button
+                    onClick={handleFullSearch}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                  >
+                    View all results for "{query}"
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>

@@ -57,11 +57,16 @@ Deno.serve(async (req) => {
           try {
             // Call OpenAI to discover images
             console.log(`🤖 [${itemIndex}/${queueItems.length}] Calling AI for image discovery...`)
+            console.log(`📋 [${itemIndex}/${queueItems.length}] Product: "${item.product_name}"`)
+            console.log(`📋 [${itemIndex}/${queueItems.length}] UPC: ${item.upc || 'None'}`)
+            console.log(`📋 [${itemIndex}/${queueItems.length}] Category: ${item.category || 'None'}`)
+            console.log(`📋 [${itemIndex}/${queueItems.length}] Manufacturer: ${item.manufacturer || 'None'}`)
+            
             const aiResult = await discoverProductImages(item.product_name, {
               upc: item.upc,
               category: item.category,
               manufacturer: item.manufacturer,
-              maxImages: 5,
+              maxImages: 15,
             })
 
             console.log(`✅ [${itemIndex}/${queueItems.length}] AI found ${aiResult.images.length} images`)
@@ -89,88 +94,58 @@ Deno.serve(async (req) => {
               }
             }
 
-            // Download and upload images IN PARALLEL for much faster processing
-            console.log(`📥 [${itemIndex}/${queueItems.length}] Downloading ${aiResult.images.length} images in parallel...`)
+            // Save URLs without downloading for fast QA workflow
+            console.log(`💾 [${itemIndex}/${queueItems.length}] Saving ${aiResult.images.length} image URLs (no download yet)...`)
             
             const imageUploadPromises = aiResult.images.map(async (imageInfo, j) => {
               try {
-                // Download image
-                const downloadResult = await downloadImage(imageInfo.url)
-
-                if (!downloadResult || !downloadResult.success || !downloadResult.blob) {
-                  console.error(`❌ Image ${j + 1} download failed: ${downloadResult?.error || 'Unknown error'}`)
-                  return null
-                }
-
-                // Validate image
-                const validation = await validateImage(downloadResult.blob)
-                if (!validation || !validation.valid) {
-                  console.error(`❌ Image ${j + 1} validation failed: ${validation?.error || 'Unknown error'}`)
-                  return null
-                }
-
-                // Generate storage path
-                const filename = generateFilename(imageInfo.url, j)
-                const storagePath = `canonical/${item.canonical_product_id}/original/${filename}`
-
-                // Upload to Supabase Storage
-                const uploadResponse = await supabase.storage
-                  .from('product-images')
-                  .upload(storagePath, downloadResult.blob, {
-                    cacheControl: '31536000',
-                    contentType: validation.mimeType,
-                    upsert: false,
-                  })
-
-                if (!uploadResponse || uploadResponse.error) {
-                  console.error(`❌ Image ${j + 1} upload failed: ${uploadResponse?.error?.message || 'Unknown error'}`)
-                  return null
-                }
-
-                // Create product_images record
+                // Create product_images record with external URL only (no download)
                 const imageRecordResponse = await supabase
                   .from('product_images')
                   .insert({
                     canonical_product_id: item.canonical_product_id,
-                    storage_path: storagePath,
+                    external_url: imageInfo.url, // Store external URL
+                    storage_path: null, // No storage path yet
+                    is_downloaded: false, // Mark as not downloaded
                     is_primary: imageInfo.isPrimary,
                     sort_order: imageInfo.rank,
-                    variants: { original: storagePath },
-                    formats: { jpeg: { original: storagePath } },
-                    width: validation.width || 800,
-                    height: validation.height || 800,
-                    file_size: validation.fileSize,
-                    mime_type: validation.mimeType,
+                    variants: {},
+                    formats: {},
+                    width: 800, // Default dimensions
+                    height: 800,
+                    file_size: 0,
+                    mime_type: 'image/jpeg',
                     uploaded_by: null,
+                    approval_status: 'pending', // Requires admin approval before showing on marketplace
                   })
                   .select('id')
                   .single()
 
                 if (!imageRecordResponse || imageRecordResponse.error || !imageRecordResponse.data) {
-                  console.error(`❌ Image ${j + 1} record creation failed`)
+                  console.error(`❌ Image ${j + 1} record creation failed:`, imageRecordResponse.error)
                   return null
                 }
 
-                console.log(`✅ Image ${j + 1} uploaded: ${imageRecordResponse.data.id}`)
+                console.log(`✅ Image ${j + 1} URL saved: ${imageRecordResponse.data.id}`)
 
                 return {
                   id: imageRecordResponse.data.id,
                   url: imageInfo.url,
-                  storagePath,
+                  storagePath: null,
                   isPrimary: imageInfo.isPrimary,
                 }
               } catch (error) {
-                console.error(`❌ Error processing image ${j + 1}:`, error)
+                console.error(`❌ Error saving image ${j + 1}:`, error)
                 return null
               }
             })
 
-            // Wait for all images to upload in parallel
+            // Wait for all URLs to be saved
             const imageResults = await Promise.all(imageUploadPromises)
-            const uploadedImages = imageResults.filter(img => img !== null)
-            const primaryImageId = uploadedImages.find(img => img.isPrimary)?.id || null
+            const savedImages = imageResults.filter(img => img !== null)
+            const primaryImageId = savedImages.find(img => img.isPrimary)?.id || null
 
-            console.log(`✅ [${itemIndex}/${queueItems.length}] Success: ${uploadedImages.length}/${aiResult.images.length} images uploaded`)
+            console.log(`✅ [${itemIndex}/${queueItems.length}] Success: ${savedImages.length}/${aiResult.images.length} image URLs saved (ready for QA)`)
 
             // Update queue status
             const { error: completeError } = await supabase.rpc('mark_discovery_complete', {

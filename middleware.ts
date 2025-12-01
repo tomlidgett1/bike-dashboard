@@ -49,6 +49,30 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Check if user is accessing the onboarding page
+  const isOnboardingPage = request.nextUrl.pathname.startsWith('/onboarding')
+  
+  // If user is authenticated, check if they've completed onboarding
+  if (user && !isOnboardingPage) {
+    try {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('onboarding_completed')
+        .eq('user_id', user.id)
+        .single()
+
+      // Redirect to onboarding if not completed
+      if (profile && !profile.onboarding_completed) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/onboarding'
+        return NextResponse.redirect(url)
+      }
+    } catch (error) {
+      console.error('Error checking onboarding status:', error)
+      // Continue anyway if there's an error
+    }
+  }
+
   return supabaseResponse
 }
 

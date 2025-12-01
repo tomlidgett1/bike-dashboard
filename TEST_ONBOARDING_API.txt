@@ -1,0 +1,23 @@
+Run this in browser console to test the onboarding algorithm:
+
+// First, clear cache
+fetch('/api/recommendations/for-you', { method: 'DELETE' })
+  .catch(() => console.log('No DELETE endpoint, that\'s ok'));
+
+// Then test with refresh=true to force regeneration
+fetch('/api/recommendations/for-you?limit=10&refresh=true')
+  .then(r => r.json())
+  .then(data => {
+    console.log('=== ONBOARDING TEST ===');
+    console.log('Count:', data.recommendations?.length);
+    console.log('Personalized:', data.meta?.personalized);
+    console.log('Products:', data.recommendations?.map(p => ({
+      name: p.display_name || p.description,
+      price: p.price,
+      category: p.marketplace_category
+    })));
+  });
+
+// Check your browser's Network tab and look for console logs starting with:
+// [Hybrid] or [Algorithm]
+

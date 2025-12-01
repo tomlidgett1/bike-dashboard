@@ -11,6 +11,8 @@ import { ProductDetailsPanel } from "@/components/marketplace/product-details-pa
 import { EnhancedImageGallery } from "@/components/marketplace/product-detail/enhanced-image-gallery";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useProductView } from "@/lib/tracking/interaction-tracker";
 
 // ============================================================
 // Product Page - Depop-inspired Layout
@@ -21,12 +23,16 @@ export default function ProductPage() {
   const params = useParams();
   const router = useRouter();
   const productId = params?.productId as string;
+  const { user } = useAuth();
 
   const [product, setProduct] = React.useState<MarketplaceProduct | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
   const [isLiked, setIsLiked] = React.useState(false);
+
+  // Track product view with dwell time
+  useProductView(productId, user?.id);
 
   // Fetch product data
   React.useEffect(() => {

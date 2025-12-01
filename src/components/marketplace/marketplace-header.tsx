@@ -31,7 +31,7 @@ export function MarketplaceHeader() {
   const { scrollY } = useScroll();
   const router = useRouter();
   const { user } = useAuth();
-  const { profile } = useUserProfile();
+  const { profile, loading } = useUserProfile();
   const supabase = createClient();
 
   // Ensure component only renders auth UI on client-side
@@ -40,19 +40,29 @@ export function MarketplaceHeader() {
   }, []);
 
   // Get display name based on account type
+  // For business users, only show business_name (never fall back to name)
   const getDisplayName = () => {
     if (!profile) return user?.email || 'User';
     
     if (profile.account_type === 'bicycle_store') {
-      return profile.business_name || profile.name || user?.email || 'Store';
+      // Only show business_name for business users, don't fall back to name
+      return profile.business_name || user?.email || 'Store';
     } else {
       return profile.name || user?.email || 'User';
     }
   };
 
-  // Check if user can access settings (verified bicycle store only)
+  // All authenticated users can access settings
   const canAccessSettings = () => {
-    return profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
+    return !!user;
+  };
+
+  // Get the appropriate settings route based on account type
+  const getSettingsRoute = () => {
+    if (profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true) {
+      return '/settings'; // Bike store settings
+    }
+    return '/marketplace/settings'; // Individual user settings
   };
 
   // Check if user is a bicycle store with logo
@@ -85,7 +95,7 @@ export function MarketplaceHeader() {
         boxShadow: headerShadow,
         backgroundColor: headerBg,
       }}
-      className="fixed top-0 z-50 w-full border-b border-gray-200 backdrop-blur-sm"
+      className="fixed top-0 left-0 right-0 z-50 w-full border-b border-gray-200 backdrop-blur-sm"
     >
       <div className="max-w-[1920px] mx-auto px-4 sm:px-6">
         <div className="flex h-14 sm:h-16 items-center gap-2 sm:gap-4">
@@ -104,7 +114,7 @@ export function MarketplaceHeader() {
           </button>
 
           {/* Mobile + Desktop Search Bar */}
-          <div className="flex-[2] ml-[50px]">
+          <div className="flex-[2] ml-[14px]">
             <InstantSearch />
           </div>
 
@@ -136,7 +146,7 @@ export function MarketplaceHeader() {
                     {canAccessSettings() && (
                       <>
                         <DropdownMenuItem
-                          onClick={() => router.push('/settings')}
+                          onClick={() => router.push(getSettingsRoute())}
                           className="cursor-pointer rounded-md"
                         >
                           <Settings className="mr-2 h-4 w-4" />
@@ -248,7 +258,7 @@ export function MarketplaceHeader() {
                   <Button
                     variant="outline"
                     onClick={() => {
-                      router.push('/settings');
+                      router.push(getSettingsRoute());
                       setMobileMenuOpen(false);
                     }}
                     className="w-full rounded-md border-gray-300 hover:bg-gray-50"

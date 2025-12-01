@@ -1,20 +1,26 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import {
-  MARKETPLACE_CATEGORIES,
-  MARKETPLACE_SUBCATEGORIES,
-  type MarketplaceCategoriesResponse,
-  type CategoryStats,
-  type MarketplaceCategory,
-} from '@/lib/types/marketplace';
 
 // ============================================================
 // Marketplace Categories API - Public Endpoint
-// Returns category hierarchy with product counts
+// Returns category hierarchy with product counts from DB
 // ============================================================
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 300; // ISR: Revalidate every 5 minutes (categories change less frequently)
+
+interface CategoryHierarchy {
+  level1: string;
+  level2Categories: {
+    name: string;
+    count: number;
+    level3Categories: {
+      name: string;
+      count: number;
+    }[];
+  }[];
+  totalProducts: number;
+}
 
 export async function GET() {
   try {
@@ -23,7 +29,7 @@ export async function GET() {
     // Fetch all active products with their categories
     const { data: products, error } = await supabase
       .from('products')
-      .select('marketplace_category, marketplace_subcategory')
+      .select('marketplace_category, marketplace_subcategory, marketplace_level_3_category')
       .eq('is_active', true);
 
     if (error) {
@@ -34,39 +40,66 @@ export async function GET() {
       );
     }
 
-    // Build category statistics
-    const categoryStats: CategoryStats[] = MARKETPLACE_CATEGORIES.map((category) => {
-      // Get all products in this category
-      const categoryProducts = products.filter(
-        (p) => p.marketplace_category === category
-      );
+    // Get distinct Level 1 categories
+    const level1Categories = Array.from(
+      new Set(
+        products
+          .map(p => p.marketplace_category)
+          .filter(cat => cat != null && cat.trim() !== '')
+      )
+    ).sort();
 
-      // Count products per subcategory
-      const subcategoryStats = MARKETPLACE_SUBCATEGORIES[category as MarketplaceCategory].map(
-        (subcategory) => {
-          const count = categoryProducts.filter(
-            (p) => p.marketplace_subcategory === subcategory
-          ).length;
+    // Build hierarchical category structure
+    const categoryHierarchy: CategoryHierarchy[] = level1Categories.map(level1 => {
+      // Get all products in this Level 1 category
+      const level1Products = products.filter(p => p.marketplace_category === level1);
 
-          return {
-            name: subcategory,
-            count,
-          };
-        }
-      );
+      // Get distinct Level 2 categories for this Level 1
+      const level2Categories = Array.from(
+        new Set(
+          level1Products
+            .map(p => p.marketplace_subcategory)
+            .filter(cat => cat != null && cat.trim() !== '')
+        )
+      ).sort();
+
+      // Build Level 2 stats with Level 3 nested
+      const level2Stats = level2Categories.map(level2 => {
+        const level2Products = level1Products.filter(p => p.marketplace_subcategory === level2);
+
+        // Get distinct Level 3 categories for this Level 2
+        const level3Categories = Array.from(
+          new Set(
+            level2Products
+              .map(p => p.marketplace_level_3_category)
+              .filter(cat => cat != null && cat.trim() !== '')
+          )
+        ).sort();
+
+        const level3Stats = level3Categories.map(level3 => ({
+          name: level3,
+          count: level2Products.filter(p => p.marketplace_level_3_category === level3).length,
+        }));
+
+        return {
+          name: level2,
+          count: level2Products.length,
+          level3Categories: level3Stats,
+        };
+      });
 
       return {
-        category,
-        subcategories: subcategoryStats,
-        totalProducts: categoryProducts.length,
+        level1,
+        level2Categories: level2Stats,
+        totalProducts: level1Products.length,
       };
     });
 
     // Calculate total products
     const totalProducts = products.length;
 
-    const response: MarketplaceCategoriesResponse = {
-      categories: categoryStats,
+    const response = {
+      categories: categoryHierarchy,
       totalProducts,
     };
 

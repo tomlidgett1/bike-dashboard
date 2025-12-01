@@ -6,6 +6,7 @@ import { ProfileProvider } from "@/components/providers/profile-provider";
 import { MobileNavProvider } from "@/components/providers/mobile-nav-provider";
 import { ConditionalLayout } from "@/components/layout";
 import { getUserProfile } from "@/lib/server/get-user-profile";
+import { WebVitalsReporter } from "@/lib/performance/web-vitals";
 import "./globals.css";
 
 const sora = Sora({
@@ -70,6 +71,7 @@ export default async function RootLayout({
             <ProfileProvider serverProfile={serverProfile}>
               <MobileNavProvider>
                 <ConditionalLayout>{children}</ConditionalLayout>
+                <WebVitalsReporter />
               </MobileNavProvider>
             </ProfileProvider>
           </AuthProvider>

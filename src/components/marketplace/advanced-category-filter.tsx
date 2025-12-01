@@ -17,18 +17,15 @@ import {
   Store,
   Tag,
   ChevronLeft,
+  Package,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  getLevel1Categories,
-  getLevel2Categories,
-  getLevel3Categories,
-  hasLevel3,
-} from "@/lib/constants/categories";
 
 // ============================================================
 // Advanced Category Filter
 // 3-level hierarchical filtering with smooth animations
+// Dynamically fetches categories from the database
 // ============================================================
 
 interface AdvancedCategoryFilterProps {
@@ -39,6 +36,19 @@ interface AdvancedCategoryFilterProps {
   onLevel2Change: (level2: string | null) => void;
   onLevel3Change: (level3: string | null) => void;
   counts?: Record<string, number>; // Optional: category counts
+}
+
+interface CategoryHierarchy {
+  level1: string;
+  level2Categories: {
+    name: string;
+    count: number;
+    level3Categories: {
+      name: string;
+      count: number;
+    }[];
+  }[];
+  totalProducts: number;
 }
 
 // Icon mapping for Level 1 categories
@@ -62,6 +72,11 @@ const LEVEL1_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
   "Marketplace Specials": Tag,
 };
 
+// Default icon for unknown categories
+const getCategoryIcon = (categoryName: string) => {
+  return LEVEL1_ICONS[categoryName] || Package;
+};
+
 export function AdvancedCategoryFilter({
   selectedLevel1,
   selectedLevel2,
@@ -71,12 +86,31 @@ export function AdvancedCategoryFilter({
   onLevel3Change,
   counts = {},
 }: AdvancedCategoryFilterProps) {
-  const level1Categories = getLevel1Categories();
-  const level2Categories = selectedLevel1 ? getLevel2Categories(selectedLevel1) : [];
-  const level3Categories =
-    selectedLevel1 && selectedLevel2
-      ? getLevel3Categories(selectedLevel1, selectedLevel2)
-      : [];
+  const [categories, setCategories] = React.useState<CategoryHierarchy[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  // Fetch categories from API
+  React.useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch('/api/marketplace/categories');
+        if (response.ok) {
+          const data = await response.json();
+          setCategories(data.categories || []);
+        }
+      } catch (error) {
+        console.error('[AdvancedCategoryFilter] Error fetching categories:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCategories();
+  }, []);
+
+  const selectedCategory = categories.find(c => c.level1 === selectedLevel1);
+  const level2Categories = selectedCategory?.level2Categories || [];
+  const selectedLevel2Category = level2Categories.find(l2 => l2.name === selectedLevel2);
+  const level3Categories = selectedLevel2Category?.level3Categories || [];
 
   const handleLevel1Click = (level1: string) => {
     if (selectedLevel1 === level1) {
@@ -138,16 +172,12 @@ export function AdvancedCategoryFilter({
 
               {/* Level 3 Pills */}
               {level3Categories.map((level3) => {
-                const isActive = selectedLevel3 === level3;
-                const countKey = selectedLevel1 && selectedLevel2 
-                  ? `${selectedLevel1} > ${selectedLevel2} > ${level3}`
-                  : null;
-                const count = countKey ? counts[countKey] : undefined;
+                const isActive = selectedLevel3 === level3.name;
 
                 return (
                   <button
-                    key={level3}
-                    onClick={() => handleLevel3Click(level3)}
+                    key={level3.name}
+                    onClick={() => handleLevel3Click(level3.name)}
                     className={cn(
                       "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap",
                       isActive
@@ -155,9 +185,9 @@ export function AdvancedCategoryFilter({
                         : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
                     )}
                   >
-                    {level3}
-                    {count !== undefined && count > 0 && (
-                      <span className="text-xs text-gray-500">({count})</span>
+                    {level3.name}
+                    {level3.count > 0 && (
+                      <span className="text-xs text-gray-500">({level3.count})</span>
                     )}
                   </button>
                 );
@@ -180,18 +210,12 @@ export function AdvancedCategoryFilter({
 
               {/* Level 2 Pills */}
               {level2Categories.map((level2) => {
-                const isActive = selectedLevel2 === level2;
-                const hasL3 =
-                  selectedLevel1 && hasLevel3(selectedLevel1, level2);
-                const countKey = selectedLevel1 
-                  ? `${selectedLevel1} > ${level2}`
-                  : null;
-                const count = countKey ? counts[countKey] : undefined;
+                const isActive = selectedLevel2 === level2.name;
 
                 return (
                   <button
-                    key={level2}
-                    onClick={() => handleLevel2Click(level2)}
+                    key={level2.name}
+                    onClick={() => handleLevel2Click(level2.name)}
                     className={cn(
                       "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap",
                       isActive
@@ -199,9 +223,9 @@ export function AdvancedCategoryFilter({
                         : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
                     )}
                   >
-                    {level2}
-                    {count !== undefined && count > 0 && (
-                      <span className="text-xs text-gray-500">({count})</span>
+                    {level2.name}
+                    {level2.count > 0 && (
+                      <span className="text-xs text-gray-500">({level2.count})</span>
                     )}
                   </button>
                 );
@@ -223,30 +247,38 @@ export function AdvancedCategoryFilter({
               </button>
 
               {/* Level 1 Pills */}
-              {level1Categories.map((level1) => {
-                const Icon = LEVEL1_ICONS[level1] || Box;
-                const isActive = selectedLevel1 === level1;
-                const count = counts[level1];
+              {loading ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                  <span className="text-sm text-gray-500">Loading...</span>
+                </div>
+              ) : (
+                categories.map((category) => {
+                  const level1 = category.level1;
+                  const Icon = getCategoryIcon(level1);
+                  const isActive = selectedLevel1 === level1;
+                  const count = category.totalProducts;
 
-                return (
-                  <button
-                    key={level1}
-                    onClick={() => handleLevel1Click(level1)}
-                    className={cn(
-                      "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap",
-                      isActive
-                        ? "text-gray-800 bg-white shadow-sm border border-gray-200"
-                        : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {level1}
-                    {count !== undefined && count > 0 && (
-                      <span className="text-xs text-gray-500">({count})</span>
-                    )}
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={level1}
+                      onClick={() => handleLevel1Click(level1)}
+                      className={cn(
+                        "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap",
+                        isActive
+                          ? "text-gray-800 bg-white shadow-sm border border-gray-200"
+                          : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {level1}
+                      {count > 0 && (
+                        <span className="text-xs text-gray-500">({count})</span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
             </>
           )}
         </div>

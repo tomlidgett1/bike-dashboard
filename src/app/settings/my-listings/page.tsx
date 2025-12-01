@@ -7,6 +7,8 @@ import { Package, Edit, Trash2, Eye, RotateCcw, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
+import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 
 // ============================================================
 // My Listings Dashboard Page
@@ -85,29 +87,38 @@ export default function MyListingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="sticky top-0 z-50 w-full border-b border-gray-200 bg-white/95 backdrop-blur-sm">
-        <div className="max-w-[1920px] mx-auto px-6">
-          <div className="flex h-16 items-center justify-between">
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900">My Listings</h1>
-              <p className="text-sm text-gray-600">Manage your marketplace listings</p>
+    <>
+      <MarketplaceHeader />
+
+      <MarketplaceLayout>
+        <div className="min-h-screen bg-gray-50 pt-16">
+          {/* Page Header */}
+          <div className="border-b border-gray-200 bg-white">
+            <div className="max-w-[1920px] mx-auto px-6 py-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-12 h-12 rounded-md bg-gray-100">
+                    <Edit className="h-6 w-6 text-gray-700" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900">My Listings</h1>
+                    <p className="text-sm text-gray-600">Manage your marketplace listings</p>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => router.push("/marketplace/sell")}
+                  className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Listing
+                </Button>
+              </div>
             </div>
-
-            <Button
-              onClick={() => router.push("/marketplace/sell")}
-              className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Create Listing
-            </Button>
           </div>
-        </div>
-      </header>
 
-      {/* Content */}
-      <div className="max-w-[1920px] mx-auto px-6 py-8">
+          {/* Content */}
+          <div className="max-w-[1920px] mx-auto px-6 py-8">
         {/* Tabs */}
         <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit mb-8">
           <button
@@ -203,8 +214,10 @@ export default function MyListingsPage() {
             ))}
           </div>
         )}
-      </div>
-    </div>
+          </div>
+        </div>
+      </MarketplaceLayout>
+    </>
   );
 }
 

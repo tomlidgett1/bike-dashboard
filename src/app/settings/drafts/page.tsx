@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Header } from "@/components/layout";
 import {
   Table,
   TableBody,
@@ -22,6 +21,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
+import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 
 // ============================================================
 // Draft Listings Page - Table View
@@ -132,61 +133,85 @@ export default function DraftsPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <Header
-        title="Draft Listings"
-        description="Continue working on your saved drafts"
-      />
+    <>
+      <MarketplaceHeader />
 
-      {/* Content Container */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Error Message */}
-        {error && (
-          <div className="mx-4 my-4 lg:mx-6">
-            <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
-                <div>
-                  <h3 className="text-sm font-semibold text-red-900">Error</h3>
-                  <p className="mt-1 text-sm text-red-600">{error}</p>
+      <MarketplaceLayout>
+        <div className="min-h-screen bg-gray-50 pt-16">
+          {/* Page Header */}
+          <div className="border-b border-gray-200 bg-white">
+            <div className="max-w-[1920px] mx-auto px-6 py-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-12 h-12 rounded-md bg-gray-100">
+                    <FileEdit className="h-6 w-6 text-gray-700" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Draft Listings</h1>
+                    <p className="text-sm text-gray-600">Continue working on your saved drafts</p>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* Table Container - Full width, scrollable */}
-        <div className="flex-1 overflow-auto bg-white dark:bg-gray-950">
-          {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : drafts.length === 0 ? (
-            /* Empty State */
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 mx-auto">
-                  <FileEdit className="h-10 w-10 text-gray-400" />
-                </div>
-                <h3 className="mb-2 text-lg font-semibold text-gray-900">
-                  No drafts yet
-                </h3>
-                <p className="mb-6 max-w-md text-gray-600 mx-auto">
-                  When you save a draft while creating a listing, it will appear
-                  here so you can continue later.
-                </p>
                 <Button
                   onClick={() => router.push("/marketplace/sell")}
                   className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
                 >
-                  <Plus className="mr-2 h-4 w-4" />
+                  <Plus className="h-4 w-4 mr-2" />
                   Create New Listing
                 </Button>
               </div>
             </div>
-          ) : (
-            /* Table */
-            <Table>
+          </div>
+
+          {/* Content Container */}
+          <div className="max-w-[1920px] mx-auto">
+            {/* Error Message */}
+            {error && (
+              <div className="mx-6 my-4">
+                <div className="rounded-md border border-red-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                    <div>
+                      <h3 className="text-sm font-semibold text-red-900">Error</h3>
+                      <p className="mt-1 text-sm text-red-600">{error}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Table Container */}
+            <div className="bg-white">
+              {loading ? (
+                <div className="flex items-center justify-center py-24">
+                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                </div>
+              ) : drafts.length === 0 ? (
+                /* Empty State */
+                <div className="flex items-center justify-center py-24">
+                  <div className="text-center">
+                    <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-md bg-gray-100 mx-auto">
+                      <FileEdit className="h-10 w-10 text-gray-400" />
+                    </div>
+                    <h3 className="mb-2 text-lg font-semibold text-gray-900">
+                      No drafts yet
+                    </h3>
+                    <p className="mb-6 max-w-md text-gray-600 mx-auto">
+                      When you save a draft while creating a listing, it will appear
+                      here so you can continue later.
+                    </p>
+                    <Button
+                      onClick={() => router.push("/marketplace/sell")}
+                      className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create New Listing
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                /* Table */
+                <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[40%] px-6">Draft Name</TableHead>
@@ -299,10 +324,12 @@ export default function DraftsPage() {
                   );
                 })}
               </TableBody>
-            </Table>
-          )}
+                </Table>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </MarketplaceLayout>
+    </>
   );
 }

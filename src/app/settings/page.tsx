@@ -106,6 +106,8 @@ export default function SettingsPage() {
   // Form state
   const [formData, setFormData] = React.useState({
     name: "",
+    firstName: "",
+    lastName: "",
     email: "",
     phone: "",
     businessName: "",
@@ -146,8 +148,8 @@ export default function SettingsPage() {
       const authorized = profile.account_type === 'bicycle_store' && profile.bicycle_store === true;
       
       if (!authorized) {
-        // Redirect unauthorized users immediately
-        router.replace('/marketplace');
+        // Redirect individual users to marketplace settings
+        router.replace('/marketplace/settings');
       } else {
         // Only set authorized after confirming
         setIsAuthorized(true);
@@ -158,8 +160,15 @@ export default function SettingsPage() {
   // Load profile data when available
   React.useEffect(() => {
     if (profile) {
+      // Combine first_name and last_name for display, or use name field
+      const displayName = profile.first_name || profile.last_name
+        ? `${profile.first_name} ${profile.last_name}`.trim()
+        : profile.name || "";
+      
       setFormData({
-        name: profile.name || "",
+        name: displayName,
+        firstName: profile.first_name || "",
+        lastName: profile.last_name || "",
         email: profile.email || "",
         phone: profile.phone || "",
         businessName: profile.business_name || "",

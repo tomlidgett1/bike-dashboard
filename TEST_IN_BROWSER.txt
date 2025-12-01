@@ -1,0 +1,17 @@
+COPY THIS AND RUN IN BROWSER CONSOLE (F12):
+
+// Full test with detailed logging
+fetch('/api/recommendations/for-you?limit=10&refresh=true')
+  .then(async r => {
+    const data = await r.json();
+    console.log('=== RECOMMENDATIONS TEST ===');
+    console.log('Success:', data.success);
+    console.log('Count:', data.recommendations?.length || 0);
+    console.log('Meta:', data.meta);
+    console.log('Full response:', JSON.stringify(data, null, 2));
+    return data;
+  });
+
+// THEN check the server console where npm run dev is running
+// You should see logs starting with [Hybrid] and [Algorithm]
+

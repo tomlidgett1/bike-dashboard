@@ -385,27 +385,7 @@ export function SellWizard() {
   // Handle Smart Upload mode
   if (mode === 'smart') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        {/* Header */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-          <div className="max-w-[1920px] mx-auto px-6 py-4 flex items-center justify-between">
-            <Image 
-              src="/yj.svg" 
-              alt="Yellow Jersey" 
-              width={150} 
-              height={30}
-              className="h-7"
-            />
-            <Button
-              variant="ghost"
-              onClick={() => router.push('/marketplace')}
-              className="rounded-md"
-            >
-              Back to Marketplace
-            </Button>
-          </div>
-        </header>
-
+      <div className="pt-16 min-h-screen bg-gray-50 flex flex-col">
         <SmartUploadFlow
           onComplete={(aiFormData, imageUrls) => {
             console.log('🎯 [WIZARD] AI Complete - Form data:', aiFormData);
@@ -445,27 +425,7 @@ export function SellWizard() {
   // Show method choice (Step 0) - but not if coming from AI or loading a draft
   if (showMethodChoice && currentStep === 1 && !hasAiData && !draftId) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        {/* Header */}
-        <header className="bg-white border-b border-gray-200">
-          <div className="max-w-[1920px] mx-auto px-6 py-4 flex items-center justify-between">
-            <Image 
-              src="/yj.svg" 
-              alt="Yellow Jersey" 
-              width={150} 
-              height={30}
-              className="h-7"
-            />
-            <Button
-              variant="ghost"
-              onClick={() => router.push('/marketplace')}
-              className="rounded-md"
-            >
-              Back to Marketplace
-            </Button>
-          </div>
-        </header>
-
+      <div className="pt-16 min-h-screen bg-gray-50 flex flex-col">
         <div className="flex-1 py-12 px-6">
           <UploadMethodChoice
             onSelectSmart={() => {
@@ -481,21 +441,7 @@ export function SellWizard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-[1920px] mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-900">Yellow Jersey</h1>
-          <Button
-            variant="ghost"
-            onClick={() => router.push('/marketplace')}
-            className="rounded-md"
-          >
-            Back to Marketplace
-          </Button>
-        </div>
-      </header>
-
+    <div className="pt-16 min-h-screen bg-gray-50 flex flex-col">
       {/* Main Content */}
       <div className={cn(
         "flex-1 py-8 px-6",
@@ -516,7 +462,7 @@ export function SellWizard() {
 
       {/* Navigation Footer - Fixed at bottom */}
       {currentStep !== 7 && (
-        <div className="fixed bottom-0 left-0 right-0 z-40">
+        <div className="fixed bottom-0 left-0 right-0 lg:left-[200px] z-40">
           <WizardNavigation
             currentStep={currentStep}
             totalSteps={7}

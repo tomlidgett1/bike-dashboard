@@ -46,32 +46,27 @@ Deno.serve(async (req) => {
     }
 
     console.log(`📦 [AI DISCOVERY] Product: "${canonical.normalized_name}"`)
-    console.log(`📦 [AI DISCOVERY] UPC: ${canonical.upc || 'none'}`)
+    console.log(`📦 [AI DISCOVERY] UPC: ${canonical.upc || 'NONE - NO UPC IN DATABASE'}`)
     console.log(`📦 [AI DISCOVERY] Category: ${canonical.category || 'none'}`)
     console.log(`📦 [AI DISCOVERY] Manufacturer: ${canonical.manufacturer || 'none'}`)
 
-    // Check if images already exist
-    const { data: existingImages, error: imagesError } = await supabase
-      .from('product_images')
-      .select('id')
-      .eq('canonical_product_id', canonicalProductId)
-      .limit(1)
+    // Log exactly what we're passing to the search function
+    console.log(`\n📋 [AI DISCOVERY] Passing to discoverProductImages:`)
+    console.log(`   - productName: "${canonical.normalized_name}"`)
+    console.log(`   - upc: "${canonical.upc}"`)
+    console.log(`   - category: "${canonical.category}"`)
+    console.log(`   - manufacturer: "${canonical.manufacturer}"`)
 
-    if (existingImages && existingImages.length > 0) {
-      console.log(`⚠️  [AI DISCOVERY] Product already has images, skipping`)
-      return new Response(
-        JSON.stringify({ message: 'Product already has images', skipped: true }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    // Note: We allow re-discovery even if images exist (for QA workflow)
+    // Images will be created as 'pending' for admin review
 
     // Call OpenAI to discover images
-    console.log(`\n🤖 [AI DISCOVERY] Calling OpenAI API...`)
+    console.log(`\n🤖 [AI DISCOVERY] Calling discoverProductImages function...`)
     const aiResult = await discoverProductImages(canonical.normalized_name, {
       upc: canonical.upc,
       category: canonical.category,
       manufacturer: canonical.manufacturer,
-      maxImages: 5,
+      maxImages: 15,
     })
 
     console.log(`✅ [AI DISCOVERY] OpenAI returned ${aiResult.images.length} image URLs`)
@@ -85,72 +80,37 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Download and upload each image
-    const uploadedImages: any[] = []
+    // Save URLs without downloading for fast QA workflow
+    const savedImages: any[] = []
     let primaryImageId: string | null = null
+
+    console.log(`💾 [AI DISCOVERY] Saving ${aiResult.images.length} image URLs (no download yet)...`)
 
     for (let i = 0; i < aiResult.images.length; i++) {
       const imageInfo = aiResult.images[i]!
-      console.log(`\n📥 [AI DISCOVERY] Processing image ${i + 1}/${aiResult.images.length}`)
-      console.log(`📥 [AI DISCOVERY] URL: ${imageInfo.url}`)
-      console.log(`📥 [AI DISCOVERY] Description: ${imageInfo.description}`)
-      console.log(`📥 [AI DISCOVERY] Is Primary: ${imageInfo.isPrimary}`)
+      console.log(`\n💾 [AI DISCOVERY] Saving image ${i + 1}/${aiResult.images.length}`)
+      console.log(`💾 [AI DISCOVERY] URL: ${imageInfo.url}`)
+      console.log(`💾 [AI DISCOVERY] Is Primary: ${imageInfo.isPrimary}`)
 
       try {
-        // Download image
-        const downloadResult = await downloadImage(imageInfo.url)
-
-        if (!downloadResult.success || !downloadResult.blob) {
-          console.error(`❌ [AI DISCOVERY] Download failed: ${downloadResult.error}`)
-          continue
-        }
-
-        // Validate image
-        const validation = await validateImage(downloadResult.blob)
-        if (!validation.valid) {
-          console.error(`❌ [AI DISCOVERY] Validation failed: ${validation.error}`)
-          continue
-        }
-
-        console.log(`✓ [AI DISCOVERY] Image valid: ${validation.mimeType}, ${(validation.fileSize! / 1024).toFixed(0)}KB`)
-
-        // Generate storage path
-        const filename = generateFilename(imageInfo.url, i)
-        const storagePath = `canonical/${canonicalProductId}/original/${filename}`
-
-        console.log(`📤 [AI DISCOVERY] Uploading to: ${storagePath}`)
-
-        // Upload to Supabase Storage
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('product-images')
-          .upload(storagePath, downloadResult.blob, {
-            cacheControl: '31536000',
-            contentType: validation.mimeType,
-            upsert: false,
-          })
-
-        if (uploadError) {
-          console.error(`❌ [AI DISCOVERY] Upload failed: ${uploadError.message}`)
-          continue
-        }
-
-        console.log(`✅ [AI DISCOVERY] Uploaded successfully`)
-
-        // Create product_images record
+        // Create product_images record with external URL only (no download)
         const { data: imageRecord, error: recordError } = await supabase
           .from('product_images')
           .insert({
             canonical_product_id: canonicalProductId,
-            storage_path: storagePath,
+            external_url: imageInfo.url, // Store external URL
+            storage_path: null, // No storage path yet
+            is_downloaded: false, // Mark as not downloaded
             is_primary: imageInfo.isPrimary,
             sort_order: imageInfo.rank,
-            variants: { original: storagePath }, // Will be expanded later with size variants
-            formats: { jpeg: { original: storagePath } },
-            width: validation.width || 800,
-            height: validation.height || 800,
-            file_size: validation.fileSize,
-            mime_type: validation.mimeType,
-            uploaded_by: null, // AI-uploaded
+            variants: {},
+            formats: {},
+            width: 800, // Default dimensions
+            height: 800,
+            file_size: 0,
+            mime_type: 'image/jpeg',
+            uploaded_by: null,
+            approval_status: 'pending', // Requires admin approval before showing on marketplace
           })
           .select('id')
           .single()
@@ -160,21 +120,21 @@ Deno.serve(async (req) => {
           continue
         }
 
-        console.log(`✅ [AI DISCOVERY] Image record created: ${imageRecord.id}`)
+        console.log(`✅ [AI DISCOVERY] Image URL saved: ${imageRecord.id}`)
 
         if (imageInfo.isPrimary) {
           primaryImageId = imageRecord.id
           console.log(`⭐ [AI DISCOVERY] Marked as primary image`)
         }
 
-        uploadedImages.push({
+        savedImages.push({
           id: imageRecord.id,
           url: imageInfo.url,
-          storagePath,
+          storagePath: null,
           isPrimary: imageInfo.isPrimary,
         })
       } catch (error) {
-        console.error(`❌ [AI DISCOVERY] Error processing image ${i + 1}:`, error)
+        console.error(`❌ [AI DISCOVERY] Error saving image ${i + 1}:`, error)
         continue
       }
     }
@@ -182,19 +142,19 @@ Deno.serve(async (req) => {
     console.log(`\n📈 [AI DISCOVERY] ========================================`)
     console.log(`📈 [AI DISCOVERY] Summary:`)
     console.log(`📈 [AI DISCOVERY]   - Images found by AI: ${aiResult.images.length}`)
-    console.log(`📈 [AI DISCOVERY]   - Images downloaded: ${uploadedImages.length}`)
+    console.log(`📈 [AI DISCOVERY]   - Image URLs saved: ${savedImages.length}`)
     console.log(`📈 [AI DISCOVERY]   - Primary image set: ${primaryImageId ? 'Yes' : 'No'}`)
     console.log(`📈 [AI DISCOVERY] ========================================\n`)
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Successfully discovered and uploaded ${uploadedImages.length} images`,
+        message: `Successfully saved ${savedImages.length} image URLs (ready for QA)`,
         data: {
           imagesFound: aiResult.images.length,
-          imagesDownloaded: uploadedImages.length,
+          imagesSaved: savedImages.length,
           primaryImageId,
-          uploadedImages,
+          savedImages,
           reasoning: aiResult.reasoning,
         },
       }),

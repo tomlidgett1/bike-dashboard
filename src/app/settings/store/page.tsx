@@ -56,7 +56,8 @@ export default function StoreSettingsPage() {
         profile.account_type === 'bicycle_store' && profile.bicycle_store === true;
 
       if (!authorized) {
-        router.replace('/marketplace');
+        // Redirect individual users to marketplace settings
+        router.replace('/marketplace/settings');
       } else {
         setIsAuthorized(true);
       }
