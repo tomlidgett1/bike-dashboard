@@ -109,7 +109,8 @@ async function getAnonymousRecommendations(
  */
 async function enrichProducts(
   supabase: any,
-  productIds: string[]
+  productIds: string[],
+  listingType?: string | null
 ): Promise<any[]> {
   if (productIds.length === 0) {
     console.log('[enrichProducts] No product IDs to enrich');
@@ -120,7 +121,7 @@ async function enrichProducts(
 
   try {
     // Get products with canonical images (same as trending API)
-    const { data: products, error: productsError } = await supabase
+    let productsQuery = supabase
       .from('products')
       .select(`
         *,
@@ -139,6 +140,13 @@ async function enrichProducts(
       `)
       .in('id', productIds)
       .eq('is_active', true);
+
+    // Apply listing type filter if provided
+    if (listingType) {
+      productsQuery = productsQuery.eq('listing_type', listingType);
+    }
+
+    const { data: products, error: productsError } = await productsQuery;
 
     if (productsError) {
       console.error('[enrichProducts] Products query error:', productsError);
@@ -169,12 +177,24 @@ async function enrichProducts(
       let imageVariants = null;
       let allImages: string[] = [];
       
-      // Priority 1: Custom store image
-      if (product.use_custom_image && product.custom_image_url) {
+      // Priority 1: Private listing images (user-uploaded)
+      if (product.listing_type === 'private_listing' && Array.isArray(product.images) && product.images.length > 0) {
+        const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
+        if (primaryImage?.url) {
+          primaryImageUrl = primaryImage.url;
+        }
+        // Fallback to primary_image_url from product
+        if (!primaryImageUrl && product.primary_image_url) {
+          primaryImageUrl = product.primary_image_url;
+        }
+        allImages = product.images.map((img: any) => img.url).filter(Boolean);
+      }
+      // Priority 2: Custom store image
+      else if (product.use_custom_image && product.custom_image_url) {
         primaryImageUrl = product.custom_image_url;
         allImages.push(product.custom_image_url);
       }
-      // Priority 2: Canonical product images
+      // Priority 3: Canonical product images
       else if (product.canonical_products?.product_images) {
         const images = product.canonical_products.product_images;
         
@@ -202,7 +222,7 @@ async function enrichProducts(
           .filter(Boolean);
       }
       
-      // Priority 3: Placeholder if no image
+      // Priority 4: Placeholder if no image
       if (!primaryImageUrl) {
         primaryImageUrl = '/placeholder-product.svg';
         allImages = ['/placeholder-product.svg'];
@@ -257,6 +277,7 @@ export async function GET(request: NextRequest) {
     );
     const forceRefresh = searchParams.get('refresh') === 'true';
     const enrichData = searchParams.get('enrich') !== 'false'; // Default: true
+    const listingType = searchParams.get('listingType');
 
     // Initialize Supabase client
     const supabase = await createClient();
@@ -318,7 +339,7 @@ export async function GET(request: NextRequest) {
     let products: any[] = [];
     if (enrichData) {
       console.log('[Recommendations API] Enriching', productIds.length, 'products...');
-      products = await enrichProducts(supabase, productIds);
+      products = await enrichProducts(supabase, productIds, listingType);
       console.log('[Recommendations API] Enriched to', products.length, 'full products');
     }
 
@@ -387,7 +408,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Enrich products
-    const products = await enrichProducts(supabase, productIds);
+    const products = await enrichProducts(supabase, productIds, null);
 
     return NextResponse.json({
       success: true,

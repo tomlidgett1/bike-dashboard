@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
       MAX_LIMIT
     );
     const category = searchParams.get('category');
+    const listingType = searchParams.get('listingType');
 
     const supabase = await createClient();
 
@@ -88,6 +89,11 @@ export async function GET(request: NextRequest) {
       productsQuery = productsQuery.eq('marketplace_category', category);
     }
 
+    // Apply listing type filter
+    if (listingType) {
+      productsQuery = productsQuery.eq('listing_type', listingType);
+    }
+
     const { data: products, error: productsError } = await productsQuery;
 
     if (productsError) {
@@ -106,12 +112,24 @@ export async function GET(request: NextRequest) {
       let imageVariants = null;
       let allImages: string[] = [];
       
-      // Priority 1: Custom store image
-      if (product.use_custom_image && product.custom_image_url) {
+      // Priority 1: Private listing images (user-uploaded)
+      if (product.listing_type === 'private_listing' && Array.isArray(product.images) && product.images.length > 0) {
+        const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
+        if (primaryImage?.url) {
+          primaryImageUrl = primaryImage.url;
+        }
+        // Fallback to primary_image_url from product
+        if (!primaryImageUrl && product.primary_image_url) {
+          primaryImageUrl = product.primary_image_url;
+        }
+        allImages = product.images.map((img: any) => img.url).filter(Boolean);
+      }
+      // Priority 2: Custom store image
+      else if (product.use_custom_image && product.custom_image_url) {
         primaryImageUrl = product.custom_image_url;
         allImages.push(product.custom_image_url);
       }
-      // Priority 2: Canonical product images
+      // Priority 3: Canonical product images
       else if (product.canonical_products?.product_images) {
         const images = product.canonical_products.product_images;
         
@@ -139,7 +157,7 @@ export async function GET(request: NextRequest) {
           .filter(Boolean);
       }
       
-      // Priority 3: Placeholder if no image
+      // Priority 4: Placeholder if no image
       if (!primaryImageUrl) {
         primaryImageUrl = '/placeholder-product.svg';
         allImages = ['/placeholder-product.svg'];

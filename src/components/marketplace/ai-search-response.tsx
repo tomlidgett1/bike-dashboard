@@ -13,42 +13,11 @@ import type { AISearchResponse } from "@/types/ai-search";
 
 interface AISearchResponseProps {
   response: AISearchResponse;
-  isLoading?: boolean;
 }
 
-export function AISearchResponseDisplay({ response, isLoading }: AISearchResponseProps) {
+export function AISearchResponseDisplay({ response }: AISearchResponseProps) {
   const [showSpecs, setShowSpecs] = React.useState(false);
   const [showRecommendations, setShowRecommendations] = React.useState(false);
-
-  if (isLoading) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.3 }}
-        className="p-4 bg-white border-b border-gray-200"
-      >
-        <div className="flex items-center gap-2 mb-3">
-          <Sparkles className="h-4 w-4 text-[#FFC72C] animate-pulse" />
-          <span className="text-sm font-medium text-gray-700">Cycling Expert is thinking...</span>
-          <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md animate-pulse">
-            Searching the web
-          </span>
-        </div>
-        <div className="space-y-2.5">
-          <div className="h-3 bg-gray-200 rounded-md w-full animate-pulse" />
-          <div className="h-3 bg-gray-200 rounded-md w-11/12 animate-pulse" />
-          <div className="h-3 bg-gray-200 rounded-md w-10/12 animate-pulse" />
-          <div className="h-3 bg-gray-200 rounded-md w-9/12 animate-pulse" />
-        </div>
-        <div className="mt-4 flex items-center gap-2">
-          <div className="h-2 w-2 bg-[#FFC72C] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-          <div className="h-2 w-2 bg-[#FFC72C] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-          <div className="h-2 w-2 bg-[#FFC72C] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-        </div>
-      </motion.div>
-    );
-  }
 
   return (
     <motion.div

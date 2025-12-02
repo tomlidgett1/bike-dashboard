@@ -3,10 +3,11 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { Menu, X, Settings, LogOut } from "lucide-react";
+import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
+import { AuthModal } from "./auth-modal";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
@@ -19,6 +20,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { FacebookImportModal } from "./sell/facebook-import-modal";
+import { SmartUploadModal } from "./sell/smart-upload-modal";
+import type { ListingImage } from "@/lib/types/listing";
 
 // ============================================================
 // Marketplace Header
@@ -27,6 +38,10 @@ import {
 
 export function MarketplaceHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [authModalOpen, setAuthModalOpen] = React.useState(false);
+  const [sellRequirementModalOpen, setSellRequirementModalOpen] = React.useState(false);
+  const [facebookModalOpen, setFacebookModalOpen] = React.useState(false);
+  const [smartUploadModalOpen, setSmartUploadModalOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
   const { scrollY } = useScroll();
   const router = useRouter();
@@ -124,7 +139,7 @@ export function MarketplaceHeader() {
               <>
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0">
+                    <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0 cursor-pointer">
                       {shouldShowLogo() ? (
                         <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
                           <Image
@@ -164,28 +179,100 @@ export function MarketplaceHeader() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button
-                  onClick={() => router.push('/marketplace/sell')}
-                  className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                >
-                  Sell Item
-                </Button>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
+                    >
+                      Sell Item
+                      <ChevronDown className="ml-1.5 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
+                    <DropdownMenuItem
+                      onClick={() => setSmartUploadModalOpen(true)}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Smart Upload</span>
+                        <span className="text-xs text-gray-500">AI-powered analysis</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setFacebookModalOpen(true)}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Facebook Import</span>
+                        <span className="text-xs text-gray-500">Import from Facebook</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => router.push('/marketplace/sell?mode=manual')}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Standard Upload</span>
+                        <span className="text-xs text-gray-500">Manual form entry</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             ) : (
               <>
                 <Button
                   variant="outline"
-                  onClick={() => router.push('/login')}
+                  onClick={() => setAuthModalOpen(true)}
                   className="rounded-md border-[#FFE8B3] hover:bg-[#FFF8E5] hover:border-[#FFC72C]"
                 >
                   Sign In
                 </Button>
-                <Button
-                  onClick={() => router.push('/marketplace/sell')}
-                  className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                >
-                  Sell Item
-                </Button>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
+                    >
+                      Sell Item
+                      <ChevronDown className="ml-1.5 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
+                    <DropdownMenuItem
+                      onClick={() => setSellRequirementModalOpen(true)}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Smart Upload</span>
+                        <span className="text-xs text-gray-500">AI-powered analysis</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSellRequirementModalOpen(true)}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Facebook Import</span>
+                        <span className="text-xs text-gray-500">Import from Facebook</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSellRequirementModalOpen(true)}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Standard Upload</span>
+                        <span className="text-xs text-gray-500">Manual form entry</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             )}
           </div>
@@ -193,7 +280,7 @@ export function MarketplaceHeader() {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0"
+            className="lg:hidden p-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer"
             aria-label="Toggle menu"
           >
             {mobileMenuOpen ? (
@@ -244,15 +331,57 @@ export function MarketplaceHeader() {
                   </div>
                 </div>
                 
-                <Button
-                  onClick={() => {
-                    router.push('/marketplace/sell');
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                >
-                  Sell Item
-                </Button>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
+                    >
+                      Sell Item
+                      <ChevronDown className="ml-1.5 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="center" className="w-72 bg-white rounded-md">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSmartUploadModalOpen(true);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Smart Upload</span>
+                        <span className="text-xs text-gray-500">AI-powered analysis</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setFacebookModalOpen(true);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Facebook Import</span>
+                        <span className="text-xs text-gray-500">Import from Facebook</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        router.push('/marketplace/sell?mode=manual');
+                        setMobileMenuOpen(false);
+                      }}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Standard Upload</span>
+                        <span className="text-xs text-gray-500">Manual form entry</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 
                 {canAccessSettings() && (
                   <Button
@@ -285,27 +414,134 @@ export function MarketplaceHeader() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    router.push('/login');
+                    setAuthModalOpen(true);
                     setMobileMenuOpen(false);
                   }}
                   className="w-full rounded-md border-[#FFE8B3] hover:bg-[#FFF8E5] hover:border-[#FFC72C]"
                 >
                   Sign In
                 </Button>
-                <Button
-                  onClick={() => {
-                    router.push('/marketplace/sell');
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                >
-                  Sell Item
-                </Button>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
+                    >
+                      Sell Item
+                      <ChevronDown className="ml-1.5 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="center" className="w-72 bg-white rounded-md">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSellRequirementModalOpen(true);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Smart Upload</span>
+                        <span className="text-xs text-gray-500">AI-powered analysis</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSellRequirementModalOpen(true);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Facebook Import</span>
+                        <span className="text-xs text-gray-500">Import from Facebook</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSellRequirementModalOpen(true);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Standard Upload</span>
+                        <span className="text-xs text-gray-500">Manual form entry</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             )}
           </div>
         </motion.div>
       )}
+
+      {/* Sell Item Requirement Modal */}
+      <Dialog open={sellRequirementModalOpen} onOpenChange={setSellRequirementModalOpen}>
+        <DialogContent className="sm:max-w-[425px] rounded-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold text-gray-900">
+              Sign in required
+            </DialogTitle>
+            <DialogDescription className="text-gray-600 pt-2">
+              You must create an account or sign in to sell an item on Yellow Jersey.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex flex-col gap-3 pt-4">
+            <Button
+              onClick={() => {
+                setSellRequirementModalOpen(false);
+                setAuthModalOpen(true);
+              }}
+              className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
+            >
+              Sign In
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSellRequirementModalOpen(false);
+                setAuthModalOpen(true);
+              }}
+              className="w-full rounded-md border-gray-300 hover:bg-gray-50"
+            >
+              Create Account
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Auth Modal */}
+      <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
+
+      {/* Facebook Import Modal */}
+      <FacebookImportModal
+        isOpen={facebookModalOpen}
+        onClose={() => setFacebookModalOpen(false)}
+        onComplete={(formData, images) => {
+          // Store imported data in sessionStorage for the sell wizard
+          sessionStorage.setItem('facebookImportData', JSON.stringify({ formData, images }));
+          setFacebookModalOpen(false);
+          // Navigate to sell page - it will pick up the data from sessionStorage
+          router.push('/marketplace/sell?mode=manual&ai=true');
+        }}
+      />
+
+      {/* Smart Upload Modal */}
+      <SmartUploadModal
+        isOpen={smartUploadModalOpen}
+        onClose={() => setSmartUploadModalOpen(false)}
+        onComplete={(formData, imageUrls) => {
+          // Store imported data in sessionStorage for the sell wizard
+          sessionStorage.setItem('smartUploadData', JSON.stringify({ formData, imageUrls }));
+          setSmartUploadModalOpen(false);
+          // Navigate to sell page - it will pick up the data from sessionStorage
+          router.push('/marketplace/sell?mode=manual&ai=true');
+        }}
+      />
     </motion.header>
   );
 }

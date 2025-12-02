@@ -70,6 +70,8 @@ export async function GET(request: NextRequest) {
         listing_type,
         listing_status,
         model_year,
+        images,
+        primary_image_url,
         users!user_id (
           business_name,
           logo_url,
@@ -260,13 +262,27 @@ export async function GET(request: NextRequest) {
         let primaryImageUrl = null;
         let imageVariants = null;
         let allImages: string[] = [];
+        let listingImages = null; // For private listings - pass through the images array
         
-        // Priority 1: Custom store image
-        if (product.use_custom_image && product.custom_image_url) {
+        // Priority 1: Private listing images (user-uploaded)
+        if (product.listing_type === 'private_listing' && Array.isArray(product.images) && product.images.length > 0) {
+          listingImages = product.images; // Pass through for product card
+          const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
+          if (primaryImage?.url) {
+            primaryImageUrl = primaryImage.url;
+          }
+          // Also use primary_image_url from product if set
+          if (!primaryImageUrl && product.primary_image_url) {
+            primaryImageUrl = product.primary_image_url;
+          }
+          allImages = product.images.map((img: any) => img.url).filter(Boolean);
+        }
+        // Priority 2: Custom store image
+        else if (product.use_custom_image && product.custom_image_url) {
           primaryImageUrl = product.custom_image_url;
           allImages.push(product.custom_image_url);
         }
-        // Priority 2: Canonical product images (MUST be approved AND downloaded)
+        // Priority 3: Canonical product images (MUST be approved AND downloaded)
         else if (product.canonical_products?.product_images) {
           // Filter to only show approved AND downloaded images
           const images = product.canonical_products.product_images.filter((img: any) => 
@@ -298,7 +314,7 @@ export async function GET(request: NextRequest) {
             .filter(Boolean);
         }
         
-        // Priority 3: Use placeholder if no image available
+        // Priority 4: Use placeholder if no image available
         if (!primaryImageUrl) {
           primaryImageUrl = '/placeholder-product.svg';
           allImages = ['/placeholder-product.svg'];
@@ -317,6 +333,7 @@ export async function GET(request: NextRequest) {
           primary_image_url: primaryImageUrl,
           image_variants: imageVariants,
           all_images: allImages,
+          images: listingImages, // Pass through for private listings
           qoh: product.qoh || 0,
           model_year: product.model_year,
           created_at: product.created_at,

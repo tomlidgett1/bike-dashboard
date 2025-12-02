@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, Loader2, Package, Store, ArrowRight } from "lucide-react";
+import { motion } from "framer-motion";
+import { Search, X, Loader2, Package, Store, ArrowRight, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import type { AISearchResult } from "@/types/ai-search";
 import { AISearchResponseDisplay } from "./ai-search-response";
+import { AISearchLoading } from "./ai-search-loading";
 
 // ============================================================
 // Enterprise-Level Instant Search
@@ -129,6 +131,7 @@ export function InstantSearch() {
   const [aiResponse, setAiResponse] = React.useState<AISearchResult | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [aiLoading, setAiLoading] = React.useState(false);
+  const [showAiButton, setShowAiButton] = React.useState(false);
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [selectedIndex, setSelectedIndex] = React.useState(-1);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -144,7 +147,7 @@ export function InstantSearch() {
     "Shimano 12 speed cassette...",
     "used road bicycle...",
     "Wahoo Elemnt Roam V2...",
-    "Search bikes, parts, stores..."
+    "Ask a question or search bikes, parts, apparel..."
   ];
   
   React.useEffect(() => {
@@ -199,11 +202,12 @@ export function InstantSearch() {
     return () => clearTimeout(timeoutId);
   }, []);
 
-  // ULTRA-FAST search with instant dropdown + client-side caching + request deduplication + AI search
+  // Product search only (AI search triggered manually via button)
   React.useEffect(() => {
     if (query.length < 2) {
       setResults(null);
       setAiResponse(null);
+      setShowAiButton(false);
       setShowDropdown(false);
       setLoading(false);
       setAiLoading(false);
@@ -219,144 +223,119 @@ export function InstantSearch() {
       return;
     }
 
-    // Check if this is a question
-    const shouldUseAI = isQuestion(query);
+    // Check if this could be a question (to show the AI button)
+    const couldBeQuestion = isQuestion(query);
+    setShowAiButton(couldBeQuestion);
     
-    // Debug logging
-    if (shouldUseAI) {
-      console.log(`🤖 [AI SEARCH] Question detected: "${query}"`);
-    }
-    
-    // Check cache first for instant results (before showing loading state)
+    // Check cache first for instant results
     const cached = cacheRef.current.get(query.toLowerCase());
-    const aiCached = shouldUseAI ? aiCacheRef.current.get(query.toLowerCase()) : null;
     
     if (cached) {
       setResults(cached);
       setShowDropdown(true);
       setLoading(false);
       setSelectedIndex(-1);
-    } else {
-      // Show dropdown IMMEDIATELY with loading state
-      // Clear old results to prevent showing stale data
-      setResults(null);
-      setShowDropdown(true);
-      setLoading(true);
-    }
-    
-    if (aiCached) {
-      setAiResponse(aiCached);
-      setAiLoading(false);
-    } else if (shouldUseAI) {
-      setAiResponse(null);
-      setAiLoading(true);
-    } else {
-      setAiResponse(null);
-      setAiLoading(false);
-    }
-    
-    // If both are cached, no need to fetch
-    if (cached && (!shouldUseAI || aiCached)) {
       return;
     }
 
-    // Cancel previous requests if still pending
+    // Show dropdown IMMEDIATELY with loading state
+    setResults(null);
+    setShowDropdown(true);
+    setLoading(true);
+
+    // Cancel previous request if still pending
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-    }
-    if (aiAbortControllerRef.current) {
-      aiAbortControllerRef.current.abort();
     }
 
     // Aggressive 75ms debounce for instant feel
     const timer = setTimeout(async () => {
-      // Create abort controllers
       const productAbortController = new AbortController();
-      const aiAbortController = new AbortController();
-      
       abortControllerRef.current = productAbortController;
-      aiAbortControllerRef.current = aiAbortController;
       
-      // Fetch product search and AI search in parallel
-      const promises = [];
-      
-      // Product search (always)
-      if (!cached) {
-        promises.push(
-          fetch(
-            `/api/marketplace/search?q=${encodeURIComponent(query)}`,
-            { signal: productAbortController.signal }
-          )
-            .then(async (response) => {
-              if (response.ok) {
-                const data = await response.json();
-                setResults(data);
-                setSelectedIndex(-1);
-                
-                // Cache the result
-                cacheRef.current.set(query.toLowerCase(), data);
-                if (cacheRef.current.size > 50) {
-                  const firstKey = cacheRef.current.keys().next().value;
-                  cacheRef.current.delete(firstKey);
-                }
-              }
-            })
-            .catch((error) => {
-              if ((error as Error).name !== 'AbortError') {
-                console.error('Product search error:', error);
-              }
-            })
-            .finally(() => {
-              setLoading(false);
-            })
+      try {
+        const response = await fetch(
+          `/api/marketplace/search?q=${encodeURIComponent(query)}`,
+          { signal: productAbortController.signal }
         );
+        
+        if (response.ok) {
+          const data = await response.json();
+          setResults(data);
+          setSelectedIndex(-1);
+          
+          // Cache the result
+          cacheRef.current.set(query.toLowerCase(), data);
+          if (cacheRef.current.size > 50) {
+            const firstKey = cacheRef.current.keys().next().value;
+            cacheRef.current.delete(firstKey);
+          }
+        }
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          console.error('Product search error:', error);
+        }
+      } finally {
+        setLoading(false);
+        abortControllerRef.current = null;
       }
-      
-      // AI search (if question detected and not cached)
-      if (shouldUseAI && !aiCached) {
-        promises.push(
-          fetch(
-            `/api/ai-search?q=${encodeURIComponent(query)}`,
-            { signal: aiAbortController.signal }
-          )
-            .then(async (response) => {
-              if (response.ok) {
-                const data = await response.json();
-                if (data.success) {
-                  setAiResponse(data);
-                  
-                  // Cache the AI result
-                  aiCacheRef.current.set(query.toLowerCase(), data);
-                  if (aiCacheRef.current.size > 20) {
-                    const firstKey = aiCacheRef.current.keys().next().value;
-                    aiCacheRef.current.delete(firstKey);
-                  }
-                }
-              }
-            })
-            .catch((error) => {
-              if ((error as Error).name !== 'AbortError') {
-                console.error('AI search error:', error);
-                // Silently fail - just show products
-              }
-            })
-            .finally(() => {
-              setAiLoading(false);
-            })
-        );
-      }
-      
-      // Wait for all promises
-      await Promise.allSettled(promises);
-      
-      abortControllerRef.current = null;
-      aiAbortControllerRef.current = null;
-    }, 75); // 75ms debounce - instant feel while preventing request spam
+    }, 75); // 75ms debounce
 
     return () => {
       clearTimeout(timer);
-      // Don't abort here - let the effect cleanup handle it
     };
+  }, [query]);
+
+  // Function to trigger AI search manually
+  const triggerAiSearch = React.useCallback(async () => {
+    if (!query || query.length < 3) return;
+    
+    // Check cache first
+    const aiCached = aiCacheRef.current.get(query.toLowerCase());
+    if (aiCached) {
+      setAiResponse(aiCached);
+      return;
+    }
+    
+    // Start AI search
+    setAiLoading(true);
+    setAiResponse(null);
+    
+    // Cancel previous AI request if pending
+    if (aiAbortControllerRef.current) {
+      aiAbortControllerRef.current.abort();
+    }
+    
+    const aiAbortController = new AbortController();
+    aiAbortControllerRef.current = aiAbortController;
+    
+    try {
+      const response = await fetch(
+        `/api/ai-search?q=${encodeURIComponent(query)}`,
+        { signal: aiAbortController.signal }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setAiResponse(data);
+          
+          // Cache the AI result
+          aiCacheRef.current.set(query.toLowerCase(), data);
+          if (aiCacheRef.current.size > 20) {
+            const firstKey = aiCacheRef.current.keys().next().value;
+            aiCacheRef.current.delete(firstKey);
+          }
+        }
+      }
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        console.error('AI search error:', error);
+      }
+    } finally {
+      setAiLoading(false);
+      aiAbortControllerRef.current = null;
+    }
   }, [query]);
 
   // Click outside to close
@@ -524,13 +503,34 @@ export function InstantSearch() {
             </div>
           ) : (
             <>
+              {/* AI Loading State */}
+              {aiLoading && (
+                <AISearchLoading />
+              )}
+
               {/* AI Response Section */}
-              {(aiLoading || aiResponse) && (
+              {aiResponse && !aiLoading && (
                 <div className="border-b border-gray-200">
-                  <AISearchResponseDisplay 
-                    response={aiResponse?.response!} 
-                    isLoading={aiLoading}
-                  />
+                  <AISearchResponseDisplay response={aiResponse.response} />
+                </div>
+              )}
+
+              {/* AI Search CTA Button */}
+              {showAiButton && !aiLoading && !aiResponse && (results?.products || results?.stores) && (
+                <div className="border-t border-gray-100 px-4 py-2 bg-gray-50">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerAiSearch();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-white rounded-md transition-all duration-200 group border border-transparent hover:border-gray-200"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-gray-400 group-hover:text-[#FFC72C] transition-colors" />
+                    <span className="font-medium">
+                      Ask Cycling Expert
+                    </span>
+                    <ArrowRight className="h-3.5 w-3.5 ml-auto text-gray-400 group-hover:text-gray-600 transition-colors" />
+                  </button>
                 </div>
               )}
 

@@ -28,7 +28,7 @@ export function ViewModePills({
       <button
         onClick={() => onModeChange('trending')}
         className={cn(
-          "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+          "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
           activeMode === 'trending'
             ? "text-gray-800 bg-white shadow-sm"
             : "text-gray-600 hover:bg-gray-200/70"
@@ -42,7 +42,7 @@ export function ViewModePills({
       <button
         onClick={() => onModeChange('for-you')}
         className={cn(
-          "relative flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+          "relative flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
           activeMode === 'for-you'
             ? "text-gray-800 bg-white shadow-sm"
             : "text-gray-600 hover:bg-gray-200/70"
@@ -59,7 +59,7 @@ export function ViewModePills({
       <button
         onClick={() => onModeChange('all')}
         className={cn(
-          "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+          "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
           activeMode === 'all'
             ? "text-gray-800 bg-white shadow-sm"
             : "text-gray-600 hover:bg-gray-200/70"

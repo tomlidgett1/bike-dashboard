@@ -112,7 +112,7 @@ export function CascadingCategoryFilter({
                   onLevel3Change(null);
                 }}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2.5 rounded-md font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0",
+                  "flex items-center gap-2 px-4 py-2.5 rounded-md font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0 cursor-pointer",
                   isActive
                     ? "bg-white text-gray-800 shadow-md border border-gray-200"
                     : "bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:shadow-sm"
@@ -171,7 +171,7 @@ export function CascadingCategoryFilter({
               onLevel2Change(null);
               onLevel3Change(null);
             }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-gray-100 text-gray-700 hover:bg-gray-200 whitespace-nowrap flex-shrink-0"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-gray-100 text-gray-700 hover:bg-gray-200 whitespace-nowrap flex-shrink-0 cursor-pointer"
           >
             <ChevronLeft className="h-4 w-4" />
             Back
@@ -197,7 +197,7 @@ export function CascadingCategoryFilter({
                   }
                 }}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0",
+                  "flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0 cursor-pointer",
                   isActive
                     ? "bg-gray-800 text-white shadow-sm"
                     : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
@@ -256,7 +256,7 @@ export function CascadingCategoryFilter({
             onClick={() => {
               onLevel3Change(null);
             }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-gray-100 text-gray-700 hover:bg-gray-200 whitespace-nowrap flex-shrink-0"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-gray-100 text-gray-700 hover:bg-gray-200 whitespace-nowrap flex-shrink-0 cursor-pointer"
           >
             <ChevronLeft className="h-4 w-4" />
             Back
@@ -273,7 +273,7 @@ export function CascadingCategoryFilter({
                   onLevel3Change(isActive ? null : level3.name);
                 }}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0",
+                  "flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0 cursor-pointer",
                   isActive
                     ? "bg-[#FFC72C] text-gray-900 shadow-sm"
                     : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
@@ -311,7 +311,7 @@ export function CascadingCategoryFilter({
               onLevel2Change(null);
               onLevel3Change(null);
             }}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md hover:bg-gray-100 transition-colors text-gray-700 font-medium"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md hover:bg-gray-100 transition-colors text-gray-700 font-medium cursor-pointer"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
             View All Categories

@@ -36,7 +36,7 @@ function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = 
       <main 
         className={cn(
           "w-full pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0 transition-all duration-[400ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
-          isCollapsed ? "lg:pl-[72px]" : "lg:pl-[200px]",
+          isCollapsed ? "lg:pl-[56px]" : "lg:pl-[200px]",
           showStoreCTA && "mb-32"
         )}
       >
@@ -51,7 +51,7 @@ function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = 
         <div 
           className={cn(
             "fixed bottom-0 left-0 right-0 z-10 transition-all duration-[400ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
-            isCollapsed ? "lg:left-[72px]" : "lg:left-[200px]"
+            isCollapsed ? "lg:left-[56px]" : "lg:left-[200px]"
           )}
         >
           {/* Call to Action for Bike Stores */}

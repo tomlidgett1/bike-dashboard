@@ -8,6 +8,7 @@ import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import { ViewModePills, ViewMode } from "@/components/marketplace/view-mode-pills";
+import { ListingTypeFilter, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/listing-type-filter";
 import { CascadingCategoryFilter } from "@/components/marketplace/cascading-category-filter";
 import { StoresGrid } from "@/components/marketplace/stores-grid";
 import { Button } from "@/components/ui/button";
@@ -67,14 +68,17 @@ export default function MarketplacePage() {
     searchParams.get('level3') || null
   );
 
+  // Listing type filter state (default to individual sellers only)
+  const [listingTypeFilter, setListingTypeFilter] = React.useState<ListingTypeFilterType>('individuals');
+
   // Products state (for pagination accumulation)
   const [accumulatedProducts, setAccumulatedProducts] = React.useState<MarketplaceProduct[]>([]);
   const [currentPage, setCurrentPage] = React.useState(1);
 
   // Track filter changes to know when to reset
   const filterKey = React.useMemo(() => 
-    `${viewMode}-${selectedLevel1}-${selectedLevel2}-${selectedLevel3}-${searchQuery}`,
-    [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery]
+    `${viewMode}-${listingTypeFilter}-${selectedLevel1}-${selectedLevel2}-${selectedLevel3}-${searchQuery}`,
+    [viewMode, listingTypeFilter, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery]
   );
   const prevFilterKeyRef = React.useRef(filterKey);
   const processedDataRef = React.useRef<Set<string>>(new Set());
@@ -88,7 +92,10 @@ export default function MarketplacePage() {
     level2: selectedLevel2,
     level3: selectedLevel3,
     search: searchQuery,
-  }), [viewMode, currentPage, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery]);
+    // Add listing type filtering
+    listingType: listingTypeFilter === 'stores' ? 'store_inventory' : 
+                 listingTypeFilter === 'individuals' ? 'private_listing' : undefined,
+  }), [viewMode, currentPage, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter]);
 
   // Use SWR for products data with intelligent caching
   const { 
@@ -332,13 +339,19 @@ export default function MarketplacePage() {
             {/* Products View */}
             {!isStoresView && !isSellersView && (
               <>
-                {/* View Mode Pills */}
+                {/* View Mode Pills & Listing Type Filter */}
                 <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <ViewModePills
-                    activeMode={viewMode}
-                    onModeChange={handleViewModeChange}
-                    showForYouBadge={!user && viewMode !== 'for-you'}
-                  />
+                  <div className="flex items-center gap-3">
+                    <ViewModePills
+                      activeMode={viewMode}
+                      onModeChange={handleViewModeChange}
+                      showForYouBadge={!user && viewMode !== 'for-you'}
+                    />
+                    <ListingTypeFilter 
+                      activeFilter={listingTypeFilter}
+                      onFilterChange={setListingTypeFilter}
+                    />
+                  </div>
 
                   {/* Product Count */}
                   {!searchQuery && (

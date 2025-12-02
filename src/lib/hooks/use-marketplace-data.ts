@@ -15,6 +15,7 @@ interface MarketplaceDataParams {
   level2?: string | null;
   level3?: string | null;
   search?: string | null;
+  listingType?: 'store_inventory' | 'private_listing';
 }
 
 interface MarketplaceDataResponse {
@@ -64,11 +65,16 @@ const fetcher = async (url: string): Promise<MarketplaceDataResponse> => {
 
 // Build API URL based on view mode and filters
 function buildApiUrl(params: MarketplaceDataParams): string {
-  const { viewMode, page = 1, pageSize = 50, level1, level2, level3, search } = params;
+  const { viewMode, page = 1, pageSize = 50, level1, level2, level3, search, listingType } = params;
   
   let endpoint = '';
   const urlParams = new URLSearchParams();
   urlParams.set('page', String(page));
+
+  // Add listing type filter if specified
+  if (listingType) {
+    urlParams.set('listingType', listingType);
+  }
 
   // Handle search queries
   if (search) {

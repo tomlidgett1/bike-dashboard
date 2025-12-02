@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import { Package, Store, User, Clock, Settings, Edit, FileText, ShoppingBag, ChevronLeft, ChevronRight } from "lucide-react";
+import { Package, Store, User, Clock, Settings, Edit, FileText, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -127,8 +127,13 @@ export function MarketplaceSidebar() {
   const renderNavItem = (item: NavItem, index: number) => {
     if (item.type === 'separator') {
       return (
-        <div key={`separator-${index}`} className="my-2 flex items-center justify-center">
-          <div className="h-px bg-gray-200 w-[40px]" />
+        <div key={`separator-${index}`} className="my-2 px-2">
+          <div 
+            className={cn(
+              "h-px bg-gray-200 transition-all duration-400",
+              isCollapsed ? "w-[32px] mx-auto" : "w-full"
+            )}
+          />
         </div>
       );
     }
@@ -159,14 +164,14 @@ export function MarketplaceSidebar() {
         key={item.value}
         onClick={handleClick}
         className={cn(
-          "group flex items-center rounded-md text-sm font-medium transition-all duration-150 text-left w-full relative h-[38px]",
+          "group flex items-center rounded-md text-sm font-medium transition-all duration-150 text-left w-full relative h-[38px] cursor-pointer",
           isActive
             ? "bg-sidebar-accent text-sidebar-accent-foreground"
             : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
         )}
       >
         {/* Fixed icon container - icon never moves */}
-        <div className="w-[52px] h-full flex items-center justify-center shrink-0">
+        <div className="w-[40px] h-full flex items-center justify-center shrink-0">
           <Icon
             className={cn(
               "h-[18px] w-[18px] shrink-0 transition-colors",
@@ -184,7 +189,7 @@ export function MarketplaceSidebar() {
             animate={{ opacity: 1, width: "auto" }}
             exit={{ opacity: 0, width: 0 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="overflow-hidden whitespace-nowrap pr-2.5 h-full flex items-center"
+            className="overflow-hidden whitespace-nowrap pl-1 pr-2.5 h-full flex items-center"
           >
             {item.title}
           </motion.span>
@@ -214,7 +219,7 @@ export function MarketplaceSidebar() {
       <motion.aside
         initial={false}
         animate={{
-          width: isCollapsed ? 72 : 200,
+          width: isCollapsed ? 56 : 200,
         }}
         transition={{
           duration: 0.4,
@@ -224,8 +229,45 @@ export function MarketplaceSidebar() {
           "fixed left-0 top-16 z-30 hidden h-[calc(100vh-4rem)] flex-col border-r border-sidebar-border bg-sidebar lg:flex overflow-hidden"
         )}
       >
+        {/* Header with Collapse Button */}
+        <div className="flex items-center justify-between px-2 pt-4 pb-2">
+          {!isCollapsed && (
+            <motion.span
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="text-xs font-semibold text-gray-500 uppercase tracking-wider pl-2"
+            >
+              Browse
+            </motion.span>
+          )}
+          <Tooltip delayDuration={100}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={toggle}
+                className={cn(
+                  "flex items-center justify-center rounded-md p-1.5 transition-all duration-150 cursor-pointer",
+                  "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                  isCollapsed && "mx-auto"
+                )}
+                aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                {isCollapsed ? (
+                  <PanelLeft className="h-[18px] w-[18px]" />
+                ) : (
+                  <PanelLeftClose className="h-[18px] w-[18px]" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8} className="rounded-md">
+              <p>{isCollapsed ? "Expand sidebar" : "Collapse sidebar"}</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
         {/* Navigation */}
-        <ScrollArea className="flex-1 py-4">
+        <ScrollArea className="flex-1 py-2">
           <nav className="flex flex-col gap-1 px-2">
             {navItems.map((item, index) => renderNavItem(item, index))}
           </nav>
@@ -247,10 +289,10 @@ export function MarketplaceSidebar() {
               ) : (
                 <div className="bg-white rounded-md border border-gray-200 shadow-sm">
                   <div className="flex items-center">
-                    <div className="w-[52px] flex items-center justify-center py-2 shrink-0">
+                    <div className="w-[40px] flex items-center justify-center py-2 shrink-0">
                       <Clock className="h-4 w-4 text-amber-600 flex-shrink-0" />
                     </div>
-                    <p className="text-xs text-gray-700 leading-tight pr-3 py-2">
+                    <p className="text-xs text-gray-700 leading-tight pl-1 pr-3 py-2">
                       Account awaiting admin approval
                     </p>
                   </div>
@@ -260,38 +302,43 @@ export function MarketplaceSidebar() {
           )}
         </ScrollArea>
 
-        {/* Collapse Toggle Button */}
-        <div className="border-t border-sidebar-border p-2">
-          <button
-            onClick={toggle}
-            className={cn(
-              "w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 h-[38px]",
-              "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            )}
-            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {/* Fixed icon container - chevron never moves */}
-            <div className="w-[52px] h-full flex items-center justify-center shrink-0">
-              {isCollapsed ? (
-                <ChevronRight className="h-[18px] w-[18px] shrink-0" />
-              ) : (
-                <ChevronLeft className="h-[18px] w-[18px] shrink-0 transition-transform duration-200" />
-              )}
-            </div>
-            
-            {/* Text label with smooth fade */}
-            {!isCollapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: "auto" }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                className="overflow-hidden whitespace-nowrap pr-2.5 h-full flex items-center"
-              >
-                Collapse
-              </motion.span>
-            )}
-          </button>
+        {/* Help and Support Button */}
+        <div className="border-t border-sidebar-border p-2 pb-4">
+          {isCollapsed ? (
+            <Tooltip delayDuration={100}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => {
+                    // TODO: Add help and support functionality
+                    console.log('Help and Support clicked');
+                  }}
+                  className="w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground h-[38px] cursor-pointer"
+                >
+                  <div className="w-[40px] h-full flex items-center justify-center shrink-0">
+                    <HelpCircle className="h-[18px] w-[18px] shrink-0" />
+                  </div>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8} className="rounded-md">
+                <p>Help & Support</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={() => {
+                // TODO: Add help and support functionality
+                console.log('Help and Support clicked');
+              }}
+              className="w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground h-[38px] cursor-pointer"
+            >
+              <div className="w-[40px] h-full flex items-center justify-center shrink-0">
+                <HelpCircle className="h-[18px] w-[18px] shrink-0" />
+              </div>
+              <span className="overflow-hidden whitespace-nowrap pl-1 pr-2.5 h-full flex items-center">
+                Help & Support
+              </span>
+            </button>
+          )}
         </div>
       </motion.aside>
     </TooltipProvider>

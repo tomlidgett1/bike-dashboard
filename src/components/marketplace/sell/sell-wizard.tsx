@@ -7,15 +7,26 @@ import Image from "next/image";
 import { useListingForm } from "@/lib/hooks/use-listing-form";
 import { UploadMethodChoice } from "./upload-method-choice";
 import { SmartUploadFlow } from "./smart-upload-flow";
+import { FacebookImportFlow } from "./facebook-import-flow";
 import { WizardNavigation } from "./wizard-navigation";
 import { Step1ItemType } from "./step-1-item-type";
-import { Step2ABikeDetails } from "./step-2a-bike-details";
+// New granular step components
+import { Step2BasicInfo } from "./step-2-basic-info";
+import { Step3FrameDetails } from "./step-3-frame-details";
+import { Step3Specifications } from "./step-3-specifications";
+import { Step4Components } from "./step-4-components";
+import { Step4Compatibility } from "./step-4-compatibility";
+import { Step5ConditionRating } from "./step-5-condition-rating";
+import { Step6ConditionDetails } from "./step-6-condition-details";
+import { Step7Photos } from "./step-7-photos";
+import { Step8PurchaseHistory } from "./step-8-purchase-history";
+import { Step9ServiceUpgrades } from "./step-9-service-upgrades";
+import { Step10Pricing } from "./step-10-pricing";
+import { Step11Delivery } from "./step-11-delivery";
+import { Step12Contact } from "./step-12-contact";
+// Legacy components for parts/apparel (will use new components where applicable)
 import { Step2BPartDetails } from "./step-2b-part-details";
 import { Step2CApparelDetails } from "./step-2c-apparel-details";
-import { Step3Condition } from "./step-3-condition";
-import { Step4Photos } from "./step-4-photos";
-import { Step5History } from "./step-5-history";
-import { Step6Pricing } from "./step-6-pricing";
 import { Step7Review } from "./step-7-review";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -38,7 +49,7 @@ import {
 export function SellWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const mode = searchParams?.get('mode'); // 'smart' or null (default manual)
+  const mode = searchParams?.get('mode'); // 'smart', 'facebook', or null (default manual)
   const hasAiData = searchParams?.get('ai') === 'true';
   const draftId = searchParams?.get('draftId') || undefined;
   
@@ -60,6 +71,71 @@ export function SellWizard() {
   // Don't show method choice if we have a draftId (loading existing draft)
   const [showMethodChoice, setShowMethodChoice] = React.useState(!mode && !hasAiData && !draftId);
 
+  // Quick listing handler - publish with minimal details
+  const handleQuickList = async (quickData: any) => {
+    try {
+      // Get images and ensure one is marked as primary
+      const images = quickData.images || formData.images || [];
+      
+      // Find primary image URL - look for isPrimary flag or use first image
+      let primaryImageUrl: string | undefined;
+      if (images.length > 0) {
+        const primaryImage = images.find((img: any) => img.isPrimary);
+        primaryImageUrl = primaryImage?.url || images[0]?.url;
+        
+        // Ensure at least one image is marked as primary
+        if (!primaryImage && images.length > 0) {
+          images[0].isPrimary = true;
+        }
+      }
+      
+      // Build the listing data for quick publish
+      const listingData = {
+        // Basic required fields
+        title: quickData.title || [quickData.brand, quickData.model].filter(Boolean).join(' '),
+        description: quickData.description || quickData.conditionDetails || '',
+        price: quickData.price,
+        conditionRating: quickData.conditionRating || 'Good',
+        
+        // Item type - default to bike if not detected
+        itemType: quickData.itemType || formData.itemType || 'bike',
+        
+        // Images - ensure primary is set
+        images: images,
+        primaryImageUrl: primaryImageUrl,
+        
+        // Set listing status to active
+        listingStatus: 'active',
+        publishedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+        
+        // Optional AI-detected fields
+        brand: quickData.brand,
+        model: quickData.model,
+        modelYear: quickData.modelYear,
+      };
+
+      console.log('🚀 [QUICK LIST] Publishing with data:', listingData);
+
+      const response = await fetch('/api/marketplace/listings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(listingData),
+      });
+
+      if (response.ok) {
+        const { listing } = await response.json();
+        window.location.href = `/marketplace?success=listing_published&id=${listing.id}`;
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create listing');
+      }
+    } catch (err: any) {
+      console.error('❌ [QUICK LIST] Error:', err);
+      alert(err.message || 'Failed to publish listing. Please try again.');
+    }
+  };
+
   // Debug logging
   React.useEffect(() => {
     console.log('🎯 [WIZARD DEBUG] mode:', mode);
@@ -70,44 +146,232 @@ export function SellWizard() {
     console.log('🎯 [WIZARD DEBUG] formData:', formData);
   }, [mode, hasAiData, draftId, currentStep, showMethodChoice, formData]);
 
-  // Step labels for progress indicator
-  const stepLabels = [
-    "Item Type",
-    "Details",
-    "Condition",
-    "Photos",
-    "History",
-    "Pricing",
-    "Review",
+  // Check for Facebook import data from sessionStorage (from header modal)
+  React.useEffect(() => {
+    const storedData = sessionStorage.getItem('facebookImportData');
+    if (storedData) {
+      try {
+        const { formData: importedFormData, images } = JSON.parse(storedData);
+        console.log('🎯 [WIZARD] Found Facebook import data in sessionStorage:', importedFormData);
+        
+        // Clear the sessionStorage data so it doesn't get re-applied
+        sessionStorage.removeItem('facebookImportData');
+        
+        // Update form data with imported data
+        updateFormData({
+          ...importedFormData,
+        });
+        
+        // Navigate to step 1 (Item Type) so user starts from beginning
+        goToStep(1);
+        
+        // Don't show method choice
+        setShowMethodChoice(false);
+      } catch (error) {
+        console.error('🎯 [WIZARD] Error parsing Facebook import data:', error);
+        sessionStorage.removeItem('facebookImportData');
+      }
+    }
+  }, []); // Only run once on mount
+
+  // Check for Smart Upload data from sessionStorage (from header modal)
+  React.useEffect(() => {
+    const storedData = sessionStorage.getItem('smartUploadData');
+    if (storedData) {
+      try {
+        const { formData: importedFormData, imageUrls } = JSON.parse(storedData);
+        console.log('🎯 [WIZARD] Found Smart Upload data in sessionStorage:', importedFormData);
+        
+        // Clear the sessionStorage data so it doesn't get re-applied
+        sessionStorage.removeItem('smartUploadData');
+        
+        // Update form data with imported data (images are already included in formData)
+        updateFormData({
+          ...importedFormData,
+        });
+        
+        // Navigate to step 1 (Item Type) so user starts from beginning
+        goToStep(1);
+        
+        // Don't show method choice
+        setShowMethodChoice(false);
+      } catch (error) {
+        console.error('🎯 [WIZARD] Error parsing Smart Upload data:', error);
+        sessionStorage.removeItem('smartUploadData');
+      }
+    }
+  }, []); // Only run once on mount
+
+  // Get total steps based on item type
+  const getTotalSteps = () => {
+    if (formData.itemType === "bike") return 13;
+    if (formData.itemType === "part") return 11;
+    if (formData.itemType === "apparel") return 11;
+    return 13; // Default to bike flow
+  };
+
+  // Step labels for progress indicator (bikes - 13 steps)
+  const bikeStepLabels = [
+    "Item Type",      // 1
+    "Basic Info",     // 2
+    "Frame",          // 3
+    "Components",     // 4
+    "Condition",      // 5
+    "Details",        // 6
+    "Photos",         // 7
+    "Purchase",       // 8
+    "Service",        // 9
+    "Pricing",        // 10
+    "Delivery",       // 11
+    "Contact",        // 12
+    "Review",         // 13
   ];
 
-  // Validate current step
+  // Step labels for parts (11 steps)
+  const partStepLabels = [
+    "Item Type",      // 1
+    "Basic Info",     // 2
+    "Specifications", // 3
+    "Compatibility",  // 4
+    "Condition",      // 5
+    "Details",        // 6
+    "Photos",         // 7
+    "Purchase",       // 8
+    "Pricing",        // 9
+    "Delivery",       // 10
+    "Contact",        // 11
+    "Review",         // 12 (maps to step 11 for parts)
+  ];
+
+  // Step labels for apparel (11 steps)
+  const apparelStepLabels = [
+    "Item Type",      // 1
+    "Basic Info",     // 2
+    "Sizing",         // 3
+    "Details",        // 4
+    "Condition",      // 5
+    "Wear",           // 6
+    "Photos",         // 7
+    "Purchase",       // 8
+    "Pricing",        // 9
+    "Delivery",       // 10
+    "Contact",        // 11
+    "Review",         // 12 (maps to step 11 for apparel)
+  ];
+
+  const getStepLabels = () => {
+    if (formData.itemType === "bike") return bikeStepLabels;
+    if (formData.itemType === "part") return partStepLabels;
+    if (formData.itemType === "apparel") return apparelStepLabels;
+    return bikeStepLabels;
+  };
+
+  // Validate current step (now more granular)
   const validateCurrentStep = (): boolean => {
     let result;
 
+    // Bike flow validation (13 steps)
+    if (formData.itemType === "bike") {
     switch (currentStep) {
       case 1:
         result = validateItemType(formData.itemType);
         break;
-      case 2:
-        if (formData.itemType === "bike") {
-          result = validateBikeDetails({
-            title: formData.title,
-            brand: formData.brand,
-            model: formData.model,
-            modelYear: formData.modelYear,
-            bikeType: formData.bikeType,
-            frameSize: formData.frameSize,
-            frameMaterial: formData.frameMaterial,
-            colorPrimary: formData.colorPrimary,
-            colorSecondary: formData.colorSecondary,
-            groupset: formData.groupset,
-            wheelSize: formData.wheelSize,
-            suspensionType: formData.suspensionType,
-            bikeWeight: formData.bikeWeight,
+        case 2: // Basic Info
+          result = {
+            isValid: !!(formData.brand && formData.model && formData.bikeType),
+            errors: [
+              ...(!formData.brand ? [{ field: "brand", message: "Brand is required" }] : []),
+              ...(!formData.model ? [{ field: "model", message: "Model is required" }] : []),
+              ...(!formData.bikeType ? [{ field: "bikeType", message: "Bike type is required" }] : []),
+            ],
+          };
+          break;
+        case 3: // Frame Details
+          result = {
+            isValid: !!(formData.frameSize && formData.frameMaterial),
+            errors: [
+              ...(!formData.frameSize ? [{ field: "frameSize", message: "Frame size is required" }] : []),
+              ...(!formData.frameMaterial ? [{ field: "frameMaterial", message: "Frame material is required" }] : []),
+            ],
+          };
+          break;
+        case 4: // Components - optional, always valid
+          result = { isValid: true, errors: [] };
+          break;
+        case 5: // Condition Rating
+          result = {
+            isValid: !!(formData.conditionRating && formData.conditionDetails && formData.conditionDetails.length >= 20),
+            errors: [
+              ...(!formData.conditionRating ? [{ field: "conditionRating", message: "Condition rating is required" }] : []),
+              ...(!formData.conditionDetails ? [{ field: "conditionDetails", message: "Condition details are required" }] : []),
+              ...(formData.conditionDetails && formData.conditionDetails.length < 20 ? [{ field: "conditionDetails", message: "Condition details must be at least 20 characters" }] : []),
+            ],
+          };
+          break;
+        case 6: // Condition Details - optional, always valid
+          result = { isValid: true, errors: [] };
+          break;
+        case 7: // Photos
+          console.log('🎯 [VALIDATION] Step 7 Photos (Bikes) - images count:', formData.images?.length || 0);
+          console.log('🎯 [VALIDATION] Step 7 Photos (Bikes) - images:', formData.images);
+          result = validatePhotos({
+            images: formData.images || [],
+            primaryImageUrl: formData.primaryImageUrl,
+          });
+          console.log('🎯 [VALIDATION] Step 7 Photos (Bikes) - result:', result);
+          break;
+        case 8: // Purchase History - optional, always valid
+          result = validateHistory({
+            purchaseLocation: formData.purchaseLocation,
+            purchaseDate: formData.purchaseDate,
+            originalRrp: formData.originalRrp,
+            serviceHistory: formData.serviceHistory,
             upgradesModifications: formData.upgradesModifications,
           });
-        } else if (formData.itemType === "part") {
+          break;
+        case 9: // Service & Upgrades - optional, always valid
+          result = { isValid: true, errors: [] };
+          break;
+        case 10: // Pricing
+          result = {
+            isValid: !!(formData.price && formData.price > 0),
+            errors: [
+              ...(!formData.price || formData.price <= 0 ? [{ field: "price", message: "Price is required" }] : []),
+            ],
+          };
+          break;
+        case 11: // Delivery
+          result = {
+            isValid: !!formData.pickupLocation,
+            errors: [
+              ...(!formData.pickupLocation ? [{ field: "pickupLocation", message: "Pickup location is required" }] : []),
+            ],
+          };
+          break;
+        case 12: // Contact
+          result = validatePricing({
+            price: formData.price,
+            isNegotiable: formData.isNegotiable,
+            pickupLocation: formData.pickupLocation,
+            shippingAvailable: formData.shippingAvailable,
+            shippingCost: formData.shippingCost,
+            includedAccessories: formData.includedAccessories,
+            sellerContactPreference: formData.sellerContactPreference,
+            sellerPhone: formData.sellerPhone,
+            sellerEmail: formData.sellerEmail,
+          });
+          break;
+        default:
+          result = { isValid: true, errors: [] };
+      }
+    } 
+    // Part flow validation (11 steps, maps differently)
+    else if (formData.itemType === "part") {
+      switch (currentStep) {
+        case 1:
+          result = validateItemType(formData.itemType);
+          break;
+        case 2: // Basic Info for parts (using legacy component)
           result = validatePartDetails({
             title: formData.title,
             marketplace_subcategory: formData.marketplace_subcategory,
@@ -119,7 +383,76 @@ export function SellWizard() {
             weight: formData.weight,
             compatibilityNotes: formData.compatibilityNotes,
           });
-        } else {
+          break;
+        case 3: // Specifications - optional
+          result = { isValid: true, errors: [] };
+          break;
+        case 4: // Compatibility - optional
+          result = { isValid: true, errors: [] };
+          break;
+        case 5: // Condition Rating
+          result = {
+            isValid: !!(formData.conditionRating && formData.conditionDetails && formData.conditionDetails.length >= 20),
+            errors: [
+              ...(!formData.conditionRating ? [{ field: "conditionRating", message: "Condition rating is required" }] : []),
+              ...(!formData.conditionDetails ? [{ field: "conditionDetails", message: "Condition details are required" }] : []),
+            ],
+          };
+          break;
+        case 6: // Condition Details - optional
+          result = { isValid: true, errors: [] };
+          break;
+        case 7: // Photos
+          console.log('🎯 [VALIDATION] Step 7 Photos (Parts) - images count:', formData.images?.length || 0);
+          result = validatePhotos({
+            images: formData.images || [],
+            primaryImageUrl: formData.primaryImageUrl,
+          });
+          console.log('🎯 [VALIDATION] Step 7 Photos (Parts) - result:', result);
+          break;
+        case 8: // Purchase History - optional
+          result = { isValid: true, errors: [] };
+          break;
+        case 9: // Pricing (skip service for parts)
+          result = {
+            isValid: !!formData.price,
+            errors: [
+              ...(!formData.price ? [{ field: "price", message: "Price is required" }] : []),
+            ],
+          };
+          break;
+        case 10: // Delivery
+          result = {
+            isValid: !!formData.pickupLocation,
+            errors: [
+              ...(!formData.pickupLocation ? [{ field: "pickupLocation", message: "Pickup location is required" }] : []),
+            ],
+          };
+          break;
+        case 11: // Contact
+          result = validatePricing({
+            price: formData.price,
+            isNegotiable: formData.isNegotiable,
+            pickupLocation: formData.pickupLocation,
+            shippingAvailable: formData.shippingAvailable,
+            shippingCost: formData.shippingCost,
+            includedAccessories: formData.includedAccessories,
+            sellerContactPreference: formData.sellerContactPreference,
+            sellerPhone: formData.sellerPhone,
+            sellerEmail: formData.sellerEmail,
+          });
+          break;
+        default:
+          result = { isValid: true, errors: [] };
+      }
+    }
+    // Apparel flow validation (11 steps, uses legacy component for now)
+    else {
+      switch (currentStep) {
+        case 1:
+          result = validateItemType(formData.itemType);
+          break;
+        case 2: // Basic Info for apparel (using legacy component)
           result = validateApparelDetails({
             title: formData.title,
             marketplace_subcategory: formData.marketplace_subcategory,
@@ -130,33 +463,51 @@ export function SellWizard() {
             colorPrimary: formData.colorPrimary,
             apparelMaterial: formData.apparelMaterial,
           });
-        }
+          break;
+        case 3: // Sizing - covered in step 2
+        case 4: // Details - covered in step 2
+          result = { isValid: true, errors: [] };
+          break;
+        case 5: // Condition Rating
+          result = {
+            isValid: !!(formData.conditionRating && formData.conditionDetails),
+            errors: [
+              ...(!formData.conditionRating ? [{ field: "conditionRating", message: "Condition rating is required" }] : []),
+              ...(!formData.conditionDetails ? [{ field: "conditionDetails", message: "Condition details are required" }] : []),
+            ],
+          };
         break;
-      case 3:
-        result = validateCondition({
-          conditionRating: formData.conditionRating,
-          conditionDetails: formData.conditionDetails,
-          wearNotes: formData.wearNotes,
-          usageEstimate: formData.usageEstimate,
-        });
+        case 6: // Wear - optional
+          result = { isValid: true, errors: [] };
         break;
-      case 4:
+        case 7: // Photos
+          console.log('🎯 [VALIDATION] Step 7 Photos (Apparel) - images count:', formData.images?.length || 0);
         result = validatePhotos({
           images: formData.images || [],
           primaryImageUrl: formData.primaryImageUrl,
         });
+          console.log('🎯 [VALIDATION] Step 7 Photos (Apparel) - result:', result);
+          break;
+        case 8: // Purchase - optional
+          result = { isValid: true, errors: [] };
+          break;
+        case 9: // Pricing
+          result = {
+            isValid: !!formData.price,
+            errors: [
+              ...(!formData.price ? [{ field: "price", message: "Price is required" }] : []),
+            ],
+          };
         break;
-      case 5:
-        result = validateHistory({
-          purchaseLocation: formData.purchaseLocation,
-          purchaseDate: formData.purchaseDate,
-          originalRrp: formData.originalRrp,
-          serviceHistory: formData.serviceHistory,
-          upgradesModifications: formData.upgradesModifications,
-          reasonForSelling: formData.reasonForSelling,
-        });
+        case 10: // Delivery
+          result = {
+            isValid: !!formData.pickupLocation,
+            errors: [
+              ...(!formData.pickupLocation ? [{ field: "pickupLocation", message: "Pickup location is required" }] : []),
+            ],
+          };
         break;
-      case 6:
+        case 11: // Contact
         result = validatePricing({
           price: formData.price,
           isNegotiable: formData.isNegotiable,
@@ -171,6 +522,7 @@ export function SellWizard() {
         break;
       default:
         result = { isValid: true, errors: [] };
+      }
     }
 
     setErrors(result.errors);
@@ -178,15 +530,33 @@ export function SellWizard() {
   };
 
   const handleNext = () => {
-    if (validateCurrentStep()) {
+    console.log('🎯 [WIZARD] handleNext called, currentStep:', currentStep);
+    console.log('🎯 [WIZARD] itemType:', formData.itemType);
+    
+    const isValid = validateCurrentStep();
+    console.log('🎯 [WIZARD] Validation result:', isValid);
+    
+    if (isValid) {
       if (currentStep === 1 && formData.itemType) {
         setItemType(formData.itemType);
       } else {
+        // For apparel, steps 2-4 all show the same component
+        // So skip from step 2 directly to step 5
+        if (formData.itemType === "apparel" && currentStep === 2) {
+          console.log('🎯 [WIZARD] Skipping apparel steps 3-4, going to step 5');
+          goToStep(5);
+        } else {
+          console.log('🎯 [WIZARD] Advancing to next step from', currentStep, 'to', currentStep + 1);
         nextStep();
+          console.log('🎯 [WIZARD] nextStep() called');
+        }
       }
       setErrors([]);
+      // Scroll to top of page so user sees new step
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } else {
       // Scroll to first error
+      console.log('🎯 [WIZARD] Validation failed, scrolling to top');
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
@@ -232,42 +602,195 @@ export function SellWizard() {
     }
   };
 
-  // Render current step
+  // Render current step (now handles different flows)
   const renderStep = () => {
+    // Build quick listing data from AI-detected form data
+    const quickListingData = {
+      title: formData.title || [formData.brand, formData.model].filter(Boolean).join(' ') || undefined,
+      description: formData.conditionDetails || formData.wearNotes || undefined,
+      price: formData.price,
+      conditionRating: formData.conditionRating,
+      images: formData.images,
+      itemType: formData.itemType,
+      brand: formData.brand,
+      model: formData.model,
+    };
+
+    // Bike flow (13 steps)
+    if (formData.itemType === "bike") {
     switch (currentStep) {
       case 1:
         return (
           <Step1ItemType
             selectedType={formData.itemType}
             onSelect={(type) => updateFormData({ itemType: type })}
+            quickListingData={quickListingData}
+            onQuickList={handleQuickList}
           />
         );
-
-      case 2:
-        if (formData.itemType === "bike") {
+        case 2: // Basic Info
           return (
-            <Step2ABikeDetails
+            <Step2BasicInfo
               data={{
                 title: formData.title,
                 brand: formData.brand,
                 model: formData.model,
                 modelYear: formData.modelYear,
                 bikeType: formData.bikeType,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 3: // Frame Details
+          return (
+            <Step3FrameDetails
+              data={{
                 frameSize: formData.frameSize,
                 frameMaterial: formData.frameMaterial,
                 colorPrimary: formData.colorPrimary,
                 colorSecondary: formData.colorSecondary,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 4: // Components
+          return (
+            <Step4Components
+              data={{
                 groupset: formData.groupset,
                 wheelSize: formData.wheelSize,
                 suspensionType: formData.suspensionType,
                 bikeWeight: formData.bikeWeight,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 5: // Condition Rating
+          return (
+            <Step5ConditionRating
+              data={{
+                conditionRating: formData.conditionRating,
+                conditionDetails: formData.conditionDetails,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 6: // Condition Details
+          return (
+            <Step6ConditionDetails
+              data={{
+                wearNotes: formData.wearNotes,
+                usageEstimate: formData.usageEstimate,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 7: // Photos
+          return (
+            <Step7Photos
+              data={{
+                images: formData.images || [],
+                primaryImageUrl: formData.primaryImageUrl,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+              itemType={formData.itemType}
+            />
+          );
+        case 8: // Purchase History
+          return (
+            <Step8PurchaseHistory
+              data={{
+                purchaseLocation: formData.purchaseLocation,
+                purchaseDate: formData.purchaseDate,
+                originalRrp: formData.originalRrp,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 9: // Service & Upgrades
+          return (
+            <Step9ServiceUpgrades
+              data={{
+                serviceHistory: formData.serviceHistory,
                 upgradesModifications: formData.upgradesModifications,
               }}
               onChange={(data) => updateFormData(data)}
               errors={errors}
             />
           );
-        } else if (formData.itemType === "part") {
+        case 10: // Pricing
+          return (
+            <Step10Pricing
+              data={{
+                price: formData.price,
+                isNegotiable: formData.isNegotiable,
+                reasonForSelling: formData.reasonForSelling,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 11: // Delivery
+          return (
+            <Step11Delivery
+              data={{
+                pickupLocation: formData.pickupLocation,
+                shippingAvailable: formData.shippingAvailable,
+                shippingCost: formData.shippingCost,
+                shippingRestrictions: formData.shippingRestrictions,
+                includedAccessories: formData.includedAccessories,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 12: // Contact
+          return (
+            <Step12Contact
+              data={{
+                sellerContactPreference: formData.sellerContactPreference,
+                sellerPhone: formData.sellerPhone,
+                sellerEmail: formData.sellerEmail,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 13: // Review
+          return (
+            <Step7Review
+              data={formData}
+              onEdit={goToStep}
+              onPublish={handlePublish}
+              onSaveDraft={handleSaveDraft}
+              isPublishing={isPublishing}
+            />
+          );
+        default:
+          return null;
+      }
+    }
+    
+    // Part flow (11 steps) - uses mix of new and legacy components
+    if (formData.itemType === "part") {
+      switch (currentStep) {
+        case 1:
+          return (
+            <Step1ItemType
+              selectedType={formData.itemType}
+              onSelect={(type) => updateFormData({ itemType: type })}
+              quickListingData={quickListingData}
+              onQuickList={handleQuickList}
+            />
+          );
+        case 2: // Basic Info (legacy component for now)
           return (
             <Step2BPartDetails
               data={{
@@ -276,16 +799,147 @@ export function SellWizard() {
                 partTypeDetail: formData.partTypeDetail,
                 brand: formData.brand,
                 model: formData.model,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 3: // Specifications
+          return (
+            <Step3Specifications
+              data={{
                 material: formData.material,
                 colorPrimary: formData.colorPrimary,
                 weight: formData.weight,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 4: // Compatibility
+          return (
+            <Step4Compatibility
+              data={{
                 compatibilityNotes: formData.compatibilityNotes,
               }}
               onChange={(data) => updateFormData(data)}
               errors={errors}
             />
           );
-        } else {
+        case 5: // Condition Rating
+          return (
+            <Step5ConditionRating
+              data={{
+                conditionRating: formData.conditionRating,
+                conditionDetails: formData.conditionDetails,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 6: // Condition Details
+          return (
+            <Step6ConditionDetails
+              data={{
+                wearNotes: formData.wearNotes,
+                usageEstimate: formData.usageEstimate,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 7: // Photos
+          return (
+            <Step7Photos
+              data={{
+                images: formData.images || [],
+                primaryImageUrl: formData.primaryImageUrl,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+              itemType={formData.itemType}
+            />
+          );
+        case 8: // Purchase History
+          return (
+            <Step8PurchaseHistory
+              data={{
+                purchaseLocation: formData.purchaseLocation,
+                purchaseDate: formData.purchaseDate,
+                originalRrp: formData.originalRrp,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 9: // Pricing (no service step for parts)
+          return (
+            <Step10Pricing
+              data={{
+                price: formData.price,
+                isNegotiable: formData.isNegotiable,
+                reasonForSelling: formData.reasonForSelling,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 10: // Delivery
+          return (
+            <Step11Delivery
+              data={{
+                pickupLocation: formData.pickupLocation,
+                shippingAvailable: formData.shippingAvailable,
+                shippingCost: formData.shippingCost,
+                shippingRestrictions: formData.shippingRestrictions,
+                includedAccessories: formData.includedAccessories,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 11: // Contact
+          return (
+            <Step12Contact
+              data={{
+                sellerContactPreference: formData.sellerContactPreference,
+                sellerPhone: formData.sellerPhone,
+                sellerEmail: formData.sellerEmail,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 12: // Review
+          return (
+            <Step7Review
+              data={formData}
+              onEdit={goToStep}
+              onPublish={handlePublish}
+              onSaveDraft={handleSaveDraft}
+              isPublishing={isPublishing}
+            />
+          );
+        default:
+          return null;
+      }
+    }
+    
+    // Apparel flow (11 steps) - uses legacy component for now
+    if (formData.itemType === "apparel") {
+      switch (currentStep) {
+        case 1:
+          return (
+            <Step1ItemType
+              selectedType={formData.itemType}
+              onSelect={(type) => updateFormData({ itemType: type })}
+              quickListingData={quickListingData}
+              onQuickList={handleQuickList}
+            />
+          );
+        case 2: // All basic details in legacy component
+        case 3: // (Sizing - covered in step 2)
+        case 4: // (Details - covered in step 2)
           return (
             <Step2CApparelDetails
               data={{
@@ -302,14 +956,21 @@ export function SellWizard() {
               errors={errors}
             />
           );
-        }
-
-      case 3:
+        case 5: // Condition Rating
         return (
-          <Step3Condition
+            <Step5ConditionRating
             data={{
               conditionRating: formData.conditionRating,
               conditionDetails: formData.conditionDetails,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 6: // Condition Details
+          return (
+            <Step6ConditionDetails
+              data={{
               wearNotes: formData.wearNotes,
               usageEstimate: formData.usageEstimate,
             }}
@@ -317,10 +978,9 @@ export function SellWizard() {
             errors={errors}
           />
         );
-
-      case 4:
+        case 7: // Photos
         return (
-          <Step4Photos
+            <Step7Photos
             data={{
               images: formData.images || [],
               primaryImageUrl: formData.primaryImageUrl,
@@ -330,33 +990,48 @@ export function SellWizard() {
             itemType={formData.itemType}
           />
         );
-
-      case 5:
+        case 8: // Purchase History
         return (
-          <Step5History
+            <Step8PurchaseHistory
             data={{
               purchaseLocation: formData.purchaseLocation,
               purchaseDate: formData.purchaseDate,
               originalRrp: formData.originalRrp,
-              serviceHistory: formData.serviceHistory,
-              upgradesModifications: formData.upgradesModifications,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 9: // Pricing
+          return (
+            <Step10Pricing
+              data={{
+                price: formData.price,
+                isNegotiable: formData.isNegotiable,
               reasonForSelling: formData.reasonForSelling,
             }}
             onChange={(data) => updateFormData(data)}
             errors={errors}
           />
         );
-
-      case 6:
+        case 10: // Delivery
         return (
-          <Step6Pricing
+            <Step11Delivery
             data={{
-              price: formData.price,
-              isNegotiable: formData.isNegotiable,
               pickupLocation: formData.pickupLocation,
               shippingAvailable: formData.shippingAvailable,
               shippingCost: formData.shippingCost,
+                shippingRestrictions: formData.shippingRestrictions,
               includedAccessories: formData.includedAccessories,
+              }}
+              onChange={(data) => updateFormData(data)}
+              errors={errors}
+            />
+          );
+        case 11: // Contact
+          return (
+            <Step12Contact
+              data={{
               sellerContactPreference: formData.sellerContactPreference,
               sellerPhone: formData.sellerPhone,
               sellerEmail: formData.sellerEmail,
@@ -365,8 +1040,7 @@ export function SellWizard() {
             errors={errors}
           />
         );
-
-      case 7:
+        case 12: // Review
         return (
           <Step7Review
             data={formData}
@@ -376,10 +1050,20 @@ export function SellWizard() {
             isPublishing={isPublishing}
           />
         );
-
       default:
         return null;
     }
+    }
+
+    // Default: Item Type selection
+    return (
+      <Step1ItemType
+        selectedType={formData.itemType}
+        onSelect={(type) => updateFormData({ itemType: type })}
+        quickListingData={quickListingData}
+        onQuickList={handleQuickList}
+      />
+    );
   };
 
   // Handle Smart Upload mode
@@ -400,6 +1084,42 @@ export function SellWizard() {
                 order: index,
                 isPrimary: index === 0,
               })),
+              // Set primary image URL explicitly
+              primaryImageUrl: imageUrls[0],
+            });
+            
+            console.log('🎯 [WIZARD] Form data updated, navigating to step 1');
+            
+            // Navigate to step 1 (Item Type) so user starts from beginning
+            goToStep(1);
+            
+            // Don't show method choice again
+            setShowMethodChoice(false);
+            
+            // Change URL without reload
+            window.history.pushState({}, '', '/marketplace/sell?mode=manual&ai=true');
+          }}
+          onSwitchToManual={() => {
+            window.history.pushState({}, '', '/marketplace/sell?mode=manual');
+            setShowMethodChoice(false);
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Show Facebook import flow if mode=facebook
+  if (mode === 'facebook') {
+    return (
+      <div className="pt-16">
+        <FacebookImportFlow
+          onComplete={(importedFormData, imageUrls) => {
+            console.log('🎯 [WIZARD] Facebook data imported:', importedFormData);
+            console.log('🎯 [WIZARD] Image URLs:', imageUrls);
+            
+            // Update form data with imported data
+            updateFormData({
+              ...importedFormData,
             });
             
             console.log('🎯 [WIZARD] Form data updated, navigating to step 1');
@@ -429,10 +1149,53 @@ export function SellWizard() {
         <div className="flex-1 py-12 px-6">
           <UploadMethodChoice
             onSelectSmart={() => {
-              router.push('/marketplace/sell?mode=smart');
+              // No longer navigating - modal handles it
             }}
             onSelectManual={() => {
               setShowMethodChoice(false);
+            }}
+            onSelectFacebook={() => {
+              // No longer navigating - modal handles it
+            }}
+            onFacebookImportComplete={(importedFormData, images) => {
+              console.log('🎯 [WIZARD] Facebook data imported from modal:', importedFormData);
+              console.log('🎯 [WIZARD] Images:', images);
+              
+              // Update form data with imported data
+              updateFormData({
+                ...importedFormData,
+              });
+              
+              console.log('🎯 [WIZARD] Form data updated, navigating to step 1');
+              
+              // Navigate to step 1 (Item Type) so user starts from beginning
+              goToStep(1);
+              
+              // Don't show method choice again
+              setShowMethodChoice(false);
+              
+              // Change URL without reload
+              window.history.pushState({}, '', '/marketplace/sell?mode=manual&ai=true');
+            }}
+            onSmartUploadComplete={(importedFormData, imageUrls) => {
+              console.log('🎯 [WIZARD] Smart Upload data imported from modal:', importedFormData);
+              console.log('🎯 [WIZARD] Image URLs:', imageUrls);
+              
+              // Update form data with imported data (images already included in formData)
+              updateFormData({
+                ...importedFormData,
+              });
+              
+              console.log('🎯 [WIZARD] Form data updated, navigating to step 1');
+              
+              // Navigate to step 1 (Item Type) so user starts from beginning
+              goToStep(1);
+              
+              // Don't show method choice again
+              setShowMethodChoice(false);
+              
+              // Change URL without reload
+              window.history.pushState({}, '', '/marketplace/sell?mode=manual&ai=true');
             }}
           />
         </div>
@@ -445,7 +1208,7 @@ export function SellWizard() {
       {/* Main Content */}
       <div className={cn(
         "flex-1 py-8 px-6",
-        currentStep !== 7 && "pb-32" // Extra bottom padding for fixed footer, except on review step
+        currentStep !== getTotalSteps() && "pb-32" // Extra bottom padding for fixed footer, except on review step
       )}>
         <AnimatePresence mode="wait">
           <motion.div
@@ -461,16 +1224,16 @@ export function SellWizard() {
       </div>
 
       {/* Navigation Footer - Fixed at bottom */}
-      {currentStep !== 7 && (
+      {currentStep !== getTotalSteps() && (
         <div className="fixed bottom-0 left-0 right-0 lg:left-[200px] z-40">
           <WizardNavigation
             currentStep={currentStep}
-            totalSteps={7}
+            totalSteps={getTotalSteps()}
             onBack={handleBack}
             onNext={handleNext}
             onSaveDraft={handleSaveDraft}
             isNextDisabled={currentStep === 1 && !formData.itemType}
-            nextLabel={currentStep === 6 ? "Review Listing" : "Continue"}
+            nextLabel={currentStep === getTotalSteps() - 1 ? "Review Listing" : "Continue"}
             lastSaved={lastSaved}
           />
         </div>

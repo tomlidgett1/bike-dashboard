@@ -26,11 +26,12 @@ export async function POST(request: NextRequest) {
     const listingData = {
       user_id: user.id,
       listing_type: "private_listing",
-      listing_source: "manual",
+      listing_source: body.facebook_source_url ? "facebook_import" : "manual",
       listing_status: body.listingStatus || "draft",
+      facebook_source_url: body.facebook_source_url,
 
       // Basic info
-      description: body.conditionDetails || body.title || "",
+      description: body.title || "", // description field is the display name/title
       price: body.price,
       marketplace_category:
         body.itemType === "bike"
@@ -147,7 +148,7 @@ export async function GET(request: NextRequest) {
       .from("products")
       .select("*")
       .eq("user_id", user.id)
-      .eq("listing_source", "manual")
+      .in("listing_source", ["manual", "facebook_import"])
       .order("created_at", { ascending: false });
 
     if (status) {

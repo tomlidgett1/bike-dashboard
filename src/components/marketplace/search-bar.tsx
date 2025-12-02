@@ -21,7 +21,7 @@ interface SearchBarProps {
 export function SearchBar({
   value,
   onChange,
-  placeholder = "Search bikes, parts, apparel...",
+  placeholder = "Ask a question or search bikes, parts, apparel...",
   loading = false,
   className,
 }: SearchBarProps) {

@@ -38,7 +38,7 @@ export function CategoryPills({
             key={name}
             onClick={() => onCategoryChange(isActive ? null : name)}
             className={cn(
-              "flex items-center gap-2 px-4 py-2.5 rounded-md font-medium transition-all duration-200",
+              "flex items-center gap-2 px-4 py-2.5 rounded-md font-medium transition-all duration-200 cursor-pointer",
               isActive
                 ? "bg-white text-gray-800 shadow-md border border-gray-200"
                 : "bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:shadow-sm"

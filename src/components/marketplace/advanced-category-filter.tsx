@@ -164,7 +164,7 @@ export function AdvancedCategoryFilter({
               {/* Back button to Level 2 */}
               <button
                 onClick={() => onLevel3Change(null)}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-md transition-all whitespace-nowrap text-gray-700 bg-gray-100 hover:bg-gray-200/70 flex-shrink-0"
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-md transition-all whitespace-nowrap text-gray-700 bg-gray-100 hover:bg-gray-200/70 flex-shrink-0 cursor-pointer"
               >
                 <ChevronLeft className="h-4 w-4" />
                 Back
@@ -179,7 +179,7 @@ export function AdvancedCategoryFilter({
                     key={level3.name}
                     onClick={() => handleLevel3Click(level3.name)}
                     className={cn(
-                      "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap",
+                      "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
                       isActive
                         ? "text-gray-800 bg-white shadow-sm border border-gray-200"
                         : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
@@ -202,7 +202,7 @@ export function AdvancedCategoryFilter({
                   onLevel2Change(null);
                   onLevel3Change(null);
                 }}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-md transition-all whitespace-nowrap text-gray-700 bg-gray-100 hover:bg-gray-200/70 flex-shrink-0"
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-md transition-all whitespace-nowrap text-gray-700 bg-gray-100 hover:bg-gray-200/70 flex-shrink-0 cursor-pointer"
               >
                 <ChevronLeft className="h-4 w-4" />
                 Back
@@ -217,7 +217,7 @@ export function AdvancedCategoryFilter({
                     key={level2.name}
                     onClick={() => handleLevel2Click(level2.name)}
                     className={cn(
-                      "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap",
+                      "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
                       isActive
                         ? "text-gray-800 bg-white shadow-sm border border-gray-200"
                         : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
@@ -237,7 +237,7 @@ export function AdvancedCategoryFilter({
               <button
                 onClick={clearAll}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap",
+                  "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
                   !selectedLevel1
                     ? "text-gray-800 bg-white shadow-sm border border-gray-200"
                     : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
@@ -264,7 +264,7 @@ export function AdvancedCategoryFilter({
                       key={level1}
                       onClick={() => handleLevel1Click(level1)}
                       className={cn(
-                        "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap",
+                        "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
                         isActive
                           ? "text-gray-800 bg-white shadow-sm border border-gray-200"
                           : "text-gray-600 bg-gray-100 hover:bg-gray-200/70"
