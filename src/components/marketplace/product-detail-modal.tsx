@@ -214,7 +214,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                               className="flex-shrink-0"
                             />
                             {hasTrustBadges && (
-                              <BadgeCheck className="h-4 w-4 text-green-600 flex-shrink-0" title="Verified seller" />
+                              <BadgeCheck className="h-4 w-4 text-green-600 flex-shrink-0" aria-label="Verified seller" />
                             )}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-gray-500">

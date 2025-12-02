@@ -18,6 +18,7 @@ interface SearchProduct {
   price: number;
   category: string;
   imageUrl: string | null;
+  thumbnailUrl?: string; // Pre-generated 100px thumbnail for instant loading
   inStock: boolean;
 }
 
@@ -27,19 +28,28 @@ interface StoreSearchBarProps {
   className?: string;
 }
 
-// Product Image Thumbnail with error handling
-function ProductImageThumbnail({ imageUrl, name }: { imageUrl: string | null; name: string }) {
+// Product Image Thumbnail
+function ProductImageThumbnail({ 
+  imageUrl, 
+  name 
+}: { 
+  imageUrl: string | null; 
+  name: string 
+}) {
   const [imageError, setImageError] = React.useState(false);
+  
+  // Just use the URL directly
+  const optimisedUrl = imageUrl;
 
   return (
     <div className="relative h-12 w-12 rounded-md bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200 flex items-center justify-center">
-      {!imageError && imageUrl ? (
+      {!imageError && optimisedUrl ? (
         <Image
-          src={imageUrl}
+          src={optimisedUrl}
           alt={name}
           fill
+          unoptimized
           className="object-contain"
-          sizes="48px"
           onError={() => setImageError(true)}
         />
       ) : (
@@ -236,7 +246,10 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
                   )}
                 >
                   {/* Product Image */}
-                  <ProductImageThumbnail imageUrl={product.imageUrl} name={product.name} />
+                  <ProductImageThumbnail 
+                    imageUrl={product.imageUrl} 
+                    name={product.name} 
+                  />
 
                   {/* Product Info */}
                   <div className="flex-1 min-w-0">

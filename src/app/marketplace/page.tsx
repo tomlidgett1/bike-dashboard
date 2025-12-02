@@ -19,7 +19,7 @@ import { useMarketplaceData, useCategoryCounts } from "@/lib/hooks/use-marketpla
 
 // ============================================================
 // Marketplace Page - Discovery-Focused Homepage
-// Default view: Trending products with pill filters
+// Default view: All Products with All Listings filter
 // Can also show stores or individual sellers
 // ============================================================
 
@@ -44,8 +44,9 @@ export default function MarketplacePage() {
   const isSellersView = urlView === 'sellers';
 
   // View mode state (trending, for-you, all) - only for products view
+  // Default to 'all' products for fastest initial load
   const [viewMode, setViewMode] = React.useState<ViewMode>(
-    (!isStoresView && !isSellersView && urlView as ViewMode) || 'trending'
+    (!isStoresView && !isSellersView && urlView as ViewMode) || 'all'
   );
 
   // Stores state
@@ -68,8 +69,8 @@ export default function MarketplacePage() {
     searchParams.get('level3') || null
   );
 
-  // Listing type filter state (default to individual sellers only)
-  const [listingTypeFilter, setListingTypeFilter] = React.useState<ListingTypeFilterType>('individuals');
+  // Listing type filter state (default to all listings)
+  const [listingTypeFilter, setListingTypeFilter] = React.useState<ListingTypeFilterType>('all');
 
   // Products state (for pagination accumulation)
   const [accumulatedProducts, setAccumulatedProducts] = React.useState<MarketplaceProduct[]>([]);
@@ -93,8 +94,8 @@ export default function MarketplacePage() {
     level3: selectedLevel3,
     search: searchQuery,
     // Add listing type filtering
-    listingType: listingTypeFilter === 'stores' ? 'store_inventory' : 
-                 listingTypeFilter === 'individuals' ? 'private_listing' : undefined,
+    listingType: listingTypeFilter === 'stores' ? 'store_inventory' as const : 
+                 listingTypeFilter === 'individuals' ? 'private_listing' as const : undefined,
   }), [viewMode, currentPage, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter]);
 
   // Use SWR for products data with intelligent caching
@@ -121,18 +122,28 @@ export default function MarketplacePage() {
     const filtersChanged = filterKey !== prevFilterKeyRef.current;
     
     if (filtersChanged) {
-      // Filters changed - reset everything and start fresh
+      // Filters changed - reset tracking but wait for fresh data
       prevFilterKeyRef.current = filterKey;
       processedDataRef.current = new Set();
+      
+      // Only set products if we have actual data for the new filter
+      // (not empty and not stale from previous filter)
+      if (fetchedProducts.length > 0) {
+        setAccumulatedProducts(fetchedProducts);
+        fetchedProducts.forEach(p => processedDataRef.current.add(p.id));
+      } else {
+        // Clear products and wait for new data to arrive
+        setAccumulatedProducts([]);
+      }
       setCurrentPage(1);
-      setAccumulatedProducts(fetchedProducts);
-      // Mark these products as processed
-      fetchedProducts.forEach(p => processedDataRef.current.add(p.id));
     } else if (fetchedProducts.length > 0) {
-      // Check if we have genuinely new data (not already processed)
+      // Same filter - check if we have genuinely new data
       const hasNewData = fetchedProducts.some(p => !processedDataRef.current.has(p.id));
       
-      if (hasNewData) {
+      // Also handle the case where we cleared products waiting for new data
+      const needsInitialData = accumulatedProducts.length === 0 && processedDataRef.current.size === 0;
+      
+      if (hasNewData || needsInitialData) {
         if (currentPage === 1) {
           setAccumulatedProducts(fetchedProducts);
         } else {
@@ -148,11 +159,15 @@ export default function MarketplacePage() {
         fetchedProducts.forEach(p => processedDataRef.current.add(p.id));
       }
     }
-  }, [fetchedProducts, currentPage, filterKey]);
+  }, [fetchedProducts, currentPage, filterKey, accumulatedProducts.length]);
 
   // Derive display state
   const products = accumulatedProducts;
-  const loading = isLoading && currentPage === 1;
+  // Show loading state when:
+  // 1. Initial loading (isLoading is true), OR
+  // 2. On page 1 with no products while validating (filter just changed)
+  const loading = (isLoading && currentPage === 1) || 
+                  (currentPage === 1 && accumulatedProducts.length === 0 && isValidating);
   const hasMore = pagination?.hasMore || false;
   const totalCount = pagination?.total || 0;
 

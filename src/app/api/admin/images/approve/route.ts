@@ -1,6 +1,11 @@
 /**
  * Admin Image Approval API
  * POST /api/admin/images/approve - Approve/reject images with max 5 validation
+ * 
+ * When approving images:
+ * 1. Validates max 5 images per product
+ * 2. Uploads approved images to Cloudinary (if not already there)
+ * 3. Creates thumbnail (100px), card (400px), detail (800px) variants
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,6 +15,12 @@ interface ApprovalRequest {
   canonicalProductId: string;
   approveImageIds: string[]; // Images to approve
   rejectPendingImages?: boolean; // Reject all other pending images
+}
+
+interface ImageToUpload {
+  id: string;
+  external_url: string;
+  sort_order: number;
 }
 
 export async function POST(request: NextRequest) {
@@ -22,6 +33,12 @@ export async function POST(request: NextRequest) {
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+    }
+
+    // Get session for edge function calls
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'No session' }, { status: 401 });
     }
 
     const body: ApprovalRequest = await request.json();
@@ -74,7 +91,81 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Approve selected images
+    // Get images that need to be uploaded to Cloudinary
+    const { data: imagesToProcess, error: fetchError } = await supabase
+      .from('product_images')
+      .select('id, external_url, sort_order, cloudinary_url')
+      .in('id', approveImageIds)
+      .eq('canonical_product_id', canonicalProductId);
+
+    if (fetchError) {
+      console.error('[ADMIN APPROVE] Fetch error:', fetchError);
+      return NextResponse.json({ error: 'Failed to fetch images' }, { status: 500 });
+    }
+
+    // Filter images that need Cloudinary upload
+    const needsUpload: ImageToUpload[] = (imagesToProcess || [])
+      .filter(img => img.external_url && !img.cloudinary_url)
+      .map(img => ({
+        id: img.id,
+        external_url: img.external_url,
+        sort_order: img.sort_order || 0,
+      }));
+
+    console.log(`[ADMIN APPROVE] ${needsUpload.length}/${approveImageIds.length} images need Cloudinary upload`);
+
+    // Upload images to Cloudinary via edge function
+    const uploadResults: { id: string; success: boolean; error?: string }[] = [];
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    for (const image of needsUpload) {
+      try {
+        console.log(`[ADMIN APPROVE] Uploading image ${image.id} to Cloudinary...`);
+        
+        const response = await fetch(
+          `${supabaseUrl}/functions/v1/download-image`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              imageId: image.id,
+              externalUrl: image.external_url,
+              canonicalProductId,
+              sortOrder: image.sort_order,
+            }),
+          }
+        );
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log(`[ADMIN APPROVE] ✅ Image ${image.id} uploaded to Cloudinary`);
+          uploadResults.push({ id: image.id, success: true });
+        } else {
+          const errorData = await response.json();
+          console.error(`[ADMIN APPROVE] ❌ Failed to upload image ${image.id}:`, errorData);
+          uploadResults.push({ id: image.id, success: false, error: errorData.error });
+        }
+      } catch (error) {
+        console.error(`[ADMIN APPROVE] ❌ Error uploading image ${image.id}:`, error);
+        uploadResults.push({ 
+          id: image.id, 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Upload failed' 
+        });
+      }
+    }
+
+    const successfulUploads = uploadResults.filter(r => r.success).length;
+    const failedUploads = uploadResults.filter(r => !r.success);
+
+    if (failedUploads.length > 0) {
+      console.warn(`[ADMIN APPROVE] ${failedUploads.length} images failed to upload to Cloudinary`);
+    }
+
+    // Approve selected images (even if some Cloudinary uploads failed)
     if (approveImageIds.length > 0) {
       const { error: approveError } = await supabase
         .from('product_images')
@@ -121,8 +212,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Approved ${approveImageIds.length} images`,
+      message: `Approved ${approveImageIds.length} images, ${successfulUploads} uploaded to Cloudinary`,
       counts,
+      cloudinaryUploads: {
+        total: needsUpload.length,
+        successful: successfulUploads,
+        failed: failedUploads.length,
+        failures: failedUploads,
+      },
     });
   } catch (error) {
     console.error('[ADMIN APPROVE] Error:', error);
@@ -130,4 +227,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

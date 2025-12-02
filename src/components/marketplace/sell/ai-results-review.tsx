@@ -56,7 +56,8 @@ export function AIResultsReview({
   };
 
   const getConfidence = (field: string): number => {
-    return editedData.field_confidence?.[field] || editedData.overall_confidence || 80;
+    const confidence = editedData.field_confidence as Record<string, number> | undefined;
+    return confidence?.[field] || editedData.overall_confidence || 80;
   };
 
   return (

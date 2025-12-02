@@ -4,92 +4,54 @@ import type { ListingImage } from "@/lib/types/listing";
 // ============================================================
 // Facebook Image Handler
 // ============================================================
-// Downloads images from Facebook CDN and uploads to Supabase Storage
-// Facebook images are temporary URLs that need to be re-hosted
+// Downloads images from Facebook CDN and uploads to Cloudinary
+// for ultra-fast image delivery (~200-500ms first loads)
 
 /**
- * Downloads an image from a URL and converts to Blob
+ * Process a single Facebook image through Cloudinary Edge Function
  */
-async function downloadImageAsBlob(imageUrl: string): Promise<Blob> {
-  const response = await fetch(imageUrl, {
-    mode: "cors",
-    cache: "no-cache",
-  });
+async function uploadToCloudinary(
+  imageUrl: string,
+  listingId: string,
+  index: number,
+  accessToken: string
+): Promise<{
+  url: string;
+  cardUrl: string;
+  thumbnailUrl: string;
+}> {
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/upload-to-cloudinary`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        imageUrl,
+        listingId,
+        index,
+      }),
+    }
+  );
 
   if (!response.ok) {
-    throw new Error(`Failed to download image: ${response.statusText}`);
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to upload to Cloudinary');
   }
 
-  const blob = await response.blob();
-  
-  // Ensure it's an image
-  if (!blob.type.startsWith("image/")) {
-    throw new Error("Downloaded content is not an image");
-  }
-
-  return blob;
+  const result = await response.json();
+  return {
+    url: result.data.url,
+    cardUrl: result.data.cardUrl,
+    thumbnailUrl: result.data.thumbnailUrl,
+  };
 }
 
 /**
- * Generates a unique filename for Supabase Storage
- */
-function generateUniqueFilename(originalUrl: string, index: number): string {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 9);
-  
-  // Try to get extension from URL
-  let extension = "jpg"; // Default
-  try {
-    const urlObj = new URL(originalUrl);
-    const pathname = urlObj.pathname;
-    const ext = pathname.split(".").pop()?.toLowerCase();
-    if (ext && ["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
-      extension = ext;
-    }
-  } catch {
-    // If URL parsing fails, use default
-  }
-
-  return `facebook-import-${timestamp}-${index}-${random}.${extension}`;
-}
-
-/**
- * Uploads a blob to Supabase Storage
- */
-async function uploadToSupabase(
-  blob: Blob,
-  filename: string,
-  userId: string
-): Promise<string> {
-  const supabase = createClient();
-
-  // Upload to listing-images bucket
-  const filePath = `${userId}/${filename}`;
-  
-  const { data, error } = await supabase.storage
-    .from("listing-images")
-    .upload(filePath, blob, {
-      contentType: blob.type,
-      cacheControl: "3600",
-      upsert: false,
-    });
-
-  if (error) {
-    console.error("❌ Upload error:", error);
-    throw new Error(`Failed to upload image: ${error.message}`);
-  }
-
-  // Get public URL
-  const { data: publicUrlData } = supabase.storage
-    .from("listing-images")
-    .getPublicUrl(filePath);
-
-  return publicUrlData.publicUrl;
-}
-
-/**
- * Main function: Downloads Facebook images and uploads to Supabase Storage
- * Returns array of ListingImage objects with permanent URLs
+ * Main function: Downloads Facebook images and uploads to Cloudinary
+ * Returns array of ListingImage objects with permanent URLs and variants
  */
 export async function processFacebookImages(
   facebookImageUrls: string[],
@@ -101,43 +63,43 @@ export async function processFacebookImages(
 
   const supabase = createClient();
   
-  // Get current user
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
+  // Get current user and session
+  const { data: { session }, error: authError } = await supabase.auth.getSession();
+  if (authError || !session) {
     throw new Error("Authentication required to upload images");
   }
 
   const uploadedImages: ListingImage[] = [];
   const errors: string[] = [];
+  const listingId = `fb-${Date.now()}`;
 
-  console.log(`📸 [FB IMAGE HANDLER] Processing ${facebookImageUrls.length} images...`);
+  console.log(`📸 [FB IMAGE HANDLER] Uploading ${facebookImageUrls.length} images to Cloudinary...`);
 
   for (let i = 0; i < facebookImageUrls.length; i++) {
     const imageUrl = facebookImageUrls[i];
     
     try {
-      console.log(`📥 [FB IMAGE HANDLER] Downloading image ${i + 1}/${facebookImageUrls.length}`);
+      console.log(`📸 [FB IMAGE HANDLER] Processing image ${i + 1}/${facebookImageUrls.length}`);
       
-      // Download image as blob
-      const blob = await downloadImageAsBlob(imageUrl);
+      // Upload to Cloudinary via Edge Function
+      const { url, cardUrl, thumbnailUrl } = await uploadToCloudinary(
+        imageUrl,
+        listingId,
+        i,
+        session.access_token
+      );
       
-      // Generate unique filename
-      const filename = generateUniqueFilename(imageUrl, i);
-      
-      console.log(`📤 [FB IMAGE HANDLER] Uploading image ${i + 1}/${facebookImageUrls.length}`);
-      
-      // Upload to Supabase
-      const publicUrl = await uploadToSupabase(blob, filename, user.id);
-      
-      // Add to results
+      // Add to results with all variant URLs
       uploadedImages.push({
         id: `fb-img-${Date.now()}-${i}`,
-        url: publicUrl,
+        url,
+        cardUrl,
+        thumbnailUrl,
         order: i,
-        isPrimary: i === 0, // First image is primary
+        isPrimary: i === 0,
       });
 
-      console.log(`✅ [FB IMAGE HANDLER] Image ${i + 1} uploaded successfully`);
+      console.log(`✅ [FB IMAGE HANDLER] Image ${i + 1} uploaded to Cloudinary`);
       
       // Report progress
       if (onProgress) {
@@ -146,8 +108,6 @@ export async function processFacebookImages(
     } catch (error) {
       console.error(`❌ [FB IMAGE HANDLER] Failed to process image ${i + 1}:`, error);
       errors.push(`Image ${i + 1}: ${error instanceof Error ? error.message : "Unknown error"}`);
-      
-      // Continue with remaining images even if one fails
     }
   }
 
@@ -162,40 +122,25 @@ export async function processFacebookImages(
   }
 
   console.log(
-    `✅ [FB IMAGE HANDLER] Successfully uploaded ${uploadedImages.length}/${facebookImageUrls.length} images`
+    `✅ [FB IMAGE HANDLER] Successfully uploaded ${uploadedImages.length}/${facebookImageUrls.length} images to Cloudinary`
   );
 
   return uploadedImages;
 }
 
 /**
- * Validates that Supabase Storage bucket exists and is accessible
+ * Validates that Cloudinary is configured
  */
 export async function validateStorageBucket(): Promise<{
   exists: boolean;
   error?: string;
 }> {
-  try {
-    const supabase = createClient();
-    
-    // Try to list files (will fail if bucket doesn't exist or no access)
-    const { error } = await supabase.storage
-      .from("listing-images")
-      .list("", { limit: 1 });
-
-    if (error) {
-      return {
-        exists: false,
-        error: error.message,
-      };
-    }
-
-    return { exists: true };
-  } catch (error) {
+  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  if (!cloudName) {
     return {
       exists: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: "Cloudinary not configured",
     };
   }
+  return { exists: true };
 }
-

@@ -2,8 +2,7 @@
 
 import * as React from "react";
 import { useParams } from "next/navigation";
-import { motion } from "framer-motion";
-import { Loader2, Store as StoreIcon } from "lucide-react";
+import { Loader2, Store as StoreIcon, User } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { StoreHeader } from "@/components/marketplace/store-profile/store-header";
@@ -11,53 +10,81 @@ import { ContactModal } from "@/components/marketplace/store-profile/contact-mod
 import { ServicesSection } from "@/components/marketplace/store-profile/services-section";
 import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
 import { StoreSearchBar } from "@/components/marketplace/store-search-bar";
+import { SellerHeader, SellerCategories, SellerProductGrid } from "@/components/marketplace/seller-profile";
+import { useAuth } from "@/components/providers/auth-provider";
 import type { StoreProfile } from "@/lib/types/store";
+import type { SellerProfile } from "@/app/api/marketplace/seller/[sellerId]/route";
 
 // ============================================================
-// Store Profile Page
-// Public-facing store profile with products and services
+// Store/Seller Profile Page
+// Public-facing profile page that handles both:
+// - Bicycle stores (verified businesses)
+// - Individual sellers (Depop-style profile)
 // ============================================================
+
+type ProfileType = 'store' | 'seller' | null;
 
 export default function StoreProfilePage() {
   const params = useParams();
   const storeId = params.storeId as string;
+  const { user } = useAuth();
 
+  const [profileType, setProfileType] = React.useState<ProfileType>(null);
   const [store, setStore] = React.useState<StoreProfile | null>(null);
+  const [seller, setSeller] = React.useState<SellerProfile | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [isContactModalOpen, setIsContactModalOpen] = React.useState(false);
 
-  // Fetch store profile
+  // Check if viewing own profile
+  const isOwnProfile = user?.id === storeId;
+
+  // Fetch profile - try store first, then seller
   React.useEffect(() => {
-    const fetchStore = async () => {
+    const fetchProfile = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        const response = await fetch(`/api/marketplace/store/${storeId}`);
+        // First try to fetch as a bicycle store
+        const storeResponse = await fetch(`/api/marketplace/store/${storeId}`);
 
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError('Store not found');
-          } else {
-            setError('Failed to load store profile');
-          }
+        if (storeResponse.ok) {
+          const data = await storeResponse.json();
+          setStore(data.store);
+          setProfileType('store');
           return;
         }
 
-        const data = await response.json();
-        setStore(data.store);
+        // If not a store (404), try as individual seller
+        if (storeResponse.status === 404) {
+          const sellerResponse = await fetch(`/api/marketplace/seller/${storeId}`);
+
+          if (sellerResponse.ok) {
+            const data = await sellerResponse.json();
+            setSeller(data.seller);
+            setProfileType('seller');
+            return;
+          }
+
+          // Neither store nor seller found
+          setError('Profile not found');
+          return;
+        }
+
+        // Other error
+        setError('Failed to load profile');
       } catch (err) {
-        console.error('Error fetching store:', err);
-        setError('Failed to load store profile');
+        console.error('Error fetching profile:', err);
+        setError('Failed to load profile');
       } finally {
         setLoading(false);
       }
     };
 
     if (storeId) {
-      fetchStore();
+      fetchProfile();
     }
   }, [storeId]);
 
@@ -70,7 +97,7 @@ export default function StoreProfilePage() {
           <div className="flex items-center justify-center min-h-[60vh] pt-20">
             <div className="text-center">
               <Loader2 className="h-12 w-12 text-gray-400 animate-spin mx-auto mb-4" />
-              <p className="text-sm text-gray-600">Loading store...</p>
+              <p className="text-sm text-gray-600">Loading profile...</p>
             </div>
           </div>
         </MarketplaceLayout>
@@ -79,7 +106,7 @@ export default function StoreProfilePage() {
   }
 
   // Error state
-  if (error || !store) {
+  if (error || (!store && !seller)) {
     return (
       <>
         <MarketplaceHeader />
@@ -87,19 +114,19 @@ export default function StoreProfilePage() {
           <div className="flex items-center justify-center min-h-[60vh] pt-20">
             <div className="text-center">
               <div className="rounded-full bg-gray-100 p-6 mb-4 inline-block">
-                <StoreIcon className="h-12 w-12 text-gray-400" />
+                <User className="h-12 w-12 text-gray-400" />
               </div>
               <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                {error || 'Store not found'}
+                {error || 'Profile not found'}
               </h2>
               <p className="text-sm text-gray-600 mb-6">
-                The store you're looking for doesn't exist or is no longer available.
+                The profile you're looking for doesn't exist or is no longer available.
               </p>
               <a
-                href="/marketplace?view=stores"
-                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                href="/marketplace"
+                className="text-sm text-gray-900 hover:text-gray-700 font-medium"
               >
-                Browse all stores
+                Back to marketplace
               </a>
             </div>
           </div>
@@ -108,80 +135,123 @@ export default function StoreProfilePage() {
     );
   }
 
-  // Filter categories based on selection
-  const displayedCategories = selectedCategory
-    ? store.categories.filter((cat) => cat.id === selectedCategory)
-    : store.categories;
+  // ============================================================
+  // INDIVIDUAL SELLER PROFILE (Depop-style)
+  // ============================================================
+  if (profileType === 'seller' && seller) {
+    return (
+      <>
+        <MarketplaceHeader />
+        <MarketplaceLayout showFooter={false}>
+          <div className="pt-16 min-h-screen bg-gray-50">
+            {/* Seller Header */}
+            <SellerHeader 
+              seller={seller} 
+              isOwnProfile={isOwnProfile}
+              onEditClick={() => {
+                window.location.href = '/marketplace/settings';
+              }}
+            />
 
-  return (
-    <>
-      <MarketplaceHeader />
-      <MarketplaceLayout showFooter={false}>
-        {/* Store Header - Add top padding to account for fixed header */}
-        <div className="pt-16">
-          <StoreHeader
-            storeName={store.store_name}
-            storeType={store.store_type}
-            logoUrl={store.logo_url}
-            categories={store.categories}
-            selectedCategory={selectedCategory}
-            onCategorySelect={setSelectedCategory}
-            onContactClick={() => setIsContactModalOpen(true)}
-          />
-        </div>
+            {/* Category Pills */}
+            <SellerCategories
+              categories={seller.categories}
+              selectedCategory={selectedCategory}
+              onCategorySelect={setSelectedCategory}
+            />
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        {/* Search Bar - Instant search with dropdown */}
-        <div className="mb-6">
-          <StoreSearchBar 
-            storeId={storeId}
-            storeName={store.store_name}
-          />
-        </div>
+            {/* Product Grid */}
+            <SellerProductGrid
+              categories={seller.categories}
+              selectedCategory={selectedCategory}
+            />
+          </div>
+        </MarketplaceLayout>
+      </>
+    );
+  }
 
-        {/* Services Section */}
-        {store.services.length > 0 && <ServicesSection services={store.services} />}
+  // ============================================================
+  // BICYCLE STORE PROFILE (Original design)
+  // ============================================================
+  if (profileType === 'store' && store) {
+    // Filter categories based on selection
+    const displayedCategories = selectedCategory
+      ? store.categories.filter((cat) => cat.id === selectedCategory)
+      : store.categories;
 
-        {/* Products by Category */}
-        {displayedCategories.length > 0 ? (
-          <div className="space-y-2">
-            {displayedCategories.map((category) => (
-              <ProductCarousel
-                key={category.id}
-                categoryName={category.name}
-                products={category.products}
+    return (
+      <>
+        <MarketplaceHeader />
+        <MarketplaceLayout showFooter={false}>
+          {/* Store Header - Add top padding to account for fixed header */}
+          <div className="pt-16">
+            <StoreHeader
+              storeName={store.store_name}
+              storeType={store.store_type}
+              logoUrl={store.logo_url}
+              categories={store.categories}
+              selectedCategory={selectedCategory}
+              onCategorySelect={setSelectedCategory}
+              onContactClick={() => setIsContactModalOpen(true)}
+            />
+          </div>
+
+          {/* Main Content */}
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            {/* Search Bar - Instant search with dropdown */}
+            <div className="mb-6">
+              <StoreSearchBar 
+                storeId={storeId}
+                storeName={store.store_name}
               />
-            ))}
-          </div>
-        ) : (
-          <div className="flex items-center justify-center py-24">
-            <div className="text-center">
-              <div className="rounded-full bg-gray-100 p-6 mb-4 inline-block">
-                <StoreIcon className="h-12 w-12 text-gray-400" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                No products available
-              </h3>
-              <p className="text-sm text-gray-600">
-                This store hasn't added any products yet.
-              </p>
             </div>
+
+            {/* Services Section */}
+            {store.services.length > 0 && <ServicesSection services={store.services} />}
+
+            {/* Products by Category */}
+            {displayedCategories.length > 0 ? (
+              <div className="space-y-2">
+                {displayedCategories.map((category) => (
+                  <ProductCarousel
+                    key={category.id}
+                    categoryName={category.name}
+                    products={category.products}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-24">
+                <div className="text-center">
+                  <div className="rounded-full bg-gray-100 p-6 mb-4 inline-block">
+                    <StoreIcon className="h-12 w-12 text-gray-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    No products available
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    This store hasn't added any products yet.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-        {/* Contact Modal */}
-        <ContactModal
-          isOpen={isContactModalOpen}
-          onClose={() => setIsContactModalOpen(false)}
-          storeName={store.store_name}
-          phone={store.phone}
-          address={store.address}
-          openingHours={store.opening_hours}
-        />
-      </MarketplaceLayout>
-    </>
-  );
+          {/* Contact Modal */}
+          <ContactModal
+            isOpen={isContactModalOpen}
+            onClose={() => setIsContactModalOpen(false)}
+            storeName={store.store_name}
+            phone={store.phone}
+            address={store.address}
+            openingHours={store.opening_hours}
+          />
+        </MarketplaceLayout>
+      </>
+    );
+  }
+
+  // Fallback (shouldn't reach here)
+  return null;
 }
-

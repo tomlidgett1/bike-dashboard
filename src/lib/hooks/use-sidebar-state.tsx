@@ -16,7 +16,7 @@ const SidebarContext = createContext<SidebarState | undefined>(undefined);
 /**
  * Provider component for sidebar state
  */
-export function SidebarStateProvider({ children }: { children: ReactNode }): JSX.Element {
+export function SidebarStateProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [mounted, setMounted] = useState(false);
 

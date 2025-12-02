@@ -104,7 +104,7 @@ export interface ConversationWithMessages extends ConversationWithParticipants {
 }
 
 export interface NotificationWithDetails extends Notification {
-  conversation: {
+  conversation?: {
     id: string;
     subject: string;
     product_id: string | null;

@@ -6,6 +6,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { MessageWithAttachments } from '@/lib/types/message';
 import { formatDistanceToNow } from 'date-fns';

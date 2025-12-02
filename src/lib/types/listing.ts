@@ -32,7 +32,9 @@ export interface ServiceRecord {
 // ============================================================
 export interface ListingImage {
   id: string;
-  url: string;
+  url: string;           // Original/full-size image URL
+  thumbnailUrl?: string; // 100px thumbnail for search dropdowns
+  cardUrl?: string;      // 400px image for product cards
   order: number;
   isPrimary: boolean;
 }
@@ -95,6 +97,7 @@ export interface ListingFormData {
   isNegotiable?: boolean;
   shippingAvailable?: boolean;
   shippingCost?: number;
+  shippingRestrictions?: string;
   pickupLocation?: string;
   includedAccessories?: string;
   
@@ -193,6 +196,7 @@ export interface HistoryFormData {
 export interface PricingFormData {
   price?: number;
   isNegotiable?: boolean;
+  reasonForSelling?: string;
   pickupLocation?: string;
   shippingAvailable?: boolean;
   shippingCost?: number;

@@ -29,6 +29,14 @@ export interface UserPreferences {
   interests?: string[]
 }
 
+export interface SocialLinks {
+  instagram?: string
+  facebook?: string
+  strava?: string
+  twitter?: string
+  website?: string
+}
+
 export interface UserProfile {
   id?: string
   user_id: string
@@ -51,6 +59,11 @@ export interface UserProfile {
   order_alerts: boolean
   inventory_alerts: boolean
   marketing_emails: boolean
+  // Seller profile fields
+  bio?: string
+  cover_image_url?: string
+  social_links?: SocialLinks
+  seller_display_name?: string
   created_at?: string
   updated_at?: string
 }
@@ -126,14 +139,18 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
     }
   }, [user])
 
-  // Initialize with server profile data
+  // Track if we've already initialized from server profile
+  const [initializedFromServer, setInitializedFromServer] = useState(false)
+
+  // Initialize with server profile data - NO duplicate fetches
   useEffect(() => {
-    if (serverProfile && user) {
+    if (serverProfile && user && !initializedFromServer) {
       // Use account_type from serverProfile if available, otherwise infer from business_name
       const hasBusinessName = serverProfile.business_name && serverProfile.business_name.trim().length > 0;
       const accountType = serverProfile.account_type || (hasBusinessName ? 'bicycle_store' : 'individual');
       
-      // We have server data, use it immediately
+      // We have server data - use it directly WITHOUT refetching
+      // Server already fetched with proper caching, no need to hit DB again
       setProfile({
         user_id: user.id,
         name: serverProfile.name || '',
@@ -155,14 +172,14 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
         inventory_alerts: true,
         marketing_emails: false,
       })
-      
-      // Fetch full profile in background
+      setInitializedFromServer(true)
+      // DON'T call fetchFullProfile() - server data is sufficient for display
+    } else if (user && !serverProfile && !initializedFromServer) {
+      // No server profile available, fetch from client
       fetchFullProfile()
-    } else if (user) {
-      // No server profile, fetch from client
-      fetchFullProfile()
+      setInitializedFromServer(true)
     }
-  }, [user, serverProfile, fetchFullProfile])
+  }, [user, serverProfile, fetchFullProfile, initializedFromServer])
 
   const saveProfile = async (profileData: Partial<UserProfile>) => {
     if (!user) return { success: false, error: 'No user logged in' }

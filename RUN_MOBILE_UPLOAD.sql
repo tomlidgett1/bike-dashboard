@@ -62,6 +62,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Atomic JSONB array append function (prevents race conditions)
+-- This ensures parallel uploads don't overwrite each other
+CREATE OR REPLACE FUNCTION append_mobile_upload_image(
+  p_token VARCHAR(32),
+  p_image JSONB
+)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE mobile_upload_sessions
+  SET 
+    images = COALESCE(images, '[]'::jsonb) || p_image,
+    status = 'pending'
+  WHERE session_token = p_token;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Success message
 SELECT 'Mobile upload sessions table created successfully!' as status;
 

@@ -174,13 +174,22 @@ export function useMarketplaceData(
   };
 }
 
+// Fetcher for category counts
+const categoryCountsFetcher = async (url: string): Promise<{ counts: Record<string, number>; total: number }> => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch category counts');
+  }
+  return response.json();
+};
+
 /**
  * Hook for category counts with aggressive caching
  */
 export function useCategoryCounts() {
   const { data, error, isLoading } = useSWR<{ counts: Record<string, number>; total: number }>(
     '/api/marketplace/category-counts',
-    fetcher,
+    categoryCountsFetcher,
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,

@@ -99,7 +99,8 @@ export async function POST(
       .from("product-images")
       .getPublicUrl(uploadData.path);
 
-    // Update session with new image (append to images array)
+    // Update session with new image using atomic JSONB append
+    // This prevents race conditions when multiple uploads happen in parallel
     const newImage = {
       id: `mobile-${timestamp}-${randomSuffix}`,
       url: urlData.publicUrl,
@@ -107,22 +108,43 @@ export async function POST(
       uploadedAt: new Date().toISOString(),
     };
 
-    const currentImages = session.images || [];
-    const updatedImages = [...currentImages, newImage];
+    // Use raw SQL for atomic JSONB array append to prevent race conditions
+    const { error: updateError } = await supabase.rpc('append_mobile_upload_image', {
+      p_token: token,
+      p_image: newImage
+    });
 
-    const { error: updateError } = await supabase
-      .from("mobile_upload_sessions")
-      .update({ 
-        images: updatedImages,
-        status: "pending", // Back to pending after upload
-      })
-      .eq("session_token", token);
+    // Fallback if RPC doesn't exist - use regular update (less safe but works)
+    if (updateError?.code === 'PGRST202') {
+      // RPC doesn't exist, use regular update with fresh read
+      const { data: freshSession } = await supabase
+        .from("mobile_upload_sessions")
+        .select("images")
+        .eq("session_token", token)
+        .single();
+      
+      const currentImages = freshSession?.images || [];
+      const updatedImages = [...currentImages, newImage];
 
-    if (updateError) {
+      await supabase
+        .from("mobile_upload_sessions")
+        .update({ 
+          images: updatedImages,
+          status: "pending",
+        })
+        .eq("session_token", token);
+    } else if (updateError) {
       console.error("[Mobile Upload] Error updating session images:", updateError);
-      // Image was uploaded successfully, just couldn't update session
-      // Don't return error, return success with warning
     }
+
+    // Get updated session to get total count
+    const { data: updatedSession } = await supabase
+      .from("mobile_upload_sessions")
+      .select("images")
+      .eq("session_token", token)
+      .single();
+    
+    const totalImages = (updatedSession?.images as any[] || []).length;
 
     console.log(`[Mobile Upload] Image uploaded to session ${token}: ${urlData.publicUrl}`);
 
@@ -132,7 +154,7 @@ export async function POST(
         id: newImage.id,
         url: urlData.publicUrl,
         storagePath: uploadData.path,
-        totalImages: updatedImages.length,
+        totalImages,
       },
     });
   } catch (error) {

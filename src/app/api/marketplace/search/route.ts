@@ -77,56 +77,79 @@ export async function GET(request: NextRequest) {
     if (productsWithCanonicalIds.length > 0) {
       const { data: canonicalImages } = await supabase
         .from('product_images')
-        .select('canonical_product_id, storage_path, is_primary, variants')
+        .select('canonical_product_id, storage_path, is_primary, variants, cloudinary_url, thumbnail_url, card_url')
         .in('canonical_product_id', productsWithCanonicalIds)
-        .eq('is_primary', true);
+        .eq('is_primary', true)
+        .eq('approval_status', 'approved');
       
       canonicalImages?.forEach((img: any) => {
         canonicalImagesMap.set(img.canonical_product_id, img);
       });
     }
 
+    // IMPORTANT: Only show products with Cloudinary images
     const products = (productsResult.data || [])
       .map((product: any) => {
         let imageUrl = null;
+        let thumbnailUrl = null;
+        let hasCloudinaryImage = false;
         
-        // Priority 1: Custom store image
+        // Priority 1: Custom store image - check for cloudinary URL
         if (product.use_custom_image && product.custom_image_url) {
-          imageUrl = product.custom_image_url;
+          if (product.custom_image_url.includes('cloudinary')) {
+            hasCloudinaryImage = true;
+            imageUrl = product.custom_image_url;
+          }
         } 
-        // Priority 2: Canonical product images
+        // Priority 2: Canonical product images - ONLY Cloudinary
         else if (product.canonical_product_id) {
           const primaryImage = canonicalImagesMap.get(product.canonical_product_id);
-          if (primaryImage) {
-            // Use thumbnail for instant search speed
-            if (primaryImage.variants?.thumbnail) {
-              imageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.variants.thumbnail}`;
-            } else if (primaryImage.variants?.small) {
-              imageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.variants.small}`;
-            } else if (primaryImage.storage_path) {
-              imageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
+          if (primaryImage && primaryImage.cloudinary_url) {
+            hasCloudinaryImage = true;
+            // Prioritise Cloudinary thumbnail_url (100px, instant loading)
+            if (primaryImage.thumbnail_url) {
+              thumbnailUrl = primaryImage.thumbnail_url;
+              imageUrl = primaryImage.card_url || primaryImage.cloudinary_url || thumbnailUrl;
+            } else {
+              imageUrl = primaryImage.cloudinary_url;
             }
           }
         }
-        // Priority 3: Direct image URLs
-        else if (product.primary_image_url) {
+        // Priority 3: Private listings with images array - check for cloudinary URLs
+        else if (product.images && Array.isArray(product.images) && product.images.length > 0) {
+          const cloudinaryImage = product.images.find((img: any) => 
+            img.url?.includes('cloudinary') || img.cloudinaryUrl
+          );
+          if (cloudinaryImage) {
+            hasCloudinaryImage = true;
+            const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
+            imageUrl = primaryImage?.url || product.primary_image_url;
+            thumbnailUrl = primaryImage?.thumbnailUrl;
+          }
+        }
+        // Priority 4: Direct image URLs - check for cloudinary
+        else if (product.primary_image_url && product.primary_image_url.includes('cloudinary')) {
+          hasCloudinaryImage = true;
           imageUrl = product.primary_image_url;
         }
 
-        // Skip products without images
-        if (!imageUrl) return null;
+        // Skip products without cloudinary images
+        if (!hasCloudinaryImage || !imageUrl) return null;
 
         return {
           id: product.product_id,
           name: product.display_name || product.description,
           price: product.price,
           category: product.marketplace_category,
-          imageUrl,
+          imageUrl: thumbnailUrl || imageUrl, // Use thumbnail for search dropdown (smaller, faster)
+          thumbnailUrl, // Pre-generated thumbnail for instant loading
           storeName: product.business_name || 'Unknown Store',
           inStock: (product.qoh || 0) > 0,
         };
       })
-      .filter(Boolean); // Remove nulls
+      .filter(Boolean); // Remove nulls (no cloudinary image)
+    
+    console.log(`🖼️ [SEARCH] Filtered to ${products.length} products with Cloudinary images`);
     
     // Products are already sorted by relevance from the function
 

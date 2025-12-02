@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { 
+  generateImageVariants, 
+  generateVariantPaths,
+  formatFileSize 
+} from "@/lib/utils/image-variants";
 
 // ============================================================
-// Upload Listing Image
+// Upload Listing Image with Pre-generated Variants
 // POST /api/marketplace/listings/upload-image
+// 
+// Generates thumbnail (100px), card (400px), and original variants
+// for instant loading without on-demand transformation
 // ============================================================
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  
   try {
     const supabase = await createClient();
 
@@ -45,39 +55,107 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate storage path: listings/{user_id}/{listing_id}/{timestamp}-{filename}
     const timestamp = Date.now();
-    const filename = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const storagePath = `listings/${user.id}/${listingId || 'temp'}/${timestamp}-${filename}`;
+    const effectiveListingId = listingId || 'temp';
 
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("product-images")
-      .upload(storagePath, file, {
-        cacheControl: "31536000", // 1 year cache
-        contentType: file.type,
-        upsert: false,
-      });
+    console.log(`📸 [UPLOAD] Processing image for listing ${effectiveListingId}...`);
+    console.log(`📸 [UPLOAD] Original size: ${formatFileSize(file.size)}`);
 
-    if (uploadError) {
-      console.error("Upload error:", uploadError);
+    // Convert file to buffer for Sharp processing
+    const arrayBuffer = await file.arrayBuffer();
+    const inputBuffer = Buffer.from(arrayBuffer);
+
+    // Generate all variants using Sharp
+    console.log(`📸 [UPLOAD] Generating variants...`);
+    const variants = await generateImageVariants(inputBuffer);
+
+    console.log(`📸 [UPLOAD] Variant sizes: original=${formatFileSize(variants.original.length)}, card=${formatFileSize(variants.card.length)}, thumbnail=${formatFileSize(variants.thumbnail.length)}`);
+
+    // Generate storage paths for all variants
+    const paths = generateVariantPaths(user.id, effectiveListingId, timestamp);
+
+    // Upload all variants in parallel
+    console.log(`📸 [UPLOAD] Uploading ${Object.keys(paths).length} variants to storage...`);
+    
+    const uploadPromises = [
+      // Original
+      supabase.storage
+        .from("listing-images")
+        .upload(paths.original, variants.original, {
+          cacheControl: "31536000",
+          contentType: "image/webp",
+          upsert: false,
+        }),
+      // Card (400px)
+      supabase.storage
+        .from("listing-images")
+        .upload(paths.card, variants.card, {
+          cacheControl: "31536000",
+          contentType: "image/webp",
+          upsert: false,
+        }),
+      // Thumbnail (100px)
+      supabase.storage
+        .from("listing-images")
+        .upload(paths.thumbnail, variants.thumbnail, {
+          cacheControl: "31536000",
+          contentType: "image/webp",
+          upsert: false,
+        }),
+    ];
+
+    const [originalResult, cardResult, thumbnailResult] = await Promise.all(uploadPromises);
+
+    // Check for upload errors
+    if (originalResult.error) {
+      console.error("Original upload error:", originalResult.error);
       return NextResponse.json(
-        { error: `Upload failed: ${uploadError.message}` },
+        { error: `Original upload failed: ${originalResult.error.message}` },
+        { status: 500 }
+      );
+    }
+    if (cardResult.error) {
+      console.error("Card upload error:", cardResult.error);
+      return NextResponse.json(
+        { error: `Card upload failed: ${cardResult.error.message}` },
+        { status: 500 }
+      );
+    }
+    if (thumbnailResult.error) {
+      console.error("Thumbnail upload error:", thumbnailResult.error);
+      return NextResponse.json(
+        { error: `Thumbnail upload failed: ${thumbnailResult.error.message}` },
         { status: 500 }
       );
     }
 
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from("product-images")
-      .getPublicUrl(uploadData.path);
+    // Get public URLs for all variants
+    const { data: originalUrl } = supabase.storage
+      .from("listing-images")
+      .getPublicUrl(paths.original);
+    const { data: cardUrl } = supabase.storage
+      .from("listing-images")
+      .getPublicUrl(paths.card);
+    const { data: thumbnailUrl } = supabase.storage
+      .from("listing-images")
+      .getPublicUrl(paths.thumbnail);
+
+    const processingTime = Date.now() - startTime;
+    console.log(`✅ [UPLOAD] Complete in ${processingTime}ms`);
 
     return NextResponse.json({
       success: true,
       data: {
         id: `img-${timestamp}`,
-        url: urlData.publicUrl,
-        storagePath: uploadData.path,
+        url: originalUrl.publicUrl,
+        cardUrl: cardUrl.publicUrl,
+        thumbnailUrl: thumbnailUrl.publicUrl,
+        storagePath: paths.original,
+        metadata: {
+          originalWidth: variants.metadata.originalWidth,
+          originalHeight: variants.metadata.originalHeight,
+          processingTimeMs: processingTime,
+        },
       },
     });
   } catch (error) {
@@ -88,4 +166,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -49,7 +49,7 @@ export default function UsedProductsPage() {
     level3: level3 || undefined,
     sortBy: sortBy as any,
     pageSize: 24,
-    listingType: 'private_listing', // Only show used/private listings
+    listingType: 'private_listing' as const, // Only show used/private listings
   }), [level1, level2, level3, sortBy]);
 
   // Fetch products with filters

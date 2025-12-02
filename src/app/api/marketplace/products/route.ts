@@ -51,48 +51,39 @@ export async function GET(request: NextRequest) {
     // Optimize: Use count planning hint for better performance
     const countType = useEstimatedCount ? 'planned' : 'exact';
     
-    // OPTIMIZATION: Use minimal field selection for list view (10 essential fields)
-    // This reduces payload size by ~70% and speeds up queries significantly
-    // Full details are fetched only on product detail page
-    const minimalFields = `
+    // OPTIMIZATION: Use cached image columns - eliminates expensive JOINs
+    // Target: <50ms response time for category filtering
+    // Only join users table for store name (small table, fast lookup)
+    const fastFields = `
         id,
-        description,
         display_name,
+        description,
         price,
         marketplace_category,
         marketplace_subcategory,
+        marketplace_level_3_category,
         qoh,
         created_at,
         user_id,
-        canonical_product_id,
-        use_custom_image,
-        custom_image_url,
         listing_type,
         listing_status,
         model_year,
+        cached_image_url,
+        cached_thumbnail_url,
+        has_displayable_image,
         images,
-        primary_image_url,
         users!user_id (
           business_name,
           logo_url,
           account_type
-        ),
-        canonical_products!canonical_product_id (
-          id,
-          product_images!canonical_product_id (
-            storage_path,
-            is_primary,
-            variants,
-            approval_status,
-            is_downloaded
-          )
         )
       `;
     
     let query = supabase
       .from('products')
-      .select(minimalFields, { count: countType, head: false })
+      .select(fastFields, { count: countType, head: false })
       .eq('is_active', true)
+      .eq('has_displayable_image', true)  // Only products with images (uses index)
       .or('listing_status.is.null,listing_status.eq.active');
 
     // Apply new 3-level taxonomy filters (takes precedence)
@@ -254,96 +245,53 @@ export async function GET(request: NextRequest) {
     const totalPages = Math.ceil(total / pageSize);
     const hasMore = page < totalPages;
 
-    // Transform data to marketplace product format with optimized images
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    
-    const products: MarketplaceProduct[] = uniqueData
-      .map((product: any) => {
-        let primaryImageUrl = null;
-        let imageVariants = null;
-        let allImages: string[] = [];
-        let listingImages = null; // For private listings - pass through the images array
-        
-        // Priority 1: Private listing images (user-uploaded)
-        if (product.listing_type === 'private_listing' && Array.isArray(product.images) && product.images.length > 0) {
-          listingImages = product.images; // Pass through for product card
-          const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
-          if (primaryImage?.url) {
-            primaryImageUrl = primaryImage.url;
-          }
-          // Also use primary_image_url from product if set
-          if (!primaryImageUrl && product.primary_image_url) {
-            primaryImageUrl = product.primary_image_url;
-          }
-          allImages = product.images.map((img: any) => img.url).filter(Boolean);
-        }
-        // Priority 2: Custom store image
-        else if (product.use_custom_image && product.custom_image_url) {
-          primaryImageUrl = product.custom_image_url;
-          allImages.push(product.custom_image_url);
-        }
-        // Priority 3: Canonical product images (MUST be approved AND downloaded)
-        else if (product.canonical_products?.product_images) {
-          // Filter to only show approved AND downloaded images
-          const images = product.canonical_products.product_images.filter((img: any) => 
-            img.approval_status === 'approved' && img.is_downloaded
-          );
-          
-          // Get primary image first (REQUIRED - must have is_primary flag)
-          const primaryImage = images.find((img: any) => img.is_primary);
-          if (primaryImage) {
-            primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
-            imageVariants = primaryImage.variants;
-          }
-          
-          // Get ALL images for the gallery (primary first, then others)
-          const sortedImages = [...images].sort((a: any, b: any) => {
-            if (a.is_primary) return -1;
-            if (b.is_primary) return 1;
-            return 0;
-          });
-          
-          allImages = sortedImages
-            .map((img: any) => {
-              // Try to use the 'large' variant if available, otherwise original
-              if (img.variants?.large) {
-                return `${baseUrl}/storage/v1/object/public/product-images/${img.variants.large}`;
-              }
-              return `${baseUrl}/storage/v1/object/public/product-images/${img.storage_path}`;
-            })
-            .filter(Boolean);
-        }
-        
-        // Priority 4: Use placeholder if no image available
-        if (!primaryImageUrl) {
-          primaryImageUrl = '/placeholder-product.svg';
-          allImages = ['/placeholder-product.svg'];
-          console.log(`🖼️ [IMAGE] Using placeholder for product ${product.id} (no image available)`);
-        }
+    // Transform data to marketplace product format
+    // FAST PATH: Use cached image URLs - no complex processing needed
+    const products: MarketplaceProduct[] = uniqueData.map((product: any) => {
+      // Use cached image URL (pre-computed by database trigger)
+      const primaryImageUrl = product.cached_image_url;
+      const thumbnailUrl = product.cached_thumbnail_url;
       
-        // OPTIMIZED: Return only essential fields for list view
-        // This reduces JSON payload size by ~70%
-        return {
-          id: product.id,
-          description: product.description,
-          display_name: product.display_name,
-          price: parseFloat(product.price) || 0,
-          marketplace_category: product.marketplace_category,
-          marketplace_subcategory: product.marketplace_subcategory,
-          primary_image_url: primaryImageUrl,
-          image_variants: imageVariants,
-          all_images: allImages,
-          images: listingImages, // Pass through for private listings
-          qoh: product.qoh || 0,
-          model_year: product.model_year,
-          created_at: product.created_at,
-          user_id: product.user_id,
-          store_name: product.users?.business_name || 'Bike Store',
-          store_logo_url: product.users?.logo_url || null,
-          listing_type: product.listing_type,
-          listing_status: product.listing_status,
-        } as MarketplaceProduct;
-      });
+      // For private listings, pass through the images array for gallery
+      const listingImages = product.listing_type === 'private_listing' ? product.images : null;
+      
+      // Build all_images array (simplified - detail page fetches full gallery)
+      const allImages: string[] = primaryImageUrl ? [primaryImageUrl] : [];
+      if (listingImages && Array.isArray(listingImages)) {
+        listingImages.forEach((img: any) => {
+          if (img.url && !allImages.includes(img.url)) {
+            allImages.push(img.url);
+          }
+        });
+      }
+      
+      return {
+        id: product.id,
+        description: product.description,
+        display_name: product.display_name,
+        price: parseFloat(product.price) || 0,
+        marketplace_category: product.marketplace_category,
+        marketplace_subcategory: product.marketplace_subcategory,
+        primary_image_url: primaryImageUrl,
+        image_variants: null, // Only needed on detail page
+        all_images: allImages,
+        images: listingImages,
+        // Use cached thumbnail for optimised loading
+        card_url: primaryImageUrl,
+        thumbnail_url: thumbnailUrl,
+        detail_url: primaryImageUrl, // Detail page will fetch full resolution
+        qoh: product.qoh || 0,
+        model_year: product.model_year,
+        created_at: product.created_at,
+        user_id: product.user_id,
+        store_name: product.users?.business_name || 'Bike Store',
+        store_logo_url: product.users?.logo_url || null,
+        listing_type: product.listing_type,
+        listing_status: product.listing_status,
+      } as MarketplaceProduct;
+    });
+    
+    console.log(`⚡ [FAST QUERY] Returned ${products.length} products with cached images`);
 
     const response: MarketplaceProductsResponse = {
       products,

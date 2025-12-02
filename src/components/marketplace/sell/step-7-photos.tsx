@@ -7,9 +7,11 @@ import { PhotosFormData, ListingImage } from "@/lib/types/listing";
 import { SectionHeader, InfoBox } from "./form-elements";
 import { ValidationError, getFieldError } from "@/lib/validation/listing-validation";
 import { cn } from "@/lib/utils";
+import { compressImage, compressedToFile, shouldCompress } from "@/lib/utils/image-compression";
 
 // ============================================================
 // Step 7: Photo Upload
+// Includes client-side compression for faster uploads & loading
 // ============================================================
 
 interface Step7PhotosProps {
@@ -56,7 +58,7 @@ export function Step7Photos({ data, onChange, errors = [], itemType = "bike" }: 
     setUploading(true);
 
     try {
-      // Upload each file to Supabase with progress tracking
+      // Compress and upload each file with progress tracking
       const uploadedImages: ListingImage[] = [];
       const total = validFiles.length;
 
@@ -64,25 +66,62 @@ export function Step7Photos({ data, onChange, errors = [], itemType = "bike" }: 
         const file = validFiles[i];
         setUploadProgress(Math.round(((i + 1) / total) * 100));
 
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("listingId", "temp-" + Date.now());
+        // Compress image before upload (1200px max, 0.8 quality = ~80% reduction)
+        let fileToUpload: File = file;
+        if (shouldCompress(file)) {
+          try {
+            const compressed = await compressImage(file, {
+              maxDimension: 1200, // Optimal for web display
+              quality: 0.8,
+            });
+            fileToUpload = compressedToFile(compressed, file.name);
+            console.log(`[Upload] Compressed ${file.name}: ${(file.size / 1024).toFixed(0)}KB → ${(fileToUpload.size / 1024).toFixed(0)}KB`);
+          } catch (err) {
+            console.warn(`[Upload] Compression failed for ${file.name}, using original`);
+          }
+        }
 
-        const response = await fetch("/api/marketplace/listings/upload-image", {
-          method: "POST",
-          body: formData,
-        });
+        // Get session for auth
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          throw new Error("Not authenticated");
+        }
+
+        // Upload to Cloudinary via Edge Function
+        const formData = new FormData();
+        formData.append("file", fileToUpload);
+        formData.append("listingId", "manual-" + Date.now());
+        formData.append("index", i.toString());
+
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/upload-to-cloudinary`,
+          {
+            method: "POST",
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: formData,
+          }
+        );
 
         if (!response.ok) {
-          console.error(`Failed to upload ${file.name}`);
+          const error = await response.json();
+          console.error(`Failed to upload ${file.name}:`, error);
           continue; // Skip failed uploads
         }
 
         const result = await response.json();
+        console.log(`✅ [MANUAL UPLOAD] Image uploaded to Cloudinary`);
         
+        // Include variant URLs for instant loading
         uploadedImages.push({
           id: result.data.id,
           url: result.data.url,
+          cardUrl: result.data.cardUrl,
+          thumbnailUrl: result.data.thumbnailUrl,
           order: currentCount + i,
           isPrimary: currentCount === 0 && i === 0,
         });

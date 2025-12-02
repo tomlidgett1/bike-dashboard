@@ -55,6 +55,12 @@ const individualUserItems: NavItem[] = [
   },
   {
     type: 'item',
+    title: "My Store",
+    value: "my-store",
+    icon: Store,
+  },
+  {
+    type: 'item',
     title: "My Listings",
     value: "my-listings",
     icon: Edit,
@@ -86,6 +92,12 @@ const storeUserItems: NavItem[] = [
   },
   {
     type: 'item',
+    title: "My Store",
+    value: "my-store",
+    icon: Store,
+  },
+  {
+    type: 'item',
     title: "Settings",
     value: "settings",
     icon: Settings,
@@ -106,6 +118,11 @@ export function MarketplaceSidebar() {
     if (path === "/settings/my-listings") return "my-listings";
     if (path === "/settings/drafts") return "drafts";
     if (path === "/settings/purchases") return "purchases";
+    // Check if user is viewing their own store
+    const storeMatch = path.match(/^\/marketplace\/store\/(.+)$/);
+    if (storeMatch && (storeMatch[1] === profile?.user_id || storeMatch[1] === user?.id)) {
+      return "my-store";
+    }
     return searchParams.get("view") || "products";
   };
   
@@ -153,6 +170,8 @@ export function MarketplaceSidebar() {
         url = "/settings/drafts";
       } else if (item.value === "purchases") {
         url = "/settings/purchases";
+      } else if (item.value === "my-store") {
+        url = `/marketplace/store/${profile?.user_id || user?.id}`;
       } else {
         url = `/marketplace?view=${item.value}`;
       }

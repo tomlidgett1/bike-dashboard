@@ -18,6 +18,11 @@ interface ProductImage {
   width: number;
   height: number;
   created_at: string;
+  // Cloudinary URLs
+  cloudinary_url: string | null;
+  thumbnail_url: string | null;
+  card_url: string | null;
+  detail_url: string | null;
 }
 
 interface Product {
@@ -82,7 +87,11 @@ export default function ImageQAPage() {
             width,
             height,
             sort_order,
-            created_at
+            created_at,
+            cloudinary_url,
+            thumbnail_url,
+            card_url,
+            detail_url
           )
         `)
         .order('created_at', { ascending: false })
@@ -96,18 +105,26 @@ export default function ImageQAPage() {
 
       if (error) throw error;
 
-      // Get URLs for images (external or storage)
+      // Get URLs for images - prioritise Cloudinary, fall back to external/storage
       const productsWithUrls = await Promise.all(
         (data || []).map(async (product: any) => {
           const imagesWithUrls = await Promise.all(
             (product.product_images || []).map(async (img: any) => {
               let url: string;
               
-              // If not downloaded yet, use external URL
-              if (!img.is_downloaded && img.external_url) {
+              // Priority 1: Cloudinary card_url (400px, optimised)
+              if (img.card_url) {
+                url = img.card_url;
+              }
+              // Priority 2: Cloudinary main URL
+              else if (img.cloudinary_url) {
+                url = img.cloudinary_url;
+              }
+              // Priority 3: External URL (pending images)
+              else if (img.external_url) {
                 url = img.external_url;
               } 
-              // Otherwise use storage URL
+              // Priority 4: Legacy Supabase Storage URL
               else if (img.storage_path) {
                 const { data: urlData } = supabase.storage
                   .from('product-images')
@@ -127,8 +144,10 @@ export default function ImageQAPage() {
             ...product,
             images: imagesWithUrls.sort((a, b) => {
               // Sort: approved first, then pending, then rejected, by sort_order
-              const statusOrder = { approved: 0, pending: 1, rejected: 2 };
-              const statusDiff = statusOrder[a.approval_status] - statusOrder[b.approval_status];
+              const statusOrder: Record<string, number> = { approved: 0, pending: 1, rejected: 2 };
+              const statusA = statusOrder[a.approval_status] ?? 3;
+              const statusB = statusOrder[b.approval_status] ?? 3;
+              const statusDiff = statusA - statusB;
               if (statusDiff !== 0) return statusDiff;
               return (a.sort_order || 0) - (b.sort_order || 0);
             }),
@@ -623,8 +642,10 @@ export default function ImageQAPage() {
               return {
                 ...p,
                 images: imagesWithUrls.sort((a, b) => {
-                  const statusOrder = { approved: 0, pending: 1, rejected: 2 };
-                  const statusDiff = statusOrder[a.approval_status] - statusOrder[b.approval_status];
+                  const statusOrder: Record<string, number> = { approved: 0, pending: 1, rejected: 2 };
+                  const statusA = statusOrder[a.approval_status] ?? 3;
+                  const statusB = statusOrder[b.approval_status] ?? 3;
+                  const statusDiff = statusA - statusB;
                   if (statusDiff !== 0) return statusDiff;
                   return (a.sort_order || 0) - (b.sort_order || 0);
                 }),

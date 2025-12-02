@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { Search, X, Loader2, Package, Store, ArrowRight, Sparkles } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Search, X, Loader2, Package, Store, ArrowRight, Sparkles, Clock, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
@@ -16,29 +16,43 @@ import { AISearchLoading } from "./ai-search-loading";
 // Multi-faceted real-time search with dropdown results
 // ============================================================
 
+// Recent searches storage key
+const RECENT_SEARCHES_KEY = 'yj_recent_searches';
+const MAX_RECENT_SEARCHES = 5;
+
 interface SearchProduct {
   id: string;
   name: string;
   price: number;
   category: string;
   imageUrl: string;
+  thumbnailUrl?: string; // Pre-generated 100px thumbnail for instant loading
   storeName: string;
   inStock: boolean;
 }
 
-// Product Image Thumbnail with error handling
-function ProductImageThumbnail({ imageUrl, name }: { imageUrl: string; name: string }) {
+// Product Image Thumbnail - uses Cloudinary thumbnailUrl when available
+function ProductImageThumbnail({ 
+  imageUrl, 
+  name 
+}: { 
+  imageUrl: string; 
+  name: string 
+}) {
   const [imageError, setImageError] = React.useState(false);
+  
+  // Just use the URL directly (thumbnailUrl already set by API if available)
+  const optimisedUrl = imageUrl;
 
   return (
     <div className="relative h-12 w-12 rounded-md bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200 flex items-center justify-center">
-      {!imageError && imageUrl ? (
+      {!imageError && optimisedUrl ? (
         <Image
-          src={imageUrl}
+          src={optimisedUrl}
           alt={name}
           fill
+          unoptimized
           className="object-contain"
-          sizes="48px"
           onError={() => setImageError(true)}
         />
       ) : (
@@ -134,12 +148,77 @@ export function InstantSearch() {
   const [showAiButton, setShowAiButton] = React.useState(false);
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [selectedIndex, setSelectedIndex] = React.useState(-1);
+  const [recentSearches, setRecentSearches] = React.useState<string[]>([]);
+  const [isFocused, setIsFocused] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const cacheRef = React.useRef<Map<string, SearchResults>>(new Map());
   const aiCacheRef = React.useRef<Map<string, AISearchResult>>(new Map());
   const abortControllerRef = React.useRef<AbortController | null>(null);
   const aiAbortControllerRef = React.useRef<AbortController | null>(null);
+
+  // Load recent searches from localStorage on mount
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem(RECENT_SEARCHES_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setRecentSearches(parsed.slice(0, MAX_RECENT_SEARCHES));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load recent searches:', error);
+    }
+  }, []);
+
+  // Save a search to recent searches
+  const saveRecentSearch = React.useCallback((searchQuery: string) => {
+    if (!searchQuery.trim()) return;
+    
+    setRecentSearches(prev => {
+      // Remove duplicates and add new search at the beginning
+      const filtered = prev.filter(s => s.toLowerCase() !== searchQuery.toLowerCase());
+      const updated = [searchQuery, ...filtered].slice(0, MAX_RECENT_SEARCHES);
+      
+      // Save to localStorage
+      try {
+        localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
+      } catch (error) {
+        console.error('Failed to save recent searches:', error);
+      }
+      
+      return updated;
+    });
+  }, []);
+
+  // Remove a specific recent search
+  const removeRecentSearch = React.useCallback((searchQuery: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    setRecentSearches(prev => {
+      const updated = prev.filter(s => s !== searchQuery);
+      
+      try {
+        localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
+      } catch (error) {
+        console.error('Failed to save recent searches:', error);
+      }
+      
+      return updated;
+    });
+  }, []);
+
+  // Clear all recent searches
+  const clearAllRecentSearches = React.useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRecentSearches([]);
+    try {
+      localStorage.removeItem(RECENT_SEARCHES_KEY);
+    } catch (error) {
+      console.error('Failed to clear recent searches:', error);
+    }
+  }, []);
   
   // Typewriter effect for placeholder
   const [placeholder, setPlaceholder] = React.useState("");
@@ -267,8 +346,8 @@ export function InstantSearch() {
           // Cache the result
           cacheRef.current.set(query.toLowerCase(), data);
           if (cacheRef.current.size > 50) {
-            const firstKey = cacheRef.current.keys().next().value;
-            cacheRef.current.delete(firstKey);
+            const firstKey = cacheRef.current.keys().next().value as string;
+            if (firstKey) cacheRef.current.delete(firstKey);
           }
         }
       } catch (error) {
@@ -323,8 +402,8 @@ export function InstantSearch() {
           // Cache the AI result
           aiCacheRef.current.set(query.toLowerCase(), data);
           if (aiCacheRef.current.size > 20) {
-            const firstKey = aiCacheRef.current.keys().next().value;
-            aiCacheRef.current.delete(firstKey);
+            const firstKey = aiCacheRef.current.keys().next().value as string;
+            if (firstKey) aiCacheRef.current.delete(firstKey);
           }
         }
       }
@@ -401,10 +480,12 @@ export function InstantSearch() {
     if (index < productCount) {
       // Navigate to product - use full page reload
       const product = results.products[index];
+      saveRecentSearch(query.trim());
       window.location.href = `/marketplace?search=${encodeURIComponent(product.name)}`;
     } else {
       // Navigate to store - use full page reload
       const store = results.stores[index - productCount];
+      saveRecentSearch(query.trim());
       window.location.href = `/marketplace?view=stores&store=${store.id}`;
     }
 
@@ -414,9 +495,17 @@ export function InstantSearch() {
 
   const handleFullSearch = () => {
     if (query.trim()) {
+      saveRecentSearch(query.trim());
       window.location.href = `/marketplace?search=${encodeURIComponent(query)}`;
       setShowDropdown(false);
     }
+  };
+
+  // Use a recent search
+  const handleRecentSearchClick = (searchQuery: string) => {
+    saveRecentSearch(searchQuery);
+    window.location.href = `/marketplace?search=${encodeURIComponent(searchQuery)}`;
+    setShowDropdown(false);
   };
 
   const handleClear = () => {
@@ -454,10 +543,15 @@ export function InstantSearch() {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => {
+            setIsFocused(true);
             if (results && query.length >= 2) {
+              setShowDropdown(true);
+            } else if (query.length < 2 && recentSearches.length > 0) {
+              // Show recent searches when focused with no query
               setShowDropdown(true);
             }
           }}
+          onBlur={() => setIsFocused(false)}
           placeholder={placeholder}
           className="pl-10 pr-16 sm:pl-11 sm:pr-20 h-10 rounded-md border-gray-300 focus:border-gray-400 focus:ring-gray-400 text-sm bg-white"
         />
@@ -482,6 +576,58 @@ export function InstantSearch() {
           </kbd>
         </div>
       </div>
+
+      {/* Recent Searches Dropdown - Shows when focused with no query */}
+      <AnimatePresence>
+        {showDropdown && query.length < 2 && recentSearches.length > 0 && (
+          <motion.div
+            ref={dropdownRef}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.15 }}
+            className="absolute top-full left-0 right-0 mt-2 bg-white rounded-md border border-gray-200 shadow-xl z-50 overflow-hidden"
+          >
+            {/* Header */}
+            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                <Clock className="h-3.5 w-3.5" />
+                Recent Searches
+              </div>
+              <button
+                onClick={clearAllRecentSearches}
+                className="text-xs text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="h-3 w-3" />
+                Clear all
+              </button>
+            </div>
+            
+            {/* Recent Searches List */}
+            <div className="py-1">
+              {recentSearches.map((recentQuery, index) => (
+                <button
+                  key={`${recentQuery}-${index}`}
+                  onClick={() => handleRecentSearchClick(recentQuery)}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left group"
+                >
+                  <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                  <span className="flex-1 text-sm text-gray-700 truncate">
+                    {recentQuery}
+                  </span>
+                  <button
+                    onClick={(e) => removeRecentSearch(recentQuery, e)}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-gray-200 transition-all"
+                    aria-label="Remove search"
+                  >
+                    <X className="h-3 w-3 text-gray-400" />
+                  </button>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Dropdown Results - Shows INSTANTLY */}
       {showDropdown && query.length >= 2 && (
@@ -556,7 +702,10 @@ export function InstantSearch() {
                         )}
                       >
                         {/* Product Image */}
-                        <ProductImageThumbnail imageUrl={product.imageUrl} name={product.name} />
+                        <ProductImageThumbnail 
+                          imageUrl={product.imageUrl} 
+                          name={product.name} 
+                        />
 
                         {/* Product Info */}
                         <div className="flex-1 min-w-0">

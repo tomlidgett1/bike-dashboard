@@ -120,7 +120,7 @@ async function enrichProducts(
   console.log('[enrichProducts] Enriching', productIds.length, 'products...');
 
   try {
-    // Get products with canonical images (same as trending API)
+    // Get products with canonical images including cloudinary URLs
     let productsQuery = supabase
       .from('products')
       .select(`
@@ -134,7 +134,12 @@ async function enrichProducts(
           product_images!canonical_product_id (
             storage_path,
             is_primary,
-            variants
+            variants,
+            cloudinary_url,
+            card_url,
+            detail_url,
+            thumbnail_url,
+            approval_status
           )
         )
       `)
@@ -168,7 +173,7 @@ async function enrichProducts(
 
     const scoreMap = new Map(scores?.map((s: any) => [s.product_id, s]) || []);
 
-    // Transform to marketplace format (EXACT same logic as /api/marketplace/products)
+    // Transform to marketplace format - only products with Cloudinary images
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     
     const enriched = products.map((product: any) => {
@@ -176,56 +181,69 @@ async function enrichProducts(
       let primaryImageUrl = null;
       let imageVariants = null;
       let allImages: string[] = [];
+      let hasCloudinaryImage = false;
       
-      // Priority 1: Private listing images (user-uploaded)
+      // Priority 1: Private listing images - check for cloudinary URLs
       if (product.listing_type === 'private_listing' && Array.isArray(product.images) && product.images.length > 0) {
-        const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
-        if (primaryImage?.url) {
-          primaryImageUrl = primaryImage.url;
+        const cloudinaryImage = product.images.find((img: any) => 
+          img.url?.includes('cloudinary') || img.cloudinaryUrl
+        );
+        if (cloudinaryImage) {
+          hasCloudinaryImage = true;
+          const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
+          if (primaryImage?.url) {
+            primaryImageUrl = primaryImage.url;
+          }
+          if (!primaryImageUrl && product.primary_image_url) {
+            primaryImageUrl = product.primary_image_url;
+          }
+          allImages = product.images.map((img: any) => img.url).filter(Boolean);
         }
-        // Fallback to primary_image_url from product
-        if (!primaryImageUrl && product.primary_image_url) {
-          primaryImageUrl = product.primary_image_url;
-        }
-        allImages = product.images.map((img: any) => img.url).filter(Boolean);
       }
-      // Priority 2: Custom store image
+      // Priority 2: Custom store image - check for cloudinary URL
       else if (product.use_custom_image && product.custom_image_url) {
-        primaryImageUrl = product.custom_image_url;
-        allImages.push(product.custom_image_url);
+        if (product.custom_image_url.includes('cloudinary')) {
+          hasCloudinaryImage = true;
+          primaryImageUrl = product.custom_image_url;
+          allImages.push(product.custom_image_url);
+        }
       }
-      // Priority 3: Canonical product images
+      // Priority 3: Canonical product images - only approved cloudinary images
       else if (product.canonical_products?.product_images) {
-        const images = product.canonical_products.product_images;
+        // Filter to only approved images with cloudinary_url
+        const images = product.canonical_products.product_images.filter((img: any) =>
+          img.approval_status === 'approved' && img.cloudinary_url
+        );
         
-        // Get primary image
+        // Get primary image - must have cloudinary_url
         const primaryImage = images.find((img: any) => img.is_primary);
         if (primaryImage) {
-          primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
+          hasCloudinaryImage = true;
+          // Prefer cloudinary URLs
+          primaryImageUrl = primaryImage.card_url || primaryImage.cloudinary_url;
           imageVariants = primaryImage.variants;
         }
         
-        // Get ALL images for gallery (primary first)
-        const sortedImages = [...images].sort((a: any, b: any) => {
-          if (a.is_primary) return -1;
-          if (b.is_primary) return 1;
-          return 0;
-        });
+        // Get ALL images for gallery (primary first) - only cloudinary
+        const sortedImages = [...images]
+          .sort((a: any, b: any) => {
+            if (a.is_primary) return -1;
+            if (b.is_primary) return 1;
+            return 0;
+          });
         
         allImages = sortedImages
           .map((img: any) => {
-            if (img.variants?.large) {
-              return `${baseUrl}/storage/v1/object/public/product-images/${img.variants.large}`;
-            }
-            return `${baseUrl}/storage/v1/object/public/product-images/${img.storage_path}`;
+            if (img.detail_url) return img.detail_url;
+            if (img.cloudinary_url) return img.cloudinary_url;
+            return null;
           })
           .filter(Boolean);
       }
       
-      // Priority 4: Placeholder if no image
-      if (!primaryImageUrl) {
-        primaryImageUrl = '/placeholder-product.svg';
-        allImages = ['/placeholder-product.svg'];
+      // FILTER: Skip products without cloudinary images
+      if (!hasCloudinaryImage || !primaryImageUrl) {
+        return null;
       }
     
       return {
@@ -245,7 +263,9 @@ async function enrichProducts(
         images: product.images, // Keep original images array for private listings
         product_scores: score || null,
       };
-    });
+    }).filter(Boolean);
+    
+    console.log(`🖼️ [FOR-YOU] Filtered to ${enriched.length} products with Cloudinary images`);
 
     console.log('[enrichProducts] Enriched', enriched.length, 'products');
 

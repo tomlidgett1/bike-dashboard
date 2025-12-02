@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, Loader2, AlertCircle, CheckCircle2, Sparkles, ImageIcon, Monitor, Smartphone } from "lucide-react";
+import { Upload, X, Loader2, AlertCircle, CheckCircle2, Sparkles, ImageIcon, Monitor, Smartphone, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,14 +14,19 @@ import {
 import { cn } from "@/lib/utils";
 import type { ListingAnalysisResult } from "@/lib/ai/schemas";
 import { QrUploadSection } from "./qr-upload-section";
+import { compressImage, compressedToFile, shouldCompress } from "@/lib/utils/image-compression";
 
 // ============================================================
-// Smart Upload Modal
-// Popup dialog for AI-powered photo analysis
-// Supports both computer upload and mobile QR code upload
+// Smart Upload Modal - Enterprise Optimized
+// Features:
+// - Client-side image compression (5MB → 200KB)
+// - Parallel uploads (3 concurrent)
+// - Supports both computer upload and mobile QR code upload
 // ============================================================
 
-type FlowStage = "upload" | "uploading" | "analyzing" | "success" | "error";
+const UPLOAD_CONCURRENCY = 3;
+
+type FlowStage = "upload" | "compressing" | "uploading" | "analyzing" | "success" | "error";
 type UploadTab = "computer" | "phone";
 
 interface SmartUploadModalProps {
@@ -99,9 +104,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   const handleAnalyze = async () => {
     if (photos.length === 0) return;
 
-    setStage("uploading");
     setError(null);
-    setUploadProgress({ current: 0, total: photos.length });
 
     try {
       // Get Supabase session
@@ -113,28 +116,88 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         throw new Error('You must be logged in to use AI analysis');
       }
 
-      // Upload photos to Supabase storage
-      const urls: string[] = [];
+      // Phase 1: Compress images
+      setStage("compressing");
+      setUploadProgress({ current: 0, total: photos.length });
+      
+      console.log('🗜️ [SMART UPLOAD] Compressing', photos.length, 'photos...');
+      
+      const compressedFiles: File[] = [];
       for (let i = 0; i < photos.length; i++) {
         const photo = photos[i];
-        const fileName = `${session.user.id}/${Date.now()}-${i}-${photo.file.name}`;
+        let fileToUpload: File;
         
-        const { data, error: uploadError } = await supabase.storage
-          .from('listing-images')
-          .upload(fileName, photo.file);
-
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('listing-images')
-          .getPublicUrl(fileName);
-
-        urls.push(publicUrl);
+        if (shouldCompress(photo.file)) {
+          const compressed = await compressImage(photo.file, {
+            maxDimension: 1920,
+            quality: 0.8,
+          });
+          fileToUpload = compressedToFile(compressed, photo.file.name);
+          console.log(`[SMART UPLOAD] Compressed: ${(photo.file.size / 1024).toFixed(0)}KB → ${(fileToUpload.size / 1024).toFixed(0)}KB`);
+        } else {
+          fileToUpload = photo.file;
+        }
+        
+        compressedFiles.push(fileToUpload);
         setUploadProgress({ current: i + 1, total: photos.length });
       }
 
+      // Phase 2: Upload to Cloudinary via Edge Function (ultra-fast CDN)
+      setStage("uploading");
+      setUploadProgress({ current: 0, total: compressedFiles.length });
+      
+      console.log('📤 [SMART UPLOAD] Uploading to Cloudinary...');
+      
+      const uploadedImages: Array<{ url: string; cardUrl: string; thumbnailUrl: string }> = [];
+      const listingId = `smart-${Date.now()}`;
+      
+      for (let i = 0; i < compressedFiles.length; i += UPLOAD_CONCURRENCY) {
+        const batch = compressedFiles.slice(i, i + UPLOAD_CONCURRENCY);
+        
+        const batchResults = await Promise.all(
+          batch.map(async (file, batchIndex) => {
+            const globalIndex = i + batchIndex;
+            
+            // Upload to Cloudinary via Edge Function
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('listingId', listingId);
+            formData.append('index', globalIndex.toString());
+            
+            const response = await fetch(
+              `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/upload-to-cloudinary`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${session.access_token}`,
+                },
+                body: formData,
+              }
+            );
+            
+            if (!response.ok) {
+              const error = await response.json();
+              throw new Error(error.error || 'Upload failed');
+            }
+            
+            const result = await response.json();
+            console.log(`✅ [SMART UPLOAD] Image ${globalIndex + 1} uploaded to Cloudinary`);
+            return {
+              url: result.data.url,
+              cardUrl: result.data.cardUrl,
+              thumbnailUrl: result.data.thumbnailUrl,
+            };
+          })
+        );
+        
+        uploadedImages.push(...batchResults);
+        setUploadProgress({ current: Math.min(i + UPLOAD_CONCURRENCY, compressedFiles.length), total: compressedFiles.length });
+      }
+
+      console.log('✅ [SMART UPLOAD] All photos uploaded to Cloudinary');
+      const urls = uploadedImages.map(img => img.url);
       setUploadedUrls(urls);
-      await runAiAnalysis(urls);
+      await runAiAnalysis(urls, uploadedImages);
 
     } catch (err: any) {
       console.error('❌ [SMART UPLOAD MODAL] Error:', err);
@@ -143,7 +206,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
     }
   };
 
-  const runAiAnalysis = async (urls: string[]) => {
+  const runAiAnalysis = async (
+    urls: string[], 
+    uploadedImages?: Array<{ url: string; cardUrl: string; thumbnailUrl: string }>
+  ) => {
     setStage("analyzing");
 
     try {
@@ -233,16 +299,18 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         formData.apparelMaterial = analysis.apparel_details.material;
       }
 
-      // Add images to form data with first image as primary
+      // Add images to form data with variants (for instant loading)
       formData.images = urls.map((url, index) => ({
         id: `ai-${index}`,
         url,
+        cardUrl: uploadedImages?.[index]?.cardUrl,
+        thumbnailUrl: uploadedImages?.[index]?.thumbnailUrl,
         order: index,
         isPrimary: index === 0,
       }));
       
-      // Set the primary image URL explicitly
-      formData.primaryImageUrl = urls[0];
+      // Set the primary image URL explicitly (use cardUrl for faster loading)
+      formData.primaryImageUrl = uploadedImages?.[0]?.cardUrl || urls[0];
 
       setStage("success");
 
@@ -413,6 +481,41 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     />
                   </motion.div>
                 )}
+              </motion.div>
+            )}
+
+            {/* Compressing Stage */}
+            {stage === "compressing" && (
+              <motion.div
+                key="compressing"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="py-8 text-center space-y-4"
+              >
+                <div className="relative">
+                  <Zap className="h-10 w-10 text-gray-900 mx-auto" />
+                  <motion.div
+                    className="absolute -top-1 -right-1 w-5 h-5 bg-gray-900 rounded-full flex items-center justify-center"
+                    animate={{ scale: [1, 1.2, 1] }}
+                    transition={{ repeat: Infinity, duration: 0.5 }}
+                  >
+                    <Loader2 className="h-3 w-3 animate-spin text-white" />
+                  </motion.div>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">Optimizing photos...</p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {uploadProgress.current} of {uploadProgress.total} compressed
+                  </p>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2 max-w-[200px] mx-auto">
+                  <div
+                    className="bg-gray-900 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                  />
+                </div>
               </motion.div>
             )}
 

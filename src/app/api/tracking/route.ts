@@ -240,17 +240,20 @@ export async function POST(request: NextRequest) {
     if (user?.id) {
       console.log('[Tracking API] Triggering user preferences update for:', user.id);
       // Don't await this - let it run in background
-      supabase.rpc('update_user_preferences_from_interactions', {
-        p_user_id: user.id,
-      }).then(({ error }) => {
-        if (error) {
-          console.error('[Tracking API] Failed to update user preferences:', error);
-        } else {
-          console.log('[Tracking API] User preferences updated successfully');
+      (async () => {
+        try {
+          const { error } = await supabase.rpc('update_user_preferences_from_interactions', {
+            p_user_id: user.id,
+          });
+          if (error) {
+            console.error('[Tracking API] Failed to update user preferences:', error);
+          } else {
+            console.log('[Tracking API] User preferences updated successfully');
+          }
+        } catch (err) {
+          console.error('[Tracking API] Exception in preferences update:', err);
         }
-      }).catch(err => {
-        console.error('[Tracking API] Exception in preferences update:', err);
-      });
+      })();
     }
 
     console.log('[Tracking API] Returning success response');

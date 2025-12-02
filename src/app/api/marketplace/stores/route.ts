@@ -4,57 +4,139 @@ import { createClient } from '@/lib/supabase/server';
 // ============================================================
 // Marketplace Stores API - Public Endpoint
 // Returns all stores (users) on the platform
+// OPTIMISED: Single query with product counts (was 50+ queries, now 1)
 // ============================================================
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 300; // ISR: Revalidate every 5 minutes
 
 export async function GET() {
+  const startTime = performance.now();
+  
   try {
     const supabase = await createClient();
 
-    // Fetch all users with their profile information
-    const { data: users, error } = await supabase
-      .from('users')
-      .select('user_id, business_name, store_type, logo_url, created_at')
-      .order('created_at', { ascending: false });
+    // OPTIMISED: Single query using RPC function for stores with product counts
+    const { data: stores, error: rpcError } = await supabase
+      .rpc('get_stores_with_product_counts');
 
-    if (error) {
-      console.error('Error fetching stores:', error);
+    if (!rpcError && stores) {
+      const queryTime = performance.now() - startTime;
+      console.log(`⚡ [STORES] Fetched ${stores.length} stores in ${queryTime.toFixed(0)}ms (RPC)`);
+      
+      // Transform the data
+      const activeStores = stores.map((store: any) => ({
+        id: store.user_id,
+        store_name: store.business_name?.trim() || 'Bike Store',
+        store_type: store.store_type?.trim() || 'Retail',
+        logo_url: store.logo_url,
+        product_count: store.product_count || 0,
+        joined_date: store.created_at,
+      }));
+
       return NextResponse.json(
-        { error: 'Failed to fetch stores' },
-        { status: 500 }
+        { stores: activeStores, total: activeStores.length },
+        {
+          headers: {
+            'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+            'CDN-Cache-Control': 'public, s-maxage=300',
+            'Vercel-CDN-Cache-Control': 'public, s-maxage=300',
+            'X-Response-Time': `${queryTime.toFixed(0)}ms`,
+          },
+        }
       );
     }
 
-    // Get product counts for each store
-    const storesWithCounts = await Promise.all(
-      (users || []).map(async (user) => {
-        const { count } = await supabase
-          .from('products')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.user_id)
-          .eq('is_active', true);
+    // Fallback: Use JOIN query if RPC doesn't exist
+    console.log('[STORES] RPC not available, using fallback query');
+    
+    // OPTIMISED FALLBACK: Single query with LEFT JOIN instead of N+1
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('users')
+      .select(`
+        user_id,
+        business_name,
+        store_type,
+        logo_url,
+        created_at,
+        products!left(id)
+      `)
+      .eq('products.is_active', true);
 
-        return {
+    if (fallbackError) {
+      console.error('Error fetching stores (fallback):', fallbackError);
+      
+      // Ultimate fallback: separate queries but log warning
+      console.warn('[STORES] Using N+1 fallback - consider creating RPC function');
+      
+      const { data: users, error } = await supabase
+        .from('users')
+        .select('user_id, business_name, store_type, logo_url, created_at')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        return NextResponse.json(
+          { error: 'Failed to fetch stores' },
+          { status: 500 }
+        );
+      }
+
+      // Batch product counts in a single query
+      const userIds = (users || []).map(u => u.user_id);
+      const { data: productCounts } = await supabase
+        .from('products')
+        .select('user_id')
+        .in('user_id', userIds)
+        .eq('is_active', true);
+
+      // Count products per user
+      const countMap = new Map<string, number>();
+      (productCounts || []).forEach((p: any) => {
+        countMap.set(p.user_id, (countMap.get(p.user_id) || 0) + 1);
+      });
+
+      const activeStores = (users || [])
+        .map(user => ({
           id: user.user_id,
-          store_name: user.business_name && user.business_name.trim() !== '' 
-            ? user.business_name 
-            : 'Bike Store',
-          store_type: user.store_type && user.store_type.trim() !== '' 
-            ? user.store_type 
-            : 'Retail',
+          store_name: user.business_name?.trim() || 'Bike Store',
+          store_type: user.store_type?.trim() || 'Retail',
           logo_url: user.logo_url,
-          product_count: count || 0,
+          product_count: countMap.get(user.user_id) || 0,
           joined_date: user.created_at,
-        };
-      })
-    );
+        }))
+        .filter(store => store.product_count > 0);
 
-    // Filter out stores with no products
-    const activeStores = storesWithCounts.filter(store => store.product_count > 0);
+      const queryTime = performance.now() - startTime;
+      console.log(`⚡ [STORES] Fetched ${activeStores.length} stores in ${queryTime.toFixed(0)}ms (batched fallback)`);
 
-    // Cache aggressively (5 minutes)
+      return NextResponse.json(
+        { stores: activeStores, total: activeStores.length },
+        {
+          headers: {
+            'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+            'CDN-Cache-Control': 'public, s-maxage=300',
+            'Vercel-CDN-Cache-Control': 'public, s-maxage=300',
+            'X-Response-Time': `${queryTime.toFixed(0)}ms`,
+          },
+        }
+      );
+    }
+
+    // Process JOIN fallback result
+    const activeStores = (fallbackData || [])
+      .map((user: any) => ({
+        id: user.user_id,
+        store_name: user.business_name?.trim() || 'Bike Store',
+        store_type: user.store_type?.trim() || 'Retail',
+        logo_url: user.logo_url,
+        product_count: Array.isArray(user.products) ? user.products.length : 0,
+        joined_date: user.created_at,
+      }))
+      .filter((store: any) => store.product_count > 0);
+
+    const queryTime = performance.now() - startTime;
+    console.log(`⚡ [STORES] Fetched ${activeStores.length} stores in ${queryTime.toFixed(0)}ms (JOIN fallback)`);
+
     return NextResponse.json(
       { stores: activeStores, total: activeStores.length },
       {
@@ -62,6 +144,7 @@ export async function GET() {
           'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
           'CDN-Cache-Control': 'public, s-maxage=300',
           'Vercel-CDN-Cache-Control': 'public, s-maxage=300',
+          'X-Response-Time': `${queryTime.toFixed(0)}ms`,
         },
       }
     );

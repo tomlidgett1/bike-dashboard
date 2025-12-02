@@ -2,9 +2,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
-import { downloadImage, validateImage, generateFilename } from '../_shared/image-downloader.ts'
 
 console.log('Function "download-image" initialized!')
+
+// ============================================================
+// Download Image & Upload to Cloudinary
+// Downloads external images and uploads to Cloudinary CDN
+// Creates 3 variants: thumbnail (100px), card (400px), detail (800px)
+// ============================================================
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -14,6 +19,19 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+  // Cloudinary credentials
+  const cloudName = Deno.env.get('CLOUDINARY_CLOUD_NAME')
+  const apiKey = Deno.env.get('CLOUDINARY_API_KEY')
+  const apiSecret = Deno.env.get('CLOUDINARY_API_SECRET')
+
+  if (!cloudName || !apiKey || !apiSecret) {
+    console.error('❌ [DOWNLOAD IMAGE] Cloudinary credentials not configured')
+    return new Response(
+      JSON.stringify({ error: 'Cloudinary credentials not configured' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
 
   try {
     const { imageId, externalUrl, canonicalProductId, sortOrder } = await req.json()
@@ -28,68 +46,132 @@ Deno.serve(async (req) => {
     console.log(`\n📥 [DOWNLOAD IMAGE] ========================================`)
     console.log(`📥 [DOWNLOAD IMAGE] Image ID: ${imageId}`)
     console.log(`📥 [DOWNLOAD IMAGE] URL: ${externalUrl}`)
+    console.log(`📥 [DOWNLOAD IMAGE] Uploading to Cloudinary...`)
     console.log(`📥 [DOWNLOAD IMAGE] ========================================\n`)
 
-    // Download image
-    const downloadResult = await downloadImage(externalUrl)
+    // Download image from external URL
+    const imageResponse = await fetch(externalUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; BikeMarketplace/1.0; +https://bikemarketplace.com)',
+      },
+    })
 
-    if (!downloadResult.success || !downloadResult.blob) {
-      console.error(`❌ [DOWNLOAD IMAGE] Download failed: ${downloadResult.error}`)
+    if (!imageResponse.ok) {
+      console.error(`❌ [DOWNLOAD IMAGE] Download failed: ${imageResponse.status}`)
       return new Response(
-        JSON.stringify({ error: 'Download failed', details: downloadResult.error }),
+        JSON.stringify({ error: 'Download failed', details: `HTTP ${imageResponse.status}` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Validate image
-    const validation = await validateImage(downloadResult.blob)
-    if (!validation.valid) {
-      console.error(`❌ [DOWNLOAD IMAGE] Validation failed: ${validation.error}`)
+    const contentType = imageResponse.headers.get('content-type')
+    if (!contentType || !contentType.startsWith('image/')) {
+      console.error(`❌ [DOWNLOAD IMAGE] Invalid content type: ${contentType}`)
       return new Response(
-        JSON.stringify({ error: 'Validation failed', details: validation.error }),
+        JSON.stringify({ error: 'Invalid content type', details: contentType }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    console.log(`✓ [DOWNLOAD IMAGE] Image valid: ${validation.mimeType}, ${(validation.fileSize! / 1024).toFixed(0)}KB`)
+    // Convert to base64 for Cloudinary upload
+    const arrayBuffer = await imageResponse.arrayBuffer()
+    const uint8Array = new Uint8Array(arrayBuffer)
+    const fileSize = uint8Array.length
 
-    // Generate storage path
-    const filename = generateFilename(externalUrl, sortOrder || 0)
-    const storagePath = `canonical/${canonicalProductId}/original/${filename}`
-
-    console.log(`📤 [DOWNLOAD IMAGE] Uploading to: ${storagePath}`)
-
-    // Upload to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from('product-images')
-      .upload(storagePath, downloadResult.blob, {
-        cacheControl: '31536000',
-        contentType: validation.mimeType,
-        upsert: false,
-      })
-
-    if (uploadError) {
-      console.error(`❌ [DOWNLOAD IMAGE] Upload failed: ${uploadError.message}`)
+    // Validate file size
+    if (fileSize > 10 * 1024 * 1024) {
       return new Response(
-        JSON.stringify({ error: 'Upload failed', details: uploadError.message }),
+        JSON.stringify({ error: 'Image too large (>10MB)' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (fileSize < 10 * 1024) {
+      return new Response(
+        JSON.stringify({ error: 'Image too small (likely a placeholder)' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log(`✓ [DOWNLOAD IMAGE] Downloaded ${(fileSize / 1024).toFixed(0)}KB, type: ${contentType}`)
+
+    // Convert to base64
+    let binary = ''
+    const chunkSize = 8192
+    for (let i = 0; i < uint8Array.length; i += chunkSize) {
+      const chunk = uint8Array.slice(i, i + chunkSize)
+      binary += String.fromCharCode(...chunk)
+    }
+    const base64 = btoa(binary)
+    const mimeType = contentType || 'image/jpeg'
+    const dataUri = `data:${mimeType};base64,${base64}`
+
+    // Generate Cloudinary signature
+    const timestamp = Math.floor(Date.now() / 1000)
+    const publicId = `bike-marketplace/canonical/${canonicalProductId}/${timestamp}-${sortOrder || 0}`
+    
+    // Eager transformations: thumbnail (100px), card (400px), detail (800px)
+    const eagerTransforms = 'w_100,c_limit,q_auto:low,f_webp|w_400,c_limit,q_auto:good,f_webp|w_800,c_limit,q_auto:best,f_webp'
+    
+    const signatureString = `eager=${eagerTransforms}&eager_async=false&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`
+    const encoder = new TextEncoder()
+    const data = encoder.encode(signatureString)
+    const hashBuffer = await crypto.subtle.digest('SHA-1', data)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    const signature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+
+    // Upload to Cloudinary
+    console.log(`📤 [DOWNLOAD IMAGE] Uploading to Cloudinary: ${publicId}`)
+    
+    const cloudinaryForm = new FormData()
+    cloudinaryForm.append('file', dataUri)
+    cloudinaryForm.append('api_key', apiKey)
+    cloudinaryForm.append('timestamp', timestamp.toString())
+    cloudinaryForm.append('signature', signature)
+    cloudinaryForm.append('public_id', publicId)
+    cloudinaryForm.append('eager', eagerTransforms)
+    cloudinaryForm.append('eager_async', 'false')
+
+    const cloudinaryResponse = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      {
+        method: 'POST',
+        body: cloudinaryForm,
+      }
+    )
+
+    if (!cloudinaryResponse.ok) {
+      const errorText = await cloudinaryResponse.text()
+      console.error('❌ [DOWNLOAD IMAGE] Cloudinary upload failed:', errorText)
+      return new Response(
+        JSON.stringify({ error: 'Cloudinary upload failed', details: errorText }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    console.log(`✅ [DOWNLOAD IMAGE] Uploaded successfully`)
+    const cloudinaryResult = await cloudinaryResponse.json()
+    console.log(`✅ [DOWNLOAD IMAGE] Uploaded to Cloudinary: ${cloudinaryResult.public_id}`)
 
-    // Update product_images record
+    // Build optimised URLs
+    const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`
+    const thumbnailUrl = `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${cloudinaryResult.public_id}`
+    const cardUrl = `${baseUrl}/w_400,c_limit,q_auto:good,f_webp/${cloudinaryResult.public_id}`
+    const detailUrl = `${baseUrl}/w_800,c_limit,q_auto:best,f_webp/${cloudinaryResult.public_id}`
+
+    // Update product_images record with Cloudinary URLs
     const { error: updateError } = await supabase
       .from('product_images')
       .update({
-        storage_path: storagePath,
+        cloudinary_url: cloudinaryResult.secure_url,
+        cloudinary_public_id: cloudinaryResult.public_id,
+        thumbnail_url: thumbnailUrl,
+        card_url: cardUrl,
+        detail_url: detailUrl,
         is_downloaded: true,
-        variants: { original: storagePath },
-        formats: { jpeg: { original: storagePath } },
-        width: validation.width || 800,
-        height: validation.height || 800,
-        file_size: validation.fileSize,
-        mime_type: validation.mimeType,
+        width: cloudinaryResult.width || 800,
+        height: cloudinaryResult.height || 800,
+        file_size: fileSize,
+        mime_type: mimeType,
       })
       .eq('id', imageId)
 
@@ -101,17 +183,27 @@ Deno.serve(async (req) => {
       )
     }
 
-    console.log(`✅ [DOWNLOAD IMAGE] Record updated with storage path`)
+    console.log(`✅ [DOWNLOAD IMAGE] Record updated with Cloudinary URLs`)
+
+    // Pre-warm CDN cache
+    console.log(`🔥 [DOWNLOAD IMAGE] Pre-warming CDN cache...`)
+    fetch(cardUrl).catch(() => {})
+    fetch(thumbnailUrl).catch(() => {})
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Image downloaded successfully',
+        message: 'Image uploaded to Cloudinary successfully',
         data: {
           imageId,
-          storagePath,
-          fileSize: validation.fileSize,
-          mimeType: validation.mimeType,
+          cloudinaryUrl: cloudinaryResult.secure_url,
+          thumbnailUrl,
+          cardUrl,
+          detailUrl,
+          publicId: cloudinaryResult.public_id,
+          fileSize,
+          width: cloudinaryResult.width,
+          height: cloudinaryResult.height,
         },
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -128,4 +220,3 @@ Deno.serve(async (req) => {
     )
   }
 })
-

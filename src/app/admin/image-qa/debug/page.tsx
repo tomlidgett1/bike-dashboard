@@ -37,7 +37,13 @@ export default function ImageQADebugPage() {
       results.rejectedImages = allImages?.filter(img => img.approval_status === 'rejected').length || 0;
 
       // 3. Check approval_status column exists
-      const { data: columnCheck } = await supabase.rpc('check_column_exists' as any).catch(() => null);
+      let columnCheck = null;
+      try {
+        const { data } = await supabase.rpc('check_column_exists' as any);
+        columnCheck = data;
+      } catch {
+        // RPC doesn't exist, that's ok
+      }
       
       // 4. Sample products with images
       const { data: sampleProducts } = await supabase

@@ -7,10 +7,12 @@ import { motion } from "framer-motion";
 import { Package, Heart } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
+import { getCardImageUrl } from "@/lib/utils/cloudinary";
 
 // ============================================================
 // Product Card - Image-First Design
 // Large image with floating price, minimal clutter
+// Uses Cloudinary CDN for ultra-fast image delivery (~200ms)
 // ============================================================
 
 interface ProductCardProps {
@@ -54,30 +56,43 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({ p
     };
   }, [priority, isVisible]);
 
-  // Memoize image URL calculation to prevent recalculating on every render
+  // Memoize image URL - uses Cloudinary cardUrl when available for instant loading
   const imageUrl = React.useMemo(() => {
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const productAny = product as any;
     
-    // For private listings with images array
-    if ((product as any).listing_type === 'private_listing' && Array.isArray((product as any).images)) {
-      const listingImages = (product as any).images as Array<{ url: string; isPrimary?: boolean }>;
+    // Priority 1: Cloudinary card_url directly on product (canonical products)
+    if (productAny.card_url) {
+      return productAny.card_url;
+    }
+    
+    // Priority 2: For private listings with images array
+    if (productAny.listing_type === 'private_listing' && Array.isArray(productAny.images)) {
+      const listingImages = productAny.images as Array<{ 
+        url: string; 
+        cardUrl?: string; 
+        isPrimary?: boolean 
+      }>;
       const primaryImage = listingImages.find(img => img.isPrimary) || listingImages[0];
-      if (primaryImage?.url && !primaryImage.url.startsWith('blob:')) {
-        return primaryImage.url;
+      
+      if (primaryImage) {
+        // Use Cloudinary cardUrl if available (instant loading)
+        return getCardImageUrl(primaryImage);
       }
     }
     
-    // For store inventory
+    // Priority 3: Legacy Supabase Storage image_variants
     if (product.image_variants && product.image_variants.medium) {
       return `${baseUrl}/storage/v1/object/public/product-images/${product.image_variants.medium}`;
     }
     
+    // Priority 4: Direct primary image URL (legacy)
     if (product.primary_image_url && !product.primary_image_url.startsWith('blob:')) {
       return product.primary_image_url;
     }
     
     return null;
-  }, [product.id, product.image_variants, product.primary_image_url]);
+  }, [product.id, product.image_variants, product.primary_image_url, (product as any).card_url]);
 
   // Memoize click handler to prevent recreating on every render
   const handleClick = React.useCallback(() => {
@@ -128,11 +143,10 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({ p
               src={imageUrl}
               alt={product.description}
               fill
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 16vw"
+              unoptimized // Cloudinary already optimizes - skip Next.js processing
               className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
               loading={priority ? 'eager' : 'lazy'}
               priority={priority}
-              quality={85}
               placeholder="blur"
               blurDataURL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iI2Y3ZjdmNyIvPjwvc3ZnPg=="
               onError={() => setImageError(true)}

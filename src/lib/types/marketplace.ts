@@ -38,6 +38,10 @@ export interface MarketplaceProduct {
   image_formats?: any;
   all_images?: string[]; // All product images for gallery
   images?: any; // Raw images field (for listings)
+  // Cloudinary optimised URLs for instant loading
+  card_url?: string | null; // 400px product card image
+  thumbnail_url?: string | null; // 100px thumbnail for search
+  detail_url?: string | null; // 800px detail page image
   qoh: number;
   model_year: string | null;
   created_at: string;

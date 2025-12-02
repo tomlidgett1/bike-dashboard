@@ -4,12 +4,29 @@ import * as React from "react";
 import { Bike, Settings, Shirt, Apple, ChevronDown, Package, Loader2, ChevronLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { preload } from "swr";
 
 // ============================================================
 // Cascading Category Filter
 // Shows L1 categories, expands to L2, then L3
 // Dynamically fetches categories from the database
+// With hover-based prefetching for instant category switching
 // ============================================================
+
+// Prefetch function for category products
+const prefetchCategoryProducts = (level1?: string, level2?: string, level3?: string) => {
+  const params = new URLSearchParams();
+  params.set('page', '1');
+  params.set('pageSize', '50');
+  if (level1) params.set('level1', level1);
+  if (level2) params.set('level2', level2);
+  if (level3) params.set('level3', level3);
+  
+  const url = `/api/marketplace/products?${params}`;
+  
+  // Use SWR preload for intelligent caching
+  preload(url, (url: string) => fetch(url).then(res => res.json()));
+};
 
 interface CascadingCategoryFilterProps {
   selectedLevel1: string | null;
@@ -111,6 +128,12 @@ export function CascadingCategoryFilter({
                   onLevel2Change(null);
                   onLevel3Change(null);
                 }}
+                onMouseEnter={() => {
+                  // Prefetch products for this category on hover
+                  if (!isActive) {
+                    prefetchCategoryProducts(name);
+                  }
+                }}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2.5 rounded-md font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0 cursor-pointer",
                   isActive
@@ -196,6 +219,12 @@ export function CascadingCategoryFilter({
                     onLevel3Change(null);
                   }
                 }}
+                onMouseEnter={() => {
+                  // Prefetch products for this subcategory on hover
+                  if (!isActive && selectedLevel1) {
+                    prefetchCategoryProducts(selectedLevel1, level2.name);
+                  }
+                }}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0 cursor-pointer",
                   isActive
@@ -271,6 +300,12 @@ export function CascadingCategoryFilter({
                 key={level3.name}
                 onClick={() => {
                   onLevel3Change(isActive ? null : level3.name);
+                }}
+                onMouseEnter={() => {
+                  // Prefetch products for this L3 category on hover
+                  if (!isActive && selectedLevel1 && selectedLevel2) {
+                    prefetchCategoryProducts(selectedLevel1, selectedLevel2, level3.name);
+                  }
                 }}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0 cursor-pointer",
