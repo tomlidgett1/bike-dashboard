@@ -36,6 +36,8 @@ interface CascadingCategoryFilterProps {
   onLevel2Change: (subcategory: string | null) => void;
   onLevel3Change: (level3: string | null) => void;
   counts?: Record<string, number>;
+  /** Filter categories by listing type: 'all' | 'stores' | 'individuals' */
+  listingTypeFilter?: 'all' | 'stores' | 'individuals';
 }
 
 interface CategoryHierarchy {
@@ -69,15 +71,29 @@ export function CascadingCategoryFilter({
   onLevel2Change,
   onLevel3Change,
   counts,
+  listingTypeFilter = 'all',
 }: CascadingCategoryFilterProps) {
   const [categories, setCategories] = React.useState<CategoryHierarchy[]>([]);
   const [loading, setLoading] = React.useState(true);
 
-  // Fetch categories from API
+  // Fetch categories from API - re-fetch when listing type filter changes
   React.useEffect(() => {
     const fetchCategories = async () => {
+      setLoading(true);
       try {
-        const response = await fetch('/api/marketplace/categories');
+        // Build URL with listing type filter
+        const params = new URLSearchParams();
+        if (listingTypeFilter === 'stores') {
+          params.set('listingType', 'store_inventory');
+        } else if (listingTypeFilter === 'individuals') {
+          params.set('listingType', 'private_listing');
+        }
+        
+        const url = params.toString() 
+          ? `/api/marketplace/categories?${params}` 
+          : '/api/marketplace/categories';
+        
+        const response = await fetch(url);
         if (response.ok) {
           const data = await response.json();
           setCategories(data.categories || []);
@@ -89,7 +105,7 @@ export function CascadingCategoryFilter({
       }
     };
     fetchCategories();
-  }, []);
+  }, [listingTypeFilter]);
   // Level 1 Category Pills
   const renderLevel1 = () => {
     if (loading) {

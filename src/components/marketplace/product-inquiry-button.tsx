@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/auth-provider';
+import { useAuthModal } from '@/components/providers/auth-modal-provider';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -41,6 +42,7 @@ export function ProductInquiryButton({
 }: ProductInquiryButtonProps) {
   const router = useRouter();
   const { user } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -48,7 +50,7 @@ export function ProductInquiryButton({
 
   const handleClick = () => {
     if (!user) {
-      router.push('/login');
+      openAuthModal();
       return;
     }
 

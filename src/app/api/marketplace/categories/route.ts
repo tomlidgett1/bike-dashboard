@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 // ============================================================
 // Marketplace Categories API - Public Endpoint
 // Returns category hierarchy with product counts from DB
+// Supports filtering by listing type (stores, individuals)
 // ============================================================
 
 export const dynamic = 'force-dynamic';
@@ -22,15 +23,27 @@ interface CategoryHierarchy {
   totalProducts: number;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
+    
+    // Get listing type filter from query params
+    const { searchParams } = new URL(request.url);
+    const listingType = searchParams.get('listingType'); // 'store_inventory' | 'private_listing' | null
 
-    // Fetch all active products with their categories
-    const { data: products, error } = await supabase
+    // Build the query
+    let query = supabase
       .from('products')
       .select('marketplace_category, marketplace_subcategory, marketplace_level_3_category')
       .eq('is_active', true);
+    
+    // Filter by listing type if specified
+    if (listingType === 'store_inventory' || listingType === 'private_listing') {
+      query = query.eq('listing_type', listingType);
+    }
+
+    // Fetch products with their categories
+    const { data: products, error } = await query;
 
     if (error) {
       console.error('Error fetching category stats:', error);

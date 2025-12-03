@@ -3,8 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
   // Check if this is an auth route
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || 
-                      request.nextUrl.pathname.startsWith('/auth')
+  const isAuthRoute = request.nextUrl.pathname.startsWith('/auth') ||
+                      request.nextUrl.pathname.startsWith('/marketplace')
   
   // For testing: log to console to see if middleware runs
   if (!isAuthRoute) {
@@ -16,9 +16,9 @@ export async function updateSession(request: NextRequest) {
   }
   
   // TEST: Force redirect to see if middleware is working
-  console.log('❌ Forcing redirect to /login')
+  console.log('❌ Forcing redirect to /marketplace')
   const url = request.nextUrl.clone()
-  url.pathname = '/login'
+  url.pathname = '/marketplace'
   return NextResponse.redirect(url)
   
   /* Original code - temporarily disabled for testing
@@ -61,11 +61,11 @@ export async function updateSession(request: NextRequest) {
       error: error?.message
     })
 
-    // If no user, redirect to login
+    // If no user, redirect to marketplace
     if (!user) {
-      console.log('❌ No user found, redirecting to /login')
+      console.log('❌ No user found, redirecting to /marketplace')
       const url = request.nextUrl.clone()
-      url.pathname = '/login'
+      url.pathname = '/marketplace'
       return NextResponse.redirect(url)
     }
 
@@ -75,7 +75,7 @@ export async function updateSession(request: NextRequest) {
   } catch (error) {
     console.error('❌ Middleware error:', error)
     const url = request.nextUrl.clone()
-    url.pathname = '/login'
+    url.pathname = '/marketplace'
     return NextResponse.redirect(url)
   }
 

@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { ProfileProvider } from "@/components/providers/profile-provider";
 import { MobileNavProvider } from "@/components/providers/mobile-nav-provider";
+import { AuthModalProvider } from "@/components/providers/auth-modal-provider";
 import { ConditionalLayout } from "@/components/layout";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
@@ -69,10 +70,12 @@ export default async function RootLayout({
         >
           <AuthProvider>
             <ProfileProvider serverProfile={serverProfile}>
-              <MobileNavProvider>
-                <ConditionalLayout>{children}</ConditionalLayout>
-                <WebVitalsReporter />
-              </MobileNavProvider>
+              <AuthModalProvider>
+                <MobileNavProvider>
+                  <ConditionalLayout>{children}</ConditionalLayout>
+                  <WebVitalsReporter />
+                </MobileNavProvider>
+              </AuthModalProvider>
             </ProfileProvider>
           </AuthProvider>
         </ThemeProvider>

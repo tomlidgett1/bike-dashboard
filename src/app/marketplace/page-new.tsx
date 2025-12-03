@@ -11,6 +11,7 @@ import { ViewModePills, ViewMode } from "@/components/marketplace/view-mode-pill
 import { CategoryPills } from "@/components/marketplace/category-pills";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
+import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { useInteractionTracker } from "@/lib/tracking/interaction-tracker";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 
@@ -23,6 +24,7 @@ export default function MarketplacePage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const tracker = useInteractionTracker(user?.id);
 
   // View mode state (trending, for-you, all)
@@ -241,7 +243,7 @@ export default function MarketplacePage() {
                   </div>
                 </div>
                 <Button
-                  onClick={() => router.push('/login')}
+                  onClick={openAuthModal}
                   className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium flex items-center gap-2"
                 >
                   <LogIn className="h-4 w-4" />
@@ -293,7 +295,7 @@ export default function MarketplacePage() {
                           : 'Sign in to get recommendations based on your browsing history and preferences.'}
                       </p>
                       <Button
-                        onClick={() => user ? setViewMode('trending') : router.push('/login')}
+                        onClick={() => user ? setViewMode('trending') : openAuthModal()}
                         className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
                       >
                         {user ? 'Browse Trending' : 'Sign In'}

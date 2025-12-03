@@ -55,7 +55,7 @@ function OnboardingPageContent() {
 
   useEffect(() => {
     if (!user) {
-      router.push('/login')
+      router.push('/marketplace')
     }
   }, [user, router])
 

@@ -8,15 +8,14 @@ import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon } from
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
-import { ViewModePills, ViewMode } from "@/components/marketplace/view-mode-pills";
-import { ListingTypeFilter, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/listing-type-filter";
-import { CascadingCategoryFilter } from "@/components/marketplace/cascading-category-filter";
+import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
 import { StoresGrid } from "@/components/marketplace/stores-grid";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
+import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { useInteractionTracker } from "@/lib/tracking/interaction-tracker";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
-import { useMarketplaceData, useCategoryCounts } from "@/lib/hooks/use-marketplace-data";
+import { useMarketplaceData } from "@/lib/hooks/use-marketplace-data";
 
 // ============================================================
 // Marketplace Page - Discovery-Focused Homepage
@@ -40,6 +39,7 @@ function MarketplacePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const tracker = useInteractionTracker(user?.id);
 
   // Detect if we're in stores or sellers view from URL
@@ -72,6 +72,26 @@ function MarketplacePageContent() {
   const [selectedLevel3, setSelectedLevel3] = React.useState<string | null>(
     searchParams.get('level3') || null
   );
+
+  // Sync category filter state with URL params when they change
+  // This ensures filters reset when navigating between views (Products, Stores, Sellers)
+  React.useEffect(() => {
+    const urlLevel1 = searchParams.get('level1') || null;
+    const urlLevel2 = searchParams.get('level2') || null;
+    const urlLevel3 = searchParams.get('level3') || null;
+    
+    // When on Stores or Sellers view, clear the category filters
+    if (isStoresView || isSellersView) {
+      if (selectedLevel1 !== null) setSelectedLevel1(null);
+      if (selectedLevel2 !== null) setSelectedLevel2(null);
+      if (selectedLevel3 !== null) setSelectedLevel3(null);
+    } else {
+      // On Products view, sync state with URL params
+      if (urlLevel1 !== selectedLevel1) setSelectedLevel1(urlLevel1);
+      if (urlLevel2 !== selectedLevel2) setSelectedLevel2(urlLevel2);
+      if (urlLevel3 !== selectedLevel3) setSelectedLevel3(urlLevel3);
+    }
+  }, [searchParams, isStoresView, isSellersView]);
 
   // Listing type filter state (default to all listings)
   const [listingTypeFilter, setListingTypeFilter] = React.useState<ListingTypeFilterType>('all');
@@ -116,9 +136,6 @@ function MarketplacePageContent() {
       dedupingInterval: 5000,
     }
   );
-
-  // Use SWR for category counts
-  const { counts: categoryCounts } = useCategoryCounts();
 
   // Handle filter changes and product accumulation
   // This effect ONLY handles data population, NOT filter resets (those are done in handlers)
@@ -339,6 +356,11 @@ function MarketplacePageContent() {
     processedDataRef.current = new Set();
     setCurrentPage(1);
     
+    // Reset category filters since categories may differ between listing types
+    setSelectedLevel1(null);
+    setSelectedLevel2(null);
+    setSelectedLevel3(null);
+    
     // Then change the filter
     setListingTypeFilter(filter);
     
@@ -399,32 +421,21 @@ function MarketplacePageContent() {
             {/* Products View */}
             {!isStoresView && !isSellersView && (
               <>
-                {/* View Mode Pills & Listing Type Filter - Scrollable on mobile */}
-                <div className="flex items-center justify-between gap-2 sm:gap-4">
-                  <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 pb-1 sm:pb-0" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                    <ViewModePills
-                      activeMode={viewMode}
-                      onModeChange={handleViewModeChange}
-                      showForYouBadge={!user && viewMode !== 'for-you'}
-                    />
-                    {/* Only show listing type filter on All Products tab */}
-                    {viewMode === 'all' && (
-                      <ListingTypeFilter 
-                        activeFilter={listingTypeFilter}
-                        onFilterChange={handleListingTypeChange}
-                      />
-                    )}
-                  </div>
-
-                  {/* Product Count */}
-                  {!searchQuery && (
-                    <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
-                      <span className="text-sm text-gray-700 font-medium">
-                        {totalCount.toLocaleString()} {viewMode === 'trending' ? 'trending' : ''} products
-                      </span>
-                    </div>
-                  )}
-                </div>
+                {/* Unified Filter Bar - View modes, categories, source filter */}
+                <UnifiedFilterBar
+                  viewMode={viewMode}
+                  onViewModeChange={handleViewModeChange}
+                  showForYouBadge={!user && viewMode !== 'for-you'}
+                  selectedLevel1={selectedLevel1}
+                  selectedLevel2={selectedLevel2}
+                  selectedLevel3={selectedLevel3}
+                  onLevel1Change={handleLevel1Change}
+                  onLevel2Change={handleLevel2Change}
+                  onLevel3Change={handleLevel3Change}
+                  listingTypeFilter={listingTypeFilter}
+                  onListingTypeChange={handleListingTypeChange}
+                  productCount={!searchQuery ? totalCount : undefined}
+                />
 
                 {/* Active Search Display */}
                 {searchQuery && (
@@ -455,19 +466,6 @@ function MarketplacePageContent() {
                   </motion.div>
                 )}
 
-                {/* Cascading Category Filter - Only show on All Products tab */}
-                {viewMode === 'all' && (
-                  <CascadingCategoryFilter
-                    selectedLevel1={selectedLevel1}
-                    selectedLevel2={selectedLevel2}
-                    selectedLevel3={selectedLevel3}
-                    onLevel1Change={handleLevel1Change}
-                    onLevel2Change={handleLevel2Change}
-                    onLevel3Change={handleLevel3Change}
-                    counts={categoryCounts}
-                  />
-                )}
-
                 {/* Loading State - Amazon-style instant skeletons */}
                 {loading && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-4">
@@ -496,7 +494,7 @@ function MarketplacePageContent() {
                       </div>
                     </div>
                     <Button
-                      onClick={() => router.push('/login')}
+                      onClick={openAuthModal}
                       className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium flex items-center gap-2"
                     >
                       <LogIn className="h-4 w-4" />
@@ -562,7 +560,7 @@ function MarketplacePageContent() {
                                 : 'Sign in to get recommendations based on your browsing history and preferences.'}
                             </p>
                             <Button
-                              onClick={() => user ? setViewMode('trending') : router.push('/login')}
+                              onClick={() => user ? setViewMode('trending') : openAuthModal()}
                               className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
                             >
                               {user ? 'Browse Trending' : 'Sign In'}

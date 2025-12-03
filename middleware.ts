@@ -4,7 +4,6 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function middleware(request: NextRequest) {
   // Check if this is a public route that doesn't require authentication
   const isPublicRoute = 
-    request.nextUrl.pathname.startsWith('/login') || 
     request.nextUrl.pathname.startsWith('/auth') ||
     request.nextUrl.pathname.startsWith('/marketplace') ||
     request.nextUrl.pathname.startsWith('/api/marketplace')
@@ -42,10 +41,10 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // If no user, redirect to login
+  // If no user, redirect to marketplace
   if (!user) {
     const url = request.nextUrl.clone()
-    url.pathname = '/login'
+    url.pathname = '/marketplace'
     return NextResponse.redirect(url)
   }
 

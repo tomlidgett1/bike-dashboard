@@ -7,10 +7,10 @@ import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search } fr
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
-import { AuthModal } from "./auth-modal";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
+import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -44,7 +44,6 @@ interface MarketplaceHeaderProps {
 export function MarketplaceHeader({ compactSearchOnMobile = false }: MarketplaceHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
-  const [authModalOpen, setAuthModalOpen] = React.useState(false);
   const [sellRequirementModalOpen, setSellRequirementModalOpen] = React.useState(false);
   const [facebookModalOpen, setFacebookModalOpen] = React.useState(false);
   const [smartUploadModalOpen, setSmartUploadModalOpen] = React.useState(false);
@@ -54,6 +53,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
   const router = useRouter();
   const { user } = useAuth();
   const { profile, loading } = useUserProfile();
+  const { openAuthModal } = useAuthModal();
   const supabase = createClient();
 
   // Ensure component only renders auth UI on client-side
@@ -94,7 +94,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    router.push('/login');
+    router.push('/marketplace');
     router.refresh();
   };
 
@@ -250,7 +250,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
               <>
                 <Button
                   variant="outline"
-                  onClick={() => setAuthModalOpen(true)}
+                  onClick={openAuthModal}
                   className="rounded-md border-[#FFE8B3] hover:bg-[#FFF8E5] hover:border-[#FFC72C]"
                 >
                   Sign In
@@ -438,7 +438,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setAuthModalOpen(true);
+                    openAuthModal();
                     setMobileMenuOpen(false);
                   }}
                   className="w-full rounded-md border-[#FFE8B3] hover:bg-[#FFF8E5] hover:border-[#FFC72C]"
@@ -518,7 +518,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
             <Button
               onClick={() => {
                 setSellRequirementModalOpen(false);
-                setAuthModalOpen(true);
+                openAuthModal();
               }}
               className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
             >
@@ -528,7 +528,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
               variant="outline"
               onClick={() => {
                 setSellRequirementModalOpen(false);
-                setAuthModalOpen(true);
+                openAuthModal();
               }}
               className="w-full rounded-md border-gray-300 hover:bg-gray-50"
             >
@@ -537,9 +537,6 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Auth Modal */}
-      <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
 
       {/* Facebook Import Modal */}
       <FacebookImportModal
