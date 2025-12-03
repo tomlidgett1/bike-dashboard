@@ -31,24 +31,16 @@ export async function GET(
       );
     }
 
-    console.log(`[STORE API] Fetching store ${storeId}${searchQuery ? ` with search: "${searchQuery}"` : ''}`);
-
-    // Fetch store profile (must be verified bicycle store)
+    // Fetch store profile - filter for verified bicycle stores in query for faster 404
     const { data: storeUser, error: storeError } = await supabase
       .from('users')
-      .select('user_id, business_name, logo_url, store_type, address, phone, opening_hours, account_type, bicycle_store')
+      .select('user_id, business_name, logo_url, store_type, address, phone, opening_hours')
       .eq('user_id', storeId)
+      .eq('account_type', 'bicycle_store')
+      .eq('bicycle_store', true)
       .single();
 
     if (storeError || !storeUser) {
-      return NextResponse.json(
-        { error: 'Store not found' },
-        { status: 404 }
-      );
-    }
-
-    // Verify this is a verified bicycle store
-    if (storeUser.account_type !== 'bicycle_store' || !storeUser.bicycle_store) {
       return NextResponse.json(
         { error: 'Store not found' },
         { status: 404 }

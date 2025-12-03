@@ -5,7 +5,7 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useMobileNav } from '@/components/providers/mobile-nav-provider';
@@ -19,7 +19,10 @@ import { ArrowLeft, Archive, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
-export default function MessagesPage() {
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
+function MessagesPageContent() {
   const { user } = useAuth();
   const { setIsHidden: setMobileNavHidden } = useMobileNav();
   const searchParams = useSearchParams();
@@ -271,6 +274,19 @@ export default function MessagesPage() {
       </div>
     </div>
     </div>
+  );
+}
+
+// Wrap with Suspense for useSearchParams
+export default function MessagesPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-pulse text-gray-400">Loading messages...</div>
+      </div>
+    }>
+      <MessagesPageContent />
+    </Suspense>
   );
 }
 

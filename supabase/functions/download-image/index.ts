@@ -110,8 +110,9 @@ Deno.serve(async (req) => {
     const timestamp = Math.floor(Date.now() / 1000)
     const publicId = `bike-marketplace/canonical/${canonicalProductId}/${timestamp}-${sortOrder || 0}`
     
-    // Eager transformations: thumbnail (100px), card (400px), detail (800px)
-    const eagerTransforms = 'w_100,c_limit,q_auto:low,f_webp|w_400,c_limit,q_auto:good,f_webp|w_800,c_limit,q_auto:best,f_webp'
+    // Eager transformations: thumbnail (100px), mobile_card (200px), card (400px), detail (800px)
+    // Card variants use ar_1:1,c_fill for square cropping (center gravity)
+    const eagerTransforms = 'w_100,c_limit,q_auto:low,f_webp|w_200,ar_1:1,c_fill,q_auto:good,f_webp|w_400,ar_1:1,c_fill,q_auto:good,f_webp|w_800,c_limit,q_auto:best,f_webp'
     
     const signatureString = `eager=${eagerTransforms}&eager_async=false&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`
     const encoder = new TextEncoder()
@@ -155,7 +156,8 @@ Deno.serve(async (req) => {
     // Build optimised URLs
     const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`
     const thumbnailUrl = `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${cloudinaryResult.public_id}`
-    const cardUrl = `${baseUrl}/w_400,c_limit,q_auto:good,f_webp/${cloudinaryResult.public_id}`
+    const mobileCardUrl = `${baseUrl}/w_200,ar_1:1,c_fill,q_auto:good,f_webp/${cloudinaryResult.public_id}`
+    const cardUrl = `${baseUrl}/w_400,ar_1:1,c_fill,q_auto:good,f_webp/${cloudinaryResult.public_id}`
     const detailUrl = `${baseUrl}/w_800,c_limit,q_auto:best,f_webp/${cloudinaryResult.public_id}`
 
     // Update product_images record with Cloudinary URLs
@@ -165,6 +167,7 @@ Deno.serve(async (req) => {
         cloudinary_url: cloudinaryResult.secure_url,
         cloudinary_public_id: cloudinaryResult.public_id,
         thumbnail_url: thumbnailUrl,
+        mobile_card_url: mobileCardUrl,
         card_url: cardUrl,
         detail_url: detailUrl,
         is_downloaded: true,
@@ -188,6 +191,7 @@ Deno.serve(async (req) => {
     // Pre-warm CDN cache
     console.log(`🔥 [DOWNLOAD IMAGE] Pre-warming CDN cache...`)
     fetch(cardUrl).catch(() => {})
+    fetch(mobileCardUrl).catch(() => {})
     fetch(thumbnailUrl).catch(() => {})
 
     return new Response(
@@ -198,6 +202,7 @@ Deno.serve(async (req) => {
           imageId,
           cloudinaryUrl: cloudinaryResult.secure_url,
           thumbnailUrl,
+          mobileCardUrl,
           cardUrl,
           detailUrl,
           publicId: cloudinaryResult.public_id,

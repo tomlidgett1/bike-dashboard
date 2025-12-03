@@ -129,7 +129,10 @@ serve(async (req) => {
     const publicId = `bike-marketplace/listings/${user.id}/${listingId}/${timestamp}-${index}`;
     
     // Create signature (Cloudinary requires signed uploads)
-    const signatureString = `eager=w_100,c_limit,q_auto:low,f_webp|w_400,c_limit,q_auto:good,f_webp|w_800,c_limit,q_auto:best,f_webp&eager_async=false&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`;
+    // Variants: thumbnail (100px), mobile_card (200px), card (400px), detail (800px)
+    // Card variants use ar_1:1,c_fill for square cropping (center gravity)
+    const eagerTransforms = 'w_100,c_limit,q_auto:low,f_webp|w_200,ar_1:1,c_fill,q_auto:good,f_webp|w_400,ar_1:1,c_fill,q_auto:good,f_webp|w_800,c_limit,q_auto:best,f_webp';
+    const signatureString = `eager=${eagerTransforms}&eager_async=false&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`;
     const encoder = new TextEncoder();
     const data = encoder.encode(signatureString);
     const hashBuffer = await crypto.subtle.digest("SHA-1", data);
@@ -143,7 +146,7 @@ serve(async (req) => {
     cloudinaryForm.append("timestamp", timestamp.toString());
     cloudinaryForm.append("signature", signature);
     cloudinaryForm.append("public_id", publicId);
-    cloudinaryForm.append("eager", "w_100,c_limit,q_auto:low,f_webp|w_400,c_limit,q_auto:good,f_webp|w_800,c_limit,q_auto:best,f_webp");
+    cloudinaryForm.append("eager", eagerTransforms);
     cloudinaryForm.append("eager_async", "false");
 
     const cloudinaryResponse = await fetch(
@@ -167,13 +170,15 @@ serve(async (req) => {
     const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`;
     
     const thumbnailUrl = `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${result.public_id}`;
-    const cardUrl = `${baseUrl}/w_400,c_limit,q_auto:good,f_webp/${result.public_id}`;
+    const mobileCardUrl = `${baseUrl}/w_200,ar_1:1,c_fill,q_auto:good,f_webp/${result.public_id}`;
+    const cardUrl = `${baseUrl}/w_400,ar_1:1,c_fill,q_auto:good,f_webp/${result.public_id}`;
     const detailUrl = `${baseUrl}/w_800,c_limit,q_auto:best,f_webp/${result.public_id}`;
 
-    // Pre-warm CDN cache by requesting the cardUrl (most commonly used)
+    // Pre-warm CDN cache by requesting the most commonly used variants
     // This runs in background, doesn't block response
     console.log(`🔥 [CLOUDINARY] Pre-warming cache for: ${cardUrl}`);
     fetch(cardUrl).catch(() => {}); // Fire and forget
+    fetch(mobileCardUrl).catch(() => {}); // Mobile card
     fetch(thumbnailUrl).catch(() => {}); // Also warm thumbnail
 
     return new Response(
@@ -183,6 +188,7 @@ serve(async (req) => {
           id: `img-${timestamp}-${index}`,
           url: result.secure_url,
           cardUrl: cardUrl,
+          mobileCardUrl: mobileCardUrl,
           thumbnailUrl: thumbnailUrl,
           detailUrl: detailUrl,
           publicId: result.public_id,

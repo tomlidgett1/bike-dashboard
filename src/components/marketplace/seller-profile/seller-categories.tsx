@@ -1,95 +1,149 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
+import { 
+  Bike, 
+  Settings, 
+  Shirt, 
+  Apple, 
+  Package,
+  ShoppingBag,
+  CheckCircle
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SellerCategory } from "@/app/api/marketplace/seller/[sellerId]/route";
 
 // ============================================================
-// Seller Categories (Horizontal scrolling pills)
-// Depop-style category filter for seller profiles
+// Seller Categories with Icons
+// Tab-style navigation with For Sale/Sold + category filters
 // ============================================================
+
+// Map category names to icons
+const getCategoryIcon = (categoryName: string): React.ComponentType<{ className?: string }> => {
+  const name = categoryName.toLowerCase();
+  if (name.includes('bicycle') || name.includes('bike')) return Bike;
+  if (name.includes('part') || name.includes('component')) return Settings;
+  if (name.includes('apparel') || name.includes('clothing') || name.includes('jersey')) return Shirt;
+  if (name.includes('nutrition') || name.includes('food')) return Apple;
+  return Package;
+};
+
+type ListingTab = 'for-sale' | 'sold';
 
 interface SellerCategoriesProps {
   categories: SellerCategory[];
+  soldCategories: SellerCategory[];
+  selectedTab: ListingTab;
   selectedCategory: string | null;
+  onTabSelect: (tab: ListingTab) => void;
   onCategorySelect: (categoryId: string | null) => void;
   className?: string;
 }
 
 export function SellerCategories({
   categories,
+  soldCategories,
+  selectedTab,
   selectedCategory,
+  onTabSelect,
   onCategorySelect,
   className,
 }: SellerCategoriesProps) {
-  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
-
-  // Total product count across all categories
-  const totalProducts = React.useMemo(() => {
+  // Total product counts
+  const forSaleCount = React.useMemo(() => {
     return categories.reduce((sum, cat) => sum + cat.product_count, 0);
   }, [categories]);
 
-  if (categories.length === 0) {
-    return null;
-  }
+  const soldCount = React.useMemo(() => {
+    return soldCategories.reduce((sum, cat) => sum + cat.product_count, 0);
+  }, [soldCategories]);
+
+  // Get current categories based on selected tab
+  const currentCategories = selectedTab === 'for-sale' ? categories : soldCategories;
 
   return (
     <div className={cn("bg-white border-b border-gray-100 sticky top-16 z-30", className)}>
-      <div className="max-w-4xl mx-auto px-4 sm:px-6">
-        <div className="relative py-3">
-          <div
-            ref={scrollContainerRef}
-            className="overflow-x-auto scrollbar-hide -mx-2 px-2"
-            style={{
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-            }}
-          >
-            <div className="flex gap-2 pb-1" style={{ minWidth: 'min-content' }}>
-              {/* All Items */}
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => onCategorySelect(null)}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        <div className="py-3">
+          {/* Main Tab Container - For Sale / Sold */}
+          <div className="flex items-center gap-4 mb-3">
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+              <button
+                onClick={() => {
+                  onTabSelect('for-sale');
+                  onCategorySelect(null);
+                }}
                 className={cn(
-                  "flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors",
-                  selectedCategory === null
-                    ? "bg-gray-900 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                  selectedTab === 'for-sale'
+                    ? "text-gray-800 bg-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70"
                 )}
               >
-                All Items
-                <span className="ml-1.5 opacity-70">({totalProducts})</span>
-              </motion.button>
-
-              {/* Category Pills */}
-              {categories.map((category) => (
-                <motion.button
-                  key={category.id}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => onCategorySelect(category.id)}
-                  className={cn(
-                    "flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors",
-                    selectedCategory === category.id
-                      ? "bg-gray-900 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  )}
-                >
-                  {category.display_name}
-                  <span className="ml-1.5 opacity-70">({category.product_count})</span>
-                </motion.button>
-              ))}
+                <ShoppingBag size={15} />
+                For Sale
+                <span className="text-gray-500 ml-1">({forSaleCount})</span>
+              </button>
+              <button
+                onClick={() => {
+                  onTabSelect('sold');
+                  onCategorySelect(null);
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                  selectedTab === 'sold'
+                    ? "text-gray-800 bg-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70"
+                )}
+              >
+                <CheckCircle size={15} />
+                Sold
+                <span className="text-gray-500 ml-1">({soldCount})</span>
+              </button>
             </div>
           </div>
 
-          {/* Fade edges for scroll indication */}
-          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white to-transparent pointer-events-none" />
-          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent pointer-events-none" />
+          {/* Category Pills */}
+          {currentCategories.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              {/* All Items */}
+              <button
+                onClick={() => onCategorySelect(null)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
+                  selectedCategory === null
+                    ? "text-gray-800 bg-white shadow-sm border border-gray-200"
+                    : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+                )}
+              >
+                <Package className="h-4 w-4" />
+                All
+              </button>
+
+              {/* Category Pills */}
+              {currentCategories.map((category) => {
+                const Icon = getCategoryIcon(category.display_name);
+                return (
+                  <button
+                    key={category.id}
+                    onClick={() => onCategorySelect(category.id)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
+                      selectedCategory === category.id
+                        ? "text-gray-800 bg-white shadow-sm border border-gray-200"
+                        : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {category.display_name}
+                    <span className="text-gray-500">({category.product_count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
-

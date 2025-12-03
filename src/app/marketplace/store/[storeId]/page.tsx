@@ -35,21 +35,26 @@ export default function StoreProfilePage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
+  const [selectedTab, setSelectedTab] = React.useState<'for-sale' | 'sold'>('for-sale');
   const [isContactModalOpen, setIsContactModalOpen] = React.useState(false);
 
   // Check if viewing own profile
   const isOwnProfile = user?.id === storeId;
 
-  // Fetch profile - try store first, then seller
+  // Fetch profile - try store and seller in parallel for faster loading
   React.useEffect(() => {
     const fetchProfile = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        // First try to fetch as a bicycle store
-        const storeResponse = await fetch(`/api/marketplace/store/${storeId}`);
+        // Fetch both store and seller APIs in parallel
+        const [storeResponse, sellerResponse] = await Promise.all([
+          fetch(`/api/marketplace/store/${storeId}`),
+          fetch(`/api/marketplace/seller/${storeId}`),
+        ]);
 
+        // Check if it's a bicycle store
         if (storeResponse.ok) {
           const data = await storeResponse.json();
           setStore(data.store);
@@ -57,24 +62,16 @@ export default function StoreProfilePage() {
           return;
         }
 
-        // If not a store (404), try as individual seller
-        if (storeResponse.status === 404) {
-          const sellerResponse = await fetch(`/api/marketplace/seller/${storeId}`);
-
-          if (sellerResponse.ok) {
-            const data = await sellerResponse.json();
-            setSeller(data.seller);
-            setProfileType('seller');
-            return;
-          }
-
-          // Neither store nor seller found
-          setError('Profile not found');
+        // Check if it's an individual seller
+        if (sellerResponse.ok) {
+          const data = await sellerResponse.json();
+          setSeller(data.seller);
+          setProfileType('seller');
           return;
         }
 
-        // Other error
-        setError('Failed to load profile');
+        // Neither store nor seller found
+        setError('Profile not found');
       } catch (err) {
         console.error('Error fetching profile:', err);
         setError('Failed to load profile');
@@ -139,6 +136,8 @@ export default function StoreProfilePage() {
   // INDIVIDUAL SELLER PROFILE (Depop-style)
   // ============================================================
   if (profileType === 'seller' && seller) {
+    const currentCategories = selectedTab === 'for-sale' ? seller.categories : seller.sold_categories;
+    
     return (
       <>
         <MarketplaceHeader />
@@ -153,17 +152,24 @@ export default function StoreProfilePage() {
               }}
             />
 
-            {/* Category Pills */}
+            {/* Category Tabs and Pills */}
             <SellerCategories
               categories={seller.categories}
+              soldCategories={seller.sold_categories}
+              selectedTab={selectedTab}
               selectedCategory={selectedCategory}
+              onTabSelect={(tab) => {
+                setSelectedTab(tab);
+                setSelectedCategory(null);
+              }}
               onCategorySelect={setSelectedCategory}
             />
 
             {/* Product Grid */}
             <SellerProductGrid
-              categories={seller.categories}
+              categories={currentCategories}
               selectedCategory={selectedCategory}
+              isSoldTab={selectedTab === 'sold'}
             />
           </div>
         </MarketplaceLayout>

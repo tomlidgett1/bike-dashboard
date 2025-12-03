@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { motion, useScroll, useTransform } from "framer-motion";
-import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown } from "lucide-react";
+import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
+import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
@@ -36,13 +36,20 @@ import type { ListingImage } from "@/lib/types/listing";
 // Full-width responsive header with enterprise search
 // ============================================================
 
-export function MarketplaceHeader() {
+interface MarketplaceHeaderProps {
+  /** When true, shows a search icon button on mobile that expands to full search */
+  compactSearchOnMobile?: boolean;
+}
+
+export function MarketplaceHeader({ compactSearchOnMobile = false }: MarketplaceHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
   const [authModalOpen, setAuthModalOpen] = React.useState(false);
   const [sellRequirementModalOpen, setSellRequirementModalOpen] = React.useState(false);
   const [facebookModalOpen, setFacebookModalOpen] = React.useState(false);
   const [smartUploadModalOpen, setSmartUploadModalOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
   const { scrollY } = useScroll();
   const router = useRouter();
   const { user } = useAuth();
@@ -128,10 +135,27 @@ export function MarketplaceHeader() {
             />
           </button>
 
-          {/* Mobile + Desktop Search Bar */}
-          <div className="flex-[2] ml-[14px]">
-            <InstantSearch />
-          </div>
+          {/* Desktop Search Bar (always visible) + Mobile Search (conditional) */}
+          {compactSearchOnMobile ? (
+            <>
+              {/* Desktop: Full search bar */}
+              <div className="hidden sm:block flex-[2] ml-[14px]">
+                <InstantSearch />
+              </div>
+              {/* Mobile: Search icon button */}
+              <button
+                onClick={() => setMobileSearchOpen(true)}
+                className="sm:hidden p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors ml-auto"
+                aria-label="Open search"
+              >
+                <Search className="h-5 w-5 text-gray-700" />
+              </button>
+            </>
+          ) : (
+            <div className="flex-[2] ml-[14px]">
+              <InstantSearch />
+            </div>
+          )}
 
           {/* Desktop Actions - Fixed on far right */}
           <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
@@ -542,6 +566,46 @@ export function MarketplaceHeader() {
           router.push('/marketplace/sell?mode=manual&ai=true');
         }}
       />
+
+      {/* Mobile Search Overlay */}
+      <AnimatePresence>
+        {mobileSearchOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/40 z-[60] sm:hidden"
+              onClick={() => setMobileSearchOpen(false)}
+            />
+            {/* Search Panel */}
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+              className="fixed top-0 left-0 right-0 z-[61] bg-white shadow-xl sm:hidden"
+            >
+              <div className="flex items-center gap-3 p-3 border-b border-gray-100">
+                {/* Back/Close button */}
+                <button
+                  onClick={() => setMobileSearchOpen(false)}
+                  className="p-2 rounded-full hover:bg-gray-100 transition-colors flex-shrink-0"
+                  aria-label="Close search"
+                >
+                  <X className="h-5 w-5 text-gray-600" />
+                </button>
+                {/* Search input */}
+                <div className="flex-1">
+                  <InstantSearch autoFocus onResultClick={() => setMobileSearchOpen(false)} />
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </motion.header>
   );
 }

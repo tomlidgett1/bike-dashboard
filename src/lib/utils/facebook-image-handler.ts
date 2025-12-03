@@ -18,6 +18,7 @@ async function uploadToCloudinary(
 ): Promise<{
   url: string;
   cardUrl: string;
+  mobileCardUrl: string;
   thumbnailUrl: string;
 }> {
   const response = await fetch(
@@ -45,6 +46,7 @@ async function uploadToCloudinary(
   return {
     url: result.data.url,
     cardUrl: result.data.cardUrl,
+    mobileCardUrl: result.data.mobileCardUrl,
     thumbnailUrl: result.data.thumbnailUrl,
   };
 }
@@ -82,7 +84,7 @@ export async function processFacebookImages(
       console.log(`📸 [FB IMAGE HANDLER] Processing image ${i + 1}/${facebookImageUrls.length}`);
       
       // Upload to Cloudinary via Edge Function
-      const { url, cardUrl, thumbnailUrl } = await uploadToCloudinary(
+      const { url, cardUrl, mobileCardUrl, thumbnailUrl } = await uploadToCloudinary(
         imageUrl,
         listingId,
         i,
@@ -94,6 +96,7 @@ export async function processFacebookImages(
         id: `fb-img-${Date.now()}-${i}`,
         url,
         cardUrl,
+        mobileCardUrl,
         thumbnailUrl,
         order: i,
         isPrimary: i === 0,

@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Map form data to database schema
+    // Note: We no longer store images in JSONB - they go to product_images table
     const listingData = {
       user_id: user.id,
       listing_type: "private_listing",
@@ -86,7 +87,8 @@ export async function POST(request: NextRequest) {
       seller_phone: body.sellerPhone,
       seller_email: body.sellerEmail,
 
-      // Images
+      // Legacy: Keep images in JSONB for backwards compatibility during transition
+      // The database trigger will read from product_images first, then fall back to this
       images: body.images || [],
       primary_image_url: body.primaryImageUrl,
 
@@ -110,6 +112,42 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error("Error creating listing:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // ============================================================
+    // Insert images into product_images table (single source of truth)
+    // ============================================================
+    const images = body.images || [];
+    if (images.length > 0 && listing?.id) {
+      console.log(`📸 [LISTINGS API] Inserting ${images.length} images into product_images table`);
+      
+      const imageRecords = images.map((img: any, index: number) => ({
+        product_id: listing.id,
+        cloudinary_url: img.url,
+        card_url: img.cardUrl,
+        thumbnail_url: img.thumbnailUrl,
+        detail_url: img.detailUrl || img.url,
+        external_url: img.url,
+        is_primary: img.isPrimary || index === 0,
+        sort_order: img.order || index,
+        is_downloaded: true,
+        approval_status: 'approved',
+        uploaded_by: user.id,
+        width: img.width || 800,
+        height: img.height || 800,
+        mime_type: 'image/webp',
+      }));
+
+      const { error: imageError } = await supabase
+        .from("product_images")
+        .insert(imageRecords);
+
+      if (imageError) {
+        console.error("Error inserting images:", imageError);
+        // Don't fail the whole request, images are stored in JSONB as backup
+      } else {
+        console.log(`✅ [LISTINGS API] ${images.length} images inserted into product_images table`);
+      }
     }
 
     return NextResponse.json({ listing }, { status: 201 });

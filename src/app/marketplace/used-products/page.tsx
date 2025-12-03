@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { SlidersHorizontal, RefreshCw } from "lucide-react";
@@ -24,7 +25,10 @@ import { cn } from "@/lib/utils";
 // Shows pre-owned bikes and equipment from individual sellers
 // ============================================================
 
-export default function UsedProductsPage() {
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
+function UsedProductsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -171,6 +175,19 @@ export default function UsedProductsPage() {
         </div>
       </MarketplaceLayout>
     </>
+  );
+}
+
+// Wrap with Suspense for useSearchParams
+export default function UsedProductsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-pulse text-gray-400">Loading...</div>
+      </div>
+    }>
+      <UsedProductsPageContent />
+    </Suspense>
   );
 }
 

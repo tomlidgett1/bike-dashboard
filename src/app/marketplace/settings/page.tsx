@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
@@ -56,6 +57,9 @@ function StravaIcon({ className }: { className?: string }) {
   );
 }
 
+// Force dynamic rendering to avoid useSearchParams SSR issues
+export const dynamic = 'force-dynamic'
+
 export default function MarketplaceSettingsPage() {
   const { user } = useAuth()
   const router = useRouter()
@@ -79,7 +83,6 @@ export default function MarketplaceSettingsPage() {
     bio: '',
     location: '',
     logoUrl: '',
-    coverImageUrl: '',
     socialInstagram: '',
     socialFacebook: '',
     socialStrava: '',
@@ -112,7 +115,6 @@ export default function MarketplaceSettingsPage() {
         bio: profile.bio || '',
         location: profile.address || '',
         logoUrl: profile.logo_url || '',
-        coverImageUrl: profile.cover_image_url || '',
         socialInstagram: profile.social_links?.instagram || '',
         socialFacebook: profile.social_links?.facebook || '',
         socialStrava: profile.social_links?.strava || '',
@@ -140,7 +142,6 @@ export default function MarketplaceSettingsPage() {
         bio: formData.bio,
         address: formData.location,
         logo_url: formData.logoUrl,
-        cover_image_url: formData.coverImageUrl,
         social_links: {
           instagram: formData.socialInstagram || undefined,
           facebook: formData.socialFacebook || undefined,
@@ -169,7 +170,6 @@ export default function MarketplaceSettingsPage() {
     formData.bio !== (profile?.bio || '') ||
     formData.location !== (profile?.address || '') ||
     formData.logoUrl !== (profile?.logo_url || '') ||
-    formData.coverImageUrl !== (profile?.cover_image_url || '') ||
     formData.socialInstagram !== (profile?.social_links?.instagram || '') ||
     formData.socialFacebook !== (profile?.social_links?.facebook || '') ||
     formData.socialStrava !== (profile?.social_links?.strava || '') ||
@@ -254,45 +254,30 @@ export default function MarketplaceSettingsPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Profile & Cover Image Preview */}
-                  <div className="relative rounded-md overflow-hidden bg-gray-100">
-                    {/* Cover Image */}
-                    <div className="h-32 sm:h-40 relative bg-gradient-to-br from-gray-700 to-gray-900">
-                      {formData.coverImageUrl ? (
+                  {/* Profile Photo Preview */}
+                  <div className="flex items-center gap-4">
+                    <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-full border-2 border-gray-200 bg-gray-100 overflow-hidden flex-shrink-0">
+                      {formData.logoUrl ? (
                         <Image
-                          src={formData.coverImageUrl}
-                          alt="Cover"
-                          fill
-                          className="object-cover"
+                          src={formData.logoUrl}
+                          alt="Profile"
+                          width={96}
+                          height={96}
+                          className="h-full w-full object-cover"
                         />
                       ) : (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="text-center text-white/60">
-                            <ImageIcon className="h-8 w-8 mx-auto mb-1" />
-                            <p className="text-xs">Add a cover image</p>
-                          </div>
+                        <div className="h-full w-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                          <span className="text-2xl sm:text-3xl font-bold text-gray-400">
+                            {displayName.charAt(0).toUpperCase()}
+                          </span>
                         </div>
                       )}
                     </div>
-                    
-                    {/* Profile Photo */}
-                    <div className="absolute bottom-0 left-4 transform translate-y-1/2">
-                      <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-full border-4 border-white bg-white overflow-hidden shadow-md">
-                        {formData.logoUrl ? (
-                          <Image
-                            src={formData.logoUrl}
-                            alt="Profile"
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="h-full w-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                            <span className="text-2xl sm:text-3xl font-bold text-gray-400">
-                              {displayName.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                    <div>
+                      <p className="text-lg font-semibold text-gray-900">{displayName}</p>
+                      {formData.location && (
+                        <p className="text-sm text-gray-500">{formData.location}</p>
+                      )}
                     </div>
                   </div>
 
@@ -378,26 +363,6 @@ export default function MarketplaceSettingsPage() {
                     </div>
                     <p className="text-xs text-gray-500">
                       Paste a URL to your profile photo
-                    </p>
-                  </div>
-
-                  {/* Cover Image URL */}
-                  <div className="space-y-2">
-                    <Label htmlFor="coverImageUrl">Cover Image URL</Label>
-                    <div className="relative">
-                      <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="coverImageUrl"
-                        value={formData.coverImageUrl}
-                        onChange={(e) =>
-                          setFormData({ ...formData, coverImageUrl: e.target.value })
-                        }
-                        placeholder="https://example.com/your-cover.jpg"
-                        className="rounded-md pl-10"
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Paste a URL for your profile banner image
                     </p>
                   </div>
 

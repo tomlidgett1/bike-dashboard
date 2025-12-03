@@ -65,11 +65,11 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto border border-gray-200" style={{
+    <div className="flex flex-col h-full overflow-y-auto lg:border lg:border-gray-200" style={{
       scrollbarWidth: 'thin',
       scrollbarColor: '#d1d5db transparent'
     }}>
-      <div className="p-4 sm:p-6 space-y-4">
+      <div className="px-4 py-4 sm:p-6 space-y-4">
         {/* Status Badges */}
         <div className="flex items-center gap-2 flex-wrap">
           {viewCount && (

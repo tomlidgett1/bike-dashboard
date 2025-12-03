@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { 
   MapPin, 
   Calendar, 
@@ -10,14 +10,22 @@ import {
   ChevronDown,
   Instagram,
   Facebook,
-  ExternalLink
+  ExternalLink,
+  UserPlus,
+  UserMinus,
+  MessageCircle,
+  Users,
+  CheckCircle,
+  Loader2,
+  Settings
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import type { SellerProfile } from "@/app/api/marketplace/seller/[sellerId]/route";
 
 // ============================================================
-// Seller Profile Header (Depop-style)
-// Cover image, profile photo, bio, social links, and stats
+// Seller Profile Header
+// Clean layout with profile photo, stats, Follow + Message buttons
 // ============================================================
 
 // Strava icon component (not in lucide)
@@ -37,12 +45,17 @@ interface SellerHeaderProps {
   seller: SellerProfile;
   isOwnProfile?: boolean;
   onEditClick?: () => void;
+  onFollowToggle?: () => Promise<void>;
 }
 
-export function SellerHeader({ seller, isOwnProfile, onEditClick }: SellerHeaderProps) {
+export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle }: SellerHeaderProps) {
+  const router = useRouter();
   const [bioExpanded, setBioExpanded] = React.useState(false);
   const bioRef = React.useRef<HTMLParagraphElement>(null);
   const [showReadMore, setShowReadMore] = React.useState(false);
+  const [isFollowing, setIsFollowing] = React.useState(seller.is_following);
+  const [followerCount, setFollowerCount] = React.useState(seller.stats.follower_count);
+  const [isFollowLoading, setIsFollowLoading] = React.useState(false);
 
   // Check if bio needs "read more" button
   React.useEffect(() => {
@@ -70,189 +83,245 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick }: SellerHeader
     seller.social_links.website
   );
 
-  return (
-    <div className="bg-white">
-      {/* Cover Image Section */}
-      <div className="relative h-48 sm:h-56 md:h-64 w-full bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
-        {seller.cover_image_url ? (
-          <>
-            <Image
-              src={seller.cover_image_url}
-              alt={`${seller.display_name}'s cover`}
-              fill
-              className="object-cover"
-              priority
-            />
-            {/* Gradient overlay for text readability */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-          </>
-        ) : (
-          /* Default gradient background when no cover image */
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900">
-            {/* Subtle pattern overlay */}
-            <div 
-              className="absolute inset-0 opacity-10"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-              }}
-            />
-          </div>
-        )}
-      </div>
+  // Handle follow/unfollow
+  const handleFollowClick = async () => {
+    if (isFollowLoading) return;
+    
+    setIsFollowLoading(true);
+    try {
+      const response = await fetch('/api/marketplace/follow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: seller.id }),
+      });
 
-      {/* Profile Content */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6">
-        {/* Profile Photo - Overlapping cover */}
-        <div className="relative -mt-16 sm:-mt-20 mb-4">
-          <div className="relative h-28 w-28 sm:h-32 sm:w-32 rounded-full overflow-hidden bg-white border-4 border-white shadow-lg">
-            {seller.logo_url ? (
-              <Image
-                src={seller.logo_url}
-                alt={seller.display_name}
-                fill
-                className="object-cover"
-                priority
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                <span className="text-4xl sm:text-5xl font-bold text-gray-400">
-                  {seller.display_name.charAt(0).toUpperCase()}
-                </span>
+      if (response.ok) {
+        const data = await response.json();
+        setIsFollowing(data.isFollowing);
+        setFollowerCount(data.followerCount);
+        if (onFollowToggle) await onFollowToggle();
+      }
+    } catch (error) {
+      console.error('Error toggling follow:', error);
+    } finally {
+      setIsFollowLoading(false);
+    }
+  };
+
+  // Handle message click - navigate to messages with this seller
+  const handleMessageClick = () => {
+    // Navigate to messages and start conversation with this seller
+    router.push(`/messages?newConversation=${seller.id}`);
+  };
+
+  return (
+    <div className="bg-white border-b border-gray-200">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+        <div className="flex flex-col sm:flex-row sm:items-start gap-6">
+          {/* Profile Photo */}
+          <div className="flex-shrink-0">
+            <div className="relative h-24 w-24 sm:h-28 sm:w-28 rounded-full overflow-hidden bg-gray-100 border-2 border-gray-200">
+              {seller.logo_url ? (
+                <Image
+                  src={seller.logo_url}
+                  alt={seller.display_name}
+                  fill
+                  className="object-cover"
+                  priority
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                  <span className="text-3xl sm:text-4xl font-bold text-gray-400">
+                    {seller.display_name.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Profile Info */}
+          <div className="flex-1 min-w-0">
+            {/* Name and Location Row */}
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-3">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 mb-1">
+                  {seller.display_name}
+                </h1>
+                {seller.location && (
+                  <div className="flex items-center gap-1.5 text-gray-500">
+                    <MapPin className="h-4 w-4" />
+                    <span className="text-sm">{seller.location}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                {isOwnProfile ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onEditClick}
+                    className="rounded-md"
+                  >
+                    <Settings className="h-4 w-4 mr-2" />
+                    Edit Profile
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      variant={isFollowing ? "outline" : "default"}
+                      size="sm"
+                      onClick={handleFollowClick}
+                      disabled={isFollowLoading}
+                      className="rounded-md min-w-[100px]"
+                    >
+                      {isFollowLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : isFollowing ? (
+                        <>
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Following
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="h-4 w-4 mr-2" />
+                          Follow
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleMessageClick}
+                      className="rounded-md"
+                    >
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      Message
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Stats Row */}
+            <div className="flex items-center flex-wrap gap-4 sm:gap-6 mb-3 text-sm">
+              <div className="flex items-center gap-1.5 text-gray-600">
+                <Package className="h-4 w-4" />
+                <span className="font-medium">{seller.stats.total_items}</span>
+                <span className="text-gray-500">for sale</span>
+              </div>
+              {seller.stats.sold_items > 0 && (
+                <div className="flex items-center gap-1.5 text-gray-600">
+                  <CheckCircle className="h-4 w-4" />
+                  <span className="font-medium">{seller.stats.sold_items}</span>
+                  <span className="text-gray-500">sold</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1.5 text-gray-600">
+                <Users className="h-4 w-4" />
+                <span className="font-medium">{followerCount}</span>
+                <span className="text-gray-500">followers</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-gray-500">
+                <Calendar className="h-4 w-4" />
+                <span>Joined {memberSince}</span>
+              </div>
+            </div>
+
+            {/* Bio Section */}
+            {seller.bio && (
+              <div className="mb-3">
+                <p 
+                  ref={bioRef}
+                  className={cn(
+                    "text-gray-700 text-sm leading-relaxed transition-all duration-300",
+                    !bioExpanded && "line-clamp-2"
+                  )}
+                >
+                  {seller.bio}
+                </p>
+                {showReadMore && (
+                  <button
+                    onClick={() => setBioExpanded(!bioExpanded)}
+                    className="flex items-center gap-1 mt-1 text-sm font-medium text-gray-900 hover:text-gray-700 transition-colors"
+                  >
+                    {bioExpanded ? 'Show less' : 'Read more'}
+                    <ChevronDown 
+                      className={cn(
+                        "h-4 w-4 transition-transform duration-200",
+                        bioExpanded && "rotate-180"
+                      )} 
+                    />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Social Links */}
+            {hasSocialLinks && (
+              <div className="flex items-center gap-2">
+                {seller.social_links?.instagram && (
+                  <a
+                    href={seller.social_links.instagram.startsWith('http') 
+                      ? seller.social_links.instagram 
+                      : `https://instagram.com/${seller.social_links.instagram.replace('@', '')}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                    aria-label="Instagram"
+                  >
+                    <Instagram className="h-4 w-4" />
+                  </a>
+                )}
+                {seller.social_links?.facebook && (
+                  <a
+                    href={seller.social_links.facebook.startsWith('http')
+                      ? seller.social_links.facebook
+                      : `https://facebook.com/${seller.social_links.facebook}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                    aria-label="Facebook"
+                  >
+                    <Facebook className="h-4 w-4" />
+                  </a>
+                )}
+                {seller.social_links?.strava && (
+                  <a
+                    href={seller.social_links.strava.startsWith('http')
+                      ? seller.social_links.strava
+                      : `https://strava.com/athletes/${seller.social_links.strava}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                    aria-label="Strava"
+                  >
+                    <StravaIcon className="h-3.5 w-3.5" />
+                  </a>
+                )}
+                {seller.social_links?.website && (
+                  <a
+                    href={seller.social_links.website.startsWith('http')
+                      ? seller.social_links.website
+                      : `https://${seller.social_links.website}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                    aria-label="Website"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                )}
               </div>
             )}
           </div>
-
-          {/* Edit Button (if own profile) */}
-          {isOwnProfile && onEditClick && (
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={onEditClick}
-              className="absolute top-20 sm:top-24 right-0 px-4 py-2 bg-white border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
-            >
-              Edit Profile
-            </motion.button>
-          )}
         </div>
-
-        {/* Name and Location */}
-        <div className="mb-4">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">
-            {seller.display_name}
-          </h1>
-          {seller.location && (
-            <div className="flex items-center gap-1.5 text-gray-500">
-              <MapPin className="h-4 w-4" />
-              <span className="text-sm">{seller.location}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Stats Row */}
-        <div className="flex items-center gap-6 mb-4 text-sm">
-          <div className="flex items-center gap-1.5 text-gray-600">
-            <Package className="h-4 w-4" />
-            <span className="font-medium">{seller.stats.total_items}</span>
-            <span className="text-gray-500">items</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-gray-500">
-            <Calendar className="h-4 w-4" />
-            <span>Joined {memberSince}</span>
-          </div>
-        </div>
-
-        {/* Bio Section */}
-        {seller.bio && (
-          <div className="mb-4">
-            <p 
-              ref={bioRef}
-              className={cn(
-                "text-gray-700 text-sm leading-relaxed transition-all duration-300",
-                !bioExpanded && "line-clamp-3"
-              )}
-            >
-              {seller.bio}
-            </p>
-            {showReadMore && (
-              <button
-                onClick={() => setBioExpanded(!bioExpanded)}
-                className="flex items-center gap-1 mt-1 text-sm font-medium text-gray-900 hover:text-gray-700 transition-colors"
-              >
-                {bioExpanded ? 'Show less' : 'Read more'}
-                <ChevronDown 
-                  className={cn(
-                    "h-4 w-4 transition-transform duration-200",
-                    bioExpanded && "rotate-180"
-                  )} 
-                />
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Social Links */}
-        {hasSocialLinks && (
-          <div className="flex items-center gap-3 pb-6">
-            {seller.social_links?.instagram && (
-              <a
-                href={seller.social_links.instagram.startsWith('http') 
-                  ? seller.social_links.instagram 
-                  : `https://instagram.com/${seller.social_links.instagram.replace('@', '')}`
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center h-9 w-9 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
-                aria-label="Instagram"
-              >
-                <Instagram className="h-4.5 w-4.5" />
-              </a>
-            )}
-            {seller.social_links?.facebook && (
-              <a
-                href={seller.social_links.facebook.startsWith('http')
-                  ? seller.social_links.facebook
-                  : `https://facebook.com/${seller.social_links.facebook}`
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center h-9 w-9 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
-                aria-label="Facebook"
-              >
-                <Facebook className="h-4.5 w-4.5" />
-              </a>
-            )}
-            {seller.social_links?.strava && (
-              <a
-                href={seller.social_links.strava.startsWith('http')
-                  ? seller.social_links.strava
-                  : `https://strava.com/athletes/${seller.social_links.strava}`
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center h-9 w-9 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
-                aria-label="Strava"
-              >
-                <StravaIcon className="h-4 w-4" />
-              </a>
-            )}
-            {seller.social_links?.website && (
-              <a
-                href={seller.social_links.website.startsWith('http')
-                  ? seller.social_links.website
-                  : `https://${seller.social_links.website}`
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center h-9 w-9 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
-                aria-label="Website"
-              >
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
 }
-

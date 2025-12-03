@@ -75,6 +75,35 @@ export function getThumbnailUrl(
 }
 
 /**
+ * Get the best image URL for mobile product cards (200px)
+ * - Uses mobileCardUrl if available (pre-generated on Cloudinary)
+ * - Falls back to cardUrl, then original URL for legacy images
+ */
+export function getMobileCardImageUrl(
+  imageData: { url?: string; mobileCardUrl?: string; cardUrl?: string } | string | null | undefined
+): string | null {
+  if (!imageData) return null;
+  
+  // If it's just a string URL
+  if (typeof imageData === 'string') {
+    return imageData;
+  }
+  
+  // Prefer pre-generated mobileCardUrl (Cloudinary)
+  if (imageData.mobileCardUrl) {
+    return imageData.mobileCardUrl;
+  }
+  
+  // Fall back to cardUrl if mobileCardUrl not available
+  if (imageData.cardUrl) {
+    return imageData.cardUrl;
+  }
+  
+  // Fallback to original URL
+  return imageData.url || null;
+}
+
+/**
  * Get the best image URL for detail pages
  * - Uses detailUrl if available (pre-generated on Cloudinary)
  * - Falls back to original URL for legacy images
@@ -109,6 +138,7 @@ export async function uploadToCloudinary(
 ): Promise<{
   url: string;
   cardUrl: string;
+  mobileCardUrl: string;
   thumbnailUrl: string;
   detailUrl?: string;
   id: string;
@@ -138,6 +168,7 @@ export async function uploadToCloudinary(
   return {
     url: result.data.url,
     cardUrl: result.data.cardUrl,
+    mobileCardUrl: result.data.mobileCardUrl,
     thumbnailUrl: result.data.thumbnailUrl,
     detailUrl: result.data.detailUrl,
     id: result.data.id,

@@ -12,6 +12,90 @@ console.log('Function "migrate-images-to-cloudinary" initialized!')
 // ============================================================
 
 const BATCH_SIZE = 10
+const MIN_IMAGE_SIZE = 5 * 1024 // 5KB minimum (lowered from 10KB)
+
+// Realistic browser headers to avoid 403 blocks
+const BROWSER_HEADERS_LIST = [
+  {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'image',
+    'Sec-Fetch-Mode': 'no-cors',
+    'Sec-Fetch-Site': 'cross-site',
+  },
+  {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+    'Accept': 'image/webp,image/png,image/svg+xml,image/*;q=0.8,video/*;q=0.8,*/*;q=0.5',
+    'Accept-Language': 'en-GB,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+  },
+  {
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Accept': 'image/avif,image/webp,*/*',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate, br',
+  },
+]
+
+// Helper to download external image with retries and different headers
+async function downloadExternalImage(url: string): Promise<{ data: Uint8Array; mimeType: string } | { error: string }> {
+  const maxRetries = BROWSER_HEADERS_LIST.length
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const headers = BROWSER_HEADERS_LIST[attempt]
+    
+    // Add referer based on the URL's origin
+    const urlObj = new URL(url)
+    const headersWithReferer = {
+      ...headers,
+      'Referer': `${urlObj.origin}/`,
+      'Origin': urlObj.origin,
+    }
+    
+    try {
+      console.log(`📥 [MIGRATE] Attempt ${attempt + 1}/${maxRetries} with ${headers['User-Agent'].substring(0, 30)}...`)
+      
+      const response = await fetch(url, {
+        headers: headersWithReferer,
+        redirect: 'follow',
+      })
+
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer()
+        const data = new Uint8Array(arrayBuffer)
+        const mimeType = response.headers.get('content-type') || 'image/jpeg'
+        return { data, mimeType }
+      }
+
+      // If 403 or 401, try next header set
+      if (response.status === 403 || response.status === 401) {
+        console.log(`⚠️ [MIGRATE] Got ${response.status}, trying different headers...`)
+        continue
+      }
+
+      // For other errors, don't retry
+      return { error: `HTTP ${response.status}` }
+      
+    } catch (fetchError) {
+      console.log(`⚠️ [MIGRATE] Fetch error on attempt ${attempt + 1}:`, fetchError)
+      if (attempt === maxRetries - 1) {
+        return { error: fetchError instanceof Error ? fetchError.message : 'Network error' }
+      }
+    }
+    
+    // Small delay between retries
+    await new Promise(r => setTimeout(r, 500))
+  }
+  
+  return { error: 'All download attempts failed (403 Forbidden)' }
+}
 
 interface MigrationResult {
   imageId: string
@@ -56,11 +140,20 @@ Deno.serve(async (req) => {
 
     // Find images that need migration
     // Priority: approved images with storage_path but no cloudinary_url
+    // Skip images that have already failed multiple times
+    const maxAttempts = body.maxAttempts || 3
+    const skipFailed = body.skipFailed !== false // Default true - skip images that have failed before
+    
     let query = supabase
       .from('product_images')
-      .select('id, canonical_product_id, storage_path, external_url, sort_order, approval_status')
+      .select('id, canonical_product_id, storage_path, external_url, sort_order, approval_status, migration_attempts, migration_error')
       .is('cloudinary_url', null)
       .limit(batchSize)
+
+    if (skipFailed) {
+      // Skip images that have hit max retry attempts
+      query = query.or(`migration_attempts.is.null,migration_attempts.lt.${maxAttempts}`)
+    }
 
     if (migrateFromStorage) {
       // Migrate images that have a storage_path (already in Supabase Storage)
@@ -124,24 +217,29 @@ Deno.serve(async (req) => {
           imageData = new Uint8Array(arrayBuffer)
           mimeType = downloadData.type || 'image/jpeg'
         } else if (image.external_url) {
-          // Download from external URL
-          console.log(`📥 [MIGRATE] Downloading from external URL: ${image.external_url}`)
+          // Download from external URL with retries
+          console.log(`📥 [MIGRATE] Downloading external: ${image.external_url}`)
           
-          const response = await fetch(image.external_url, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (compatible; BikeMarketplace/1.0)',
-            },
-          })
-
-          if (!response.ok) {
-            console.error(`❌ [MIGRATE] External download failed: ${response.status}`)
-            results.push({ imageId: image.id, success: false, error: `HTTP ${response.status}` })
+          const downloadResult = await downloadExternalImage(image.external_url)
+          
+          if ('error' in downloadResult) {
+            console.error(`❌ [MIGRATE] External download failed: ${downloadResult.error}`)
+            
+            // Mark as permanently failed to avoid retrying forever
+            await supabase
+              .from('product_images')
+              .update({ 
+                migration_error: downloadResult.error,
+                migration_attempts: (image.migration_attempts || 0) + 1,
+              })
+              .eq('id', image.id)
+            
+            results.push({ imageId: image.id, success: false, error: `External download failed: ${downloadResult.error}` })
             continue
           }
 
-          const arrayBuffer = await response.arrayBuffer()
-          imageData = new Uint8Array(arrayBuffer)
-          mimeType = response.headers.get('content-type') || 'image/jpeg'
+          imageData = downloadResult.data
+          mimeType = downloadResult.mimeType
         } else {
           console.error(`❌ [MIGRATE] No source URL for image ${image.id}`)
           results.push({ imageId: image.id, success: false, error: 'No source URL' })
@@ -149,12 +247,22 @@ Deno.serve(async (req) => {
         }
 
         const fileSize = imageData.length
-        console.log(`✓ [MIGRATE] Downloaded ${(fileSize / 1024).toFixed(0)}KB`)
+        console.log(`✓ [MIGRATE] Downloaded ${(fileSize / 1024).toFixed(0)}KB (${mimeType})`)
 
         // Validate size
-        if (fileSize < 10 * 1024) {
-          console.error(`❌ [MIGRATE] Image too small (${fileSize} bytes)`)
-          results.push({ imageId: image.id, success: false, error: 'Image too small' })
+        if (fileSize < MIN_IMAGE_SIZE) {
+          console.error(`❌ [MIGRATE] Image too small (${fileSize} bytes, min ${MIN_IMAGE_SIZE})`)
+          
+          // Mark as too small to skip in future
+          await supabase
+            .from('product_images')
+            .update({ 
+              migration_error: `Image too small: ${fileSize} bytes`,
+              migration_attempts: (image.migration_attempts || 0) + 1,
+            })
+            .eq('id', image.id)
+          
+          results.push({ imageId: image.id, success: false, error: `Image too small (${fileSize} bytes)` })
           continue
         }
 
@@ -178,7 +286,9 @@ Deno.serve(async (req) => {
         const timestamp = Math.floor(Date.now() / 1000)
         const publicId = `bike-marketplace/canonical/${image.canonical_product_id}/${timestamp}-${image.sort_order || 0}`
         
-        const eagerTransforms = 'w_100,c_limit,q_auto:low,f_webp|w_400,c_limit,q_auto:good,f_webp|w_800,c_limit,q_auto:best,f_webp'
+        // Variants: thumbnail (100px), mobile_card (200px), card (400px), detail (800px)
+        // Card variants use ar_1:1,c_fill for square cropping (center gravity)
+        const eagerTransforms = 'w_100,c_limit,q_auto:low,f_webp|w_200,ar_1:1,c_fill,q_auto:good,f_webp|w_400,ar_1:1,c_fill,q_auto:good,f_webp|w_800,c_limit,q_auto:best,f_webp'
         
         const signatureString = `eager=${eagerTransforms}&eager_async=false&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`
         const encoder = new TextEncoder()
@@ -220,7 +330,8 @@ Deno.serve(async (req) => {
         // Build optimised URLs
         const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`
         const thumbnailUrl = `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${cloudinaryResult.public_id}`
-        const cardUrl = `${baseUrl}/w_400,c_limit,q_auto:good,f_webp/${cloudinaryResult.public_id}`
+        const mobileCardUrl = `${baseUrl}/w_200,ar_1:1,c_fill,q_auto:good,f_webp/${cloudinaryResult.public_id}`
+        const cardUrl = `${baseUrl}/w_400,ar_1:1,c_fill,q_auto:good,f_webp/${cloudinaryResult.public_id}`
         const detailUrl = `${baseUrl}/w_800,c_limit,q_auto:best,f_webp/${cloudinaryResult.public_id}`
 
         // Update product_images record
@@ -230,6 +341,7 @@ Deno.serve(async (req) => {
             cloudinary_url: cloudinaryResult.secure_url,
             cloudinary_public_id: cloudinaryResult.public_id,
             thumbnail_url: thumbnailUrl,
+            mobile_card_url: mobileCardUrl,
             card_url: cardUrl,
             detail_url: detailUrl,
             is_downloaded: true,
@@ -250,6 +362,7 @@ Deno.serve(async (req) => {
 
         // Pre-warm CDN
         fetch(cardUrl).catch(() => {})
+        fetch(mobileCardUrl).catch(() => {})
         fetch(thumbnailUrl).catch(() => {})
 
       } catch (error) {

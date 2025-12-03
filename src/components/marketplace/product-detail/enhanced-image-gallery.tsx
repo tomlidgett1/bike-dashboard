@@ -64,7 +64,7 @@ export function EnhancedImageGallery({
 
   if (images.length === 0) {
     return (
-      <div className="flex items-center justify-center bg-gray-100 rounded-xl h-[400px]">
+      <div className="flex items-center justify-center bg-gray-100 sm:rounded-xl h-[400px]">
         <p className="text-gray-500">No images available</p>
       </div>
     );
@@ -76,18 +76,22 @@ export function EnhancedImageGallery({
     index, 
     className,
     showOverlay = false,
-    overlayCount = 0
+    overlayCount = 0,
+    isFirstImage = false
   }: { 
     src: string; 
     index: number; 
     className?: string;
     showOverlay?: boolean;
     overlayCount?: number;
+    isFirstImage?: boolean;
   }) => (
     <div
       onClick={() => openFullscreen(index)}
       className={cn(
-        "relative bg-gray-100 rounded-xl overflow-hidden cursor-pointer transition-all duration-200 border border-gray-200",
+        "relative bg-gray-100 overflow-hidden cursor-pointer transition-all duration-200",
+        // No border radius on mobile for first image, rounded on tablet+
+        isFirstImage ? "sm:rounded-xl sm:border sm:border-gray-200" : "rounded-md sm:rounded-xl border border-gray-200",
         className
       )}
     >
@@ -114,7 +118,7 @@ export function EnhancedImageGallery({
     if (count === 1) {
       return (
         <div className="aspect-[4/3]">
-          <GridImage src={images[0]} index={0} className="w-full h-full" />
+          <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
         </div>
       );
     }
@@ -122,12 +126,12 @@ export function EnhancedImageGallery({
     // 2 images: Two images stacked vertically
     if (count === 2) {
       return (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-0.5 sm:gap-2">
           <div className="aspect-[4/3]">
-            <GridImage src={images[0]} index={0} className="w-full h-full" />
+            <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
           </div>
           <div className="aspect-[4/3]">
-            <GridImage src={images[1]} index={1} className="w-full h-full" />
+            <GridImage src={images[1]} index={1} className="w-full h-full" isFirstImage />
           </div>
         </div>
       );
@@ -136,13 +140,13 @@ export function EnhancedImageGallery({
     // 3 images: First row: 1 large, Second row: 2 squares
     if (count === 3) {
       return (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-0.5 sm:gap-2">
           {/* First row: 1 large image */}
           <div className="aspect-[4/3]">
-            <GridImage src={images[0]} index={0} className="w-full h-full" />
+            <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
           </div>
           {/* Second row: 2 squares */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-0.5 sm:gap-2">
             <div className="aspect-square">
               <GridImage src={images[1]} index={1} className="w-full h-full" />
             </div>
@@ -157,13 +161,13 @@ export function EnhancedImageGallery({
     // 4 images: First row: 1 large, Second row: 3 squares
     if (count === 4) {
       return (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-0.5 sm:gap-2">
           {/* First row: 1 large image */}
           <div className="aspect-[4/3]">
-            <GridImage src={images[0]} index={0} className="w-full h-full" />
+            <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
           </div>
           {/* Second row: 3 squares */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-0.5 sm:gap-2">
             <div className="aspect-square">
               <GridImage src={images[1]} index={1} className="w-full h-full" />
             </div>
@@ -182,13 +186,13 @@ export function EnhancedImageGallery({
     const extraCount = count > 4 ? count - 4 : 0;
     
     return (
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-0.5 sm:gap-2">
         {/* First row: 1 large image */}
         <div className="aspect-[4/3]">
-          <GridImage src={images[0]} index={0} className="w-full h-full" />
+          <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
         </div>
         {/* Second row: 3 squares */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-0.5 sm:gap-2">
           <div className="aspect-square">
             <GridImage src={images[1]} index={1} className="w-full h-full" />
           </div>

@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams, usePathname } from "next/navigation";
+import { Suspense } from "react";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { Package, Store, User, Clock, Settings, Edit, FileText, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -104,9 +105,10 @@ const storeUserItems: NavItem[] = [
   },
 ];
 
-export function MarketplaceSidebar() {
+function MarketplaceSidebarContent() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const router = useRouter();
   const { user } = useAuth();
   const { profile } = useUserProfile();
   const { isCollapsed, toggle, mounted } = useSidebarState();
@@ -175,7 +177,7 @@ export function MarketplaceSidebar() {
       } else {
         url = `/marketplace?view=${item.value}`;
       }
-      window.location.href = url;
+      router.push(url);
     };
 
     const buttonContent = (
@@ -361,6 +363,17 @@ export function MarketplaceSidebar() {
         </div>
       </motion.aside>
     </TooltipProvider>
+  );
+}
+
+// Wrap with Suspense to handle useSearchParams SSR requirements
+export function MarketplaceSidebar() {
+  return (
+    <Suspense fallback={
+      <div className="hidden lg:block w-[60px] flex-shrink-0 bg-sidebar border-r border-sidebar-border" />
+    }>
+      <MarketplaceSidebarContent />
+    </Suspense>
   );
 }
 

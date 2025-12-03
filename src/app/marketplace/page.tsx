@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon } from "lucide-react";
@@ -32,7 +33,10 @@ interface Store {
   joined_date: string;
 }
 
-export default function MarketplacePage() {
+// Force dynamic rendering to avoid useSearchParams SSR issues
+export const dynamic = 'force-dynamic'
+
+function MarketplacePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
@@ -117,27 +121,28 @@ export default function MarketplacePage() {
   const { counts: categoryCounts } = useCategoryCounts();
 
   // Handle filter changes and product accumulation
+  // This effect ONLY handles data population, NOT filter resets (those are done in handlers)
   React.useEffect(() => {
     // Check if filters changed
     const filtersChanged = filterKey !== prevFilterKeyRef.current;
     
     if (filtersChanged) {
-      // Filters changed - reset tracking but wait for fresh data
+      // Filters changed - update tracking ref
       prevFilterKeyRef.current = filterKey;
-      processedDataRef.current = new Set();
       
-      // Only set products if we have actual data for the new filter
-      // (not empty and not stale from previous filter)
-      if (fetchedProducts.length > 0) {
+      // IMPORTANT: Don't populate products here if we're validating
+      // The handler already cleared products, wait for fresh data
+      // SWR's keepPreviousData means fetchedProducts might be stale
+      if (!isValidating && fetchedProducts.length > 0) {
+        // Only use data if we're NOT currently fetching new data
+        // This ensures we don't accidentally show stale data
         setAccumulatedProducts(fetchedProducts);
-        fetchedProducts.forEach(p => processedDataRef.current.add(p.id));
-      } else {
-        // Clear products and wait for new data to arrive
-        setAccumulatedProducts([]);
+        processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
       }
-      setCurrentPage(1);
-    } else if (fetchedProducts.length > 0) {
-      // Same filter - check if we have genuinely new data
+      // If isValidating is true, products stay empty (cleared by handler)
+      // and loading state will be shown
+    } else if (fetchedProducts.length > 0 && !isValidating) {
+      // Same filter, not validating - check if we have genuinely new data
       const hasNewData = fetchedProducts.some(p => !processedDataRef.current.has(p.id));
       
       // Also handle the case where we cleared products waiting for new data
@@ -146,6 +151,7 @@ export default function MarketplacePage() {
       if (hasNewData || needsInitialData) {
         if (currentPage === 1) {
           setAccumulatedProducts(fetchedProducts);
+          processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
         } else {
           setAccumulatedProducts(prev => {
             // Only add products we haven't seen before
@@ -154,12 +160,12 @@ export default function MarketplacePage() {
             );
             return [...prev, ...newProducts];
           });
+          // Mark these products as processed
+          fetchedProducts.forEach(p => processedDataRef.current.add(p.id));
         }
-        // Mark these products as processed
-        fetchedProducts.forEach(p => processedDataRef.current.add(p.id));
       }
     }
-  }, [fetchedProducts, currentPage, filterKey, accumulatedProducts.length]);
+  }, [fetchedProducts, currentPage, filterKey, accumulatedProducts.length, isValidating]);
 
   // Derive display state
   const products = accumulatedProducts;
@@ -227,9 +233,13 @@ export default function MarketplacePage() {
     // Don't reset if clicking the same tab
     if (mode === viewMode) return;
     
-    setViewMode(mode);
-    setCurrentPage(1);
+    // Clear all product state FIRST before changing mode
     setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setCurrentPage(1);
+    
+    // Then change the mode
+    setViewMode(mode);
     
     // Clear category filters when switching to Trending or For You
     if (mode === 'trending' || mode === 'for-you') {
@@ -250,11 +260,15 @@ export default function MarketplacePage() {
     // Don't reset if clicking the same category
     if (category === selectedLevel1) return;
     
+    // Clear all product state FIRST before changing filter
+    setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setCurrentPage(1);
+    
+    // Then change the filter
     setSelectedLevel1(category);
     setSelectedLevel2(null);
     setSelectedLevel3(null);
-    setCurrentPage(1);
-    setAccumulatedProducts([]);
     
     if (category) {
       tracker.trackClick(undefined, {
@@ -269,10 +283,14 @@ export default function MarketplacePage() {
     // Don't reset if clicking the same subcategory
     if (subcategory === selectedLevel2) return;
     
+    // Clear all product state FIRST before changing filter
+    setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setCurrentPage(1);
+    
+    // Then change the filter
     setSelectedLevel2(subcategory);
     setSelectedLevel3(null);
-    setCurrentPage(1);
-    setAccumulatedProducts([]);
     
     if (subcategory) {
       tracker.trackClick(undefined, {
@@ -287,9 +305,13 @@ export default function MarketplacePage() {
     // Don't reset if clicking the same level3 category
     if (level3 === selectedLevel3) return;
     
-    setSelectedLevel3(level3);
-    setCurrentPage(1);
+    // Clear all product state FIRST before changing filter
     setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setCurrentPage(1);
+    
+    // Then change the filter
+    setSelectedLevel3(level3);
     
     if (level3) {
       tracker.trackClick(undefined, {
@@ -304,6 +326,29 @@ export default function MarketplacePage() {
     setSearchQuery(null);
     setCurrentPage(1);
     setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+  };
+
+  // Handler for listing type filter changes (All Listings, Stores, Individual Sellers)
+  const handleListingTypeChange = (filter: ListingTypeFilterType) => {
+    // Don't reset if clicking the same filter
+    if (filter === listingTypeFilter) return;
+    
+    // Clear all product state FIRST before changing filter
+    setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setCurrentPage(1);
+    
+    // Then change the filter
+    setListingTypeFilter(filter);
+    
+    // Track filter change
+    tracker.trackClick(undefined, {
+      action: 'listing_type_filter_change',
+      from: listingTypeFilter,
+      to: filter,
+      view_mode: viewMode,
+    });
   };
 
   return (
@@ -364,7 +409,7 @@ export default function MarketplacePage() {
                     />
                     <ListingTypeFilter 
                       activeFilter={listingTypeFilter}
-                      onFilterChange={setListingTypeFilter}
+                      onFilterChange={handleListingTypeChange}
                     />
                   </div>
 
@@ -634,6 +679,19 @@ export default function MarketplacePage() {
         </div>
       </MarketplaceLayout>
     </>
+  );
+}
+
+// Wrap with Suspense to handle useSearchParams
+export default function MarketplacePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-pulse text-gray-400">Loading...</div>
+      </div>
+    }>
+      <MarketplacePageContent />
+    </Suspense>
   );
 }
 

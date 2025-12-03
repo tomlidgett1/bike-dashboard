@@ -138,7 +138,14 @@ function isQuestion(query: string): boolean {
   return false;
 }
 
-export function InstantSearch() {
+interface InstantSearchProps {
+  /** Automatically focus the input when mounted */
+  autoFocus?: boolean;
+  /** Called when a search result is clicked (useful for closing mobile overlays) */
+  onResultClick?: () => void;
+}
+
+export function InstantSearch({ autoFocus = false, onResultClick }: InstantSearchProps = {}) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResults | null>(null);
@@ -156,6 +163,17 @@ export function InstantSearch() {
   const aiCacheRef = React.useRef<Map<string, AISearchResult>>(new Map());
   const abortControllerRef = React.useRef<AbortController | null>(null);
   const aiAbortControllerRef = React.useRef<AbortController | null>(null);
+
+  // Auto-focus input when prop is set
+  React.useEffect(() => {
+    if (autoFocus && inputRef.current) {
+      // Small delay to ensure the element is visible after animations
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [autoFocus]);
 
   // Load recent searches from localStorage on mount
   React.useEffect(() => {
@@ -481,11 +499,13 @@ export function InstantSearch() {
       // Navigate to product - use full page reload
       const product = results.products[index];
       saveRecentSearch(query.trim());
+      onResultClick?.();
       window.location.href = `/marketplace?search=${encodeURIComponent(product.name)}`;
     } else {
       // Navigate to store - use full page reload
       const store = results.stores[index - productCount];
       saveRecentSearch(query.trim());
+      onResultClick?.();
       window.location.href = `/marketplace?view=stores&store=${store.id}`;
     }
 
@@ -496,6 +516,7 @@ export function InstantSearch() {
   const handleFullSearch = () => {
     if (query.trim()) {
       saveRecentSearch(query.trim());
+      onResultClick?.();
       window.location.href = `/marketplace?search=${encodeURIComponent(query)}`;
       setShowDropdown(false);
     }
@@ -504,6 +525,7 @@ export function InstantSearch() {
   // Use a recent search
   const handleRecentSearchClick = (searchQuery: string) => {
     saveRecentSearch(searchQuery);
+    onResultClick?.();
     window.location.href = `/marketplace?search=${encodeURIComponent(searchQuery)}`;
     setShowDropdown(false);
   };

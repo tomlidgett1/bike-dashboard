@@ -107,139 +107,97 @@ export async function GET(
       .single();
 
     if (productError || !product) {
-      // Try to fetch as private listing
-      const { data: listingProduct, error: listingError } = await supabase
-        .from('products')
+      console.error(`❌ Product not found: ${productId}`, productError);
+      return NextResponse.json(
+        { error: 'Product not found' },
+        { status: 404 }
+      );
+    }
+
+    // ============================================================
+    // Fetch images from product_images table (single source of truth)
+    // This works for both private listings and canonical products
+    // ============================================================
+    const { data: productImagesFromTable } = await supabase
+      .from('product_images')
+      .select(`
+        id,
+        cloudinary_url,
+        card_url,
+        thumbnail_url,
+        detail_url,
+        external_url,
+        is_primary,
+        sort_order,
+        approval_status
+      `)
+      .eq('product_id', productId)
+      .eq('approval_status', 'approved')
+      .order('is_primary', { ascending: false })
+      .order('sort_order', { ascending: true });
+
+    // If no images found by product_id, check canonical_product_id
+    let allProductImages = productImagesFromTable || [];
+    if (allProductImages.length === 0 && product.canonical_product_id) {
+      const { data: canonicalImages } = await supabase
+        .from('product_images')
         .select(`
           id,
-          description,
-          display_name,
-          price,
-          marketplace_category,
-          marketplace_subcategory,
-          marketplace_level_3_category,
-          qoh,
-          model_year,
-          created_at,
-          user_id,
-          listing_type,
-          listing_source,
-          listing_status,
-          published_at,
-          frame_size,
-          frame_material,
-          bike_type,
-          groupset,
-          wheel_size,
-          suspension_type,
-          bike_weight,
-          color_primary,
-          color_secondary,
-          part_type_detail,
-          compatibility_notes,
-          material,
-          weight,
-          size,
-          gender_fit,
-          apparel_material,
-          condition_rating,
-          condition_details,
-          wear_notes,
-          usage_estimate,
-          purchase_location,
-          purchase_date,
-          service_history,
-          upgrades_modifications,
-          reason_for_selling,
-          is_negotiable,
-          shipping_available,
-          shipping_cost,
-          pickup_location,
-          included_accessories,
-          seller_contact_preference,
-          seller_phone,
-          seller_email,
-          users!inner (
-            store_name,
-            store_logo_url
-          )
+          cloudinary_url,
+          card_url,
+          thumbnail_url,
+          detail_url,
+          external_url,
+          is_primary,
+          sort_order,
+          approval_status
         `)
-        .eq('id', productId)
-        .eq('listing_status', 'active')
-        .eq('listing_type', 'private_listing')
-        .single();
-
-      if (listingError || !listingProduct) {
-        console.error(`❌ Product not found: ${productId}`, productError || listingError);
-        return NextResponse.json(
-          { error: 'Product not found' },
-          { status: 404 }
-        );
-      }
-
-      // Fetch images for private listing
-      const { data: images } = await supabase
-        .from('product_images')
-        .select('url, isPrimary, order')
-        .eq('productId', productId)
-        .order('order', { ascending: true });
-
-      // Format the response
-      const user = (listingProduct.users as any);
-      const formattedProduct: MarketplaceProduct = {
-        ...listingProduct,
-        store_name: user?.business_name || 'Unknown Seller',
-        store_logo_url: user?.logo_url || null,
-        store_account_type: user?.account_type || null,
-        primary_image_url: images?.find(img => img.isPrimary)?.url || images?.[0]?.url || null,
-        images: images || [],
-      };
-
-      const loadTime = Date.now() - startTime;
-      console.log(`✅ [PRODUCT API] Private listing loaded in ${loadTime}ms`);
-
-      return NextResponse.json({ product: formattedProduct });
+        .eq('canonical_product_id', product.canonical_product_id)
+        .eq('approval_status', 'approved')
+        .order('is_primary', { ascending: false })
+        .order('sort_order', { ascending: true });
+      
+      allProductImages = canonicalImages || [];
     }
 
-    // Format the response for store inventory
-    const canonicalProduct = (product.canonical_products as any);
-    const productImages = canonicalProduct?.product_images || [];
+    // Format the response
     const user = (product.users as any);
     
-    // Build image URLs
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    let primaryImageUrl = null;
+    // Build image URLs from product_images table (single source of truth)
+    let primaryImageUrl: string | null = null;
     let allImages: string[] = [];
     
-    // Priority 1: Manually uploaded images (stored in images JSONB field)
-    if (product.images && Array.isArray(product.images) && product.images.length > 0) {
-      const manualImages = product.images as Array<{ url: string; isPrimary?: boolean; order?: number }>;
-      // Find primary image or use first one
-      const primaryManualImage = manualImages.find(img => img.isPrimary) || manualImages[0];
-      primaryImageUrl = primaryManualImage?.url;
+    // Priority 1: Images from product_images table
+    if (allProductImages.length > 0) {
+      const primaryImage = allProductImages.find((img: any) => img.is_primary) || allProductImages[0];
+      // Use detail_url for full resolution, fallback to card_url or cloudinary_url
+      primaryImageUrl = primaryImage?.detail_url || primaryImage?.cloudinary_url || primaryImage?.card_url || null;
       
-      // Get all images sorted by order
-      allImages = manualImages
-        .sort((a, b) => (a.order || 0) - (b.order || 0))
-        .map(img => img.url)
-        .filter(url => url && !url.startsWith('blob:'));
+      // Get all images - use detail_url for gallery
+      allImages = allProductImages
+        .map((img: any) => img.detail_url || img.cloudinary_url || img.card_url)
+        .filter((url: string | null) => url && !url.startsWith('blob:'));
       
-      console.log(`📸 [PRODUCT API] Using manually uploaded images: ${allImages.length} images`);
+      console.log(`📸 [PRODUCT API] Using ${allProductImages.length} images from product_images table`);
     }
-    // Priority 2: Custom store image
+    // Priority 2: Custom store image (legacy)
     else if (product.use_custom_image && product.custom_image_url) {
       primaryImageUrl = product.custom_image_url;
       allImages = [product.custom_image_url];
+      console.log(`📸 [PRODUCT API] Using custom store image`);
     }
-    // Priority 3: Canonical product images (only approved AND downloaded ones)
-    else if (productImages.length > 0) {
-      // Already filtered for approved & downloaded in query
-      const primaryImage = productImages.find((img: any) => img.is_primary) || productImages[0];
-      primaryImageUrl = primaryImage ? `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}` : null;
-      allImages = productImages.map((img: any) => 
-        `${baseUrl}/storage/v1/object/public/product-images/${img.storage_path}`
-      );
-      console.log(`🖼️ [PRODUCT API] Using ${productImages.length} approved & downloaded canonical images`);
+    // Priority 3: Legacy JSONB images (fallback during migration)
+    else if (product.images && Array.isArray(product.images) && product.images.length > 0) {
+      const manualImages = product.images as Array<{ url: string; cardUrl?: string; detailUrl?: string; isPrimary?: boolean; order?: number }>;
+      const primaryManualImage = manualImages.find(img => img.isPrimary) || manualImages[0];
+      primaryImageUrl = primaryManualImage?.detailUrl || primaryManualImage?.url;
+      
+      allImages = manualImages
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .map(img => img.detailUrl || img.url)
+        .filter(url => url && !url.startsWith('blob:'));
+      
+      console.log(`📸 [PRODUCT API] Using legacy JSONB images: ${allImages.length} images`);
     }
     // Priority 4: Use placeholder if no images available
     else {
@@ -248,13 +206,11 @@ export async function GET(
       console.log(`🖼️ [PRODUCT API] Using placeholder for product ${productId}`);
     }
     
-    const primaryImage = productImages.find((img: any) => img.is_primary) || productImages[0];
-    
     const formattedProduct: MarketplaceProduct = {
       ...product,
       primary_image_url: primaryImageUrl,
       all_images: allImages,
-      image_variants: primaryImage?.variants || null,
+      image_variants: null,
       store_name: user?.business_name || 'Unknown Store',
       store_logo_url: user?.logo_url || null,
       store_account_type: user?.account_type || null,

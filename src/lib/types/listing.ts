@@ -34,7 +34,8 @@ export interface ListingImage {
   id: string;
   url: string;           // Original/full-size image URL
   thumbnailUrl?: string; // 100px thumbnail for search dropdowns
-  cardUrl?: string;      // 400px image for product cards
+  mobileCardUrl?: string; // 200px image for mobile product cards
+  cardUrl?: string;      // 400px image for desktop product cards
   order: number;
   isPrimary: boolean;
 }

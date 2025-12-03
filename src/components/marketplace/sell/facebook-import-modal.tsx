@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, AlertCircle, X, CheckCircle2, ImageIcon } from "lucide-react";
+import { Loader2, X, CheckCircle2 } from "lucide-react";
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -159,63 +159,61 @@ export function FacebookImportModal({ isOpen, onClose, onComplete }: FacebookImp
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[480px] rounded-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
-            <Image src="/facebook.png" alt="Facebook" width={20} height={20} />
+          <DialogTitle className="flex items-center gap-2 text-base font-medium">
+            <Image src="/facebook.png" alt="Facebook" width={18} height={18} />
             Import from Facebook
           </DialogTitle>
-          <DialogDescription>
-            Paste a Facebook Marketplace link to auto-fill your listing details.
+          <DialogDescription className="text-sm">
+            Paste a Marketplace link to auto-fill details
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-4">
+        <div className="mt-2">
           <AnimatePresence mode="wait">
             {/* Input Stage */}
             {stage === "input" && (
               <motion.form
                 key="input"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 onSubmit={handleSubmit}
-                className="space-y-4"
+                className="space-y-3"
               >
                 <div className="space-y-2">
                   <Input
                     type="url"
-                    placeholder="https://www.facebook.com/marketplace/item/123456789"
+                    placeholder="facebook.com/marketplace/item/123456789"
                     value={facebookUrl}
                     onChange={(e) => {
                       setFacebookUrl(e.target.value);
                       setError(null);
                     }}
-                    className="rounded-md"
+                    className="rounded-md text-sm"
                     autoFocus
                   />
                   {error && (
-                    <p className="text-sm text-red-600 flex items-center gap-1.5">
-                      <AlertCircle className="h-3.5 w-3.5" />
-                      {error}
-                    </p>
+                    <p className="text-xs text-red-500">{error}</p>
                   )}
                 </div>
 
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-end gap-2 pt-1">
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
+                    size="sm"
                     onClick={onClose}
-                    className="rounded-md"
+                    className="text-gray-500"
                   >
                     Cancel
                   </Button>
                   <Button
                     type="submit"
+                    size="sm"
                     disabled={!facebookUrl}
-                    className="rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                    className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
                   >
-                    Import Listing
+                    Import
                   </Button>
                 </div>
               </motion.form>
@@ -225,17 +223,13 @@ export function FacebookImportModal({ isOpen, onClose, onComplete }: FacebookImp
             {stage === "scraping" && (
               <motion.div
                 key="scraping"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="py-8 text-center space-y-4"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center justify-center py-12"
               >
-                <Loader2 className="h-10 w-10 animate-spin text-blue-600 mx-auto" />
-                <div>
-                  <p className="font-medium text-gray-900">Fetching listing details...</p>
-                  <p className="text-sm text-gray-500 mt-1">This may take a moment</p>
-                </div>
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
+                <p className="text-gray-600 text-sm">Fetching listing...</p>
               </motion.div>
             )}
 
@@ -243,39 +237,18 @@ export function FacebookImportModal({ isOpen, onClose, onComplete }: FacebookImp
             {stage === "processing-images" && (
               <motion.div
                 key="processing"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="py-8 text-center space-y-4"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center justify-center py-12"
               >
-                <div className="relative">
-                  <ImageIcon className="h-10 w-10 text-blue-600 mx-auto" />
-                  <motion.div
-                    className="absolute -top-1 -right-1 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center"
-                    animate={{ scale: [1, 1.2, 1] }}
-                    transition={{ repeat: Infinity, duration: 1 }}
-                  >
-                    <Loader2 className="h-3 w-3 animate-spin text-white" />
-                  </motion.div>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">Processing images...</p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {imageProgress.total > 0 
-                      ? `${imageProgress.current} of ${imageProgress.total} images`
-                      : "Downloading images from Facebook"
-                    }
-                  </p>
-                </div>
-                {imageProgress.total > 0 && (
-                  <div className="w-full bg-gray-200 rounded-full h-2 max-w-[200px] mx-auto">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${(imageProgress.current / imageProgress.total) * 100}%` }}
-                    />
-                  </div>
-                )}
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
+                <p className="text-gray-600 text-sm">
+                  {imageProgress.total > 0 
+                    ? `Uploading ${imageProgress.current}/${imageProgress.total}...`
+                    : "Processing images..."
+                  }
+                </p>
               </motion.div>
             )}
 
@@ -283,19 +256,13 @@ export function FacebookImportModal({ isOpen, onClose, onComplete }: FacebookImp
             {stage === "success" && (
               <motion.div
                 key="success"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ duration: 0.2 }}
-                className="py-8 text-center space-y-4"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center justify-center py-12"
               >
-                <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="h-8 w-8 text-green-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">Import successful!</p>
-                  <p className="text-sm text-gray-500 mt-1">Preparing your listing...</p>
-                </div>
+                <CheckCircle2 className="h-6 w-6 text-green-500 mb-3" />
+                <p className="text-gray-600 text-sm">Done!</p>
               </motion.div>
             )}
 
@@ -303,37 +270,31 @@ export function FacebookImportModal({ isOpen, onClose, onComplete }: FacebookImp
             {stage === "error" && (
               <motion.div
                 key="error"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="py-6 space-y-4"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center justify-center py-12"
               >
-                <div className="bg-red-50 rounded-md p-4 border border-red-200">
-                  <div className="flex gap-3">
-                    <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-red-800">Import failed</p>
-                      <p className="text-sm text-red-700 mt-1">{error}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2">
+                <X className="h-6 w-6 text-red-500 mb-3" />
+                <p className="text-gray-600 text-sm mb-1">Import failed</p>
+                <p className="text-gray-400 text-xs mb-4 text-center max-w-[280px]">{error}</p>
+                <div className="flex gap-2">
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
+                    size="sm"
                     onClick={onClose}
-                    className="rounded-md"
+                    className="text-gray-500"
                   >
                     Cancel
                   </Button>
                   <Button
                     type="button"
+                    size="sm"
                     onClick={handleRetry}
                     className="rounded-md"
                   >
-                    Try Again
+                    Retry
                   </Button>
                 </div>
               </motion.div>
