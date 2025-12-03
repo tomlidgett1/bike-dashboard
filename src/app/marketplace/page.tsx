@@ -353,7 +353,7 @@ function MarketplacePageContent() {
 
   return (
     <>
-      <MarketplaceHeader />
+      <MarketplaceHeader compactSearchOnMobile />
 
       <MarketplaceLayout showFooter={false} showStoreCTA={isStoresView}>
         <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20">
@@ -399,9 +399,9 @@ function MarketplacePageContent() {
             {/* Products View */}
             {!isStoresView && !isSellersView && (
               <>
-                {/* View Mode Pills & Listing Type Filter */}
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div className="flex items-center gap-3">
+                {/* View Mode Pills & Listing Type Filter - Scrollable on mobile */}
+                <div className="flex items-center justify-between gap-2 sm:gap-4">
+                  <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 pb-1 sm:pb-0" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                     <ViewModePills
                       activeMode={viewMode}
                       onModeChange={handleViewModeChange}
@@ -415,7 +415,7 @@ function MarketplacePageContent() {
 
                   {/* Product Count */}
                   {!searchQuery && (
-                    <div className="hidden sm:flex items-center gap-2">
+                    <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
                       <span className="text-sm text-gray-700 font-medium">
                         {totalCount.toLocaleString()} {viewMode === 'trending' ? 'trending' : ''} products
                       </span>
@@ -467,7 +467,7 @@ function MarketplacePageContent() {
 
                 {/* Loading State - Amazon-style instant skeletons */}
                 {loading && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-4">
                     {Array.from({ length: 24 }).map((_, i) => (
                       <ProductCardSkeleton key={i} />
                     ))}
@@ -599,7 +599,7 @@ function MarketplacePageContent() {
 
                   {/* Products Grid - Progressive Loading */}
                   {products.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-4">
                       {products.map((product, index) => (
                         <ProductCard 
                           key={product.id} 

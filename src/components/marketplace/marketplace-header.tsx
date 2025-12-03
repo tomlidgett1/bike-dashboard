@@ -567,43 +567,32 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
         }}
       />
 
-      {/* Mobile Search Overlay */}
+      {/* Mobile Search Overlay - Full screen takeover */}
       <AnimatePresence>
         {mobileSearchOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 bg-black/40 z-[60] sm:hidden"
-              onClick={() => setMobileSearchOpen(false)}
-            />
-            {/* Search Panel */}
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-              className="fixed top-0 left-0 right-0 z-[61] bg-white shadow-xl sm:hidden"
-            >
-              <div className="flex items-center gap-3 p-3 border-b border-gray-100">
-                {/* Back/Close button */}
-                <button
-                  onClick={() => setMobileSearchOpen(false)}
-                  className="p-2 rounded-full hover:bg-gray-100 transition-colors flex-shrink-0"
-                  aria-label="Close search"
-                >
-                  <X className="h-5 w-5 text-gray-600" />
-                </button>
-                {/* Search input */}
-                <div className="flex-1">
-                  <InstantSearch autoFocus onResultClick={() => setMobileSearchOpen(false)} />
-                </div>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[60] bg-gray-50 sm:hidden flex flex-col overflow-hidden"
+          >
+            {/* Search Header */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-200 flex-shrink-0">
+              {/* Back/Close button */}
+              <button
+                onClick={() => setMobileSearchOpen(false)}
+                className="p-2 -ml-1 rounded-full hover:bg-gray-100 transition-colors flex-shrink-0"
+                aria-label="Close search"
+              >
+                <X className="h-5 w-5 text-gray-600" />
+              </button>
+              {/* Search input - just the input, dropdown renders below */}
+              <div className="flex-1">
+                <InstantSearch autoFocus onResultClick={() => setMobileSearchOpen(false)} mobileFullscreen />
               </div>
-            </motion.div>
-          </>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </motion.header>
