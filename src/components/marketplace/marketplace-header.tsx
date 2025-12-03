@@ -575,10 +575,10 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[60] bg-gray-50 sm:hidden flex flex-col overflow-hidden"
+            className="fixed inset-0 z-[60] bg-white sm:hidden flex flex-col overflow-hidden"
           >
             {/* Search Header */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-200 flex-shrink-0">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0">
               {/* Back/Close button */}
               <button
                 onClick={() => setMobileSearchOpen(false)}
@@ -587,11 +587,12 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
               >
                 <X className="h-5 w-5 text-gray-600" />
               </button>
-              {/* Search input - just the input, dropdown renders below */}
+              {/* Search input */}
               <div className="flex-1">
-                <InstantSearch autoFocus onResultClick={() => setMobileSearchOpen(false)} mobileFullscreen />
+                <InstantSearch autoFocus onResultClick={() => setMobileSearchOpen(false)} />
               </div>
             </div>
+            {/* Results will show in the dropdown which is positioned absolute below the input */}
           </motion.div>
         )}
       </AnimatePresence>

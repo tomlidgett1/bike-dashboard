@@ -407,10 +407,13 @@ function MarketplacePageContent() {
                       onModeChange={handleViewModeChange}
                       showForYouBadge={!user && viewMode !== 'for-you'}
                     />
-                    <ListingTypeFilter 
-                      activeFilter={listingTypeFilter}
-                      onFilterChange={handleListingTypeChange}
-                    />
+                    {/* Only show listing type filter on All Products tab */}
+                    {viewMode === 'all' && (
+                      <ListingTypeFilter 
+                        activeFilter={listingTypeFilter}
+                        onFilterChange={handleListingTypeChange}
+                      />
+                    )}
                   </div>
 
                   {/* Product Count */}

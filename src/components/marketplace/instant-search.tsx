@@ -143,11 +143,9 @@ interface InstantSearchProps {
   autoFocus?: boolean;
   /** Called when a search result is clicked (useful for closing mobile overlays) */
   onResultClick?: () => void;
-  /** When true, renders dropdown as scrollable content below input (for mobile fullscreen mode) */
-  mobileFullscreen?: boolean;
 }
 
-export function InstantSearch({ autoFocus = false, onResultClick, mobileFullscreen = false }: InstantSearchProps = {}) {
+export function InstantSearch({ autoFocus = false, onResultClick }: InstantSearchProps = {}) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResults | null>(null);
@@ -555,9 +553,9 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullscre
   const hasResults = results && (results.products.length > 0 || results.stores.length > 0);
 
   return (
-    <div className={cn("relative w-full", mobileFullscreen && "flex flex-col h-full")}>
+    <div className="relative w-full">
       {/* Search Input */}
-      <div className="relative flex-shrink-0">
+      <div className="relative">
         <Search className="absolute left-3 sm:left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         
         <Input
@@ -610,12 +608,7 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullscre
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.15 }}
-            className={cn(
-              "bg-white z-50 overflow-hidden",
-              mobileFullscreen 
-                ? "mt-0 border-b border-gray-200" 
-                : "absolute top-full left-0 right-0 mt-2 rounded-md border border-gray-200 shadow-xl"
-            )}
+            className="absolute top-full left-0 right-0 mt-2 bg-white rounded-md border border-gray-200 shadow-xl z-50 overflow-hidden"
           >
             {/* Header */}
             <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
@@ -662,12 +655,7 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullscre
       {showDropdown && query.length >= 2 && (
         <div
           ref={dropdownRef}
-          className={cn(
-            "bg-white z-50 overflow-y-auto animate-in fade-in duration-100",
-            mobileFullscreen 
-              ? "flex-1" 
-              : "absolute top-full left-0 right-0 mt-2 rounded-md border border-gray-200 shadow-2xl max-h-[600px]"
-          )}
+          className="absolute top-full left-0 right-0 mt-2 bg-white rounded-md border border-gray-200 shadow-2xl z-50 max-h-[70vh] overflow-y-auto animate-in fade-in duration-100"
         >
           {loading && !results ? (
             // Minimal loading state - appears instantly while searching
