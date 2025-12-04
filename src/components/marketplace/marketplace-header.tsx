@@ -474,6 +474,23 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
                         }
                       }}
                     />
+                    <button
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        if (user) {
+                          setFacebookModalOpen(true);
+                        } else {
+                          setSellRequirementModalOpen(true);
+                        }
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left hover:bg-gray-100 transition-colors"
+                    >
+                      <Image src="/facebook.png" alt="Facebook" width={20} height={20} className="flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900">Facebook Import</p>
+                        <p className="text-xs text-gray-500">Import from Facebook</p>
+                      </div>
+                    </button>
                     <MobileNavItem
                       icon={FileText}
                       label="Standard Upload"

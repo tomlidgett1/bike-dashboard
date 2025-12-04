@@ -100,12 +100,12 @@ function MessagesPageContent() {
   );
 
   return (
-    <div className="w-full max-w-full overflow-hidden -mb-[calc(56px+env(safe-area-inset-bottom))] lg:mb-0">
-      <div className="flex h-screen bg-gray-50 overflow-hidden w-full max-w-full">
+    <div className="w-full max-w-full overflow-hidden">
+      <div className="flex h-[100dvh] md:h-screen bg-gray-50 overflow-hidden w-full max-w-full">
       {/* Left Sidebar: Conversation List */}
       <div
         className={cn(
-          'w-full md:w-96 bg-white md:border-r border-gray-200 flex flex-col h-full',
+          'w-full md:w-96 bg-white md:border-r border-gray-200 flex flex-col h-full pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0',
           showConversationOnMobile && 'hidden md:flex'
         )}
       >
@@ -169,7 +169,7 @@ function MessagesPageContent() {
       {/* Right Panel: Active Conversation */}
       <div
         className={cn(
-          'flex-1 flex flex-col bg-white h-full w-full md:w-auto overflow-hidden',
+          'flex-1 flex flex-col bg-white h-full w-full md:w-auto overflow-hidden fixed inset-0 md:static md:inset-auto z-20',
           !showConversationOnMobile && 'hidden md:flex'
         )}
       >

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { MarketplaceSidebar } from "./marketplace-sidebar";
+import { MobileLoginPrompt } from "@/components/marketplace/mobile-login-prompt";
 import { Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSidebarState, SidebarStateProvider } from "@/lib/hooks/use-sidebar-state";
@@ -41,6 +42,9 @@ function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = 
       >
         {children}
       </main>
+
+      {/* Mobile Login Prompt - Only for non-authenticated users on mobile */}
+      <MobileLoginPrompt />
 
       {/* Call to Action & Simple Footer - Only for Stores Page */}
       {showStoreCTA && (
