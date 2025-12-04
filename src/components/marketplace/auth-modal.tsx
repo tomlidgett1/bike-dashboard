@@ -182,31 +182,18 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
         });
         if (authError) throw authError;
 
-        // Create user profile with account type (bicycle_store always false initially)
+        // Update user profile with account type (trigger already created the base profile)
+        // bicycle_store is always false until admin approves
         if (authData.user) {
-          const { error: profileError } = await supabase.from("users").insert({
-            user_id: authData.user.id,
-            email: email,
-            account_type: accountType,
-            bicycle_store: false, // Always false until admin approves
-            name: "",
-            phone: "",
-            first_name: "",
-            last_name: "",
-            business_name: "",
-            store_type: "",
-            address: "",
-            website: "",
-            preferences: {},
-            onboarding_completed: false,
-            email_notifications: true,
-            order_alerts: true,
-            inventory_alerts: true,
-            marketing_emails: false,
-          });
+          const { error: profileError } = await supabase
+            .from("users")
+            .update({
+              account_type: accountType,
+            })
+            .eq("user_id", authData.user.id);
 
           if (profileError) {
-            console.error("Error creating profile:", profileError);
+            console.error("Error updating profile:", profileError);
           }
 
           // Close modal and redirect to onboarding

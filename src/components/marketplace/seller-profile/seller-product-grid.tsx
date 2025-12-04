@@ -133,7 +133,7 @@ export function SellerProductGrid({
   if (products.length === 0) {
     return (
       <div className={cn("py-20", className)}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-gray-100 mb-4">
               <Package className="h-8 w-8 text-gray-400" />
@@ -155,7 +155,7 @@ export function SellerProductGrid({
 
   return (
     <div className={cn("py-6", className)}>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+      <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* Responsive Grid: 2 cols mobile, 3 cols tablet, 5 cols desktop */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {products.map((product, index) => (

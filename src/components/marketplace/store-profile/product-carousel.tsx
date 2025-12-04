@@ -21,7 +21,7 @@ interface ProductCarouselProps {
 export function ProductCarousel({
   categoryName,
   products,
-  initialVisibleCount = 6,
+  initialVisibleCount = 10,
 }: ProductCarouselProps) {
   const [isExpanded, setIsExpanded] = React.useState(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -99,7 +99,7 @@ export function ProductCarousel({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4"
           >
             {displayedProducts.map((product, index) => (
               <ProductCard key={product.id} product={product} priority={index < 6} />

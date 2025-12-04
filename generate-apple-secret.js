@@ -4,8 +4,8 @@ import jwt from "jsonwebtoken";
 // CONFIGURE THESE VALUES
 const TEAM_ID = "235G724JXB";                       // Your Apple Team ID
 const CLIENT_ID = "yellowjerseyofficial";           // Your Service ID (client_id)
-const KEY_ID = "CDZZ56TGCS";                        // Your Key ID
-const PRIVATE_KEY = fs.readFileSync("./AuthKey_CDZZ56TGCS.p8");
+const KEY_ID = "7AT5386ZS6";                        // Your Key ID
+const PRIVATE_KEY = fs.readFileSync("./AuthKey_7AT5386ZS6.p8");
 
 // Generate issue and expiry times
 const now = Math.floor(Date.now() / 1000);

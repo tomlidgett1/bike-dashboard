@@ -4,12 +4,15 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon } from "lucide-react";
+import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon, User } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
+import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type AdvancedFiltersState } from "@/components/marketplace/advanced-filters";
 import { StoresGrid } from "@/components/marketplace/stores-grid";
+import { SellersGrid } from "@/components/marketplace/sellers-grid";
+import type { IndividualSeller } from "@/app/api/marketplace/sellers/route";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
@@ -57,6 +60,10 @@ function MarketplacePageContent() {
   const [stores, setStores] = React.useState<Store[]>([]);
   const [storesLoading, setStoresLoading] = React.useState(false);
 
+  // Sellers state
+  const [sellers, setSellers] = React.useState<IndividualSeller[]>([]);
+  const [sellersLoading, setSellersLoading] = React.useState(false);
+
   // Search state
   const [searchQuery, setSearchQuery] = React.useState<string | null>(
     searchParams.get('search') || null
@@ -96,14 +103,18 @@ function MarketplacePageContent() {
   // Listing type filter state (default to all listings)
   const [listingTypeFilter, setListingTypeFilter] = React.useState<ListingTypeFilterType>('all');
 
+  // Advanced filters state
+  const [advancedFilters, setAdvancedFilters] = React.useState<AdvancedFiltersState>(DEFAULT_ADVANCED_FILTERS);
+  const activeFilterCount = countActiveFilters(advancedFilters);
+
   // Products state (for pagination accumulation)
   const [accumulatedProducts, setAccumulatedProducts] = React.useState<MarketplaceProduct[]>([]);
   const [currentPage, setCurrentPage] = React.useState(1);
 
   // Track filter changes to know when to reset
   const filterKey = React.useMemo(() => 
-    `${viewMode}-${listingTypeFilter}-${selectedLevel1}-${selectedLevel2}-${selectedLevel3}-${searchQuery}`,
-    [viewMode, listingTypeFilter, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery]
+    `${viewMode}-${listingTypeFilter}-${selectedLevel1}-${selectedLevel2}-${selectedLevel3}-${searchQuery}-${advancedFilters.minPrice}-${advancedFilters.maxPrice}-${advancedFilters.condition}-${advancedFilters.sortBy}`,
+    [viewMode, listingTypeFilter, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, advancedFilters]
   );
   const prevFilterKeyRef = React.useRef(filterKey);
   const processedDataRef = React.useRef<Set<string>>(new Set());
@@ -120,7 +131,13 @@ function MarketplacePageContent() {
     // Add listing type filtering
     listingType: listingTypeFilter === 'stores' ? 'store_inventory' as const : 
                  listingTypeFilter === 'individuals' ? 'private_listing' as const : undefined,
-  }), [viewMode, currentPage, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter]);
+    // Add advanced filters
+    minPrice: advancedFilters.minPrice || null,
+    maxPrice: advancedFilters.maxPrice || null,
+    condition: advancedFilters.condition !== 'all' ? advancedFilters.condition : null,
+    sortBy: advancedFilters.sortBy,
+    brand: advancedFilters.brand || null,
+  }), [viewMode, currentPage, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, advancedFilters]);
 
   // Use SWR for products data with intelligent caching
   const { 
@@ -214,6 +231,27 @@ function MarketplacePageContent() {
       fetchStores();
     }
   }, [isStoresView]);
+
+  // Fetch sellers when in sellers view
+  React.useEffect(() => {
+    if (isSellersView) {
+      const fetchSellers = async () => {
+        setSellersLoading(true);
+        try {
+          const response = await fetch('/api/marketplace/sellers');
+          if (response.ok) {
+            const data = await response.json();
+            setSellers(data.sellers || []);
+          }
+        } catch (error) {
+          console.error('[Marketplace] Error fetching sellers:', error);
+        } finally {
+          setSellersLoading(false);
+        }
+      };
+      fetchSellers();
+    }
+  }, [isSellersView]);
 
   // Update URL when filters change
   React.useEffect(() => {
@@ -373,6 +411,38 @@ function MarketplacePageContent() {
     });
   };
 
+  // Handler for advanced filters changes
+  const handleAdvancedFiltersChange = (filters: AdvancedFiltersState) => {
+    setAdvancedFilters(filters);
+  };
+
+  const handleAdvancedFiltersApply = () => {
+    // Clear all product state to trigger fresh fetch
+    setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setCurrentPage(1);
+    
+    // Track filter application
+    tracker.trackClick(undefined, {
+      action: 'advanced_filters_applied',
+      min_price: advancedFilters.minPrice || null,
+      max_price: advancedFilters.maxPrice || null,
+      condition: advancedFilters.condition,
+      sort_by: advancedFilters.sortBy,
+    });
+  };
+
+  const handleAdvancedFiltersReset = () => {
+    setAdvancedFilters(DEFAULT_ADVANCED_FILTERS);
+    setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setCurrentPage(1);
+    
+    tracker.trackClick(undefined, {
+      action: 'advanced_filters_reset',
+    });
+  };
+
   return (
     <>
       <MarketplaceHeader compactSearchOnMobile />
@@ -405,17 +475,20 @@ function MarketplacePageContent() {
 
             {/* Sellers View */}
             {isSellersView && (
-              <div className="flex flex-col items-center justify-center py-24 px-4">
-                <div className="rounded-full bg-gray-100 p-6 mb-4">
-                  <StoreIcon className="h-12 w-12 text-gray-400" />
+              <>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <h1 className="text-2xl font-bold text-gray-900">Individual Sellers</h1>
+                  {!sellersLoading && (
+                    <div className="hidden sm:flex items-center gap-2">
+                      <span className="text-sm text-gray-700 font-medium">
+                        {sellers.length.toLocaleString()} {sellers.length === 1 ? 'seller' : 'sellers'}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  Individual Sellers Coming Soon
-                </h3>
-                <p className="text-sm text-gray-600 text-center max-w-md">
-                  We're working on adding individual seller profiles. Check back soon!
-                </p>
-              </div>
+                
+                <SellersGrid sellers={sellers} loading={sellersLoading} />
+              </>
             )}
 
             {/* Products View */}
@@ -435,7 +508,104 @@ function MarketplacePageContent() {
                   listingTypeFilter={listingTypeFilter}
                   onListingTypeChange={handleListingTypeChange}
                   productCount={!searchQuery ? totalCount : undefined}
+                  additionalFilters={
+                    <AdvancedFilters
+                      filters={advancedFilters}
+                      onFiltersChange={handleAdvancedFiltersChange}
+                      onApply={handleAdvancedFiltersApply}
+                      onReset={handleAdvancedFiltersReset}
+                      activeFilterCount={activeFilterCount}
+                    />
+                  }
                 />
+
+                {/* Active Advanced Filters Summary */}
+                {viewMode === 'all' && activeFilterCount > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-2 flex-wrap"
+                  >
+                    <span className="text-xs text-gray-500 font-medium">Active filters:</span>
+                    {advancedFilters.minPrice && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-md">
+                        Min: ${advancedFilters.minPrice}
+                        <button
+                          onClick={() => {
+                            setAdvancedFilters(prev => ({ ...prev, minPrice: '' }));
+                            handleAdvancedFiltersApply();
+                          }}
+                          className="ml-1 hover:text-gray-900"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )}
+                    {advancedFilters.maxPrice && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-md">
+                        Max: ${advancedFilters.maxPrice}
+                        <button
+                          onClick={() => {
+                            setAdvancedFilters(prev => ({ ...prev, maxPrice: '' }));
+                            handleAdvancedFiltersApply();
+                          }}
+                          className="ml-1 hover:text-gray-900"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )}
+                    {advancedFilters.condition !== 'all' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-md">
+                        {advancedFilters.condition}
+                        <button
+                          onClick={() => {
+                            setAdvancedFilters(prev => ({ ...prev, condition: 'all' }));
+                            handleAdvancedFiltersApply();
+                          }}
+                          className="ml-1 hover:text-gray-900"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )}
+                    {advancedFilters.brand && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-md">
+                        {advancedFilters.brand}
+                        <button
+                          onClick={() => {
+                            setAdvancedFilters(prev => ({ ...prev, brand: '' }));
+                            handleAdvancedFiltersApply();
+                          }}
+                          className="ml-1 hover:text-gray-900"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )}
+                    {advancedFilters.sortBy !== 'newest' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-md">
+                        {advancedFilters.sortBy === 'oldest' ? 'Oldest' : 
+                         advancedFilters.sortBy === 'price_asc' ? 'Price ↑' : 'Price ↓'}
+                        <button
+                          onClick={() => {
+                            setAdvancedFilters(prev => ({ ...prev, sortBy: 'newest' }));
+                            handleAdvancedFiltersApply();
+                          }}
+                          className="ml-1 hover:text-gray-900"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )}
+                    <button
+                      onClick={handleAdvancedFiltersReset}
+                      className="text-xs text-gray-500 hover:text-gray-700 font-medium underline underline-offset-2"
+                    >
+                      Clear all
+                    </button>
+                  </motion.div>
+                )}
 
                 {/* Active Search Display */}
                 {searchQuery && (

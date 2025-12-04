@@ -68,6 +68,9 @@ interface UnifiedFilterBarProps {
   
   // Product count
   productCount?: number;
+  
+  // Additional filters slot (e.g., AdvancedFilters component)
+  additionalFilters?: React.ReactNode;
 }
 
 // Category icon mapping
@@ -102,6 +105,7 @@ export function UnifiedFilterBar({
   listingTypeFilter,
   onListingTypeChange,
   productCount,
+  additionalFilters,
 }: UnifiedFilterBarProps) {
   const [categories, setCategories] = React.useState<CategoryHierarchy[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -288,7 +292,7 @@ export function UnifiedFilterBar({
           </button>
         </div>
 
-        {/* Right side: Source Filter + Count */}
+        {/* Right side: Source Filter + Advanced Filters + Count */}
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Source Filter Dropdown - Only on Browse mode */}
           {isOnBrowseMode && (
@@ -345,6 +349,9 @@ export function UnifiedFilterBar({
               </AnimatePresence>
             </div>
           )}
+
+          {/* Additional Filters Slot (e.g., AdvancedFilters) */}
+          {isOnBrowseMode && additionalFilters}
 
           {/* Product Count */}
           {productCount !== undefined && (

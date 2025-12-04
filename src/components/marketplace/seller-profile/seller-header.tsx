@@ -116,7 +116,7 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
 
   return (
     <div className="bg-white border-b border-gray-200">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex flex-col sm:flex-row sm:items-start gap-6">
           {/* Profile Photo */}
           <div className="flex-shrink-0">

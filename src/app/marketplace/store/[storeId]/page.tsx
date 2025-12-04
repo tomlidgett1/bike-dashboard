@@ -2,27 +2,84 @@
 
 import * as React from "react";
 import { useParams } from "next/navigation";
-import { Loader2, Store as StoreIcon, User } from "lucide-react";
+import { Loader2, User, Package } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
-import { StoreHeader } from "@/components/marketplace/store-profile/store-header";
-import { ContactModal } from "@/components/marketplace/store-profile/contact-modal";
-import { ServicesSection } from "@/components/marketplace/store-profile/services-section";
 import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
-import { StoreSearchBar } from "@/components/marketplace/store-search-bar";
-import { SellerHeader, SellerCategories, SellerProductGrid } from "@/components/marketplace/seller-profile";
+import { SellerHeader, SellerCategories } from "@/components/marketplace/seller-profile";
 import { useAuth } from "@/components/providers/auth-provider";
 import type { StoreProfile } from "@/lib/types/store";
-import type { SellerProfile } from "@/app/api/marketplace/seller/[sellerId]/route";
+import type { SellerProfile, SellerCategory } from "@/app/api/marketplace/seller/[sellerId]/route";
+import type { MarketplaceProduct } from "@/lib/types/marketplace";
 
 // ============================================================
-// Store/Seller Profile Page
+// Unified Store/Seller Profile Page
 // Public-facing profile page that handles both:
 // - Bicycle stores (verified businesses)
-// - Individual sellers (Depop-style profile)
+// - Individual sellers
+// Both use the same unified layout with carousels
 // ============================================================
 
 type ProfileType = 'store' | 'seller' | null;
+
+// Convert store categories to seller categories format for unified display
+function convertStoreCategoriesToSellerFormat(
+  categories: StoreProfile['categories']
+): SellerCategory[] {
+  return categories.map(cat => ({
+    id: cat.id,
+    name: cat.name,
+    display_name: cat.name,
+    display_order: cat.display_order,
+    product_count: cat.product_count,
+    products: cat.products.map(p => ({
+      id: p.id,
+      description: p.description,
+      display_name: p.display_name || null,
+      price: p.price,
+      primary_image_url: p.primary_image_url,
+      marketplace_category: p.marketplace_category || null,
+      marketplace_subcategory: p.marketplace_subcategory || null,
+      condition_rating: null,
+      created_at: p.created_at || new Date().toISOString(),
+      sold_at: null,
+      listing_type: 'individual_listing' as const,
+    })),
+  }));
+}
+
+// Convert seller products to marketplace products format for carousels
+function convertSellerProductsToMarketplace(
+  categories: SellerCategory[],
+  sellerId: string,
+  displayName: string,
+  logoUrl: string | null
+): { name: string; products: MarketplaceProduct[] }[] {
+  return categories.map(cat => ({
+    name: cat.display_name || cat.name,
+    products: cat.products.map(p => ({
+      id: p.id,
+      description: p.description,
+      display_name: p.display_name,
+      price: p.price,
+      marketplace_category: p.marketplace_category,
+      marketplace_subcategory: p.marketplace_subcategory,
+      primary_image_url: p.primary_image_url,
+      image_variants: null,
+      image_formats: null,
+      store_name: displayName,
+      store_logo_url: logoUrl,
+      store_id: sellerId,
+      category: p.marketplace_category,
+      qoh: 1,
+      model_year: null,
+      created_at: p.created_at,
+      user_id: sellerId,
+      listing_type: 'private_listing' as const,
+      condition_rating: p.condition_rating,
+    })),
+  }));
+}
 
 export default function StoreProfilePage() {
   const params = useParams();
@@ -36,7 +93,6 @@ export default function StoreProfilePage() {
   const [error, setError] = React.useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [selectedTab, setSelectedTab] = React.useState<'for-sale' | 'sold'>('for-sale');
-  const [isContactModalOpen, setIsContactModalOpen] = React.useState(false);
 
   // Check if viewing own profile
   const isOwnProfile = user?.id === storeId;
@@ -133,29 +189,100 @@ export default function StoreProfilePage() {
   }
 
   // ============================================================
-  // INDIVIDUAL SELLER PROFILE (Depop-style)
+  // UNIFIED PROFILE LAYOUT
+  // Works for both bicycle stores and individual sellers
   // ============================================================
-  if (profileType === 'seller' && seller) {
-    const currentCategories = selectedTab === 'for-sale' ? seller.categories : seller.sold_categories;
-    
-    return (
-      <>
-        <MarketplaceHeader />
-        <MarketplaceLayout showFooter={false}>
-          <div className="pt-16 min-h-screen bg-gray-50">
-            {/* Seller Header */}
-            <SellerHeader 
-              seller={seller} 
-              isOwnProfile={isOwnProfile}
-              onEditClick={() => {
-                window.location.href = '/marketplace/settings';
-              }}
-            />
 
-            {/* Category Tabs and Pills */}
+  // Prepare unified data for display
+  let unifiedProfile: SellerProfile;
+  let categories: SellerCategory[];
+  let soldCategories: SellerCategory[] = [];
+  let categoryCarousels: { name: string; products: MarketplaceProduct[] }[] = [];
+
+  if (profileType === 'store' && store) {
+    // Convert store to unified format
+    categories = convertStoreCategoriesToSellerFormat(store.categories);
+    
+    // Create unified profile from store data
+    unifiedProfile = {
+      id: store.id,
+      display_name: store.store_name,
+      first_name: '',
+      last_name: '',
+      bio: store.store_type || '',
+      logo_url: store.logo_url,
+      location: store.address || '',
+      social_links: {},
+      stats: {
+        total_items: store.categories.reduce((sum, cat) => sum + cat.product_count, 0),
+        sold_items: 0,
+        follower_count: 0,
+        following_count: 0,
+        member_since: new Date().toISOString(),
+      },
+      is_following: false,
+      categories,
+      sold_categories: [],
+    };
+
+    // For stores, use categories directly for carousels
+    categoryCarousels = store.categories.map(cat => ({
+      name: cat.name,
+      products: cat.products,
+    }));
+  } else if (profileType === 'seller' && seller) {
+    unifiedProfile = seller;
+    categories = seller.categories;
+    soldCategories = seller.sold_categories;
+    
+    // Convert seller categories for carousel display
+    categoryCarousels = convertSellerProductsToMarketplace(
+      selectedTab === 'for-sale' ? seller.categories : seller.sold_categories,
+      seller.id,
+      seller.display_name,
+      seller.logo_url
+    );
+  } else {
+    return null;
+  }
+
+  // Get current categories based on selected tab (for individual sellers)
+  const currentCategories = profileType === 'seller' 
+    ? (selectedTab === 'for-sale' ? categories : soldCategories)
+    : categories;
+
+  // Filter carousels based on selected category
+  const displayedCarousels = selectedCategory
+    ? categoryCarousels.filter(c => 
+        c.name.toLowerCase().replace(/\s+/g, '-') === selectedCategory.toLowerCase().replace(/\s+/g, '-') ||
+        `category-${c.name.toLowerCase().replace(/\s+/g, '-')}` === selectedCategory
+      )
+    : categoryCarousels;
+
+  // Check if there are any products
+  const hasProducts = displayedCarousels.some(c => c.products.length > 0);
+
+  return (
+    <>
+      <MarketplaceHeader />
+      <MarketplaceLayout showFooter={false}>
+        <div className="pt-16 min-h-screen bg-gray-50">
+          {/* Unified Header - Works for both stores and sellers */}
+          <SellerHeader 
+            seller={unifiedProfile} 
+            isOwnProfile={isOwnProfile}
+            onEditClick={() => {
+              window.location.href = profileType === 'store' 
+                ? '/settings/store' 
+                : '/marketplace/settings';
+            }}
+          />
+
+          {/* Category Tabs (For Sale/Sold) - Only for individual sellers */}
+          {profileType === 'seller' && (
             <SellerCategories
-              categories={seller.categories}
-              soldCategories={seller.sold_categories}
+              categories={categories}
+              soldCategories={soldCategories}
               selectedTab={selectedTab}
               selectedCategory={selectedCategory}
               onTabSelect={(tab) => {
@@ -164,100 +291,88 @@ export default function StoreProfilePage() {
               }}
               onCategorySelect={setSelectedCategory}
             />
+          )}
 
-            {/* Product Grid */}
-            <SellerProductGrid
-              categories={currentCategories}
-              selectedCategory={selectedCategory}
-              isSoldTab={selectedTab === 'sold'}
-            />
-          </div>
-        </MarketplaceLayout>
-      </>
-    );
-  }
+          {/* Category Pills - For stores (no For Sale/Sold tabs) */}
+          {profileType === 'store' && categories.length > 0 && (
+            <div className="bg-white border-b border-gray-100 sticky top-16 z-30">
+              <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="py-3">
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    {/* All Items */}
+                    <button
+                      onClick={() => setSelectedCategory(null)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
+                        selectedCategory === null
+                          ? "text-gray-800 bg-white shadow-sm border border-gray-200"
+                          : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+                      }`}
+                    >
+                      <Package className="h-4 w-4" />
+                      All Products
+                    </button>
 
-  // ============================================================
-  // BICYCLE STORE PROFILE (Original design)
-  // ============================================================
-  if (profileType === 'store' && store) {
-    // Filter categories based on selection
-    const displayedCategories = selectedCategory
-      ? store.categories.filter((cat) => cat.id === selectedCategory)
-      : store.categories;
-
-    return (
-      <>
-        <MarketplaceHeader />
-        <MarketplaceLayout showFooter={false}>
-          {/* Store Header - Add top padding to account for fixed header */}
-          <div className="pt-16">
-            <StoreHeader
-              storeName={store.store_name}
-              storeType={store.store_type}
-              logoUrl={store.logo_url}
-              categories={store.categories}
-              selectedCategory={selectedCategory}
-              onCategorySelect={setSelectedCategory}
-              onContactClick={() => setIsContactModalOpen(true)}
-            />
-          </div>
-
-          {/* Main Content */}
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            {/* Search Bar - Instant search with dropdown */}
-            <div className="mb-6">
-              <StoreSearchBar 
-                storeId={storeId}
-                storeName={store.store_name}
-              />
+                    {/* Category Pills */}
+                    {categories.map((category) => (
+                      <button
+                        key={category.id}
+                        onClick={() => setSelectedCategory(category.id)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
+                          selectedCategory === category.id
+                            ? "text-gray-800 bg-white shadow-sm border border-gray-200"
+                            : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+                        }`}
+                      >
+                        {category.display_name}
+                        <span className="text-gray-500">({category.product_count})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
+          )}
 
-            {/* Services Section */}
-            {store.services.length > 0 && <ServicesSection services={store.services} />}
-
-            {/* Products by Category */}
-            {displayedCategories.length > 0 ? (
+          {/* Products by Category - Full Width Carousels */}
+          <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            {hasProducts ? (
               <div className="space-y-2">
-                {displayedCategories.map((category) => (
-                  <ProductCarousel
-                    key={category.id}
-                    categoryName={category.name}
-                    products={category.products}
-                  />
+                {displayedCarousels.map((carousel, index) => (
+                  carousel.products.length > 0 && (
+                    <ProductCarousel
+                      key={`${carousel.name}-${index}`}
+                      categoryName={carousel.name}
+                      products={carousel.products}
+                    />
+                  )
                 ))}
               </div>
             ) : (
               <div className="flex items-center justify-center py-24">
                 <div className="text-center">
                   <div className="rounded-full bg-gray-100 p-6 mb-4 inline-block">
-                    <StoreIcon className="h-12 w-12 text-gray-400" />
+                    <Package className="h-12 w-12 text-gray-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    No products available
+                    {profileType === 'seller' && selectedTab === 'sold'
+                      ? 'No sold items yet'
+                      : 'No products available'
+                    }
                   </h3>
                   <p className="text-sm text-gray-600">
-                    This store hasn't added any products yet.
+                    {profileType === 'seller' && selectedTab === 'sold'
+                      ? "This seller hasn't sold any items yet."
+                      : isOwnProfile
+                        ? "You haven't listed any products yet."
+                        : "This profile doesn't have any products listed."
+                    }
                   </p>
                 </div>
               </div>
             )}
           </div>
-
-          {/* Contact Modal */}
-          <ContactModal
-            isOpen={isContactModalOpen}
-            onClose={() => setIsContactModalOpen(false)}
-            storeName={store.store_name}
-            phone={store.phone}
-            address={store.address}
-            openingHours={store.opening_hours}
-          />
-        </MarketplaceLayout>
-      </>
-    );
-  }
-
-  // Fallback (shouldn't reach here)
-  return null;
+        </div>
+      </MarketplaceLayout>
+    </>
+  );
 }

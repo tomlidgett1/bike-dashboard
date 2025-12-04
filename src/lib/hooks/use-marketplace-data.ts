@@ -16,6 +16,12 @@ interface MarketplaceDataParams {
   level3?: string | null;
   search?: string | null;
   listingType?: 'store_inventory' | 'private_listing';
+  // Advanced filters
+  minPrice?: string | null;
+  maxPrice?: string | null;
+  condition?: string | null;
+  sortBy?: 'newest' | 'oldest' | 'price_asc' | 'price_desc';
+  brand?: string | null;
 }
 
 interface MarketplaceDataResponse {
@@ -65,7 +71,21 @@ const fetcher = async (url: string): Promise<MarketplaceDataResponse> => {
 
 // Build API URL based on view mode and filters
 function buildApiUrl(params: MarketplaceDataParams): string {
-  const { viewMode, page = 1, pageSize = 50, level1, level2, level3, search, listingType } = params;
+  const { 
+    viewMode, 
+    page = 1, 
+    pageSize = 50, 
+    level1, 
+    level2, 
+    level3, 
+    search, 
+    listingType,
+    minPrice,
+    maxPrice,
+    condition,
+    sortBy,
+    brand,
+  } = params;
   
   let endpoint = '';
   const urlParams = new URLSearchParams();
@@ -75,6 +95,13 @@ function buildApiUrl(params: MarketplaceDataParams): string {
   if (listingType) {
     urlParams.set('listingType', listingType);
   }
+
+  // Add advanced filters
+  if (minPrice) urlParams.set('minPrice', minPrice);
+  if (maxPrice) urlParams.set('maxPrice', maxPrice);
+  if (condition && condition !== 'all') urlParams.set('condition', condition);
+  if (sortBy && sortBy !== 'newest') urlParams.set('sortBy', sortBy);
+  if (brand) urlParams.set('brand', brand);
 
   // Handle search queries
   if (search) {

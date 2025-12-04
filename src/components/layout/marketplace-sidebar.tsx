@@ -137,9 +137,10 @@ function MarketplaceSidebarContent() {
   const isWaitingForApproval = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === false;
   
   // Build navigation items based on user type
+  // Only show user-specific items when logged in
   const navItems = [
     ...browsingNavItems,
-    ...(isVerifiedStore ? storeUserItems : individualUserItems),
+    ...(user ? (isVerifiedStore ? storeUserItems : individualUserItems) : []),
   ];
 
   // Render nav item with or without tooltip

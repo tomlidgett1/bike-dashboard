@@ -63,7 +63,7 @@ export function SellerCategories({
 
   return (
     <div className={cn("bg-white border-b border-gray-100 sticky top-16 z-30", className)}>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+      <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="py-3">
           {/* Main Tab Container - For Sale / Sold */}
           <div className="flex items-center gap-4 mb-3">

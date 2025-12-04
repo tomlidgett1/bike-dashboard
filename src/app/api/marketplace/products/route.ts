@@ -31,6 +31,8 @@ export async function GET(request: NextRequest) {
     const maxPrice = searchParams.get('maxPrice');
     const createdAfter = searchParams.get('createdAfter');
     const listingType = searchParams.get('listingType'); // Filter by listing type
+    const condition = searchParams.get('condition'); // Filter by condition rating
+    const brand = searchParams.get('brand'); // Filter by brand name
     const excludeBicycleStores = searchParams.get('excludeBicycleStores') === 'true';
     const sortBy = searchParams.get('sortBy') || 'newest';
     const page = parseInt(searchParams.get('page') || '1');
@@ -68,6 +70,7 @@ export async function GET(request: NextRequest) {
         listing_type,
         listing_status,
         model_year,
+        condition_rating,
         cached_image_url,
         cached_thumbnail_url,
         has_displayable_image,
@@ -126,6 +129,17 @@ export async function GET(request: NextRequest) {
     // Apply listing type filter
     if (listingType) {
       query = query.eq('listing_type', listingType);
+    }
+
+    // Apply condition filter (for private listings with condition rating)
+    if (condition) {
+      query = query.eq('condition_rating', condition);
+    }
+
+    // Apply brand filter (searches in display_name - case insensitive)
+    if (brand) {
+      query = query.ilike('display_name', `%${brand}%`);
+      console.log(`🏷️ [FILTER] Applying brand filter: "${brand}"`);
     }
 
     // Note: We'll filter out bicycle store products after fetching
@@ -288,6 +302,7 @@ export async function GET(request: NextRequest) {
         store_logo_url: product.users?.logo_url || null,
         listing_type: product.listing_type,
         listing_status: product.listing_status,
+        condition_rating: product.condition_rating || null,
       } as MarketplaceProduct;
     });
     
