@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { MarketplaceSidebar } from "./marketplace-sidebar";
-import { MobileBottomNav } from "./mobile-nav";
 import { Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSidebarState, SidebarStateProvider } from "@/lib/hooks/use-sidebar-state";
@@ -35,16 +34,13 @@ function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = 
       {/* Header is included in each marketplace page for more control */}
       <main 
         className={cn(
-          "w-full pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0 transition-all duration-[400ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
+          "w-full transition-all duration-[400ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
           isCollapsed ? "lg:pl-[56px]" : "lg:pl-[200px]",
           showStoreCTA && "mb-32"
         )}
       >
         {children}
       </main>
-
-      {/* Mobile Bottom Navigation */}
-      <MobileBottomNav />
 
       {/* Call to Action & Simple Footer - Only for Stores Page */}
       {showStoreCTA && (

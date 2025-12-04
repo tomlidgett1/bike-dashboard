@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search } from "lucide-react";
+import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
@@ -30,6 +30,34 @@ import {
 import { FacebookImportModal } from "./sell/facebook-import-modal";
 import { SmartUploadModal } from "./sell/smart-upload-modal";
 import type { ListingImage } from "@/lib/types/listing";
+
+// ============================================================
+// Mobile Nav Item Component
+// ============================================================
+
+interface MobileNavItemProps {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  subtitle?: string;
+  onClick: () => void;
+}
+
+function MobileNavItem({ icon: Icon, label, subtitle, onClick }: MobileNavItemProps) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left hover:bg-gray-100 transition-colors"
+    >
+      <Icon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-900">{label}</p>
+        {subtitle && (
+          <p className="text-xs text-gray-500">{subtitle}</p>
+        )}
+      </div>
+    </button>
+  );
+}
 
 // ============================================================
 // Marketplace Header
@@ -112,395 +140,449 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
   );
 
   return (
-    <motion.header
-      style={{
-        boxShadow: headerShadow,
-        backgroundColor: headerBg,
-      }}
-      className="fixed top-0 left-0 right-0 z-50 w-full border-b border-gray-200 backdrop-blur-sm"
-    >
-      <div className="max-w-[1920px] mx-auto px-4 sm:px-6">
-        <div className="flex h-14 sm:h-16 items-center gap-2 sm:gap-4">
-          {/* Logo - Fixed on left */}
-          <button
-            onClick={() => router.push('/marketplace')}
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 -ml-2"
-          >
-            <Image 
-              src="/yj.svg" 
-              alt="Yellow Jersey" 
-              width={180} 
-              height={36}
-              className="h-9"
-            />
-          </button>
+    <>
+      <motion.header
+        style={{
+          boxShadow: headerShadow,
+          backgroundColor: headerBg,
+        }}
+        className="fixed top-0 left-0 right-0 z-50 w-full border-b border-gray-200 backdrop-blur-sm"
+      >
+        <div className="max-w-[1920px] mx-auto px-4 sm:px-6">
+          <div className="flex h-14 sm:h-16 items-center gap-2 sm:gap-4">
+            {/* Mobile Menu Button - Left of logo */}
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="lg:hidden p-2 -ml-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer"
+              aria-label="Open menu"
+            >
+              <Menu className="h-5 w-5 text-gray-700" />
+            </button>
 
-          {/* Desktop Search Bar (always visible) + Mobile Search (conditional) */}
-          {compactSearchOnMobile ? (
-            <>
-              {/* Desktop: Full search bar */}
-              <div className="hidden sm:block flex-[2] ml-[14px]">
+            {/* Logo */}
+            <button
+              onClick={() => router.push('/marketplace')}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0"
+            >
+              <Image 
+                src="/yj.svg" 
+                alt="Yellow Jersey" 
+                width={180} 
+                height={36}
+                className="h-8 sm:h-9"
+              />
+            </button>
+
+            {/* Desktop Search Bar (always visible) + Mobile Search (conditional) */}
+            {compactSearchOnMobile ? (
+              <>
+                {/* Desktop: Full search bar */}
+                <div className="hidden sm:block flex-[2] ml-[14px]">
+                  <InstantSearch />
+                </div>
+                {/* Mobile: Search icon button and Sell button */}
+                <div className="sm:hidden flex items-center gap-2 ml-auto">
+                  <button
+                    onClick={() => setMobileSearchOpen(true)}
+                    className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+                    aria-label="Open search"
+                  >
+                    <Search className="h-5 w-5 text-gray-700" />
+                  </button>
+                  <Button
+                    onClick={() => {
+                      if (user) {
+                        setSmartUploadModalOpen(true);
+                      } else {
+                        setSellRequirementModalOpen(true);
+                      }
+                    }}
+                    size="sm"
+                    className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-3"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Sell
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="flex-[2] ml-[14px]">
                 <InstantSearch />
               </div>
-              {/* Mobile: Search icon button */}
-              <button
-                onClick={() => setMobileSearchOpen(true)}
-                className="sm:hidden p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors ml-auto"
-                aria-label="Open search"
-              >
-                <Search className="h-5 w-5 text-gray-700" />
-              </button>
-            </>
-          ) : (
-            <div className="flex-[2] ml-[14px]">
-              <InstantSearch />
-            </div>
-          )}
+            )}
 
-          {/* Desktop Actions - Fixed on far right */}
-          <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
-            {mounted && user ? (
-              <>
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0 cursor-pointer">
-                      {shouldShowLogo() ? (
-                        <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
-                          <Image
-                            src={profile!.logo_url!}
-                            alt={getDisplayName()}
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <UserAvatar name={getDisplayName()} size="default" />
+            {/* Desktop Actions - Fixed on far right */}
+            <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
+              {mounted && user ? (
+                <>
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
+                      <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0 cursor-pointer">
+                        {shouldShowLogo() ? (
+                          <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
+                            <Image
+                              src={profile!.logo_url!}
+                              alt={getDisplayName()}
+                              fill
+                              className="object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <UserAvatar name={getDisplayName()} size="default" />
+                        )}
+                        <span className="text-sm font-medium text-gray-700 max-w-[150px] truncate">
+                          {getDisplayName()}
+                        </span>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48 bg-white rounded-md">
+                      {canAccessSettings() && (
+                        <>
+                          <DropdownMenuItem
+                            onClick={() => router.push(getSettingsRoute())}
+                            className="cursor-pointer rounded-md"
+                          >
+                            <Settings className="mr-2 h-4 w-4" />
+                            <span>Settings</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                        </>
                       )}
-                      <span className="text-sm font-medium text-gray-700 max-w-[150px] truncate">
-                        {getDisplayName()}
-                      </span>
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48 bg-white rounded-md">
-                    {canAccessSettings() && (
-                      <>
-                        <DropdownMenuItem
-                          onClick={() => router.push(getSettingsRoute())}
-                          className="cursor-pointer rounded-md"
-                        >
-                          <Settings className="mr-2 h-4 w-4" />
-                          <span>Settings</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                      </>
-                    )}
-                    <DropdownMenuItem
-                      onClick={handleSignOut}
-                      className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      <span>Sign Out</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                    >
-                      Sell Item
-                      <ChevronDown className="ml-1.5 h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
-                    <DropdownMenuItem
-                      onClick={() => setSmartUploadModalOpen(true)}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Smart Upload</span>
-                        <span className="text-xs text-gray-500">AI-powered analysis</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setFacebookModalOpen(true)}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Facebook Import</span>
-                        <span className="text-xs text-gray-500">Import from Facebook</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => router.push('/marketplace/sell?mode=manual')}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Standard Upload</span>
-                        <span className="text-xs text-gray-500">Manual form entry</span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={openAuthModal}
-                  className="rounded-md border-[#FFE8B3] hover:bg-[#FFF8E5] hover:border-[#FFC72C]"
-                >
-                  Sign In
-                </Button>
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                    >
-                      Sell Item
-                      <ChevronDown className="ml-1.5 h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
-                    <DropdownMenuItem
-                      onClick={() => setSellRequirementModalOpen(true)}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Smart Upload</span>
-                        <span className="text-xs text-gray-500">AI-powered analysis</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setSellRequirementModalOpen(true)}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Facebook Import</span>
-                        <span className="text-xs text-gray-500">Import from Facebook</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setSellRequirementModalOpen(true)}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Standard Upload</span>
-                        <span className="text-xs text-gray-500">Manual form entry</span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
-            )}
+                      <DropdownMenuItem
+                        onClick={handleSignOut}
+                        className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
+                      >
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>Sign Out</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
+                      >
+                        Sell Item
+                        <ChevronDown className="ml-1.5 h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
+                      <DropdownMenuItem
+                        onClick={() => setSmartUploadModalOpen(true)}
+                        className="cursor-pointer rounded-md"
+                      >
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        <div className="flex flex-col">
+                          <span className="font-medium">Smart Upload</span>
+                          <span className="text-xs text-gray-500">AI-powered analysis</span>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setFacebookModalOpen(true)}
+                        className="cursor-pointer rounded-md"
+                      >
+                        <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
+                        <div className="flex flex-col">
+                          <span className="font-medium">Facebook Import</span>
+                          <span className="text-xs text-gray-500">Import from Facebook</span>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => router.push('/marketplace/sell?mode=manual')}
+                        className="cursor-pointer rounded-md"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        <div className="flex flex-col">
+                          <span className="font-medium">Standard Upload</span>
+                          <span className="text-xs text-gray-500">Manual form entry</span>
+                        </div>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={openAuthModal}
+                    className="rounded-md border-[#FFE8B3] hover:bg-[#FFF8E5] hover:border-[#FFC72C]"
+                  >
+                    Sign In
+                  </Button>
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
+                      >
+                        Sell Item
+                        <ChevronDown className="ml-1.5 h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
+                      <DropdownMenuItem
+                        onClick={() => setSellRequirementModalOpen(true)}
+                        className="cursor-pointer rounded-md"
+                      >
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        <div className="flex flex-col">
+                          <span className="font-medium">Smart Upload</span>
+                          <span className="text-xs text-gray-500">AI-powered analysis</span>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setSellRequirementModalOpen(true)}
+                        className="cursor-pointer rounded-md"
+                      >
+                        <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
+                        <div className="flex flex-col">
+                          <span className="font-medium">Facebook Import</span>
+                          <span className="text-xs text-gray-500">Import from Facebook</span>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setSellRequirementModalOpen(true)}
+                        className="cursor-pointer rounded-md"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        <div className="flex flex-col">
+                          <span className="font-medium">Standard Upload</span>
+                          <span className="text-xs text-gray-500">Manual form entry</span>
+                        </div>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
+            </div>
           </div>
-
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer"
-            aria-label="Toggle menu"
-          >
-            {mobileMenuOpen ? (
-              <X className="h-5 w-5 text-gray-700" />
-            ) : (
-              <Menu className="h-5 w-5 text-gray-700" />
-            )}
-          </button>
         </div>
-      </div>
+      </motion.header>
 
-      {/* Mobile Menu Dropdown */}
-      {mobileMenuOpen && (
-        <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: "auto", opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{
-            duration: 0.4,
-            ease: [0.04, 0.62, 0.23, 0.98],
-          }}
-          className="lg:hidden border-t border-gray-200 overflow-hidden bg-white"
-        >
-          <div className="max-w-[1920px] mx-auto px-6 py-4 space-y-3">
-            {mounted && user ? (
-              <>
-                {/* User Info */}
-                <div className="flex items-center gap-3 px-3 py-2 bg-white rounded-md border border-gray-200 shadow-sm">
-                  {shouldShowLogo() ? (
-                    <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
-                      <Image
-                        src={profile!.logo_url!}
-                        alt={getDisplayName()}
-                        fill
-                        className="object-cover"
-                      />
+      {/* Mobile Slide-out Menu - Rendered outside header for proper positioning */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/50 z-[100] lg:hidden"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+            {/* Slide-out Panel */}
+            <motion.div
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+              className="fixed top-0 left-0 bottom-0 w-[300px] bg-white z-[101] lg:hidden flex flex-col shadow-2xl"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 h-14 border-b border-gray-200 flex-shrink-0">
+                <Image 
+                  src="/yj.svg" 
+                  alt="Yellow Jersey" 
+                  width={140} 
+                  height={28}
+                  className="h-7"
+                />
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
+                >
+                  <X className="h-5 w-5 text-gray-600" />
+                </button>
+              </div>
+
+              {/* User Info (if logged in) */}
+              {mounted && user && (
+                <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
+                  <div className="flex items-center gap-3">
+                    {shouldShowLogo() ? (
+                      <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
+                        <Image
+                          src={profile!.logo_url!}
+                          alt={getDisplayName()}
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <UserAvatar name={getDisplayName()} size="default" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {getDisplayName()}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {user.email}
+                      </p>
                     </div>
-                  ) : (
-                    <UserAvatar name={getDisplayName()} size="default" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {getDisplayName()}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {user.email}
-                    </p>
                   </div>
                 </div>
-                
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                    >
-                      Sell Item
-                      <ChevronDown className="ml-1.5 h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="center" className="w-72 bg-white rounded-md">
-                    <DropdownMenuItem
+              )}
+
+              {/* Navigation - Scrollable */}
+              <div className="flex-1 overflow-y-auto">
+                {/* Browse Section */}
+                <div className="px-4 py-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Browse</p>
+                  <nav className="space-y-1">
+                    <MobileNavItem
+                      icon={Package}
+                      label="All Products"
                       onClick={() => {
-                        setSmartUploadModalOpen(true);
+                        router.push('/marketplace');
                         setMobileMenuOpen(false);
                       }}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Smart Upload</span>
-                        <span className="text-xs text-gray-500">AI-powered analysis</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
+                    />
+                    <MobileNavItem
+                      icon={Store}
+                      label="Stores"
                       onClick={() => {
-                        setFacebookModalOpen(true);
+                        router.push('/marketplace?view=stores');
                         setMobileMenuOpen(false);
                       }}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Facebook Import</span>
-                        <span className="text-xs text-gray-500">Import from Facebook</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
+                    />
+                    <MobileNavItem
+                      icon={User}
+                      label="Individual Sellers"
                       onClick={() => {
-                        router.push('/marketplace/sell?mode=manual');
+                        router.push('/marketplace?view=sellers');
                         setMobileMenuOpen(false);
                       }}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Standard Upload</span>
-                        <span className="text-xs text-gray-500">Manual form entry</span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                
-                {canAccessSettings() && (
+                    />
+                  </nav>
+                </div>
+
+                {/* Sell Section */}
+                <div className="px-4 py-3 border-t border-gray-100">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Sell</p>
+                  <nav className="space-y-1">
+                    <MobileNavItem
+                      icon={Sparkles}
+                      label="Smart Upload"
+                      subtitle="AI-powered analysis"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        if (user) {
+                          setSmartUploadModalOpen(true);
+                        } else {
+                          setSellRequirementModalOpen(true);
+                        }
+                      }}
+                    />
+                    <MobileNavItem
+                      icon={FileText}
+                      label="Standard Upload"
+                      subtitle="Manual form entry"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        if (user) {
+                          router.push('/marketplace/sell?mode=manual');
+                        } else {
+                          setSellRequirementModalOpen(true);
+                        }
+                      }}
+                    />
+                  </nav>
+                </div>
+
+                {/* User Section (if logged in) */}
+                {mounted && user && (
+                  <div className="px-4 py-3 border-t border-gray-100">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Your Account</p>
+                    <nav className="space-y-1">
+                      <MobileNavItem
+                        icon={Store}
+                        label="My Store"
+                        onClick={() => {
+                          router.push(`/marketplace/store/${profile?.user_id || user?.id}`);
+                          setMobileMenuOpen(false);
+                        }}
+                      />
+                      <MobileNavItem
+                        icon={Edit}
+                        label="My Listings"
+                        onClick={() => {
+                          router.push('/settings/my-listings');
+                          setMobileMenuOpen(false);
+                        }}
+                      />
+                      <MobileNavItem
+                        icon={FileText}
+                        label="Draft Listings"
+                        onClick={() => {
+                          router.push('/settings/drafts');
+                          setMobileMenuOpen(false);
+                        }}
+                      />
+                      <MobileNavItem
+                        icon={ShoppingBag}
+                        label="My Purchases"
+                        onClick={() => {
+                          router.push('/settings/purchases');
+                          setMobileMenuOpen(false);
+                        }}
+                      />
+                      <MobileNavItem
+                        icon={Settings}
+                        label="Settings"
+                        onClick={() => {
+                          router.push(getSettingsRoute());
+                          setMobileMenuOpen(false);
+                        }}
+                      />
+                    </nav>
+                  </div>
+                )}
+
+                {/* Help Section */}
+                <div className="px-4 py-3 border-t border-gray-100">
+                  <nav className="space-y-1">
+                    <MobileNavItem
+                      icon={HelpCircle}
+                      label="Help & Support"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                      }}
+                    />
+                  </nav>
+                </div>
+              </div>
+
+              {/* Footer - Sign In/Out */}
+              <div className="border-t border-gray-200 p-4 flex-shrink-0">
+                {mounted && user ? (
                   <Button
                     variant="outline"
                     onClick={() => {
-                      router.push(getSettingsRoute());
+                      handleSignOut();
                       setMobileMenuOpen(false);
                     }}
-                    className="w-full rounded-md border-gray-300 hover:bg-gray-50"
+                    className="w-full rounded-md border-red-300 text-red-600 hover:bg-red-50"
                   >
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign Out
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      openAuthModal();
+                    }}
+                    className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
+                  >
+                    Sign In
                   </Button>
                 )}
-                
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    handleSignOut();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full rounded-md border-red-300 text-red-600 hover:bg-red-50"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign Out
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    openAuthModal();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full rounded-md border-[#FFE8B3] hover:bg-[#FFF8E5] hover:border-[#FFC72C]"
-                >
-                  Sign In
-                </Button>
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                    >
-                      Sell Item
-                      <ChevronDown className="ml-1.5 h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="center" className="w-72 bg-white rounded-md">
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setSellRequirementModalOpen(true);
-                        setMobileMenuOpen(false);
-                      }}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Smart Upload</span>
-                        <span className="text-xs text-gray-500">AI-powered analysis</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setSellRequirementModalOpen(true);
-                        setMobileMenuOpen(false);
-                      }}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Facebook Import</span>
-                        <span className="text-xs text-gray-500">Import from Facebook</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setSellRequirementModalOpen(true);
-                        setMobileMenuOpen(false);
-                      }}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Standard Upload</span>
-                        <span className="text-xs text-gray-500">Manual form entry</span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
-            )}
-          </div>
-        </motion.div>
-      )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Sell Item Requirement Modal */}
       <Dialog open={sellRequirementModalOpen} onOpenChange={setSellRequirementModalOpen}>
@@ -572,7 +654,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[60] bg-white sm:hidden flex flex-col overflow-hidden"
+            className="fixed inset-0 z-[102] bg-white sm:hidden flex flex-col overflow-hidden"
           >
             {/* Search Header */}
             <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0">
@@ -593,7 +675,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.header>
+    </>
   );
 }
 
