@@ -40,3 +40,6 @@ next-env.d.ts
 .branches
 .temp
 .git
+
+# Apple private key - DO NOT COMMIT
+*.p8
