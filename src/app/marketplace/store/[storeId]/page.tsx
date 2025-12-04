@@ -60,10 +60,10 @@ function convertSellerProductsToMarketplace(
     products: cat.products.map(p => ({
       id: p.id,
       description: p.description,
-      display_name: p.display_name,
+      display_name: p.display_name ?? undefined,
       price: p.price,
-      marketplace_category: p.marketplace_category,
-      marketplace_subcategory: p.marketplace_subcategory,
+      marketplace_category: p.marketplace_category ?? '',
+      marketplace_subcategory: p.marketplace_subcategory ?? '',
       primary_image_url: p.primary_image_url,
       image_variants: null,
       image_formats: null,
@@ -76,7 +76,7 @@ function convertSellerProductsToMarketplace(
       created_at: p.created_at,
       user_id: sellerId,
       listing_type: 'private_listing' as const,
-      condition_rating: p.condition_rating,
+      condition_rating: p.condition_rating as MarketplaceProduct['condition_rating'],
     })),
   }));
 }
