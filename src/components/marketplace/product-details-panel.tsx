@@ -154,10 +154,10 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
               (product as any).display_name || product.description
             }
             sellerId={product.user_id}
-            variant="ghost"
+            variant="outline"
             size="lg"
             fullWidth
-            className="rounded-xl h-12 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            className="rounded-xl h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
           />
 
           {/* Secondary Actions - Subtle */}

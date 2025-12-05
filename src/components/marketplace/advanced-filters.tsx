@@ -419,19 +419,16 @@ export function AdvancedFilters({
   const triggerButton = (
     <button
       className={cn(
-        "flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer border",
+        "flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
         activeFilterCount > 0
-          ? "bg-gray-900 text-white border-gray-900 hover:bg-gray-800"
-          : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-gray-300"
+          ? "text-gray-800 bg-white shadow-sm"
+          : "text-gray-600 hover:bg-gray-200/70"
       )}
     >
-      <SlidersHorizontal className="h-3.5 w-3.5" />
+      <SlidersHorizontal className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
       <span className="hidden sm:inline">Filters</span>
       {activeFilterCount > 0 && (
-        <span className={cn(
-          "flex items-center justify-center h-4 w-4 text-[10px] font-bold rounded-full",
-          "bg-white text-gray-900"
-        )}>
+        <span className="flex items-center justify-center h-4 w-4 text-[10px] font-bold rounded-full bg-gray-900 text-white">
           {activeFilterCount}
         </span>
       )}
@@ -449,6 +446,7 @@ export function AdvancedFilters({
           <SheetContent 
             side="bottom" 
             className="h-[80vh] rounded-t-2xl px-4"
+            showCloseButton={false}
           >
             <SheetHeader className="pb-3 border-b border-gray-100">
               <div className="flex items-center justify-between">

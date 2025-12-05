@@ -70,7 +70,7 @@ interface MarketplaceHeaderProps {
   compactSearchOnMobile?: boolean;
 }
 
-export function MarketplaceHeader({ compactSearchOnMobile = false }: MarketplaceHeaderProps) {
+export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
   const [sellRequirementModalOpen, setSellRequirementModalOpen] = React.useState(false);
@@ -210,9 +210,28 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
                 </div>
               </>
             ) : (
-              <div className="flex-[2] ml-[14px]">
-                <InstantSearch />
-              </div>
+              <>
+                {/* Always hide search on mobile, show on desktop */}
+                <div className="hidden sm:block flex-[2] ml-[14px]">
+                  <InstantSearch />
+                </div>
+                {/* Mobile: Just the Sell button */}
+                <div className="sm:hidden flex items-center gap-2 ml-auto">
+                  <Button
+                    onClick={() => {
+                      if (user) {
+                        setSmartUploadModalOpen(true);
+                      } else {
+                        setSellRequirementModalOpen(true);
+                      }
+                    }}
+                    size="sm"
+                    className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-3"
+                  >
+                    Sell
+                  </Button>
+                </div>
+              </>
             )}
 
             {/* Desktop Actions - Fixed on far right */}

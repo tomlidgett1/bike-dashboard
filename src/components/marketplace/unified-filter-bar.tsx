@@ -221,7 +221,7 @@ export function UnifiedFilterBar({
   return (
     <div className="space-y-3">
       {/* Primary Row: View Mode Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex flex-col gap-3">
         {/* View Mode Tabs - Full width on mobile */}
         <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-full sm:w-auto">
           <button
@@ -269,62 +269,66 @@ export function UnifiedFilterBar({
           </button>
         </div>
 
-        {/* Right side: Source Filter Tabs + Advanced Filters + Count */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* Source Filter Tabs - Only on Browse mode */}
-          {isOnBrowseMode && (
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+        {/* Source Filter Tabs + Advanced Filters - only on Browse mode */}
+        {isOnBrowseMode && (
+          <div className="flex items-stretch gap-2">
+            {/* Listing Type Filter Tabs - Full width */}
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-md flex-1">
               <button
                 onClick={() => onListingTypeChange('all')}
                 className={cn(
-                  "flex items-center gap-1 px-2 sm:px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 flex-1 px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'all'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
                 )}
               >
-                <Package className="h-3 w-3" />
-                <span className="hidden sm:inline">All</span>
+                <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span className="hidden xs:inline">All Listings</span>
+                <span className="xs:hidden">All</span>
               </button>
               
               <button
                 onClick={() => onListingTypeChange('stores')}
                 className={cn(
-                  "flex items-center gap-1 px-2 sm:px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 flex-1 px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'stores'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
                 )}
               >
-                <Store className="h-3 w-3" />
-                <span className="hidden sm:inline">Stores</span>
+                <Store className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                Stores
               </button>
               
               <button
                 onClick={() => onListingTypeChange('individuals')}
                 className={cn(
-                  "flex items-center gap-1 px-2 sm:px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 flex-1 px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'individuals'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
                 )}
               >
-                <User className="h-3 w-3" />
-                <span className="hidden sm:inline">Sellers</span>
+                <User className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span className="hidden xs:inline">Private Sellers</span>
+                <span className="xs:hidden">Private</span>
               </button>
             </div>
-          )}
 
-          {/* Additional Filters Slot (e.g., AdvancedFilters) */}
-          {isOnBrowseMode && additionalFilters}
+            {/* Additional Filters Slot (e.g., AdvancedFilters) - Matches height exactly */}
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+              {additionalFilters}
+            </div>
 
-          {/* Product Count */}
-          {productCount !== undefined && (
-            <span className="hidden sm:inline text-sm text-gray-500 font-medium tabular-nums">
-              {productCount.toLocaleString()} items
-            </span>
-          )}
-        </div>
+            {/* Product Count */}
+            {productCount !== undefined && (
+              <span className="hidden lg:flex items-center text-sm text-gray-500 font-medium tabular-nums whitespace-nowrap">
+                {productCount.toLocaleString()} items
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Category Navigation - Only on Browse mode */}
