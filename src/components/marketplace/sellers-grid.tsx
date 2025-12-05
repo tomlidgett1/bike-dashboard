@@ -34,11 +34,12 @@ export function SellerCard({ seller, priority = false }: SellerCardProps) {
       className="group cursor-pointer"
       onClick={handleClick}
     >
-      <Card className="overflow-hidden rounded-md border-gray-200 bg-white hover:border-gray-300 hover:shadow-md transition-all duration-200">
-        <CardContent className="p-6">
-          {/* Centered Circular Avatar */}
-          <div className="flex flex-col items-center mb-4">
-            <div className="relative h-20 w-20 rounded-full bg-gray-50 overflow-hidden border border-gray-200 mb-3 group-hover:border-gray-300 transition-colors">
+      <Card className="overflow-hidden rounded-md border-gray-200 bg-white hover:border-gray-300 hover:shadow-md transition-all duration-200 h-full">
+        <CardContent className="p-3 sm:p-5 h-full">
+          {/* Mobile: Horizontal List Layout */}
+          <div className="flex sm:hidden items-center gap-3">
+            {/* Avatar */}
+            <div className="relative h-14 w-14 rounded-full bg-gray-50 overflow-hidden border border-gray-200 group-hover:border-gray-300 transition-colors flex-shrink-0">
               {seller.logo_url ? (
                 <Image
                   src={seller.logo_url}
@@ -46,37 +47,77 @@ export function SellerCard({ seller, priority = false }: SellerCardProps) {
                   fill
                   className="object-cover"
                   priority={priority}
-                  sizes="80px"
+                  sizes="56px"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                  <span className="text-2xl font-bold text-gray-400">
+                  <span className="text-xl font-bold text-gray-400">
                     {seller.display_name.charAt(0).toUpperCase()}
                   </span>
                 </div>
               )}
             </div>
 
-            {/* Seller Name */}
-            <h3 className="text-base font-semibold text-gray-900 text-center mb-1.5 line-clamp-2">
-              {seller.display_name}
-            </h3>
-
-            {/* Location */}
-            {seller.location && (
-              <div className="flex items-center gap-1 text-xs text-gray-500 text-center">
-                <MapPin className="h-3 w-3" />
-                <span className="line-clamp-1">{seller.location}</span>
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-gray-900 line-clamp-1 mb-0.5">
+                {seller.display_name}
+              </h3>
+              {seller.location && (
+                <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
+                  <MapPin className="h-3 w-3 flex-shrink-0" />
+                  <span className="line-clamp-1">{seller.location}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1">
+                <Package className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-600 truncate">
+                  {seller.product_count} {seller.product_count === 1 ? 'item' : 'items'}
+                </span>
               </div>
-            )}
+            </div>
           </div>
 
-          {/* Product Count */}
-          <div className="flex items-center justify-center gap-1.5 pt-3 border-t border-gray-100">
-            <Package className="h-3.5 w-3.5 text-gray-400" />
-            <span className="text-sm text-gray-600">
-              {seller.product_count} {seller.product_count === 1 ? 'item' : 'items'}
-            </span>
+          {/* Desktop: Centered Grid Layout */}
+          <div className="hidden sm:flex flex-col h-full">
+            <div className="flex flex-col items-center mb-4 flex-1">
+              <div className="relative h-20 w-20 rounded-full bg-gray-50 overflow-hidden border border-gray-200 mb-3 group-hover:border-gray-300 transition-colors flex-shrink-0">
+                {seller.logo_url ? (
+                  <Image
+                    src={seller.logo_url}
+                    alt={seller.display_name}
+                    fill
+                    className="object-cover"
+                    priority={priority}
+                    sizes="80px"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                    <span className="text-2xl font-bold text-gray-400">
+                      {seller.display_name.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <h3 className="text-base font-semibold text-gray-900 text-center mb-1.5 line-clamp-2 w-full">
+                {seller.display_name}
+              </h3>
+
+              {seller.location && (
+                <div className="flex items-center gap-1 text-xs text-gray-500 text-center w-full justify-center">
+                  <MapPin className="h-3 w-3 flex-shrink-0" />
+                  <span className="line-clamp-1">{seller.location}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-center gap-1.5 pt-3 border-t border-gray-100">
+              <Package className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+              <span className="text-sm text-gray-600 truncate">
+                {seller.product_count} {seller.product_count === 1 ? 'item' : 'items'}
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -91,19 +132,26 @@ export function SellerCard({ seller, priority = false }: SellerCardProps) {
 
 export function SellerCardSkeleton() {
   return (
-    <Card className="overflow-hidden rounded-md border-gray-200 bg-white">
-      <CardContent className="p-6">
-        <div className="flex flex-col items-center">
-          {/* Circular Avatar Skeleton */}
-          <div className="h-20 w-20 rounded-full bg-gray-200 animate-pulse mb-3" />
+    <Card className="overflow-hidden rounded-md border-gray-200 bg-white h-full">
+      <CardContent className="p-3 sm:p-5 h-full">
+        {/* Mobile: Horizontal List Skeleton */}
+        <div className="flex sm:hidden items-center gap-3">
+          <div className="h-14 w-14 rounded-full bg-gray-200 animate-pulse flex-shrink-0" />
+          <div className="flex-1 min-w-0 space-y-2">
+            <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4" />
+            <div className="h-3 bg-gray-200 rounded animate-pulse w-1/2" />
+            <div className="h-3 bg-gray-200 rounded animate-pulse w-2/3" />
+          </div>
+        </div>
+
+        {/* Desktop: Centered Grid Skeleton */}
+        <div className="hidden sm:flex flex-col h-full">
+          <div className="flex flex-col items-center flex-1">
+            <div className="h-20 w-20 rounded-full bg-gray-200 animate-pulse mb-3" />
+            <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4 mb-1.5" />
+            <div className="h-3 bg-gray-200 rounded animate-pulse w-1/2 mb-4" />
+          </div>
           
-          {/* Seller Name Skeleton */}
-          <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4 mb-1.5" />
-          
-          {/* Location Skeleton */}
-          <div className="h-3 bg-gray-200 rounded animate-pulse w-1/2 mb-4" />
-          
-          {/* Product Count Skeleton */}
           <div className="flex items-center justify-center gap-1.5 pt-3 border-t border-gray-100 w-full">
             <div className="h-3.5 w-3.5 bg-gray-200 rounded animate-pulse" />
             <div className="h-4 bg-gray-200 rounded animate-pulse w-16" />
@@ -159,7 +207,7 @@ export function SellersGrid({ sellers, loading = false }: SellersGridProps) {
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4"
+        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5 sm:gap-4"
       >
         {sellers.map((seller, index) => (
           <SellerCard key={seller.id} seller={seller} priority={index < 12} />

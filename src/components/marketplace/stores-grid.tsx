@@ -59,7 +59,7 @@ export function StoresGrid({ stores, loading = false }: StoresGridProps) {
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4"
+        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5 sm:gap-4"
       >
         {stores.map((store, index) => (
           <StoreCard key={store.id} store={store} priority={index < 12} />

@@ -42,10 +42,11 @@ export function StoreCard({ store, priority = false }: StoreCardProps) {
       onClick={handleClick}
     >
       <Card className="overflow-hidden rounded-md border-gray-200 bg-white hover:border-gray-300 hover:shadow-md transition-all duration-200 h-full">
-        <CardContent className="p-4 sm:p-5 h-full flex flex-col">
-          {/* Centered Circular Logo */}
-          <div className="flex flex-col items-center mb-3 sm:mb-4 flex-1">
-            <div className="relative h-16 w-16 sm:h-20 sm:w-20 rounded-full bg-gray-50 overflow-hidden border border-gray-200 mb-2 sm:mb-3 group-hover:border-gray-300 transition-colors flex-shrink-0">
+        <CardContent className="p-3 sm:p-5 h-full">
+          {/* Mobile: Horizontal List Layout */}
+          <div className="flex sm:hidden items-center gap-3">
+            {/* Logo */}
+            <div className="relative h-14 w-14 rounded-full bg-gray-50 overflow-hidden border border-gray-200 group-hover:border-gray-300 transition-colors flex-shrink-0">
               {store.logo_url ? (
                 <Image
                   src={store.logo_url}
@@ -53,32 +54,67 @@ export function StoreCard({ store, priority = false }: StoreCardProps) {
                   fill
                   className="object-cover"
                   priority={priority}
-                  sizes="(max-width: 640px) 64px, 80px"
+                  sizes="56px"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center">
-                  <Store className="h-8 w-8 sm:h-10 sm:w-10 text-gray-300" />
+                  <Store className="h-7 w-7 text-gray-300" />
                 </div>
               )}
             </div>
 
-            {/* Store Name */}
-            <h3 className="text-sm sm:text-base font-semibold text-gray-900 text-center mb-1 sm:mb-1.5 line-clamp-2 w-full">
-              {store.store_name}
-            </h3>
-
-            {/* Store Type */}
-            <p className="text-xs text-gray-500 text-center line-clamp-1 w-full">
-              {store.store_type}
-            </p>
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-gray-900 line-clamp-1 mb-0.5">
+                {store.store_name}
+              </h3>
+              <p className="text-xs text-gray-500 line-clamp-1 mb-1">
+                {store.store_type}
+              </p>
+              <div className="flex items-center gap-1">
+                <Package className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-600 truncate">
+                  {store.product_count} {store.product_count === 1 ? 'product' : 'products'}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* Simple Product Count */}
-          <div className="flex items-center justify-center gap-1.5 pt-2.5 sm:pt-3 border-t border-gray-100">
-            <Package className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-            <span className="text-xs sm:text-sm text-gray-600 truncate">
-              {store.product_count} {store.product_count === 1 ? 'product' : 'products'}
-            </span>
+          {/* Desktop: Centered Grid Layout */}
+          <div className="hidden sm:flex flex-col h-full">
+            <div className="flex flex-col items-center mb-4 flex-1">
+              <div className="relative h-20 w-20 rounded-full bg-gray-50 overflow-hidden border border-gray-200 mb-3 group-hover:border-gray-300 transition-colors flex-shrink-0">
+                {store.logo_url ? (
+                  <Image
+                    src={store.logo_url}
+                    alt={store.store_name}
+                    fill
+                    className="object-cover"
+                    priority={priority}
+                    sizes="80px"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <Store className="h-10 w-10 text-gray-300" />
+                  </div>
+                )}
+              </div>
+
+              <h3 className="text-base font-semibold text-gray-900 text-center mb-1.5 line-clamp-2 w-full">
+                {store.store_name}
+              </h3>
+
+              <p className="text-xs text-gray-500 text-center line-clamp-1 w-full">
+                {store.store_type}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-1.5 pt-3 border-t border-gray-100">
+              <Package className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+              <span className="text-sm text-gray-600 truncate">
+                {store.product_count} {store.product_count === 1 ? 'product' : 'products'}
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -93,19 +129,26 @@ export function StoreCard({ store, priority = false }: StoreCardProps) {
 
 export function StoreCardSkeleton() {
   return (
-    <Card className="overflow-hidden rounded-md border-gray-200 bg-white">
-      <CardContent className="p-6">
-        <div className="flex flex-col items-center">
-          {/* Circular Logo Skeleton */}
-          <div className="h-20 w-20 rounded-full bg-gray-200 animate-pulse mb-3" />
+    <Card className="overflow-hidden rounded-md border-gray-200 bg-white h-full">
+      <CardContent className="p-3 sm:p-5 h-full">
+        {/* Mobile: Horizontal List Skeleton */}
+        <div className="flex sm:hidden items-center gap-3">
+          <div className="h-14 w-14 rounded-full bg-gray-200 animate-pulse flex-shrink-0" />
+          <div className="flex-1 min-w-0 space-y-2">
+            <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4" />
+            <div className="h-3 bg-gray-200 rounded animate-pulse w-1/2" />
+            <div className="h-3 bg-gray-200 rounded animate-pulse w-2/3" />
+          </div>
+        </div>
+
+        {/* Desktop: Centered Grid Skeleton */}
+        <div className="hidden sm:flex flex-col h-full">
+          <div className="flex flex-col items-center flex-1">
+            <div className="h-20 w-20 rounded-full bg-gray-200 animate-pulse mb-3" />
+            <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4 mb-1.5" />
+            <div className="h-3 bg-gray-200 rounded animate-pulse w-1/2 mb-4" />
+          </div>
           
-          {/* Store Name Skeleton */}
-          <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4 mb-1.5" />
-          
-          {/* Store Type Skeleton */}
-          <div className="h-3 bg-gray-200 rounded animate-pulse w-1/2 mb-4" />
-          
-          {/* Product Count Skeleton */}
           <div className="flex items-center justify-center gap-1.5 pt-3 border-t border-gray-100 w-full">
             <div className="h-3.5 w-3.5 bg-gray-200 rounded animate-pulse" />
             <div className="h-4 bg-gray-200 rounded animate-pulse w-20" />
