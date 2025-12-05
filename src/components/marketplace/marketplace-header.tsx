@@ -226,7 +226,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                       }
                     }}
                     size="sm"
-                    className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-3"
+                    className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-6"
                   >
                     Sell
                   </Button>
