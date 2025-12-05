@@ -5,6 +5,7 @@
 
 'use client';
 
+import * as React from 'react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -42,6 +43,21 @@ export function MakeOfferButton({
   const { openAuthModal } = useAuthModal();
   const { createOffer, creating } = useCreateOffer();
 
+  // Debug logging - check what we're receiving
+  React.useEffect(() => {
+    console.log('[MAKE OFFER] Component mounted with props:', {
+      productId,
+      productIdType: typeof productId,
+      productIdLength: productId?.length,
+      sellerId,
+      sellerIdType: typeof sellerId,
+      sellerIdLength: sellerId?.length,
+      productName: productName?.substring(0, 50),
+      productPrice,
+      isMobile: window.innerWidth < 768,
+    });
+  }, [productId, sellerId, productName, productPrice]);
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState('');
@@ -71,6 +87,20 @@ export function MakeOfferButton({
   const handleClick = () => {
     if (!user) {
       openAuthModal();
+      return;
+    }
+
+    // Validate sellerId
+    if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
+      alert('Unable to make offer: Seller information is missing. Please try refreshing the page.');
+      console.error('[MAKE OFFER] Invalid sellerId:', sellerId);
+      return;
+    }
+
+    // Validate productId
+    if (!productId || typeof productId !== 'string' || productId.trim() === '') {
+      alert('Unable to make offer: Product information is missing. Please try refreshing the page.');
+      console.error('[MAKE OFFER] Invalid productId:', productId);
       return;
     }
 

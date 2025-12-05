@@ -5,6 +5,7 @@
 
 'use client';
 
+import * as React from 'react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -47,6 +48,20 @@ export function ProductInquiryButton({
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Debug logging - check what we're receiving
+  React.useEffect(() => {
+    console.log('[PRODUCT INQUIRY] Component mounted with props:', {
+      productId,
+      productIdType: typeof productId,
+      productIdLength: productId?.length,
+      sellerId,
+      sellerIdType: typeof sellerId,
+      sellerIdLength: sellerId?.length,
+      productName: productName?.substring(0, 50),
+      isMobile: window.innerWidth < 768,
+    });
+  }, [productId, sellerId, productName]);
 
   const handleClick = () => {
     if (!user) {
