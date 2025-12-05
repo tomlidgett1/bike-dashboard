@@ -1,10 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Bike, Wrench, ShoppingBag } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { CardSection } from "./expandable-section";
-import { ConditionBadge } from "./condition-badge";
 import { SpecGrid } from "./spec-grid";
 
 // ============================================================
@@ -65,21 +63,7 @@ function BikeOverview({ product }: { product: MarketplaceProduct }) {
   ];
 
   return (
-    <CardSection>
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-          <Bike className="h-4 w-4 text-gray-600" />
-        </div>
-        <h3 className="text-base font-semibold text-gray-900">Overview</h3>
-      </div>
-
-      {product.condition_rating && (
-        <div className="mb-4">
-          <p className="text-xs text-gray-600 mb-2">Condition</p>
-          <ConditionBadge condition={product.condition_rating} />
-        </div>
-      )}
-
+    <CardSection title="Overview">
       <SpecGrid items={items} columns={2} />
     </CardSection>
   );
@@ -101,21 +85,7 @@ function PartOverview({ product }: { product: MarketplaceProduct }) {
   ];
 
   return (
-    <CardSection>
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-          <Wrench className="h-4 w-4 text-gray-600" />
-        </div>
-        <h3 className="text-base font-semibold text-gray-900">Overview</h3>
-      </div>
-
-      {product.condition_rating && (
-        <div className="mb-4">
-          <p className="text-xs text-gray-600 mb-2">Condition</p>
-          <ConditionBadge condition={product.condition_rating} />
-        </div>
-      )}
-
+    <CardSection title="Overview">
       <SpecGrid items={items} columns={1} />
     </CardSection>
   );
@@ -136,21 +106,7 @@ function ApparelOverview({ product }: { product: MarketplaceProduct }) {
   ];
 
   return (
-    <CardSection>
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-          <ShoppingBag className="h-4 w-4 text-gray-600" />
-        </div>
-        <h3 className="text-base font-semibold text-gray-900">Overview</h3>
-      </div>
-
-      {product.condition_rating && (
-        <div className="mb-4">
-          <p className="text-xs text-gray-600 mb-2">Condition</p>
-          <ConditionBadge condition={product.condition_rating} />
-        </div>
-      )}
-
+    <CardSection title="Overview">
       <SpecGrid items={items} columns={2} />
     </CardSection>
   );

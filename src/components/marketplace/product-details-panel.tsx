@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Heart, Share2, Shield, Package, Clock, Eye, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
+import { MakeOfferButton } from "./make-offer-button";
 import { OverviewCard } from "./product-detail/overview-card";
 import {
   ConditionSection,
@@ -65,157 +66,158 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto lg:border lg:border-gray-200" style={{
+    <div className="flex flex-col h-full overflow-y-auto lg:bg-white" style={{
       scrollbarWidth: 'thin',
       scrollbarColor: '#d1d5db transparent'
     }}>
-      <div className="px-4 py-4 sm:p-6 space-y-4">
-        {/* Status Badges */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {viewCount && (
-            <div className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 rounded-md text-xs text-gray-700">
-              <Eye className="h-3 w-3" />
-              <span>{viewCount} views</span>
-            </div>
-          )}
-          {listingAge !== null && (
-            <div className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 rounded-md text-xs text-gray-700">
-              <Clock className="h-3 w-3" />
-              <span>Listed {listingAge === 0 ? "today" : `${listingAge}d ago`}</span>
-            </div>
-          )}
-        </div>
+      <div className="px-4 py-5 sm:px-6 sm:py-6 space-y-6">
+        
+        {/* ===== HERO SECTION ===== */}
+        <div className="space-y-4">
+          {/* Product Title - Clean and Bold */}
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight tracking-tight">
+            {(product as any).display_name || product.description}
+          </h1>
 
-        {/* Product Title */}
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3 leading-tight">
-          {(product as any).display_name || product.description}
-        </h1>
-
-        {/* Pricing Display */}
-        <div className="mb-4">
-          <div className="flex items-baseline gap-3 mb-2">
-            {/* Current Price */}
-            <p className="text-3xl sm:text-4xl font-bold text-gray-900">
+          {/* Price - Large and Prominent */}
+          <div className="flex items-baseline gap-3">
+            <p className="text-4xl sm:text-5xl font-bold text-gray-900">
               ${product.price.toLocaleString("en-AU")}
             </p>
-
-            {/* Negotiable Badge */}
             {product.is_negotiable && (
-              <span className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-md">
-                Negotiable
+              <span className="text-sm text-gray-500 font-medium">
+                or best offer
               </span>
             )}
           </div>
 
-          {/* Size/Condition Chips */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {product.frame_size && (
-              <span className="px-2.5 py-1 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-md">
-                Size {product.frame_size}
-              </span>
-            )}
-            {product.size && (
-              <span className="px-2.5 py-1 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-md">
-                Size {product.size}
-              </span>
-            )}
-            {product.condition_rating && (
-              <span className="px-2.5 py-1 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-md">
-                {product.condition_rating}
-              </span>
-            )}
-          </div>
+          {/* Quick Stats - Minimal Pills */}
+          {(product.frame_size || product.size || product.condition_rating) && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {(product.frame_size || product.size) && (
+                <span className="px-3 py-1.5 bg-gray-50 text-gray-700 text-sm font-medium rounded-full">
+                  Size {product.frame_size || product.size}
+                </span>
+              )}
+              {product.condition_rating && (
+                <span className="px-3 py-1.5 bg-gray-50 text-gray-700 text-sm font-medium rounded-full">
+                  {product.condition_rating}
+                </span>
+              )}
+              {listingAge !== null && (
+                <span className="px-3 py-1.5 bg-gray-50 text-gray-500 text-sm rounded-full">
+                  Listed {listingAge === 0 ? "today" : `${listingAge}d ago`}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Product Description - Clean Box */}
+          {product.condition_details && (
+            <div className="pt-4 border-t border-gray-100">
+              <p className="text-base text-gray-700 leading-relaxed whitespace-pre-wrap">
+                {product.condition_details}
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* Action Buttons */}
-        <div className="space-y-2">
-          {/* Buy Now Button */}
+        {/* ===== PRIMARY ACTIONS ===== */}
+        <div className="space-y-3 pt-2">
+          {/* Buy Now - Primary CTA */}
           <Button
             size="lg"
-            className="w-full bg-gray-900 hover:bg-gray-800 text-white rounded-md h-12 font-semibold"
+            className="w-full bg-gray-900 hover:bg-gray-800 text-white rounded-xl h-14 text-base font-semibold shadow-sm"
           >
             Buy Now
           </Button>
 
-          {/* Make Offer / Message Button */}
-          <div className="w-full">
-            <ProductInquiryButton
-              productId={product.id}
-              productName={
-                (product as any).display_name || product.description
-              }
-              sellerId={product.user_id}
-              variant="outline"
-              size="lg"
-              fullWidth
-              className="rounded-md h-12 border-2 border-gray-300 font-semibold"
-            />
-          </div>
+          {/* Make Offer - Secondary CTA */}
+          <MakeOfferButton
+            productId={product.id}
+            productName={
+              (product as any).display_name || product.description
+            }
+            productPrice={product.price}
+            sellerId={product.user_id}
+            productImage={product.all_images?.[0] || null}
+            variant="outline"
+            size="lg"
+            fullWidth
+            className="rounded-xl h-14 text-base font-semibold border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+          />
 
-          {/* Like & Share Row */}
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="lg"
+          {/* Send Message - Tertiary CTA */}
+          <ProductInquiryButton
+            productId={product.id}
+            productName={
+              (product as any).display_name || product.description
+            }
+            sellerId={product.user_id}
+            variant="ghost"
+            size="lg"
+            fullWidth
+            className="rounded-xl h-12 text-sm font-medium text-gray-700 hover:bg-gray-100"
+          />
+
+          {/* Secondary Actions - Subtle */}
+          <div className="flex items-center justify-center gap-6 pt-2">
+            <button
               onClick={() => setIsLiked(!isLiked)}
-              className={cn(
-                "flex-1 rounded-md h-12 border-2",
-                isLiked
-                  ? "border-red-500 text-red-500 hover:bg-red-50"
-                  : "border-gray-300 hover:border-gray-400"
-              )}
+              className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
             >
               <Heart
-                className={cn("h-5 w-5 mr-2", isLiked && "fill-current")}
+                className={cn("h-5 w-5", isLiked && "fill-current text-red-500")}
               />
-              Save
-            </Button>
-            <Button
-              variant="outline"
-              size="lg"
+              <span className="font-medium">Save</span>
+            </button>
+            <button
               onClick={handleShare}
-              className="flex-1 rounded-md h-12 border-2 border-gray-300 hover:border-gray-400"
+              className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
             >
-              <Share2 className="h-5 w-5 mr-2" />
-              Share
-            </Button>
+              <Share2 className="h-5 w-5" />
+              <span className="font-medium">Share</span>
+            </button>
           </div>
         </div>
 
-        {/* Buyer Protection Notice */}
-        <div className="mt-4 p-3 bg-white border border-gray-200 rounded-md">
-          <div className="flex items-start gap-2">
-            <Shield className="h-4 w-4 text-gray-700 flex-shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-gray-900">
-                All purchases through Bike are covered by Buyer Protection.
+        {/* ===== KEY INFORMATION ===== */}
+        <div className="space-y-4 pt-4 border-t border-gray-100">
+          
+          {/* Delivery Info */}
+          {product.pickup_location && (
+            <div className="flex items-start gap-3">
+              <Package className="h-5 w-5 text-gray-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">
+                  {product.shipping_available ? "Pickup or Delivery" : "Pickup Only"}
+                </p>
+                <p className="text-sm text-gray-600 mt-0.5">
+                  {product.pickup_location}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Buyer Protection - Subtle */}
+          <div className="flex items-start gap-3">
+            <Shield className="h-5 w-5 text-gray-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-900">
+                Buyer Protection
+              </p>
+              <p className="text-sm text-gray-600 mt-0.5">
+                Secure payments and purchase protection
               </p>
             </div>
           </div>
         </div>
 
-        {/* Shipping Info */}
-        {product.pickup_location && (
-          <div className="mt-3 p-3 bg-white border border-gray-200 rounded-md">
-            <div className="flex items-start gap-2">
-              <Package className="h-4 w-4 text-gray-700 flex-shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-700">
-                  <span className="font-semibold">Pickup:</span>{" "}
-                  {product.pickup_location}
-                </p>
-                {product.shipping_available && (
-                  <p className="text-xs text-gray-600 mt-1">
-                    Shipping also available
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Seller Info */}
-        <div className="bg-white border border-gray-200 rounded-md p-4">
+        {/* ===== SELLER INFO - Moved Lower ===== */}
+        <div className="pt-4 border-t border-gray-100">
+          <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-3">
+            Sold By
+          </p>
           <div className="flex items-center gap-3">
             <div className="relative h-12 w-12 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
               {product.store_logo_url && !logoError ? (
@@ -228,64 +230,59 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center">
-                  <Package className="h-6 w-6 text-gray-400" />
+                  <Package className="h-5 w-5 text-gray-400" />
                 </div>
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-1.5">
                 <p className="font-semibold text-gray-900 truncate">
                   {product.store_name}
                 </p>
                 <Image
                   src="/verified.png"
                   alt="Verified"
-                  width={16}
-                  height={16}
+                  width={14}
+                  height={14}
                   className="flex-shrink-0"
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-gray-600">Verified seller</p>
-                {product.store_account_type === 'bicycle_store' && (
-                  <Link
-                    href={`/marketplace/store/${product.user_id}`}
-                    className="text-xs text-gray-900 hover:text-gray-700 font-medium flex items-center gap-1 transition-colors"
-                  >
-                    Visit Store
-                    <ExternalLink className="h-3 w-3" />
-                  </Link>
-                )}
-              </div>
+              {product.store_account_type === 'bicycle_store' && (
+                <Link
+                  href={`/marketplace/store/${product.user_id}`}
+                  className="text-sm text-gray-600 hover:text-gray-900 font-medium inline-flex items-center gap-1 transition-colors mt-0.5"
+                >
+                  View store
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </Link>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Quick Overview */}
-        <OverviewCard product={product} />
+        {/* ===== PRODUCT DETAILS ===== */}
+        <div className="pt-6 border-t border-gray-100 space-y-1">
+          <OverviewCard product={product} />
 
-        {/* Expandable Detail Sections */}
-        <ConditionSection product={product} />
-        <SpecificationsSection product={product} />
-        <HistorySection product={product} />
-        <WhatsIncludedSection product={product} />
-        <DeliverySection product={product} />
-        <SellerContactSection product={product} />
+          <ConditionSection product={product} />
+          <SpecificationsSection product={product} />
+          <HistorySection product={product} />
+          <WhatsIncludedSection product={product} />
+          <DeliverySection product={product} />
+          <SellerContactSection product={product} />
 
-        {/* Fallback if no sections shown */}
-        {!product.condition_rating &&
-          !product.frame_size &&
-          !product.size &&
-          !product.service_history?.length && (
-            <div className="bg-white rounded-md border border-gray-200 p-6 text-center">
-              <p className="text-sm text-gray-600 mb-2">
-                This is a basic listing without extended details.
-              </p>
-              <p className="text-xs text-gray-500">
-                Contact the seller for more information about this item.
-              </p>
-            </div>
-          )}
+          {/* Fallback if no sections shown */}
+          {!product.condition_rating &&
+            !product.frame_size &&
+            !product.size &&
+            !product.service_history?.length && (
+              <div className="text-center py-8">
+                <p className="text-sm text-gray-500">
+                  Contact seller for more details
+                </p>
+              </div>
+            )}
+        </div>
       </div>
     </div>
   );

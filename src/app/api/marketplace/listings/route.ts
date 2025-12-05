@@ -33,6 +33,9 @@ export async function POST(request: NextRequest) {
 
       // Basic info
       description: body.title || "", // description field is the display name/title
+      brand: body.brand,
+      model: body.model,
+      model_year: body.modelYear,
       price: body.price,
       marketplace_category:
         body.itemType === "bike"

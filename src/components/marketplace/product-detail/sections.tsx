@@ -17,30 +17,17 @@ interface ConditionSectionProps {
 }
 
 export function ConditionSection({ product }: ConditionSectionProps) {
-  if (!product.condition_rating && !product.condition_details) return null;
+  // Only show this section if there's wear notes or usage estimate (not just condition rating or description)
+  if (!product.wear_notes && !product.usage_estimate) return null;
 
   return (
-    <ExpandableSection title="Condition & Wear Details">
-      <div className="space-y-4">
-        {product.condition_rating && (
-          <div>
-            <p className="text-xs text-gray-600 mb-2">Overall Condition</p>
-            <ConditionBadge condition={product.condition_rating} size="lg" />
-          </div>
-        )}
-
-        {product.condition_details && (
-          <div>
-            <p className="text-sm font-semibold text-gray-900 mb-2">Visual Condition</p>
-            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-              {product.condition_details}
-            </p>
-          </div>
-        )}
-
+    <ExpandableSection title="Condition Details">
+      <div className="space-y-5">
         {product.wear_notes && (
           <div>
-            <p className="text-sm font-semibold text-gray-900 mb-2">Known Issues & Wear</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">
+              Known Issues
+            </p>
             <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
               {product.wear_notes}
             </p>
@@ -49,7 +36,9 @@ export function ConditionSection({ product }: ConditionSectionProps) {
 
         {product.usage_estimate && (
           <div>
-            <p className="text-sm font-semibold text-gray-900 mb-1">Usage History</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">
+              Usage History
+            </p>
             <p className="text-sm text-gray-700">{product.usage_estimate}</p>
           </div>
         )}

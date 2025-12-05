@@ -42,7 +42,18 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   const [uploadedUrls, setUploadedUrls] = React.useState<string[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = React.useState({ current: 0, total: 0 });
+  const [isMobile, setIsMobile] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Detect if on mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Reset state when modal opens/closes
   React.useEffect(() => {
@@ -334,12 +345,17 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[480px] rounded-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
+      <DialogContent className={cn(
+        "rounded-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out",
+        isMobile 
+          ? "w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] p-4" 
+          : "sm:max-w-[480px]"
+      )}>
         <DialogHeader>
-          <DialogTitle className="text-base font-medium">
+          <DialogTitle className={cn("font-medium", isMobile ? "text-sm" : "text-base")}>
             Smart Upload
           </DialogTitle>
-          <DialogDescription className="text-sm">
+          <DialogDescription className={cn(isMobile ? "text-xs" : "text-sm")}>
             AI will detect product details from your photos
           </DialogDescription>
         </DialogHeader>
@@ -355,43 +371,48 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 exit={{ opacity: 0 }}
                 className="space-y-3"
               >
-                {/* Tab Switcher */}
-                <div className="flex bg-gray-100 p-0.5 rounded-md">
-                  <button
-                    onClick={() => setActiveTab("computer")}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-sm font-medium rounded-md transition-colors",
-                      activeTab === "computer"
-                        ? "bg-white text-gray-800 shadow-sm"
-                        : "text-gray-600 hover:bg-gray-200/70"
-                    )}
-                  >
-                    <Monitor className="h-3.5 w-3.5" />
-                    Computer
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("phone")}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-sm font-medium rounded-md transition-colors",
-                      activeTab === "phone"
-                        ? "bg-white text-gray-800 shadow-sm"
-                        : "text-gray-600 hover:bg-gray-200/70"
-                    )}
-                  >
-                    <Smartphone className="h-3.5 w-3.5" />
-                    Phone
-                  </button>
-                </div>
+                {/* Tab Switcher - Hidden on mobile */}
+                {!isMobile && (
+                  <div className="flex bg-gray-100 p-0.5 rounded-md">
+                    <button
+                      onClick={() => setActiveTab("computer")}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-sm font-medium rounded-md transition-colors",
+                        activeTab === "computer"
+                          ? "bg-white text-gray-800 shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70"
+                      )}
+                    >
+                      <Monitor className="h-3.5 w-3.5" />
+                      Computer
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("phone")}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-sm font-medium rounded-md transition-colors",
+                        activeTab === "phone"
+                          ? "bg-white text-gray-800 shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70"
+                      )}
+                    >
+                      <Smartphone className="h-3.5 w-3.5" />
+                      Phone
+                    </button>
+                  </div>
+                )}
 
-                {/* Computer Upload Tab */}
-                {activeTab === "computer" && (
+                {/* Computer Upload Tab - Always shown on mobile */}
+                {(activeTab === "computer" || isMobile) && (
                   <div className="space-y-3">
                     {/* Drop Zone */}
                     <div
                       onDrop={handleDrop}
                       onDragOver={(e) => e.preventDefault()}
                       onClick={() => fileInputRef.current?.click()}
-                      className="border border-dashed border-gray-300 rounded-md p-5 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                      className={cn(
+                        "border border-dashed border-gray-300 rounded-md text-center cursor-pointer hover:bg-gray-50 transition-colors",
+                        isMobile ? "p-4" : "p-5"
+                      )}
                     >
                       <input
                         ref={fileInputRef}
@@ -401,18 +422,18 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                         onChange={handleFileSelect}
                         className="hidden"
                       />
-                      <Upload className="h-6 w-6 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-600">
-                        Drop photos or click to upload
+                      <Upload className={cn("text-gray-400 mx-auto mb-2", isMobile ? "h-5 w-5" : "h-6 w-6")} />
+                      <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>
+                        {isMobile ? "Tap to upload photos" : "Drop photos or click to upload"}
                       </p>
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className={cn("text-gray-400 mt-1", isMobile ? "text-[10px]" : "text-xs")}>
                         Up to 10 photos
                       </p>
                     </div>
 
                     {/* Photo Previews */}
                     {photos.length > 0 && (
-                      <div className="grid grid-cols-5 gap-1.5">
+                      <div className={cn("grid gap-1.5", isMobile ? "grid-cols-4" : "grid-cols-5")}>
                         {photos.map((photo, index) => (
                           <div key={index} className="relative aspect-square rounded-md overflow-hidden border border-gray-200 group">
                             <img
@@ -425,7 +446,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                                 e.stopPropagation();
                                 removePhoto(index);
                               }}
-                              className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              className={cn(
+                                "absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full transition-opacity",
+                                isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                              )}
                             >
                               <X className="h-3 w-3 text-white" />
                             </button>
@@ -435,13 +459,13 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     )}
 
                     {/* Actions */}
-                    <div className="flex justify-end gap-2 pt-1">
+                    <div className={cn("flex gap-2 pt-1", isMobile ? "justify-stretch" : "justify-end")}>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         onClick={onClose}
-                        className="text-gray-500"
+                        className={cn("text-gray-500", isMobile && "flex-1")}
                       >
                         Cancel
                       </Button>
@@ -449,16 +473,16 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                         onClick={handleAnalyze}
                         disabled={photos.length === 0}
                         size="sm"
-                        className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
+                        className={cn("rounded-md bg-gray-900 hover:bg-gray-800 text-white", isMobile && "flex-1")}
                       >
-                        Analyse
+                        Upload
                       </Button>
                     </div>
                   </div>
                 )}
 
-                {/* Phone QR Upload Tab */}
-                {activeTab === "phone" && (
+                {/* Phone QR Upload Tab - Hidden on mobile */}
+                {!isMobile && activeTab === "phone" && (
                   <QrUploadSection
                     onPhotosReady={handleQrPhotosReady}
                     onCancel={() => setActiveTab("computer")}
@@ -474,10 +498,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex flex-col items-center justify-center py-12"
+                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
               >
-                <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
-                <p className="text-gray-600 text-sm">
+                <Loader2 className={cn("animate-spin text-gray-400 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
+                <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>
                   Optimising {uploadProgress.current}/{uploadProgress.total}...
                 </p>
               </motion.div>
@@ -490,10 +514,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex flex-col items-center justify-center py-12"
+                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
               >
-                <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
-                <p className="text-gray-600 text-sm">
+                <Loader2 className={cn("animate-spin text-gray-400 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
+                <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>
                   Uploading {uploadProgress.current}/{uploadProgress.total}...
                 </p>
               </motion.div>
@@ -506,10 +530,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex flex-col items-center justify-center py-12"
+                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
               >
-                <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
-                <p className="text-gray-600 text-sm">Analysing photos...</p>
+                <Loader2 className={cn("animate-spin text-gray-400 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
+                <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>Analysing photos...</p>
               </motion.div>
             )}
 
@@ -520,10 +544,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex flex-col items-center justify-center py-12"
+                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
               >
-                <CheckCircle2 className="h-6 w-6 text-green-500 mb-3" />
-                <p className="text-gray-600 text-sm">Done!</p>
+                <CheckCircle2 className={cn("text-green-500 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
+                <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>Done!</p>
               </motion.div>
             )}
 
@@ -534,18 +558,18 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex flex-col items-center justify-center py-12"
+                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
               >
-                <X className="h-6 w-6 text-red-500 mb-3" />
-                <p className="text-gray-600 text-sm mb-1">Something went wrong</p>
-                <p className="text-gray-400 text-xs mb-4">{error}</p>
-                <div className="flex gap-2">
+                <X className={cn("text-red-500 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
+                <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Something went wrong</p>
+                <p className={cn("text-gray-400 mb-4", isMobile ? "text-[10px]" : "text-xs")}>{error}</p>
+                <div className={cn("flex gap-2", isMobile && "w-full")}>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={onClose}
-                    className="text-gray-500"
+                    className={cn("text-gray-500", isMobile && "flex-1")}
                   >
                     Cancel
                   </Button>
@@ -553,7 +577,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     type="button"
                     size="sm"
                     onClick={handleRetry}
-                    className="rounded-md"
+                    className={cn("rounded-md", isMobile && "flex-1")}
                   >
                     Retry
                   </Button>

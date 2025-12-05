@@ -27,20 +27,22 @@ export function ExpandableSection({
   const [isExpanded, setIsExpanded] = React.useState(defaultExpanded);
 
   return (
-    <div className={cn("bg-white rounded-md border border-gray-200", className)}>
-      {/* Header - Always Visible */}
+    <div className={cn("border-t border-gray-100 pt-4", className)}>
+      {/* Header - Always Visible - Minimal Design */}
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between group"
       >
-        <div className="flex items-center gap-3">
-          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700 transition-colors">
+            {title}
+          </h3>
           {badge && <div>{badge}</div>}
         </div>
         <ChevronDown
           className={cn(
-            "h-5 w-5 text-gray-400 transition-transform duration-200",
+            "h-4 w-4 text-gray-400 transition-transform duration-200 group-hover:text-gray-600",
             isExpanded && "rotate-180"
           )}
         />
@@ -59,7 +61,7 @@ export function ExpandableSection({
             }}
             className="overflow-hidden"
           >
-            <div className="px-5 pb-4 pt-1">
+            <div className="pt-4 pb-1">
               {children}
             </div>
           </motion.div>
@@ -81,8 +83,8 @@ interface CardSectionProps {
 
 export function CardSection({ title, children, className }: CardSectionProps) {
   return (
-    <div className={cn("bg-white rounded-md border border-gray-200 p-5", className)}>
-      {title && <h3 className="text-base font-semibold text-gray-900 mb-3">{title}</h3>}
+    <div className={cn("border-t border-gray-100 pt-4", className)}>
+      {title && <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>}
       {children}
     </div>
   );

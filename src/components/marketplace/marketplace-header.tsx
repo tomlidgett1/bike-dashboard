@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus } from "lucide-react";
+import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, MessageCircle } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
@@ -13,6 +13,7 @@ import { useUserProfile } from "@/components/providers/profile-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
+import { useUnreadCount } from "@/lib/hooks/use-unread-count";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,6 +84,9 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
   const { profile, loading } = useUserProfile();
   const { openAuthModal } = useAuthModal();
   const supabase = createClient();
+  
+  // Only fetch unread count if user is authenticated
+  const { count: unreadCount } = useUnreadCount(user ? 30000 : 0); // 0 = disabled polling
 
   // Ensure component only renders auth UI on client-side
   React.useEffect(() => {
@@ -214,6 +218,20 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
             <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
               {mounted && user ? (
                 <>
+                  {/* Messages Button */}
+                  <button
+                    onClick={() => router.push('/messages')}
+                    className="relative p-2 rounded-md hover:bg-gray-100 transition-colors cursor-pointer"
+                    aria-label="Messages"
+                  >
+                    <MessageCircle className="h-5 w-5 text-gray-700" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
+
                   <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
                       <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0 cursor-pointer">
@@ -511,6 +529,25 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
                   <div className="px-4 py-3 border-t border-gray-100">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Your Account</p>
                     <nav className="space-y-1">
+                      {/* Messages with badge */}
+                      <button
+                        onClick={() => {
+                          router.push('/messages');
+                          setMobileMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left hover:bg-gray-100 transition-colors relative"
+                      >
+                        <MessageCircle className="h-5 w-5 text-gray-500 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">Messages</p>
+                        </div>
+                        {unreadCount > 0 && (
+                          <span className="flex-shrink-0 h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+                            {unreadCount > 99 ? '99+' : unreadCount}
+                          </span>
+                        )}
+                      </button>
+                      
                       <MobileNavItem
                         icon={Store}
                         label="My Store"

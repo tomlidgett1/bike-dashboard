@@ -93,7 +93,8 @@ export function SellWizard() {
       const listingData = {
         // Basic required fields
         title: quickData.title || [quickData.brand, quickData.model].filter(Boolean).join(' '),
-        description: quickData.description || quickData.conditionDetails || '',
+        description: quickData.title || [quickData.brand, quickData.model].filter(Boolean).join(' '), // Legacy field - stores title
+        conditionDetails: quickData.description || '', // User's actual description
         price: quickData.price,
         conditionRating: quickData.conditionRating || 'Good',
         
@@ -109,10 +110,11 @@ export function SellWizard() {
         publishedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
         
-        // Optional AI-detected fields
+        // Optional fields
         brand: quickData.brand,
         model: quickData.model,
         modelYear: quickData.modelYear,
+        pickupLocation: quickData.pickupLocation,
       };
 
       console.log('🚀 [QUICK LIST] Publishing with data:', listingData);

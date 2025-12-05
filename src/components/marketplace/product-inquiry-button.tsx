@@ -54,6 +54,13 @@ export function ProductInquiryButton({
       return;
     }
 
+    // Validate sellerId
+    if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
+      alert('Unable to send message: Seller information is missing. Please try refreshing the page.');
+      console.error('[PRODUCT INQUIRY] Invalid sellerId:', sellerId);
+      return;
+    }
+
     // Check if user is trying to message themselves
     if (user.id === sellerId) {
       alert('You cannot send a message to yourself');
@@ -70,6 +77,19 @@ export function ProductInquiryButton({
       return;
     }
 
+    // Validate IDs before sending
+    if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
+      setError('Unable to send message: Seller information is missing. Please refresh the page.');
+      console.error('[PRODUCT INQUIRY] Invalid sellerId:', sellerId);
+      return;
+    }
+
+    if (productId && (typeof productId !== 'string' || productId.trim() === '')) {
+      setError('Unable to send message: Product information is missing. Please refresh the page.');
+      console.error('[PRODUCT INQUIRY] Invalid productId:', productId);
+      return;
+    }
+
     try {
       setSending(true);
       setError(null);
@@ -80,6 +100,12 @@ export function ProductInquiryButton({
         initialMessage: message,
       };
 
+      console.log('[PRODUCT INQUIRY] Sending message:', {
+        productId,
+        sellerId,
+        messageLength: message.length,
+      });
+
       const response = await fetch('/api/messages/conversations', {
         method: 'POST',
         headers: {
@@ -89,6 +115,12 @@ export function ProductInquiryButton({
       });
 
       const data = await response.json();
+      
+      console.log('[PRODUCT INQUIRY] Response:', {
+        status: response.status,
+        ok: response.ok,
+        data,
+      });
 
       if (!response.ok) {
         // If conversation already exists, navigate to it

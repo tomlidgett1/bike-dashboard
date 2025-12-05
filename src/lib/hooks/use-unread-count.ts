@@ -19,6 +19,13 @@ export function useUnreadCount(refreshInterval: number = 30000) {
 
       const response = await fetch('/api/messages/unread-count');
 
+      // If unauthorized, silently set count to 0 (user not logged in)
+      if (response.status === 401) {
+        setCount(0);
+        setLoading(false);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error('Failed to fetch unread count');
       }
@@ -28,12 +35,19 @@ export function useUnreadCount(refreshInterval: number = 30000) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
       console.error('Error fetching unread count:', err);
+      setCount(0); // Default to 0 on error
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    // Don't fetch if polling is disabled (refreshInterval is 0)
+    if (refreshInterval === 0) {
+      setLoading(false);
+      return;
+    }
+
     fetchUnreadCount();
 
     // Set up polling interval

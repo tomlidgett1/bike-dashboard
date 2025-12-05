@@ -228,11 +228,21 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                         </div>
                       </div>
 
-                      {/* Title & Price */}
-                      <div className="mb-4">
-                        <h1 className="text-xl lg:text-2xl font-bold text-gray-900 mb-2 line-clamp-2 leading-tight">
+                      {/* Title & Description & Price */}
+                      <div className="mb-4 space-y-3">
+                        <h1 className="text-xl lg:text-2xl font-bold text-gray-900 line-clamp-2 leading-tight">
                           {(product as any).display_name || product.description}
                         </h1>
+                        
+                        {/* Product Description */}
+                        {product.condition_details && (
+                          <div className="p-3 bg-white border border-gray-200 rounded-xl">
+                            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                              {product.condition_details}
+                            </p>
+                          </div>
+                        )}
+                        
                         <div className="flex items-baseline gap-2">
                           <p className="text-3xl lg:text-4xl font-black text-gray-900">
                             ${product.price.toLocaleString('en-AU')}

@@ -3,8 +3,7 @@
 import * as React from "react";
 import { 
   Bike, Settings, Shirt, Apple, Package, Loader2, X, 
-  ChevronRight, Store, User, TrendingUp, Heart, SlidersHorizontal,
-  Check
+  ChevronRight, Store, User, TrendingUp, Heart
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -83,15 +82,6 @@ const getCategoryIcon = (categoryName: string) => {
   return Package;
 };
 
-// Source filter label
-const getSourceLabel = (filter: ListingTypeFilter) => {
-  switch (filter) {
-    case 'stores': return 'Stores';
-    case 'individuals': return 'Sellers';
-    default: return 'All Sources';
-  }
-};
-
 export function UnifiedFilterBar({
   viewMode,
   onViewModeChange,
@@ -109,8 +99,6 @@ export function UnifiedFilterBar({
 }: UnifiedFilterBarProps) {
   const [categories, setCategories] = React.useState<CategoryHierarchy[]>([]);
   const [loading, setLoading] = React.useState(true);
-  const [sourceDropdownOpen, setSourceDropdownOpen] = React.useState(false);
-  const sourceDropdownRef = React.useRef<HTMLDivElement>(null);
 
   // Fetch categories
   React.useEffect(() => {
@@ -141,17 +129,6 @@ export function UnifiedFilterBar({
     };
     fetchCategories();
   }, [listingTypeFilter]);
-
-  // Close source dropdown on click outside
-  React.useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (sourceDropdownRef.current && !sourceDropdownRef.current.contains(e.target as Node)) {
-        setSourceDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   // Get current category data
   const selectedCategory = categories.find(c => c.level1 === selectedLevel1);
@@ -292,61 +269,49 @@ export function UnifiedFilterBar({
           </button>
         </div>
 
-        {/* Right side: Source Filter + Advanced Filters + Count */}
+        {/* Right side: Source Filter Tabs + Advanced Filters + Count */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Source Filter Dropdown - Only on Browse mode */}
+          {/* Source Filter Tabs - Only on Browse mode */}
           {isOnBrowseMode && (
-            <div className="relative" ref={sourceDropdownRef}>
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
               <button
-                onClick={() => setSourceDropdownOpen(!sourceDropdownOpen)}
+                onClick={() => onListingTypeChange('all')}
                 className={cn(
-                  "flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer border",
-                  listingTypeFilter !== 'all'
-                    ? "bg-gray-900 text-white border-gray-900 hover:bg-gray-800"
-                    : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-gray-300"
+                  "flex items-center gap-1 px-2 sm:px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap",
+                  listingTypeFilter === 'all'
+                    ? "text-gray-800 bg-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70"
                 )}
               >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{getSourceLabel(listingTypeFilter)}</span>
+                <Package className="h-3 w-3" />
+                <span className="hidden sm:inline">All</span>
               </button>
               
-              <AnimatePresence>
-                {sourceDropdownOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -4, scale: 0.95 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-full mt-1.5 bg-white rounded-md border border-gray-200 shadow-lg z-50 min-w-[160px] overflow-hidden"
-                  >
-                    {[
-                      { value: 'all' as const, label: 'All Sources', icon: Package },
-                      { value: 'stores' as const, label: 'Stores Only', icon: Store },
-                      { value: 'individuals' as const, label: 'Sellers Only', icon: User },
-                    ].map((option) => (
-                      <button
-                        key={option.value}
-                        onClick={() => {
-                          onListingTypeChange(option.value);
-                          setSourceDropdownOpen(false);
-                        }}
-                        className={cn(
-                          "w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors text-left",
-                          listingTypeFilter === option.value
-                            ? "bg-gray-100 text-gray-900 font-medium"
-                            : "text-gray-700 hover:bg-gray-50"
-                        )}
-                      >
-                        <option.icon className="h-4 w-4 text-gray-500" />
-                        <span className="flex-1">{option.label}</span>
-                        {listingTypeFilter === option.value && (
-                          <Check className="h-4 w-4 text-gray-700" />
-                        )}
-                      </button>
-                    ))}
-                  </motion.div>
+              <button
+                onClick={() => onListingTypeChange('stores')}
+                className={cn(
+                  "flex items-center gap-1 px-2 sm:px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap",
+                  listingTypeFilter === 'stores'
+                    ? "text-gray-800 bg-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70"
                 )}
-              </AnimatePresence>
+              >
+                <Store className="h-3 w-3" />
+                <span className="hidden sm:inline">Stores</span>
+              </button>
+              
+              <button
+                onClick={() => onListingTypeChange('individuals')}
+                className={cn(
+                  "flex items-center gap-1 px-2 sm:px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap",
+                  listingTypeFilter === 'individuals'
+                    ? "text-gray-800 bg-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70"
+                )}
+              >
+                <User className="h-3 w-3" />
+                <span className="hidden sm:inline">Sellers</span>
+              </button>
             </div>
           )}
 
