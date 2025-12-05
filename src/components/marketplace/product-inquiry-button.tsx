@@ -73,14 +73,6 @@ export function ProductInquiryButton({
       return;
     }
 
-    // Check if user has completed profile setup
-    // Note: This is a basic check - the API will do full validation
-    if (!user.user_metadata?.name && !user.user_metadata?.business_name) {
-      alert('Please complete your profile before sending messages. Go to Settings to add your name.');
-      router.push('/onboarding');
-      return;
-    }
-
     // Validate sellerId
     if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
       alert('Unable to send message: Seller information is missing. Please try refreshing the page.');

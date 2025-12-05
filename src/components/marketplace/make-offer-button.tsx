@@ -94,13 +94,6 @@ export function MakeOfferButton({
       return;
     }
 
-    // Check if user has completed profile setup
-    if (!user.user_metadata?.name && !user.user_metadata?.business_name) {
-      alert('Please complete your profile before making offers. Go to Settings to add your name.');
-      router.push('/onboarding');
-      return;
-    }
-
     // Validate sellerId
     if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
       alert('Unable to make offer: Seller information is missing. Please try refreshing the page.');
