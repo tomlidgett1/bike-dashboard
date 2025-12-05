@@ -14,14 +14,6 @@ import type {
   ConversationListItem,
 } from '@/lib/types/message';
 
-// UUID validation regex
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isValidUUID(uuid: string | undefined | null): boolean {
-  if (!uuid) return false;
-  return UUID_REGEX.test(uuid);
-}
-
 // ============================================================
 // POST: Create new conversation
 // ============================================================
@@ -42,34 +34,10 @@ export async function POST(request: NextRequest) {
     const body: CreateConversationRequest = await request.json();
     const { productId, recipientUserId, subject, initialMessage } = body;
 
-    console.log('[CREATE CONVERSATION] Request body:', {
-      productId,
-      recipientUserId,
-      hasSubject: !!subject,
-      hasInitialMessage: !!initialMessage,
-    });
-
     // Validate required fields
     if (!recipientUserId || !initialMessage) {
       return NextResponse.json(
         { error: 'Missing required fields: recipientUserId, initialMessage' },
-        { status: 400 }
-      );
-    }
-
-    // Validate UUID formats
-    if (!isValidUUID(recipientUserId)) {
-      console.error('[CREATE CONVERSATION] Invalid recipientUserId:', recipientUserId);
-      return NextResponse.json(
-        { error: 'Invalid recipient user ID format. Please refresh the page and try again.' },
-        { status: 400 }
-      );
-    }
-
-    if (productId && !isValidUUID(productId)) {
-      console.error('[CREATE CONVERSATION] Invalid productId:', productId);
-      return NextResponse.json(
-        { error: 'Invalid product ID format. Please refresh the page and try again.' },
         { status: 400 }
       );
     }

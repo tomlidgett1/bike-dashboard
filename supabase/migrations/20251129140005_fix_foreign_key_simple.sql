@@ -66,3 +66,5 @@ Application validates product_id exists before insert.';
 -- Success message
 SELECT 'Foreign key constraint removed - tracking should work now!' as status;
 
+
+

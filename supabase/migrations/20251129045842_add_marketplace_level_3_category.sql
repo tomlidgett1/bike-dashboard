@@ -20,3 +20,5 @@ CREATE INDEX IF NOT EXISTS idx_products_marketplace_categories
 -- Add comment
 COMMENT ON COLUMN products.marketplace_level_3_category IS 'Third level of marketplace categorization (e.g., XC, Trail, Enduro for Mountain bikes)';
 
+
+

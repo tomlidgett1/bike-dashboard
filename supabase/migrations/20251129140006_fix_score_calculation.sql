@@ -56,3 +56,5 @@ WHERE ps.trending_score > 0
 ORDER BY ps.trending_score DESC
 LIMIT 10;
 
+
+

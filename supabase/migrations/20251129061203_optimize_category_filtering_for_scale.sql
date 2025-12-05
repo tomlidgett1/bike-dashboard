@@ -151,3 +151,5 @@ COMMENT ON MATERIALIZED VIEW marketplace_category_counts IS
 --   $$SELECT refresh_marketplace_category_counts()$$
 -- );
 
+
+

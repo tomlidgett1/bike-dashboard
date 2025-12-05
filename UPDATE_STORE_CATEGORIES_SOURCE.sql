@@ -3,3 +3,5 @@ ALTER TABLE store_categories DROP CONSTRAINT IF EXISTS store_categories_source_c
 ALTER TABLE store_categories ADD CONSTRAINT store_categories_source_check 
   CHECK (source IN ('lightspeed', 'custom', 'display_override'));
 
+
+

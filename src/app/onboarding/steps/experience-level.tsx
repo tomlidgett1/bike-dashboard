@@ -48,7 +48,7 @@ export function ExperienceLevelStep({ selected, onUpdate, onNext }: ExperienceLe
       description="This helps us recommend bikes suited to your skill level."
     >
       <RadioGroup value={selected} onValueChange={onUpdate}>
-        <div className="space-y-3">
+        <div className="space-y-2.5 sm:space-y-3">
           {experienceLevels.map((level) => (
             <SingleSelectOption
               key={level.value}
@@ -67,11 +67,13 @@ export function ExperienceLevelStep({ selected, onUpdate, onNext }: ExperienceLe
         onClick={onNext}
         disabled={!isValid}
         size="lg"
-        className="w-full rounded-md mt-6"
+        className="w-full rounded-md h-11 sm:h-12 text-sm sm:text-base font-medium mt-4 sm:mt-6"
       >
         Continue
       </Button>
     </QuestionCard>
   )
 }
+
+
 

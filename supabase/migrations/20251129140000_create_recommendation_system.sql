@@ -441,3 +441,5 @@ WHERE NOT EXISTS (
   SELECT 1 FROM product_scores WHERE product_id = products.id
 );
 
+
+

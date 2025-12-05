@@ -24,3 +24,5 @@ CREATE INDEX IF NOT EXISTS users_bicycle_store_idx ON users(bicycle_store) WHERE
 COMMENT ON COLUMN users.account_type IS 'User-selected account type during signup (individual or bicycle_store)';
 COMMENT ON COLUMN users.bicycle_store IS 'Admin-approved bicycle store flag (always false until admin verifies)';
 
+
+

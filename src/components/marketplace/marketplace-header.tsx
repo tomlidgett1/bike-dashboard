@@ -13,7 +13,7 @@ import { useUserProfile } from "@/components/providers/profile-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
-import { useUnreadCount } from "@/lib/hooks/use-unread-count";
+import { useCombinedUnreadCount } from "@/lib/hooks/use-combined-unread-count";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -86,7 +86,8 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
   const supabase = createClient();
   
   // Only fetch unread count if user is authenticated
-  const { count: unreadCount } = useUnreadCount(user ? 30000 : 0); // 0 = disabled polling
+  const { counts } = useCombinedUnreadCount(user ? 30000 : 0); // 0 = disabled polling
+  const unreadCount = counts.total;
 
   // Ensure component only renders auth UI on client-side
   React.useEffect(() => {

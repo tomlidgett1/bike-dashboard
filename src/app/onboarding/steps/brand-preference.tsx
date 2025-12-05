@@ -53,7 +53,7 @@ export function BrandPreferenceStep({ selected, onUpdate, onNext }: BrandPrefere
       title="What bike brands do you like or are interested in?"
       description="Select your favourite brands or add your own. You can skip this if you're not sure."
     >
-      <div className="space-y-3">
+      <div className="space-y-2.5 sm:space-y-3">
         {popularBrands.map((brand) => (
           <MultiSelectOption
             key={brand}
@@ -77,8 +77,8 @@ export function BrandPreferenceStep({ selected, onUpdate, onNext }: BrandPrefere
       </div>
 
       {/* Add Custom Brand */}
-      <div className="space-y-2 mt-6">
-        <Label htmlFor="customBrand" className="text-sm font-medium">
+      <div className="space-y-1.5 sm:space-y-2 mt-4 sm:mt-6">
+        <Label htmlFor="customBrand" className="text-xs sm:text-sm font-medium">
           Or add another brand
         </Label>
         <div className="flex gap-2">
@@ -89,25 +89,25 @@ export function BrandPreferenceStep({ selected, onUpdate, onNext }: BrandPrefere
             value={customBrand}
             onChange={(e) => setCustomBrand(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleAddCustom()}
-            className="rounded-md"
+            className="rounded-md h-10 sm:h-11 text-sm sm:text-base"
           />
           <Button
             onClick={handleAddCustom}
             disabled={!customBrand.trim()}
             variant="outline"
-            className="rounded-md"
+            className="rounded-md h-10 sm:h-11 px-4 text-sm sm:text-base shrink-0"
           >
             Add
           </Button>
         </div>
       </div>
 
-      <div className="flex gap-3 mt-6">
+      <div className="flex gap-2 sm:gap-3 mt-4 sm:mt-6">
         <Button
           onClick={handleSkip}
           variant="outline"
           size="lg"
-          className="flex-1 rounded-md"
+          className="flex-1 rounded-md h-11 sm:h-12 text-sm sm:text-base font-medium"
         >
           Skip
         </Button>
@@ -115,7 +115,7 @@ export function BrandPreferenceStep({ selected, onUpdate, onNext }: BrandPrefere
           onClick={onNext}
           disabled={selected.length === 0}
           size="lg"
-          className="flex-1 rounded-md"
+          className="flex-1 rounded-md h-11 sm:h-12 text-sm sm:text-base font-medium"
         >
           Continue
         </Button>
@@ -123,4 +123,6 @@ export function BrandPreferenceStep({ selected, onUpdate, onNext }: BrandPrefere
     </QuestionCard>
   )
 }
+
+
 

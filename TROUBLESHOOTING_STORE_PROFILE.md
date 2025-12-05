@@ -139,3 +139,5 @@ Once the store profile loads:
 5. ✅ Test product carousels (scroll, expand)
 6. ✅ Go to Settings → Store Settings to add categories/services
 
+
+

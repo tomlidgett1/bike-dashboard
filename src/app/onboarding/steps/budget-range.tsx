@@ -33,7 +33,7 @@ export function BudgetRangeStep({ selected, onUpdate, onNext }: BudgetRangeStepP
       description="This helps us show bikes within your price range. You can skip this if you prefer."
     >
       <RadioGroup value={selected} onValueChange={onUpdate}>
-        <div className="space-y-3">
+        <div className="space-y-2.5 sm:space-y-3">
           {budgetRanges.map((range) => (
             <SingleSelectOption
               key={range.value}
@@ -48,12 +48,12 @@ export function BudgetRangeStep({ selected, onUpdate, onNext }: BudgetRangeStepP
         </div>
       </RadioGroup>
 
-      <div className="flex gap-3 mt-6">
+      <div className="flex gap-2 sm:gap-3 mt-4 sm:mt-6">
         <Button
           onClick={handleSkip}
           variant="outline"
           size="lg"
-          className="flex-1 rounded-md"
+          className="flex-1 rounded-md h-11 sm:h-12 text-sm sm:text-base font-medium"
         >
           Skip
         </Button>
@@ -61,7 +61,7 @@ export function BudgetRangeStep({ selected, onUpdate, onNext }: BudgetRangeStepP
           onClick={onNext}
           disabled={!isValid}
           size="lg"
-          className="flex-1 rounded-md"
+          className="flex-1 rounded-md h-11 sm:h-12 text-sm sm:text-base font-medium"
         >
           Continue
         </Button>
@@ -69,4 +69,6 @@ export function BudgetRangeStep({ selected, onUpdate, onNext }: BudgetRangeStepP
     </QuestionCard>
   )
 }
+
+
 

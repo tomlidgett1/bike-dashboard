@@ -18,3 +18,5 @@ BEGIN
   RAISE NOTICE '✅ Explicit permissions granted to authenticated role';
 END $$;
 
+
+

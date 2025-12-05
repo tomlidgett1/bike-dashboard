@@ -5,7 +5,6 @@
 
 'use client';
 
-import * as React from 'react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -43,25 +42,6 @@ export function MakeOfferButton({
   const { openAuthModal } = useAuthModal();
   const { createOffer, creating } = useCreateOffer();
 
-  // Debug logging - check what we're receiving
-  React.useEffect(() => {
-    console.log('[MAKE OFFER] Component mounted with props:', {
-      productId,
-      productIdType: typeof productId,
-      productIdLength: productId?.length,
-      productIdValid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId || ''),
-      sellerId,
-      sellerIdType: typeof sellerId,
-      sellerIdLength: sellerId?.length,
-      sellerIdValid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sellerId || ''),
-      productName: productName?.substring(0, 50),
-      productPrice,
-      currentUserId: user?.id,
-      currentUserIdValid: user?.id ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) : false,
-      isMobile: window.innerWidth < 768,
-    });
-  }, [productId, sellerId, productName, productPrice, user]);
-
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState('');
@@ -91,20 +71,6 @@ export function MakeOfferButton({
   const handleClick = () => {
     if (!user) {
       openAuthModal();
-      return;
-    }
-
-    // Validate sellerId
-    if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
-      alert('Unable to make offer: Seller information is missing. Please try refreshing the page.');
-      console.error('[MAKE OFFER] Invalid sellerId:', sellerId);
-      return;
-    }
-
-    // Validate productId
-    if (!productId || typeof productId !== 'string' || productId.trim() === '') {
-      alert('Unable to make offer: Product information is missing. Please try refreshing the page.');
-      console.error('[MAKE OFFER] Invalid productId:', productId);
       return;
     }
 

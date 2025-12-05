@@ -71,3 +71,5 @@ LIMIT 10;
 
 -- If these queries return products, the algorithm should work!
 
+
+

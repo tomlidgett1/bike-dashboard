@@ -43,3 +43,5 @@ When you click "Find More Images", look for these console logs in **Supabase Edg
 
 The logs will tell us if UPC is being passed correctly!
 
+
+

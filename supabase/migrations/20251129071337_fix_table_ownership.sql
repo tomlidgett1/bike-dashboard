@@ -16,3 +16,5 @@ BEGIN
   RAISE NOTICE '🔒 Other tables still have RLS enabled';
 END $$;
 
+
+

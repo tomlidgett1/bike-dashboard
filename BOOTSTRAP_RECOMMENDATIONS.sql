@@ -68,3 +68,5 @@ SELECT
   (SELECT COUNT(*) FROM product_scores WHERE trending_score > 0) as trending_products,
   (SELECT COUNT(*) FROM user_interactions) as total_interactions;
 
+
+

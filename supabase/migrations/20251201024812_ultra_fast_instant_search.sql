@@ -84,3 +84,5 @@ WHERE is_active = true;
 ANALYZE products;
 ANALYZE users;
 
+
+

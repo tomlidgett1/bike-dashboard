@@ -24,3 +24,5 @@ BEGIN
   RAISE NOTICE '🔒 Using security definer function to prevent recursion';
 END $$;
 
+
+

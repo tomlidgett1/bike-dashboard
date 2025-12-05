@@ -26,11 +26,11 @@ function OnboardingPageContent() {
   const { user } = useAuth()
   const supabase = createClient()
 
-  const accountType = searchParams.get('type') as 'individual' | 'bicycle_store' || 'individual'
-  
+  const [accountType, setAccountType] = useState<'individual' | 'bicycle_store'>('individual')
   const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
 
   // Form data state
   const [formData, setFormData] = useState({
@@ -56,8 +56,50 @@ function OnboardingPageContent() {
   useEffect(() => {
     if (!user) {
       router.push('/marketplace')
+      return
     }
-  }, [user, router])
+
+    // Check if user has already completed onboarding and get account type
+    const checkOnboardingStatus = async () => {
+      try {
+        const { data: profile, error: profileError } = await supabase
+          .from('users')
+          .select('onboarding_completed, account_type')
+          .eq('user_id', user.id)
+          .single()
+
+        if (profileError) {
+          console.error('Error fetching profile:', profileError)
+        }
+
+        // Redirect if onboarding already completed
+        if (profile?.onboarding_completed === true) {
+          console.log('[ONBOARDING] Already completed, redirecting to marketplace')
+          router.push('/marketplace')
+          return
+        }
+
+        // Set account type from database or URL parameter
+        const dbAccountType = profile?.account_type
+        const urlAccountType = searchParams.get('type')
+        
+        if (dbAccountType === 'bicycle_store') {
+          setAccountType('bicycle_store')
+        } else if (urlAccountType === 'bicycle_store') {
+          setAccountType('bicycle_store')
+        } else {
+          setAccountType('individual')
+        }
+
+        setIsLoadingProfile(false)
+      } catch (err) {
+        console.error('Error in onboarding check:', err)
+        setIsLoadingProfile(false)
+      }
+    }
+
+    checkOnboardingStatus()
+  }, [user, router, supabase, searchParams])
 
   const handleBack = () => {
     if (currentStep > 1) {
@@ -128,9 +170,9 @@ function OnboardingPageContent() {
     }
   }
 
-  if (!user) {
+  if (!user || isLoadingProfile) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
         <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
       </div>
     )
@@ -203,27 +245,27 @@ function OnboardingPageContent() {
         )
       case 7:
         return (
-          <div className="bg-white rounded-xl shadow-xl p-8 text-center">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+          <div className="bg-white rounded-xl shadow-xl p-5 sm:p-6 md:p-8 text-center">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3 sm:mb-4">
               You&apos;re all set!
             </h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-sm sm:text-base text-gray-600 mb-5 sm:mb-6">
               Let&apos;s start exploring bikes tailored to your preferences.
             </p>
             {error && (
-              <div className="bg-white border border-gray-200 rounded-md p-4 mb-6">
-                <p className="text-sm text-red-600">{error}</p>
+              <div className="bg-white border border-gray-200 rounded-md p-3 sm:p-4 mb-5 sm:mb-6">
+                <p className="text-xs sm:text-sm text-red-600">{error}</p>
               </div>
             )}
             <Button
               onClick={handleComplete}
               disabled={loading}
               size="lg"
-              className="rounded-md"
+              className="rounded-md w-full sm:w-auto sm:px-8 h-11 sm:h-12 text-sm sm:text-base font-medium"
             >
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
                   Finishing up...
                 </>
               ) : (

@@ -55,3 +55,5 @@ GRANT EXECUTE ON FUNCTION search_stores_with_product_count TO anon, authenticate
 -- Performance comment
 COMMENT ON FUNCTION search_stores_with_product_count IS 'Optimized store search with product counts - replaces N+1 query pattern for instant search';
 
+
+

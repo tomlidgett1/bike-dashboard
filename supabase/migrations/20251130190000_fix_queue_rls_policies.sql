@@ -30,3 +30,5 @@ COMMENT ON POLICY "Authenticated users can insert to discovery queue" ON ai_imag
 COMMENT ON POLICY "Authenticated users can update discovery queue" ON ai_image_discovery_queue 
   IS 'Allows admin users to reset queue items or update priorities';
 
+
+

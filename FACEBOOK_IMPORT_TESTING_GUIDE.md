@@ -249,3 +249,5 @@ supabase secrets set APIFY_API_TOKEN=your_token
 
 **Recommendation:** Start with free tier for testing, then monthly plan for production.
 
+
+

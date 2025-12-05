@@ -13,3 +13,5 @@ fetch('/api/marketplace/trending?limit=3')
     });
   });
 
+
+

@@ -129,3 +129,5 @@ If this fails → RLS policy issue
 3. If there's an error, tell me the exact error message
 4. This will tell us exactly what's failing!
 
+
+

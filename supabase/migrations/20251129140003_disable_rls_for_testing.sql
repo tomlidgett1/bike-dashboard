@@ -19,3 +19,5 @@ BEGIN
   RAISE NOTICE 'Remember to re-enable with: ALTER TABLE user_interactions ENABLE ROW LEVEL SECURITY;';
 END $$;
 
+
+

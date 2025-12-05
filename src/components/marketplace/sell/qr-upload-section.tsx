@@ -316,3 +316,5 @@ export function QrUploadSection({ onPhotosReady, onCancel }: QrUploadSectionProp
   );
 }
 
+
+

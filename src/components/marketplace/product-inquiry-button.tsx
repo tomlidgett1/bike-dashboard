@@ -5,7 +5,6 @@
 
 'use client';
 
-import * as React from 'react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -49,34 +48,9 @@ export function ProductInquiryButton({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Debug logging - check what we're receiving
-  React.useEffect(() => {
-    console.log('[PRODUCT INQUIRY] Component mounted with props:', {
-      productId,
-      productIdType: typeof productId,
-      productIdLength: productId?.length,
-      productIdValid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId || ''),
-      sellerId,
-      sellerIdType: typeof sellerId,
-      sellerIdLength: sellerId?.length,
-      sellerIdValid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sellerId || ''),
-      productName: productName?.substring(0, 50),
-      currentUserId: user?.id,
-      currentUserIdValid: user?.id ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) : false,
-      isMobile: window.innerWidth < 768,
-    });
-  }, [productId, sellerId, productName, user]);
-
   const handleClick = () => {
     if (!user) {
       openAuthModal();
-      return;
-    }
-
-    // Validate sellerId
-    if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
-      alert('Unable to send message: Seller information is missing. Please try refreshing the page.');
-      console.error('[PRODUCT INQUIRY] Invalid sellerId:', sellerId);
       return;
     }
 
@@ -96,19 +70,6 @@ export function ProductInquiryButton({
       return;
     }
 
-    // Validate IDs before sending
-    if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
-      setError('Unable to send message: Seller information is missing. Please refresh the page.');
-      console.error('[PRODUCT INQUIRY] Invalid sellerId:', sellerId);
-      return;
-    }
-
-    if (productId && (typeof productId !== 'string' || productId.trim() === '')) {
-      setError('Unable to send message: Product information is missing. Please refresh the page.');
-      console.error('[PRODUCT INQUIRY] Invalid productId:', productId);
-      return;
-    }
-
     try {
       setSending(true);
       setError(null);
@@ -119,12 +80,6 @@ export function ProductInquiryButton({
         initialMessage: message,
       };
 
-      console.log('[PRODUCT INQUIRY] Sending message:', {
-        productId,
-        sellerId,
-        messageLength: message.length,
-      });
-
       const response = await fetch('/api/messages/conversations', {
         method: 'POST',
         headers: {
@@ -134,12 +89,6 @@ export function ProductInquiryButton({
       });
 
       const data = await response.json();
-      
-      console.log('[PRODUCT INQUIRY] Response:', {
-        status: response.status,
-        ok: response.ok,
-        data,
-      });
 
       if (!response.ok) {
         // If conversation already exists, navigate to it

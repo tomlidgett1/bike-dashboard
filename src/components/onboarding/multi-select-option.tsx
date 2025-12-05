@@ -29,7 +29,7 @@ export function MultiSelectOption({
     >
       <div
         className={cn(
-          "flex items-center space-x-3 p-4 rounded-md border-2 transition-all cursor-pointer hover:bg-gray-50",
+          "flex items-center space-x-2.5 sm:space-x-3 p-3 sm:p-4 rounded-md border-2 transition-all cursor-pointer active:scale-[0.98] hover:bg-gray-50 touch-manipulation min-h-[52px] sm:min-h-[56px]",
           checked
             ? "border-blue-500 bg-blue-50"
             : "border-gray-200 bg-white"
@@ -40,20 +40,22 @@ export function MultiSelectOption({
           id={id}
           checked={checked}
           onCheckedChange={onCheckedChange}
-          className="rounded-md"
+          className="rounded-md shrink-0"
         />
         <Label
           htmlFor={id}
           className={cn(
-            "flex items-center gap-2 cursor-pointer text-base font-medium flex-1",
+            "flex items-center gap-2 cursor-pointer text-sm sm:text-base font-medium flex-1 leading-snug",
             checked ? "text-blue-700" : "text-gray-700"
           )}
         >
-          {icon && <span className="text-gray-600">{icon}</span>}
-          {label}
+          {icon && <span className="text-gray-600 shrink-0">{icon}</span>}
+          <span className="break-words">{label}</span>
         </Label>
       </div>
     </motion.div>
   )
 }
+
+
 

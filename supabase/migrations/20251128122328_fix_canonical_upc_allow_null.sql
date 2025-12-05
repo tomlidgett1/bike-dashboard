@@ -155,3 +155,5 @@ SET
 COMMENT ON COLUMN canonical_products.upc IS 'Universal Product Code - unique when present, NULL for products without UPC (matched by normalized_name)';
 
 
+
+

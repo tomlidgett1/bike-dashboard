@@ -89,3 +89,5 @@ $$ LANGUAGE sql STABLE;
 COMMENT ON COLUMN product_images.approval_status IS 'Approval status for AI-discovered images: pending (awaiting review), approved (live on marketplace), rejected (not suitable)';
 COMMENT ON FUNCTION get_products_with_pending_images IS 'Returns products that have pending images awaiting admin approval';
 
+
+

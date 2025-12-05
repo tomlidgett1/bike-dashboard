@@ -19,3 +19,5 @@ CREATE POLICY "Authenticated users can delete product images"
 COMMENT ON POLICY "Authenticated users can delete product images" ON product_images 
 IS 'Allows admin users to delete any product image during QA workflow, including AI-discovered images';
 
+
+

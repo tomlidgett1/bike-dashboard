@@ -33,3 +33,5 @@ COMMENT ON FUNCTION get_marketplace_category_counts() IS
 -- Grant execute permission to authenticated and anon users
 GRANT EXECUTE ON FUNCTION get_marketplace_category_counts() TO authenticated, anon;
 
+
+

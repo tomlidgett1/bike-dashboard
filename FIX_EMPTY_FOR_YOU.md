@@ -171,3 +171,5 @@ Run **`BOOTSTRAP_RECOMMENDATIONS.sql`** in Supabase SQL Editor now!
 
 This will initialize the recommendation system with data so you can see products on the For You page.
 
+
+

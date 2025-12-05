@@ -183,3 +183,5 @@ BEGIN
   RAISE NOTICE '🔒 Security is properly enforced';
 END $$;
 
+
+

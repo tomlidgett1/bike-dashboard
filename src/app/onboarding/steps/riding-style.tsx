@@ -36,7 +36,7 @@ export function RidingStyleStep({ selected, onUpdate, onNext }: RidingStyleStepP
       title="What type of bike riding do you prefer?"
       description="Select all that apply. This helps us show you the most relevant bikes."
     >
-      <div className="space-y-3">
+      <div className="space-y-2.5 sm:space-y-3">
         {ridingStyles.map((style) => (
           <MultiSelectOption
             key={style.value}
@@ -53,11 +53,13 @@ export function RidingStyleStep({ selected, onUpdate, onNext }: RidingStyleStepP
         onClick={onNext}
         disabled={!isValid}
         size="lg"
-        className="w-full rounded-md mt-6"
+        className="w-full rounded-md h-11 sm:h-12 text-sm sm:text-base font-medium mt-4 sm:mt-6"
       >
         Continue
       </Button>
     </QuestionCard>
   )
 }
+
+
 

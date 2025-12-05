@@ -57,3 +57,5 @@ FROM information_schema.columns
 WHERE table_name = 'product_images'
   AND column_name = 'approval_status';
 
+
+

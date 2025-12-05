@@ -42,3 +42,5 @@ BEGIN
   RAISE NOTICE '🔓 Authenticated users can now create conversations';
 END $$;
 
+
+

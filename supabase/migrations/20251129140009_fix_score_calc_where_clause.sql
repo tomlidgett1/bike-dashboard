@@ -42,3 +42,5 @@ SELECT
   MAX(trending_score) as max_trend
 FROM product_scores;
 
+
+

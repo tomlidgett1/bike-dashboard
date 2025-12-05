@@ -13,3 +13,5 @@ CREATE INDEX IF NOT EXISTS idx_listing_drafts_completed ON listing_drafts(comple
 COMMENT ON COLUMN listing_drafts.completed IS 'Whether the draft has been completed and published as a listing';
 COMMENT ON COLUMN listing_drafts.completed_at IS 'Timestamp when the draft was completed';
 
+
+

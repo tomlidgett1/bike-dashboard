@@ -60,14 +60,7 @@ export function useOffers(options: UseOffersOptions = {}) {
       const response = await fetch(`/api/offers?${params.toString()}`);
       
       if (!response.ok) {
-        let errorMessage = 'Failed to fetch offers';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
+        throw new Error('Failed to fetch offers');
       }
 
       const data: GetOffersResponse = await response.json();
@@ -130,14 +123,7 @@ export function useOffer(offerId: string | null) {
       const response = await fetch(`/api/offers/${offerId}`);
       
       if (!response.ok) {
-        let errorMessage = 'Failed to fetch offer';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
+        throw new Error('Failed to fetch offer');
       }
 
       const data = await response.json();
@@ -183,20 +169,12 @@ export function useCreateOffer() {
         body: JSON.stringify(request),
       });
 
+      const data: CreateOfferResponse = await response.json();
+
       if (!response.ok) {
-        // Try to parse error message from JSON, but fallback if it's HTML
-        let errorMessage = 'Failed to create offer';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          // Response is not JSON (probably HTML error page)
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
+        throw new Error(data.message || 'Failed to create offer');
       }
 
-      const data: CreateOfferResponse = await response.json();
       return data.offer;
     } catch (err) {
       console.error('Error creating offer:', err);
@@ -232,18 +210,12 @@ export function useAcceptOffer() {
         method: 'PATCH',
       });
 
+      const data: AcceptOfferResponse = await response.json();
+
       if (!response.ok) {
-        let errorMessage = 'Failed to accept offer';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
+        throw new Error(data.message || 'Failed to accept offer');
       }
 
-      const data: AcceptOfferResponse = await response.json();
       return data.offer;
     } catch (err) {
       console.error('Error accepting offer:', err);
@@ -279,18 +251,12 @@ export function useRejectOffer() {
         method: 'PATCH',
       });
 
+      const data: RejectOfferResponse = await response.json();
+
       if (!response.ok) {
-        let errorMessage = 'Failed to reject offer';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
+        throw new Error(data.message || 'Failed to reject offer');
       }
 
-      const data: RejectOfferResponse = await response.json();
       return data.offer;
     } catch (err) {
       console.error('Error rejecting offer:', err);
@@ -333,18 +299,12 @@ export function useCounterOffer() {
         body: JSON.stringify(request),
       });
 
+      const data: CounterOfferResponse = await response.json();
+
       if (!response.ok) {
-        let errorMessage = 'Failed to counter offer';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
+        throw new Error(data.message || 'Failed to counter offer');
       }
 
-      const data: CounterOfferResponse = await response.json();
       return data.offer;
     } catch (err) {
       console.error('Error countering offer:', err);
@@ -380,18 +340,12 @@ export function useCancelOffer() {
         method: 'PATCH',
       });
 
+      const data: CancelOfferResponse = await response.json();
+
       if (!response.ok) {
-        let errorMessage = 'Failed to cancel offer';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
+        throw new Error(data.message || 'Failed to cancel offer');
       }
 
-      const data: CancelOfferResponse = await response.json();
       return data.offer;
     } catch (err) {
       console.error('Error cancelling offer:', err);

@@ -37,7 +37,7 @@ export function InterestsStep({ selected, onUpdate, onNext }: InterestsStepProps
       title="What bike components or accessories interest you most?"
       description="Select all that interest you. This helps us personalise your marketplace experience."
     >
-      <div className="space-y-3">
+      <div className="space-y-2.5 sm:space-y-3">
         {interests.map((interest) => (
           <MultiSelectOption
             key={interest.value}
@@ -54,11 +54,13 @@ export function InterestsStep({ selected, onUpdate, onNext }: InterestsStepProps
         onClick={onNext}
         disabled={!isValid}
         size="lg"
-        className="w-full rounded-md mt-6"
+        className="w-full rounded-md h-11 sm:h-12 text-sm sm:text-base font-medium mt-4 sm:mt-6"
       >
         Continue
       </Button>
     </QuestionCard>
   )
 }
+
+
 

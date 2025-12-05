@@ -33,3 +33,5 @@ SELECT COUNT(*) as cache_entries FROM recommendation_cache;
 
 SELECT '🗑️ Everything wiped clean!' as status;
 
+
+

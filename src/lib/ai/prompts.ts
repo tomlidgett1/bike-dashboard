@@ -273,3 +273,5 @@ Be specific about wear, damage, and condition - transparency builds trust with b
 Return structured JSON matching the schema exactly.`;
 }
 
+
+

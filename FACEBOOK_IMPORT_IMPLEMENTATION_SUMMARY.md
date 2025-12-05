@@ -378,3 +378,5 @@ The Facebook Marketplace import feature is now **fully implemented and ready for
 
 This feature provides significant value by reducing the time to create a listing from 10-15 minutes to under 2 minutes when importing from Facebook Marketplace.
 
+
+

@@ -39,3 +39,5 @@ COMMENT ON COLUMN users.last_name IS 'Individual user last name (collected durin
 COMMENT ON COLUMN users.preferences IS 'User personalization preferences stored as JSONB (riding styles, brands, experience, budget, interests)';
 COMMENT ON COLUMN users.onboarding_completed IS 'Flag indicating whether user has completed onboarding flow';
 
+
+

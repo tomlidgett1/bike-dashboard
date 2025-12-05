@@ -75,3 +75,5 @@ SELECT * FROM trending_products ORDER BY trending_score DESC LIMIT 10;
 
 SELECT '✅ Materialized views refreshed with real data!' as status;
 
+
+

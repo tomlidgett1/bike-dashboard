@@ -23,3 +23,5 @@ SELECT cron.schedule(
 -- Verify it's scheduled
 SELECT * FROM cron.job WHERE jobname = 'send-message-notifications';
 
+
+

@@ -5,7 +5,9 @@ export async function middleware(request: NextRequest) {
   // Check if this is a public route that doesn't require authentication
   const isPublicRoute = 
     request.nextUrl.pathname.startsWith('/auth') ||
-    request.nextUrl.pathname.startsWith('/marketplace') ||
+    request.nextUrl.pathname === '/marketplace' ||
+    request.nextUrl.pathname.startsWith('/marketplace/store') ||
+    request.nextUrl.pathname.startsWith('/marketplace/used-products') ||
     request.nextUrl.pathname.startsWith('/api/marketplace')
   
   if (isPublicRoute) {
@@ -54,21 +56,39 @@ export async function middleware(request: NextRequest) {
   // If user is authenticated, check if they've completed onboarding
   if (user && !isOnboardingPage) {
     try {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('users')
         .select('onboarding_completed')
         .eq('user_id', user.id)
         .single()
 
-      // Redirect to onboarding if not completed
-      if (profile && !profile.onboarding_completed) {
+      // Log for debugging
+      console.log('[MIDDLEWARE] Onboarding check:', {
+        user_id: user.id,
+        profile: profile,
+        onboarding_completed: profile?.onboarding_completed,
+        error: profileError
+      })
+
+      // Redirect to onboarding if:
+      // 1. Profile doesn't exist (error occurred) OR
+      // 2. Profile exists but onboarding_completed is false or null
+      const shouldRedirect = profileError || !profile || profile.onboarding_completed === false || profile.onboarding_completed === null
+      
+      if (shouldRedirect) {
+        console.log('[MIDDLEWARE] Redirecting to onboarding')
         const url = request.nextUrl.clone()
         url.pathname = '/onboarding'
         return NextResponse.redirect(url)
       }
+
+      console.log('[MIDDLEWARE] Onboarding completed, allowing access')
     } catch (error) {
-      console.error('Error checking onboarding status:', error)
-      // Continue anyway if there's an error
+      console.error('[MIDDLEWARE] Error checking onboarding status:', error)
+      // Redirect to onboarding if there's an error - safer approach
+      const url = request.nextUrl.clone()
+      url.pathname = '/onboarding'
+      return NextResponse.redirect(url)
     }
   }
 

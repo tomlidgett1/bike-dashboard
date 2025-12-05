@@ -34,3 +34,5 @@ ALTER TABLE products
 ADD CONSTRAINT products_listing_source_check 
 CHECK (listing_source IN ('lightspeed', 'manual', 'facebook_import'));
 
+
+

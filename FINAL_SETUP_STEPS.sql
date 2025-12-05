@@ -58,3 +58,5 @@ SELECT
   '✅ Recommendation system is ready!' as message,
   'Visit http://localhost:3000/for-you and click Refresh' as next_step;
 
+
+

@@ -29,3 +29,5 @@ LIMIT 10;
 -- If you see products above, the system is ready!
 SELECT '✅ Ready! Visit /for-you and click Refresh' as next_step;
 
+
+

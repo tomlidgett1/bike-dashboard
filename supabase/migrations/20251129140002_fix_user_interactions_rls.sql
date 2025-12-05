@@ -70,3 +70,5 @@ END $$;
 COMMENT ON TABLE user_interactions IS 
 'Tracks user interactions with products. Supports both authenticated (user_id set) and anonymous (user_id NULL) tracking.';
 
+
+
