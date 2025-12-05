@@ -10,6 +10,8 @@ import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
 import "./globals.css";
 
+export const dynamic = 'force-dynamic';
+
 const sora = Sora({
   variable: "--font-sora",
   subsets: ["latin"],
