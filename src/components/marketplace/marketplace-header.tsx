@@ -200,7 +200,6 @@ export function MarketplaceHeader({ compactSearchOnMobile = false }: Marketplace
                     size="sm"
                     className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-3"
                   >
-                    <Plus className="h-4 w-4 mr-1" />
                     Sell
                   </Button>
                 </div>

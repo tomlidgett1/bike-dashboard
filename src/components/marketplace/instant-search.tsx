@@ -551,6 +551,25 @@ export function InstantSearch({ autoFocus = false, onResultClick }: InstantSearc
   }, []);
 
   const hasResults = results && (results.products.length > 0 || results.stores.length > 0);
+  
+  // Detect if we're on mobile
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 640); // sm breakpoint
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Prevent body scroll when mobile dropdown is open
+  React.useEffect(() => {
+    if (isMobile && showDropdown && query.length >= 1) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, [isMobile, showDropdown, query]);
 
   return (
     <div className="relative w-full">
@@ -599,17 +618,52 @@ export function InstantSearch({ autoFocus = false, onResultClick }: InstantSearc
         </div>
       </div>
 
+      {/* Mobile Backdrop for Recent Searches */}
+      <AnimatePresence>
+        {isMobile && showDropdown && query.length < 2 && recentSearches.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-black/50 z-[60]"
+            onClick={() => setShowDropdown(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Recent Searches Dropdown - Shows when focused with no query */}
       <AnimatePresence>
         {showDropdown && query.length < 2 && recentSearches.length > 0 && (
           <motion.div
             ref={dropdownRef}
-            initial={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0, y: isMobile ? 20 : -8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.15 }}
-            className="absolute top-full left-0 right-0 mt-2 bg-white rounded-md border border-gray-200 shadow-xl z-50 overflow-hidden"
+            exit={{ opacity: 0, y: isMobile ? 20 : -8 }}
+            transition={{ duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] }}
+            className={cn(
+              "bg-white z-[70] overflow-y-auto",
+              isMobile
+                ? "fixed inset-x-0 bottom-0 top-16 rounded-t-2xl border-t border-gray-200 shadow-2xl"
+                : "absolute top-full left-0 right-0 mt-2 rounded-md border border-gray-200 shadow-xl overflow-hidden"
+            )}
           >
+            {/* Mobile Close Handle */}
+            {isMobile && (
+              <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-gray-900">
+                  Search
+                </p>
+                <button
+                  onClick={() => setShowDropdown(false)}
+                  className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
+                  aria-label="Close search"
+                >
+                  <X className="h-5 w-5 text-gray-600" />
+                </button>
+              </div>
+            )}
+
             {/* Header */}
             <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
@@ -659,12 +713,52 @@ export function InstantSearch({ autoFocus = false, onResultClick }: InstantSearc
         )}
       </AnimatePresence>
 
+      {/* Mobile Backdrop for Search Results */}
+      <AnimatePresence>
+        {isMobile && showDropdown && query.length >= 2 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-black/50 z-[60]"
+            onClick={() => setShowDropdown(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Dropdown Results - Shows INSTANTLY */}
-      {showDropdown && query.length >= 2 && (
-        <div
-          ref={dropdownRef}
-          className="absolute top-full left-0 right-0 mt-2 bg-white rounded-md border border-gray-200 shadow-2xl z-50 max-h-[70vh] overflow-y-auto animate-in fade-in duration-100"
-        >
+      <AnimatePresence>
+        {showDropdown && query.length >= 2 && (
+          <motion.div
+            ref={dropdownRef}
+            initial={{ opacity: 0, y: isMobile ? 20 : 0 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: isMobile ? 20 : 0 }}
+            transition={{ duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] }}
+            className={cn(
+              "bg-white z-[70] overflow-y-auto",
+              isMobile
+                ? "fixed inset-x-0 bottom-0 top-16 rounded-t-2xl border-t border-gray-200 shadow-2xl"
+                : "absolute top-full left-0 right-0 mt-2 rounded-md border border-gray-200 shadow-2xl max-h-[70vh]"
+            )}
+          >
+          {/* Mobile Close Handle */}
+          {isMobile && (
+            <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-900">
+                Search Results
+              </p>
+              <button
+                onClick={() => setShowDropdown(false)}
+                className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
+                aria-label="Close search"
+              >
+                <X className="h-5 w-5 text-gray-600" />
+              </button>
+            </div>
+          )}
+
           {loading && !results ? (
             // Minimal loading state - appears instantly while searching
             <div className="p-6 text-center">
@@ -830,8 +924,9 @@ export function InstantSearch({ autoFocus = false, onResultClick }: InstantSearc
               )}
             </>
           )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
