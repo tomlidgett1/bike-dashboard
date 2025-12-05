@@ -801,7 +801,7 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
   );
 
   return (
-    <div className="relative w-full flex flex-col h-full">
+    <div className={cn("relative w-full flex flex-col", mobileFullPage ? "h-full" : "")}>
       {/* Search Input */}
       <div className="relative flex-shrink-0">
         <Search className="absolute left-3 sm:left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />

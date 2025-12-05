@@ -107,6 +107,16 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Prevent body scroll when mobile search is open
+  React.useEffect(() => {
+    if (mobileSearchOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, [mobileSearchOpen]);
+
   // Get display name based on account type
   // For business users, only show business_name (never fall back to name)
   const getDisplayName = () => {
@@ -783,7 +793,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[102] bg-white sm:hidden flex flex-col"
+            className="fixed inset-0 z-[102] bg-white sm:hidden flex flex-col overflow-hidden"
           >
             {/* Search Header */}
             <div className="flex items-center gap-2 px-3 py-3 border-b border-gray-200 flex-shrink-0">
@@ -799,14 +809,12 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
             </div>
             
             {/* Search input and results - full page mode */}
-            <div className="flex-1 flex flex-col min-h-0">
-              <div className="px-3 py-3 flex-shrink-0">
-                <InstantSearch 
-                  autoFocus 
-                  onResultClick={() => setMobileSearchOpen(false)} 
-                  mobileFullPage 
-                />
-              </div>
+            <div className="flex-1 flex flex-col min-h-0 px-3 py-3 overflow-hidden">
+              <InstantSearch 
+                autoFocus 
+                onResultClick={() => setMobileSearchOpen(false)} 
+                mobileFullPage 
+              />
             </div>
           </motion.div>
         )}
