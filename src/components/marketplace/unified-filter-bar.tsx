@@ -272,12 +272,12 @@ export function UnifiedFilterBar({
         {/* Source Filter Tabs + Advanced Filters - only on Browse mode */}
         {isOnBrowseMode && (
           <div className="flex items-stretch gap-2">
-            {/* Listing Type Filter Tabs - Full width */}
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-md flex-1">
+            {/* Listing Type Filter Tabs - Full width on mobile, auto on desktop */}
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-full sm:w-auto">
               <button
                 onClick={() => onListingTypeChange('all')}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 flex-1 px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'all'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
@@ -291,7 +291,7 @@ export function UnifiedFilterBar({
               <button
                 onClick={() => onListingTypeChange('stores')}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 flex-1 px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'stores'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
@@ -304,7 +304,7 @@ export function UnifiedFilterBar({
               <button
                 onClick={() => onListingTypeChange('individuals')}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 flex-1 px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'individuals'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
