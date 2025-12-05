@@ -40,6 +40,10 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
       }
 
       if (!messagesResponse.ok || !offersResponse.ok) {
+        console.warn('Unread counts fetch failed:', {
+          messages: messagesResponse.status,
+          offers: offersResponse.status
+        });
         throw new Error('Failed to fetch unread counts');
       }
 

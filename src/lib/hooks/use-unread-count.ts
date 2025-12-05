@@ -27,6 +27,8 @@ export function useUnreadCount(refreshInterval: number = 30000) {
       }
 
       if (!response.ok) {
+        // Don't try to parse JSON from error responses
+        console.warn(`Unread count fetch failed: ${response.status} ${response.statusText}`);
         throw new Error('Failed to fetch unread count');
       }
 
