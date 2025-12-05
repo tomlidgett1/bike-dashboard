@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, Loader2, CheckCircle2, Monitor, Smartphone } from "lucide-react";
+import { Upload, X, Loader2, CheckCircle2, Monitor, Smartphone, Camera, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,6 +44,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   const [uploadProgress, setUploadProgress] = React.useState({ current: 0, total: 0 });
   const [isMobile, setIsMobile] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const cameraInputRef = React.useRef<HTMLInputElement>(null);
 
   // Detect if on mobile
   React.useEffect(() => {
@@ -404,32 +405,75 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 {/* Computer Upload Tab - Always shown on mobile */}
                 {(activeTab === "computer" || isMobile) && (
                   <div className="space-y-3">
-                    {/* Drop Zone */}
-                    <div
-                      onDrop={handleDrop}
-                      onDragOver={(e) => e.preventDefault()}
-                      onClick={() => fileInputRef.current?.click()}
-                      className={cn(
-                        "border border-dashed border-gray-300 rounded-md text-center cursor-pointer hover:bg-gray-50 transition-colors",
-                        isMobile ? "p-4" : "p-5"
-                      )}
-                    >
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        onChange={handleFileSelect}
-                        className="hidden"
-                      />
-                      <Upload className={cn("text-gray-400 mx-auto mb-2", isMobile ? "h-5 w-5" : "h-6 w-6")} />
-                      <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>
-                        {isMobile ? "Tap to upload photos" : "Drop photos or click to upload"}
-                      </p>
-                      <p className={cn("text-gray-400 mt-1", isMobile ? "text-[10px]" : "text-xs")}>
-                        Up to 10 photos
-                      </p>
-                    </div>
+                    {/* Mobile: Two-button upload interface */}
+                    {isMobile ? (
+                      <div className="space-y-3">
+                        <p className="text-xs text-gray-600 text-center">Upload up to 10 photos</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {/* Camera button */}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => cameraInputRef.current?.click()}
+                            className="h-auto flex-col gap-2 py-4 rounded-md border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                          >
+                            <Camera className="h-6 w-6 text-gray-600" />
+                            <span className="text-sm font-medium text-gray-700">Take Photo</span>
+                          </Button>
+                          <input
+                            ref={cameraInputRef}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleFileSelect}
+                            className="hidden"
+                          />
+                          
+                          {/* Gallery button */}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="h-auto flex-col gap-2 py-4 rounded-md border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                          >
+                            <ImageIcon className="h-6 w-6 text-gray-600" />
+                            <span className="text-sm font-medium text-gray-700">Select Photos</span>
+                          </Button>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleFileSelect}
+                            className="hidden"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      /* Desktop: Drop Zone */
+                      <div
+                        onDrop={handleDrop}
+                        onDragOver={(e) => e.preventDefault()}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="border border-dashed border-gray-300 rounded-md p-5 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                      >
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handleFileSelect}
+                          className="hidden"
+                        />
+                        <Upload className="text-gray-400 mx-auto mb-2 h-6 w-6" />
+                        <p className="text-sm text-gray-600">
+                          Drop photos or click to upload
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Up to 10 photos
+                        </p>
+                      </div>
+                    )}
 
                     {/* Photo Previews */}
                     {photos.length > 0 && (
