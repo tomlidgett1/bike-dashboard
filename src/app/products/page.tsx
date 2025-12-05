@@ -42,36 +42,36 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
-import dynamic from "next/dynamic";
+import NextDynamic from "next/dynamic";
 
 // Dynamically import Dialog components to avoid SSR issues
-const Dialog = dynamic(
+const Dialog = NextDynamic(
   () => import("@/components/ui/dialog").then((mod) => mod.Dialog),
   { ssr: false }
 );
-const DialogContent = dynamic(
+const DialogContent = NextDynamic(
   () => import("@/components/ui/dialog").then((mod) => mod.DialogContent),
   { ssr: false }
 );
-const DialogDescription = dynamic(
+const DialogDescription = NextDynamic(
   () => import("@/components/ui/dialog").then((mod) => mod.DialogDescription),
   { ssr: false }
 );
-const DialogHeader = dynamic(
+const DialogHeader = NextDynamic(
   () => import("@/components/ui/dialog").then((mod) => mod.DialogHeader),
   { ssr: false }
 );
-const DialogTitle = dynamic(
+const DialogTitle = NextDynamic(
   () => import("@/components/ui/dialog").then((mod) => mod.DialogTitle),
   { ssr: false }
 );
-const DialogTrigger = dynamic(
+const DialogTrigger = NextDynamic(
   () => import("@/components/ui/dialog").then((mod) => mod.DialogTrigger),
   { ssr: false }
 );
 
 // Dynamically import ImageGallery to avoid SSR issues
-const ImageGallery = dynamic(
+const ImageGallery = NextDynamic(
   () => import("@/components/products/image-gallery").then((mod) => mod.ImageGallery),
   { ssr: false }
 );
