@@ -143,9 +143,11 @@ interface InstantSearchProps {
   autoFocus?: boolean;
   /** Called when a search result is clicked (useful for closing mobile overlays) */
   onResultClick?: () => void;
+  /** When true, renders in full-page mobile mode without sheet styling */
+  mobileFullPage?: boolean;
 }
 
-export function InstantSearch({ autoFocus = false, onResultClick }: InstantSearchProps = {}) {
+export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage = false }: InstantSearchProps = {}) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResults | null>(null);
@@ -560,21 +562,248 @@ export function InstantSearch({ autoFocus = false, onResultClick }: InstantSearc
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+  
+  // When in mobileFullPage mode, treat as if not mobile for dropdown positioning
+  const useMobileSheet = isMobile && !mobileFullPage;
 
-  // Prevent body scroll when mobile dropdown is open
+  // Prevent body scroll when mobile dropdown is open (only for sheet mode)
   React.useEffect(() => {
-    if (isMobile && showDropdown && query.length >= 1) {
+    if (useMobileSheet && showDropdown && query.length >= 1) {
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = '';
       };
     }
-  }, [isMobile, showDropdown, query]);
+  }, [useMobileSheet, showDropdown, query]);
+
+  // Render results content (shared between dropdown and inline modes)
+  const renderResultsContent = () => (
+    <>
+      {loading && !results ? (
+        // Minimal loading state - appears instantly while searching
+        <div className="p-6 text-center">
+          <Loader2 className="h-6 w-6 animate-spin text-gray-400 mx-auto" />
+        </div>
+      ) : !hasResults && !aiResponse && !aiLoading ? (
+        // No results state - only shows when ALL loading is complete
+        <div className="p-8 text-center">
+          <Search className="h-8 w-8 text-gray-300 mx-auto mb-3" />
+          <p className="text-sm font-medium text-gray-900 mb-1">No results found</p>
+          <p className="text-xs text-gray-500">Try a different search term</p>
+        </div>
+      ) : (
+        <>
+          {/* AI Loading State */}
+          {aiLoading && (
+            <AISearchLoading />
+          )}
+
+          {/* AI Response Section */}
+          {aiResponse && !aiLoading && (
+            <div className="border-b border-gray-200">
+              <AISearchResponseDisplay response={aiResponse.response} />
+            </div>
+          )}
+
+          {/* AI Search CTA Button */}
+          {showAiButton && !aiLoading && !aiResponse && (results?.products || results?.stores) && (
+            <div className={cn("border-t border-gray-100 py-2 bg-gray-50", mobileFullPage ? "px-3" : "px-4")}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerAiSearch();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-white rounded-md transition-all duration-200 group border border-transparent hover:border-gray-200"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-gray-400 group-hover:text-[#FFC72C] transition-colors" />
+                <span className="font-medium">
+                  Ask Cycling Expert
+                </span>
+                <ArrowRight className="h-3.5 w-3.5 ml-auto text-gray-400 group-hover:text-gray-600 transition-colors" />
+              </button>
+            </div>
+          )}
+
+          {/* Products Section */}
+          {results?.products && results.products.length > 0 && (
+            <div className="border-b border-gray-100">
+              <div className={cn("py-2 bg-gray-50", mobileFullPage ? "px-3" : "px-4")}>
+                <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                  <Package className="h-3.5 w-3.5" />
+                  Products
+                </div>
+              </div>
+              <div className="py-1">
+                {results.products.map((product, index) => (
+                  <button
+                    key={product.id}
+                    onClick={() => handleSelectItem(index)}
+                    className={cn(
+                      "w-full flex items-center gap-3 py-3 transition-colors text-left",
+                      mobileFullPage ? "px-3" : "px-4",
+                      selectedIndex === index
+                        ? "bg-gray-100"
+                        : "hover:bg-gray-50"
+                    )}
+                  >
+                    {/* Product Image */}
+                    <ProductImageThumbnail 
+                      imageUrl={product.imageUrl} 
+                      name={product.name} 
+                    />
+
+                    {/* Product Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {product.name}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-gray-500">{product.storeName}</span>
+                        {!product.inStock && (
+                          <span className="text-xs text-red-500 font-medium">Out of Stock</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Price */}
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-semibold text-gray-900">
+                        ${product.price.toFixed(2)}
+                      </p>
+                      <p className="text-xs text-gray-500">{product.category}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Stores Section */}
+          {results?.stores && results.stores.length > 0 && (
+            <div>
+              <div className={cn("py-2 bg-gray-50", mobileFullPage ? "px-3" : "px-4")}>
+                <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                  <Store className="h-3.5 w-3.5" />
+                  Stores
+                </div>
+              </div>
+              <div className="py-1">
+                {results.stores.map((store, index) => (
+                  <button
+                    key={store.id}
+                    onClick={() => handleSelectItem(results.products.length + index)}
+                    className={cn(
+                      "w-full flex items-center gap-3 py-3 transition-colors text-left",
+                      mobileFullPage ? "px-3" : "px-4",
+                      selectedIndex === results.products.length + index
+                        ? "bg-gray-100"
+                        : "hover:bg-gray-50"
+                    )}
+                  >
+                    {/* Store Logo */}
+                    <div className="relative h-10 w-10 rounded-md bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200 flex items-center justify-center">
+                      {store.logoUrl ? (
+                        <Image
+                          src={store.logoUrl}
+                          alt={store.name}
+                          fill
+                          className="object-cover"
+                          sizes="40px"
+                        />
+                      ) : (
+                        <Store className="h-5 w-5 text-gray-400" />
+                      )}
+                    </div>
+
+                    {/* Store Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">
+                        {store.name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {store.productCount} {store.productCount === 1 ? 'product' : 'products'}
+                      </p>
+                    </div>
+
+                    <ArrowRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* View All Results */}
+          {query && (
+            <div className={cn("border-t border-gray-100", mobileFullPage ? "p-2 px-3" : "p-2")}>
+              <button
+                onClick={handleFullSearch}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+              >
+                View all results for "{query}"
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+
+  // Render recent searches content (shared between dropdown and inline modes)
+  const renderRecentSearchesContent = () => (
+    <>
+      {/* Header */}
+      <div className={cn("py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between", mobileFullPage ? "px-3" : "px-4")}>
+        <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
+          <Clock className="h-3.5 w-3.5" />
+          Recent Searches
+        </div>
+        <button
+          onClick={clearAllRecentSearches}
+          className="text-xs text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
+        >
+          <Trash2 className="h-3 w-3" />
+          Clear all
+        </button>
+      </div>
+      
+      {/* Recent Searches List */}
+      <div className="py-1">
+        {recentSearches.map((recentQuery, index) => (
+          <div
+            key={`${recentQuery}-${index}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => handleRecentSearchClick(recentQuery)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleRecentSearchClick(recentQuery);
+              }
+            }}
+            className={cn("w-full flex items-center gap-3 py-2.5 hover:bg-gray-50 transition-colors text-left group cursor-pointer", mobileFullPage ? "px-3" : "px-4")}
+          >
+            <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
+            <span className="flex-1 text-sm text-gray-700 truncate">
+              {recentQuery}
+            </span>
+            <button
+              onClick={(e) => removeRecentSearch(recentQuery, e)}
+              className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-gray-200 transition-all"
+              aria-label="Remove search"
+            >
+              <X className="h-3 w-3 text-gray-400" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full flex flex-col h-full">
       {/* Search Input */}
-      <div className="relative">
+      <div className="relative flex-shrink-0">
         <Search className="absolute left-3 sm:left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         
         <Input
@@ -585,7 +814,10 @@ export function InstantSearch({ autoFocus = false, onResultClick }: InstantSearc
           onKeyDown={handleKeyDown}
           onFocus={() => {
             setIsFocused(true);
-            if (results && query.length >= 2) {
+            if (mobileFullPage) {
+              // In mobile full page mode, always show content area
+              setShowDropdown(true);
+            } else if (results && query.length >= 2) {
               setShowDropdown(true);
             } else if (query.length < 2 && recentSearches.length > 0) {
               // Show recent searches when focused with no query
@@ -618,315 +850,121 @@ export function InstantSearch({ autoFocus = false, onResultClick }: InstantSearc
         </div>
       </div>
 
-      {/* Mobile Backdrop for Recent Searches */}
-      <AnimatePresence>
-        {isMobile && showDropdown && query.length < 2 && recentSearches.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/50 z-[60]"
-            onClick={() => setShowDropdown(false)}
-          />
-        )}
-      </AnimatePresence>
+      {/* Mobile Full Page Mode - Render inline */}
+      {mobileFullPage && (
+        <div className="flex-1 overflow-y-auto bg-white mt-2">
+          {query.length < 2 && recentSearches.length > 0 ? (
+            renderRecentSearchesContent()
+          ) : query.length >= 2 ? (
+            renderResultsContent()
+          ) : null}
+        </div>
+      )}
 
-      {/* Recent Searches Dropdown - Shows when focused with no query */}
-      <AnimatePresence>
-        {showDropdown && query.length < 2 && recentSearches.length > 0 && (
-          <motion.div
-            ref={dropdownRef}
-            initial={{ opacity: 0, y: isMobile ? 20 : -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: isMobile ? 20 : -8 }}
-            transition={{ duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className={cn(
-              "bg-white z-[70] overflow-y-auto",
-              isMobile
-                ? "fixed inset-x-0 bottom-0 top-16 rounded-t-2xl border-t border-gray-200 shadow-2xl"
-                : "absolute top-full left-0 right-0 mt-2 rounded-md border border-gray-200 shadow-xl overflow-hidden"
-            )}
-          >
-            {/* Mobile Close Handle */}
-            {isMobile && (
-              <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-900">
-                  Search
-                </p>
-                <button
-                  onClick={() => setShowDropdown(false)}
-                  className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
-                  aria-label="Close search"
-                >
-                  <X className="h-5 w-5 text-gray-600" />
-                </button>
-              </div>
-            )}
-
-            {/* Header */}
-            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                <Clock className="h-3.5 w-3.5" />
-                Recent Searches
-              </div>
-              <button
-                onClick={clearAllRecentSearches}
-                className="text-xs text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
-              >
-                <Trash2 className="h-3 w-3" />
-                Clear all
-              </button>
-            </div>
-            
-            {/* Recent Searches List */}
-            <div className="py-1">
-              {recentSearches.map((recentQuery, index) => (
-                <div
-                  key={`${recentQuery}-${index}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleRecentSearchClick(recentQuery)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      handleRecentSearchClick(recentQuery);
-                    }
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left group cursor-pointer"
-                >
-                  <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                  <span className="flex-1 text-sm text-gray-700 truncate">
-                    {recentQuery}
-                  </span>
-                  <button
-                    onClick={(e) => removeRecentSearch(recentQuery, e)}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-gray-200 transition-all"
-                    aria-label="Remove search"
-                  >
-                    <X className="h-3 w-3 text-gray-400" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Mobile Backdrop for Search Results */}
-      <AnimatePresence>
-        {isMobile && showDropdown && query.length >= 2 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/50 z-[60]"
-            onClick={() => setShowDropdown(false)}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Dropdown Results - Shows INSTANTLY */}
-      <AnimatePresence>
-        {showDropdown && query.length >= 2 && (
-          <motion.div
-            ref={dropdownRef}
-            initial={{ opacity: 0, y: isMobile ? 20 : 0 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: isMobile ? 20 : 0 }}
-            transition={{ duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className={cn(
-              "bg-white z-[70] overflow-y-auto",
-              isMobile
-                ? "fixed inset-x-0 bottom-0 top-16 rounded-t-2xl border-t border-gray-200 shadow-2xl"
-                : "absolute top-full left-0 right-0 mt-2 rounded-md border border-gray-200 shadow-2xl max-h-[70vh]"
-            )}
-          >
-          {/* Mobile Close Handle */}
-          {isMobile && (
-            <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-              <p className="text-sm font-medium text-gray-900">
-                Search Results
-              </p>
-              <button
+      {/* Desktop/Sheet Mode - Render as dropdowns (only when not in mobileFullPage mode) */}
+      {!mobileFullPage && (
+        <>
+          {/* Mobile Backdrop for Recent Searches (only in sheet mode) */}
+          <AnimatePresence>
+            {useMobileSheet && showDropdown && query.length < 2 && recentSearches.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 bg-black/50 z-[60]"
                 onClick={() => setShowDropdown(false)}
-                className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
-                aria-label="Close search"
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Recent Searches Dropdown - Shows when focused with no query */}
+          <AnimatePresence>
+            {showDropdown && query.length < 2 && recentSearches.length > 0 && (
+              <motion.div
+                ref={dropdownRef}
+                initial={{ opacity: 0, y: useMobileSheet ? 20 : -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: useMobileSheet ? 20 : -8 }}
+                transition={{ duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] }}
+                className={cn(
+                  "bg-white z-[70] overflow-y-auto",
+                  useMobileSheet && "fixed inset-x-0 bottom-0 top-16 rounded-t-2xl border-t border-gray-200 shadow-2xl",
+                  !useMobileSheet && "absolute top-full left-0 right-0 mt-2 rounded-md border border-gray-200 shadow-xl overflow-hidden"
+                )}
               >
-                <X className="h-5 w-5 text-gray-600" />
-              </button>
-            </div>
-          )}
-
-          {loading && !results ? (
-            // Minimal loading state - appears instantly while searching
-            <div className="p-6 text-center">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 mx-auto" />
-            </div>
-          ) : !hasResults && !aiResponse && !aiLoading ? (
-            // No results state - only shows when ALL loading is complete
-            <div className="p-8 text-center">
-              <Search className="h-8 w-8 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm font-medium text-gray-900 mb-1">No results found</p>
-              <p className="text-xs text-gray-500">Try a different search term</p>
-            </div>
-          ) : (
-            <>
-              {/* AI Loading State */}
-              {aiLoading && (
-                <AISearchLoading />
-              )}
-
-              {/* AI Response Section */}
-              {aiResponse && !aiLoading && (
-                <div className="border-b border-gray-200">
-                  <AISearchResponseDisplay response={aiResponse.response} />
-                </div>
-              )}
-
-              {/* AI Search CTA Button */}
-              {showAiButton && !aiLoading && !aiResponse && (results?.products || results?.stores) && (
-                <div className="border-t border-gray-100 px-4 py-2 bg-gray-50">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerAiSearch();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-white rounded-md transition-all duration-200 group border border-transparent hover:border-gray-200"
-                  >
-                    <Sparkles className="h-3.5 w-3.5 text-gray-400 group-hover:text-[#FFC72C] transition-colors" />
-                    <span className="font-medium">
-                      Ask Cycling Expert
-                    </span>
-                    <ArrowRight className="h-3.5 w-3.5 ml-auto text-gray-400 group-hover:text-gray-600 transition-colors" />
-                  </button>
-                </div>
-              )}
-
-              {/* Products Section */}
-              {results?.products && results.products.length > 0 && (
-                <div className="border-b border-gray-100">
-                  <div className="px-4 py-2 bg-gray-50">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                      <Package className="h-3.5 w-3.5" />
-                      Products
-                    </div>
+                {/* Mobile Close Handle (only in sheet mode) */}
+                {useMobileSheet && (
+                  <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-900">
+                      Search
+                    </p>
+                    <button
+                      onClick={() => setShowDropdown(false)}
+                      className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
+                      aria-label="Close search"
+                    >
+                      <X className="h-5 w-5 text-gray-600" />
+                    </button>
                   </div>
-                  <div className="py-1">
-                    {results.products.map((product, index) => (
-                      <button
-                        key={product.id}
-                        onClick={() => handleSelectItem(index)}
-                        className={cn(
-                          "w-full flex items-center gap-3 px-4 py-3 transition-colors text-left",
-                          selectedIndex === index
-                            ? "bg-gray-100"
-                            : "hover:bg-gray-50"
-                        )}
-                      >
-                        {/* Product Image */}
-                        <ProductImageThumbnail 
-                          imageUrl={product.imageUrl} 
-                          name={product.name} 
-                        />
+                )}
 
-                        {/* Product Info */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {product.name}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-xs text-gray-500">{product.storeName}</span>
-                            {!product.inStock && (
-                              <span className="text-xs text-red-500 font-medium">Out of Stock</span>
-                            )}
-                          </div>
-                        </div>
+                {renderRecentSearchesContent()}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-                        {/* Price */}
-                        <div className="text-right flex-shrink-0">
-                          <p className="text-sm font-semibold text-gray-900">
-                            ${product.price.toFixed(2)}
-                          </p>
-                          <p className="text-xs text-gray-500">{product.category}</p>
-                        </div>
-                      </button>
-                    ))}
+          {/* Mobile Backdrop for Search Results (only in sheet mode) */}
+          <AnimatePresence>
+            {useMobileSheet && showDropdown && query.length >= 2 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 bg-black/50 z-[60]"
+                onClick={() => setShowDropdown(false)}
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Dropdown Results - Shows INSTANTLY */}
+          <AnimatePresence>
+            {showDropdown && query.length >= 2 && (
+              <motion.div
+                ref={dropdownRef}
+                initial={{ opacity: 0, y: useMobileSheet ? 20 : 0 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: useMobileSheet ? 20 : 0 }}
+                transition={{ duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] }}
+                className={cn(
+                  "bg-white z-[70] overflow-y-auto",
+                  useMobileSheet && "fixed inset-x-0 bottom-0 top-16 rounded-t-2xl border-t border-gray-200 shadow-2xl",
+                  !useMobileSheet && "absolute top-full left-0 right-0 mt-2 rounded-md border border-gray-200 shadow-2xl max-h-[70vh]"
+                )}
+              >
+                {/* Mobile Close Handle (only in sheet mode) */}
+                {useMobileSheet && (
+                  <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-900">
+                      Search Results
+                    </p>
+                    <button
+                      onClick={() => setShowDropdown(false)}
+                      className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
+                      aria-label="Close search"
+                    >
+                      <X className="h-5 w-5 text-gray-600" />
+                    </button>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Stores Section */}
-              {results?.stores && results.stores.length > 0 && (
-                <div>
-                  <div className="px-4 py-2 bg-gray-50">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                      <Store className="h-3.5 w-3.5" />
-                      Stores
-                    </div>
-                  </div>
-                  <div className="py-1">
-                    {results.stores.map((store, index) => (
-                      <button
-                        key={store.id}
-                        onClick={() => handleSelectItem(results.products.length + index)}
-                        className={cn(
-                          "w-full flex items-center gap-3 px-4 py-3 transition-colors text-left",
-                          selectedIndex === results.products.length + index
-                            ? "bg-gray-100"
-                            : "hover:bg-gray-50"
-                        )}
-                      >
-                        {/* Store Logo */}
-                        <div className="relative h-10 w-10 rounded-md bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200 flex items-center justify-center">
-                          {store.logoUrl ? (
-                            <Image
-                              src={store.logoUrl}
-                              alt={store.name}
-                              fill
-                              className="object-cover"
-                              sizes="40px"
-                            />
-                          ) : (
-                            <Store className="h-5 w-5 text-gray-400" />
-                          )}
-                        </div>
-
-                        {/* Store Info */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900">
-                            {store.name}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {store.productCount} {store.productCount === 1 ? 'product' : 'products'}
-                          </p>
-                        </div>
-
-                        <ArrowRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* View All Results */}
-              {query && (
-                <div className="border-t border-gray-100 p-2">
-                  <button
-                    onClick={handleFullSearch}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-                  >
-                    View all results for "{query}"
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+                {renderResultsContent()}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
     </div>
   );
 }

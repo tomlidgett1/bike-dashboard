@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { FacebookImportModal } from "./sell/facebook-import-modal";
 import { SmartUploadModal } from "./sell/smart-upload-modal";
+import { MobileUploadMethodDialog } from "./sell/mobile-upload-method-dialog";
 import type { ListingImage } from "@/lib/types/listing";
 
 // ============================================================
@@ -76,7 +77,9 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
   const [sellRequirementModalOpen, setSellRequirementModalOpen] = React.useState(false);
   const [facebookModalOpen, setFacebookModalOpen] = React.useState(false);
   const [smartUploadModalOpen, setSmartUploadModalOpen] = React.useState(false);
+  const [mobileUploadMethodOpen, setMobileUploadMethodOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const { scrollY } = useScroll();
   const router = useRouter();
@@ -92,6 +95,16 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
   // Ensure component only renders auth UI on client-side
   React.useEffect(() => {
     setMounted(true);
+  }, []);
+
+  // Detect if on mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   // Get display name based on account type
@@ -211,7 +224,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                   <Button
                     onClick={() => {
                       if (user) {
-                        setSmartUploadModalOpen(true);
+                        setMobileUploadMethodOpen(true);
                       } else {
                         setSellRequirementModalOpen(true);
                       }
@@ -248,7 +261,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                   <Button
                     onClick={() => {
                       if (user) {
-                        setSmartUploadModalOpen(true);
+                        setMobileUploadMethodOpen(true);
                       } else {
                         setSellRequirementModalOpen(true);
                       }
@@ -747,6 +760,21 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
         }}
       />
 
+      {/* Mobile Upload Method Dialog */}
+      <MobileUploadMethodDialog
+        isOpen={mobileUploadMethodOpen}
+        onClose={() => setMobileUploadMethodOpen(false)}
+        onSelectQuick={() => {
+          setSmartUploadModalOpen(true);
+        }}
+        onSelectFacebook={() => {
+          setFacebookModalOpen(true);
+        }}
+        onSelectComprehensive={() => {
+          router.push('/marketplace/sell');
+        }}
+      />
+
       {/* Mobile Search Overlay - Full screen takeover */}
       <AnimatePresence>
         {mobileSearchOpen && (
@@ -755,10 +783,10 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[102] bg-white sm:hidden flex flex-col overflow-hidden"
+            className="fixed inset-0 z-[102] bg-white sm:hidden flex flex-col"
           >
             {/* Search Header */}
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0">
+            <div className="flex items-center gap-2 px-3 py-3 border-b border-gray-200 flex-shrink-0">
               {/* Back/Close button */}
               <button
                 onClick={() => setMobileSearchOpen(false)}
@@ -767,12 +795,19 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
               >
                 <X className="h-5 w-5 text-gray-600" />
               </button>
-              {/* Search input */}
-              <div className="flex-1">
-                <InstantSearch autoFocus onResultClick={() => setMobileSearchOpen(false)} />
+              <span className="text-sm font-medium text-gray-900">Search</span>
+            </div>
+            
+            {/* Search input and results - full page mode */}
+            <div className="flex-1 flex flex-col min-h-0">
+              <div className="px-3 py-3 flex-shrink-0">
+                <InstantSearch 
+                  autoFocus 
+                  onResultClick={() => setMobileSearchOpen(false)} 
+                  mobileFullPage 
+                />
               </div>
             </div>
-            {/* Results will show in the dropdown which is positioned absolute below the input */}
           </motion.div>
         )}
       </AnimatePresence>
