@@ -49,14 +49,18 @@ export function MakeOfferButton({
       productId,
       productIdType: typeof productId,
       productIdLength: productId?.length,
+      productIdValid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId || ''),
       sellerId,
       sellerIdType: typeof sellerId,
       sellerIdLength: sellerId?.length,
+      sellerIdValid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sellerId || ''),
       productName: productName?.substring(0, 50),
       productPrice,
+      currentUserId: user?.id,
+      currentUserIdValid: user?.id ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) : false,
       isMobile: window.innerWidth < 768,
     });
-  }, [productId, sellerId, productName, productPrice]);
+  }, [productId, sellerId, productName, productPrice, user]);
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null);

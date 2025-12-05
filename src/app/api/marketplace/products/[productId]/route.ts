@@ -217,7 +217,15 @@ export async function GET(
     };
 
     const loadTime = Date.now() - startTime;
+    
+    // Debug: Log user_id to help diagnose UUID issues
     console.log(`✅ [PRODUCT API] Product loaded in ${loadTime}ms`);
+    console.log(`📝 [PRODUCT API] Product user_id:`, {
+      user_id: product.user_id,
+      user_id_type: typeof product.user_id,
+      user_id_length: product.user_id?.length,
+      user_id_valid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(product.user_id || ''),
+    });
 
     return NextResponse.json({ product: formattedProduct });
 
