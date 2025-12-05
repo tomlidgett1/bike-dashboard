@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera, Upload, X, Check, Clock, ImageIcon, Loader2, AlertCircle, CheckCircle2, Zap } from "lucide-react";
