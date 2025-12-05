@@ -116,210 +116,262 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
 
   return (
     <div className="bg-white border-b border-gray-200">
-      <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex flex-col sm:flex-row sm:items-start gap-6">
-          {/* Profile Photo */}
-          <div className="flex-shrink-0">
-            <div className="relative h-24 w-24 sm:h-28 sm:w-28 rounded-full overflow-hidden bg-gray-100 border-2 border-gray-200">
-              {seller.logo_url ? (
-                <Image
-                  src={seller.logo_url}
-                  alt={seller.display_name}
-                  fill
-                  className="object-cover"
-                  priority
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                  <span className="text-3xl sm:text-4xl font-bold text-gray-400">
-                    {seller.display_name.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Profile Info */}
-          <div className="flex-1 min-w-0">
-            {/* Name and Location Row */}
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-3">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                  {seller.display_name}
-                </h1>
-                {seller.location && (
-                  <div className="flex items-center gap-1.5 text-gray-500">
-                    <MapPin className="h-4 w-4" />
-                    <span className="text-sm">{seller.location}</span>
+      <div className="max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+        <div className="flex flex-col gap-4">
+          {/* Top Row: Profile Photo + Name/Location + Action Buttons on Desktop */}
+          <div className="flex items-start gap-3 sm:gap-4">
+            {/* Profile Photo */}
+            <div className="flex-shrink-0">
+              <div className="relative h-20 w-20 sm:h-24 sm:w-24 lg:h-28 lg:w-28 rounded-full overflow-hidden bg-gray-100 border-2 border-gray-200">
+                {seller.logo_url ? (
+                  <Image
+                    src={seller.logo_url}
+                    alt={seller.display_name}
+                    fill
+                    className="object-cover"
+                    priority
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                    <span className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-400">
+                      {seller.display_name.charAt(0).toUpperCase()}
+                    </span>
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2">
-                {isOwnProfile ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={onEditClick}
-                    className="rounded-md"
-                  >
-                    <Settings className="h-4 w-4 mr-2" />
-                    Edit Profile
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      variant={isFollowing ? "outline" : "default"}
-                      size="sm"
-                      onClick={handleFollowClick}
-                      disabled={isFollowLoading}
-                      className="rounded-md min-w-[100px]"
-                    >
-                      {isFollowLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : isFollowing ? (
-                        <>
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                          Following
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus className="h-4 w-4 mr-2" />
-                          Follow
-                        </>
-                      )}
-                    </Button>
+            {/* Name, Location & Action Buttons */}
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
+                {/* Name and Location */}
+                <div className="min-w-0">
+                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1 truncate">
+                    {seller.display_name}
+                  </h1>
+                  {seller.location && (
+                    <div className="flex items-center gap-1.5 text-gray-500">
+                      <MapPin className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
+                      <span className="text-xs sm:text-sm truncate">{seller.location}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Action Buttons - Show on Desktop Only */}
+                <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
+                  {isOwnProfile ? (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleMessageClick}
+                      onClick={onEditClick}
                       className="rounded-md"
                     >
-                      <MessageCircle className="h-4 w-4 mr-2" />
-                      Message
+                      <Settings className="h-4 w-4 mr-2" />
+                      Edit Profile
                     </Button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Stats Row */}
-            <div className="flex items-center flex-wrap gap-4 sm:gap-6 mb-3 text-sm">
-              <div className="flex items-center gap-1.5 text-gray-600">
-                <Package className="h-4 w-4" />
-                <span className="font-medium">{seller.stats.total_items}</span>
-                <span className="text-gray-500">for sale</span>
-              </div>
-              {seller.stats.sold_items > 0 && (
-                <div className="flex items-center gap-1.5 text-gray-600">
-                  <CheckCircle className="h-4 w-4" />
-                  <span className="font-medium">{seller.stats.sold_items}</span>
-                  <span className="text-gray-500">sold</span>
-                </div>
-              )}
-              <div className="flex items-center gap-1.5 text-gray-600">
-                <Users className="h-4 w-4" />
-                <span className="font-medium">{followerCount}</span>
-                <span className="text-gray-500">followers</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-gray-500">
-                <Calendar className="h-4 w-4" />
-                <span>Joined {memberSince}</span>
-              </div>
-            </div>
-
-            {/* Bio Section */}
-            {seller.bio && (
-              <div className="mb-3">
-                <p 
-                  ref={bioRef}
-                  className={cn(
-                    "text-gray-700 text-sm leading-relaxed transition-all duration-300",
-                    !bioExpanded && "line-clamp-2"
+                  ) : (
+                    <>
+                      <Button
+                        variant={isFollowing ? "outline" : "default"}
+                        size="sm"
+                        onClick={handleFollowClick}
+                        disabled={isFollowLoading}
+                        className="rounded-md min-w-[100px]"
+                      >
+                        {isFollowLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : isFollowing ? (
+                          <>
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Following
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="h-4 w-4 mr-2" />
+                            Follow
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleMessageClick}
+                        className="rounded-md"
+                      >
+                        <MessageCircle className="h-4 w-4 mr-2" />
+                        Message
+                      </Button>
+                    </>
                   )}
-                >
-                  {seller.bio}
-                </p>
-                {showReadMore && (
-                  <button
-                    onClick={() => setBioExpanded(!bioExpanded)}
-                    className="flex items-center gap-1 mt-1 text-sm font-medium text-gray-900 hover:text-gray-700 transition-colors"
-                  >
-                    {bioExpanded ? 'Show less' : 'Read more'}
-                    <ChevronDown 
-                      className={cn(
-                        "h-4 w-4 transition-transform duration-200",
-                        bioExpanded && "rotate-180"
-                      )} 
-                    />
-                  </button>
-                )}
+                </div>
               </div>
-            )}
+            </div>
+          </div>
 
-            {/* Social Links */}
-            {hasSocialLinks && (
-              <div className="flex items-center gap-2">
-                {seller.social_links?.instagram && (
-                  <a
-                    href={seller.social_links.instagram.startsWith('http') 
-                      ? seller.social_links.instagram 
-                      : `https://instagram.com/${seller.social_links.instagram.replace('@', '')}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
-                    aria-label="Instagram"
-                  >
-                    <Instagram className="h-4 w-4" />
-                  </a>
-                )}
-                {seller.social_links?.facebook && (
-                  <a
-                    href={seller.social_links.facebook.startsWith('http')
-                      ? seller.social_links.facebook
-                      : `https://facebook.com/${seller.social_links.facebook}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
-                    aria-label="Facebook"
-                  >
-                    <Facebook className="h-4 w-4" />
-                  </a>
-                )}
-                {seller.social_links?.strava && (
-                  <a
-                    href={seller.social_links.strava.startsWith('http')
-                      ? seller.social_links.strava
-                      : `https://strava.com/athletes/${seller.social_links.strava}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
-                    aria-label="Strava"
-                  >
-                    <StravaIcon className="h-3.5 w-3.5" />
-                  </a>
-                )}
-                {seller.social_links?.website && (
-                  <a
-                    href={seller.social_links.website.startsWith('http')
-                      ? seller.social_links.website
-                      : `https://${seller.social_links.website}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
-                    aria-label="Website"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
-                )}
-              </div>
+          {/* Mobile Action Buttons - Full Width Below Profile */}
+          <div className="flex sm:hidden items-center gap-2">
+            {isOwnProfile ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onEditClick}
+                className="rounded-md flex-1"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Edit Profile
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant={isFollowing ? "outline" : "default"}
+                  size="sm"
+                  onClick={handleFollowClick}
+                  disabled={isFollowLoading}
+                  className="rounded-md flex-1"
+                >
+                  {isFollowLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : isFollowing ? (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-1.5" />
+                      <span className="text-sm">Following</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="h-4 w-4 mr-1.5" />
+                      <span className="text-sm">Follow</span>
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleMessageClick}
+                  className="rounded-md flex-1"
+                >
+                  <MessageCircle className="h-4 w-4 mr-1.5" />
+                  <span className="text-sm">Message</span>
+                </Button>
+              </>
             )}
           </div>
+
+          {/* Stats Row - Optimised for Mobile */}
+          <div className="flex items-center flex-wrap gap-3 sm:gap-4 lg:gap-6 text-xs sm:text-sm">
+            <div className="flex items-center gap-1.5 text-gray-600">
+              <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
+              <span className="font-medium">{seller.stats.total_items}</span>
+              <span className="text-gray-500 hidden xs:inline">for sale</span>
+            </div>
+            {seller.stats.sold_items > 0 && (
+              <div className="flex items-center gap-1.5 text-gray-600">
+                <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
+                <span className="font-medium">{seller.stats.sold_items}</span>
+                <span className="text-gray-500 hidden xs:inline">sold</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 text-gray-600">
+              <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
+              <span className="font-medium">{followerCount}</span>
+              <span className="text-gray-500 hidden xs:inline">followers</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-gray-500">
+              <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Joined {memberSince}</span>
+              <span className="sm:hidden">{memberSince}</span>
+            </div>
+          </div>
+
+          {/* Bio Section */}
+          {seller.bio && (
+            <div>
+              <p 
+                ref={bioRef}
+                className={cn(
+                  "text-gray-700 text-xs sm:text-sm leading-relaxed transition-all duration-300",
+                  !bioExpanded && "line-clamp-2"
+                )}
+              >
+                {seller.bio}
+              </p>
+              {showReadMore && (
+                <button
+                  onClick={() => setBioExpanded(!bioExpanded)}
+                  className="flex items-center gap-1 mt-1.5 text-xs sm:text-sm font-medium text-gray-900 hover:text-gray-700 transition-colors"
+                >
+                  {bioExpanded ? 'Show less' : 'Read more'}
+                  <ChevronDown 
+                    className={cn(
+                      "h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform duration-200",
+                      bioExpanded && "rotate-180"
+                    )} 
+                  />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Social Links */}
+          {hasSocialLinks && (
+            <div className="flex items-center gap-2">
+              {seller.social_links?.instagram && (
+                <a
+                  href={seller.social_links.instagram.startsWith('http') 
+                    ? seller.social_links.instagram 
+                    : `https://instagram.com/${seller.social_links.instagram.replace('@', '')}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center h-9 w-9 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                  aria-label="Instagram"
+                >
+                  <Instagram className="h-4 w-4" />
+                </a>
+              )}
+              {seller.social_links?.facebook && (
+                <a
+                  href={seller.social_links.facebook.startsWith('http')
+                    ? seller.social_links.facebook
+                    : `https://facebook.com/${seller.social_links.facebook}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center h-9 w-9 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                  aria-label="Facebook"
+                >
+                  <Facebook className="h-4 w-4" />
+                </a>
+              )}
+              {seller.social_links?.strava && (
+                <a
+                  href={seller.social_links.strava.startsWith('http')
+                    ? seller.social_links.strava
+                    : `https://strava.com/athletes/${seller.social_links.strava}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center h-9 w-9 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                  aria-label="Strava"
+                >
+                  <StravaIcon className="h-3.5 w-3.5" />
+                </a>
+              )}
+              {seller.social_links?.website && (
+                <a
+                  href={seller.social_links.website.startsWith('http')
+                    ? seller.social_links.website
+                    : `https://${seller.social_links.website}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center h-9 w-9 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                  aria-label="Website"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

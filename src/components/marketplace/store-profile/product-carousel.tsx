@@ -73,16 +73,16 @@ export function ProductCarousel({
   const hasMore = products.length > initialVisibleCount;
 
   return (
-    <section className="py-3">
+    <section className="py-2.5 sm:py-3">
       {/* Category Header */}
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-base font-semibold text-gray-900">{categoryName}</h3>
+      <div className="flex items-center justify-between mb-2.5 sm:mb-3 px-3 sm:px-0">
+        <h3 className="text-sm sm:text-base font-semibold text-gray-900">{categoryName}</h3>
         {hasMore && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="text-sm text-gray-600 hover:text-gray-900"
+            className="text-xs sm:text-sm text-gray-600 hover:text-gray-900 h-auto py-1 px-2 sm:px-3"
           >
             {isExpanded ? 'Show Less' : `See All (${products.length})`}
           </Button>
@@ -92,21 +92,21 @@ export function ProductCarousel({
       {/* Products */}
       <AnimatePresence mode="wait">
         {isExpanded ? (
-          // Expanded Grid View
+          // Expanded Grid View - Mobile Optimised
           <motion.div
             key="grid"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4"
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3 sm:gap-4 px-3 sm:px-0"
           >
             {displayedProducts.map((product, index) => (
               <ProductCard key={product.id} product={product} priority={index < 6} />
             ))}
           </motion.div>
         ) : (
-          // Carousel View
+          // Carousel View - Mobile Optimised
           <motion.div
             key="carousel"
             initial={{ opacity: 0 }}
@@ -115,46 +115,49 @@ export function ProductCarousel({
             transition={{ duration: 0.3 }}
             className="relative"
           >
-            {/* Left Arrow */}
+            {/* Left Arrow - Hidden on Mobile */}
             {canScrollLeft && !isExpanded && (
               <button
                 onClick={() => scroll('left')}
-                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white shadow-lg flex items-center justify-center hover:bg-gray-50 transition-colors"
+                className="hidden sm:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white shadow-lg items-center justify-center hover:bg-gray-50 transition-colors"
                 aria-label="Scroll left"
               >
                 <ChevronLeft className="h-5 w-5 text-gray-700" />
               </button>
             )}
 
-            {/* Right Arrow */}
+            {/* Right Arrow - Hidden on Mobile */}
             {canScrollRight && !isExpanded && (
               <button
                 onClick={() => scroll('right')}
-                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white shadow-lg flex items-center justify-center hover:bg-gray-50 transition-colors"
+                className="hidden sm:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white shadow-lg items-center justify-center hover:bg-gray-50 transition-colors"
                 aria-label="Scroll right"
               >
                 <ChevronRight className="h-5 w-5 text-gray-700" />
               </button>
             )}
 
-            {/* Scrollable Container */}
+            {/* Scrollable Container - Mobile Optimised */}
             <div
               ref={scrollContainerRef}
-              className="overflow-x-auto scrollbar-hide -mx-2 px-2"
+              className="overflow-x-auto scrollbar-hide -mx-3 sm:-mx-2 px-3 sm:px-2 snap-x snap-mandatory sm:snap-none"
               style={{
                 scrollbarWidth: 'none',
                 msOverflowStyle: 'none',
+                WebkitOverflowScrolling: 'touch',
               }}
             >
-              <div className="flex gap-4" style={{ minWidth: 'min-content' }}>
+              <div className="flex gap-2.5 sm:gap-3 md:gap-4" style={{ minWidth: 'min-content' }}>
                 {displayedProducts.map((product, index) => (
                   <div
                     key={product.id}
-                    className="flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] lg:w-[220px] xl:w-[240px]"
+                    className="flex-shrink-0 w-[145px] xs:w-[160px] sm:w-[180px] md:w-[200px] lg:w-[220px] xl:w-[240px] snap-start"
                   >
                     <ProductCard product={product} priority={index < 6} />
                   </div>
                 ))}
+                {/* Spacer for mobile scroll end */}
+                <div className="w-3 flex-shrink-0 sm:hidden" />
               </div>
             </div>
           </motion.div>
