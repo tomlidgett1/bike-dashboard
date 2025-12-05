@@ -220,8 +220,8 @@ export function UnifiedFilterBar({
 
   return (
     <div className="space-y-3">
-      {/* Primary Row: View Mode Tabs */}
-      <div className="flex flex-col gap-3">
+      {/* Primary Row: View Mode Tabs + Source Filter Tabs (desktop only) */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         {/* View Mode Tabs - Full width on mobile */}
         <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-full sm:w-auto">
           <button
@@ -269,7 +269,7 @@ export function UnifiedFilterBar({
           </button>
         </div>
 
-        {/* Source Filter Tabs + Advanced Filters - only on Browse mode */}
+        {/* Source Filter Tabs + Advanced Filters - only on Browse mode - Same row on desktop */}
         {isOnBrowseMode && (
           <div className="flex items-stretch gap-2">
             {/* Listing Type Filter Tabs - Full width on mobile, auto on desktop */}
