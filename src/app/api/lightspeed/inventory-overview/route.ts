@@ -88,10 +88,26 @@ export async function GET() {
 
     const syncedItemIds = new Set(syncedProducts.map(p => p.lightspeed_item_id))
 
-    // Fetch category names from Lightspeed using our client
+    // Fetch category names and preferences from Lightspeed
     let categoryNamesMap = new Map<string, string>()
+    let categoryPreferencesMap = new Map<string, { isEnabled: boolean, lastSyncedAt: string | null }>()
 
     try {
+      // Fetch category preferences
+      const { data: prefs } = await supabase
+        .from('lightspeed_category_sync_preferences')
+        .select('category_id, is_enabled, last_synced_at')
+        .eq('user_id', user.id)
+
+      prefs?.forEach(pref => {
+        categoryPreferencesMap.set(pref.category_id, {
+          isEnabled: pref.is_enabled,
+          lastSyncedAt: pref.last_synced_at,
+        })
+      })
+
+      console.log(`[Inventory Overview] Fetched ${prefs?.length || 0} category preferences`)
+
       // Use the Lightspeed client to fetch categories
       const { createLightspeedClient } = await import('@/lib/services/lightspeed')
       const client = createLightspeedClient(user.id)
@@ -207,6 +223,8 @@ export async function GET() {
 
     // Add not synced categories
     notSyncedCategories.forEach(cat => {
+      const prefs = categoryPreferencesMap.get(cat.categoryId)
+      
       allCategoriesMap.set(cat.categoryId, {
         categoryId: cat.categoryId,
         name: cat.name,
@@ -215,18 +233,22 @@ export async function GET() {
         notSyncedProducts: cat.productCount,
         products: cat.products,
         syncStatus: cat.syncedCount > 0 ? 'partial' : 'not_synced',
-        lastSyncedAt: null,
+        autoSyncEnabled: prefs?.isEnabled || false,
+        lastSyncedAt: prefs?.lastSyncedAt || null,
       })
     })
 
     // Add/update with synced categories
     syncedCategories.forEach(cat => {
       const existing = allCategoriesMap.get(cat.categoryId)
+      const prefs = categoryPreferencesMap.get(cat.categoryId)
       
       if (existing) {
         existing.syncedProducts = cat.productCount
         existing.totalProducts = existing.notSyncedProducts + cat.productCount
         existing.syncStatus = existing.notSyncedProducts > 0 ? 'partial' : 'fully_synced'
+        existing.autoSyncEnabled = prefs?.isEnabled || false
+        existing.lastSyncedAt = prefs?.lastSyncedAt || null
       } else {
         allCategoriesMap.set(cat.categoryId, {
           categoryId: cat.categoryId,
@@ -236,7 +258,8 @@ export async function GET() {
           notSyncedProducts: 0,
           products: cat.products,
           syncStatus: 'fully_synced',
-          lastSyncedAt: null,
+          autoSyncEnabled: prefs?.isEnabled || false,
+          lastSyncedAt: prefs?.lastSyncedAt || null,
         })
       }
     })

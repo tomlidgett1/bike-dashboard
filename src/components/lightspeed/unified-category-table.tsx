@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, CheckCircle2, Clock } from "lucide-react";
+import { ChevronDown, CheckCircle2, Clock, Zap } from "lucide-react";
+import Image from "next/image";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,8 @@ interface Category {
   syncedProducts: number;
   notSyncedProducts: number;
   syncStatus: 'not_synced' | 'partial' | 'fully_synced';
+  autoSyncEnabled: boolean;
+  lastSyncedAt: string | null;
   products: any[];
 }
 
@@ -34,9 +37,11 @@ export function UnifiedCategoryTable({
   const getSyncBadge = (status: string, syncedCount: number, totalCount: number) => {
     if (status === 'fully_synced') {
       return (
-        <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-          <CheckCircle2 className="mr-1 h-3 w-3" />
-          Fully Synced
+        <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 flex items-center gap-1">
+          <div className="h-3 w-3 flex items-center justify-center">
+            <Image src="/ls.png" alt="Lightspeed" width={12} height={12} className="object-contain" />
+          </div>
+          Synced
         </Badge>
       );
     } else if (status === 'partial') {
@@ -54,23 +59,43 @@ export function UnifiedCategoryTable({
     }
   };
 
+  const formatLastSync = (date: string | null) => {
+    if (!date) return '-';
+    
+    const syncDate = new Date(date);
+    const now = new Date();
+    const diff = now.getTime() - syncDate.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    return syncDate.toLocaleDateString();
+  };
+
   return (
     <div className="overflow-auto">
       <table className="w-full">
         <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
           <tr className="border-b border-gray-200 dark:border-gray-800">
             <th className="w-12 px-4 py-3"></th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Category Name
             </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Status
             </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
-              Products
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+            <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Synced / Total
+            </th>
+            <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Auto-Sync
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Last Synced
             </th>
             <th className="w-12 px-4 py-3"></th>
           </tr>
@@ -78,7 +103,7 @@ export function UnifiedCategoryTable({
         <tbody>
           {categories.length === 0 ? (
             <tr>
-              <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
+              <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
                 No categories found
               </td>
             </tr>
@@ -102,14 +127,25 @@ export function UnifiedCategoryTable({
                     <td className="px-4 py-3">
                       {getSyncBadge(category.syncStatus, category.syncedProducts, category.totalProducts)}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="text-sm text-muted-foreground">
-                        {category.totalProducts} total
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-center">
                       <div className="text-sm font-medium">
                         {category.syncedProducts} / {category.totalProducts}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {category.autoSyncEnabled ? (
+                        <div className="inline-flex items-center gap-1 rounded-md bg-green-100 dark:bg-green-900/20 px-2 py-1">
+                          <Zap className="h-3 w-3 text-green-600 dark:text-green-400" />
+                          <span className="text-xs font-medium text-green-700 dark:text-green-400">ON</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Off</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {formatLastSync(category.lastSyncedAt)}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -125,7 +161,7 @@ export function UnifiedCategoryTable({
                   {/* Expanded Products */}
                   {isExpanded && (
                     <tr>
-                      <td colSpan={6} className="px-0 py-0">
+                      <td colSpan={7} className="px-0 py-0">
                         <div className="bg-gray-50 dark:bg-gray-900 border-y border-gray-200 dark:border-gray-800">
                           <div className="px-16 py-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
