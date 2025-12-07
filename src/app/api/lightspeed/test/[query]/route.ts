@@ -46,6 +46,7 @@ export async function GET(
         let currentParams: any = {
           qoh: '>,0',  // Operator format: '>,0' means qoh > 0
           limit: 100,
+          load_relations: '["Item"]', // Load item details (name, SKU, etc)
         }
         let pageCount = 0
         const maxPages = 100 // Safety limit (10,000 records max)
@@ -80,6 +81,7 @@ export async function GET(
                   qoh: '>,0',
                   limit: 100,
                   after: afterParam,
+                  load_relations: '["Item"]',
                 }
               } else {
                 hasMore = false
@@ -96,32 +98,60 @@ export async function GET(
           }
         }
         
-        // Extract unique item IDs across all shops
-        const allUniqueItemIds = [...new Set(allItemShops.map(shop => shop.itemID))]
+        // Extract unique item IDs and build detailed list
+        const uniqueItemsMap = new Map()
         
-        // Get items from shopID:0 (total across all locations)
-        const totalShopRecords = allItemShops.filter(shop => shop.shopID === '0')
-        const itemIdsFromShop0 = totalShopRecords.map(shop => shop.itemID)
-
-        result = {
-          query: 'itemshops-with-stock',
-          endpoint: '/ItemShop.json?qoh=%3E,0&limit=100',
-          description: 'COMPLETE list of ALL items with positive stock across your entire inventory.',
-          paginationComplete: pageCount < maxPages,
-          pagesQueried: pageCount,
-          totalRecords: allItemShops.length,
-          uniqueItemIds: allUniqueItemIds.length,
-          itemsFromShopId0: itemIdsFromShop0.length,
-          allUniqueItemIds: allUniqueItemIds, // EVERY unique item ID with stock
-          itemIdsFromShop0: itemIdsFromShop0, // Item IDs from shopID:0 (totals)
-          sampleRecords: allItemShops.slice(0, 10).map(shop => ({
-            itemID: shop.itemID,
+        // Build map of unique items with their details
+        allItemShops.forEach(shop => {
+          if (!uniqueItemsMap.has(shop.itemID)) {
+            uniqueItemsMap.set(shop.itemID, {
+              itemID: shop.itemID,
+              description: shop.Item?.description || 'N/A',
+              systemSku: shop.Item?.systemSku || 'N/A',
+              modelYear: shop.Item?.modelYear || null,
+              upc: shop.Item?.upc || null,
+              categoryID: shop.Item?.categoryID || null,
+              manufacturerID: shop.Item?.manufacturerID || null,
+              // Collect all shop records for this item
+              shops: [],
+            })
+          }
+          // Add this shop's inventory to the item
+          uniqueItemsMap.get(shop.itemID).shops.push({
             shopID: shop.shopID,
             qoh: shop.qoh,
             sellable: shop.sellable,
             reorderPoint: shop.reorderPoint,
-          })),
-          note: 'This query paginated through ALL pages to get every single item with stock. allUniqueItemIds contains EVERY item ID.',
+            isTotal: shop.shopID === '0',
+          })
+        })
+        
+        const allItemsWithDetails = Array.from(uniqueItemsMap.values())
+        const allUniqueItemIds = Array.from(uniqueItemsMap.keys())
+        
+        // Get items from shopID:0 (total across all locations)
+        const totalShopRecords = allItemShops.filter(shop => shop.shopID === '0')
+        const itemsFromShop0 = totalShopRecords.map(shop => ({
+          itemID: shop.itemID,
+          description: shop.Item?.description || 'N/A',
+          systemSku: shop.Item?.systemSku || 'N/A',
+          qoh: shop.qoh,
+          sellable: shop.sellable,
+        }))
+
+        result = {
+          query: 'itemshops-with-stock',
+          endpoint: '/ItemShop.json?qoh=%3E,0&limit=100&load_relations=["Item"]',
+          description: 'COMPLETE list of ALL items with positive stock including item details (name, SKU, etc).',
+          paginationComplete: pageCount < maxPages,
+          pagesQueried: pageCount,
+          totalRecords: allItemShops.length,
+          uniqueItems: allItemsWithDetails.length,
+          itemsFromShop0Count: itemsFromShop0.length,
+          allItemsWithDetails: allItemsWithDetails, // EVERY item with full details and inventory by location
+          itemsFromShop0: itemsFromShop0, // Items from shopID:0 (totals) with details
+          allUniqueItemIds: allUniqueItemIds, // Just the IDs if you need them
+          note: 'allItemsWithDetails contains EVERY item with stock including: description (name), SKU, model year, and inventory by shop location.',
         }
         break
       }
