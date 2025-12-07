@@ -125,7 +125,7 @@ export default function ConnectLightspeedPage() {
       setSyncPhase('Syncing to marketplace...');
       setSyncProgress(50);
 
-      const response = await fetch('/api/lightspeed/sync-selected', {
+      const response = await fetch('/api/lightspeed/sync-from-cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
