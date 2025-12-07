@@ -45,14 +45,14 @@ export async function GET(
         const items = await client.getItems({
           qoh: '>,0',
           limit: 100,
-          offset: 0,
+          // Note: offset is deprecated by Lightspeed, use next/previous URLs instead
         })
 
         const itemIds = items.map(item => item.itemID)
 
         result = {
           query: 'items-in-stock',
-          endpoint: '/Item.json?qoh=>,0&limit=100&offset=0',
+          endpoint: '/Item.json?qoh=>,0&limit=100',
           totalCount: items.length,
           itemsReturned: items.length,
           itemIds: itemIds.slice(0, 10), // First 10 IDs
@@ -64,7 +64,7 @@ export async function GET(
             categoryID: item.categoryID,
             manufacturerID: item.manufacturerID,
           })),
-          note: 'This returns the first 100 items with stock. To get total count, use a separate query.',
+          note: 'Returns the first 100 items with stock. Lightspeed uses next/previous URLs for pagination (offset is deprecated).',
         }
         break
       }
