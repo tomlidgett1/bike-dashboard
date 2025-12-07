@@ -158,6 +158,34 @@ export async function GET(request: NextRequest) {
       console.warn('[Lightspeed Callback] Error fetching account info:', accountError)
     }
 
+    // Trigger automatic full inventory sync
+    console.log('[Lightspeed Callback] Triggering automatic full inventory sync...')
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (supabaseUrl && session) {
+        const functionUrl = `${supabaseUrl}/functions/v1/sync-all-lightspeed-products`
+        
+        // Trigger async (don't wait for completion)
+        fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ userId: user.id }),
+        }).catch(syncError => {
+          console.error('[Lightspeed Callback] Background sync failed:', syncError)
+        })
+
+        console.log('[Lightspeed Callback] Full inventory sync triggered in background')
+      }
+    } catch (syncError) {
+      // Non-critical - user can manually trigger sync if needed
+      console.warn('[Lightspeed Callback] Could not trigger automatic sync:', syncError)
+    }
+
     // Success - redirect to connect page
     return NextResponse.redirect(`${baseUrl}/connect-lightspeed?success=true`)
   } catch (error) {

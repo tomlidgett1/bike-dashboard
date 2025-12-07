@@ -118,6 +118,20 @@ export default function ConnectLightspeedPage() {
   const [syncAllResult, setSyncAllResult] = React.useState<any>(null);
   const [syncAllError, setSyncAllError] = React.useState<string | null>(null);
 
+  // Check for initial sync on connection
+  React.useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('success') === 'true' && isConnected) {
+      // Show message that initial sync is running
+      setSyncingAllProducts(true);
+      
+      // Check sync status after a delay
+      setTimeout(() => {
+        setSyncingAllProducts(false);
+      }, 5000); // Show for 5 seconds
+    }
+  }, [isConnected]);
+
   // Sync settings
   const [autoSyncNewProducts, setAutoSyncNewProducts] = React.useState(true);
   const [showCategoryList, setShowCategoryList] = React.useState(false);
@@ -1551,6 +1565,23 @@ export default function ConnectLightspeedPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Initial Sync Notice */}
+                  {syncingAllProducts && !syncAllResult && (
+                    <div className="rounded-md bg-blue-50 border border-blue-200 p-3 dark:bg-blue-900/10 dark:border-blue-900">
+                      <div className="flex items-start gap-2">
+                        <Loader2 className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0 animate-spin" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-blue-900 dark:text-blue-400">
+                            Initial Sync Running
+                          </p>
+                          <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                            Your inventory is being synced automatically in the background. This may take a few minutes.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="rounded-md bg-gray-50 border border-gray-200 p-3 dark:bg-gray-900 dark:border-gray-800">
                     <p className="text-xs text-muted-foreground">
                       This will query all items with positive stock from your Lightspeed account,
