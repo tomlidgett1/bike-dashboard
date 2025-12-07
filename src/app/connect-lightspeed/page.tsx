@@ -112,6 +112,11 @@ export default function ConnectLightspeedPage() {
   const [testRunning, setTestRunning] = React.useState(false);
   const [testResult, setTestResult] = React.useState<any>(null);
   const [testError, setTestError] = React.useState<string | null>(null);
+  
+  // Sync All Products State
+  const [syncingAllProducts, setSyncingAllProducts] = React.useState(false);
+  const [syncAllResult, setSyncAllResult] = React.useState<any>(null);
+  const [syncAllError, setSyncAllError] = React.useState<string | null>(null);
 
   // Sync settings
   const [autoSyncNewProducts, setAutoSyncNewProducts] = React.useState(true);
@@ -1529,6 +1534,122 @@ export default function ConnectLightspeedPage() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Sync All Products to Table */}
+          {isConnected && (
+            <motion.div variants={itemVariants}>
+              <Card className="bg-white dark:bg-card rounded-md border-border">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-base font-semibold">
+                      Sync All Products to Database
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="text-xs">
+                    Fetch all items with stock from Lightspeed and store in products_all_ls table
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-md bg-gray-50 border border-gray-200 p-3 dark:bg-gray-900 dark:border-gray-800">
+                    <p className="text-xs text-muted-foreground">
+                      This will query all items with positive stock from your Lightspeed account,
+                      fetch their complete details, and store them in the products_all_ls table.
+                      This may take several minutes depending on your inventory size.
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={async () => {
+                      setSyncingAllProducts(true);
+                      setSyncAllError(null);
+                      setSyncAllResult(null);
+
+                      try {
+                        const response = await fetch('/api/lightspeed/sync-all-products', {
+                          method: 'POST',
+                        });
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                          setSyncAllError(data.error || 'Sync failed');
+                        } else {
+                          setSyncAllResult(data);
+                        }
+                      } catch (error) {
+                        setSyncAllError(error instanceof Error ? error.message : 'Unknown error');
+                      } finally {
+                        setSyncingAllProducts(false);
+                      }
+                    }}
+                    disabled={syncingAllProducts}
+                    className="w-full rounded-md"
+                  >
+                    {syncingAllProducts ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Syncing All Products...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Start Full Sync
+                      </>
+                    )}
+                  </Button>
+
+                  {/* Sync Error */}
+                  {syncAllError && (
+                    <div className="rounded-md bg-red-50 border border-red-200 p-3 dark:bg-red-900/10 dark:border-red-900">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-red-900 dark:text-red-400">
+                            Sync Failed
+                          </p>
+                          <p className="text-xs text-red-700 dark:text-red-400 mt-1">
+                            {syncAllError}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sync Success */}
+                  {syncAllResult && (
+                    <div className="rounded-md bg-green-50 border border-green-200 p-4 dark:bg-green-900/10 dark:border-green-900">
+                      <div className="flex items-start gap-2">
+                        <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                        <div className="flex-1 space-y-2">
+                          <p className="text-sm font-medium text-green-900 dark:text-green-400">
+                            Sync Complete!
+                          </p>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">Items Synced:</span>
+                              <span className="ml-1 font-medium">{syncAllResult.productsInserted}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Pages Queried:</span>
+                              <span className="ml-1 font-medium">{syncAllResult.pagesQueried}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Unique Items:</span>
+                              <span className="ml-1 font-medium">{syncAllResult.uniqueItems}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Total Records:</span>
+                              <span className="ml-1 font-medium">{syncAllResult.totalRecords}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
 
           {/* API Test Panel */}
           {isConnected && (
