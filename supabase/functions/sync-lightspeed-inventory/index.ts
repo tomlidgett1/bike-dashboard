@@ -629,13 +629,16 @@ Deno.serve(async (req) => {
           categoryProducts = productsToInsert.filter(p => p.lightspeed_category_id === categoryId)
         }
         
+        // Get category name from categoryMap
+        const categoryInfo = categoryMap.get(categoryId)
+        
         finalUpdates.push(
           supabaseAdmin
             .from('lightspeed_category_sync_preferences')
             .upsert({
               user_id: user.id,
               category_id: categoryId,
-              category_name: categoryName,
+              category_name: categoryInfo?.name || `Category ${categoryId}`,
               is_enabled: true, // CRITICAL: Enable auto-updates for this category
               last_synced_at: new Date().toISOString(),
               product_count: categoryProducts.length,
