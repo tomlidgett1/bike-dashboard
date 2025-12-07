@@ -4,13 +4,14 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Zap, AlertCircle, ChevronDown, Trash2, CheckCircle2 } from "lucide-react";
+import { Loader2, Zap, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
 import { MetricsHeader } from "@/components/lightspeed/metrics-header";
+import { UnifiedCategoryTable } from "@/components/lightspeed/unified-category-table";
+import { ProductTableView } from "@/components/lightspeed/product-table-view";
 import { SyncProgressModal } from "@/components/lightspeed/sync-progress-modal";
 import { DeleteConfirmDialog } from "@/components/lightspeed/delete-confirm-dialog";
 
@@ -19,17 +20,22 @@ type ViewMode = 'categories' | 'products';
 interface Category {
   categoryId: string;
   name: string;
-  productCount: number;
+  totalProducts: number;
+  syncedProducts: number;
+  notSyncedProducts: number;
   products: any[];
+  syncStatus: 'not_synced' | 'partial' | 'fully_synced';
+  lastSyncedAt: string | null;
 }
 
 interface InventoryData {
+  categories: Category[];
   notSynced: {
-    categories: Category[];
+    categories: any[];
     products: any[];
   };
   synced: {
-    categories: Category[];
+    categories: any[];
     products: any[];
   };
   totals: {
@@ -47,14 +53,11 @@ export default function ConnectLightspeedPage() {
   const [loadingInventory, setLoadingInventory] = React.useState(false);
   
   // Selection state
-  const [selectedNotSyncedCategories, setSelectedNotSyncedCategories] = React.useState<Set<string>>(new Set());
-  const [selectedNotSyncedProducts, setSelectedNotSyncedProducts] = React.useState<Set<string>>(new Set());
-  const [selectedSyncedCategories, setSelectedSyncedCategories] = React.useState<Set<string>>(new Set());
-  const [selectedSyncedProducts, setSelectedSyncedProducts] = React.useState<Set<string>>(new Set());
+  const [selectedCategories, setSelectedCategories] = React.useState<Set<string>>(new Set());
+  const [selectedProducts, setSelectedProducts] = React.useState<Set<string>>(new Set());
   
-  // Expanded categories
-  const [expandedNotSyncedCat, setExpandedNotSyncedCat] = React.useState<string | null>(null);
-  const [expandedSyncedCat, setExpandedSyncedCat] = React.useState<string | null>(null);
+  // Expanded category
+  const [expandedCategory, setExpandedCategory] = React.useState<string | null>(null);
   
   // Sync state
   const [syncModalOpen, setSyncModalOpen] = React.useState(false);
@@ -104,7 +107,29 @@ export default function ConnectLightspeedPage() {
     }
   };
 
+  const handleCategoryToggle = (categoryId: string) => {
+    setSelectedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(categoryId)) {
+        newSet.delete(categoryId);
+      } else {
+        newSet.add(categoryId);
+      }
+      return newSet;
+    });
+  };
+
   const handleSyncSelected = async () => {
+    // Get categories that need syncing (not fully synced)
+    const categoriesToSync = Array.from(selectedCategories).filter(catId => {
+      const category = inventoryData?.categories.find(c => c.categoryId === catId);
+      return category && category.notSyncedProducts > 0;
+    });
+
+    if (categoriesToSync.length === 0 && selectedProducts.size === 0) {
+      return;
+    }
+
     setSyncModalOpen(true);
     setSyncStatus('syncing');
     setSyncProgress(0);
@@ -113,15 +138,10 @@ export default function ConnectLightspeedPage() {
     setSyncError('');
 
     try {
-      const body: any = {};
-      
-      if (viewMode === 'categories' && selectedNotSyncedCategories.size > 0) {
-        body.categoryIds = Array.from(selectedNotSyncedCategories);
-        body.syncType = 'categories';
-      } else if (viewMode === 'products' && selectedNotSyncedProducts.size > 0) {
-        body.itemIds = Array.from(selectedNotSyncedProducts);
-        body.syncType = 'products';
-      }
+      const body: any = {
+        categoryIds: categoriesToSync,
+        syncType: 'categories',
+      };
 
       setSyncPhase('Syncing to marketplace...');
       setSyncProgress(50);
@@ -142,11 +162,9 @@ export default function ConnectLightspeedPage() {
       setSyncStatus('success');
       setSyncResult(result.data);
       
-      // Clear selections
-      setSelectedNotSyncedCategories(new Set());
-      setSelectedNotSyncedProducts(new Set());
+      setSelectedCategories(new Set());
+      setSelectedProducts(new Set());
       
-      // Refresh inventory data
       await fetchInventoryData();
 
     } catch (error) {
@@ -154,6 +172,21 @@ export default function ConnectLightspeedPage() {
       setSyncStatus('error');
       setSyncError(error instanceof Error ? error.message : 'Unknown error');
     }
+  };
+
+  const handleRemoveSelected = () => {
+    // Get categories that are synced
+    const categoriesToRemove = Array.from(selectedCategories).filter(catId => {
+      const category = inventoryData?.categories.find(c => c.categoryId === catId);
+      return category && category.syncedProducts > 0;
+    });
+
+    if (categoriesToRemove.length === 0) {
+      return;
+    }
+
+    setDeleteTarget({ type: 'categories', ids: categoriesToRemove });
+    setDeleteDialogOpen(true);
   };
 
   const handleDeleteConfirm = async () => {
@@ -179,13 +212,9 @@ export default function ConnectLightspeedPage() {
         throw new Error('Delete failed');
       }
 
-      // Refresh inventory
       await fetchInventoryData();
-      
-      // Clear selections
-      setSelectedSyncedCategories(new Set());
-      setSelectedSyncedProducts(new Set());
-
+      setSelectedCategories(new Set());
+      setSelectedProducts(new Set());
       setDeleteDialogOpen(false);
       setDeleteTarget(null);
 
@@ -195,6 +224,40 @@ export default function ConnectLightspeedPage() {
       setIsDeleting(false);
     }
   };
+
+  const handleProductToggle = (itemId: string) => {
+    setSelectedProducts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAllProducts = () => {
+    const allItemIds = inventoryData?.notSynced.products.map(p => p.itemId) || [];
+    setSelectedProducts(new Set(allItemIds));
+  };
+
+  const handleClearAllProducts = () => {
+    setSelectedProducts(new Set());
+  };
+
+  const handleDeleteProducts = (itemIds: string[]) => {
+    setDeleteTarget({ type: 'products', ids: itemIds });
+    setDeleteDialogOpen(true);
+  };
+
+  // Get selected counts for actions
+  const selectedWithProducts = Array.from(selectedCategories)
+    .map(catId => inventoryData?.categories.find(c => c.categoryId === catId))
+    .filter(Boolean);
+  
+  const hasNotSyncedSelected = selectedWithProducts.some(cat => cat && cat.notSyncedProducts > 0);
+  const hasSyncedSelected = selectedWithProducts.some(cat => cat && cat.syncedProducts > 0);
 
   // Loading state
   if (isLoading) {
@@ -274,344 +337,116 @@ export default function ConnectLightspeedPage() {
       />
 
       {/* Main Content */}
-      <div className="flex-1 bg-gray-50 dark:bg-gray-950">
+      <div className="flex-1 bg-gray-50 dark:bg-gray-950 flex flex-col">
         {loadingInventory ? (
           <div className="flex items-center justify-center min-h-[60vh]">
             <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
           </div>
         ) : (
-          <div className="h-full flex flex-col">
-            {/* View Mode Tabs */}
+          <>
+            {/* Tabs and Actions Bar */}
             <div className="px-6 py-4 bg-white dark:bg-card border-b border-gray-200 dark:border-gray-800">
-              <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-                <button
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                    viewMode === 'categories'
-                      ? "text-gray-800 bg-white shadow-sm"
-                      : "text-gray-600 hover:bg-gray-200/70"
-                  )}
-                  onClick={() => setViewMode('categories')}
-                >
-                  By Categories
-                </button>
-                <button
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                    viewMode === 'products'
-                      ? "text-gray-800 bg-white shadow-sm"
-                      : "text-gray-600 hover:bg-gray-200/70"
-                  )}
-                  onClick={() => setViewMode('products')}
-                >
-                  All Products
-                </button>
+              <div className="flex items-center justify-between">
+                {/* View Mode Tabs */}
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                  <button
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                      viewMode === 'categories'
+                        ? "text-gray-800 bg-white shadow-sm"
+                        : "text-gray-600 hover:bg-gray-200/70"
+                    )}
+                    onClick={() => setViewMode('categories')}
+                  >
+                    By Categories
+                    {selectedCategories.size > 0 && (
+                      <Badge variant="secondary" className="rounded-md ml-1 h-5 px-1.5 text-xs">
+                        {selectedCategories.size}
+                      </Badge>
+                    )}
+                  </button>
+                  <button
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                      viewMode === 'products'
+                        ? "text-gray-800 bg-white shadow-sm"
+                        : "text-gray-600 hover:bg-gray-200/70"
+                    )}
+                    onClick={() => setViewMode('products')}
+                  >
+                    All Products
+                    {selectedProducts.size > 0 && (
+                      <Badge variant="secondary" className="rounded-md ml-1 h-5 px-1.5 text-xs">
+                        {selectedProducts.size}
+                      </Badge>
+                    )}
+                  </button>
+                </div>
+
+                {/* Action Buttons */}
+                {viewMode === 'categories' && selectedCategories.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    {hasNotSyncedSelected && (
+                      <Button
+                        onClick={handleSyncSelected}
+                        size="sm"
+                        className="rounded-md"
+                      >
+                        Sync to Marketplace
+                      </Button>
+                    )}
+                    {hasSyncedSelected && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRemoveSelected}
+                        className="rounded-md"
+                      >
+                        Remove from Marketplace
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Side by Side Layout */}
-            <div className="flex-1 flex gap-6 p-6 overflow-hidden">
-              {/* NOT SYNCED YET SECTION - LEFT */}
-            <div className="bg-white dark:bg-card rounded-md border border-gray-200 dark:border-gray-800">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold">Not Synced Yet</h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    {inventoryData?.totals.totalNotSynced || 0} products available to sync to marketplace
-                  </p>
-                </div>
-                {viewMode === 'categories' && selectedNotSyncedCategories.size > 0 && (
-                  <Button
-                    onClick={handleSyncSelected}
-                    size="sm"
-                    className="rounded-md"
-                  >
-                    Sync {selectedNotSyncedCategories.size} {selectedNotSyncedCategories.size === 1 ? 'Category' : 'Categories'}
-                  </Button>
-                )}
-                {viewMode === 'products' && selectedNotSyncedProducts.size > 0 && (
-                  <Button
-                    onClick={handleSyncSelected}
-                    size="sm"
-                    className="rounded-md"
-                  >
-                    Sync {selectedNotSyncedProducts.size} {selectedNotSyncedProducts.size === 1 ? 'Product' : 'Products'}
-                  </Button>
-                )}
-              </div>
-
-              <div className="p-6">
+            {/* Content Area */}
+            <div className="flex-1 p-6">
+              <div className="bg-white dark:bg-card rounded-md border border-gray-200 dark:border-gray-800 h-full flex flex-col overflow-hidden">
                 {viewMode === 'categories' ? (
-                  /* Category View */
-                  <div className="space-y-2">
-                    {inventoryData?.notSynced.categories.map((category) => {
-                      const isSelected = selectedNotSyncedCategories.has(category.categoryId);
-                      const isExpanded = expandedNotSyncedCat === category.categoryId;
-
-                      return (
-                        <div key={category.categoryId} className="rounded-md border border-gray-200 dark:border-gray-800">
-                          <div className="flex items-center gap-3 p-4">
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={() => {
-                                setSelectedNotSyncedCategories(prev => {
-                                  const newSet = new Set(prev);
-                                  if (newSet.has(category.categoryId)) {
-                                    newSet.delete(category.categoryId);
-                                  } else {
-                                    newSet.add(category.categoryId);
-                                  }
-                                  return newSet;
-                                });
-                              }}
-                            />
-                            <button
-                              onClick={() => setExpandedNotSyncedCat(isExpanded ? null : category.categoryId)}
-                              className="flex-1 flex items-center justify-between text-left hover:opacity-70 transition-opacity"
-                            >
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <div className="text-sm font-medium">{category.name}</div>
-                                  {category.syncedCount > 0 && (
-                                    <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs">
-                                      {category.syncedCount} synced
-                                    </Badge>
-                                  )}
-                                </div>
-                                <div className="text-xs text-muted-foreground mt-0.5">
-                                  {category.productCount} products not synced yet
-                                </div>
-                              </div>
-                              <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform duration-200", isExpanded && "rotate-180")} />
-                            </button>
-                          </div>
-
-                          {/* Expanded Products List */}
-                          {isExpanded && (
-                            <div className="border-t border-gray-200 dark:border-gray-800 p-4 bg-gray-50 dark:bg-gray-900">
-                              <div className="space-y-2">
-                                {category.products.map((product: any) => (
-                                  <div key={product.itemId} className="flex items-center justify-between p-2 rounded-md bg-white dark:bg-card">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-sm font-medium truncate">{product.name}</div>
-                                      <div className="text-xs text-muted-foreground">
-                                        SKU: {product.sku || 'N/A'} • Stock: {product.totalQoh}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                    {(!inventoryData?.notSynced.categories || inventoryData.notSynced.categories.length === 0) && (
-                      <div className="text-center py-12 text-muted-foreground">
-                        All products have been synced to the marketplace
-                      </div>
-                    )}
-                  </div>
+                  <UnifiedCategoryTable
+                    categories={inventoryData?.categories || []}
+                    selectedCategories={selectedCategories}
+                    onCategoryToggle={handleCategoryToggle}
+                    expandedCategory={expandedCategory}
+                    onCategoryExpand={setExpandedCategory}
+                  />
                 ) : (
-                  /* Products View */
-                  <div className="space-y-2">
-                    {inventoryData?.notSynced.products.map((product: any) => {
-                      const isSelected = selectedNotSyncedProducts.has(product.itemId);
-
-                      return (
-                        <div key={product.itemId} className="flex items-center gap-3 p-4 rounded-md border border-gray-200 dark:border-gray-800">
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => {
-                              setSelectedNotSyncedProducts(prev => {
-                                const newSet = new Set(prev);
-                                if (newSet.has(product.itemId)) {
-                                  newSet.delete(product.itemId);
-                                } else {
-                                  newSet.add(product.itemId);
-                                }
-                                return newSet;
-                              });
-                            }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate">{product.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              SKU: {product.sku || 'N/A'} • Category: {product.categoryName} • Stock: {product.totalQoh}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {(!inventoryData?.notSynced.products || inventoryData.notSynced.products.length === 0) && (
-                      <div className="text-center py-12 text-muted-foreground">
-                        All products have been synced to the marketplace
-                      </div>
-                    )}
-                  </div>
+                  <ProductTableView
+                    products={[
+                      ...inventoryData?.notSynced.products.map((p: any) => ({ ...p, isSynced: false })) || [],
+                      ...inventoryData?.synced.products.map((p: any) => ({ ...p, isSynced: true })) || [],
+                    ].map(p => ({
+                      id: p.id,
+                      itemId: p.itemId,
+                      name: p.name,
+                      sku: p.sku,
+                      modelYear: p.modelYear,
+                      categoryId: p.categoryId,
+                      totalQoh: p.totalQoh,
+                      totalSellable: p.totalSellable,
+                      isSynced: p.isSynced,
+                    }))}
+                    selectedProducts={selectedProducts}
+                    onProductToggle={handleProductToggle}
+                    onSelectAll={handleSelectAllProducts}
+                    onClearAll={handleClearAllProducts}
+                    onDeleteProducts={handleDeleteProducts}
+                  />
                 )}
-                </div>
-              </div>
-
-              {/* ALREADY SYNCED SECTION - RIGHT */}
-              <div className="flex-1 flex flex-col bg-white dark:bg-card rounded-md border border-gray-200 dark:border-gray-800 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between flex-shrink-0">
-                  <div>
-                    <h2 className="text-lg font-semibold flex items-center gap-2">
-                      Already Synced
-                      <CheckCircle2 className="h-5 w-5 text-green-600" />
-                    </h2>
-                    <p className="text-sm text-muted-foreground mt-0.5">
-                      {inventoryData?.totals.totalSynced || 0} products currently on marketplace
-                    </p>
-                  </div>
-                {viewMode === 'categories' && selectedSyncedCategories.size > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setDeleteTarget({ type: 'categories', ids: Array.from(selectedSyncedCategories) });
-                      setDeleteDialogOpen(true);
-                    }}
-                    className="rounded-md"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Remove {selectedSyncedCategories.size} {selectedSyncedCategories.size === 1 ? 'Category' : 'Categories'}
-                  </Button>
-                )}
-                {viewMode === 'products' && selectedSyncedProducts.size > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setDeleteTarget({ type: 'products', ids: Array.from(selectedSyncedProducts) });
-                      setDeleteDialogOpen(true);
-                    }}
-                    className="rounded-md"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Remove {selectedSyncedProducts.size} from Marketplace
-                  </Button>
-                )}
-              </div>
-
-              <div className="p-6">
-                {viewMode === 'categories' ? (
-                  /* Category View */
-                  <div className="space-y-2">
-                    {inventoryData?.synced.categories.map((category) => {
-                      const isExpanded = expandedSyncedCat === category.categoryId;
-                      const isSelected = selectedSyncedCategories.has(category.categoryId);
-
-                      return (
-                        <div key={category.categoryId} className="rounded-md border border-gray-200 dark:border-gray-800">
-                          <div className="flex items-center gap-3 p-4">
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={() => {
-                                setSelectedSyncedCategories(prev => {
-                                  const newSet = new Set(prev);
-                                  if (newSet.has(category.categoryId)) {
-                                    newSet.delete(category.categoryId);
-                                  } else {
-                                    newSet.add(category.categoryId);
-                                  }
-                                  return newSet;
-                                });
-                              }}
-                            />
-                            <button
-                              onClick={() => setExpandedSyncedCat(isExpanded ? null : category.categoryId)}
-                              className="flex-1 flex items-center justify-between text-left hover:opacity-70 transition-opacity"
-                            >
-                              <div>
-                                <div className="text-sm font-medium">{category.name}</div>
-                                <div className="text-xs text-muted-foreground mt-0.5">
-                                  {category.productCount} products on marketplace
-                                </div>
-                              </div>
-                              <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform duration-200", isExpanded && "rotate-180")} />
-                            </button>
-                          </div>
-
-                          {/* Expanded Products List */}
-                          {isExpanded && (
-                            <div className="border-t border-gray-200 dark:border-gray-800 p-4 bg-gray-50 dark:bg-gray-900">
-                              <div className="space-y-2">
-                                {category.products.map((product: any) => (
-                                  <div key={product.itemId} className="flex items-center justify-between p-2 rounded-md bg-white dark:bg-card">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-sm font-medium truncate">{product.name}</div>
-                                      <div className="text-xs text-muted-foreground">
-                                        SKU: {product.sku || 'N/A'} • Stock: {product.totalQoh}
-                                      </div>
-                                    </div>
-                                    <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                      Live
-                                    </Badge>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                    {(!inventoryData?.synced.categories || inventoryData.synced.categories.length === 0) && (
-                      <div className="text-center py-12 text-muted-foreground">
-                        No products synced yet. Select categories above to get started.
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  /* Products View */
-                  <div className="space-y-2">
-                    {inventoryData?.synced.products.map((product: any) => {
-                      const isSelected = selectedSyncedProducts.has(product.itemId);
-
-                      return (
-                        <div key={product.itemId} className="flex items-center gap-3 p-4 rounded-md border border-gray-200 dark:border-gray-800">
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => {
-                              setSelectedSyncedProducts(prev => {
-                                const newSet = new Set(prev);
-                                if (newSet.has(product.itemId)) {
-                                  newSet.delete(product.itemId);
-                                } else {
-                                  newSet.add(product.itemId);
-                                }
-                                return newSet;
-                              });
-                            }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate">{product.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              SKU: {product.sku || 'N/A'} • Category: {product.categoryName} • Stock: {product.totalQoh}
-                            </div>
-                          </div>
-                          <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                            Live
-                          </Badge>
-                        </div>
-                      );
-                    })}
-
-                    {(!inventoryData?.synced.products || inventoryData.synced.products.length === 0) && (
-                      <div className="text-center py-12 text-muted-foreground">
-                        No products synced yet. Select products above to get started.
-                      </div>
-                    )}
-                  </div>
-                )}
-                </div>
               </div>
             </div>
-          </div>
+          </>
         )}
       </div>
 
@@ -642,3 +477,4 @@ export default function ConnectLightspeedPage() {
     </>
   );
 }
+

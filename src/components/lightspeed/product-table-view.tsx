@@ -17,6 +17,7 @@ interface Product {
   categoryId: string | null;
   totalQoh: number;
   totalSellable: number;
+  isSynced?: boolean;
 }
 
 interface ProductTableViewProps {
@@ -192,6 +193,9 @@ export function ProductTableView({
                   )}
                 </div>
               </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+                Status
+              </th>
               <th className="w-24 px-4 py-3 text-right text-xs font-medium text-muted-foreground">
                 Actions
               </th>
@@ -200,7 +204,7 @@ export function ProductTableView({
           <tbody>
             {filteredAndSortedProducts.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
                   No products found
                 </td>
               </tr>
@@ -253,15 +257,28 @@ export function ProductTableView({
                         </span>
                       </div>
                     </td>
+                    <td className="px-4 py-3">
+                      {product.isSynced ? (
+                        <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                          Live
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="rounded-md">
+                          Not Synced
+                        </Badge>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onDeleteProducts([product.itemId])}
-                        className="h-8 w-8 p-0 rounded-md"
-                      >
-                        <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-600" />
-                      </Button>
+                      {product.isSynced && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onDeleteProducts([product.itemId])}
+                          className="h-8 w-8 p-0 rounded-md"
+                        >
+                          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-600" />
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 );

@@ -155,13 +155,55 @@ export async function GET() {
       category.products.push(product)
     })
 
-    const notSyncedCategories = Array.from(notSyncedCategoryMap.values()).sort((a, b) => 
-      a.name.localeCompare(b.name)
-    )
+    const notSyncedCategories = Array.from(notSyncedCategoryMap.values())
+    const syncedCategories = Array.from(syncedCategoryMap.values())
 
-    const syncedCategories = Array.from(syncedCategoryMap.values()).sort((a, b) => 
-      a.name.localeCompare(b.name)
-    )
+    // Build unified category list with sync status
+    const allCategoriesMap = new Map<string, any>()
+
+    // Add not synced categories
+    notSyncedCategories.forEach(cat => {
+      allCategoriesMap.set(cat.categoryId, {
+        categoryId: cat.categoryId,
+        name: cat.name,
+        totalProducts: cat.productCount,
+        syncedProducts: cat.syncedCount || 0,
+        notSyncedProducts: cat.productCount,
+        products: cat.products,
+        syncStatus: cat.syncedCount > 0 ? 'partial' : 'not_synced',
+        lastSyncedAt: null,
+      })
+    })
+
+    // Add/update with synced categories
+    syncedCategories.forEach(cat => {
+      const existing = allCategoriesMap.get(cat.categoryId)
+      
+      if (existing) {
+        existing.syncedProducts = cat.productCount
+        existing.totalProducts = existing.notSyncedProducts + cat.productCount
+        existing.syncStatus = existing.notSyncedProducts > 0 ? 'partial' : 'fully_synced'
+      } else {
+        allCategoriesMap.set(cat.categoryId, {
+          categoryId: cat.categoryId,
+          name: cat.name,
+          totalProducts: cat.productCount,
+          syncedProducts: cat.productCount,
+          notSyncedProducts: 0,
+          products: cat.products,
+          syncStatus: 'fully_synced',
+          lastSyncedAt: null,
+        })
+      }
+    })
+
+    // Sort by sync status then name (not synced first, then partial, then fully synced)
+    const allCategories = Array.from(allCategoriesMap.values()).sort((a, b) => {
+      const statusOrder = { 'not_synced': 0, 'partial': 1, 'fully_synced': 2 }
+      const statusDiff = statusOrder[a.syncStatus as keyof typeof statusOrder] - statusOrder[b.syncStatus as keyof typeof statusOrder]
+      if (statusDiff !== 0) return statusDiff
+      return a.name.localeCompare(b.name)
+    })
 
     // Calculate totals
     const totalProducts = allLsProducts?.length || 0
@@ -175,6 +217,7 @@ export async function GET() {
         totalSynced: syncedProductsList.length,
         totalNotSynced: notSyncedProducts.length,
       },
+      categories: allCategories,
       notSynced: {
         categories: notSyncedCategories,
         products: notSyncedProducts,
