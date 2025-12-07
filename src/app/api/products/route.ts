@@ -92,11 +92,24 @@ export async function GET(request: NextRequest) {
     // Apply pagination
     query = query.range(from, to)
 
-    const { data: products, error, count } = await query
+    const { data, error, count } = await query
 
     if (error) {
-      console.error('Error fetching products:', error)
+      console.error('[Products API] Query error:', error)
       throw error
+    }
+
+    console.log(`[Products API] Query returned ${data?.length || 0} products`)
+    
+    // Check first product's raw data
+    if (data && data.length > 0) {
+      const first = data[0]
+      console.log('[Products API] First product raw data:', {
+        id: first.id,
+        canonical_product_id: first.canonical_product_id,
+        has_canonical_products_join: !!first.canonical_products,
+        canonical_products_keys: first.canonical_products ? Object.keys(first.canonical_products) : [],
+      })
     }
 
     // Get unique categories for filter dropdown
@@ -110,7 +123,7 @@ export async function GET(request: NextRequest) {
     const uniqueCategories = [...new Set(categories?.map(c => c.category_name).filter(Boolean))]
 
     // Process products to add resolved image URLs from product_images table
-    const processedProducts = (products || []).map((product, idx) => {
+    const processedProducts = (data || []).map((product, idx) => {
       let resolvedImageUrl = null;
       
       // Debug first product
