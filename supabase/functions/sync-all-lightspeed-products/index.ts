@@ -152,6 +152,18 @@ Deno.serve(async (req) => {
       const data = await response.json()
       const items = Array.isArray(data.Item) ? data.Item : (data.Item ? [data.Item] : [])
       
+      // Log first item to see what data we're getting
+      if (batchNum === 1 && items.length > 0) {
+        const sampleItem = items[0]
+        console.log(`[Sync All LS Products] Sample item structure:`, {
+          itemID: sampleItem.itemID,
+          hasImages: !!sampleItem.Images,
+          hasPrices: !!sampleItem.Prices,
+          imageCount: sampleItem.Images?.Image ? (Array.isArray(sampleItem.Images.Image) ? sampleItem.Images.Image.length : 1) : 0,
+          priceCount: sampleItem.Prices?.ItemPrice ? (Array.isArray(sampleItem.Prices.ItemPrice) ? sampleItem.Prices.ItemPrice.length : 1) : 0,
+        })
+      }
+      
       items.forEach((item: any) => {
         itemDetailsMap.set(item.itemID, item)
       })
@@ -226,6 +238,11 @@ Deno.serve(async (req) => {
         }))
         
         primaryImageUrl = images[0]?.url || null
+      } else {
+        // Log if no images found
+        if (itemId === itemDetailsMap.keys().next().value) {
+          console.log(`⚠️ [Sync All LS Products] First item has no Images data. Item structure:`, Object.keys(itemDetails))
+        }
       }
       
       productsToInsert.push({
