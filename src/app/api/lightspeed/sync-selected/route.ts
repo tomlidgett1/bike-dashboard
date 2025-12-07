@@ -3,7 +3,8 @@
  * 
  * POST /api/lightspeed/sync-selected
  * 
- * Syncs selected categories or individual items to products and canonical_products tables
+ * Syncs selected categories or items from products_all_ls to products table
+ * Uses data already fetched instead of querying Lightspeed again
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -33,10 +34,45 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`[Sync Selected] User ${user.id}, type: ${syncType}`, {
-      categoryIds: categoryIds?.length || 0,
-      itemIds: itemIds?.length || 0,
-    })
+    console.log(`[Sync Selected] User ${user.id}, type: ${syncType}`)
+
+    // Build query to fetch products from products_all_ls
+    let query = supabase
+      .from('products_all_ls')
+      .select('*')
+      .eq('user_id', user.id)
+
+    if (categoryIds && categoryIds.length > 0) {
+      query = query.in('category_id', categoryIds)
+      console.log('[Sync Selected] Fetching products from categories:', categoryIds)
+    } else if (itemIds && itemIds.length > 0) {
+      query = query.in('lightspeed_item_id', itemIds)
+      console.log('[Sync Selected] Fetching specific items:', itemIds.length)
+    }
+
+    const { data: productsToSync, error: fetchError } = await query
+
+    if (fetchError) {
+      console.error('[Sync Selected] Error fetching products:', fetchError)
+      return NextResponse.json(
+        { error: 'Failed to fetch products' },
+        { status: 500 }
+      )
+    }
+
+    if (!productsToSync || productsToSync.length === 0) {
+      console.log('[Sync Selected] No products found to sync')
+      return NextResponse.json({
+        success: true,
+        data: {
+          itemsSynced: 0,
+          itemsWithStock: 0,
+          message: 'No products found in selected categories',
+        },
+      })
+    }
+
+    console.log(`[Sync Selected] Found ${productsToSync.length} products to sync from products_all_ls`)
 
     // Get session for edge function call
     const { data: { session } } = await supabase.auth.getSession()
@@ -49,54 +85,23 @@ export async function POST(request: NextRequest) {
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 
-    if (!supabaseUrl) {
-      return NextResponse.json(
-        { error: 'Supabase configuration missing' },
-        { status: 500 }
-      )
-    }
+    // Extract unique category IDs from the products
+    const uniqueCategoryIds = [...new Set(productsToSync.map(p => p.category_id).filter(Boolean))]
+    
+    console.log('[Sync Selected] Unique categories to sync:', uniqueCategoryIds)
 
-    // Prepare data for edge function
-    // Note: Edge function only supports categoryIds, not individual itemIds
-    let functionBody: any = {}
-
-    if (categoryIds && categoryIds.length > 0) {
-      functionBody.categoryIds = categoryIds
-      console.log('[Sync Selected] Syncing categories:', categoryIds)
-    } else if (itemIds && itemIds.length > 0) {
-      // For individual items, we need to fetch them and sync by category
-      // For now, get all unique categories from the selected items
-      const { data: itemsData } = await supabase
-        .from('products_all_ls')
-        .select('category_id')
-        .in('lightspeed_item_id', itemIds)
-        .eq('user_id', user.id)
-      
-      const uniqueCategoryIds = [...new Set(itemsData?.map(item => item.category_id).filter(Boolean))]
-      
-      if (uniqueCategoryIds.length === 0) {
-        return NextResponse.json(
-          { error: 'No categories found for selected items' },
-          { status: 400 }
-        )
-      }
-      
-      functionBody.categoryIds = uniqueCategoryIds
-      console.log('[Sync Selected] Syncing items via categories:', uniqueCategoryIds)
-    }
-
-    // Call the existing sync-lightspeed-inventory edge function
+    // Call the edge function with category IDs
     const functionUrl = `${supabaseUrl}/functions/v1/sync-lightspeed-inventory`
     
-    console.log('[Sync Selected] Calling edge function:', functionUrl)
-
     const response = await fetch(functionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify(functionBody),
+      body: JSON.stringify({
+        categoryIds: uniqueCategoryIds,
+      }),
     })
 
     if (!response.ok) {
@@ -110,9 +115,10 @@ export async function POST(request: NextRequest) {
 
     const result = await response.json()
 
-    console.log('[Sync Selected] Sync complete:', {
+    console.log('[Sync Selected] Edge function result:', {
       itemsSynced: result.data?.itemsSynced || 0,
       itemsWithStock: result.data?.itemsWithStock || 0,
+      totalItems: result.data?.totalItemsInCategories || 0,
     })
 
     return NextResponse.json({
