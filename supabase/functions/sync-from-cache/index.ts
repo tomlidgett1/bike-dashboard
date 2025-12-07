@@ -114,9 +114,9 @@ Deno.serve(async (req) => {
       model_year: product.model_year,
       upc: product.upc,
       manufacturer_id: product.manufacturer_id,
-      price: 0, // Will be fetched from Lightspeed if needed
-      default_cost: 0,
-      avg_cost: 0,
+      price: parseFloat(product.price) || 0,
+      default_cost: parseFloat(product.default_cost) || 0,
+      avg_cost: parseFloat(product.avg_cost) || 0,
       qoh: product.total_qoh,
       sellable: product.total_sellable,
       reorder_point: 0,

@@ -184,6 +184,31 @@ Deno.serve(async (req) => {
       // Find shopID:0 (total across all locations)
       const totalShop = shops.find((s: any) => s.shopID === '0')
       
+      // Extract prices from Lightspeed Prices.ItemPrice array
+      let price = 0
+      let defaultCost = 0
+      let avgCost = 0
+      
+      if (itemDetails.Prices && itemDetails.Prices.ItemPrice) {
+        const prices = Array.isArray(itemDetails.Prices.ItemPrice) 
+          ? itemDetails.Prices.ItemPrice 
+          : [itemDetails.Prices.ItemPrice]
+        
+        // Find default price (useType='Default' or first price)
+        const defaultPrice = prices.find((p: any) => p.useType === 'Default') || prices[0]
+        if (defaultPrice && defaultPrice.amount) {
+          price = parseFloat(defaultPrice.amount)
+        }
+      }
+      
+      // Extract costs
+      if (itemDetails.defaultCost) {
+        defaultCost = parseFloat(itemDetails.defaultCost)
+      }
+      if (itemDetails.avgCost) {
+        avgCost = parseFloat(itemDetails.avgCost)
+      }
+      
       productsToInsert.push({
         user_id: userId,
         lightspeed_item_id: itemId,
@@ -194,6 +219,9 @@ Deno.serve(async (req) => {
         upc: itemDetails.upc || null,
         category_id: itemDetails.categoryID || null,
         manufacturer_id: itemDetails.manufacturerID || null,
+        price: price,
+        default_cost: defaultCost,
+        avg_cost: avgCost,
         stock_data: shops, // Store all shop records
         total_qoh: totalShop ? parseInt(totalShop.qoh) : 0,
         total_sellable: totalShop ? parseInt(totalShop.sellable) : 0,
