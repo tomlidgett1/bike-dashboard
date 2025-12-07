@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
       
       console.log(`[Sync All LS Products] Fetching items batch ${batchNum}/${totalBatches} (${batch.length} items)`)
 
-      const itemUrl = `${LIGHTSPEED_CONFIG.API_BASE_URL}/Account/${accountId}/Item.json?itemID=IN,[${batch.join(',')}]`
+      const itemUrl = `${LIGHTSPEED_CONFIG.API_BASE_URL}/Account/${accountId}/Item.json?itemID=IN,[${batch.join(',')}]&load_relations=["ItemShops","Images","Prices"]`
       
       const response = await fetch(itemUrl, {
         headers: {
@@ -209,6 +209,24 @@ Deno.serve(async (req) => {
         avgCost = parseFloat(itemDetails.avgCost)
       }
       
+      // Extract images from Lightspeed Images.Image array
+      let images: any[] = []
+      let primaryImageUrl: string | null = null
+      
+      if (itemDetails.Images && itemDetails.Images.Image) {
+        const imageData = Array.isArray(itemDetails.Images.Image)
+          ? itemDetails.Images.Image
+          : [itemDetails.Images.Image]
+        
+        images = imageData.map((img: any) => ({
+          url: img.baseImageURL,
+          publicId: img.publicID,
+          filename: img.filename,
+        }))
+        
+        primaryImageUrl = images[0]?.url || null
+      }
+      
       productsToInsert.push({
         user_id: userId,
         lightspeed_item_id: itemId,
@@ -222,6 +240,8 @@ Deno.serve(async (req) => {
         price: price,
         default_cost: defaultCost,
         avg_cost: avgCost,
+        images: images,
+        primary_image_url: primaryImageUrl,
         stock_data: shops, // Store all shop records
         total_qoh: totalShop ? parseInt(totalShop.qoh) : 0,
         total_sellable: totalShop ? parseInt(totalShop.sellable) : 0,
