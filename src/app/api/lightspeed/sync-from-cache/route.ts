@@ -105,48 +105,6 @@ export async function POST(request: NextRequest) {
       itemsWithStock: result.data?.itemsWithStock || 0,
     })
 
-    // CRITICAL: Enable auto-updates by creating category preferences
-    if (uniqueCategoryIds.length > 0 && result.data?.itemsSynced > 0) {
-      console.log('[Sync from Cache] Creating category sync preferences for auto-updates')
-      
-      // Fetch category names
-      const { createLightspeedClient } = await import('@/lib/services/lightspeed')
-      const client = createLightspeedClient(user.id)
-      
-      try {
-        const categories = await client.getCategories({ archived: 'false' })
-        const categoryMap = new Map(categories.map(c => [c.categoryID, c]))
-        
-        // Create/update preferences for synced categories
-        const preferences = uniqueCategoryIds.map(catId => {
-          const category = categoryMap.get(catId)
-          return {
-            user_id: user.id,
-            category_id: catId,
-            category_name: category?.name || `Category ${catId}`,
-            category_path: category?.fullPathName || category?.name || '',
-            is_enabled: true, // Enable auto-updates for synced categories
-            last_synced_at: new Date().toISOString(),
-            product_count: productsToSync.filter(p => p.category_id === catId).length,
-          }
-        })
-
-        const { error: prefError } = await supabase
-          .from('lightspeed_category_sync_preferences')
-          .upsert(preferences, {
-            onConflict: 'user_id,category_id',
-          })
-
-        if (prefError) {
-          console.error('[Sync from Cache] Error creating preferences:', prefError)
-        } else {
-          console.log(`[Sync from Cache] Enabled auto-updates for ${preferences.length} categories`)
-        }
-      } catch (catError) {
-        console.error('[Sync from Cache] Error setting up preferences:', catError)
-      }
-    }
-
     return NextResponse.json({
       success: true,
       data: result.data,

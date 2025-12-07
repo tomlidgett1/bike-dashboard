@@ -632,12 +632,16 @@ Deno.serve(async (req) => {
         finalUpdates.push(
           supabaseAdmin
             .from('lightspeed_category_sync_preferences')
-            .update({
+            .upsert({
+              user_id: user.id,
+              category_id: categoryId,
+              category_name: categoryName,
+              is_enabled: true, // CRITICAL: Enable auto-updates for this category
               last_synced_at: new Date().toISOString(),
               product_count: categoryProducts.length,
+            }, {
+              onConflict: 'user_id,category_id',
             })
-            .eq('user_id', user.id)
-            .eq('category_id', categoryId)
         )
       })
     }
