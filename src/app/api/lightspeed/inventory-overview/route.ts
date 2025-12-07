@@ -22,29 +22,71 @@ export async function GET() {
       )
     }
 
-    // Fetch all products from products_all_ls
-    const { data: allLsProducts, error: productsError } = await supabase
-      .from('products_all_ls')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('description', { ascending: true })
+    // Fetch ALL products from products_all_ls (paginate to get beyond 1000 limit)
+    let allLsProducts: any[] = []
+    const pageSize = 1000
+    let page = 0
+    let hasMore = true
 
-    if (productsError) {
-      console.error('[Inventory Overview] Error fetching products:', productsError)
-      return NextResponse.json(
-        { error: 'Failed to fetch inventory' },
-        { status: 500 }
-      )
+    while (hasMore) {
+      const from = page * pageSize
+      const to = from + pageSize - 1
+
+      const { data, error: productsError } = await supabase
+        .from('products_all_ls')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('description', { ascending: true })
+        .range(from, to)
+
+      if (productsError) {
+        console.error('[Inventory Overview] Error fetching products:', productsError)
+        return NextResponse.json(
+          { error: 'Failed to fetch inventory' },
+          { status: 500 }
+        )
+      }
+
+      if (data && data.length > 0) {
+        allLsProducts = [...allLsProducts, ...data]
+        page++
+        hasMore = data.length === pageSize
+      } else {
+        hasMore = false
+      }
     }
 
-    // Fetch synced products from products table to determine sync status
-    const { data: syncedProducts } = await supabase
-      .from('products')
-      .select('lightspeed_item_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
+    console.log(`[Inventory Overview] Fetched ${allLsProducts.length} products from products_all_ls`)
 
-    const syncedItemIds = new Set(syncedProducts?.map(p => p.lightspeed_item_id) || [])
+    // Fetch synced products from products table to determine sync status
+    // Also need to paginate this
+    let syncedProducts: any[] = []
+    page = 0
+    hasMore = true
+
+    while (hasMore) {
+      const from = page * pageSize
+      const to = from + pageSize - 1
+
+      const { data } = await supabase
+        .from('products')
+        .select('lightspeed_item_id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .range(from, to)
+
+      if (data && data.length > 0) {
+        syncedProducts = [...syncedProducts, ...data]
+        page++
+        hasMore = data.length === pageSize
+      } else {
+        hasMore = false
+      }
+    }
+
+    console.log(`[Inventory Overview] Fetched ${syncedProducts.length} synced products from products table`)
+
+    const syncedItemIds = new Set(syncedProducts.map(p => p.lightspeed_item_id))
 
     // Fetch category names from Lightspeed using our client
     let categoryNamesMap = new Map<string, string>()
@@ -69,7 +111,9 @@ export async function GET() {
     const notSyncedProducts: any[] = []
     const syncedProductsList: any[] = []
 
-    allLsProducts?.forEach(product => {
+    console.log(`[Inventory Overview] Processing ${allLsProducts.length} products...`)
+
+    allLsProducts.forEach(product => {
       const isSynced = syncedItemIds.has(product.lightspeed_item_id)
       const productData = {
         id: product.id,
