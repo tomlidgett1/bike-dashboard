@@ -417,6 +417,8 @@ export interface LightspeedItemShopsResponse {
     count: string
     offset: string
     limit: string
+    next?: string
+    previous?: string
   }
 }
 
