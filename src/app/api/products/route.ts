@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const from = (page - 1) * pageSize
     const to = from + pageSize - 1
 
-    // Build query - include canonical product images
+    // Build query - include canonical product images with thumbnail_url
     let query = supabase
       .from('products')
       .select(`
@@ -49,7 +49,11 @@ export async function GET(request: NextRequest) {
           product_images!canonical_product_id (
             id,
             storage_path,
+            thumbnail_url,
+            card_url,
+            cloudinary_url,
             is_primary,
+            approval_status,
             variants,
             formats
           )
