@@ -26,6 +26,13 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
 
+  console.log('[Lightspeed Callback] Received callback:', {
+    hasCode: !!code,
+    hasState: !!state,
+    error,
+    errorDescription
+  })
+
   // Get the correct origin (handle ngrok/proxies)
   const forwardedHost = request.headers.get('x-forwarded-host')
   const forwardedProto = request.headers.get('x-forwarded-proto')
@@ -101,13 +108,22 @@ export async function GET(request: NextRequest) {
 
     const tokenData: LightspeedTokenResponse = await tokenResponse.json()
 
+    console.log('[Lightspeed Callback] Token exchange successful, storing tokens for user:', user.id)
+
     // Store tokens (encrypted)
-    await storeTokens(
+    const connection = await storeTokens(
       user.id,
       tokenData.access_token,
       tokenData.refresh_token,
       tokenData.expires_in
     )
+
+    console.log('[Lightspeed Callback] Tokens stored successfully:', {
+      connectionId: connection.id,
+      status: connection.status,
+      hasAccessToken: !!connection.access_token_encrypted,
+      hasRefreshToken: !!connection.refresh_token_encrypted
+    })
 
     // Fetch account info to store account ID and name
     try {

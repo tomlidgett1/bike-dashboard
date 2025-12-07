@@ -18,17 +18,22 @@ export async function GET() {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
+      console.log('[Lightspeed Initiate] No authenticated user')
       return NextResponse.json(
         { error: 'Unauthorised. Please log in first.' },
         { status: 401 }
       )
     }
 
+    console.log('[Lightspeed Initiate] Starting OAuth flow for user:', user.id)
+
     // Generate and store OAuth state token
     const state = await generateOAuthState(user.id)
 
     // Build authorization URL
     const authUrl = buildAuthUrl(state)
+
+    console.log('[Lightspeed Initiate] Redirecting to Lightspeed OAuth')
 
     // Redirect to Lightspeed OAuth
     return NextResponse.redirect(authUrl)
