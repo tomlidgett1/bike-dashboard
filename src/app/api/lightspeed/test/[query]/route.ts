@@ -38,21 +38,58 @@ export async function GET(
     let result: any = {}
 
     switch (query) {
-      case 'items-in-stock': {
-        // Query items with positive stock
-        console.log('[Lightspeed Test] Fetching items with stock...')
+      case 'itemshops-with-stock': {
+        // Query ItemShops with positive stock - THIS IS THE CORRECT ENDPOINT
+        console.log('[Lightspeed Test] Fetching ItemShops with stock...')
         
-        const items = await client.getItems({
-          qoh: '>,0',
+        // Use the >,0 operator (greater than 0) for qoh field
+        const response = await client.getItemShops({
+          qoh: '>,0',  // Operator format: '>,0' means qoh > 0
           limit: 100,
-          // Note: offset is deprecated by Lightspeed, use next/previous URLs instead
+        })
+
+        // ItemShops response wraps the array
+        const itemShops = Array.isArray(response.ItemShop) ? response.ItemShop : [response.ItemShop]
+        
+        // Extract unique item IDs
+        const itemIds = [...new Set(itemShops.map(shop => shop.itemID))]
+
+        result = {
+          query: 'itemshops-with-stock',
+          endpoint: '/ItemShop.json?qoh=%3E,0&limit=100',
+          description: 'ItemShops shows inventory by location. Each item may have multiple shops with stock. shopID:0 shows total across all locations.',
+          totalRecords: itemShops.length,
+          uniqueItems: itemIds.length,
+          itemIds: itemIds.slice(0, 10), // First 10 unique item IDs
+          sampleRecords: itemShops.slice(0, 5).map(shop => ({
+            itemID: shop.itemID,
+            shopID: shop.shopID,
+            qoh: shop.qoh,
+            sellable: shop.sellable,
+            reorderPoint: shop.reorderPoint,
+            note: shop.shopID === '0' ? 'Total across all shops' : `Shop ${shop.shopID}`,
+          })),
+          note: 'This is the CORRECT way to query items with stock. shopID:0 contains total inventory across all locations.',
+        }
+        break
+      }
+
+      case 'items-in-stock': {
+        // Query items - note: qoh filtering must be done on ItemShops endpoint, not Item endpoint
+        console.log('[Lightspeed Test] Fetching items (first 100)...')
+        
+        // Get first 100 items (not archived)
+        const items = await client.getItems({
+          archived: 'false',
+          limit: 100,
         })
 
         const itemIds = items.map(item => item.itemID)
 
         result = {
           query: 'items-in-stock',
-          endpoint: '/Item.json?qoh=>,0&limit=100',
+          endpoint: '/Item.json?archived=false&limit=100',
+          note: 'Note: QoH (quantity on hand) is stored in ItemShops, not Item. To filter by stock, you must query the ItemShops endpoint with qoh=>0, not the Item endpoint.',
           totalCount: items.length,
           itemsReturned: items.length,
           itemIds: itemIds.slice(0, 10), // First 10 IDs
@@ -60,11 +97,12 @@ export async function GET(
             itemID: item.itemID,
             systemSku: item.systemSku,
             description: item.description,
-            // Note: qoh is at the ItemPrice level in the full response
             categoryID: item.categoryID,
             manufacturerID: item.manufacturerID,
+            modelYear: item.modelYear,
+            upc: item.upc,
           })),
-          note: 'Returns the first 100 items with stock. Lightspeed uses next/previous URLs for pagination (offset is deprecated).',
+          recommendation: 'To get items WITH stock, query ItemShops endpoint: GET /ItemShop.json?qoh=>0',
         }
         break
       }

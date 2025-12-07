@@ -108,7 +108,7 @@ export default function ConnectLightspeedPage() {
   
   // API Test Panel State
   const [showApiTest, setShowApiTest] = React.useState(false);
-  const [testQuery, setTestQuery] = React.useState('items-in-stock');
+  const [testQuery, setTestQuery] = React.useState('itemshops-with-stock');
   const [testRunning, setTestRunning] = React.useState(false);
   const [testResult, setTestResult] = React.useState<any>(null);
   const [testError, setTestError] = React.useState<string | null>(null);
@@ -1581,6 +1581,28 @@ export default function ConnectLightspeedPage() {
                           <Label className="text-sm font-medium">Select Query</Label>
                           <div className="grid grid-cols-1 gap-2">
                             <button
+                              onClick={() => setTestQuery('itemshops-with-stock')}
+                              className={cn(
+                                "flex items-start gap-3 rounded-md border p-3 text-left transition-colors",
+                                testQuery === 'itemshops-with-stock'
+                                  ? "border-gray-900 bg-gray-50 dark:border-gray-100 dark:bg-gray-900"
+                                  : "border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
+                              )}
+                            >
+                              <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-current flex-shrink-0 mt-0.5">
+                                {testQuery === 'itemshops-with-stock' && (
+                                  <div className="h-2.5 w-2.5 rounded-full bg-current" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium">Items with Stock (ItemShops)</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  GET /ItemShop.json?qoh=&gt;0 - Returns inventory by location (correct method)
+                                </div>
+                              </div>
+                            </button>
+
+                            <button
                               onClick={() => setTestQuery('items-in-stock')}
                               className={cn(
                                 "flex items-start gap-3 rounded-md border p-3 text-left transition-colors",
@@ -1595,9 +1617,9 @@ export default function ConnectLightspeedPage() {
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium">Items with Stock</div>
+                                <div className="text-sm font-medium">All Items (No Stock Filter)</div>
                                 <div className="text-xs text-muted-foreground mt-0.5">
-                                  GET /Item.json?qoh=&gt;,0 - Returns all items with positive stock
+                                  GET /Item.json - Returns first 100 items (qoh not available on this endpoint)
                                 </div>
                               </div>
                             </button>
