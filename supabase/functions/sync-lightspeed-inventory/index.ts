@@ -144,7 +144,41 @@ Deno.serve(async (req) => {
 
     const encryptionKey = Deno.env.get('TOKEN_ENCRYPTION_KEY')!
     const accessToken = await decryptToken(connection.access_token_encrypted, encryptionKey)
-    const accountId = connection.account_id
+    let accountId = connection.account_id
+
+    console.log(`🔑 [AUTH] Access token decrypted: ${accessToken ? 'Yes' : 'No'}`)
+    console.log(`🏢 [ACCOUNT] Account ID from DB: ${accountId || 'NULL - will fetch from API'}`)
+
+    // If accountId is missing, fetch it from Lightspeed API
+    if (!accountId) {
+      console.log(`🏢 [ACCOUNT] Fetching account ID from Lightspeed API...`)
+      const accountRes = await fetch(`https://api.lightspeedapp.com/API/V3/Account.json`, {
+        headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' },
+      })
+      
+      if (accountRes.ok) {
+        const accountData = await accountRes.json()
+        accountId = accountData.Account?.accountID
+        
+        // Update connection with account ID
+        if (accountId) {
+          await supabaseAdmin
+            .from('lightspeed_connections')
+            .update({ account_id: accountId, account_name: accountData.Account?.name })
+            .eq('user_id', user.id)
+          
+          console.log(`✅ [ACCOUNT] Fetched and saved account ID: ${accountId}`)
+        }
+      } else {
+        throw new Error('Failed to fetch account ID from Lightspeed')
+      }
+    }
+
+    if (!accountId) {
+      throw new Error('Account ID is required but could not be determined')
+    }
+
+    console.log(`✅ [ACCOUNT] Using account ID: ${accountId}`)
 
     await sendProgress({ phase: 'fetch_inventory', message: 'Fetching inventory data...', progress: 10 })
 
