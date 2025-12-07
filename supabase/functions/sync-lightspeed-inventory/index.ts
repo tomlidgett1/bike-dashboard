@@ -361,32 +361,62 @@ Deno.serve(async (req) => {
               nextUrl = `https://api.lightspeedapp.com/API/V3/Account/${accountId}/Item.json?categoryID=${categoryId}&archived=false&limit=100`
             }
             
-            while (nextUrl) {
+            let pageCount = 0
+            const maxPages = 50 // Safety limit: 50 pages × 100 items = 5000 items max
+            
+            while (nextUrl && pageCount < maxPages) {
+              pageCount++
+              console.log(`📂 [FETCH CATEGORY] ${categoryId}: Page ${pageCount}, URL: ${nextUrl.substring(0, 150)}`)
+              
               const res = await fetch(nextUrl, {
                 headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' },
               })
+              
               if (res.status === 429) {
+                console.log(`⏰ [FETCH CATEGORY] ${categoryId}: Rate limited, waiting...`)
                 await new Promise(r => setTimeout(r, 5000))
                 continue
               }
-              if (!res.ok) break
+              
+              if (!res.ok) {
+                console.error(`❌ [FETCH CATEGORY] ${categoryId}: HTTP ${res.status}`)
+                break
+              }
               
               const data = await res.json()
               const items = Array.isArray(data.Item) ? data.Item : data.Item ? [data.Item] : []
+              
+              console.log(`📂 [FETCH CATEGORY] ${categoryId}: Page ${pageCount} got ${items.length} items`)
               
               if (categoryId === '__UNCATEGORIZED__') {
                 const uncategorized = items.filter((item: any) => 
                   !item.categoryID || item.categoryID === '0' || item.categoryID === 0
                 )
                 categoryItems.push(...uncategorized)
+                console.log(`📂 [FETCH CATEGORY] ${categoryId}: Filtered to ${uncategorized.length} uncategorized items`)
               } else {
                 categoryItems.push(...items)
               }
               
+              console.log(`📂 [FETCH CATEGORY] ${categoryId}: Total so far: ${categoryItems.length} items`)
+              
               nextUrl = data['@attributes']?.next || null
+              
+              if (nextUrl) {
+                console.log(`📂 [FETCH CATEGORY] ${categoryId}: Next page available`)
+              } else {
+                console.log(`📂 [FETCH CATEGORY] ${categoryId}: No more pages`)
+              }
+              
               // Minimal delay to avoid rate limits
               await new Promise(r => setTimeout(r, 10))
             }
+            
+            if (pageCount >= maxPages) {
+              console.warn(`⚠️ [FETCH CATEGORY] ${categoryId}: Reached max pages limit (${maxPages}), may have more items`)
+            }
+            
+            console.log(`✅ [FETCH CATEGORY] ${categoryId}: Complete - ${categoryItems.length} total items from ${pageCount} pages`)
             
             sendProgress({ 
               phase: 'fetch_category', 
