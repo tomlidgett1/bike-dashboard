@@ -51,25 +51,36 @@ export async function GET(
         // ItemShops response wraps the array
         const itemShops = Array.isArray(response.ItemShop) ? response.ItemShop : [response.ItemShop]
         
-        // Extract unique item IDs
-        const itemIds = [...new Set(itemShops.map(shop => shop.itemID))]
+        // Extract unique item IDs across all shops
+        const allUniqueItemIds = [...new Set(itemShops.map(shop => shop.itemID))]
+        
+        // Get items from shopID:0 (total across all locations)
+        const totalShopRecords = itemShops.filter(shop => shop.shopID === '0')
+        const itemIdsFromShop0 = totalShopRecords.map(shop => shop.itemID)
+        
+        // Check if there are more pages
+        const hasMorePages = response['@attributes']?.next && response['@attributes'].next !== ''
 
         result = {
           query: 'itemshops-with-stock',
           endpoint: '/ItemShop.json?qoh=%3E,0&limit=100',
-          description: 'ItemShops shows inventory by location. Each item may have multiple shops with stock. shopID:0 shows total across all locations.',
-          totalRecords: itemShops.length,
-          uniqueItems: itemIds.length,
-          itemIds: itemIds.slice(0, 10), // First 10 unique item IDs
-          sampleRecords: itemShops.slice(0, 5).map(shop => ({
+          description: 'ALL item IDs with positive stock (from this page).',
+          warning: hasMorePages ? 'More pages available! This shows first 100 records only.' : 'All records returned.',
+          totalRecordsThisPage: itemShops.length,
+          uniqueItemIdsThisPage: allUniqueItemIds.length,
+          itemsWithShopId0: itemIdsFromShop0.length,
+          hasMorePages: hasMorePages,
+          nextPageUrl: response['@attributes']?.next || null,
+          allUniqueItemIds: allUniqueItemIds, // EVERY unique item ID from this page
+          itemIdsFromShop0: itemIdsFromShop0, // Item IDs from shopID:0 (totals)
+          allRecords: itemShops.map(shop => ({
             itemID: shop.itemID,
             shopID: shop.shopID,
             qoh: shop.qoh,
             sellable: shop.sellable,
             reorderPoint: shop.reorderPoint,
-            note: shop.shopID === '0' ? 'Total across all shops' : `Shop ${shop.shopID}`,
           })),
-          note: 'This is the CORRECT way to query items with stock. shopID:0 contains total inventory across all locations.',
+          note: 'allUniqueItemIds shows EVERY unique item with stock on this page. itemIdsFromShop0 shows items from shopID:0 (totals across all locations).',
         }
         break
       }
