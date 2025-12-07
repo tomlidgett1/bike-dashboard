@@ -160,7 +160,7 @@ export class InstagramClient {
         productId: 'test-123',
         title: 'Test Product',
         price: 99.99,
-        imageUrl: 'https://via.placeholder.com/1080',
+        URLIMAGE: 'https://via.placeholder.com/1080',
         caption: 'This is a test post from Yellow Jersey 🚴‍♂️',
         description: 'Test description',
       };
