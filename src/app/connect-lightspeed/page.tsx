@@ -105,6 +105,13 @@ export default function ConnectLightspeedPage() {
   } | null>(null);
   const [savingSettings, setSavingSettings] = React.useState(false);
   const [loadingCategories, setLoadingCategories] = React.useState(false);
+  
+  // API Test Panel State
+  const [showApiTest, setShowApiTest] = React.useState(false);
+  const [testQuery, setTestQuery] = React.useState('items-in-stock');
+  const [testRunning, setTestRunning] = React.useState(false);
+  const [testResult, setTestResult] = React.useState<any>(null);
+  const [testError, setTestError] = React.useState<string | null>(null);
 
   // Sync settings
   const [autoSyncNewProducts, setAutoSyncNewProducts] = React.useState(true);
@@ -1522,6 +1529,204 @@ export default function ConnectLightspeedPage() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* API Test Panel */}
+          {isConnected && (
+            <motion.div variants={itemVariants}>
+              <Card className="bg-white dark:bg-card rounded-md border-border">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Settings className="h-4 w-4 text-muted-foreground" />
+                      <CardTitle className="text-base font-semibold">
+                        API Test Panel
+                      </CardTitle>
+                      <Badge variant="secondary" className="rounded-md text-xs">
+                        Developer
+                      </Badge>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowApiTest(!showApiTest)}
+                      className="rounded-md"
+                    >
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 transition-transform duration-200",
+                          showApiTest && "rotate-180"
+                        )}
+                      />
+                    </Button>
+                  </div>
+                  <CardDescription className="text-xs">
+                    Test different Lightspeed API queries
+                  </CardDescription>
+                </CardHeader>
+                <AnimatePresence>
+                  {showApiTest && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{
+                        duration: 0.4,
+                        ease: [0.04, 0.62, 0.23, 0.98],
+                      }}
+                      className="overflow-hidden"
+                    >
+                      <CardContent className="space-y-4">
+                        {/* Query Selection */}
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Select Query</Label>
+                          <div className="grid grid-cols-1 gap-2">
+                            <button
+                              onClick={() => setTestQuery('items-in-stock')}
+                              className={cn(
+                                "flex items-start gap-3 rounded-md border p-3 text-left transition-colors",
+                                testQuery === 'items-in-stock'
+                                  ? "border-gray-900 bg-gray-50 dark:border-gray-100 dark:bg-gray-900"
+                                  : "border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
+                              )}
+                            >
+                              <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-current flex-shrink-0 mt-0.5">
+                                {testQuery === 'items-in-stock' && (
+                                  <div className="h-2.5 w-2.5 rounded-full bg-current" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium">Items with Stock</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  GET /Item.json?qoh=&gt;,0 - Returns all items with positive stock
+                                </div>
+                              </div>
+                            </button>
+
+                            <button
+                              onClick={() => setTestQuery('all-categories')}
+                              className={cn(
+                                "flex items-start gap-3 rounded-md border p-3 text-left transition-colors",
+                                testQuery === 'all-categories'
+                                  ? "border-gray-900 bg-gray-50 dark:border-gray-100 dark:bg-gray-900"
+                                  : "border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
+                              )}
+                            >
+                              <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-current flex-shrink-0 mt-0.5">
+                                {testQuery === 'all-categories' && (
+                                  <div className="h-2.5 w-2.5 rounded-full bg-current" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium">All Categories</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  GET /Category.json - Returns all product categories
+                                </div>
+                              </div>
+                            </button>
+
+                            <button
+                              onClick={() => setTestQuery('account-info')}
+                              className={cn(
+                                "flex items-start gap-3 rounded-md border p-3 text-left transition-colors",
+                                testQuery === 'account-info'
+                                  ? "border-gray-900 bg-gray-50 dark:border-gray-100 dark:bg-gray-900"
+                                  : "border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
+                              )}
+                            >
+                              <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-current flex-shrink-0 mt-0.5">
+                                {testQuery === 'account-info' && (
+                                  <div className="h-2.5 w-2.5 rounded-full bg-current" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium">Account Information</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  GET /Account.json - Returns account details and stats
+                                </div>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Run Test Button */}
+                        <Button
+                          onClick={async () => {
+                            setTestRunning(true);
+                            setTestError(null);
+                            setTestResult(null);
+
+                            try {
+                              const response = await fetch(`/api/lightspeed/test/${testQuery}`);
+                              const data = await response.json();
+
+                              if (!response.ok) {
+                                setTestError(data.error || 'Test failed');
+                              } else {
+                                setTestResult(data);
+                              }
+                            } catch (error) {
+                              setTestError(error instanceof Error ? error.message : 'Unknown error');
+                            } finally {
+                              setTestRunning(false);
+                            }
+                          }}
+                          disabled={testRunning}
+                          className="w-full rounded-md"
+                        >
+                          {testRunning ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Running Test...
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="mr-2 h-4 w-4" />
+                              Run Test Query
+                            </>
+                          )}
+                        </Button>
+
+                        {/* Test Results */}
+                        {testError && (
+                          <div className="rounded-md bg-red-50 border border-red-200 p-3 dark:bg-red-900/10 dark:border-red-900">
+                            <div className="flex items-start gap-2">
+                              <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-red-900 dark:text-red-400">
+                                  Error
+                                </p>
+                                <p className="text-xs text-red-700 dark:text-red-400 mt-1">
+                                  {testError}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {testResult && (
+                          <div className="rounded-md bg-white border border-gray-200 dark:bg-gray-900 dark:border-gray-800">
+                            <div className="border-b border-gray-200 dark:border-gray-800 px-3 py-2 flex items-center justify-between">
+                              <span className="text-xs font-medium text-muted-foreground">
+                                Test Results
+                              </span>
+                              <Badge variant="secondary" className="rounded-md text-xs">
+                                {testResult.duration}ms
+                              </Badge>
+                            </div>
+                            <div className="p-3">
+                              <pre className="text-xs font-mono overflow-x-auto">
+                                {JSON.stringify(testResult, null, 2)}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </Card>
+            </motion.div>
+          )}
 
           {/* Help Card */}
           <motion.div variants={itemVariants}>
