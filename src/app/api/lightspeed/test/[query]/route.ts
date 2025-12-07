@@ -40,22 +40,21 @@ export async function GET(
     switch (query) {
       case 'itemshops-with-stock': {
         // Query ItemShops with positive stock - THIS IS THE CORRECT ENDPOINT
-        console.log('[Lightspeed Test] Fetching ALL ItemShops with stock (paginating through all pages)...')
+        console.log('[Lightspeed Test] Step 1: Fetching ALL ItemShops with stock...')
         
         const allItemShops: any[] = []
         let currentParams: any = {
           qoh: '>,0',  // Operator format: '>,0' means qoh > 0
           limit: 100,
-          load_relations: '["Item"]', // Load item details (name, SKU, etc)
         }
         let pageCount = 0
         const maxPages = 100 // Safety limit (10,000 records max)
         let hasMore = true
         
-        // Paginate through all pages
+        // Paginate through all ItemShop pages
         while (hasMore && pageCount < maxPages) {
           pageCount++
-          console.log(`[Lightspeed Test] Fetching page ${pageCount}...`)
+          console.log(`[Lightspeed Test] Fetching ItemShops page ${pageCount}...`)
           
           const response = await client.getItemShops(currentParams)
           
@@ -71,7 +70,7 @@ export async function GET(
           const nextUrl = response['@attributes']?.next
           hasMore = !!(nextUrl && nextUrl !== '')
           
-          // If there's a next page, we need to extract the 'after' parameter from it
+          // If there's a next page, extract the 'after' parameter
           if (hasMore && nextUrl) {
             try {
               const url = new URL(nextUrl)
@@ -81,7 +80,6 @@ export async function GET(
                   qoh: '>,0',
                   limit: 100,
                   after: afterParam,
-                  load_relations: '["Item"]',
                 }
               } else {
                 hasMore = false
@@ -98,26 +96,62 @@ export async function GET(
           }
         }
         
-        // Extract unique item IDs and build detailed list
-        const uniqueItemsMap = new Map()
+        console.log(`[Lightspeed Test] Step 2: Fetching item details for ${allItemShops.length} records...`)
         
-        // Build map of unique items with their details
+        // Extract unique item IDs
+        const uniqueItemIds = [...new Set(allItemShops.map(shop => shop.itemID))]
+        
+        // Fetch item details in batches (max 100 per request using IN operator)
+        const itemDetailsMap = new Map()
+        const batchSize = 100
+        
+        for (let i = 0; i < uniqueItemIds.length; i += batchSize) {
+          const batch = uniqueItemIds.slice(i, i + batchSize)
+          console.log(`[Lightspeed Test] Fetching item details batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(uniqueItemIds.length/batchSize)}`)
+          
+          // Use IN operator to fetch multiple items at once
+          const items = await client.getItems({
+            itemID: `IN,[${batch.join(',')}]`,
+          })
+          
+          items.forEach(item => {
+            itemDetailsMap.set(item.itemID, {
+              description: item.description,
+              systemSku: item.systemSku,
+              modelYear: item.modelYear,
+              upc: item.upc,
+              categoryID: item.categoryID,
+              manufacturerID: item.manufacturerID,
+            })
+          })
+          
+          // Small delay between batches
+          if (i + batchSize < uniqueItemIds.length) {
+            await new Promise(resolve => setTimeout(resolve, 200))
+          }
+        }
+        
+        console.log(`[Lightspeed Test] Fetched details for ${itemDetailsMap.size} items`)
+        
+        // Build complete item list with inventory details
+        const itemInventoryMap = new Map()
+        
         allItemShops.forEach(shop => {
-          if (!uniqueItemsMap.has(shop.itemID)) {
-            uniqueItemsMap.set(shop.itemID, {
+          if (!itemInventoryMap.has(shop.itemID)) {
+            const details = itemDetailsMap.get(shop.itemID) || {}
+            itemInventoryMap.set(shop.itemID, {
               itemID: shop.itemID,
-              description: shop.Item?.description || 'N/A',
-              systemSku: shop.Item?.systemSku || 'N/A',
-              modelYear: shop.Item?.modelYear || null,
-              upc: shop.Item?.upc || null,
-              categoryID: shop.Item?.categoryID || null,
-              manufacturerID: shop.Item?.manufacturerID || null,
-              // Collect all shop records for this item
+              description: details.description || 'N/A',
+              systemSku: details.systemSku || 'N/A',
+              modelYear: details.modelYear || null,
+              upc: details.upc || null,
+              categoryID: details.categoryID || null,
+              manufacturerID: details.manufacturerID || null,
               shops: [],
             })
           }
-          // Add this shop's inventory to the item
-          uniqueItemsMap.get(shop.itemID).shops.push({
+          // Add this shop's inventory
+          itemInventoryMap.get(shop.itemID).shops.push({
             shopID: shop.shopID,
             qoh: shop.qoh,
             sellable: shop.sellable,
@@ -126,32 +160,36 @@ export async function GET(
           })
         })
         
-        const allItemsWithDetails = Array.from(uniqueItemsMap.values())
-        const allUniqueItemIds = Array.from(uniqueItemsMap.keys())
+        const allItemsWithDetails = Array.from(itemInventoryMap.values())
         
-        // Get items from shopID:0 (total across all locations)
-        const totalShopRecords = allItemShops.filter(shop => shop.shopID === '0')
-        const itemsFromShop0 = totalShopRecords.map(shop => ({
-          itemID: shop.itemID,
-          description: shop.Item?.description || 'N/A',
-          systemSku: shop.Item?.systemSku || 'N/A',
-          qoh: shop.qoh,
-          sellable: shop.sellable,
-        }))
+        // Get simplified list from shopID:0 (totals)
+        const itemsFromShop0 = allItemShops
+          .filter(shop => shop.shopID === '0')
+          .map(shop => {
+            const details = itemDetailsMap.get(shop.itemID) || {}
+            return {
+              itemID: shop.itemID,
+              description: details.description || 'N/A',
+              systemSku: details.systemSku || 'N/A',
+              qoh: shop.qoh,
+              sellable: shop.sellable,
+            }
+          })
 
         result = {
           query: 'itemshops-with-stock',
-          endpoint: '/ItemShop.json?qoh=%3E,0&limit=100&load_relations=["Item"]',
-          description: 'COMPLETE list of ALL items with positive stock including item details (name, SKU, etc).',
+          endpoint: 'Multi-step: ItemShop.json (stock) + Item.json (details)',
+          description: 'COMPLETE list of ALL items with positive stock including full details.',
           paginationComplete: pageCount < maxPages,
           pagesQueried: pageCount,
+          itemDetailBatches: Math.ceil(uniqueItemIds.length / batchSize),
           totalRecords: allItemShops.length,
           uniqueItems: allItemsWithDetails.length,
           itemsFromShop0Count: itemsFromShop0.length,
-          allItemsWithDetails: allItemsWithDetails, // EVERY item with full details and inventory by location
+          allItemsWithDetails: allItemsWithDetails, // EVERY item with full details and inventory
           itemsFromShop0: itemsFromShop0, // Items from shopID:0 (totals) with details
-          allUniqueItemIds: allUniqueItemIds, // Just the IDs if you need them
-          note: 'allItemsWithDetails contains EVERY item with stock including: description (name), SKU, model year, and inventory by shop location.',
+          allUniqueItemIds: uniqueItemIds, // Just the IDs
+          note: 'This uses a 2-step process: (1) Query ItemShops for stock, (2) Query Items for details using IN operator.',
         }
         break
       }
