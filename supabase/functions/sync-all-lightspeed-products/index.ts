@@ -134,7 +134,8 @@ Deno.serve(async (req) => {
       
       console.log(`[Sync All LS Products] Fetching items batch ${batchNum}/${totalBatches} (${batch.length} items)`)
 
-      const itemUrl = `${LIGHTSPEED_CONFIG.API_BASE_URL}/Account/${accountId}/Item.json?itemID=IN,[${batch.join(',')}]&load_relations=["ItemShops","Images","Prices"]`
+      // Note: load_relations with IN operator causes issues, fetch relations separately if needed
+      const itemUrl = `${LIGHTSPEED_CONFIG.API_BASE_URL}/Account/${accountId}/Item.json?itemID=IN,[${batch.join(',')}]`
       
       const response = await fetch(itemUrl, {
         headers: {
