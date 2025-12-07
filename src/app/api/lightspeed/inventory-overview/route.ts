@@ -99,6 +99,7 @@ export async function GET() {
       categoryId: string
       name: string
       productCount: number
+      syncedCount: number
       products: any[]
     }>()
 
@@ -110,6 +111,7 @@ export async function GET() {
           categoryId,
           name: product.categoryName,
           productCount: 0,
+          syncedCount: 0,
           products: [],
         })
       }
@@ -117,6 +119,15 @@ export async function GET() {
       const category = notSyncedCategoryMap.get(categoryId)!
       category.productCount++
       category.products.push(product)
+    })
+
+    // Add synced count to each category
+    syncedProductsList.forEach(product => {
+      const categoryId = product.categoryId || 'uncategorized'
+      const category = notSyncedCategoryMap.get(categoryId)
+      if (category) {
+        category.syncedCount++
+      }
     })
 
     // Group synced products by category

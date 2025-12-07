@@ -278,34 +278,38 @@ export default function ConnectLightspeedPage() {
             <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
           </div>
         ) : (
-          <div className="px-6 py-6 space-y-6">
+          <div className="h-full flex flex-col">
             {/* View Mode Tabs */}
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-              <button
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                  viewMode === 'categories'
-                    ? "text-gray-800 bg-white shadow-sm"
-                    : "text-gray-600 hover:bg-gray-200/70"
-                )}
-                onClick={() => setViewMode('categories')}
-              >
-                By Categories
-              </button>
-              <button
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                  viewMode === 'products'
-                    ? "text-gray-800 bg-white shadow-sm"
-                    : "text-gray-600 hover:bg-gray-200/70"
-                )}
-                onClick={() => setViewMode('products')}
-              >
-                All Products
-              </button>
+            <div className="px-6 py-4 bg-white dark:bg-card border-b border-gray-200 dark:border-gray-800">
+              <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                <button
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                    viewMode === 'categories'
+                      ? "text-gray-800 bg-white shadow-sm"
+                      : "text-gray-600 hover:bg-gray-200/70"
+                  )}
+                  onClick={() => setViewMode('categories')}
+                >
+                  By Categories
+                </button>
+                <button
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                    viewMode === 'products'
+                      ? "text-gray-800 bg-white shadow-sm"
+                      : "text-gray-600 hover:bg-gray-200/70"
+                  )}
+                  onClick={() => setViewMode('products')}
+                >
+                  All Products
+                </button>
+              </div>
             </div>
 
-            {/* NOT SYNCED YET SECTION */}
+            {/* Side by Side Layout */}
+            <div className="flex-1 flex gap-6 p-6 overflow-hidden">
+              {/* NOT SYNCED YET SECTION - LEFT */}
             <div className="bg-white dark:bg-card rounded-md border border-gray-200 dark:border-gray-800">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
                 <div>
@@ -363,10 +367,17 @@ export default function ConnectLightspeedPage() {
                               onClick={() => setExpandedNotSyncedCat(isExpanded ? null : category.categoryId)}
                               className="flex-1 flex items-center justify-between text-left hover:opacity-70 transition-opacity"
                             >
-                              <div>
-                                <div className="text-sm font-medium">{category.name}</div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <div className="text-sm font-medium">{category.name}</div>
+                                  {category.syncedCount > 0 && (
+                                    <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs">
+                                      {category.syncedCount} synced
+                                    </Badge>
+                                  )}
+                                </div>
                                 <div className="text-xs text-muted-foreground mt-0.5">
-                                  {category.productCount} products
+                                  {category.productCount} products not synced yet
                                 </div>
                               </div>
                               <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform duration-200", isExpanded && "rotate-180")} />
@@ -439,21 +450,21 @@ export default function ConnectLightspeedPage() {
                     )}
                   </div>
                 )}
-              </div>
-            </div>
-
-            {/* ALREADY SYNCED SECTION */}
-            <div className="bg-white dark:bg-card rounded-md border border-gray-200 dark:border-gray-800">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold flex items-center gap-2">
-                    Already Synced
-                    <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    {inventoryData?.totals.totalSynced || 0} products currently on marketplace
-                  </p>
                 </div>
+              </div>
+
+              {/* ALREADY SYNCED SECTION - RIGHT */}
+              <div className="flex-1 flex flex-col bg-white dark:bg-card rounded-md border border-gray-200 dark:border-gray-800 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between flex-shrink-0">
+                  <div>
+                    <h2 className="text-lg font-semibold flex items-center gap-2">
+                      Already Synced
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {inventoryData?.totals.totalSynced || 0} products currently on marketplace
+                    </p>
+                  </div>
                 {viewMode === 'products' && selectedSyncedProducts.size > 0 && (
                   <Button
                     variant="outline"
@@ -564,6 +575,7 @@ export default function ConnectLightspeedPage() {
                     )}
                   </div>
                 )}
+                </div>
               </div>
             </div>
           </div>
