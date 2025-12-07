@@ -353,70 +353,73 @@ Deno.serve(async (req) => {
         fetchPromises.push(
           (async () => {
             const categoryItems: any[] = []
-            let nextUrl: string | null
+            let currentUrl: string
             
             if (categoryId === '__UNCATEGORIZED__') {
-              nextUrl = `https://api.lightspeedapp.com/API/V3/Account/${accountId}/Item.json?categoryID=0&archived=false&limit=100`
+              currentUrl = `https://api.lightspeedapp.com/API/V3/Account/${accountId}/Item.json?categoryID=0&archived=false&limit=100`
             } else {
-              nextUrl = `https://api.lightspeedapp.com/API/V3/Account/${accountId}/Item.json?categoryID=${categoryId}&archived=false&limit=100`
+              currentUrl = `https://api.lightspeedapp.com/API/V3/Account/${accountId}/Item.json?categoryID=${categoryId}&archived=false&limit=100`
             }
             
             let pageCount = 0
             const maxPages = 50 // Safety limit: 50 pages × 100 items = 5000 items max
             
-            while (nextUrl && pageCount < maxPages) {
+            while (currentUrl && pageCount < maxPages) {
               pageCount++
-              console.log(`📂 [FETCH CATEGORY] ${categoryId}: Page ${pageCount}, URL: ${nextUrl.substring(0, 150)}`)
+              console.log(`📂 [FETCH CATEGORY] ${categoryId}: Page ${pageCount}`)
+              console.log(`📂 [FETCH CATEGORY] ${categoryId}: URL: ${currentUrl}`)
               
-              const res = await fetch(nextUrl, {
+              const res = await fetch(currentUrl, {
                 headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' },
               })
               
               if (res.status === 429) {
-                console.log(`⏰ [FETCH CATEGORY] ${categoryId}: Rate limited, waiting...`)
+                console.log(`⏰ [FETCH CATEGORY] ${categoryId}: Rate limited, waiting 5s...`)
                 await new Promise(r => setTimeout(r, 5000))
-                continue
+                continue // Retry same page
               }
               
               if (!res.ok) {
-                console.error(`❌ [FETCH CATEGORY] ${categoryId}: HTTP ${res.status}`)
+                const errorText = await res.text()
+                console.error(`❌ [FETCH CATEGORY] ${categoryId}: HTTP ${res.status} - ${errorText}`)
                 break
               }
               
               const data = await res.json()
               const items = Array.isArray(data.Item) ? data.Item : data.Item ? [data.Item] : []
               
-              console.log(`📂 [FETCH CATEGORY] ${categoryId}: Page ${pageCount} got ${items.length} items`)
+              console.log(`📂 [FETCH CATEGORY] ${categoryId}: Page ${pageCount} received ${items.length} items`)
               
               if (categoryId === '__UNCATEGORIZED__') {
                 const uncategorized = items.filter((item: any) => 
                   !item.categoryID || item.categoryID === '0' || item.categoryID === 0
                 )
                 categoryItems.push(...uncategorized)
-                console.log(`📂 [FETCH CATEGORY] ${categoryId}: Filtered to ${uncategorized.length} uncategorized items`)
+                console.log(`📂 [FETCH CATEGORY] ${categoryId}: Filtered to ${uncategorized.length} uncategorized`)
               } else {
                 categoryItems.push(...items)
               }
               
-              console.log(`📂 [FETCH CATEGORY] ${categoryId}: Total so far: ${categoryItems.length} items`)
+              console.log(`📂 [FETCH CATEGORY] ${categoryId}: Running total: ${categoryItems.length} items`)
               
-              nextUrl = data['@attributes']?.next || null
-              
-              if (nextUrl) {
-                console.log(`📂 [FETCH CATEGORY] ${categoryId}: Next page available`)
-              } else {
-                console.log(`📂 [FETCH CATEGORY] ${categoryId}: No more pages`)
+              // CRITICAL: Use same pattern as sync-all-lightspeed-products
+              currentUrl = data['@attributes']?.next || null
+              if (!currentUrl || currentUrl === '') {
+                console.log(`📂 [FETCH CATEGORY] ${categoryId}: Pagination complete - no more pages`)
+                break
               }
               
-              // Minimal delay to avoid rate limits
-              await new Promise(r => setTimeout(r, 10))
+              console.log(`📂 [FETCH CATEGORY] ${categoryId}: Next page available, continuing...`)
+              
+              // Rate limit delay (200ms like sync-all function)
+              await new Promise(r => setTimeout(r, 200))
             }
             
             if (pageCount >= maxPages) {
-              console.warn(`⚠️ [FETCH CATEGORY] ${categoryId}: Reached max pages limit (${maxPages}), may have more items`)
+              console.warn(`⚠️ [FETCH CATEGORY] ${categoryId}: Reached max pages limit (${maxPages})`)
             }
             
-            console.log(`✅ [FETCH CATEGORY] ${categoryId}: Complete - ${categoryItems.length} total items from ${pageCount} pages`)
+            console.log(`✅ [FETCH CATEGORY] ${categoryId}: FINAL - ${categoryItems.length} total items from ${pageCount} pages`)
             
             sendProgress({ 
               phase: 'fetch_category', 
