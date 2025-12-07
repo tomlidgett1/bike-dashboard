@@ -109,26 +109,30 @@ export async function GET(request: NextRequest) {
 
     const uniqueCategories = [...new Set(categories?.map(c => c.category_name).filter(Boolean))]
 
-    // Process products to add resolved image URLs
+    // Process products to add resolved image URLs from product_images table
     const processedProducts = (products || []).map(product => {
-      let resolvedImageUrl = product.primary_image_url; // Default to Lightspeed image
+      let resolvedImageUrl = null;
       
-      // If product has canonical product with images, use those
+      // Get approved images from canonical product_images
       if (product.canonical_products?.product_images && Array.isArray(product.canonical_products.product_images)) {
-        const images = product.canonical_products.product_images;
+        const approvedImages = product.canonical_products.product_images.filter(
+          (img: any) => img.approval_status === 'approved' || img.approval_status === null
+        );
         
-        // Find primary image or use first available
-        const primaryImage = images.find((img: any) => img.is_primary) || images[0];
+        // Find primary image or use first approved
+        const primaryImage = approvedImages.find((img: any) => img.is_primary) || approvedImages[0];
         
-        if (primaryImage && primaryImage.storage_path) {
-          const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-          
-          // Use storage_path directly (variants aren't being generated yet)
-          // TODO: When image processing is added, use: variants.thumbnail || variants.medium || storage_path
-          const imagePath = primaryImage.storage_path;
-          
-          resolvedImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${imagePath}`;
+        if (primaryImage) {
+          // Use thumbnail_url for table display (optimized 100px)
+          resolvedImageUrl = primaryImage.thumbnail_url || 
+                            primaryImage.card_url || 
+                            primaryImage.cloudinary_url;
         }
+      }
+      
+      // Fallback to cached_image_url (populated by trigger)
+      if (!resolvedImageUrl) {
+        resolvedImageUrl = product.cached_image_url || product.cached_thumbnail_url;
       }
       
       return {
