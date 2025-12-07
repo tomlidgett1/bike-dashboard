@@ -15,7 +15,6 @@ import {
   updateConnectionStatus,
   getLightspeedCredentials,
   LIGHTSPEED_CONFIG,
-  createLightspeedClient,
 } from '@/lib/services/lightspeed'
 import type { LightspeedTokenResponse } from '@/lib/services/lightspeed'
 
@@ -127,20 +126,36 @@ export async function GET(request: NextRequest) {
 
     // Fetch account info to store account ID and name
     try {
-      const client = createLightspeedClient(user.id)
-      const accountInfo = await client.getAccount()
-      
-      // Update connection with account info
-      await supabase
-        .from('lightspeed_connections')
-        .update({
-          account_id: accountInfo.Account.accountID,
-          account_name: accountInfo.Account.name,
+      // Use the access token we just received to get account info
+      const accountResponse = await fetch(`${LIGHTSPEED_CONFIG.API_BASE_URL}/Account.json`, {
+        headers: {
+          'Authorization': `Bearer ${tokenData.access_token}`,
+          'Accept': 'application/json',
+        },
+      })
+
+      if (accountResponse.ok) {
+        const accountData = await accountResponse.json()
+        
+        console.log('[Lightspeed Callback] Account info retrieved:', {
+          accountId: accountData.Account?.accountID,
+          accountName: accountData.Account?.name
         })
-        .eq('user_id', user.id)
+
+        // Update connection with account info
+        await supabase
+          .from('lightspeed_connections')
+          .update({
+            account_id: accountData.Account?.accountID || null,
+            account_name: accountData.Account?.name || null,
+          })
+          .eq('user_id', user.id)
+      } else {
+        console.warn('[Lightspeed Callback] Could not fetch account info:', accountResponse.status)
+      }
     } catch (accountError) {
       // Non-critical - connection still works without account info
-      console.warn('Could not fetch account info:', accountError)
+      console.warn('[Lightspeed Callback] Error fetching account info:', accountError)
     }
 
     // Success - redirect to connect page
