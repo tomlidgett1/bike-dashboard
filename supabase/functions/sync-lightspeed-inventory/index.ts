@@ -65,10 +65,14 @@ Deno.serve(async (req) => {
 
   const body = await req.json()
   const categoryIds: string[] = body.categoryIds || []
+  const itemIds: string[] = body.itemIds || []
   const useSSE = body.sse === true
-  const syncAll = categoryIds.length === 0
+  const syncAll = categoryIds.length === 0 && itemIds.length === 0
 
-  console.log(`🔄 User: ${user.id}, Sync ${syncAll ? 'ALL' : categoryIds.length + ' categories'}, SSE: ${useSSE}`)
+  console.log(`🔄 [SYNC START] User: ${user.id}`)
+  console.log(`📋 [SYNC START] Categories: ${categoryIds.length > 0 ? categoryIds.join(', ') : 'none'}`)
+  console.log(`📋 [SYNC START] Items: ${itemIds.length} item IDs provided`)
+  console.log(`📋 [SYNC START] Sync All: ${syncAll}, SSE: ${useSSE}`)
 
   // Main sync logic as a function to reuse
   async function runSync(sendProgress: (data: any) => void) {
