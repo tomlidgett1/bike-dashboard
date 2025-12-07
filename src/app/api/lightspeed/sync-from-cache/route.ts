@@ -70,16 +70,24 @@ export async function POST(request: NextRequest) {
     // Call edge function with BOTH categoryIds AND itemIds
     const functionUrl = `${supabaseUrl}/functions/v1/sync-lightspeed-inventory`
     
+    const requestBody = {
+      categoryIds: uniqueCategoryIds,
+      itemIds: itemIdsToSync, // Send specific items to sync
+    }
+    
+    console.log('[Sync from Cache] Sending to edge function:', {
+      categoryIds: uniqueCategoryIds,
+      itemIdsCount: itemIdsToSync.length,
+      itemIdsSample: itemIdsToSync.slice(0, 5),
+    })
+    
     const response = await fetch(functionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({
-        categoryIds: uniqueCategoryIds,
-        itemIds: itemIdsToSync, // Send specific items to sync
-      }),
+      body: JSON.stringify(requestBody),
     })
 
     if (!response.ok) {

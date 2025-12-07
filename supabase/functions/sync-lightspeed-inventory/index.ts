@@ -210,7 +210,57 @@ Deno.serve(async (req) => {
     )
 
     // Fetch items from categories
-    if (syncAll) {
+    if (itemIds.length > 0) {
+      // Fetch specific items by ID using IN operator
+      console.log(`📦 [FETCH] Fetching ${itemIds.length} specific items by ID`)
+      
+      fetchPromises.push(
+        (async () => {
+          const allItems: any[] = []
+          const batchSize = 100
+          
+          for (let i = 0; i < itemIds.length; i += batchSize) {
+            const batch = itemIds.slice(i, i + batchSize)
+            console.log(`📦 [FETCH ITEMS] Batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(itemIds.length/batchSize)}: ${batch.length} items`)
+            
+            const url = `https://api.lightspeedapp.com/API/V3/Account/${accountId}/Item.json?itemID=IN,[${batch.join(',')}]&archived=false`
+            
+            const res = await fetch(url, {
+              headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' },
+            })
+            
+            if (res.status === 429) {
+              await new Promise(r => setTimeout(r, 5000))
+              i -= batchSize // Retry this batch
+              continue
+            }
+            
+            if (!res.ok) {
+              console.error(`❌ [FETCH ITEMS] Batch failed: ${res.status}`)
+              continue
+            }
+            
+            const data = await res.json()
+            const items = Array.isArray(data.Item) ? data.Item : data.Item ? [data.Item] : []
+            allItems.push(...items)
+            
+            console.log(`✅ [FETCH ITEMS] Batch ${Math.floor(i/batchSize) + 1}: Got ${items.length} items`)
+            
+            await sendProgress({ 
+              phase: 'fetch_items', 
+              message: `Fetched ${allItems.length}/${itemIds.length} items...`, 
+              progress: 20 + (allItems.length / itemIds.length) * 30,
+              details: { itemsFetched: allItems.length, totalItems: itemIds.length }
+            })
+            
+            await new Promise(r => setTimeout(r, 200))
+          }
+          
+          console.log(`✅ [FETCH ITEMS] Total items fetched: ${allItems.length}`)
+          return { type: 'items', data: allItems }
+        })()
+      )
+    } else if (syncAll) {
       fetchPromises.push(
         (async () => {
           const allItems: any[] = []
