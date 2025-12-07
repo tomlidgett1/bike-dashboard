@@ -115,6 +115,20 @@ export async function DELETE(request: NextRequest) {
 
         deletedCount += count || 0
       }
+
+      // CRITICAL: Disable auto-updates for these categories
+      console.log('[Bulk Delete] Disabling auto-updates for removed categories')
+      const { error: prefError } = await supabase
+        .from('lightspeed_category_sync_preferences')
+        .update({ is_enabled: false })
+        .eq('user_id', user.id)
+        .in('category_id', categoryIds)
+
+      if (prefError) {
+        console.error('[Bulk Delete] Error disabling category preferences:', prefError)
+      } else {
+        console.log(`[Bulk Delete] Disabled ${categoryIds.length} category preferences`)
+      }
     }
 
     console.log(`[Bulk Delete] ${hardDelete ? 'Deleted' : 'Deactivated'} ${deletedCount} products`)
