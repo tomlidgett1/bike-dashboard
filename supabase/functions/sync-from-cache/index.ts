@@ -46,28 +46,55 @@ Deno.serve(async (req) => {
 
     await sendProgress({ phase: 'init', message: 'Starting sync from cached data...', progress: 0 })
 
-    // Step 1: Fetch products from products_all_ls (already have the data!)
+    // Step 1: Fetch ALL products from products_all_ls (paginate beyond 1000 limit!)
     console.log(`📦 [SYNC FROM CACHE] Fetching from products_all_ls table...`)
     
-    let query = supabaseAdmin
-      .from('products_all_ls')
-      .select('*')
-      .eq('user_id', user.id)
+    let cachedProducts: any[] = []
+    const pageSize = 1000
+    let page = 0
+    let hasMore = true
 
-    if (categoryIds.length > 0) {
-      query = query.in('category_id', categoryIds)
-    } else if (itemIds.length > 0) {
-      query = query.in('lightspeed_item_id', itemIds)
+    while (hasMore) {
+      const from = page * pageSize
+      const to = from + pageSize - 1
+
+      console.log(`📦 [SYNC FROM CACHE] Fetching page ${page + 1} (rows ${from}-${to})`)
+
+      let query = supabaseAdmin
+        .from('products_all_ls')
+        .select('*')
+        .eq('user_id', user.id)
+        .range(from, to)
+
+      if (categoryIds.length > 0) {
+        query = query.in('category_id', categoryIds)
+      } else if (itemIds.length > 0) {
+        query = query.in('lightspeed_item_id', itemIds)
+      }
+
+      const { data, error: fetchError } = await query
+
+      if (fetchError) {
+        console.error(`❌ [SYNC FROM CACHE] Page ${page + 1} error:`, fetchError)
+        throw new Error('Failed to fetch products')
+      }
+
+      if (data && data.length > 0) {
+        cachedProducts = [...cachedProducts, ...data]
+        console.log(`📦 [SYNC FROM CACHE] Page ${page + 1}: Got ${data.length} products, total: ${cachedProducts.length}`)
+        page++
+        hasMore = data.length === pageSize
+      } else {
+        hasMore = false
+      }
     }
 
-    const { data: cachedProducts, error: fetchError } = await query
-
-    if (fetchError || !cachedProducts || cachedProducts.length === 0) {
-      console.error(`❌ [SYNC FROM CACHE] No products found:`, fetchError)
+    if (cachedProducts.length === 0) {
+      console.error(`❌ [SYNC FROM CACHE] No products found`)
       throw new Error('No products found to sync')
     }
 
-    console.log(`✅ [SYNC FROM CACHE] Found ${cachedProducts.length} products in cache`)
+    console.log(`✅ [SYNC FROM CACHE] Found ${cachedProducts.length} total products in cache from ${page} pages`)
 
     await sendProgress({ 
       phase: 'prepare', 
