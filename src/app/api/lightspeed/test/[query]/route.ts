@@ -48,28 +48,23 @@ export async function GET(
           offset: 0,
         })
 
-        const itemIds = items.Item.map(item => item.itemID)
-        const totalCount = items['@attributes']?.count || items.Item.length
+        const itemIds = items.map(item => item.itemID)
 
         result = {
           query: 'items-in-stock',
           endpoint: '/Item.json?qoh=>,0&limit=100&offset=0',
-          totalCount: parseInt(totalCount),
-          itemsReturned: items.Item.length,
+          totalCount: items.length,
+          itemsReturned: items.length,
           itemIds: itemIds.slice(0, 10), // First 10 IDs
-          sampleItems: items.Item.slice(0, 3).map(item => ({
+          sampleItems: items.slice(0, 3).map(item => ({
             itemID: item.itemID,
             systemSku: item.systemSku,
             description: item.description,
-            qoh: item.Prices?.ItemPrice?.[0]?.qoh || 0,
-            price: item.Prices?.ItemPrice?.[0]?.amount || 0,
+            // Note: qoh is at the ItemPrice level in the full response
+            categoryID: item.categoryID,
+            manufacturerID: item.manufacturerID,
           })),
-          pagination: {
-            limit: 100,
-            offset: 0,
-            hasMore: parseInt(totalCount) > 100,
-            totalPages: Math.ceil(parseInt(totalCount) / 100),
-          },
+          note: 'This returns the first 100 items with stock. To get total count, use a separate query.',
         }
         break
       }
@@ -83,13 +78,13 @@ export async function GET(
         result = {
           query: 'all-categories',
           endpoint: '/Category.json',
-          totalCount: categories.Category?.length || 0,
-          categories: categories.Category?.slice(0, 10).map((cat: any) => ({
+          totalCount: categories.length,
+          categories: categories.slice(0, 10).map((cat) => ({
             categoryID: cat.categoryID,
             name: cat.name,
             fullPathName: cat.fullPathName,
             nodeDepth: cat.nodeDepth,
-          })) || [],
+          })),
         }
         break
       }
@@ -106,9 +101,7 @@ export async function GET(
           account: {
             accountID: account.Account.accountID,
             name: account.Account.name,
-            link: account.Account.link,
-            timeZone: account.Account.timeZone,
-            currency: account.Account.currency,
+            link: account.Account.link?.['@attributes']?.href || null,
           },
         }
         break
