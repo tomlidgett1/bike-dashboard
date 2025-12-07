@@ -148,7 +148,7 @@ export default function ConnectLightspeedPage() {
       }
 
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const functionUrl = `${supabaseUrl}/functions/v1/sync-lightspeed-inventory`;
+      const functionUrl = `${supabaseUrl}/functions/v1/sync-from-cache`;
 
       // Prepare request body with SSE enabled
       const requestBody = {
