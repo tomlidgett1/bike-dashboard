@@ -119,14 +119,21 @@ Deno.serve(async (req) => {
       manufacturerId: p.manufacturer_id,
     })))
 
-    // Attach canonical IDs
-    productsToInsert.forEach((product, idx) => {
-      if (matchResults[idx].canonicalProductId) {
-        (product as any).canonical_product_id = matchResults[idx].canonicalProductId
-      }
-    })
+    console.log(`📊 [SYNC FROM CACHE] Match results:`, matchResults?.length || 0, 'results received')
 
-    console.log(`✅ [SYNC FROM CACHE] Matched to ${matchResults.filter(r => r.canonicalProductId).length} canonical products`)
+    // Attach canonical IDs (with safety checks)
+    if (matchResults && Array.isArray(matchResults)) {
+      productsToInsert.forEach((product, idx) => {
+        if (matchResults[idx] && matchResults[idx].canonicalProductId) {
+          (product as any).canonical_product_id = matchResults[idx].canonicalProductId
+        }
+      })
+
+      const matchedCount = matchResults.filter(r => r && r.canonicalProductId).length
+      console.log(`✅ [SYNC FROM CACHE] Matched to ${matchedCount} canonical products`)
+    } else {
+      console.warn(`⚠️ [SYNC FROM CACHE] Match results not in expected format, continuing without canonical matches`)
+    }
 
     await sendProgress({ 
       phase: 'insert', 
