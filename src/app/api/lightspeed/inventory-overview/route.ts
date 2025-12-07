@@ -23,7 +23,7 @@ export async function GET() {
     }
 
     // Fetch all products from products_all_ls
-    const { data: products, error: productsError } = await supabase
+    const { data: allLsProducts, error: productsError } = await supabase
       .from('products_all_ls')
       .select('*')
       .eq('user_id', user.id)
@@ -37,30 +37,47 @@ export async function GET() {
       )
     }
 
-    // Get categories with product counts
-    const categoryMap = new Map<string, {
-      categoryId: string
-      name: string
-      productCount: number
-      products: any[]
-    }>()
+    // Fetch synced products from products table to determine sync status
+    const { data: syncedProducts } = await supabase
+      .from('products')
+      .select('lightspeed_item_id')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
 
-    // Group products by category
-    products?.forEach(product => {
-      const categoryId = product.category_id || 'uncategorized'
-      
-      if (!categoryMap.has(categoryId)) {
-        categoryMap.set(categoryId, {
-          categoryId,
-          name: categoryId === 'uncategorized' ? 'Uncategorized' : `Category ${categoryId}`,
-          productCount: 0,
-          products: [],
-        })
+    const syncedItemIds = new Set(syncedProducts?.map(p => p.lightspeed_item_id) || [])
+
+    // Fetch category names from Lightspeed
+    const { data: lsConnection } = await supabase
+      .from('lightspeed_connections')
+      .select('account_id')
+      .eq('user_id', user.id)
+      .eq('status', 'connected')
+      .single()
+
+    let categoryNamesMap = new Map<string, string>()
+
+    if (lsConnection?.account_id) {
+      try {
+        // Fetch category names from Lightspeed API via our client
+        const categoryResponse = await fetch('/api/lightspeed/categories')
+        if (categoryResponse.ok) {
+          const categoryData = await categoryResponse.json()
+          categoryData.categories?.forEach((cat: any) => {
+            categoryNamesMap.set(cat.categoryID, cat.name)
+          })
+        }
+      } catch (error) {
+        console.error('[Inventory Overview] Error fetching category names:', error)
       }
+    }
 
-      const category = categoryMap.get(categoryId)!
-      category.productCount++
-      category.products.push({
+    // Separate products into synced and not synced
+    const notSyncedProducts: any[] = []
+    const syncedProductsList: any[] = []
+
+    allLsProducts?.forEach(product => {
+      const isSynced = syncedItemIds.has(product.lightspeed_item_id)
+      const productData = {
         id: product.id,
         itemId: product.lightspeed_item_id,
         name: product.description,
@@ -68,31 +85,99 @@ export async function GET() {
         modelYear: product.model_year,
         upc: product.upc,
         categoryId: product.category_id,
+        categoryName: categoryNamesMap.get(product.category_id || '') || `Category ${product.category_id || 'Unknown'}`,
         manufacturerId: product.manufacturer_id,
         totalQoh: product.total_qoh,
         totalSellable: product.total_sellable,
         stockData: product.stock_data,
-      })
+        isSynced,
+      }
+
+      if (isSynced) {
+        syncedProductsList.push(productData)
+      } else {
+        notSyncedProducts.push(productData)
+      }
     })
 
-    const categories = Array.from(categoryMap.values()).sort((a, b) => 
-      b.productCount - a.productCount
+    // Group not synced products by category
+    const notSyncedCategoryMap = new Map<string, {
+      categoryId: string
+      name: string
+      productCount: number
+      products: any[]
+    }>()
+
+    notSyncedProducts.forEach(product => {
+      const categoryId = product.categoryId || 'uncategorized'
+      
+      if (!notSyncedCategoryMap.has(categoryId)) {
+        notSyncedCategoryMap.set(categoryId, {
+          categoryId,
+          name: product.categoryName,
+          productCount: 0,
+          products: [],
+        })
+      }
+
+      const category = notSyncedCategoryMap.get(categoryId)!
+      category.productCount++
+      category.products.push(product)
+    })
+
+    // Group synced products by category
+    const syncedCategoryMap = new Map<string, {
+      categoryId: string
+      name: string
+      productCount: number
+      products: any[]
+    }>()
+
+    syncedProductsList.forEach(product => {
+      const categoryId = product.categoryId || 'uncategorized'
+      
+      if (!syncedCategoryMap.has(categoryId)) {
+        syncedCategoryMap.set(categoryId, {
+          categoryId,
+          name: product.categoryName,
+          productCount: 0,
+          products: [],
+        })
+      }
+
+      const category = syncedCategoryMap.get(categoryId)!
+      category.productCount++
+      category.products.push(product)
+    })
+
+    const notSyncedCategories = Array.from(notSyncedCategoryMap.values()).sort((a, b) => 
+      a.name.localeCompare(b.name)
+    )
+
+    const syncedCategories = Array.from(syncedCategoryMap.values()).sort((a, b) => 
+      a.name.localeCompare(b.name)
     )
 
     // Calculate totals
-    const totalProducts = products?.length || 0
-    const totalStock = products?.reduce((sum, p) => sum + (p.total_qoh || 0), 0) || 0
-    const categoriesCount = categories.length
+    const totalProducts = allLsProducts?.length || 0
+    const totalStock = allLsProducts?.reduce((sum, p) => sum + (p.total_qoh || 0), 0) || 0
 
     return NextResponse.json({
       success: true,
       totals: {
         totalProducts,
         totalStock,
-        categoriesCount,
+        totalSynced: syncedProductsList.length,
+        totalNotSynced: notSyncedProducts.length,
       },
-      categories,
-      products: products || [],
+      notSynced: {
+        categories: notSyncedCategories,
+        products: notSyncedProducts,
+      },
+      synced: {
+        categories: syncedCategories,
+        products: syncedProductsList,
+      },
     })
 
   } catch (error) {

@@ -4,31 +4,39 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Zap, AlertCircle } from "lucide-react";
+import { Loader2, Zap, AlertCircle, ChevronDown, Trash2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
 import { MetricsHeader } from "@/components/lightspeed/metrics-header";
-import { CategoryTreeView } from "@/components/lightspeed/category-tree-view";
-import { ProductTableView } from "@/components/lightspeed/product-table-view";
 import { SyncProgressModal } from "@/components/lightspeed/sync-progress-modal";
 import { DeleteConfirmDialog } from "@/components/lightspeed/delete-confirm-dialog";
 
 type ViewMode = 'categories' | 'products';
 
-interface InventoryData {
-  categories: Array<{
-    categoryId: string;
-    name: string;
-    productCount: number;
-    products: any[];
-  }>;
+interface Category {
+  categoryId: string;
+  name: string;
+  productCount: number;
   products: any[];
+}
+
+interface InventoryData {
+  notSynced: {
+    categories: Category[];
+    products: any[];
+  };
+  synced: {
+    categories: Category[];
+    products: any[];
+  };
   totals: {
     totalProducts: number;
     totalStock: number;
-    categoriesCount: number;
+    totalSynced: number;
+    totalNotSynced: number;
   };
 }
 
@@ -37,9 +45,15 @@ export default function ConnectLightspeedPage() {
   const [viewMode, setViewMode] = React.useState<ViewMode>('categories');
   const [inventoryData, setInventoryData] = React.useState<InventoryData | null>(null);
   const [loadingInventory, setLoadingInventory] = React.useState(false);
-  const [selectedCategories, setSelectedCategories] = React.useState<Set<string>>(new Set());
-  const [selectedProducts, setSelectedProducts] = React.useState<Set<string>>(new Set());
-  const [selectedCategoryId, setSelectedCategoryId] = React.useState<string | null>(null);
+  
+  // Selection state
+  const [selectedNotSyncedCategories, setSelectedNotSyncedCategories] = React.useState<Set<string>>(new Set());
+  const [selectedNotSyncedProducts, setSelectedNotSyncedProducts] = React.useState<Set<string>>(new Set());
+  const [selectedSyncedProducts, setSelectedSyncedProducts] = React.useState<Set<string>>(new Set());
+  
+  // Expanded categories
+  const [expandedNotSyncedCat, setExpandedNotSyncedCat] = React.useState<string | null>(null);
+  const [expandedSyncedCat, setExpandedSyncedCat] = React.useState<string | null>(null);
   
   // Sync state
   const [syncModalOpen, setSyncModalOpen] = React.useState(false);
@@ -89,39 +103,6 @@ export default function ConnectLightspeedPage() {
     }
   };
 
-  const handleCategoryToggle = (categoryId: string) => {
-    setSelectedCategories(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(categoryId)) {
-        newSet.delete(categoryId);
-      } else {
-        newSet.add(categoryId);
-      }
-      return newSet;
-    });
-  };
-
-  const handleProductToggle = (itemId: string) => {
-    setSelectedProducts(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(itemId)) {
-        newSet.delete(itemId);
-      } else {
-        newSet.add(itemId);
-      }
-      return newSet;
-    });
-  };
-
-  const handleSelectAllProducts = () => {
-    const allItemIds = inventoryData?.products.map(p => p.lightspeed_item_id) || [];
-    setSelectedProducts(new Set(allItemIds));
-  };
-
-  const handleClearAllProducts = () => {
-    setSelectedProducts(new Set());
-  };
-
   const handleSyncSelected = async () => {
     setSyncModalOpen(true);
     setSyncStatus('syncing');
@@ -133,11 +114,11 @@ export default function ConnectLightspeedPage() {
     try {
       const body: any = {};
       
-      if (viewMode === 'categories' && selectedCategories.size > 0) {
-        body.categoryIds = Array.from(selectedCategories);
+      if (viewMode === 'categories' && selectedNotSyncedCategories.size > 0) {
+        body.categoryIds = Array.from(selectedNotSyncedCategories);
         body.syncType = 'categories';
-      } else if (viewMode === 'products' && selectedProducts.size > 0) {
-        body.itemIds = Array.from(selectedProducts);
+      } else if (viewMode === 'products' && selectedNotSyncedProducts.size > 0) {
+        body.itemIds = Array.from(selectedNotSyncedProducts);
         body.syncType = 'products';
       }
 
@@ -161,8 +142,8 @@ export default function ConnectLightspeedPage() {
       setSyncResult(result.data);
       
       // Clear selections
-      setSelectedCategories(new Set());
-      setSelectedProducts(new Set());
+      setSelectedNotSyncedCategories(new Set());
+      setSelectedNotSyncedProducts(new Set());
       
       // Refresh inventory data
       await fetchInventoryData();
@@ -201,11 +182,7 @@ export default function ConnectLightspeedPage() {
       await fetchInventoryData();
       
       // Clear selections
-      if (deleteTarget.type === 'categories') {
-        setSelectedCategories(new Set());
-      } else {
-        setSelectedProducts(new Set());
-      }
+      setSelectedSyncedProducts(new Set());
 
       setDeleteDialogOpen(false);
       setDeleteTarget(null);
@@ -216,24 +193,6 @@ export default function ConnectLightspeedPage() {
       setIsDeleting(false);
     }
   };
-
-  const handleDeleteProducts = (itemIds: string[]) => {
-    setDeleteTarget({ type: 'products', ids: itemIds });
-    setDeleteDialogOpen(true);
-  };
-
-  const handleDeleteCategories = () => {
-    if (selectedCategories.size === 0) return;
-    setDeleteTarget({ type: 'categories', ids: Array.from(selectedCategories) });
-    setDeleteDialogOpen(true);
-  };
-
-  // Get products for selected category
-  const categoryProducts = React.useMemo(() => {
-    if (!selectedCategoryId || !inventoryData) return [];
-    const category = inventoryData.categories.find(c => c.categoryId === selectedCategoryId);
-    return category?.products || [];
-  }, [selectedCategoryId, inventoryData]);
 
   // Loading state
   if (isLoading) {
@@ -304,6 +263,8 @@ export default function ConnectLightspeedPage() {
         accountId={connection?.account_id || 'N/A'}
         totalProducts={inventoryData?.totals.totalProducts || 0}
         totalStock={inventoryData?.totals.totalStock || 0}
+        totalSynced={inventoryData?.totals.totalSynced || 0}
+        totalNotSynced={inventoryData?.totals.totalNotSynced || 0}
         lastSyncTime={connection?.last_sync_at ? new Date(connection.last_sync_at) : null}
         isRefreshing={loadingInventory}
         onRefresh={fetchInventoryData}
@@ -311,11 +272,14 @@ export default function ConnectLightspeedPage() {
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* View Mode Tabs */}
-        <div className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-card px-6 py-3">
-          <div className="flex items-center justify-between">
-            {/* Tab Switcher */}
+      <div className="flex-1 bg-gray-50 dark:bg-gray-950">
+        {loadingInventory ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+          </div>
+        ) : (
+          <div className="px-6 py-6 space-y-6">
+            {/* View Mode Tabs */}
             <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
               <button
                 className={cn(
@@ -326,12 +290,7 @@ export default function ConnectLightspeedPage() {
                 )}
                 onClick={() => setViewMode('categories')}
               >
-                Categories
-                {selectedCategories.size > 0 && (
-                  <Badge variant="secondary" className="rounded-md ml-1 h-5 px-1.5 text-xs">
-                    {selectedCategories.size}
-                  </Badge>
-                )}
+                By Categories
               </button>
               <button
                 className={cn(
@@ -342,140 +301,271 @@ export default function ConnectLightspeedPage() {
                 )}
                 onClick={() => setViewMode('products')}
               >
-                Products
-                {selectedProducts.size > 0 && (
-                  <Badge variant="secondary" className="rounded-md ml-1 h-5 px-1.5 text-xs">
-                    {selectedProducts.size}
-                  </Badge>
-                )}
+                All Products
               </button>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-              {viewMode === 'categories' && selectedCategories.size > 0 && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDeleteCategories}
-                    className="rounded-md"
-                  >
-                    Delete Selected
-                  </Button>
-                  <Button
-                    onClick={handleSyncSelected}
-                    size="sm"
-                    className="rounded-md"
-                  >
-                    Sync {selectedCategories.size} {selectedCategories.size === 1 ? 'Category' : 'Categories'}
-                  </Button>
-                </>
-              )}
-              
-              {viewMode === 'products' && selectedProducts.size > 0 && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDeleteProducts(Array.from(selectedProducts))}
-                    className="rounded-md"
-                  >
-                    Delete Selected
-                  </Button>
-                  <Button
-                    onClick={handleSyncSelected}
-                    size="sm"
-                    className="rounded-md"
-                  >
-                    Sync {selectedProducts.size} {selectedProducts.size === 1 ? 'Product' : 'Products'}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Content Area */}
-        {loadingInventory ? (
-          <div className="flex-1 flex items-center justify-center">
-            <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
-          </div>
-        ) : (
-          <div className="flex-1 flex">
-            {viewMode === 'categories' ? (
-              <>
-                {/* Left Panel - Category Tree */}
-                <div className="w-80 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-card">
-                  <CategoryTreeView
-                    categories={inventoryData?.categories || []}
-                    selectedCategories={selectedCategories}
-                    onCategoryToggle={handleCategoryToggle}
-                    onCategoryClick={setSelectedCategoryId}
-                    selectedCategoryId={selectedCategoryId}
-                  />
+            {/* NOT SYNCED YET SECTION */}
+            <div className="bg-white dark:bg-card rounded-md border border-gray-200 dark:border-gray-800">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Not Synced Yet</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {inventoryData?.totals.totalNotSynced || 0} products available to sync to marketplace
+                  </p>
                 </div>
+                {viewMode === 'categories' && selectedNotSyncedCategories.size > 0 && (
+                  <Button
+                    onClick={handleSyncSelected}
+                    size="sm"
+                    className="rounded-md"
+                  >
+                    Sync {selectedNotSyncedCategories.size} {selectedNotSyncedCategories.size === 1 ? 'Category' : 'Categories'}
+                  </Button>
+                )}
+                {viewMode === 'products' && selectedNotSyncedProducts.size > 0 && (
+                  <Button
+                    onClick={handleSyncSelected}
+                    size="sm"
+                    className="rounded-md"
+                  >
+                    Sync {selectedNotSyncedProducts.size} {selectedNotSyncedProducts.size === 1 ? 'Product' : 'Products'}
+                  </Button>
+                )}
+              </div>
 
-                {/* Right Panel - Category Products */}
-                <div className="flex-1 bg-gray-50 dark:bg-gray-950">
-                  {selectedCategoryId ? (
-                    <div className="h-full flex flex-col">
-                      <div className="p-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-card">
-                        <h2 className="text-lg font-semibold">
-                          {inventoryData?.categories.find(c => c.categoryId === selectedCategoryId)?.name || 'Category'}
-                        </h2>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {categoryProducts.length} products in this category
-                        </p>
-                      </div>
-                      <div className="flex-1 overflow-auto p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                          {categoryProducts.map((product: any) => (
-                            <div
-                              key={product.itemId}
-                              className="rounded-md border border-gray-200 dark:border-gray-800 bg-white dark:bg-card p-4 hover:shadow-md transition-shadow"
+              <div className="p-6">
+                {viewMode === 'categories' ? (
+                  /* Category View */
+                  <div className="space-y-2">
+                    {inventoryData?.notSynced.categories.map((category) => {
+                      const isSelected = selectedNotSyncedCategories.has(category.categoryId);
+                      const isExpanded = expandedNotSyncedCat === category.categoryId;
+
+                      return (
+                        <div key={category.categoryId} className="rounded-md border border-gray-200 dark:border-gray-800">
+                          <div className="flex items-center gap-3 p-4">
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => {
+                                setSelectedNotSyncedCategories(prev => {
+                                  const newSet = new Set(prev);
+                                  if (newSet.has(category.categoryId)) {
+                                    newSet.delete(category.categoryId);
+                                  } else {
+                                    newSet.add(category.categoryId);
+                                  }
+                                  return newSet;
+                                });
+                              }}
+                            />
+                            <button
+                              onClick={() => setExpandedNotSyncedCat(isExpanded ? null : category.categoryId)}
+                              className="flex-1 flex items-center justify-between text-left hover:opacity-70 transition-opacity"
                             >
-                              <div className="text-sm font-medium line-clamp-2 mb-2">
-                                {product.name}
+                              <div>
+                                <div className="text-sm font-medium">{category.name}</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  {category.productCount} products
+                                </div>
                               </div>
-                              <div className="text-xs text-muted-foreground space-y-1">
-                                <div>SKU: {product.sku || 'N/A'}</div>
-                                <div>Stock: {product.totalQoh}</div>
+                              <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform duration-200", isExpanded && "rotate-180")} />
+                            </button>
+                          </div>
+
+                          {/* Expanded Products List */}
+                          {isExpanded && (
+                            <div className="border-t border-gray-200 dark:border-gray-800 p-4 bg-gray-50 dark:bg-gray-900">
+                              <div className="space-y-2">
+                                {category.products.map((product: any) => (
+                                  <div key={product.itemId} className="flex items-center justify-between p-2 rounded-md bg-white dark:bg-card">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium truncate">{product.name}</div>
+                                      <div className="text-xs text-muted-foreground">
+                                        SKU: {product.sku || 'N/A'} • Stock: {product.totalQoh}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          ))}
+                          )}
                         </div>
+                      );
+                    })}
+
+                    {(!inventoryData?.notSynced.categories || inventoryData.notSynced.categories.length === 0) && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        All products have been synced to the marketplace
                       </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-muted-foreground">
-                      Select a category to view products
-                    </div>
-                  )}
-                </div>
-              </>
-            ) : (
-              /* Products Table View */
-              <div className="flex-1 bg-white dark:bg-card">
-                <ProductTableView
-                  products={inventoryData?.products.map(p => ({
-                    id: p.id,
-                    itemId: p.lightspeed_item_id,
-                    name: p.description,
-                    sku: p.system_sku,
-                    modelYear: p.model_year,
-                    categoryId: p.category_id,
-                    totalQoh: p.total_qoh,
-                    totalSellable: p.total_sellable,
-                  })) || []}
-                  selectedProducts={selectedProducts}
-                  onProductToggle={handleProductToggle}
-                  onSelectAll={handleSelectAllProducts}
-                  onClearAll={handleClearAllProducts}
-                  onDeleteProducts={handleDeleteProducts}
-                />
+                    )}
+                  </div>
+                ) : (
+                  /* Products View */
+                  <div className="space-y-2">
+                    {inventoryData?.notSynced.products.map((product: any) => {
+                      const isSelected = selectedNotSyncedProducts.has(product.itemId);
+
+                      return (
+                        <div key={product.itemId} className="flex items-center gap-3 p-4 rounded-md border border-gray-200 dark:border-gray-800">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => {
+                              setSelectedNotSyncedProducts(prev => {
+                                const newSet = new Set(prev);
+                                if (newSet.has(product.itemId)) {
+                                  newSet.delete(product.itemId);
+                                } else {
+                                  newSet.add(product.itemId);
+                                }
+                                return newSet;
+                              });
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{product.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              SKU: {product.sku || 'N/A'} • Category: {product.categoryName} • Stock: {product.totalQoh}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {(!inventoryData?.notSynced.products || inventoryData.notSynced.products.length === 0) && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        All products have been synced to the marketplace
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+
+            {/* ALREADY SYNCED SECTION */}
+            <div className="bg-white dark:bg-card rounded-md border border-gray-200 dark:border-gray-800">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    Already Synced
+                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {inventoryData?.totals.totalSynced || 0} products currently on marketplace
+                  </p>
+                </div>
+                {viewMode === 'products' && selectedSyncedProducts.size > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setDeleteTarget({ type: 'products', ids: Array.from(selectedSyncedProducts) });
+                      setDeleteDialogOpen(true);
+                    }}
+                    className="rounded-md"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Remove {selectedSyncedProducts.size} from Marketplace
+                  </Button>
+                )}
+              </div>
+
+              <div className="p-6">
+                {viewMode === 'categories' ? (
+                  /* Category View */
+                  <div className="space-y-2">
+                    {inventoryData?.synced.categories.map((category) => {
+                      const isExpanded = expandedSyncedCat === category.categoryId;
+
+                      return (
+                        <div key={category.categoryId} className="rounded-md border border-gray-200 dark:border-gray-800">
+                          <button
+                            onClick={() => setExpandedSyncedCat(isExpanded ? null : category.categoryId)}
+                            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors rounded-md"
+                          >
+                            <div>
+                              <div className="text-sm font-medium">{category.name}</div>
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {category.productCount} products on marketplace
+                              </div>
+                            </div>
+                            <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform duration-200", isExpanded && "rotate-180")} />
+                          </button>
+
+                          {/* Expanded Products List */}
+                          {isExpanded && (
+                            <div className="border-t border-gray-200 dark:border-gray-800 p-4 bg-gray-50 dark:bg-gray-900">
+                              <div className="space-y-2">
+                                {category.products.map((product: any) => (
+                                  <div key={product.itemId} className="flex items-center justify-between p-2 rounded-md bg-white dark:bg-card">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium truncate">{product.name}</div>
+                                      <div className="text-xs text-muted-foreground">
+                                        SKU: {product.sku || 'N/A'} • Stock: {product.totalQoh}
+                                      </div>
+                                    </div>
+                                    <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                      Live
+                                    </Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {(!inventoryData?.synced.categories || inventoryData.synced.categories.length === 0) && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        No products synced yet. Select categories above to get started.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Products View */
+                  <div className="space-y-2">
+                    {inventoryData?.synced.products.map((product: any) => {
+                      const isSelected = selectedSyncedProducts.has(product.itemId);
+
+                      return (
+                        <div key={product.itemId} className="flex items-center gap-3 p-4 rounded-md border border-gray-200 dark:border-gray-800">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => {
+                              setSelectedSyncedProducts(prev => {
+                                const newSet = new Set(prev);
+                                if (newSet.has(product.itemId)) {
+                                  newSet.delete(product.itemId);
+                                } else {
+                                  newSet.add(product.itemId);
+                                }
+                                return newSet;
+                              });
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{product.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              SKU: {product.sku || 'N/A'} • Category: {product.categoryName} • Stock: {product.totalQoh}
+                            </div>
+                          </div>
+                          <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                            Live
+                          </Badge>
+                        </div>
+                      );
+                    })}
+
+                    {(!inventoryData?.synced.products || inventoryData.synced.products.length === 0) && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        No products synced yet. Select products above to get started.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -1,9 +1,9 @@
 /**
- * Lightspeed Categories Endpoint
+ * Lightspeed Categories API
  * 
  * GET /api/lightspeed/categories
  * 
- * Fetches all categories from Lightspeed for sync selection
+ * Fetches all categories from Lightspeed
  */
 
 import { NextResponse } from 'next/server'
@@ -25,59 +25,26 @@ export async function GET() {
 
     // Create Lightspeed client
     const client = createLightspeedClient(user.id)
-    
-    // Fetch categories
+
+    // Fetch all categories
     const categories = await client.getCategories({ archived: 'false' })
 
-    // Transform categories into a tree structure
-    const categoryMap = new Map()
-    const rootCategories: any[] = []
-
-    // First pass: create all nodes
-    categories.forEach(cat => {
-      categoryMap.set(cat.categoryID, {
-        id: cat.categoryID,
-        name: cat.name,
-        fullPath: cat.fullPathName,
-        depth: parseInt(cat.nodeDepth),
-        parentId: cat.parentID === '0' ? null : cat.parentID,
-        children: [],
-      })
-    })
-
-    // Second pass: build tree
-    categories.forEach(cat => {
-      const node = categoryMap.get(cat.categoryID)
-      if (cat.parentID === '0') {
-        rootCategories.push(node)
-      } else {
-        const parent = categoryMap.get(cat.parentID)
-        if (parent) {
-          parent.children.push(node)
-        }
-      }
-    })
-
     return NextResponse.json({
-      categories: rootCategories,
-      total: categories.length,
+      success: true,
+      categories: categories.map(cat => ({
+        categoryID: cat.categoryID,
+        name: cat.name,
+        fullPathName: cat.fullPathName,
+        nodeDepth: cat.nodeDepth,
+      })),
     })
+
   } catch (error) {
-    console.error('Error fetching categories:', error)
-    
-    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch categories'
+    console.error('[Categories API] Error:', error)
     
     return NextResponse.json(
-      { error: errorMessage },
+      { error: error instanceof Error ? error.message : 'Unknown error occurred' },
       { status: 500 }
     )
   }
 }
-
-
-
-
-
-
-
-

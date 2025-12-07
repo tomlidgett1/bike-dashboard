@@ -37,15 +37,37 @@ export async function POST() {
     // Disconnect the user (clears tokens and updates status)
     await disconnectUser(user.id)
 
-    // Optionally delete sync settings
+    // Delete sync settings
     await supabase
       .from('lightspeed_sync_settings')
       .delete()
       .eq('user_id', user.id)
 
+    // Delete all products from products table (NOT canonical_products)
+    console.log('[Disconnect] Deleting products for user:', user.id)
+    const { error: deleteProductsError } = await supabase
+      .from('products')
+      .delete()
+      .eq('user_id', user.id)
+
+    if (deleteProductsError) {
+      console.error('[Disconnect] Error deleting products:', deleteProductsError)
+    }
+
+    // Delete all products_all_ls entries
+    console.log('[Disconnect] Deleting products_all_ls for user:', user.id)
+    const { error: deleteAllLsError } = await supabase
+      .from('products_all_ls')
+      .delete()
+      .eq('user_id', user.id)
+
+    if (deleteAllLsError) {
+      console.error('[Disconnect] Error deleting products_all_ls:', deleteAllLsError)
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'Lightspeed account disconnected successfully',
+      message: 'Lightspeed account disconnected and products removed successfully',
     })
   } catch (error) {
     console.error('Error disconnecting Lightspeed:', error)
