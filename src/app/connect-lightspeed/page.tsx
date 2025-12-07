@@ -49,6 +49,7 @@ export default function ConnectLightspeedPage() {
   // Selection state
   const [selectedNotSyncedCategories, setSelectedNotSyncedCategories] = React.useState<Set<string>>(new Set());
   const [selectedNotSyncedProducts, setSelectedNotSyncedProducts] = React.useState<Set<string>>(new Set());
+  const [selectedSyncedCategories, setSelectedSyncedCategories] = React.useState<Set<string>>(new Set());
   const [selectedSyncedProducts, setSelectedSyncedProducts] = React.useState<Set<string>>(new Set());
   
   // Expanded categories
@@ -182,6 +183,7 @@ export default function ConnectLightspeedPage() {
       await fetchInventoryData();
       
       // Clear selections
+      setSelectedSyncedCategories(new Set());
       setSelectedSyncedProducts(new Set());
 
       setDeleteDialogOpen(false);
@@ -465,6 +467,20 @@ export default function ConnectLightspeedPage() {
                       {inventoryData?.totals.totalSynced || 0} products currently on marketplace
                     </p>
                   </div>
+                {viewMode === 'categories' && selectedSyncedCategories.size > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setDeleteTarget({ type: 'categories', ids: Array.from(selectedSyncedCategories) });
+                      setDeleteDialogOpen(true);
+                    }}
+                    className="rounded-md"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Remove {selectedSyncedCategories.size} {selectedSyncedCategories.size === 1 ? 'Category' : 'Categories'}
+                  </Button>
+                )}
                 {viewMode === 'products' && selectedSyncedProducts.size > 0 && (
                   <Button
                     variant="outline"
@@ -487,21 +503,38 @@ export default function ConnectLightspeedPage() {
                   <div className="space-y-2">
                     {inventoryData?.synced.categories.map((category) => {
                       const isExpanded = expandedSyncedCat === category.categoryId;
+                      const isSelected = selectedSyncedCategories.has(category.categoryId);
 
                       return (
                         <div key={category.categoryId} className="rounded-md border border-gray-200 dark:border-gray-800">
-                          <button
-                            onClick={() => setExpandedSyncedCat(isExpanded ? null : category.categoryId)}
-                            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors rounded-md"
-                          >
-                            <div>
-                              <div className="text-sm font-medium">{category.name}</div>
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                {category.productCount} products on marketplace
+                          <div className="flex items-center gap-3 p-4">
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => {
+                                setSelectedSyncedCategories(prev => {
+                                  const newSet = new Set(prev);
+                                  if (newSet.has(category.categoryId)) {
+                                    newSet.delete(category.categoryId);
+                                  } else {
+                                    newSet.add(category.categoryId);
+                                  }
+                                  return newSet;
+                                });
+                              }}
+                            />
+                            <button
+                              onClick={() => setExpandedSyncedCat(isExpanded ? null : category.categoryId)}
+                              className="flex-1 flex items-center justify-between text-left hover:opacity-70 transition-opacity"
+                            >
+                              <div>
+                                <div className="text-sm font-medium">{category.name}</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  {category.productCount} products on marketplace
+                                </div>
                               </div>
-                            </div>
-                            <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform duration-200", isExpanded && "rotate-180")} />
-                          </button>
+                              <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform duration-200", isExpanded && "rotate-180")} />
+                            </button>
+                          </div>
 
                           {/* Expanded Products List */}
                           {isExpanded && (
