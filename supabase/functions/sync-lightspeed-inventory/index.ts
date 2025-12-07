@@ -222,8 +222,11 @@ Deno.serve(async (req) => {
           for (let i = 0; i < itemIds.length; i += batchSize) {
             const batch = itemIds.slice(i, i + batchSize)
             console.log(`📦 [FETCH ITEMS] Batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(itemIds.length/batchSize)}: ${batch.length} items`)
+            console.log(`📦 [FETCH ITEMS] Item IDs: ${batch.join(', ')}`)
             
             const url = `https://api.lightspeedapp.com/API/V3/Account/${accountId}/Item.json?itemID=IN,[${batch.join(',')}]&archived=false`
+            
+            console.log(`📦 [FETCH ITEMS] URL: ${url}`)
             
             const res = await fetch(url, {
               headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' },
@@ -236,7 +239,9 @@ Deno.serve(async (req) => {
             }
             
             if (!res.ok) {
+              const errorBody = await res.text()
               console.error(`❌ [FETCH ITEMS] Batch failed: ${res.status}`)
+              console.error(`❌ [FETCH ITEMS] Error response: ${errorBody}`)
               continue
             }
             
