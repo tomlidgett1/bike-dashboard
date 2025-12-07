@@ -46,29 +46,23 @@ export async function GET() {
 
     const syncedItemIds = new Set(syncedProducts?.map(p => p.lightspeed_item_id) || [])
 
-    // Fetch category names from Lightspeed
-    const { data: lsConnection } = await supabase
-      .from('lightspeed_connections')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .eq('status', 'connected')
-      .single()
-
+    // Fetch category names from Lightspeed using our client
     let categoryNamesMap = new Map<string, string>()
 
-    if (lsConnection?.account_id) {
-      try {
-        // Fetch category names from Lightspeed API via our client
-        const categoryResponse = await fetch('/api/lightspeed/categories')
-        if (categoryResponse.ok) {
-          const categoryData = await categoryResponse.json()
-          categoryData.categories?.forEach((cat: any) => {
-            categoryNamesMap.set(cat.categoryID, cat.name)
-          })
-        }
-      } catch (error) {
-        console.error('[Inventory Overview] Error fetching category names:', error)
-      }
+    try {
+      // Use the Lightspeed client to fetch categories
+      const { createLightspeedClient } = await import('@/lib/services/lightspeed')
+      const client = createLightspeedClient(user.id)
+      const categories = await client.getCategories({ archived: 'false' })
+      
+      console.log(`[Inventory Overview] Fetched ${categories.length} category names from Lightspeed`)
+      
+      categories.forEach((cat: any) => {
+        categoryNamesMap.set(cat.categoryID, cat.name)
+      })
+    } catch (error) {
+      console.error('[Inventory Overview] Error fetching category names:', error)
+      // Continue without category names - will show IDs instead
     }
 
     // Separate products into synced and not synced

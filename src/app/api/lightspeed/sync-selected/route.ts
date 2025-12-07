@@ -57,14 +57,32 @@ export async function POST(request: NextRequest) {
     }
 
     // Prepare data for edge function
-    let functionBody: any = {
-      userId: user.id,
-    }
+    // Note: Edge function only supports categoryIds, not individual itemIds
+    let functionBody: any = {}
 
     if (categoryIds && categoryIds.length > 0) {
       functionBody.categoryIds = categoryIds
+      console.log('[Sync Selected] Syncing categories:', categoryIds)
     } else if (itemIds && itemIds.length > 0) {
-      functionBody.itemIds = itemIds
+      // For individual items, we need to fetch them and sync by category
+      // For now, get all unique categories from the selected items
+      const { data: itemsData } = await supabase
+        .from('products_all_ls')
+        .select('category_id')
+        .in('lightspeed_item_id', itemIds)
+        .eq('user_id', user.id)
+      
+      const uniqueCategoryIds = [...new Set(itemsData?.map(item => item.category_id).filter(Boolean))]
+      
+      if (uniqueCategoryIds.length === 0) {
+        return NextResponse.json(
+          { error: 'No categories found for selected items' },
+          { status: 400 }
+        )
+      }
+      
+      functionBody.categoryIds = uniqueCategoryIds
+      console.log('[Sync Selected] Syncing items via categories:', uniqueCategoryIds)
     }
 
     // Call the existing sync-lightspeed-inventory edge function
