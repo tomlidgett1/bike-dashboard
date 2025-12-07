@@ -118,20 +118,6 @@ export default function ConnectLightspeedPage() {
   const [syncAllResult, setSyncAllResult] = React.useState<any>(null);
   const [syncAllError, setSyncAllError] = React.useState<string | null>(null);
 
-  // Check for initial sync on connection
-  React.useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('success') === 'true' && isConnected) {
-      // Show message that initial sync is running
-      setSyncingAllProducts(true);
-      
-      // Check sync status after a delay
-      setTimeout(() => {
-        setSyncingAllProducts(false);
-      }, 5000); // Show for 5 seconds
-    }
-  }, [isConnected]);
-
   // Sync settings
   const [autoSyncNewProducts, setAutoSyncNewProducts] = React.useState(true);
   const [showCategoryList, setShowCategoryList] = React.useState(false);
@@ -179,6 +165,20 @@ export default function ConnectLightspeedPage() {
     updateSyncSettings,
     formatLastSync,
   } = useLightspeedConnection();
+
+  // Check for initial sync on connection
+  React.useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('success') === 'true' && isConnected) {
+      // Show message that initial sync is running
+      setSyncingAllProducts(true);
+      
+      // Check sync status after a delay
+      setTimeout(() => {
+        setSyncingAllProducts(false);
+      }, 5000); // Show for 5 seconds
+    }
+  }, [isConnected]);
 
   // Fetch sync history, state, and categories
   React.useEffect(() => {
