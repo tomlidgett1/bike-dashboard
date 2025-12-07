@@ -67,8 +67,8 @@ export async function POST(request: NextRequest) {
       categories: uniqueCategoryIds,
     })
 
-    // Call edge function with BOTH categoryIds AND itemIds
-    const functionUrl = `${supabaseUrl}/functions/v1/sync-lightspeed-inventory`
+    // Call the new efficient edge function that uses cached data
+    const functionUrl = `${supabaseUrl}/functions/v1/sync-from-cache`
     
     const requestBody = {
       categoryIds: uniqueCategoryIds,
