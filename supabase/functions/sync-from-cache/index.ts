@@ -150,17 +150,27 @@ Deno.serve(async (req) => {
     console.log(`📊 [SYNC FROM CACHE] Match results:`, matchResults?.length || 0, 'results received')
 
     // Attach canonical IDs (with safety checks)
+    let matchedCount = 0
     if (matchResults && Array.isArray(matchResults)) {
       productsToInsert.forEach((product, idx) => {
         if (matchResults[idx] && matchResults[idx].canonicalProductId) {
           (product as any).canonical_product_id = matchResults[idx].canonicalProductId
+          matchedCount++
         }
       })
 
-      const matchedCount = matchResults.filter(r => r && r.canonicalProductId).length
-      console.log(`✅ [SYNC FROM CACHE] Matched to ${matchedCount} canonical products`)
+      console.log(`✅ [SYNC FROM CACHE] Matched ${matchedCount}/${productsToInsert.length} products to canonical`)
+      
+      // Log sample matches
+      const sampleMatches = productsToInsert.slice(0, 3).map((p, i) => ({
+        description: p.description?.substring(0, 30),
+        upc: p.upc,
+        canonical_id: (p as any).canonical_product_id || 'NULL',
+        matchType: matchResults[i]?.matchType,
+      }))
+      console.log(`📊 [SYNC FROM CACHE] Sample matches:`, sampleMatches)
     } else {
-      console.warn(`⚠️ [SYNC FROM CACHE] Match results not in expected format, continuing without canonical matches`)
+      console.warn(`⚠️ [SYNC FROM CACHE] Match results not in expected format:`, typeof matchResults, matchResults)
     }
 
     await sendProgress({ 
