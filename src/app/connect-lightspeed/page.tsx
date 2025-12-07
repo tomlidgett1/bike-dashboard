@@ -134,42 +134,127 @@ export default function ConnectLightspeedPage() {
     setSyncModalOpen(true);
     setSyncStatus('syncing');
     setSyncProgress(0);
-    setSyncPhase('Preparing sync...');
-    setSyncMessage('');
+    setSyncPhase('Initializing sync...');
+    setSyncMessage('Preparing to sync your inventory');
     setSyncError('');
 
     try {
-      const body: any = {
-        categoryIds: categoriesToSync,
-        syncType: 'categories',
-      };
+      // Get session token for direct edge function call
+      const supabase = (await import('@/lib/supabase/client')).createClient();
+      const { data: { session } } = await supabase.auth.getSession();
 
-      setSyncPhase('Syncing to marketplace...');
-      setSyncProgress(50);
-
-      const response = await fetch('/api/lightspeed/sync-from-cache', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Sync failed');
+      if (!session) {
+        throw new Error('No active session');
       }
 
-      setSyncProgress(100);
-      setSyncStatus('success');
-      setSyncResult(result.data);
-      
-      setSelectedCategories(new Set());
-      setSelectedProducts(new Set());
-      
-      await fetchInventoryData();
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const functionUrl = `${supabaseUrl}/functions/v1/sync-lightspeed-inventory`;
+
+      // Prepare request body with SSE enabled
+      const requestBody = {
+        categoryIds: categoriesToSync,
+        sse: true, // Enable Server-Sent Events for real-time progress
+      };
+
+      console.log('[Sync] Starting SSE sync with categories:', categoriesToSync);
+
+      // Use fetch with streaming response for SSE
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'Accept': 'text/event-stream',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync request failed: ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error('No response body for SSE');
+      }
+
+      // Read SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) {
+          console.log('[Sync SSE] Stream complete');
+          break;
+        }
+
+        // Decode chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true });
+        
+        // Process complete SSE messages
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || ''; // Keep incomplete message in buffer
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          // Parse SSE message
+          const eventMatch = line.match(/^event: (.+)$/m);
+          const dataMatch = line.match(/^data: (.+)$/m);
+
+          if (dataMatch) {
+            try {
+              const data = JSON.parse(dataMatch[1]);
+              console.log('[Sync SSE] Event:', eventMatch?.[1] || 'message', data);
+
+              if (eventMatch?.[1] === 'complete') {
+                // Sync complete
+                setSyncProgress(100);
+                setSyncStatus('success');
+                setSyncResult(data);
+                setSelectedCategories(new Set());
+                setSelectedProducts(new Set());
+                await fetchInventoryData();
+              } else if (eventMatch?.[1] === 'error') {
+                // Sync error
+                setSyncStatus('error');
+                setSyncError(data.error || 'Sync failed');
+              } else {
+                // Progress update
+                if (data.phase) {
+                  setSyncPhase(data.phase.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()));
+                }
+                if (data.message) {
+                  setSyncMessage(data.message);
+                }
+                if (typeof data.progress === 'number') {
+                  setSyncProgress(Math.min(data.progress, 99)); // Never show 100% until complete event
+                }
+                
+                // Enhanced details display
+                if (data.details) {
+                  const d = data.details;
+                  let detailText = data.message;
+                  
+                  if (d.itemsFetched) detailText += ` • ${d.itemsFetched} items fetched`;
+                  if (d.itemsToSync) detailText += ` • ${d.itemsToSync} to sync`;
+                  if (d.itemsSynced) detailText += ` • ${d.itemsSynced} synced`;
+                  if (d.categoryId) detailText += ` • Category ${d.categoryId}`;
+                  
+                  setSyncMessage(detailText);
+                }
+              }
+            } catch (error) {
+              console.error('[Sync SSE] Parse error:', error);
+            }
+          }
+        }
+      }
 
     } catch (error) {
-      console.error('Sync error:', error);
+      console.error('[Sync] Error:', error);
       setSyncStatus('error');
       setSyncError(error instanceof Error ? error.message : 'Unknown error');
     }

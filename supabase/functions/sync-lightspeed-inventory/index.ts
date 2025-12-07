@@ -180,7 +180,18 @@ Deno.serve(async (req) => {
 
     console.log(`✅ [ACCOUNT] Using account ID: ${accountId}`)
 
-    await sendProgress({ phase: 'fetch_inventory', message: 'Fetching inventory data...', progress: 10 })
+    await sendProgress({ 
+      phase: 'fetch_inventory', 
+      message: 'Connecting to Lightspeed API...', 
+      progress: 5,
+      details: { accountId }
+    })
+    
+    await sendProgress({ 
+      phase: 'fetch_inventory', 
+      message: 'Fetching current stock levels from Lightspeed...', 
+      progress: 10 
+    })
 
     // Fetch inventory and categories in parallel
     const fetchPromises: Promise<any>[] = []
@@ -390,7 +401,12 @@ Deno.serve(async (req) => {
       })
     }
 
-    await sendProgress({ phase: 'fetch_items', message: 'Fetching items from categories...', progress: 30 })
+    await sendProgress({ 
+      phase: 'fetch_items', 
+      message: `Fetching products from ${categoryIds.length > 0 ? categoryIds.length + ' categories' : 'Lightspeed'}...`, 
+      progress: 25,
+      details: { categoryCount: categoryIds.length, itemCount: itemIds.length }
+    })
 
     // Wait for all parallel fetches
     const results = await Promise.all(fetchPromises)
@@ -410,9 +426,9 @@ Deno.serve(async (req) => {
 
     await sendProgress({ 
       phase: 'filter', 
-      message: `Filtering ${allItems.length} items by stock...`, 
+      message: `Filtering ${allItems.length} items by stock availability...`, 
       progress: 55,
-      details: { totalItems: allItems.length, itemsWithStock: inventoryMap.size }
+      details: { totalItems: allItems.length, itemsWithStock: inventoryMap.size, itemsFiltered: allItems.length - inventoryMap.size }
     })
 
     // Filter items to only those with stock
@@ -435,9 +451,9 @@ Deno.serve(async (req) => {
 
     await sendProgress({ 
       phase: 'fetch_categories', 
-      message: 'Fetching category names...', 
+      message: `Fetching category information for ${itemsToSync.length} products...`, 
       progress: 60,
-      details: { itemsToSync: itemsToSync.length }
+      details: { itemsToSync: itemsToSync.length, categoriesCount: categoryMap.size }
     })
 
     // Fetch categories for enrichment
@@ -497,8 +513,9 @@ Deno.serve(async (req) => {
 
     await sendProgress({ 
       phase: 'matching', 
-      message: `Matching products to canonical catalog...`, 
-      progress: 70 
+      message: `Matching ${productsToInsert.length} products to canonical catalog...`, 
+      progress: 70,
+      details: { productsToMatch: productsToInsert.length }
     })
 
     // CRITICAL: First, check which products already have canonical matches
