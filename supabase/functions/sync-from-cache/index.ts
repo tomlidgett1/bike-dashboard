@@ -104,6 +104,7 @@ Deno.serve(async (req) => {
     })
 
     // Step 2: Transform cached products to products table format
+    // NOTE: Do NOT copy images - they come from product_images table via canonical_product_id
     const productsToInsert = cachedProducts.map(product => ({
       user_id: user.id,
       lightspeed_item_id: product.lightspeed_item_id,
@@ -121,8 +122,8 @@ Deno.serve(async (req) => {
       sellable: product.total_sellable,
       reorder_point: 0,
       reorder_level: 0,
-      images: product.images || [],
-      primary_image_url: product.primary_image_url || null,
+      // Images come from product_images table via canonical_product_id
+      // The database trigger will populate cached_image_url automatically
       last_synced_at: new Date().toISOString(),
       is_active: true,
       is_archived: false,

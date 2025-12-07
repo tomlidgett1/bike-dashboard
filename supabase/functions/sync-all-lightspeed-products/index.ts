@@ -152,18 +152,6 @@ Deno.serve(async (req) => {
       const data = await response.json()
       const items = Array.isArray(data.Item) ? data.Item : (data.Item ? [data.Item] : [])
       
-      // Log first item to see what data we're getting
-      if (batchNum === 1 && items.length > 0) {
-        const sampleItem = items[0]
-        console.log(`[Sync All LS Products] Sample item structure:`, {
-          itemID: sampleItem.itemID,
-          hasImages: !!sampleItem.Images,
-          hasPrices: !!sampleItem.Prices,
-          imageCount: sampleItem.Images?.Image ? (Array.isArray(sampleItem.Images.Image) ? sampleItem.Images.Image.length : 1) : 0,
-          priceCount: sampleItem.Prices?.ItemPrice ? (Array.isArray(sampleItem.Prices.ItemPrice) ? sampleItem.Prices.ItemPrice.length : 1) : 0,
-        })
-      }
-      
       items.forEach((item: any) => {
         itemDetailsMap.set(item.itemID, item)
       })
@@ -222,28 +210,9 @@ Deno.serve(async (req) => {
         avgCost = parseFloat(itemDetails.avgCost)
       }
       
-      // Extract images from Lightspeed Images.Image array
-      let images: any[] = []
-      let primaryImageUrl: string | null = null
-      
-      if (itemDetails.Images && itemDetails.Images.Image) {
-        const imageData = Array.isArray(itemDetails.Images.Image)
-          ? itemDetails.Images.Image
-          : [itemDetails.Images.Image]
-        
-        images = imageData.map((img: any) => ({
-          url: img.baseImageURL,
-          publicId: img.publicID,
-          filename: img.filename,
-        }))
-        
-        primaryImageUrl = images[0]?.url || null
-      } else {
-        // Log if no images found
-        if (itemId === itemDetailsMap.keys().next().value) {
-          console.log(`⚠️ [Sync All LS Products] First item has no Images data. Item structure:`, Object.keys(itemDetails))
-        }
-      }
+      // NOTE: Do NOT extract images from Lightspeed
+      // All images come from product_images table via canonical_product_id
+      // The database trigger will automatically populate cached_image_url
       
       productsToInsert.push({
         user_id: userId,
@@ -258,8 +227,6 @@ Deno.serve(async (req) => {
         price: price,
         default_cost: defaultCost,
         avg_cost: avgCost,
-        images: images,
-        primary_image_url: primaryImageUrl,
         stock_data: shops, // Store all shop records
         total_qoh: totalShop ? parseInt(totalShop.qoh) : 0,
         total_sellable: totalShop ? parseInt(totalShop.sellable) : 0,
