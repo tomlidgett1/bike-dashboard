@@ -110,8 +110,32 @@ export async function GET(request: NextRequest) {
     const uniqueCategories = [...new Set(categories?.map(c => c.category_name).filter(Boolean))]
 
     // Process products to add resolved image URLs from product_images table
-    const processedProducts = (products || []).map(product => {
+    const processedProducts = (products || []).map((product, idx) => {
       let resolvedImageUrl = null;
+      
+      // Debug first product
+      if (idx === 0) {
+        console.log('[Products API] First product debug:', {
+          has_canonical_id: !!product.canonical_product_id,
+          canonical_id: product.canonical_product_id,
+          has_canonical_join: !!product.canonical_products,
+          has_product_images: !!product.canonical_products?.product_images,
+          image_count: product.canonical_products?.product_images?.length || 0,
+          cached_image: product.cached_image_url ? 'YES' : 'NO',
+          cached_thumbnail: product.cached_thumbnail_url ? 'YES' : 'NO',
+        })
+        
+        if (product.canonical_products?.product_images?.[0]) {
+          const img = product.canonical_products.product_images[0]
+          console.log('[Products API] First image data:', {
+            thumbnail_url: img.thumbnail_url || 'NULL',
+            card_url: img.card_url || 'NULL',
+            cloudinary_url: img.cloudinary_url || 'NULL',
+            approval_status: img.approval_status,
+            is_primary: img.is_primary,
+          })
+        }
+      }
       
       // Get approved images from canonical product_images
       if (product.canonical_products?.product_images && Array.isArray(product.canonical_products.product_images)) {
@@ -140,6 +164,9 @@ export async function GET(request: NextRequest) {
         resolved_image_url: resolvedImageUrl,
       };
     });
+
+    console.log('[Products API] Total products:', processedProducts.length)
+    console.log('[Products API] Products with images:', processedProducts.filter(p => p.resolved_image_url).length)
 
     return NextResponse.json({
       products: processedProducts,
