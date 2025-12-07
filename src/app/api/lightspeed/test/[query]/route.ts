@@ -40,47 +40,88 @@ export async function GET(
     switch (query) {
       case 'itemshops-with-stock': {
         // Query ItemShops with positive stock - THIS IS THE CORRECT ENDPOINT
-        console.log('[Lightspeed Test] Fetching ItemShops with stock...')
+        console.log('[Lightspeed Test] Fetching ALL ItemShops with stock (paginating through all pages)...')
         
-        // Use the >,0 operator (greater than 0) for qoh field
-        const response = await client.getItemShops({
+        const allItemShops: any[] = []
+        let currentParams: any = {
           qoh: '>,0',  // Operator format: '>,0' means qoh > 0
           limit: 100,
-        })
-
-        // ItemShops response wraps the array
-        const itemShops = Array.isArray(response.ItemShop) ? response.ItemShop : [response.ItemShop]
+        }
+        let pageCount = 0
+        const maxPages = 100 // Safety limit (10,000 records max)
+        let hasMore = true
+        
+        // Paginate through all pages
+        while (hasMore && pageCount < maxPages) {
+          pageCount++
+          console.log(`[Lightspeed Test] Fetching page ${pageCount}...`)
+          
+          const response = await client.getItemShops(currentParams)
+          
+          // ItemShops response wraps the array
+          const itemShops = Array.isArray(response.ItemShop) 
+            ? response.ItemShop 
+            : (response.ItemShop ? [response.ItemShop] : [])
+          
+          allItemShops.push(...itemShops)
+          console.log(`[Lightspeed Test] Page ${pageCount}: ${itemShops.length} records, total: ${allItemShops.length}`)
+          
+          // Check for next page
+          const nextUrl = response['@attributes']?.next
+          hasMore = !!(nextUrl && nextUrl !== '')
+          
+          // If there's a next page, we need to extract the 'after' parameter from it
+          if (hasMore && nextUrl) {
+            try {
+              const url = new URL(nextUrl)
+              const afterParam = url.searchParams.get('after')
+              if (afterParam) {
+                currentParams = {
+                  qoh: '>,0',
+                  limit: 100,
+                  after: afterParam,
+                }
+              } else {
+                hasMore = false
+              }
+            } catch (e) {
+              console.error('[Lightspeed Test] Error parsing next URL:', e)
+              hasMore = false
+            }
+          }
+          
+          // Small delay to respect rate limits
+          if (hasMore) {
+            await new Promise(resolve => setTimeout(resolve, 200))
+          }
+        }
         
         // Extract unique item IDs across all shops
-        const allUniqueItemIds = [...new Set(itemShops.map(shop => shop.itemID))]
+        const allUniqueItemIds = [...new Set(allItemShops.map(shop => shop.itemID))]
         
         // Get items from shopID:0 (total across all locations)
-        const totalShopRecords = itemShops.filter(shop => shop.shopID === '0')
+        const totalShopRecords = allItemShops.filter(shop => shop.shopID === '0')
         const itemIdsFromShop0 = totalShopRecords.map(shop => shop.itemID)
-        
-        // Check if there are more pages
-        const hasMorePages = response['@attributes']?.next && response['@attributes'].next !== ''
 
         result = {
           query: 'itemshops-with-stock',
           endpoint: '/ItemShop.json?qoh=%3E,0&limit=100',
-          description: 'ALL item IDs with positive stock (from this page).',
-          warning: hasMorePages ? 'More pages available! This shows first 100 records only.' : 'All records returned.',
-          totalRecordsThisPage: itemShops.length,
-          uniqueItemIdsThisPage: allUniqueItemIds.length,
-          itemsWithShopId0: itemIdsFromShop0.length,
-          hasMorePages: hasMorePages,
-          nextPageUrl: response['@attributes']?.next || null,
-          allUniqueItemIds: allUniqueItemIds, // EVERY unique item ID from this page
+          description: 'COMPLETE list of ALL items with positive stock across your entire inventory.',
+          paginationComplete: pageCount < maxPages,
+          pagesQueried: pageCount,
+          totalRecords: allItemShops.length,
+          uniqueItemIds: allUniqueItemIds.length,
+          itemsFromShopId0: itemIdsFromShop0.length,
+          allUniqueItemIds: allUniqueItemIds, // EVERY unique item ID with stock
           itemIdsFromShop0: itemIdsFromShop0, // Item IDs from shopID:0 (totals)
-          allRecords: itemShops.map(shop => ({
+          sampleRecords: allItemShops.slice(0, 10).map(shop => ({
             itemID: shop.itemID,
             shopID: shop.shopID,
             qoh: shop.qoh,
             sellable: shop.sellable,
             reorderPoint: shop.reorderPoint,
           })),
-          note: 'allUniqueItemIds shows EVERY unique item with stock on this page. itemIdsFromShop0 shows items from shopID:0 (totals across all locations).',
+          note: 'This query paginated through ALL pages to get every single item with stock. allUniqueItemIds contains EVERY item ID.',
         }
         break
       }
