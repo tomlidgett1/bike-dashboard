@@ -80,7 +80,7 @@ export function WebVitalsReporter() {
     const observer = new PerformanceObserver((list) => {
       list.getEntries().forEach((entry) => {
         if (entry.entryType === 'measure') {
-          console.log(`📊 [Custom Metric] ${entry.name}: ${entry.duration.toFixed(2)}ms`);
+          // Custom metric logging removed
         }
       });
     });
@@ -124,6 +124,7 @@ export function trackMarketplaceOperation(operation: string, callback: () => voi
     return result;
   }
 }
+
 
 
 

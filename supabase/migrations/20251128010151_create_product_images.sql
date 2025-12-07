@@ -173,3 +173,4 @@ COMMENT ON COLUMN product_images.is_primary IS 'Only one image per canonical pro
 
 
 
+

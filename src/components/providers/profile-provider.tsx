@@ -149,6 +149,13 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
       const hasBusinessName = serverProfile.business_name && serverProfile.business_name.trim().length > 0;
       const accountType = serverProfile.account_type || (hasBusinessName ? 'bicycle_store' : 'individual');
       
+      // 🔍 DEBUG: Server profile bicycle_store value
+      console.log('🔍 [PROFILE PROVIDER] Server profile data:', {
+        accountType: serverProfile.account_type,
+        bicycleStore: serverProfile.bicycle_store,
+        businessName: serverProfile.business_name,
+      });
+      
       // We have server data - use it directly WITHOUT refetching
       // Server already fetched with proper caching, no need to hit DB again
       setProfile({
@@ -164,7 +171,7 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
         website: '',
         logo_url: serverProfile.logo_url || undefined,
         account_type: accountType,
-        bicycle_store: false,
+        bicycle_store: serverProfile.bicycle_store ?? false,
         preferences: {},
         onboarding_completed: false,
         email_notifications: true,

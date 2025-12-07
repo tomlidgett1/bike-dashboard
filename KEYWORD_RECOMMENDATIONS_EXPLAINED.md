@@ -220,3 +220,4 @@ Keyword matching is now the **2nd highest priority** after trending!
 **The system now considers keywords from product names!** 🎯
 
 
+

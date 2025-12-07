@@ -136,6 +136,22 @@ function MarketplaceSidebarContent() {
   // Check if user is a bicycle store waiting for admin approval
   const isWaitingForApproval = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === false;
   
+  // 🔍 DEBUG: Account approval status
+  React.useEffect(() => {
+    if (user) {
+      console.log('🔍 [SIDEBAR] Account Approval Debug:', {
+        userId: user.id,
+        hasProfile: !!profile,
+        accountType: profile?.account_type,
+        bicycleStoreFlag: profile?.bicycle_store,
+        isVerifiedStore,
+        isWaitingForApproval,
+        shouldShowApprovalBadge: isWaitingForApproval,
+        profileData: profile
+      });
+    }
+  }, [user, profile, isVerifiedStore, isWaitingForApproval]);
+  
   // Build navigation items based on user type
   // Only show user-specific items when logged in
   const navItems = [
@@ -297,6 +313,10 @@ function MarketplaceSidebarContent() {
           {/* Verification Status Message */}
           {isWaitingForApproval && (
             <div className="pt-4 pb-2 px-2">
+              {(() => {
+                console.log('🟡 [SIDEBAR] Rendering "Account awaiting admin approval" badge');
+                return null;
+              })()}
               {isCollapsed ? (
                 <Tooltip delayDuration={100}>
                   <TooltipTrigger asChild>

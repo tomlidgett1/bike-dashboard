@@ -35,3 +35,4 @@ GRANT EXECUTE ON FUNCTION get_marketplace_category_counts() TO authenticated, an
 
 
 
+

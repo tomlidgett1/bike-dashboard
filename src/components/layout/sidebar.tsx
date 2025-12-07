@@ -11,6 +11,8 @@ import {
   Package,
   Store,
   Edit,
+  Instagram,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,7 @@ interface NavItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   requiresStore?: boolean;
+  isAdmin?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -64,6 +67,21 @@ const navItems: NavItem[] = [
     title: "Connect Lightspeed",
     href: "/connect-lightspeed",
     icon: Zap,
+  },
+];
+
+const adminItems: NavItem[] = [
+  {
+    title: "Image QA",
+    href: "/admin/image-qa",
+    icon: ShieldCheck,
+    isAdmin: true,
+  },
+  {
+    title: "Instagram Posts",
+    href: "/admin/instagram-posts",
+    icon: Instagram,
+    isAdmin: true,
   },
 ];
 
@@ -148,6 +166,42 @@ export function Sidebar() {
               </Link>
             );
           })}
+
+          {/* Admin Section */}
+          <div className="mt-4 pt-4 border-t border-sidebar-border">
+            <p className="px-3 text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider mb-2">
+              Admin
+            </p>
+            {adminItems.map((item) => {
+              const isActive = pathname === item.href;
+              const Icon = item.icon;
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150",
+                    isActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      "h-[18px] w-[18px] shrink-0 transition-colors",
+                      isActive
+                        ? "text-sidebar-foreground"
+                        : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                    )}
+                  />
+                  <span className="overflow-hidden whitespace-nowrap">
+                    {item.title}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
 
           {/* Go to Marketplace Button */}
           <div className="mt-4 pt-4 border-t border-sidebar-border">
@@ -254,6 +308,41 @@ export function MobileSidebar() {
                 </Link>
               );
             })}
+
+            {/* Admin Section */}
+            <div className="mt-4 pt-4 border-t border-sidebar-border">
+              <p className="px-3 text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider mb-2">
+                Admin
+              </p>
+              {adminItems.map((item) => {
+                const isActive = pathname === item.href;
+                const Icon = item.icon;
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setOpen(false)}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                      isActive
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    )}
+                  >
+                    <Icon
+                      className={cn(
+                        "h-[18px] w-[18px] shrink-0 transition-colors",
+                        isActive
+                          ? "text-sidebar-foreground"
+                          : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                      )}
+                    />
+                    <span>{item.title}</span>
+                  </Link>
+                );
+              })}
+            </div>
 
             {/* Go to Marketplace Button */}
             <div className="mt-4 pt-4 border-t border-sidebar-border">
