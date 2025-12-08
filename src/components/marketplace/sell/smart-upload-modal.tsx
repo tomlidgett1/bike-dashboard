@@ -26,7 +26,7 @@ import { compressImage, compressedToFile, shouldCompress } from "@/lib/utils/ima
 
 const UPLOAD_CONCURRENCY = 3;
 
-type FlowStage = "upload" | "compressing" | "uploading" | "analyzing" | "success" | "error";
+type FlowStage = "upload" | "compressing" | "uploading" | "analyzing" | "searching" | "success" | "error";
 type UploadTab = "computer" | "phone";
 
 interface SmartUploadModalProps {
@@ -259,6 +259,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
 
       const result = await response.json();
       console.log('✅ [SMART UPLOAD MODAL] Analysis received:', result);
+      console.log('🔍 [SMART UPLOAD MODAL] Web enrichment data:', result.analysis?.web_enrichment);
+      console.log('🔍 [SMART UPLOAD MODAL] Search URLs:', result.analysis?.search_urls);
+      console.log('🔍 [SMART UPLOAD MODAL] Data sources:', result.analysis?.data_sources);
+      console.log('🔍 [SMART UPLOAD MODAL] Meta info:', result.meta);
 
       const analysis = result.analysis as ListingAnalysisResult;
 
@@ -311,6 +315,21 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         formData.apparelMaterial = analysis.apparel_details.material;
       }
 
+      // Add smart upload metadata (for database JSONB storage)
+      if (analysis.structured_metadata) {
+        formData.structuredMetadata = analysis.structured_metadata;
+      }
+
+      // Add web search sources
+      if (analysis.search_urls) {
+        formData.searchUrls = analysis.search_urls;
+      }
+
+      // Add AI confidence scores
+      if (analysis.field_confidence) {
+        formData.fieldConfidence = analysis.field_confidence;
+      }
+
       // Add images to form data with variants (for instant loading)
       formData.images = urls.map((url, index) => ({
         id: `ai-${index}`,
@@ -357,7 +376,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
             Smart Upload
           </DialogTitle>
           <DialogDescription className={cn(isMobile ? "text-xs" : "text-sm")}>
-            AI will detect product details from your photos
+            Yellow Jersey will detect product details from your photos
           </DialogDescription>
         </DialogHeader>
 
@@ -578,6 +597,20 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
               >
                 <Loader2 className={cn("animate-spin text-gray-400 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
                 <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>Analysing photos...</p>
+              </motion.div>
+            )}
+
+            {/* Searching Web Stage */}
+            {stage === "searching" && (
+              <motion.div
+                key="searching"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
+              >
+                <Loader2 className={cn("animate-spin text-gray-400 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
+                <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>Searching web for details...</p>
               </motion.div>
             )}
 

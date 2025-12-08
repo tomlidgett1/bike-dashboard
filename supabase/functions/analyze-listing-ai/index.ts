@@ -295,13 +295,218 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
     console.log('✅ [AI EDGE FUNCTION] Analysis complete');
     console.log('✅ [AI EDGE FUNCTION] Detected:', analysis.item_type, '-', analysis.brand, analysis.model);
 
+    // ============================================================
+    // Phase 2: Web Search Enrichment (NEW)
+    // ============================================================
+    let webEnrichment = null;
+    let searchUrls: Array<{url: string; type: string; relevance?: number}> = [];
+    
+    if (analysis.brand && analysis.model) {
+      try {
+        console.log('🔍 [AI EDGE FUNCTION] Starting web search enrichment...');
+        
+        const searchPrompt = `Search for "${analysis.brand} ${analysis.model}" cycling product (${analysis.item_type}). Find comprehensive product information including:
+
+1. Official product description from manufacturer or retailer websites
+2. Technical specifications:
+   ${analysis.item_type === 'bike' ? '- Frame material, size, groupset, wheel size, suspension type' : ''}
+   ${analysis.item_type === 'part' ? '- Compatibility, material, weight, dimensions' : ''}
+   ${analysis.item_type === 'apparel' ? '- Size, material, gender fit, features' : ''}
+3. Product category classification (be specific - e.g., "Mountain > Trail" or "Drivetrain > Rear Derailleur")
+4. Current Australian market pricing from retailers (BikeExchange, 99Bikes, Pushys, etc.)
+5. Model year identification if possible
+6. Any compatibility or fitment information
+
+Focus on cycling-specific sources. Prioritise Australian retailers for pricing.
+
+Return ONLY valid JSON (no markdown):
+{
+  "product_description": "Detailed product description...",
+  "technical_specs": {
+    "frame_material": "Carbon",
+    "groupset": "Shimano 105"
+  },
+  "category_classification": {
+    "level1": "Bicycles",
+    "level2": "Road",
+    "level3": "Endurance"
+  },
+  "market_pricing": {
+    "min_aud": 2000,
+    "max_aud": 3000,
+    "sources": ["BikeExchange", "99Bikes"]
+  },
+  "compatibility_info": "Compatible with...",
+  "model_year_confirmed": "2021",
+  "sources_consulted": [
+    {"url": "https://...", "type": "manufacturer", "relevance": 95}
+  ]
+}`;
+
+        const webSearchResponse = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4.1',
+            input: searchPrompt,
+            tools: [{ 
+              type: 'web_search_preview',
+              search_context_size: 'high',
+              user_location: { type: 'approximate', country: 'AU' }
+            }],
+            tool_choice: 'auto',
+            temperature: 0.3,
+            store: false,
+          }),
+        });
+
+        if (webSearchResponse.ok) {
+          const webData = await webSearchResponse.json();
+          console.log('✅ [AI EDGE FUNCTION] Web search complete');
+          
+          // Extract web search results
+          let webOutputText = '';
+          if (Array.isArray(webData.output) && webData.output.length > 0) {
+            for (const item of webData.output) {
+              if (item && item.type === 'web_search_call') {
+                console.log(`🔍 [AI EDGE FUNCTION] Web search executed: ${item.status || 'unknown'}`);
+              }
+              if (item && item.type === 'message' && Array.isArray(item.content)) {
+                for (const content of item.content) {
+                  if (content && content.type === 'output_text' && content.text) {
+                    webOutputText = content.text;
+                  }
+                }
+              }
+            }
+          }
+          
+          if (webOutputText) {
+            // Parse JSON from output
+            try {
+              const jsonMatch = webOutputText.match(/```(?:json)?\s*([\s\S]*?)```/) || webOutputText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[jsonMatch.length === 2 ? 1 : 0]);
+                webEnrichment = {
+                  product_description: parsed.product_description,
+                  technical_specs: parsed.technical_specs,
+                  category_classification: parsed.category_classification,
+                  market_pricing: parsed.market_pricing,
+                  compatibility_info: parsed.compatibility_info,
+                  model_year_confirmed: parsed.model_year_confirmed,
+                };
+                searchUrls = parsed.sources_consulted || [];
+                console.log('✅ [AI EDGE FUNCTION] Web enrichment parsed successfully');
+              }
+            } catch (parseError) {
+              console.error('⚠️ [AI EDGE FUNCTION] Failed to parse web enrichment:', parseError);
+            }
+          }
+        } else {
+          console.error('⚠️ [AI EDGE FUNCTION] Web search failed:', webSearchResponse.status);
+        }
+      } catch (webError) {
+        console.error('⚠️ [AI EDGE FUNCTION] Web search error:', webError);
+        // Continue without web enrichment - don't fail the whole request
+      }
+    }
+
+    // ============================================================
+    // Phase 3: Merge Image Analysis + Web Search Data
+    // ============================================================
+    const mergedAnalysis = { ...analysis };
+    const dataSources: Record<string, "image" | "web" | "both"> = {};
+    
+    if (webEnrichment) {
+      // Merge product description (prefer web for comprehensive description)
+      if (webEnrichment.product_description) {
+        mergedAnalysis.condition_details = `${webEnrichment.product_description}\n\nCondition: ${analysis.condition_details}`;
+        dataSources.description = 'both';
+      }
+      
+      // Merge technical specs
+      if (webEnrichment.technical_specs) {
+        if (analysis.bike_details) {
+          mergedAnalysis.bike_details = {
+            ...analysis.bike_details,
+            ...webEnrichment.technical_specs,
+          };
+          dataSources.specs = 'both';
+        } else if (analysis.part_details) {
+          mergedAnalysis.part_details = {
+            ...analysis.part_details,
+            ...webEnrichment.technical_specs,
+          };
+          dataSources.specs = 'both';
+        }
+      }
+      
+      // Use web pricing if more reliable (higher confidence)
+      if (webEnrichment.market_pricing && webEnrichment.market_pricing.min_aud) {
+        mergedAnalysis.price_estimate = {
+          min_aud: webEnrichment.market_pricing.min_aud,
+          max_aud: webEnrichment.market_pricing.max_aud || webEnrichment.market_pricing.min_aud * 1.2,
+          reasoning: `Market pricing from ${webEnrichment.market_pricing.sources?.join(', ') || 'web search'}`,
+        };
+        dataSources.pricing = 'web';
+      }
+      
+      // Confirm model year from web
+      if (webEnrichment.model_year_confirmed) {
+        mergedAnalysis.model_year = webEnrichment.model_year_confirmed;
+        dataSources.model_year = 'web';
+      }
+      
+      // Add web enrichment data
+      mergedAnalysis.web_enrichment = webEnrichment;
+      mergedAnalysis.search_urls = searchUrls;
+      mergedAnalysis.data_sources = dataSources;
+      
+      // Build structured metadata for database
+      mergedAnalysis.structured_metadata = {
+        confidence: analysis.field_confidence,
+      };
+      
+      if (analysis.item_type === 'bike' && analysis.bike_details) {
+        mergedAnalysis.structured_metadata.bike = {
+          frame_size: analysis.bike_details.frame_size,
+          frame_material: analysis.bike_details.frame_material,
+          bike_type: analysis.bike_details.bike_type,
+          groupset: analysis.bike_details.groupset,
+          wheel_size: analysis.bike_details.wheel_size,
+          suspension_type: analysis.bike_details.suspension_type,
+          color_primary: analysis.bike_details.color_primary,
+          color_secondary: analysis.bike_details.color_secondary,
+        };
+      } else if (analysis.item_type === 'part' && analysis.part_details) {
+        mergedAnalysis.structured_metadata.part = {
+          part_type_detail: analysis.part_details.part_type,
+          compatibility_notes: analysis.part_details.compatibility,
+          material: analysis.part_details.material,
+          weight: analysis.part_details.weight,
+        };
+      } else if (analysis.item_type === 'apparel' && analysis.apparel_details) {
+        mergedAnalysis.structured_metadata.apparel = {
+          size: analysis.apparel_details.size,
+          gender_fit: analysis.apparel_details.gender_fit,
+          apparel_material: analysis.apparel_details.material,
+        };
+      }
+      
+      console.log('✅ [AI EDGE FUNCTION] Data merged successfully');
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
-        analysis,
+        analysis: mergedAnalysis,
         meta: {
           model: openaiData.model,
           tokensUsed: openaiData.usage?.total_tokens,
+          webSearchPerformed: !!webEnrichment,
         },
       }),
       {

@@ -19,6 +19,10 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Sparkles,
+  CheckCircle2,
+  XCircle,
+  Star,
 } from "lucide-react";
 import { Header } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -96,6 +100,13 @@ interface Product {
   last_synced_at: string;
   is_active: boolean;
   listing_source: string | null;
+}
+
+interface DiscoveredImage {
+  id: string;
+  url: string;
+  is_primary: boolean;
+  approval_status: 'pending' | 'approved' | 'rejected';
 }
 
 interface PaginationInfo {
@@ -506,6 +517,12 @@ export default function ProductsPage() {
   const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('desc');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
   
+  // Image discovery state
+  const [discoveryModalOpen, setDiscoveryModalOpen] = React.useState(false);
+  const [discoveringProduct, setDiscoveringProduct] = React.useState<Product | null>(null);
+  const [discoveredImages, setDiscoveredImages] = React.useState<DiscoveredImage[]>([]);
+  const [discovering, setDiscovering] = React.useState(false);
+  
   // Use refs to access current values without causing re-renders
   const paginationRef = React.useRef(pagination);
   const sortByRef = React.useRef(sortBy);
@@ -653,6 +670,221 @@ export default function ProductsPage() {
     }
   };
 
+  // Handle image placeholder click - trigger AI discovery
+  const handleDiscoverImages = async (product: Product) => {
+    if (!product.canonical_product_id) {
+      alert('This product needs to be matched to the canonical catalog first.');
+      return;
+    }
+
+    setDiscoveringProduct(product);
+    setDiscoveryModalOpen(true);
+    setDiscovering(true);
+    setDiscoveredImages([]);
+
+    try {
+      // Clean product name and prepend "cycling"
+      const cleanedName = product.description.trim();
+      const searchQuery = `cycling ${cleanedName}`;
+
+      console.log(`[DISCOVER] Starting discovery for: ${searchQuery}`);
+
+      const response = await fetch('/api/admin/images/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          canonicalProductId: product.canonical_product_id,
+          customSearchQuery: searchQuery
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Discovery failed');
+      }
+
+      const result = await response.json();
+      console.log('[DISCOVER] Result:', result);
+      console.log('[DISCOVER] Canonical Product ID:', product.canonical_product_id);
+
+      // Poll for images
+      let pollCount = 0;
+      const maxPolls = 20;
+      const pollInterval = setInterval(async () => {
+        pollCount++;
+        console.log(`[DISCOVER] Polling ${pollCount}/${maxPolls} for canonical_product_id:`, product.canonical_product_id);
+
+        const { data, error } = await (await import('@/lib/supabase/client')).createClient()
+          .from('product_images')
+          .select('id, external_url, cloudinary_url, card_url, is_primary, approval_status')
+          .eq('canonical_product_id', product.canonical_product_id)
+          .eq('approval_status', 'pending')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('[DISCOVER] Polling error:', error);
+        }
+
+        if (!error && data && data.length > 0) {
+          console.log(`[DISCOVER] ✅ Found ${data.length} pending images:`, data);
+          const mappedImages = data.map(img => ({
+            id: img.id,
+            url: img.card_url || img.cloudinary_url || img.external_url || '',
+            is_primary: img.is_primary || false,
+            approval_status: img.approval_status as 'pending' | 'approved' | 'rejected'
+          }));
+          console.log('[DISCOVER] Mapped images:', mappedImages);
+          setDiscoveredImages(mappedImages);
+          clearInterval(pollInterval);
+          setDiscovering(false);
+        } else if (pollCount >= maxPolls) {
+          clearInterval(pollInterval);
+          setDiscovering(false);
+          if (!data || data.length === 0) {
+            alert('No images were found. Try a different product.');
+            setDiscoveryModalOpen(false);
+          }
+        }
+      }, 2000);
+
+    } catch (error) {
+      console.error('[DISCOVER] Error:', error);
+      alert(`Failed to discover images: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setDiscovering(false);
+      setDiscoveryModalOpen(false);
+    }
+  };
+
+  // Handle image approval/rejection
+  const handleToggleImageApproval = async (imageId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'pending' ? 'approved' : currentStatus === 'approved' ? 'rejected' : 'pending';
+    
+    console.log(`[APPROVE] Changing image ${imageId} from ${currentStatus} to ${newStatus}`);
+    
+    // Optimistic update
+    setDiscoveredImages(prev => prev.map(img => 
+      img.id === imageId ? { ...img, approval_status: newStatus } : img
+    ));
+
+    try {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      
+      const { error, data } = await supabase
+        .from('product_images')
+        .update({ approval_status: newStatus })
+        .eq('id', imageId)
+        .select();
+
+      if (error) throw error;
+      console.log(`[APPROVE] ✅ Updated image ${imageId} to ${newStatus}`, data);
+    } catch (error) {
+      console.error('[APPROVE] ❌ Error updating image:', error);
+      // Revert on error
+      setDiscoveredImages(prev => prev.map(img => 
+        img.id === imageId ? { ...img, approval_status: currentStatus as any } : img
+      ));
+    }
+  };
+
+  // Handle setting primary image
+  const handleSetPrimary = async (imageId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (!discoveringProduct?.canonical_product_id) return;
+
+    console.log(`[PRIMARY] Setting image ${imageId} as primary for canonical product ${discoveringProduct.canonical_product_id}`);
+
+    // Optimistic update
+    setDiscoveredImages(prev => prev.map(img => ({
+      ...img,
+      is_primary: img.id === imageId
+    })));
+
+    try {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      
+      // Unset all primaries
+      console.log('[PRIMARY] Unsetting all primaries for canonical product');
+      await supabase
+        .from('product_images')
+        .update({ is_primary: false })
+        .eq('canonical_product_id', discoveringProduct.canonical_product_id);
+
+      // Set this one as primary
+      console.log('[PRIMARY] Setting new primary image');
+      const { error, data } = await supabase
+        .from('product_images')
+        .update({ is_primary: true })
+        .eq('id', imageId)
+        .select();
+
+      if (error) throw error;
+      console.log('[PRIMARY] ✅ Successfully set primary image', data);
+    } catch (error) {
+      console.error('[PRIMARY] ❌ Error setting primary:', error);
+      alert('Failed to set primary image');
+    }
+  };
+
+  // Handle completing image selection
+  const handleCompleteSelection = async () => {
+    const approvedImages = discoveredImages.filter(img => img.approval_status === 'approved');
+    const hasPrimary = approvedImages.some(img => img.is_primary);
+
+    console.log('[COMPLETE] Starting image selection completion');
+    console.log('[COMPLETE] Approved images:', approvedImages.length);
+    console.log('[COMPLETE] Has primary:', hasPrimary);
+
+    if (approvedImages.length === 0) {
+      alert('Please approve at least one image');
+      return;
+    }
+
+    if (!hasPrimary) {
+      alert('Please select a primary image (click the ⭐ star)');
+      return;
+    }
+
+    // Delete non-approved images
+    const nonApprovedIds = discoveredImages
+      .filter(img => img.approval_status !== 'approved')
+      .map(img => img.id);
+
+    console.log('[COMPLETE] Will delete', nonApprovedIds.length, 'non-approved images');
+
+    if (nonApprovedIds.length > 0) {
+      try {
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
+        
+        const { error, data } = await supabase
+          .from('product_images')
+          .delete()
+          .in('id', nonApprovedIds)
+          .select();
+
+        if (error) {
+          console.error('[COMPLETE] ❌ Error deleting rejected images:', error);
+        } else {
+          console.log('[COMPLETE] ✅ Deleted', data?.length || 0, 'rejected images');
+        }
+      } catch (error) {
+        console.error('[COMPLETE] ❌ Exception deleting rejected images:', error);
+      }
+    }
+
+    console.log('[COMPLETE] ✅ Image selection complete! Refreshing products...');
+    console.log('[COMPLETE] Canonical Product ID:', discoveringProduct?.canonical_product_id);
+    console.log('[COMPLETE] Trigger should have updated cached_image_url for all products with this canonical_product_id');
+
+    // Close modal and refresh products
+    setDiscoveryModalOpen(false);
+    setDiscoveredImages([]);
+    setDiscoveringProduct(null);
+    fetchProducts(pagination.page);
+  };
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       <Header
@@ -718,7 +950,16 @@ export default function ProductsPage() {
                       {/* Product Column */}
                       <TableCell className="py-2.5 px-6" style={{ maxWidth: '8cm' }}>
                         <div className="flex items-center gap-3">
-                          <div className="flex-shrink-0 h-10 w-10 rounded-md bg-gray-100 dark:bg-gray-800 overflow-hidden ring-1 ring-gray-200 dark:ring-gray-700">
+                          <button
+                            onClick={() => product.resolved_image_url || product.primary_image_url ? null : handleDiscoverImages(product)}
+                            disabled={!!product.resolved_image_url || !!product.primary_image_url}
+                            className={cn(
+                              "flex-shrink-0 h-10 w-10 rounded-md overflow-hidden ring-1 ring-gray-200 dark:ring-gray-700 transition-all",
+                              (!product.resolved_image_url && !product.primary_image_url) && "cursor-pointer hover:ring-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950",
+                              (product.resolved_image_url || product.primary_image_url) && "bg-gray-100 dark:bg-gray-800"
+                            )}
+                            title={(!product.resolved_image_url && !product.primary_image_url) ? "Click to discover images with AI" : ""}
+                          >
                             {product.resolved_image_url || product.primary_image_url ? (
                               <Image
                                 src={product.resolved_image_url || product.primary_image_url || ''}
@@ -726,7 +967,13 @@ export default function ProductsPage() {
                                 width={40}
                                 height={40}
                                 className="object-cover w-full h-full"
-                                unoptimized={product.resolved_image_url?.includes('storage/v1/object/public')}
+                                unoptimized={
+                                  // Use unoptimized for external URLs not from our configured domains
+                                  !product.resolved_image_url?.includes('res.cloudinary.com') &&
+                                  !product.resolved_image_url?.includes('supabase.co') &&
+                                  !product.primary_image_url?.includes('res.cloudinary.com') &&
+                                  !product.primary_image_url?.includes('supabase.co')
+                                }
                                 onError={(e) => {
                                   // Fallback to placeholder on error
                                   const target = e.target as HTMLImageElement;
@@ -735,11 +982,11 @@ export default function ProductsPage() {
                                 }}
                               />
                             ) : (
-                              <div className="h-full w-full flex items-center justify-center">
-                                <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                              <div className="h-full w-full flex items-center justify-center group-hover:text-blue-500">
+                                <Sparkles className="h-5 w-5 text-muted-foreground transition-colors" />
                               </div>
                             )}
-                          </div>
+                          </button>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-foreground truncate">
                               {product.description}
@@ -905,6 +1152,173 @@ export default function ProductsPage() {
           />
         )}
       </div>
+
+      {/* Image Discovery Modal */}
+      <AnimatePresence>
+        {discoveryModalOpen && (
+          <>
+            {/* Overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/50 z-50"
+              onClick={() => !discovering && setDiscoveryModalOpen(false)}
+            />
+
+            {/* Modal */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] as [number, number, number, number] }}
+              className="fixed inset-4 md:inset-auto md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[90vw] md:max-w-4xl md:h-[80vh] bg-white dark:bg-gray-950 rounded-md shadow-2xl z-50 flex flex-col overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Discover Images with AI
+                </h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
+                  {discoveringProduct?.description}
+                </p>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-6">
+                {discovering ? (
+                  <div className="flex flex-col items-center justify-center h-full">
+                    <Loader2 className="h-12 w-12 animate-spin text-blue-600 mb-4" />
+                    <p className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                      Discovering images...
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      This may take 15-25 seconds. Searching for "cycling {discoveringProduct?.description}"
+                    </p>
+                  </div>
+                ) : discoveredImages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full">
+                    <AlertCircle className="h-12 w-12 text-gray-400 mb-4" />
+                    <p className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                      No images found
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Try a different product or check the product name
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3">
+                      <p className="text-sm text-blue-900 dark:text-blue-100 font-medium">
+                        Click images to approve/reject • Click ⭐ to set primary image
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                      {discoveredImages.map((image) => (
+                        <div key={image.id} className="relative">
+                          <button
+                            onClick={() => handleToggleImageApproval(image.id, image.approval_status)}
+                            className={cn(
+                              'relative aspect-square rounded-md overflow-hidden transition-all group w-full',
+                              'hover:scale-105 hover:shadow-lg',
+                              image.approval_status === 'approved' && 'ring-4 ring-green-500',
+                              image.approval_status === 'pending' && 'ring-2 ring-gray-300 hover:ring-blue-400',
+                              image.approval_status === 'rejected' && 'ring-4 ring-red-500 opacity-60'
+                            )}
+                          >
+                            <img
+                              src={image.url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+
+                            {/* Status Indicator */}
+                            <div className="absolute top-2 right-2">
+                              {image.approval_status === 'approved' ? (
+                                <CheckCircle2 className="h-6 w-6 text-green-500 drop-shadow-lg bg-white rounded-full" />
+                              ) : image.approval_status === 'rejected' ? (
+                                <XCircle className="h-6 w-6 text-red-500 drop-shadow-lg bg-white rounded-full" />
+                              ) : (
+                                <div className="h-6 w-6 rounded-full bg-white/80 border-2 border-gray-300" />
+                              )}
+                            </div>
+
+                            {/* Hover Overlay */}
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                              <span className="text-white font-medium opacity-0 group-hover:opacity-100 transition-opacity text-sm">
+                                {image.approval_status === 'approved' 
+                                  ? 'Click to Reject' 
+                                  : image.approval_status === 'rejected'
+                                  ? 'Click to Re-approve'
+                                  : 'Click to Approve'}
+                              </span>
+                            </div>
+                          </button>
+
+                          {/* Primary Star Button - Only show for approved images */}
+                          {image.approval_status === 'approved' && (
+                            <button
+                              onClick={(e) => handleSetPrimary(image.id, e)}
+                              className={cn(
+                                'absolute -bottom-3 left-1/2 -translate-x-1/2 z-10',
+                                'p-1.5 rounded-full transition-all shadow-lg',
+                                image.is_primary 
+                                  ? 'bg-yellow-400 hover:bg-yellow-500' 
+                                  : 'bg-white hover:bg-gray-100 border-2 border-gray-300'
+                              )}
+                              title={image.is_primary ? 'Primary image' : 'Set as primary'}
+                            >
+                              <Star 
+                                className={cn(
+                                  'h-4 w-4',
+                                  image.is_primary ? 'text-yellow-900 fill-yellow-900' : 'text-gray-600'
+                                )} 
+                              />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              {!discovering && discoveredImages.length > 0 && (
+                <div className="flex-shrink-0 px-6 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between">
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    {discoveredImages.filter(img => img.approval_status === 'approved').length} approved • 
+                    {discoveredImages.filter(img => img.approval_status === 'pending').length} pending • 
+                    {discoveredImages.filter(img => img.approval_status === 'rejected').length} rejected
+                  </div>
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => setDiscoveryModalOpen(false)}
+                      className="rounded-md"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleCompleteSelection}
+                      className="rounded-md bg-green-600 hover:bg-green-700 text-white"
+                      disabled={
+                        discoveredImages.filter(img => img.approval_status === 'approved').length === 0 ||
+                        !discoveredImages.some(img => img.is_primary && img.approval_status === 'approved')
+                      }
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Save Selection
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

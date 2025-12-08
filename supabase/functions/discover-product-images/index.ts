@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
   try {
-    const { canonicalProductId } = await req.json()
+    const { canonicalProductId, customSearchQuery } = await req.json()
 
     if (!canonicalProductId) {
       return new Response(
@@ -50,8 +50,12 @@ Deno.serve(async (req) => {
     console.log(`📦 [AI DISCOVERY] Category: ${canonical.category || 'none'}`)
     console.log(`📦 [AI DISCOVERY] Manufacturer: ${canonical.manufacturer || 'none'}`)
 
+    // Determine which product name to use for search
+    const searchQuery = customSearchQuery || canonical.normalized_name
+    
     // Log exactly what we're passing to the search function
     console.log(`\n📋 [AI DISCOVERY] Passing to discoverProductImages:`)
+    console.log(`   - searchQuery: "${searchQuery}"${customSearchQuery ? ' (CUSTOM)' : ''}`)
     console.log(`   - productName: "${canonical.normalized_name}"`)
     console.log(`   - upc: "${canonical.upc}"`)
     console.log(`   - category: "${canonical.category}"`)
@@ -62,7 +66,7 @@ Deno.serve(async (req) => {
 
     // Call OpenAI to discover images
     console.log(`\n🤖 [AI DISCOVERY] Calling discoverProductImages function...`)
-    const aiResult = await discoverProductImages(canonical.normalized_name, {
+    const aiResult = await discoverProductImages(searchQuery, {
       upc: canonical.upc,
       category: canonical.category,
       manufacturer: canonical.manufacturer,

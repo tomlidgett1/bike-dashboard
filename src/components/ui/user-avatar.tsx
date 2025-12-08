@@ -35,7 +35,7 @@ export function UserAvatar({ name, size = 'default', className }: UserAvatarProp
   return (
     <div
       className={cn(
-        'flex items-center justify-center rounded-full bg-white border-2 border-gray-200 font-semibold text-gray-700 flex-shrink-0',
+        'flex items-center justify-center rounded-full bg-white border border-gray-300 font-semibold text-gray-700 flex-shrink-0',
         sizeClasses[size],
         className
       )}
@@ -45,6 +45,7 @@ export function UserAvatar({ name, size = 'default', className }: UserAvatarProp
     </div>
   )
 }
+
 
 
 

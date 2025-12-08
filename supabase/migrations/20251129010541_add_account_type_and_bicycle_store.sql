@@ -27,3 +27,4 @@ COMMENT ON COLUMN users.bicycle_store IS 'Admin-approved bicycle store flag (alw
 
 
 
+

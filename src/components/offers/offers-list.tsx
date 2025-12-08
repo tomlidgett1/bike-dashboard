@@ -16,12 +16,20 @@ interface OffersListProps {
   role?: OfferRole;
   statusFilter?: OfferStatus | OfferStatus[];
   onOfferClick: (offerId: string) => void;
+  onAccept?: (offerId: string) => void;
+  onReject?: (offerId: string) => void;
+  onCounter?: (offerId: string) => void;
+  onCancel?: (offerId: string) => void;
 }
 
 export function OffersList({
   role,
   statusFilter,
   onOfferClick,
+  onAccept,
+  onReject,
+  onCounter,
+  onCancel,
 }: OffersListProps) {
   const { offers, loading, error, stats } = useOffers({
     role,
@@ -91,6 +99,10 @@ export function OffersList({
             offer={offer}
             role={role || 'buyer'}
             onViewDetails={onOfferClick}
+            onAccept={onAccept}
+            onReject={onReject}
+            onCounter={onCounter}
+            onCancel={onCancel}
             compact={false}
           />
         ))}

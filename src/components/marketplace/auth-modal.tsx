@@ -235,12 +235,21 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
         {/* Header with Logo */}
         <DialogHeader className="px-6 sm:px-8 pt-12 sm:pt-8 pb-4 space-y-3 sm:space-y-4 flex-shrink-0">
           <div className="flex items-center justify-center">
+            {/* Mobile Logo */}
+            <Image
+              src="/yjsmall.svg"
+              alt="Yellow Jersey"
+              width={120}
+              height={24}
+              className="h-16 sm:hidden"
+            />
+            {/* Desktop Logo */}
             <Image
               src="/yj.svg"
               alt="Yellow Jersey"
               width={200}
               height={40}
-              className="h-8 sm:h-10"
+              className="hidden sm:block h-8 sm:h-10"
             />
           </div>
           <DialogTitle className="text-center text-xl sm:text-2xl font-semibold text-gray-900">

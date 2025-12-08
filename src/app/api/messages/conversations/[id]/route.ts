@@ -30,14 +30,49 @@ export async function GET(
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
-    // Verify user is a participant
-    const { data: participant, error: participantError } = await supabase
-      .from('conversation_participants')
-      .select('*')
-      .eq('conversation_id', id)
-      .eq('user_id', user.id)
-      .single();
+    // OPTIMIZATION: Execute all initial queries in parallel
+    const startIndex = (page - 1) * limit;
+    const batch1Start = Date.now();
+    
+    const [
+      { data: participant, error: participantError },
+      { data: conversation, error: conversationError },
+      { data: participants },
+      { data: messages, error: messagesError }
+    ] = await Promise.all([
+      // Verify user is a participant
+      supabase
+        .from('conversation_participants')
+        .select('*')
+        .eq('conversation_id', id)
+        .eq('user_id', user.id)
+        .single(),
+      
+      // Fetch conversation details
+      supabase
+        .from('conversations')
+        .select('*, products(id, description, display_name, price, primary_image_url)')
+        .eq('id', id)
+        .single(),
+      
+      // Fetch all participants (just IDs for now)
+      supabase
+        .from('conversation_participants')
+        .select('*')
+        .eq('conversation_id', id),
+      
+      // Fetch messages with pagination
+      supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', id)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: true })
+        .range(startIndex, startIndex + limit - 1)
+    ]);
+    console.log(`[Conversation API] Batch 1 took: ${Date.now() - batch1Start}ms`);
 
+    // Check for errors
     if (participantError || !participant) {
       return NextResponse.json(
         { error: 'Conversation not found or access denied' },
@@ -45,45 +80,12 @@ export async function GET(
       );
     }
 
-    // Fetch conversation details
-    const { data: conversation, error: conversationError } = await supabase
-      .from('conversations')
-      .select(
-        `
-        *,
-        products(id, description, display_name, price, primary_image_url)
-      `
-      )
-      .eq('id', id)
-      .single();
-
     if (conversationError || !conversation) {
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }
       );
     }
-
-    // Fetch all participants
-    const { data: participants } = await supabase
-      .from('conversation_participants')
-      .select(
-        `
-        *,
-        users!user_id(user_id, name, business_name, logo_url)
-      `
-      )
-      .eq('conversation_id', id);
-
-    // Fetch messages with pagination
-    const startIndex = (page - 1) * limit;
-    const { data: messages, error: messagesError } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', id)
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: true })
-      .range(startIndex, startIndex + limit - 1);
 
     if (messagesError) {
       console.error('Error fetching messages:', messagesError);
@@ -93,42 +95,66 @@ export async function GET(
       );
     }
 
-    // Fetch attachments for all messages
+    // OPTIMIZATION: Fetch attachments, senders, and participant user details in parallel
     const messageIds = messages?.map((m) => m.id) || [];
-    let attachmentsMap = new Map();
+    const senderIds = [...new Set(messages?.map((m) => m.sender_id).filter(Boolean) as string[])];
+    const participantUserIds = [...new Set(participants?.map((p: any) => p.user_id) || [])];
 
-    if (messageIds.length > 0) {
-      const { data: attachments } = await supabase
-        .from('message_attachments')
-        .select('*')
-        .in('message_id', messageIds);
+    const batch2Start = Date.now();
+    const [
+      { data: attachments },
+      { data: senders },
+      { data: participantUsers }
+    ] = await Promise.all([
+      // Fetch attachments
+      messageIds.length > 0
+        ? supabase.from('message_attachments').select('*').in('message_id', messageIds)
+        : Promise.resolve({ data: null }),
+      
+      // Fetch sender details
+      senderIds.length > 0
+        ? supabase.from('users').select('user_id, name, business_name, logo_url').in('user_id', senderIds)
+        : Promise.resolve({ data: null }),
+      
+      // Fetch participant user details
+      participantUserIds.length > 0
+        ? supabase.from('users').select('user_id, name, business_name, logo_url').in('user_id', participantUserIds)
+        : Promise.resolve({ data: null })
+    ]);
+    
+    // Mark conversation as read - do this separately to not block the response
+    // Update the participant record to mark as read
+    supabase
+      .from('conversation_participants')
+      .update({
+        last_read_at: new Date().toISOString(),
+        unread_count: 0
+      })
+      .eq('conversation_id', id)
+      .eq('user_id', user.id)
+      .then(() => {})
+      .catch((err) => console.error('Error marking conversation as read:', err));
+    console.log(`[Conversation API] Batch 2 took: ${Date.now() - batch2Start}ms`);
+    console.log(`[Conversation API] Total time: ${Date.now() - batch1Start}ms`);
 
-      attachments?.forEach((attachment) => {
-        if (!attachmentsMap.has(attachment.message_id)) {
-          attachmentsMap.set(attachment.message_id, []);
-        }
-        attachmentsMap.get(attachment.message_id).push(attachment);
-      });
-    }
+    // Build maps for efficient lookup
+    const attachmentsMap = new Map();
+    attachments?.forEach((attachment) => {
+      if (!attachmentsMap.has(attachment.message_id)) {
+        attachmentsMap.set(attachment.message_id, []);
+      }
+      attachmentsMap.get(attachment.message_id).push(attachment);
+    });
 
-    // Fetch sender details for messages
-    const senderIds = [
-      ...new Set(
-        messages?.map((m) => m.sender_id).filter(Boolean) as string[]
-      ),
-    ];
-    let sendersMap = new Map();
+    const sendersMap = new Map();
+    senders?.forEach((sender) => {
+      sendersMap.set(sender.user_id, sender);
+    });
 
-    if (senderIds.length > 0) {
-      const { data: senders } = await supabase
-        .from('users')
-        .select('user_id, name, business_name, logo_url')
-        .in('user_id', senderIds);
-
-      senders?.forEach((sender) => {
-        sendersMap.set(sender.user_id, sender);
-      });
-    }
+    const participantUsersMap = new Map();
+    participantUsers?.forEach((user) => {
+      participantUsersMap.set(user.user_id, user);
+    });
 
     // Enrich messages with attachments and sender info
     const messagesWithAttachments = messages?.map((message) => ({
@@ -139,28 +165,27 @@ export async function GET(
         : undefined,
     }));
 
-    // Mark conversation as read
-    await supabase.rpc('mark_conversation_read', {
-      p_conversation_id: id,
-      p_user_id: user.id,
-    });
-
     // Build response
     const response: GetConversationResponse = {
       conversation: {
         ...conversation,
-        participants: participants?.map((p: any) => ({
-          id: p.id,
-          conversation_id: p.conversation_id,
-          user_id: p.user_id,
-          role: p.role,
-          last_read_at: p.last_read_at,
-          unread_count: p.unread_count,
-          is_archived: p.is_archived,
-          notification_preference: p.notification_preference,
-          joined_at: p.joined_at,
-          updated_at: p.updated_at,
-        })),
+        participants: participants?.map((p: any) => {
+          const userDetails = participantUsersMap.get(p.user_id);
+          return {
+            id: p.id,
+            conversation_id: p.conversation_id,
+            user_id: p.user_id,
+            role: p.role,
+            last_read_at: p.last_read_at,
+            unread_count: p.unread_count,
+            is_archived: p.is_archived,
+            notification_preference: p.notification_preference,
+            joined_at: p.joined_at,
+            updated_at: p.updated_at,
+            // Include user details if needed
+            user: userDetails || undefined,
+          };
+        }),
         product: conversation.products
           ? {
               id: conversation.products.id,
@@ -187,6 +212,7 @@ export async function GET(
     );
   }
 }
+
 
 
 

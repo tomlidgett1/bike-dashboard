@@ -227,7 +227,7 @@ export function UnifiedFilterBar({
           <button
             onClick={() => onViewModeChange('trending')}
             className={cn(
-              "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-2.5 sm:py-2 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+              "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
               viewMode === 'trending'
                 ? "text-gray-900 bg-white shadow-sm"
                 : "text-gray-600 hover:text-gray-800 hover:bg-gray-200/60"
@@ -241,7 +241,7 @@ export function UnifiedFilterBar({
           <button
             onClick={() => onViewModeChange('for-you')}
             className={cn(
-              "relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-2.5 sm:py-2 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+              "relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
               viewMode === 'for-you'
                 ? "text-gray-900 bg-white shadow-sm"
                 : "text-gray-600 hover:text-gray-800 hover:bg-gray-200/60"
@@ -258,7 +258,7 @@ export function UnifiedFilterBar({
           <button
             onClick={() => onViewModeChange('all')}
             className={cn(
-              "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-2.5 sm:py-2 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+              "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
               viewMode === 'all'
                 ? "text-gray-900 bg-white shadow-sm"
                 : "text-gray-600 hover:text-gray-800 hover:bg-gray-200/60"
@@ -277,7 +277,7 @@ export function UnifiedFilterBar({
               <button
                 onClick={() => onListingTypeChange('all')}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'all'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
@@ -291,7 +291,7 @@ export function UnifiedFilterBar({
               <button
                 onClick={() => onListingTypeChange('stores')}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'stores'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
@@ -304,7 +304,7 @@ export function UnifiedFilterBar({
               <button
                 onClick={() => onListingTypeChange('individuals')}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'individuals'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
@@ -411,7 +411,7 @@ export function UnifiedFilterBar({
                         }
                       }}
                       className={cn(
-                        "group flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-md font-medium transition-all whitespace-nowrap flex-shrink-0 cursor-pointer",
+                        "group flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-md font-medium transition-all whitespace-nowrap flex-shrink-0 cursor-pointer",
                         option.isActive
                           ? "bg-gray-900 text-white shadow-md"
                           : "bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:shadow-sm"

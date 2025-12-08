@@ -37,22 +37,22 @@ export function UnifiedCategoryTable({
   const getSyncBadge = (status: string, syncedCount: number, totalCount: number) => {
     if (status === 'fully_synced') {
       return (
-        <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 flex items-center gap-1">
-          <div className="h-3 w-3 flex items-center justify-center">
-            <Image src="/ls.png" alt="Lightspeed" width={12} height={12} className="object-contain" />
-          </div>
+        <Badge variant="secondary" className="rounded-md bg-transparent text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-green-500" />
           Synced
         </Badge>
       );
     } else if (status === 'partial') {
       return (
-        <Badge variant="secondary" className="rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+        <Badge variant="secondary" className="rounded-md bg-transparent text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-blue-500" />
           Partial ({syncedCount}/{totalCount})
         </Badge>
       );
     } else {
       return (
-        <Badge variant="secondary" className="rounded-md bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400">
+        <Badge variant="secondary" className="rounded-md bg-transparent text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-gray-400" />
           Not Synced
         </Badge>
       );
@@ -134,12 +134,15 @@ export function UnifiedCategoryTable({
                     </td>
                     <td className="px-4 py-3 text-center">
                       {category.autoSyncEnabled ? (
-                        <div className="inline-flex items-center gap-1 rounded-md bg-green-100 dark:bg-green-900/20 px-2 py-1">
-                          <Zap className="h-3 w-3 text-green-600 dark:text-green-400" />
-                          <span className="text-xs font-medium text-green-700 dark:text-green-400">ON</span>
+                        <div className="inline-flex items-center gap-1.5 rounded-md bg-transparent px-2 py-1">
+                          <span className="h-2 w-2 rounded-full bg-green-500" />
+                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">ON</span>
                         </div>
                       ) : (
-                        <span className="text-xs text-muted-foreground">Off</span>
+                        <div className="inline-flex items-center gap-1.5 rounded-md bg-transparent px-2 py-1">
+                          <span className="h-2 w-2 rounded-full bg-gray-400" />
+                          <span className="text-xs text-gray-700 dark:text-gray-300">Off</span>
+                        </div>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -158,37 +161,75 @@ export function UnifiedCategoryTable({
                     </td>
                   </tr>
 
-                  {/* Expanded Products */}
+                  {/* Expanded Products - Compact Table */}
                   {isExpanded && (
                     <tr>
                       <td colSpan={7} className="px-0 py-0">
                         <div className="bg-gray-50 dark:bg-gray-900 border-y border-gray-200 dark:border-gray-800">
-                          <div className="px-16 py-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                              {category.products.map((product: any) => (
-                                <div
-                                  key={product.itemId}
-                                  className="rounded-md border border-gray-200 dark:border-gray-800 bg-white dark:bg-card p-3"
-                                >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-sm font-medium truncate">{product.name}</div>
-                                      <div className="text-xs text-muted-foreground mt-1">
-                                        SKU: {product.sku || 'N/A'}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground">
-                                        Stock: {product.totalQoh}
-                                      </div>
-                                    </div>
-                                    {product.isSynced && (
-                                      <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs flex-shrink-0">
-                                        Live
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                          <div className="px-6 py-3">
+                            <table className="w-full">
+                              <thead>
+                                <tr className="border-b border-gray-200 dark:border-gray-800">
+                                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                    Product Name
+                                  </th>
+                                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                    SKU
+                                  </th>
+                                  <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                    Stock
+                                  </th>
+                                  <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                    Status
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {category.products.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={4} className="px-3 py-4 text-center text-xs text-muted-foreground">
+                                      No products in this category
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  category.products.map((product: any) => (
+                                    <tr 
+                                      key={product.itemId}
+                                      className="border-b border-gray-200 dark:border-gray-800 hover:bg-white dark:hover:bg-gray-800 transition-colors"
+                                    >
+                                      <td className="px-3 py-2">
+                                        <div className="text-xs font-medium text-gray-900 dark:text-gray-100">
+                                          {product.name}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <div className="text-xs text-muted-foreground font-mono">
+                                          {product.sku || 'N/A'}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        <div className="text-xs font-medium text-gray-900 dark:text-gray-100">
+                                          {product.totalQoh}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        {product.isSynced ? (
+                                          <Badge variant="secondary" className="rounded-md bg-transparent text-gray-700 dark:text-gray-300 flex items-center gap-1.5 w-fit mx-auto">
+                                            <span className="h-2 w-2 rounded-full bg-green-500" />
+                                            <span className="text-xs">Live</span>
+                                          </Badge>
+                                        ) : (
+                                          <Badge variant="secondary" className="rounded-md bg-transparent text-gray-700 dark:text-gray-300 flex items-center gap-1.5 w-fit mx-auto">
+                                            <span className="h-2 w-2 rounded-full bg-gray-400" />
+                                            <span className="text-xs">Not Synced</span>
+                                          </Badge>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       </td>

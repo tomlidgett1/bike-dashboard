@@ -75,7 +75,7 @@ export function CategoryFilters({
             setExpandedCategory(null);
           }}
           className={cn(
-            "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
+            "flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
             !selectedCategory
               ? "text-gray-800 bg-white shadow-sm border border-gray-200"
               : "text-gray-600 bg-gray-100 hover:bg-gray-200/70 border border-transparent"
@@ -95,7 +95,7 @@ export function CategoryFilters({
               key={category}
               onClick={() => handleCategoryClick(category)}
               className={cn(
-                "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
+                "flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
                 isActive
                   ? "text-gray-800 bg-white shadow-sm border border-gray-200"
                   : "text-gray-600 bg-gray-100 hover:bg-gray-200/70 border border-transparent"

@@ -363,3 +363,4 @@ SELECT * FROM pg_stat_user_tables WHERE relname = 'marketplace_products_fast';
 
 
 
+

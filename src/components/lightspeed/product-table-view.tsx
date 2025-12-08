@@ -259,11 +259,13 @@ export function ProductTableView({
                     </td>
                     <td className="px-4 py-3">
                       {product.isSynced ? (
-                        <Badge variant="secondary" className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                        <Badge variant="secondary" className="rounded-md bg-transparent text-gray-700 dark:text-gray-300 flex items-center gap-1.5 w-fit">
+                          <span className="h-2 w-2 rounded-full bg-green-500" />
                           Live
                         </Badge>
                       ) : (
-                        <Badge variant="secondary" className="rounded-md">
+                        <Badge variant="secondary" className="rounded-md bg-transparent text-gray-700 dark:text-gray-300 flex items-center gap-1.5 w-fit">
+                          <span className="h-2 w-2 rounded-full bg-gray-400" />
                           Not Synced
                         </Badge>
                       )}

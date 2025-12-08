@@ -1210,7 +1210,7 @@ export function SellWizard() {
       {/* Main Content */}
       <div className={cn(
         "flex-1 py-8 px-6",
-        currentStep !== getTotalSteps() && "pb-32" // Extra bottom padding for fixed footer, except on review step
+        currentStep !== getTotalSteps() && !(currentStep === 1 && hasAiData) && "pb-32" // Extra bottom padding for fixed footer, except on review step and quick listing
       )}>
         <AnimatePresence mode="wait">
           <motion.div
@@ -1226,7 +1226,8 @@ export function SellWizard() {
       </div>
 
       {/* Navigation Footer - Fixed at bottom */}
-      {currentStep !== getTotalSteps() && (
+      {/* Hide navigation when in quick listing mode (step 1 with AI data) */}
+      {currentStep !== getTotalSteps() && !(currentStep === 1 && hasAiData) && (
         <div className="fixed bottom-0 left-0 right-0 lg:left-[200px] z-40">
           <WizardNavigation
             currentStep={currentStep}

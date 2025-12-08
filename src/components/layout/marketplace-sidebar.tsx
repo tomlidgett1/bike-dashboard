@@ -3,19 +3,29 @@
 import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
-import { Package, Store, User, Clock, Settings, Edit, FileText, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle } from "lucide-react";
+import { Package, Store, User, Clock, Settings, Edit, FileText, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle, LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { useSidebarState } from "@/lib/hooks/use-sidebar-state";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import Image from "next/image";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { createClient } from "@/lib/supabase/client";
 
 interface NavItem {
   type: 'item' | 'separator';
@@ -135,6 +145,44 @@ function MarketplaceSidebarContent() {
   
   // Check if user is a bicycle store waiting for admin approval
   const isWaitingForApproval = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === false;
+
+  // Get display name based on account type
+  // For business users, only show business_name (never fall back to name)
+  const getDisplayName = () => {
+    if (!profile) return user?.email || 'User';
+    
+    if (profile.account_type === 'bicycle_store') {
+      // Only show business_name for business users, don't fall back to name
+      return profile.business_name || user?.email || 'Store';
+    } else {
+      return profile.name || user?.email || 'User';
+    }
+  };
+
+  // Check if user is a bicycle store with logo
+  const shouldShowLogo = () => {
+    return profile?.account_type === 'bicycle_store' && profile?.logo_url;
+  };
+
+  // Get the appropriate settings route based on account type
+  const getSettingsRoute = () => {
+    if (profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true) {
+      return '/settings'; // Bike store settings
+    }
+    return '/marketplace/settings'; // Individual user settings
+  };
+
+  // All authenticated users can access settings
+  const canAccessSettings = () => {
+    return !!user;
+  };
+
+  const supabase = createClient();
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push('/marketplace');
+    router.refresh();
+  };
   
   // 🔍 DEBUG: Account approval status
   React.useEffect(() => {
@@ -264,11 +312,14 @@ function MarketplaceSidebarContent() {
           ease: [0.04, 0.62, 0.23, 0.98],
         }}
         className={cn(
-          "fixed left-0 top-16 z-30 hidden h-[calc(100vh-4rem)] flex-col border-r border-sidebar-border bg-sidebar lg:flex overflow-hidden"
+          "fixed left-0 top-16 z-[45] hidden h-[calc(100vh-4rem)] flex-col border-r border-sidebar-border bg-sidebar lg:flex overflow-x-hidden"
         )}
       >
         {/* Header with Collapse Button */}
-        <div className="flex items-center justify-between px-2 pt-4 pb-2">
+        <div className={cn(
+          "relative flex items-center px-2 pt-4 pb-2 bg-sidebar shrink-0",
+          isCollapsed ? "justify-center" : "justify-between"
+        )}>
           {!isCollapsed && (
             <motion.span
               initial={{ opacity: 0 }}
@@ -280,32 +331,31 @@ function MarketplaceSidebarContent() {
               Browse
             </motion.span>
           )}
-          <Tooltip delayDuration={100}>
-            <TooltipTrigger asChild>
-              <button
-                onClick={toggle}
-                className={cn(
-                  "flex items-center justify-center rounded-md p-1.5 transition-all duration-150 cursor-pointer",
-                  "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                  isCollapsed && "mx-auto"
-                )}
-                aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              >
-                {isCollapsed ? (
-                  <PanelLeft className="h-[18px] w-[18px]" />
-                ) : (
-                  <PanelLeftClose className="h-[18px] w-[18px]" />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8} className="rounded-md">
-              <p>{isCollapsed ? "Expand sidebar" : "Collapse sidebar"}</p>
-            </TooltipContent>
-          </Tooltip>
+          {mounted && (
+            <Tooltip delayDuration={100}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={toggle}
+                  className="flex items-center justify-center rounded-md p-1.5 transition-all duration-150 cursor-pointer text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  type="button"
+                >
+                  {isCollapsed ? (
+                    <PanelLeft className="h-[18px] w-[18px]" />
+                  ) : (
+                    <PanelLeftClose className="h-[18px] w-[18px]" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8} className="rounded-md">
+                <p>{isCollapsed ? "Expand sidebar" : "Collapse sidebar"}</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
 
         {/* Navigation */}
-        <ScrollArea className="flex-1 py-2">
+        <ScrollArea className="relative flex-1 py-2 overflow-y-auto">
           <nav className="flex flex-col gap-1 px-2">
             {navItems.map((item, index) => renderNavItem(item, index))}
           </nav>
@@ -343,6 +393,111 @@ function MarketplaceSidebarContent() {
             </div>
           )}
         </ScrollArea>
+
+        {/* User Info */}
+        {user && (
+          <div className="border-t border-sidebar-border p-2">
+            <DropdownMenu modal={false}>
+              {isCollapsed ? (
+                <>
+                  <Tooltip delayDuration={100}>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <button className="w-full flex items-center justify-center outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0 cursor-pointer">
+                          {shouldShowLogo() ? (
+                            <div className="relative h-9 w-9 rounded-full overflow-hidden border border-gray-300 flex-shrink-0">
+                              <Image
+                                src={profile!.logo_url!}
+                                alt={getDisplayName()}
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <UserAvatar name={getDisplayName()} size="sm" className="h-9 w-9 border-gray-300" />
+                          )}
+                        </button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8} className="rounded-md">
+                      <p className="max-w-[200px] truncate">{getDisplayName()}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent side="right" align="end" className="w-48 bg-white rounded-md">
+                    {canAccessSettings() && (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => router.push(getSettingsRoute())}
+                          className="cursor-pointer rounded-md"
+                        >
+                          <Settings className="mr-2 h-4 w-4" />
+                          <span>Settings</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
+                    <DropdownMenuItem
+                      onClick={handleSignOut}
+                      className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>Sign Out</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </>
+              ) : (
+                <>
+                  <DropdownMenuTrigger asChild>
+                    <button className="w-full flex items-center gap-2 px-1 py-1.5 rounded-md hover:bg-sidebar-accent transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0 cursor-pointer">
+                      {shouldShowLogo() ? (
+                        <div className="relative h-9 w-9 rounded-full overflow-hidden border border-gray-300 flex-shrink-0">
+                          <Image
+                            src={profile!.logo_url!}
+                            alt={getDisplayName()}
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <UserAvatar name={getDisplayName()} size="sm" className="h-9 w-9 border-gray-300" />
+                      )}
+                      <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="text-sm font-medium text-sidebar-foreground/80 truncate flex-1 min-w-0 text-left"
+                      >
+                        {getDisplayName()}
+                      </motion.span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="right" align="end" className="w-48 bg-white rounded-md">
+                    {canAccessSettings() && (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => router.push(getSettingsRoute())}
+                          className="cursor-pointer rounded-md"
+                        >
+                          <Settings className="mr-2 h-4 w-4" />
+                          <span>Settings</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
+                    <DropdownMenuItem
+                      onClick={handleSignOut}
+                      className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>Sign Out</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </>
+              )}
+            </DropdownMenu>
+          </div>
+        )}
 
         {/* Help and Support Button */}
         <div className="border-t border-sidebar-border p-2 pb-4">

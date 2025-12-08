@@ -33,12 +33,21 @@ export function OnboardingLayout({
             <Bike className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 text-gray-900" />
           </div>
           <div className="flex items-center justify-center">
+            {/* Mobile Logo */}
+            <Image 
+              src="/yjsmall.svg" 
+              alt="Yellow Jersey" 
+              width={120} 
+              height={24}
+              className="h-20 w-auto sm:hidden"
+            />
+            {/* Desktop Logo */}
             <Image 
               src="/yj.svg" 
               alt="Yellow Jersey" 
               width={300} 
               height={60}
-              className="h-10 sm:h-12 md:h-16 w-auto"
+              className="hidden sm:block h-10 sm:h-12 md:h-16 w-auto"
             />
           </div>
         </div>

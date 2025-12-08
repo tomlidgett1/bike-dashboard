@@ -65,9 +65,9 @@ export function MetricsHeader({
                 <span className="text-xs text-muted-foreground">•</span>
                 <Badge
                   variant="secondary"
-                  className="rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 h-5 px-2"
+                  className="rounded-md bg-transparent text-gray-700 dark:text-gray-300 h-5 px-2"
                 >
-                  <span className="mr-1 h-1.5 w-1.5 rounded-full bg-green-500" />
+                  <span className="mr-1.5 h-2 w-2 rounded-full bg-green-500" />
                   <span className="text-xs">Connected</span>
                 </Badge>
               </div>

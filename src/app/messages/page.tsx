@@ -149,26 +149,32 @@ function MessagesPageInner() {
     setMobileNavHidden(true);
   };
 
-  const handleAcceptOffer = async () => {
-    if (!activeOfferId) return;
+  const handleAcceptOffer = async (offerId?: string) => {
+    const idToUse = offerId || activeOfferId;
+    if (!idToUse) return;
     try {
-      await acceptOffer(activeOfferId);
+      await acceptOffer(idToUse);
       // Refresh the offers list or show success message
-      setActiveOfferId(null);
-      setShowOfferDetailOnMobile(false);
-      setMobileNavHidden(false);
+      if (!offerId) {
+        setActiveOfferId(null);
+        setShowOfferDetailOnMobile(false);
+        setMobileNavHidden(false);
+      }
     } catch (error) {
       console.error('Error accepting offer:', error);
     }
   };
 
-  const handleRejectOffer = async () => {
-    if (!activeOfferId) return;
+  const handleRejectOffer = async (offerId?: string) => {
+    const idToUse = offerId || activeOfferId;
+    if (!idToUse) return;
     try {
-      await rejectOffer(activeOfferId);
-      setActiveOfferId(null);
-      setShowOfferDetailOnMobile(false);
-      setMobileNavHidden(false);
+      await rejectOffer(idToUse);
+      if (!offerId) {
+        setActiveOfferId(null);
+        setShowOfferDetailOnMobile(false);
+        setMobileNavHidden(false);
+      }
     } catch (error) {
       console.error('Error rejecting offer:', error);
     }
@@ -193,13 +199,16 @@ function MessagesPageInner() {
     }
   };
 
-  const handleCancelOffer = async () => {
-    if (!activeOfferId) return;
+  const handleCancelOffer = async (offerId?: string) => {
+    const idToUse = offerId || activeOfferId;
+    if (!idToUse) return;
     try {
-      await cancelOffer(activeOfferId);
-      setActiveOfferId(null);
-      setShowOfferDetailOnMobile(false);
-      setMobileNavHidden(false);
+      await cancelOffer(idToUse);
+      if (!offerId) {
+        setActiveOfferId(null);
+        setShowOfferDetailOnMobile(false);
+        setMobileNavHidden(false);
+      }
     } catch (error) {
       console.error('Error cancelling offer:', error);
     }
@@ -383,6 +392,14 @@ function MessagesPageInner() {
               role={offerRole}
               statusFilter={offerStatusFilter}
               onOfferClick={handleOfferClick}
+              onAccept={handleAcceptOffer}
+              onReject={handleRejectOffer}
+              onCounter={(offerId) => {
+                setActiveOfferId(offerId);
+                refreshActiveOffer();
+                handleCounterOffer();
+              }}
+              onCancel={handleCancelOffer}
             />
           )}
         </div>
@@ -520,6 +537,10 @@ function MessagesPageInner() {
                 onMessage={() => {
                   // TODO: Navigate to create conversation with the other party
                 }}
+                accepting={accepting}
+                rejecting={rejecting}
+                countering={countering}
+                cancelling={cancelling}
               />
             )}
           </>

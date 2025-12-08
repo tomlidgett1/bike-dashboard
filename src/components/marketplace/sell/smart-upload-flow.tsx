@@ -11,7 +11,7 @@ import type { ListingAnalysisResult } from "@/lib/ai/schemas";
 // Smart Upload Flow Container
 // ============================================================
 
-type FlowStage = "upload" | "analyzing" | "review" | "error";
+type FlowStage = "upload" | "analyzing" | "searching" | "review" | "error";
 
 interface SmartUploadFlowProps {
   onComplete: (formData: any, imageUrls: string[]) => void;
@@ -65,6 +65,10 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
 
       const result = await response.json();
       console.log('✅ [SMART UPLOAD] Analysis received:', result);
+      console.log('🔍 [SMART UPLOAD] Web enrichment data:', result.analysis?.web_enrichment);
+      console.log('🔍 [SMART UPLOAD] Search URLs:', result.analysis?.search_urls);
+      console.log('🔍 [SMART UPLOAD] Data sources:', result.analysis?.data_sources);
+      console.log('🔍 [SMART UPLOAD] Structured metadata:', result.analysis?.structured_metadata);
 
       setAnalysis(result.analysis);
       setStage("review");
@@ -128,6 +132,21 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       formData.size = editedAnalysis.apparel_details.size;
       formData.genderFit = editedAnalysis.apparel_details.gender_fit;
       formData.apparelMaterial = editedAnalysis.apparel_details.material;
+    }
+
+    // Add smart upload metadata (for database JSONB storage)
+    if (editedAnalysis.structured_metadata) {
+      formData.structuredMetadata = editedAnalysis.structured_metadata;
+    }
+
+    // Add web search sources
+    if (editedAnalysis.search_urls) {
+      formData.searchUrls = editedAnalysis.search_urls;
+    }
+
+    // Add AI confidence scores
+    if (editedAnalysis.field_confidence) {
+      formData.fieldConfidence = editedAnalysis.field_confidence;
     }
 
     console.log('🎯 [SMART UPLOAD] Mapped form data:', formData);

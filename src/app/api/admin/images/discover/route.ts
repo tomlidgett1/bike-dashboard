@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { canonicalProductId } = body;
+    const { canonicalProductId, customSearchQuery } = body;
 
     if (!canonicalProductId) {
       return NextResponse.json(
@@ -75,7 +75,10 @@ export async function POST(request: NextRequest) {
           'Authorization': `Bearer ${session?.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ canonicalProductId }),
+        body: JSON.stringify({ 
+          canonicalProductId,
+          customSearchQuery 
+        }),
       });
 
       console.log(`[ADMIN IMAGE DISCOVERY] Edge function response status: ${edgeFunctionResponse.status}`);

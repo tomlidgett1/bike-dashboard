@@ -826,7 +826,7 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
           }}
           onBlur={() => setIsFocused(false)}
           placeholder={placeholder}
-          className="pl-10 pr-16 sm:pl-11 sm:pr-20 h-10 rounded-md border-gray-300 focus:border-gray-400 focus:ring-gray-400 text-sm bg-white"
+          className="pl-10 pr-16 sm:pl-11 sm:pr-20 h-9 rounded-md border-gray-300 focus:border-gray-400 focus:ring-gray-400 text-sm bg-white"
         />
 
         <div className="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">

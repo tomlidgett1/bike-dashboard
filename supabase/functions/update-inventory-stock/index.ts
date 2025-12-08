@@ -364,12 +364,17 @@ Deno.serve(async (req) => {
         const updates: any[] = []
         
         for (const [itemId, stock] of itemStockMap) {
-          const { data: product } = await supabaseAdmin
+          const { data: product, error: productError } = await supabaseAdmin
             .from('products')
-            .select('id, qoh, lightspeed_category_id')
+            .select('id, description, system_sku, custom_sku, qoh, is_active, lightspeed_item_id, lightspeed_category_id')
             .eq('user_id', connection.user_id)
             .eq('lightspeed_item_id', itemId)
             .single()
+
+          if (productError) {
+            console.log(`   ⚠️  Product not found for item ${itemId}:`, productError.message)
+            continue
+          }
 
           // Only update if product exists, stock changed, and category is enabled
           if (product && product.qoh !== stock.qoh) {
@@ -381,9 +386,14 @@ Deno.serve(async (req) => {
 
             updates.push({
               id: product.id,
+              description: product.description,
+              sku: product.system_sku || product.custom_sku,
+              lightspeed_item_id: product.lightspeed_item_id,
+              lightspeed_category_id: product.lightspeed_category_id,
               oldQoh: product.qoh,
               newQoh: stock.qoh,
               sellable: stock.sellable,
+              oldIsActive: product.is_active,
               last_synced_at: new Date().toISOString(),
             })
           }
@@ -391,7 +401,7 @@ Deno.serve(async (req) => {
 
         console.log(`📝 ${updates.length} products need stock updates`)
 
-        // Apply updates in chunks
+        // Apply updates in chunks and log changes
         const CHUNK_SIZE = 15
         let updated = 0
 
@@ -405,24 +415,61 @@ Deno.serve(async (req) => {
               last_synced_at: update.last_synced_at,
             }
             
+            let newIsActive = update.oldIsActive
+
             // Update is_active based on stock transitions
             if (update.oldQoh > 0 && update.newQoh === 0) {
               // Product went out of stock - deactivate
               updateData.is_active = false
+              newIsActive = false
               console.log(`   📦 Product ${update.id}: Stock went from ${update.oldQoh} → 0, setting is_active = false`)
             } else if (update.oldQoh === 0 && update.newQoh > 0) {
               // Product came back in stock - activate
               updateData.is_active = true
+              newIsActive = true
               console.log(`   📦 Product ${update.id}: Stock went from 0 → ${update.newQoh}, setting is_active = true`)
             }
             
-            const { error } = await supabaseAdmin
+            const { error: updateError } = await supabaseAdmin
               .from('products')
               .update(updateData)
               .eq('id', update.id)
 
-            if (!error) {
-              updated++
+            if (updateError) {
+              console.error(`   ❌ Failed to update product ${update.id}:`, updateError.message)
+              continue
+            }
+
+            updated++
+            console.log(`   ✅ Updated product ${update.id}: ${update.oldQoh} → ${update.newQoh}`)
+            
+            // Log the stock change
+            const { error: logError } = await supabaseAdmin
+              .from('inventory_stock_update_logs')
+              .insert({
+                user_id: connection.user_id,
+                product_id: update.id,
+                product_name: update.description,
+                product_sku: update.sku,
+                lightspeed_item_id: update.lightspeed_item_id,
+                lightspeed_category_id: update.lightspeed_category_id,
+                old_qoh: update.oldQoh,
+                new_qoh: update.newQoh,
+                qoh_change: update.newQoh - update.oldQoh,
+                old_sellable: update.sellable, // We don't track old sellable, so using current
+                new_sellable: update.sellable,
+                old_is_active: update.oldIsActive,
+                new_is_active: newIsActive,
+                sync_type: 'auto',
+                sync_source: 'update-inventory-stock',
+                metadata: {
+                  batch_id: `${connection.user_id}-${new Date().toISOString()}`,
+                  inventory_logs_count: inventoryLogs.length,
+                }
+              })
+
+            if (logError) {
+              console.error(`   ⚠️  Failed to log change for product ${update.id}:`, logError.message)
             }
           }
 

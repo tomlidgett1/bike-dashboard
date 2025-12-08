@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X } from "lucide-react";
+import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save } from "lucide-react";
 import { ItemType, ListingImage, ConditionRating } from "@/lib/types/listing";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,14 @@ interface QuickListingData {
   itemType?: ItemType;
   brand?: string;
   model?: string;
+  modelYear?: string;
   pickupLocation?: string;
+  conditionDetails?: string;
+  wearNotes?: string;
+  usageEstimate?: string;
+  searchUrls?: any[];
+  structuredMetadata?: any;
+  fieldConfidence?: any;
 }
 
 interface Step1ItemTypeProps {
@@ -75,6 +82,8 @@ export function Step1ItemType({
       setQuickData({
         ...quickListingData,
         title: generatedTitle,
+        brand: quickListingData.brand,
+        model: quickListingData.model,
       });
     }
   }, [quickListingData]);
@@ -305,15 +314,29 @@ export function Step1ItemType({
                   />
                 </div>
 
-                {/* Brand (Optional) */}
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-900">Brand <span className="text-gray-500 font-normal">(Optional)</span></label>
-                  <Input
-                    value={quickData.brand || ''}
-                    onChange={(e) => setQuickData({ ...quickData, brand: e.target.value })}
-                    placeholder="e.g., Trek, Specialized, Giant"
-                    className="rounded-md h-11 text-base"
-                  />
+                {/* Brand & Model Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  {/* Brand */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-900">Brand <span className="text-gray-500 font-normal">(Optional)</span></label>
+                    <Input
+                      value={quickData.brand || ''}
+                      onChange={(e) => setQuickData({ ...quickData, brand: e.target.value })}
+                      placeholder="e.g., Trek, Specialized"
+                      className="rounded-md h-11 text-base"
+                    />
+                  </div>
+
+                  {/* Model */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-900">Model <span className="text-gray-500 font-normal">(Optional)</span></label>
+                    <Input
+                      value={quickData.model || ''}
+                      onChange={(e) => setQuickData({ ...quickData, model: e.target.value })}
+                      placeholder="e.g., Domane SL6"
+                      className="rounded-md h-11 text-base"
+                    />
+                  </div>
                 </div>
 
                 {/* Description */}
@@ -488,24 +511,26 @@ export function Step1ItemType({
                   </p>
                 </div>
               </div>
-              <Button
-                onClick={handleQuickList}
-                disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || isPublishing}
-                size="lg"
-                className="rounded-md bg-gray-900 hover:bg-gray-800 text-white px-8 h-11 w-full sm:w-auto"
-              >
-                {isPublishing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Publishing...
-                  </>
-                ) : (
-                  <>
-                    <Zap className="h-4 w-4 mr-2" />
-                    Publish Listing
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Button
+                  onClick={handleQuickList}
+                  disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || isPublishing}
+                  size="lg"
+                  className="rounded-md bg-gray-900 hover:bg-gray-800 text-white px-6 h-11 flex-1 sm:flex-none"
+                >
+                  {isPublishing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Publishing...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="h-4 w-4 mr-2" />
+                      Publish Listing
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </motion.div>
         ) : (

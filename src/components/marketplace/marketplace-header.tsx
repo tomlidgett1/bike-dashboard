@@ -172,32 +172,41 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
       <motion.header
         style={{
           boxShadow: headerShadow,
-          backgroundColor: headerBg,
+          backgroundColor: isMobile ? '#ffde59' : headerBg,
         }}
-        className="fixed top-0 left-0 right-0 z-50 w-full border-b border-gray-200 backdrop-blur-sm"
+        className="fixed top-0 left-0 right-0 z-40 w-full border-b border-gray-200 backdrop-blur-sm"
       >
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6">
-          <div className="flex h-14 sm:h-16 items-center gap-2 sm:gap-4">
+          <div className="flex h-14 sm:h-16 items-center justify-start gap-2 sm:gap-4">
             {/* Mobile Menu Button - Left of logo */}
             <button
               onClick={() => setMobileMenuOpen(true)}
               className="lg:hidden p-2 -ml-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer"
               aria-label="Open menu"
             >
-              <Menu className="h-5 w-5 text-gray-700" />
+              <Menu className="h-5 w-5 text-gray-700 stroke-[1.5]" />
             </button>
 
             {/* Logo */}
             <button
               onClick={() => router.push('/marketplace')}
-              className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0"
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 -ml-12 sm:-ml-3"
             >
+              {/* Mobile Logo */}
+              <Image 
+                src="/yjsmall.svg" 
+                alt="Yellow Jersey" 
+                width={120} 
+                height={24}
+                className="h-20 sm:hidden"
+              />
+              {/* Desktop Logo */}
               <Image 
                 src="/yj.svg" 
                 alt="Yellow Jersey" 
-                width={180} 
+                width={220} 
                 height={36}
-                className="h-8 sm:h-9"
+                className="hidden sm:block h-36 sm:h-40"
               />
             </button>
 
@@ -209,21 +218,21 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                   <InstantSearch />
                 </div>
                 {/* Mobile: Search icon button, Messages button (if logged in), and Sell button */}
-                <div className="sm:hidden flex items-center gap-2 ml-auto">
+                <div className="sm:hidden flex items-center gap-1 ml-auto">
                   <button
                     onClick={() => setMobileSearchOpen(true)}
-                    className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+                    className="h-9 w-9 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center"
                     aria-label="Open search"
                   >
-                    <Search className="h-5 w-5 text-gray-700" />
+                    <Search className="h-5 w-5 text-gray-700 stroke-[1.5]" />
                   </button>
                   {mounted && user && (
                     <button
                       onClick={() => router.push('/messages')}
-                      className="relative p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+                      className="relative h-9 w-9 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors flex items-center justify-center"
                       aria-label="Messages"
                     >
-                      <MessageCircle className="h-5 w-5 text-gray-700" />
+                      <MessageCircle className="h-5 w-5 text-gray-700 stroke-[1.5]" />
                       {unreadCount > 0 && (
                         <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
                           {unreadCount > 99 ? '99+' : unreadCount}
@@ -253,14 +262,14 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                   <InstantSearch />
                 </div>
                 {/* Mobile: Messages button (if logged in) and Sell button */}
-                <div className="sm:hidden flex items-center gap-2 ml-auto">
+                <div className="sm:hidden flex items-center gap-1 ml-auto">
                   {mounted && user && (
                     <button
                       onClick={() => router.push('/messages')}
-                      className="relative p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+                      className="relative h-9 w-9 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors flex items-center justify-center"
                       aria-label="Messages"
                     >
-                      <MessageCircle className="h-5 w-5 text-gray-700" />
+                      <MessageCircle className="h-5 w-5 text-gray-700 stroke-[1.5]" />
                       {unreadCount > 0 && (
                         <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
                           {unreadCount > 99 ? '99+' : unreadCount}
@@ -289,40 +298,39 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
             <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
               {mounted && user ? (
                 <>
-                  {/* Messages Button */}
-                  <button
-                    onClick={() => router.push('/messages')}
-                    className="relative p-2 rounded-md hover:bg-gray-100 transition-colors cursor-pointer"
-                    aria-label="Messages"
-                  >
-                    <MessageCircle className="h-5 w-5 text-gray-700" />
-                    {unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
-                    )}
-                  </button>
-
-                  <DropdownMenu modal={false}>
-                    <DropdownMenuTrigger asChild>
-                      <button className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0 cursor-pointer">
-                        {shouldShowLogo() ? (
-                          <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
-                            <Image
-                              src={profile!.logo_url!}
-                              alt={getDisplayName()}
-                              fill
-                              className="object-cover"
-                            />
-                          </div>
-                        ) : (
-                          <UserAvatar name={getDisplayName()} size="default" />
-                        )}
-                        <span className="text-sm font-medium text-gray-700 max-w-[150px] truncate">
-                          {getDisplayName()}
+                  {/* Icons Group - Messages and Profile */}
+                  <div className="flex items-center gap-3">
+                    {/* Messages Button */}
+                    <button
+                      onClick={() => router.push('/messages')}
+                      className="relative h-9 w-9 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center"
+                      aria-label="Messages"
+                    >
+                      <MessageCircle className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                      {unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+                          {unreadCount > 99 ? '99+' : unreadCount}
                         </span>
-                      </button>
-                    </DropdownMenuTrigger>
+                      )}
+                    </button>
+
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger asChild>
+                        <button className="outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0 cursor-pointer">
+                          {shouldShowLogo() ? (
+                            <div className="relative h-9 w-9 rounded-full overflow-hidden border border-gray-300 flex-shrink-0">
+                              <Image
+                                src={profile!.logo_url!}
+                                alt={getDisplayName()}
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <UserAvatar name={getDisplayName()} size="sm" className="h-9 w-9 border-gray-300" />
+                          )}
+                        </button>
+                      </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-48 bg-white rounded-md">
                       {canAccessSettings() && (
                         <>
@@ -345,6 +353,9 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  </div>
+
+                  {/* Sell Button */}
                   <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -480,7 +491,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                   onClick={() => setMobileMenuOpen(false)}
                   className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
                 >
-                  <X className="h-5 w-5 text-gray-600" />
+                  <X className="h-5 w-5 text-gray-700 stroke-[1.5]" />
                 </button>
               </div>
 
@@ -489,7 +500,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                 <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
                   <div className="flex items-center gap-3">
                     {shouldShowLogo() ? (
-                      <div className="relative h-10 w-10 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
+                      <div className="relative h-8 w-8 rounded-full overflow-hidden border border-gray-300 flex-shrink-0">
                         <Image
                           src={profile!.logo_url!}
                           alt={getDisplayName()}
@@ -498,7 +509,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                         />
                       </div>
                     ) : (
-                      <UserAvatar name={getDisplayName()} size="default" />
+                      <UserAvatar name={getDisplayName()} size="sm" />
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
@@ -803,7 +814,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                 className="p-2 -ml-1 rounded-full hover:bg-gray-100 transition-colors flex-shrink-0"
                 aria-label="Close search"
               >
-                <X className="h-5 w-5 text-gray-600" />
+                <X className="h-5 w-5 text-gray-700 stroke-[1.5]" />
               </button>
               <span className="text-sm font-medium text-gray-900">Search</span>
             </div>

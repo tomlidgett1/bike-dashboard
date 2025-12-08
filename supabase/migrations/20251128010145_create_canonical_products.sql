@@ -132,3 +132,4 @@ COMMENT ON COLUMN canonical_products.product_count IS 'Number of store products 
 
 
 
+

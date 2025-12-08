@@ -104,6 +104,11 @@ export async function POST(request: NextRequest) {
       is_active: body.listingStatus === "active",
       system_sku: `LISTING-${Date.now()}`,
       lightspeed_item_id: `manual-${Date.now()}`,
+
+      // Smart Upload Metadata (from AI analysis + web search)
+      smart_upload_metadata: body.structuredMetadata || {},
+      web_search_sources: body.searchUrls || [],
+      ai_confidence_scores: body.fieldConfidence || {},
     };
 
     const { data: listing, error } = await supabase

@@ -14,8 +14,9 @@ import { UnifiedCategoryTable } from "@/components/lightspeed/unified-category-t
 import { ProductTableView } from "@/components/lightspeed/product-table-view";
 import { SyncProgressModal } from "@/components/lightspeed/sync-progress-modal";
 import { DeleteConfirmDialog } from "@/components/lightspeed/delete-confirm-dialog";
+import { InventoryLogsView } from "@/components/lightspeed/inventory-logs-view";
 
-type ViewMode = 'categories' | 'products';
+type ViewMode = 'categories' | 'products' | 'logs';
 
 interface Category {
   categoryId: string;
@@ -422,15 +423,15 @@ export default function ConnectLightspeedPage() {
         onDisconnect={disconnect}
       />
 
-      {/* Main Content */}
-      <div className="flex-1 bg-gray-50 dark:bg-gray-950 flex flex-col">
+      {/* Main Content - Full width container */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         {loadingInventory ? (
           <div className="flex items-center justify-center min-h-[60vh]">
             <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
           </div>
         ) : (
           <>
-            {/* Tabs and Actions Bar */}
+            {/* Tabs and Actions Bar - with horizontal padding only */}
             <div className="px-6 py-4 bg-white dark:bg-card border-b border-gray-200 dark:border-gray-800">
               <div className="flex items-center justify-between">
                 {/* View Mode Tabs */}
@@ -467,6 +468,17 @@ export default function ConnectLightspeedPage() {
                       </Badge>
                     )}
                   </button>
+                  <button
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                      viewMode === 'logs'
+                        ? "text-gray-800 bg-white shadow-sm"
+                        : "text-gray-600 hover:bg-gray-200/70"
+                    )}
+                    onClick={() => setViewMode('logs')}
+                  >
+                    Logs
+                  </button>
                 </div>
 
                 {/* Action Buttons */}
@@ -496,41 +508,41 @@ export default function ConnectLightspeedPage() {
               </div>
             </div>
 
-            {/* Content Area */}
-            <div className="flex-1 p-6">
-              <div className="bg-white dark:bg-card rounded-md border border-gray-200 dark:border-gray-800 h-full flex flex-col overflow-hidden">
-                {viewMode === 'categories' ? (
-                  <UnifiedCategoryTable
-                    categories={inventoryData?.categories || []}
-                    selectedCategories={selectedCategories}
-                    onCategoryToggle={handleCategoryToggle}
-                    expandedCategory={expandedCategory}
-                    onCategoryExpand={setExpandedCategory}
-                  />
-                ) : (
-                  <ProductTableView
-                    products={[
-                      ...inventoryData?.notSynced.products.map((p: any) => ({ ...p, isSynced: false })) || [],
-                      ...inventoryData?.synced.products.map((p: any) => ({ ...p, isSynced: true })) || [],
-                    ].map(p => ({
-                      id: p.id,
-                      itemId: p.itemId,
-                      name: p.name,
-                      sku: p.sku,
-                      modelYear: p.modelYear,
-                      categoryId: p.categoryId,
-                      totalQoh: p.totalQoh,
-                      totalSellable: p.totalSellable,
-                      isSynced: p.isSynced,
-                    }))}
-                    selectedProducts={selectedProducts}
-                    onProductToggle={handleProductToggle}
-                    onSelectAll={handleSelectAllProducts}
-                    onClearAll={handleClearAllProducts}
-                    onDeleteProducts={handleDeleteProducts}
-                  />
-                )}
-              </div>
+            {/* Table Container - Full width, scrollable */}
+            <div className="flex-1 overflow-auto bg-white dark:bg-gray-950">
+              {viewMode === 'categories' ? (
+                <UnifiedCategoryTable
+                  categories={inventoryData?.categories || []}
+                  selectedCategories={selectedCategories}
+                  onCategoryToggle={handleCategoryToggle}
+                  expandedCategory={expandedCategory}
+                  onCategoryExpand={setExpandedCategory}
+                />
+              ) : viewMode === 'products' ? (
+                <ProductTableView
+                  products={[
+                    ...inventoryData?.notSynced.products.map((p: any) => ({ ...p, isSynced: false })) || [],
+                    ...inventoryData?.synced.products.map((p: any) => ({ ...p, isSynced: true })) || [],
+                  ].map(p => ({
+                    id: p.id,
+                    itemId: p.itemId,
+                    name: p.name,
+                    sku: p.sku,
+                    modelYear: p.modelYear,
+                    categoryId: p.categoryId,
+                    totalQoh: p.totalQoh,
+                    totalSellable: p.totalSellable,
+                    isSynced: p.isSynced,
+                  }))}
+                  selectedProducts={selectedProducts}
+                  onProductToggle={handleProductToggle}
+                  onSelectAll={handleSelectAllProducts}
+                  onClearAll={handleClearAllProducts}
+                  onDeleteProducts={handleDeleteProducts}
+                />
+              ) : (
+                <InventoryLogsView />
+              )}
             </div>
           </>
         )}

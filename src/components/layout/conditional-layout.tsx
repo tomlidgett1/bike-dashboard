@@ -22,14 +22,16 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
   // Check if user is a verified bicycle store
   const isVerifiedStore = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
 
-  // Check if this is a marketplace route
+  // Check if this is a marketplace route or messages page
   const isMarketplace = pathname?.startsWith('/marketplace') || false;
+  const isMessages = pathname?.startsWith('/messages') || false;
   const isLogin = pathname?.startsWith('/login') || false;
   const isAuth = pathname?.startsWith('/auth') || false;
   const isOnboarding = pathname?.startsWith('/onboarding') || false;
 
-  // Don't wrap marketplace, login, auth, or onboarding pages with dashboard layout
-  if (isMarketplace || isLogin || isAuth || isOnboarding) {
+  // Don't wrap marketplace, messages, login, auth, or onboarding pages with dashboard layout
+  // These pages manage their own layout
+  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding) {
     return <>{children}</>;
   }
 

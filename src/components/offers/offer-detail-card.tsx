@@ -41,6 +41,10 @@ export function OfferDetailCard({
   onCounter,
   onCancel,
   onMessage,
+  accepting,
+  rejecting,
+  countering,
+  cancelling,
 }: OfferDetailCardProps) {
   const { user } = useAuth();
   const [imageError, setImageError] = useState(false);
@@ -226,9 +230,19 @@ export function OfferDetailCard({
                 onClick={onAccept}
                 className="w-full rounded-md"
                 size="lg"
+                disabled={accepting || rejecting || countering || cancelling}
               >
-                <Check className="h-4 w-4 mr-2" />
-                Accept Offer
+                {accepting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Accepting...
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Accept Offer
+                  </>
+                )}
               </Button>
             )}
             <div className="flex gap-2">
@@ -237,9 +251,19 @@ export function OfferDetailCard({
                   onClick={onReject}
                   variant="outline"
                   className="flex-1 rounded-md"
+                  disabled={accepting || rejecting || countering || cancelling}
                 >
-                  <X className="h-4 w-4 mr-2" />
-                  Reject
+                  {rejecting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Rejecting...
+                    </>
+                  ) : (
+                    <>
+                      <X className="h-4 w-4 mr-2" />
+                      Reject
+                    </>
+                  )}
                 </Button>
               )}
               {showCounter && (
@@ -247,6 +271,7 @@ export function OfferDetailCard({
                   onClick={onCounter}
                   variant="outline"
                   className="flex-1 rounded-md"
+                  disabled={accepting || rejecting || countering || cancelling}
                 >
                   <Reply className="h-4 w-4 mr-2" />
                   Counter
@@ -257,9 +282,19 @@ export function OfferDetailCard({
                   onClick={onCancel}
                   variant="outline"
                   className="w-full rounded-md"
+                  disabled={accepting || rejecting || countering || cancelling}
                 >
-                  <Ban className="h-4 w-4 mr-2" />
-                  Cancel Offer
+                  {cancelling ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Cancelling...
+                    </>
+                  ) : (
+                    <>
+                      <Ban className="h-4 w-4 mr-2" />
+                      Cancel Offer
+                    </>
+                  )}
                 </Button>
               )}
             </div>

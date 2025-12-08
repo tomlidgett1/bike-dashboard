@@ -290,15 +290,21 @@ export async function GET(request: NextRequest) {
     // Get other participants for each conversation
     const { data: allParticipants } = await supabase
       .from('conversation_participants')
-      .select(
-        `
-        conversation_id,
-        user_id,
-        users!user_id(user_id, name, business_name, logo_url)
-      `
-      )
+      .select('conversation_id, user_id')
       .in('conversation_id', conversationIds)
       .neq('user_id', user.id);
+
+    // Get user IDs from participants
+    const participantUserIds = [...new Set(allParticipants?.map((p: any) => p.user_id) || [])];
+    
+    // Fetch user details separately
+    const { data: participantUsers } = await supabase
+      .from('users')
+      .select('user_id, name, business_name, logo_url')
+      .in('user_id', participantUserIds);
+    
+    // Create a map of user_id to user details
+    const usersMap = new Map(participantUsers?.map(u => [u.user_id, u]) || []);
 
     // Get last message for each conversation
     const { data: lastMessages } = await supabase
@@ -326,12 +332,15 @@ export async function GET(request: NextRequest) {
       const otherParticipants =
         allParticipants
           ?.filter((p: any) => p.conversation_id === conv.id)
-          .map((p: any) => ({
-            user_id: p.users.user_id,
-            name: p.users.name || '',
-            business_name: p.users.business_name || '',
-            logo_url: p.users.logo_url || null,
-          })) || [];
+          .map((p: any) => {
+            const userDetails = usersMap.get(p.user_id);
+            return {
+              user_id: p.user_id,
+              name: userDetails?.name || '',
+              business_name: userDetails?.business_name || '',
+              logo_url: userDetails?.logo_url || null,
+            };
+          }) || [];
 
       // Get last message
       const lastMessage = lastMessages?.find(

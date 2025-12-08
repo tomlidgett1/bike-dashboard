@@ -227,6 +227,10 @@ export interface OfferDetailCardProps {
   onCounter?: () => void;
   onCancel?: () => void;
   onMessage?: () => void;
+  accepting?: boolean;
+  rejecting?: boolean;
+  countering?: boolean;
+  cancelling?: boolean;
 }
 
 export interface CounterOfferModalProps {

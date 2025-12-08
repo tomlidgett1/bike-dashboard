@@ -272,7 +272,62 @@ export type ListingAnalysisResult = {
     pricing?: number;
   };
   analysis_notes?: string;
+  // Web Search Enrichment (NEW)
+  web_enrichment?: {
+    product_description?: string;
+    technical_specs?: Record<string, string>;
+    category_classification?: {
+      level1?: string;
+      level2?: string;
+      level3?: string;
+    };
+    market_pricing?: {
+      min_aud?: number;
+      max_aud?: number;
+      sources?: string[];
+    };
+    compatibility_info?: string;
+    model_year_confirmed?: string;
+  };
+  data_sources?: {
+    [key: string]: "image" | "web" | "both";
+  };
+  search_urls?: Array<{
+    url: string;
+    type: "manufacturer" | "retailer" | "review" | "forum" | "other";
+    relevance?: number;
+  }>;
+  structured_metadata?: {
+    bike?: {
+      frame_size?: string;
+      frame_material?: string;
+      bike_type?: string;
+      groupset?: string;
+      wheel_size?: string;
+      suspension_type?: string;
+      color_primary?: string;
+      color_secondary?: string;
+    };
+    part?: {
+      part_type_detail?: string;
+      compatibility_notes?: string;
+      material?: string;
+      weight?: string;
+    };
+    apparel?: {
+      size?: string;
+      gender_fit?: string;
+      apparel_material?: string;
+    };
+    confidence?: {
+      brand?: number;
+      model?: number;
+      specs?: number;
+      pricing?: number;
+    };
+  };
 };
+
 
 
 
