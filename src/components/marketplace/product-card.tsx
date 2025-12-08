@@ -173,18 +173,19 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({ p
           {/* Wishlist Button */}
           <button
             onClick={handleLikeToggle}
-            className={`absolute top-2.5 right-2.5 p-2 rounded-full transition-all duration-200 ${
+            className={`absolute top-2.5 right-2.5 transition-all duration-200 ${
               isLiked 
-                ? "bg-white shadow-md" 
-                : "bg-white/80 opacity-0 group-hover:opacity-100 hover:bg-white hover:shadow-md"
+                ? "opacity-100" 
+                : "opacity-0 group-hover:opacity-100"
             }`}
           >
             <Heart
-              className={`h-4 w-4 transition-colors duration-200 ${
+              className={`h-5 w-5 transition-colors duration-200 ${
                 isLiked 
                   ? "fill-red-500 stroke-red-500" 
-                  : "stroke-gray-600"
+                  : "stroke-white"
               }`}
+              style={{ filter: isLiked ? 'none' : 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}
             />
           </button>
         </div>

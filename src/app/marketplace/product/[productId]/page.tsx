@@ -1,26 +1,15 @@
-"use client";
+import * as React from "react";
+import { notFound } from "next/navigation";
+import { createClient } from '@/lib/supabase/server';
+import { ProductPageClient } from "./product-page-client";
+import type { MarketplaceProduct } from "@/lib/types/marketplace";
+
+// ============================================================
+// Product Page - Server Component with Parallel Data Fetching
+// Fetches all data on server for optimal performance
+// ============================================================
 
 export const dynamic = 'force-dynamic';
-
-import * as React from "react";
-import { useParams, useRouter } from "next/navigation";
-import Image from "next/image";
-import { motion } from "framer-motion";
-import { Package } from "lucide-react";
-import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
-import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
-import { ProductDetailsPanel } from "@/components/marketplace/product-details-panel";
-import { EnhancedImageGallery } from "@/components/marketplace/product-detail/enhanced-image-gallery";
-import { RecommendationCarousel } from "@/components/marketplace/product-detail/recommendation-carousel";
-import type { MarketplaceProduct } from "@/lib/types/marketplace";
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/components/providers/auth-provider";
-import { useProductView } from "@/lib/tracking/interaction-tracker";
-
-// ============================================================
-// Product Page - Depop-inspired Layout
-// Full-page product view with breadcrumbs and two-column layout
-// ============================================================
 
 interface SellerInfo {
   id: string;
@@ -29,290 +18,236 @@ interface SellerInfo {
   account_type: string | null;
 }
 
-export default function ProductPage() {
-  const params = useParams();
-  const router = useRouter();
-  const productId = params?.productId as string;
-  const { user } = useAuth();
+// Helper function to fetch product data
+async function fetchProduct(productId: string): Promise<MarketplaceProduct | null> {
+  try {
+    const supabase = await createClient();
 
-  const [product, setProduct] = React.useState<MarketplaceProduct | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
-  const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
-  const [isLiked, setIsLiked] = React.useState(false);
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select(`
+        id,
+        description,
+        display_name,
+        price,
+        marketplace_category,
+        marketplace_subcategory,
+        marketplace_level_3_category,
+        qoh,
+        model_year,
+        created_at,
+        user_id,
+        canonical_product_id,
+        use_custom_image,
+        custom_image_url,
+        images,
+        listing_type,
+        listing_source,
+        listing_status,
+        published_at,
+        frame_size,
+        frame_material,
+        bike_type,
+        groupset,
+        wheel_size,
+        suspension_type,
+        bike_weight,
+        color_primary,
+        color_secondary,
+        part_type_detail,
+        compatibility_notes,
+        material,
+        weight,
+        size,
+        gender_fit,
+        apparel_material,
+        condition_rating,
+        condition_details,
+        wear_notes,
+        usage_estimate,
+        purchase_location,
+        purchase_date,
+        service_history,
+        upgrades_modifications,
+        reason_for_selling,
+        is_negotiable,
+        shipping_available,
+        shipping_cost,
+        pickup_location,
+        included_accessories,
+        seller_contact_preference,
+        seller_phone,
+        seller_email,
+        users!user_id (
+          business_name,
+          logo_url,
+          account_type
+        ),
+        canonical_products!canonical_product_id (
+          id,
+          product_images!canonical_product_id (
+            storage_path,
+            is_primary,
+            variants,
+            approval_status,
+            is_downloaded
+          )
+        )
+      `)
+      .eq('id', productId)
+      .or('listing_status.is.null,listing_status.eq.active')
+      .single();
 
-  // Recommendation states
-  const [similarProducts, setSimilarProducts] = React.useState<MarketplaceProduct[]>([]);
-  const [sellerProducts, setSellerProducts] = React.useState<MarketplaceProduct[]>([]);
-  const [sellerInfo, setSellerInfo] = React.useState<SellerInfo | null>(null);
-  const [similarLoading, setSimilarLoading] = React.useState(true);
-  const [sellerLoading, setSellerLoading] = React.useState(true);
-
-  // Track product view with dwell time
-  useProductView(productId, user?.id);
-
-  // Fetch product data
-  React.useEffect(() => {
-    const fetchProduct = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const response = await fetch(`/api/marketplace/products/${productId}`);
-        
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError("Product not found");
-          } else {
-            throw new Error("Failed to fetch product");
-          }
-          return;
-        }
-
-        const data = await response.json();
-        setProduct(data.product);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "An error occurred");
-        console.error("Error fetching product:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (productId) {
-      fetchProduct();
+    if (productError || !product) {
+      return null;
     }
-  }, [productId]);
 
-  // Fetch similar products and seller products in parallel
-  React.useEffect(() => {
-    if (!productId || loading) return;
+    // Fetch images from product_images table
+    const { data: productImagesFromTable } = await supabase
+      .from('product_images')
+      .select(`
+        id,
+        cloudinary_url,
+        card_url,
+        thumbnail_url,
+        detail_url,
+        external_url,
+        is_primary,
+        sort_order,
+        approval_status
+      `)
+      .eq('product_id', productId)
+      .eq('approval_status', 'approved')
+      .order('is_primary', { ascending: false })
+      .order('sort_order', { ascending: true });
 
-    const fetchRecommendations = async () => {
-      // Fetch similar products
-      const fetchSimilar = async () => {
-        try {
-          setSimilarLoading(true);
-          const response = await fetch(`/api/marketplace/products/${productId}/similar?limit=12`);
-          if (response.ok) {
-            const data = await response.json();
-            setSimilarProducts(data.products || []);
-          }
-        } catch (err) {
-          console.error("Error fetching similar products:", err);
-        } finally {
-          setSimilarLoading(false);
-        }
-      };
+    let allProductImages = productImagesFromTable || [];
+    if (allProductImages.length === 0 && product.canonical_product_id) {
+      const { data: canonicalImages } = await supabase
+        .from('product_images')
+        .select(`
+          id,
+          cloudinary_url,
+          card_url,
+          thumbnail_url,
+          detail_url,
+          external_url,
+          is_primary,
+          sort_order,
+          approval_status
+        `)
+        .eq('canonical_product_id', product.canonical_product_id)
+        .eq('approval_status', 'approved')
+        .order('is_primary', { ascending: false })
+        .order('sort_order', { ascending: true });
+      
+      allProductImages = canonicalImages || [];
+    }
 
-      // Fetch seller products
-      const fetchSellerProducts = async () => {
-        try {
-          setSellerLoading(true);
-          const response = await fetch(`/api/marketplace/products/${productId}/seller-products?limit=12`);
-          if (response.ok) {
-            const data = await response.json();
-            setSellerProducts(data.products || []);
-            setSellerInfo(data.seller || null);
-          }
-        } catch (err) {
-          console.error("Error fetching seller products:", err);
-        } finally {
-          setSellerLoading(false);
-        }
-      };
-
-      // Run both fetches in parallel
-      await Promise.all([fetchSimilar(), fetchSellerProducts()]);
-    };
-
-    fetchRecommendations();
-  }, [productId, loading]);
-
-  // Get all available images
-  const images = React.useMemo(() => {
-    if (!product) return [];
+    const user = (product.users as any);
+    let primaryImageUrl: string | null = null;
+    let allImages: string[] = [];
     
-    const imgs: string[] = [];
-    
-    // Priority 1: Manually uploaded images (in images JSONB field) - works for both listing types
-    if (Array.isArray((product as any).images) && (product as any).images.length > 0) {
-      const manualImages = (product as any).images as Array<{ url: string; order?: number; isPrimary?: boolean }>;
-      const filtered = manualImages
+    if (allProductImages.length > 0) {
+      const primaryImage = allProductImages.find((img: any) => img.is_primary) || allProductImages[0];
+      primaryImageUrl = primaryImage?.detail_url || primaryImage?.cloudinary_url || primaryImage?.card_url || null;
+      
+      allImages = allProductImages
+        .map((img: any) => img.detail_url || img.cloudinary_url || img.card_url)
+        .filter((url: string | null) => url && !url.startsWith('blob:'));
+    } else if (product.use_custom_image && product.custom_image_url) {
+      primaryImageUrl = product.custom_image_url;
+      allImages = [product.custom_image_url];
+    } else if (product.images && Array.isArray(product.images) && product.images.length > 0) {
+      const manualImages = product.images as Array<{ url: string; cardUrl?: string; detailUrl?: string; isPrimary?: boolean; order?: number }>;
+      const primaryManualImage = manualImages.find(img => img.isPrimary) || manualImages[0];
+      primaryImageUrl = primaryManualImage?.detailUrl || primaryManualImage?.url;
+      
+      allImages = manualImages
         .sort((a, b) => (a.order || 0) - (b.order || 0))
-        .map((img) => img.url)
-        .filter((url) => url && !url.startsWith("blob:"));
-      
-      if (filtered.length > 0) {
-        console.log(`📸 [PRODUCT PAGE] Using ${filtered.length} manually uploaded images`);
-        return filtered;
-      }
+        .map(img => img.detailUrl || img.url)
+        .filter(url => url && !url.startsWith('blob:'));
+    } else {
+      primaryImageUrl = '/placeholder-product.svg';
+      allImages = ['/placeholder-product.svg'];
     }
     
-    // Priority 2: For store inventory with all_images array (canonical images)
-    if (product.all_images && product.all_images.length > 0) {
-      return product.all_images;
-    }
-    
-    // Priority 3: Fallback to image variants
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    
-    if (product.image_variants && product.image_variants.original) {
-      imgs.push(`${baseUrl}/storage/v1/object/public/product-images/${product.image_variants.original}`);
-    } else if (product.primary_image_url && !product.primary_image_url.startsWith("blob:")) {
-      imgs.push(product.primary_image_url);
-    }
-    
-    return imgs.length > 0 ? imgs : ['/placeholder-product.svg'];
-  }, [product]);
-
-  // Loading state
-  if (loading) {
-    return (
-      <>
-        <MarketplaceHeader />
-        <div className="min-h-screen bg-gray-50 pt-16">
-          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="animate-pulse space-y-6">
-              {/* Breadcrumb skeleton */}
-              <div className="h-4 w-64 bg-gray-200 rounded" />
-              
-              {/* Two-column grid skeleton */}
-              <div className="grid grid-cols-1 lg:grid-cols-[60%_40%] gap-6 lg:gap-8">
-                {/* Left - Image skeleton */}
-                <div className="bg-white rounded-md h-[600px]" />
-                
-                {/* Right - Details skeleton */}
-                <div className="bg-white rounded-md p-6 space-y-4">
-                  <div className="h-6 w-3/4 bg-gray-200 rounded" />
-                  <div className="h-8 w-1/3 bg-gray-200 rounded" />
-                  <div className="h-12 w-full bg-gray-200 rounded-md" />
-                  <div className="h-12 w-full bg-gray-200 rounded-md" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </>
-    );
+    return {
+      ...product,
+      primary_image_url: primaryImageUrl,
+      all_images: allImages,
+      image_variants: null,
+      store_name: user?.business_name || 'Unknown Store',
+      store_logo_url: user?.logo_url || null,
+      store_account_type: user?.account_type || null,
+    };
+  } catch (error) {
+    console.error('Error fetching product:', error);
+    return null;
   }
-
-  // Error state
-  if (error || !product) {
-    return (
-      <>
-        <MarketplaceHeader />
-        <div className="min-h-screen bg-gray-50 pt-16 flex items-center justify-center">
-          <div className="text-center max-w-md px-4">
-            <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-              <Package className="h-10 w-10 text-gray-400" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              {error === "Product not found" ? "Product Not Found" : "Error Loading Product"}
-            </h1>
-            <p className="text-gray-600 mb-6">
-              {error === "Product not found"
-                ? "This product may have been sold or is no longer available."
-                : "We couldn't load this product. Please try again."}
-            </p>
-            <Button
-              onClick={() => router.push("/marketplace")}
-              className="bg-gray-900 hover:bg-gray-800 text-white rounded-md"
-            >
-              Back to Marketplace
-            </Button>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  // Build the "See All" href for similar products
-  const similarSeeAllHref = product.marketplace_subcategory
-    ? `/marketplace?level1=${encodeURIComponent(product.marketplace_category)}&level2=${encodeURIComponent(product.marketplace_subcategory)}`
-    : product.marketplace_category
-      ? `/marketplace?level1=${encodeURIComponent(product.marketplace_category)}`
-      : undefined;
-
-  // Build the "See All" href for seller products
-  const sellerSeeAllHref = sellerInfo
-    ? `/marketplace/${sellerInfo.account_type === 'bicycle_store' ? 'store' : 'seller'}/${sellerInfo.id}`
-    : undefined;
-
-  return (
-    <>
-      <MarketplaceHeader compactSearchOnMobile />
-      
-      {/* Main Content */}
-      <div className="min-h-screen bg-gray-50 pt-14 sm:pt-16">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
-        >
-          {/* Breadcrumbs - Hidden on mobile, shown on tablet+ */}
-          <div className="hidden sm:block max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 mb-4 sm:mb-6">
-            <ProductBreadcrumbs
-              level1={product.marketplace_category}
-              level2={product.marketplace_subcategory}
-              level3={product.marketplace_level_3_category}
-              productName={(product as any).display_name || product.description}
-            />
-          </div>
-
-          {/* Two-Column Layout */}
-          <div className="lg:max-w-[1400px] lg:mx-auto lg:px-8">
-            <div className="grid grid-cols-1 lg:grid-cols-[60%_40%] lg:gap-8">
-              {/* Left Column - Image Gallery (Full-width on mobile) */}
-              <div className="w-full">
-                <EnhancedImageGallery
-                  images={images}
-                  productName={(product as any).display_name || product.description}
-                  currentIndex={currentImageIndex}
-                  onIndexChange={setCurrentImageIndex}
-                  onLikeToggle={() => setIsLiked(!isLiked)}
-                  isLiked={isLiked}
-                />
-              </div>
-
-              {/* Right Column - Product Details */}
-              <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-hidden">
-                <ProductDetailsPanel product={product} />
-              </div>
-            </div>
-          </div>
-
-          {/* Recommendation Carousels */}
-          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 mt-6 sm:mt-10 pt-4 sm:pt-6 border-t border-gray-200">
-            {/* Similar Items Carousel */}
-            <RecommendationCarousel
-              title="Similar Items"
-              subtitle={product.marketplace_subcategory 
-                ? `More ${product.marketplace_subcategory.toLowerCase()} you might like`
-                : "Items you might also like"}
-              products={similarProducts}
-              isLoading={similarLoading}
-              icon="sparkles"
-              seeAllHref={similarSeeAllHref}
-              seeAllLabel="Browse Category"
-            />
-
-            {/* More from Seller Carousel */}
-            <RecommendationCarousel
-              title="More from this Seller"
-              subtitle={sellerInfo?.name ? `See more listings from ${sellerInfo.name}` : undefined}
-              products={sellerProducts}
-              isLoading={sellerLoading}
-              icon="store"
-              seeAllHref={sellerSeeAllHref}
-              seeAllLabel="View All Listings"
-              seller={sellerInfo}
-              className="mt-2"
-            />
-          </div>
-        </motion.div>
-      </div>
-    </>
-  );
 }
 
+// Helper function to fetch similar products
+async function fetchSimilarProducts(productId: string): Promise<MarketplaceProduct[]> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const response = await fetch(`${baseUrl}/api/marketplace/products/${productId}/similar?limit=12`, {
+      next: { revalidate: 300 } // Cache for 5 minutes
+    });
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    return data.products || [];
+  } catch (error) {
+    console.error('Error fetching similar products:', error);
+    return [];
+  }
+}
+
+// Helper function to fetch seller products
+async function fetchSellerProducts(productId: string): Promise<{ products: MarketplaceProduct[]; seller: SellerInfo | null }> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const response = await fetch(`${baseUrl}/api/marketplace/products/${productId}/seller-products?limit=12`, {
+      next: { revalidate: 300 } // Cache for 5 minutes
+    });
+    
+    if (!response.ok) return { products: [], seller: null };
+    
+    const data = await response.json();
+    return {
+      products: data.products || [],
+      seller: data.seller || null
+    };
+  } catch (error) {
+    console.error('Error fetching seller products:', error);
+    return { products: [], seller: null };
+  }
+}
+
+export default async function ProductPage({ params }: { params: Promise<{ productId: string }> }) {
+  const { productId } = await params;
+
+  // Fetch all data in parallel for maximum performance
+  const [product, similarProducts, sellerData] = await Promise.all([
+    fetchProduct(productId),
+    fetchSimilarProducts(productId),
+    fetchSellerProducts(productId),
+  ]);
+
+  // If product not found, show 404
+  if (!product) {
+    notFound();
+  }
+
+  // Pass all data to client component
+  return (
+    <ProductPageClient
+      product={product}
+      similarProducts={similarProducts}
+      sellerProducts={sellerData.products}
+      sellerInfo={sellerData.seller}
+    />
+  );
+}

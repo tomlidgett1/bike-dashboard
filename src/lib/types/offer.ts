@@ -217,6 +217,8 @@ export interface OfferCardProps {
   onCancel?: (offerId: string) => void;
   onViewDetails?: (offerId: string) => void;
   compact?: boolean;
+  loadingOfferId?: string | null; // ID of the offer currently being processed
+  loadingAction?: 'accept' | 'reject' | 'counter' | 'cancel'; // Which action is loading
 }
 
 export interface OfferDetailCardProps {

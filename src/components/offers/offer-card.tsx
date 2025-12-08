@@ -9,7 +9,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import { OfferStatusBadge } from './offer-status-badge';
 import { Button } from '@/components/ui/button';
-import { Check, X, Reply, Ban, MessageCircle, ChevronRight } from 'lucide-react';
+import { Check, X, Reply, Ban, MessageCircle, ChevronRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { OfferCardProps } from '@/lib/types/offer';
 import { canAcceptOffer, canRejectOffer, canCounterOffer, canCancelOffer, calculateSavings } from '@/lib/types/offer';
@@ -24,9 +24,17 @@ export function OfferCard({
   onCancel,
   onViewDetails,
   compact = false,
+  loadingOfferId,
+  loadingAction,
 }: OfferCardProps) {
   const { user } = useAuth();
   const [imageError, setImageError] = useState(false);
+  
+  const isLoading = loadingOfferId === offer.id;
+  const isAccepting = isLoading && loadingAction === 'accept';
+  const isRejecting = isLoading && loadingAction === 'reject';
+  const isCountering = isLoading && loadingAction === 'counter';
+  const isCancelling = isLoading && loadingAction === 'cancel';
 
   const savings = calculateSavings(offer.original_price, offer.offer_amount);
   const savingsPercentage = offer.offer_percentage || ((savings / offer.original_price) * 100);
@@ -115,15 +123,25 @@ export function OfferCard({
 
           {/* Action Buttons */}
           {!compact && (showAccept || showReject || showCounter || showCancel) && (
-            <div className="flex gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
               {showAccept && (
                 <Button
                   size="sm"
                   onClick={() => onAccept?.(offer.id)}
-                  className="rounded-md text-xs"
+                  disabled={isLoading}
+                  className="rounded-md text-xs flex-1 min-w-[90px]"
                 >
-                  <Check className="h-3.5 w-3.5 mr-1" />
-                  Accept
+                  {isAccepting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                      Accepting...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-3.5 w-3.5 mr-1" />
+                      Accept
+                    </>
+                  )}
                 </Button>
               )}
               {showReject && (
@@ -131,10 +149,20 @@ export function OfferCard({
                   size="sm"
                   variant="outline"
                   onClick={() => onReject?.(offer.id)}
-                  className="rounded-md text-xs"
+                  disabled={isLoading}
+                  className="rounded-md text-xs flex-1 min-w-[90px]"
                 >
-                  <X className="h-3.5 w-3.5 mr-1" />
-                  Reject
+                  {isRejecting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                      Rejecting...
+                    </>
+                  ) : (
+                    <>
+                      <X className="h-3.5 w-3.5 mr-1" />
+                      Reject
+                    </>
+                  )}
                 </Button>
               )}
               {showCounter && (
@@ -142,10 +170,20 @@ export function OfferCard({
                   size="sm"
                   variant="outline"
                   onClick={() => onCounter?.(offer.id)}
-                  className="rounded-md text-xs"
+                  disabled={isLoading}
+                  className="rounded-md text-xs flex-1 min-w-[90px]"
                 >
-                  <Reply className="h-3.5 w-3.5 mr-1" />
-                  Counter
+                  {isCountering ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                      Countering...
+                    </>
+                  ) : (
+                    <>
+                      <Reply className="h-3.5 w-3.5 mr-1" />
+                      Counter
+                    </>
+                  )}
                 </Button>
               )}
               {showCancel && (
@@ -153,10 +191,20 @@ export function OfferCard({
                   size="sm"
                   variant="outline"
                   onClick={() => onCancel?.(offer.id)}
-                  className="rounded-md text-xs"
+                  disabled={isLoading}
+                  className="rounded-md text-xs flex-1 min-w-[90px]"
                 >
-                  <Ban className="h-3.5 w-3.5 mr-1" />
-                  Cancel
+                  {isCancelling ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                      Cancelling...
+                    </>
+                  ) : (
+                    <>
+                      <Ban className="h-3.5 w-3.5 mr-1" />
+                      Cancel
+                    </>
+                  )}
                 </Button>
               )}
             </div>

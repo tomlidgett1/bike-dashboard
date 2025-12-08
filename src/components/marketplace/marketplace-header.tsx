@@ -88,8 +88,21 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
   const { openAuthModal } = useAuthModal();
   const supabase = createClient();
   
-  // Only fetch unread count if user is authenticated
-  const { counts } = useCombinedUnreadCount(user ? 30000 : 0); // 0 = disabled polling
+  // Defer unread count fetching until after initial render
+  // This prevents blocking the page load with unread count API calls
+  const [shouldFetchUnread, setShouldFetchUnread] = React.useState(false);
+  
+  React.useEffect(() => {
+    // Defer fetching by 500ms to prioritize page content
+    const timer = setTimeout(() => {
+      setShouldFetchUnread(true);
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, []);
+  
+  // Only fetch unread count if user is authenticated AND deferral period has passed
+  const { counts } = useCombinedUnreadCount(user && shouldFetchUnread ? 30000 : 0); // 0 = disabled polling
   const unreadCount = counts.total;
 
   // Ensure component only renders auth UI on client-side

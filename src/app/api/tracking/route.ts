@@ -107,6 +107,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Process asynchronously without blocking the response
+    const interactionCount = body.interactions.length;
+    processInteractionsAsync(body.interactions).catch(error => {
+      console.error('[Tracking API] Async processing error:', error);
+    });
+
+    // Return immediately with 202 Accepted
+    console.log('[Tracking API] Returning 202 Accepted (async processing)');
+    return NextResponse.json(
+      { success: true, processed: interactionCount, status: 'accepted' },
+      { 
+        status: 202,
+        headers: {
+          'Cache-Control': 'no-store',
+        }
+      }
+    );
+
+  } catch (error) {
+    console.error('[Tracking API] Unexpected error:', error);
+    console.error('[Tracking API] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    return NextResponse.json(
+      { 
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// Async processing function (non-blocking)
+async function processInteractionsAsync(interactions: QueuedInteraction[]) {
+  try {
     // Initialize Supabase client
     console.log('[Tracking API] Initializing Supabase client...');
     const supabase = await createClient();
@@ -121,7 +155,7 @@ export async function POST(request: NextRequest) {
     const validInteractions: any[] = [];
     const productScoreUpdates: Map<string, { type: string; count: number }> = new Map();
 
-    for (const interaction of body.interactions) {
+    for (const interaction of interactions) {
       // Validate interaction
       if (!interaction.sessionId || !interaction.interactionType) {
         continue; // Skip invalid interactions
@@ -163,7 +197,7 @@ export async function POST(request: NextRequest) {
 
     if (validInteractions.length === 0) {
       console.log('[Tracking API] No valid interactions to process');
-      return NextResponse.json({ success: true, processed: 0 });
+      return;
     }
 
     console.log('[Tracking API] Inserting', validInteractions.length, 'interactions...');
@@ -187,22 +221,7 @@ export async function POST(request: NextRequest) {
       console.error('[Tracking API] Error details:', insertError.details);
       console.error('[Tracking API] Error hint:', insertError.hint);
       console.error('[Tracking API] Failed interaction data:', JSON.stringify(validInteractions[0], null, 2));
-      
-      return NextResponse.json(
-        { 
-          error: 'Failed to store interactions',
-          message: insertError.message,
-          code: insertError.code,
-          details: insertError.details,
-          hint: insertError.hint,
-          sample_data: {
-            session_id: validInteractions[0]?.session_id,
-            product_id: validInteractions[0]?.product_id,
-            interaction_type: validInteractions[0]?.interaction_type,
-          }
-        },
-        { status: 500 }
-      );
+      return; // Don't throw - just log and return
     }
     
     console.log('[Tracking API] ✅ Insert successful, inserted', insertedData?.length || 0, 'rows');
@@ -256,22 +275,14 @@ export async function POST(request: NextRequest) {
       })();
     }
 
-    console.log('[Tracking API] Returning success response');
-    return NextResponse.json({
-      success: true,
-      processed: validInteractions.length,
-    });
+    console.log('[Tracking API] Async processing completed successfully');
+    return;
 
   } catch (error) {
-    console.error('[Tracking API] Unexpected error:', error);
+    console.error('[Tracking API] Async processing error:', error);
     console.error('[Tracking API] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-    return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    );
+    // Don't throw - this is async processing
+    return;
   }
 }
 

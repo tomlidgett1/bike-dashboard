@@ -118,12 +118,14 @@ function MarketplacePageContent() {
   );
   const prevFilterKeyRef = React.useRef(filterKey);
   const processedDataRef = React.useRef<Set<string>>(new Set());
+  const lastProcessedPageRef = React.useRef(0);
+  const lastDataHashRef = React.useRef<string>('');
 
-  // Create stable params object
+  // Create stable params object - DON'T include page in SWR key for pagination
   const marketplaceParams = React.useMemo(() => ({
     viewMode,
-    page: currentPage,
-    pageSize: 50,
+    page: 1, // Always fetch page 1 from SWR, handle pagination manually
+    pageSize: 200, // Load 200 products per page
     level1: selectedLevel1,
     level2: selectedLevel2,
     level3: selectedLevel3,
@@ -137,7 +139,7 @@ function MarketplacePageContent() {
     condition: advancedFilters.condition !== 'all' ? advancedFilters.condition : null,
     sortBy: advancedFilters.sortBy,
     brand: advancedFilters.brand || null,
-  }), [viewMode, currentPage, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, advancedFilters]);
+  }), [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, advancedFilters]);
 
   // Use SWR for products data with intelligent caching
   const { 
@@ -154,52 +156,52 @@ function MarketplacePageContent() {
     }
   );
 
-  // Handle filter changes and product accumulation
-  // This effect ONLY handles data population, NOT filter resets (those are done in handlers)
+  // Handle initial page load from SWR (page 1 only)
+  // Pagination is handled manually in handleLoadMore
   React.useEffect(() => {
+    // Create a hash of current fetched products to detect data changes
+    const currentDataHash = fetchedProducts.map(p => p.id).join(',');
+    
     // Check if filters changed
     const filtersChanged = filterKey !== prevFilterKeyRef.current;
     
+    // Check if data actually changed (new products arrived from SWR)
+    const dataChanged = currentDataHash !== lastDataHashRef.current && currentDataHash !== '';
+    
+    console.log('[MARKETPLACE] SWR Effect triggered:', {
+      filtersChanged,
+      dataChanged,
+      isValidating,
+      fetchedCount: fetchedProducts.length,
+      accumulatedCount: accumulatedProducts.length,
+    });
+    
     if (filtersChanged) {
-      // Filters changed - update tracking ref
+      // Filters changed - reset everything
+      console.log('[MARKETPLACE] Filter changed, resetting...');
       prevFilterKeyRef.current = filterKey;
+      lastProcessedPageRef.current = 0;
+      lastDataHashRef.current = '';
       
-      // IMPORTANT: Don't populate products here if we're validating
-      // The handler already cleared products, wait for fresh data
-      // SWR's keepPreviousData means fetchedProducts might be stale
+      // Wait for fresh data if validating
       if (!isValidating && fetchedProducts.length > 0) {
-        // Only use data if we're NOT currently fetching new data
-        // This ensures we don't accidentally show stale data
+        console.log('[MARKETPLACE] Setting initial products from SWR');
         setAccumulatedProducts(fetchedProducts);
         processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
+        lastDataHashRef.current = currentDataHash;
       }
-      // If isValidating is true, products stay empty (cleared by handler)
-      // and loading state will be shown
-    } else if (fetchedProducts.length > 0 && !isValidating) {
-      // Same filter, not validating - check if we have genuinely new data
-      const hasNewData = fetchedProducts.some(p => !processedDataRef.current.has(p.id));
+    } else if (dataChanged && fetchedProducts.length > 0) {
+      // Data changed - this is page 1 data from SWR
+      const needsInitialData = accumulatedProducts.length === 0;
       
-      // Also handle the case where we cleared products waiting for new data
-      const needsInitialData = accumulatedProducts.length === 0 && processedDataRef.current.size === 0;
-      
-      if (hasNewData || needsInitialData) {
-        if (currentPage === 1) {
-          setAccumulatedProducts(fetchedProducts);
-          processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
-        } else {
-          setAccumulatedProducts(prev => {
-            // Only add products we haven't seen before
-            const newProducts = fetchedProducts.filter(
-              p => !processedDataRef.current.has(p.id)
-            );
-            return [...prev, ...newProducts];
-          });
-          // Mark these products as processed
-          fetchedProducts.forEach(p => processedDataRef.current.add(p.id));
-        }
+      if (needsInitialData) {
+        console.log('[MARKETPLACE] Setting initial page 1 data:', fetchedProducts.length, 'products');
+        setAccumulatedProducts(fetchedProducts);
+        processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
+        lastDataHashRef.current = currentDataHash;
       }
     }
-  }, [fetchedProducts, currentPage, filterKey, accumulatedProducts.length, isValidating]);
+  }, [fetchedProducts, filterKey, accumulatedProducts.length, isValidating]);
 
   // Derive display state
   const products = accumulatedProducts;
@@ -278,9 +280,102 @@ function MarketplacePageContent() {
     router.replace(newUrl, { scroll: false });
   }, [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, isStoresView, isSellersView, router]);
 
-  const handleLoadMore = () => {
-    if (!isValidating && hasMore) {
-      setCurrentPage(prev => prev + 1);
+  const handleLoadMore = async () => {
+    if (isValidating || !hasMore) return;
+    
+    const nextPage = currentPage + 1;
+    console.log('[MARKETPLACE] Loading more products, page:', nextPage);
+    
+    try {
+      // Build the URL for the next page
+      const params = new URLSearchParams();
+      params.set('page', String(nextPage));
+      params.set('pageSize', '200'); // Load 200 products per page
+      
+      if (listingTypeFilter === 'stores') {
+        params.set('listingType', 'store_inventory');
+      } else if (listingTypeFilter === 'individuals') {
+        params.set('listingType', 'private_listing');
+      }
+      
+      if (advancedFilters.minPrice) params.set('minPrice', advancedFilters.minPrice);
+      if (advancedFilters.maxPrice) params.set('maxPrice', advancedFilters.maxPrice);
+      if (advancedFilters.condition && advancedFilters.condition !== 'all') {
+        params.set('condition', advancedFilters.condition);
+      }
+      if (advancedFilters.sortBy && advancedFilters.sortBy !== 'newest') {
+        params.set('sortBy', advancedFilters.sortBy);
+      }
+      if (advancedFilters.brand) params.set('brand', advancedFilters.brand);
+      
+      let endpoint = '';
+      if (searchQuery) {
+        params.set('search', searchQuery);
+        if (selectedLevel1) params.set('level1', selectedLevel1);
+        if (selectedLevel2) params.set('level2', selectedLevel2);
+        if (selectedLevel3) params.set('level3', selectedLevel3);
+        endpoint = `/api/marketplace/products?${params}`;
+      } else {
+        switch (viewMode) {
+          case 'trending':
+            params.delete('pageSize');
+            params.set('limit', '200'); // Load 200 products per page
+            if (selectedLevel1) {
+              params.delete('level1');
+              params.set('category', selectedLevel1);
+            }
+            endpoint = `/api/marketplace/trending?${params}`;
+            break;
+          
+          case 'for-you':
+            params.delete('pageSize');
+            params.set('limit', '200'); // Load 200 products per page
+            params.set('enrich', 'true');
+            if (selectedLevel1) params.set('level1', selectedLevel1);
+            if (selectedLevel2) params.set('level2', selectedLevel2);
+            if (selectedLevel3) params.set('level3', selectedLevel3);
+            endpoint = `/api/recommendations/for-you?${params}`;
+            break;
+          
+          case 'all':
+            if (selectedLevel1) params.set('level1', selectedLevel1);
+            if (selectedLevel2) params.set('level2', selectedLevel2);
+            if (selectedLevel3) params.set('level3', selectedLevel3);
+            endpoint = `/api/marketplace/products?${params}`;
+            break;
+        }
+      }
+      
+      console.log('[MARKETPLACE] Fetching:', endpoint);
+      const response = await fetch(endpoint);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch more products');
+      }
+      
+      const data = await response.json();
+      const newProducts = data.products || data.recommendations || [];
+      
+      console.log('[MARKETPLACE] Received products:', newProducts.length);
+      
+      // Add new products to accumulated list
+      setAccumulatedProducts(prev => {
+        const filtered = newProducts.filter((p: any) => !processedDataRef.current.has(p.id));
+        console.log('[MARKETPLACE] Adding', filtered.length, 'new products (filtered duplicates)');
+        return [...prev, ...filtered];
+      });
+      
+      // Update refs
+      newProducts.forEach((p: any) => processedDataRef.current.add(p.id));
+      setCurrentPage(nextPage);
+      
+      // Update pagination state if provided
+      if (data.pagination) {
+        // Note: We can't easily update the SWR pagination state, 
+        // but we can track hasMore locally if needed
+      }
+    } catch (error) {
+      console.error('[MARKETPLACE] Error loading more products:', error);
     }
   };
 
@@ -639,7 +734,7 @@ function MarketplacePageContent() {
                 {/* Loading State - Amazon-style instant skeletons */}
                 {loading && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-4">
-                    {Array.from({ length: 24 }).map((_, i) => (
+                    {Array.from({ length: 36 }).map((_, i) => (
                       <ProductCardSkeleton key={i} />
                     ))}
                   </div>
@@ -775,7 +870,7 @@ function MarketplacePageContent() {
                         <ProductCard 
                           key={product.id} 
                           product={product}
-                          priority={index < 6} 
+                          priority={index < 18} // Prioritize first 18 images (top 3 rows on XL screens)
                         />
                       ))}
                     </div>

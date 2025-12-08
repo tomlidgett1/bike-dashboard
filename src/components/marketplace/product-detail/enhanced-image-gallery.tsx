@@ -101,6 +101,10 @@ export function EnhancedImageGallery({
         fill
         className="object-cover"
         sizes="(max-width: 1024px) 50vw, 33vw"
+        priority={index < 2} // Prioritize first 2 images for faster LCP
+        placeholder="blur"
+        blurDataURL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iI2YzZjRmNiIvPjwvc3ZnPg=="
+        quality={85} // High quality for product images
       />
       {showOverlay && overlayCount > 0 && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -263,6 +267,8 @@ export function EnhancedImageGallery({
                   fill
                   className="object-contain"
                   sizes="100vw"
+                  priority
+                  quality={90}
                 />
               </div>
 
@@ -320,6 +326,7 @@ export function EnhancedImageGallery({
                       fill
                       className="object-cover"
                       sizes="48px"
+                      quality={60}
                     />
                   </button>
                 ))}

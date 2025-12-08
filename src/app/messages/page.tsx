@@ -20,6 +20,7 @@ import { MessageComposer } from '@/components/messages/message-composer';
 import { OffersList } from '@/components/offers/offers-list';
 import { OfferDetailCard } from '@/components/offers/offer-detail-card';
 import { CounterOfferModal } from '@/components/offers/counter-offer-modal';
+import { OfferConfirmationDialog } from '@/components/offers/offer-confirmation-dialog';
 import { MarketplaceHeader } from '@/components/marketplace/marketplace-header';
 import { MarketplaceSidebar } from '@/components/layout/marketplace-sidebar';
 import { Button } from '@/components/ui/button';
@@ -59,6 +60,15 @@ function MessagesPageInner() {
   const [offerStatusFilter, setOfferStatusFilter] = useState<OfferStatus | undefined>();
   const [counterOfferModalOpen, setCounterOfferModalOpen] = useState(false);
   const [selectedOfferForCounter, setSelectedOfferForCounter] = useState<EnrichedOffer | null>(null);
+  
+  // Confirmation dialog state
+  const [confirmationDialogOpen, setConfirmationDialogOpen] = useState(false);
+  const [confirmationAction, setConfirmationAction] = useState<'accept' | 'reject' | 'cancel'>('accept');
+  const [offerToConfirm, setOfferToConfirm] = useState<EnrichedOffer | null>(null);
+  
+  // Loading state for list
+  const [loadingOfferId, setLoadingOfferId] = useState<string | null>(null);
+  const [loadingAction, setLoadingAction] = useState<'accept' | 'reject' | 'counter' | 'cancel' | null>(null);
   
   // Offer mutations
   const { acceptOffer, accepting } = useAcceptOffer();
@@ -149,38 +159,102 @@ function MessagesPageInner() {
     setMobileNavHidden(true);
   };
 
-  const handleAcceptOffer = async (offerId?: string) => {
-    const idToUse = offerId || activeOfferId;
-    if (!idToUse) return;
+  const handleAcceptOfferClick = async (offerId: string) => {
+    // Fetch the offer details first
+    setLoadingOfferId(offerId);
+    setLoadingAction('accept');
+    
     try {
-      await acceptOffer(idToUse);
-      // Refresh the offers list or show success message
-      if (!offerId) {
+      const response = await fetch(`/api/offers/${offerId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setOfferToConfirm(data.offer);
+        setConfirmationAction('accept');
+        setConfirmationDialogOpen(true);
+      }
+    } catch (error) {
+      console.error('Error fetching offer:', error);
+    } finally {
+      setLoadingOfferId(null);
+      setLoadingAction(null);
+    }
+  };
+
+  const handleRejectOfferClick = async (offerId: string) => {
+    // Fetch the offer details first
+    setLoadingOfferId(offerId);
+    setLoadingAction('reject');
+    
+    try {
+      const response = await fetch(`/api/offers/${offerId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setOfferToConfirm(data.offer);
+        setConfirmationAction('reject');
+        setConfirmationDialogOpen(true);
+      }
+    } catch (error) {
+      console.error('Error fetching offer:', error);
+    } finally {
+      setLoadingOfferId(null);
+      setLoadingAction(null);
+    }
+  };
+  
+  const confirmOfferAction = async () => {
+    if (!offerToConfirm) return;
+    
+    setLoadingOfferId(offerToConfirm.id);
+    setLoadingAction(confirmationAction === 'cancel' ? 'cancel' : confirmationAction);
+    
+    try {
+      if (confirmationAction === 'accept') {
+        await acceptOffer(offerToConfirm.id);
+      } else if (confirmationAction === 'reject') {
+        await rejectOffer(offerToConfirm.id);
+      } else if (confirmationAction === 'cancel') {
+        await cancelOffer(offerToConfirm.id);
+      }
+      
+      // Close dialog and reset state
+      setConfirmationDialogOpen(false);
+      setOfferToConfirm(null);
+      
+      // If in detail view, close it
+      if (offerToConfirm.id === activeOfferId) {
         setActiveOfferId(null);
         setShowOfferDetailOnMobile(false);
         setMobileNavHidden(false);
       }
     } catch (error) {
-      console.error('Error accepting offer:', error);
+      console.error('Error performing offer action:', error);
+    } finally {
+      setLoadingOfferId(null);
+      setLoadingAction(null);
     }
   };
 
-  const handleRejectOffer = async (offerId?: string) => {
-    const idToUse = offerId || activeOfferId;
-    if (!idToUse) return;
+  const handleCounterOfferClick = async (offerId: string) => {
+    // Fetch the offer details first
+    setLoadingOfferId(offerId);
+    setLoadingAction('counter');
+    
     try {
-      await rejectOffer(idToUse);
-      if (!offerId) {
-        setActiveOfferId(null);
-        setShowOfferDetailOnMobile(false);
-        setMobileNavHidden(false);
+      const response = await fetch(`/api/offers/${offerId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setSelectedOfferForCounter(data.offer);
+        setCounterOfferModalOpen(true);
       }
     } catch (error) {
-      console.error('Error rejecting offer:', error);
+      console.error('Error fetching offer:', error);
+    } finally {
+      setLoadingOfferId(null);
+      setLoadingAction(null);
     }
   };
 
-  const handleCounterOffer = () => {
+  const handleCounterOfferDetail = () => {
     if (activeOffer) {
       setSelectedOfferForCounter(activeOffer);
       setCounterOfferModalOpen(true);
@@ -199,19 +273,47 @@ function MessagesPageInner() {
     }
   };
 
-  const handleCancelOffer = async (offerId?: string) => {
-    const idToUse = offerId || activeOfferId;
-    if (!idToUse) return;
+  const handleCancelOfferClick = async (offerId: string) => {
+    // Fetch the offer details first
+    setLoadingOfferId(offerId);
+    setLoadingAction('cancel');
+    
     try {
-      await cancelOffer(idToUse);
-      if (!offerId) {
-        setActiveOfferId(null);
-        setShowOfferDetailOnMobile(false);
-        setMobileNavHidden(false);
+      const response = await fetch(`/api/offers/${offerId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setOfferToConfirm(data.offer);
+        setConfirmationAction('cancel');
+        setConfirmationDialogOpen(true);
       }
     } catch (error) {
-      console.error('Error cancelling offer:', error);
+      console.error('Error fetching offer:', error);
+    } finally {
+      setLoadingOfferId(null);
+      setLoadingAction(null);
     }
+  };
+  
+  // Handler for detail card (already has offer loaded)
+  const handleAcceptOfferDetail = async () => {
+    if (!activeOffer) return;
+    setOfferToConfirm(activeOffer);
+    setConfirmationAction('accept');
+    setConfirmationDialogOpen(true);
+  };
+
+  const handleRejectOfferDetail = async () => {
+    if (!activeOffer) return;
+    setOfferToConfirm(activeOffer);
+    setConfirmationAction('reject');
+    setConfirmationDialogOpen(true);
+  };
+
+  const handleCancelOfferDetail = async () => {
+    if (!activeOffer) return;
+    setOfferToConfirm(activeOffer);
+    setConfirmationAction('cancel');
+    setConfirmationDialogOpen(true);
   };
 
   const handleTabChange = (tab: 'messages' | 'offers') => {
@@ -392,14 +494,12 @@ function MessagesPageInner() {
               role={offerRole}
               statusFilter={offerStatusFilter}
               onOfferClick={handleOfferClick}
-              onAccept={handleAcceptOffer}
-              onReject={handleRejectOffer}
-              onCounter={(offerId) => {
-                setActiveOfferId(offerId);
-                refreshActiveOffer();
-                handleCounterOffer();
-              }}
-              onCancel={handleCancelOffer}
+              onAccept={handleAcceptOfferClick}
+              onReject={handleRejectOfferClick}
+              onCounter={handleCounterOfferClick}
+              onCancel={handleCancelOfferClick}
+              loadingOfferId={loadingOfferId}
+              loadingAction={loadingAction}
             />
           )}
         </div>
@@ -530,10 +630,10 @@ function MessagesPageInner() {
               <OfferDetailCard
                 offer={activeOffer}
                 role={offerRole}
-                onAccept={handleAcceptOffer}
-                onReject={handleRejectOffer}
-                onCounter={handleCounterOffer}
-                onCancel={handleCancelOffer}
+                onAccept={handleAcceptOfferDetail}
+                onReject={handleRejectOfferDetail}
+                onCounter={handleCounterOfferDetail}
+                onCancel={handleCancelOfferDetail}
                 onMessage={() => {
                   // TODO: Navigate to create conversation with the other party
                 }}
@@ -579,6 +679,21 @@ function MessagesPageInner() {
             setSelectedOfferForCounter(null);
           }}
           onSubmit={handleSubmitCounterOffer}
+        />
+      )}
+
+      {/* Confirmation Dialog */}
+      {offerToConfirm && (
+        <OfferConfirmationDialog
+          isOpen={confirmationDialogOpen}
+          onClose={() => {
+            setConfirmationDialogOpen(false);
+            setOfferToConfirm(null);
+          }}
+          onConfirm={confirmOfferAction}
+          offer={offerToConfirm}
+          action={confirmationAction}
+          loading={loadingOfferId === offerToConfirm.id}
         />
       )}
       </div>

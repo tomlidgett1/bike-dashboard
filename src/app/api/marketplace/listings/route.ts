@@ -1,6 +1,70 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+// Helper function to find or create canonical product with AI categorisation
+async function ensureCanonicalProduct(
+  supabase: any,
+  productData: {
+    description: string;
+    upc?: string | null;
+    brand?: string | null;
+    manufacturer?: string | null;
+  }
+): Promise<{ canonical_product_id: string; categories?: any }> {
+  const normalizedName = productData.description
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, ' ');
+  
+  const normalizedUpc = productData.upc?.trim().toUpperCase().replace(/\s+/g, '') || null;
+  
+  // Try to find existing canonical product
+  let query = supabase.from('canonical_products').select('id, marketplace_category, marketplace_subcategory, marketplace_level_3_category, display_name');
+  
+  if (normalizedUpc) {
+    query = query.eq('upc', normalizedUpc);
+  } else {
+    query = query.eq('normalized_name', normalizedName);
+  }
+  
+  const { data: existing } = await query.maybeSingle();
+  
+  if (existing) {
+    return {
+      canonical_product_id: existing.id,
+      categories: existing.marketplace_category ? {
+        marketplace_category: existing.marketplace_category,
+        marketplace_subcategory: existing.marketplace_subcategory,
+        marketplace_level_3_category: existing.marketplace_level_3_category,
+        display_name: existing.display_name,
+      } : undefined,
+    };
+  }
+  
+  // Create new canonical product
+  const { data: newCanonical, error } = await supabase
+    .from('canonical_products')
+    .insert({
+      upc: normalizedUpc,
+      normalized_name: normalizedName,
+      manufacturer: productData.manufacturer || productData.brand || null,
+      cleaned: false,
+    })
+    .select('id')
+    .single();
+  
+  if (error) {
+    throw new Error(`Failed to create canonical product: ${error.message}`);
+  }
+  
+  // Note: AI categorisation will be triggered by the categorise-canonical-products function
+  // or can be done on-demand. For now, the product will be inserted without categories
+  // and the database trigger will handle copying once categories are set.
+  
+  return { canonical_product_id: newCanonical.id };
+}
+
 // ============================================================
 // POST /api/marketplace/listings
 // Create a new listing
@@ -22,14 +86,31 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
+    // ============================================================
+    // Ensure Canonical Product exists
+    // ============================================================
+    let canonical_product_id = body.canonical_product_id;
+    
+    if (!canonical_product_id) {
+      // Create canonical product if not provided
+      const canonicalResult = await ensureCanonicalProduct(supabase, {
+        description: body.title || body.description || "Untitled Product",
+        upc: body.upc,
+        brand: body.brand,
+        manufacturer: body.manufacturer,
+      });
+      canonical_product_id = canonicalResult.canonical_product_id;
+    }
+
     // Map form data to database schema
-    // Note: We no longer store images in JSONB - they go to product_images table
+    // Note: Categories will be copied from canonical_products via database trigger
     const listingData = {
       user_id: user.id,
       listing_type: "private_listing",
       listing_source: body.facebook_source_url ? "facebook_import" : "manual",
       listing_status: body.listingStatus || "draft",
       facebook_source_url: body.facebook_source_url,
+      canonical_product_id: canonical_product_id, // Link to canonical product
 
       // Basic info
       description: body.title || "", // description field is the display name/title
@@ -37,12 +118,9 @@ export async function POST(request: NextRequest) {
       model: body.model,
       model_year: body.modelYear,
       price: body.price,
-      marketplace_category:
-        body.itemType === "bike"
-          ? "Bicycles"
-          : body.itemType === "part"
-          ? "Parts"
-          : "Apparel",
+      // Categories will be auto-populated from canonical_products via trigger
+      // But we can set them explicitly if provided (they'll be overwritten by trigger if canonical has categories)
+      marketplace_category: body.marketplace_category,
       marketplace_subcategory: body.marketplace_subcategory,
 
       // Bike fields

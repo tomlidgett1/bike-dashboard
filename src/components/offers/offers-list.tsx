@@ -20,6 +20,8 @@ interface OffersListProps {
   onReject?: (offerId: string) => void;
   onCounter?: (offerId: string) => void;
   onCancel?: (offerId: string) => void;
+  loadingOfferId?: string | null;
+  loadingAction?: 'accept' | 'reject' | 'counter' | 'cancel' | null;
 }
 
 export function OffersList({
@@ -30,6 +32,8 @@ export function OffersList({
   onReject,
   onCounter,
   onCancel,
+  loadingOfferId,
+  loadingAction,
 }: OffersListProps) {
   const { offers, loading, error, stats } = useOffers({
     role,
@@ -104,6 +108,8 @@ export function OffersList({
             onCounter={onCounter}
             onCancel={onCancel}
             compact={false}
+            loadingOfferId={loadingOfferId}
+            loadingAction={loadingAction}
           />
         ))}
       </div>

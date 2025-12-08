@@ -219,7 +219,13 @@ export async function GET(
     const loadTime = Date.now() - startTime;
     console.log(`✅ [PRODUCT API] Product loaded in ${loadTime}ms`);
 
-    return NextResponse.json({ product: formattedProduct });
+    return NextResponse.json({ product: formattedProduct }, {
+      headers: {
+        // Cache for 60 seconds, serve stale content for up to 5 minutes while revalidating
+        // This dramatically improves performance for frequently viewed products
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+      },
+    });
 
   } catch (error) {
     console.error('❌ [PRODUCT API] Error:', error);

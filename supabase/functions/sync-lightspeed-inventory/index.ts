@@ -3,6 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { matchProductsBulk } from '../_shared/canonical-matching.ts'
+import { batchCategoriseCanonicals } from '../_shared/canonical-service.ts'
 
 // Token decryption
 function decryptToken(encryptedToken: string, keyHex: string): Promise<string> {
@@ -617,6 +618,59 @@ Deno.serve(async (req) => {
 
     const matchedCount = productsToInsert.filter(p => p.canonical_product_id).length
     console.log(`✅ [MATCHING] Final result: ${matchedCount}/${productsToInsert.length} products have canonical matches`)
+
+    // ============================================================
+    // AI Categorisation: Process uncategorised canonical products
+    // ============================================================
+    
+    // Get all unique canonical IDs from the products
+    const uniqueCanonicalIds = Array.from(new Set(
+      productsToInsert
+        .map(p => p.canonical_product_id)
+        .filter(Boolean)
+    ))
+    
+    if (uniqueCanonicalIds.length > 0) {
+      console.log(`🤖 [CATEGORISATION] Checking ${uniqueCanonicalIds.length} canonical products for categorisation...`)
+      
+      // Check which canonical products need categorisation
+      const { data: uncategorisedCanonicals, error: categorisedCheckError } = await supabaseAdmin
+        .from('canonical_products')
+        .select('id')
+        .in('id', uniqueCanonicalIds)
+        .or('cleaned.is.null,cleaned.eq.false,marketplace_category.is.null')
+      
+      if (uncategorisedCanonicals && uncategorisedCanonicals.length > 0) {
+        const uncategorisedIds = uncategorisedCanonicals.map((c: any) => c.id)
+        console.log(`🤖 [CATEGORISATION] Found ${uncategorisedIds.length} canonical products needing categorisation`)
+        
+        await sendProgress({ 
+          phase: 'categorising', 
+          message: `Categorising ${uncategorisedIds.length} products with AI...`, 
+          progress: 72 
+        })
+        
+        const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
+        if (openaiApiKey) {
+          try {
+            const { success, failed } = await batchCategoriseCanonicals(
+              supabaseAdmin,
+              uncategorisedIds,
+              openaiApiKey,
+              20 // batch size
+            )
+            console.log(`✅ [CATEGORISATION] Categorised ${success} products (${failed} failed)`)
+          } catch (categorisationError) {
+            console.error('⚠️ [CATEGORISATION] Error:', categorisationError)
+            // Don't fail the sync, just log the error
+          }
+        } else {
+          console.warn('⚠️ [CATEGORISATION] OPENAI_API_KEY not set, skipping AI categorisation')
+        }
+      } else {
+        console.log(`✅ [CATEGORISATION] All canonical products already categorised`)
+      }
+    }
 
     await sendProgress({ 
       phase: 'insert', 

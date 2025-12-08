@@ -443,6 +443,23 @@ Deno.serve(async (req) => {
             updated++
             console.log(`   ✅ Updated product ${update.id}: ${update.oldQoh} → ${update.newQoh}`)
             
+            // Also update products_all_ls table with the new stock values
+            const { error: allLsUpdateError } = await supabaseAdmin
+              .from('products_all_ls')
+              .update({
+                total_qoh: update.newQoh,
+                total_sellable: update.sellable,
+                last_synced_at: update.last_synced_at,
+              })
+              .eq('user_id', connection.user_id)
+              .eq('lightspeed_item_id', update.lightspeed_item_id)
+
+            if (allLsUpdateError) {
+              console.error(`   ⚠️  Failed to update products_all_ls for item ${update.lightspeed_item_id}:`, allLsUpdateError.message)
+            } else {
+              console.log(`   ✅ Updated products_all_ls for item ${update.lightspeed_item_id}`)
+            }
+            
             // Log the stock change
             const { error: logError } = await supabaseAdmin
               .from('inventory_stock_update_logs')

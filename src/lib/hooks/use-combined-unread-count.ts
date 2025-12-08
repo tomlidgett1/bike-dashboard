@@ -26,33 +26,26 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
     try {
       setError(null);
 
-      // Fetch both counts in parallel
-      const [messagesResponse, offersResponse] = await Promise.all([
-        fetch('/api/messages/unread-count'),
-        fetch('/api/offers/unread-count'),
-      ]);
+      // Use the new combined endpoint - much faster than two separate calls!
+      const response = await fetch('/api/unread-counts');
 
       // If unauthorized, silently set counts to 0 (user not logged in)
-      if (messagesResponse.status === 401 || offersResponse.status === 401) {
+      if (response.status === 401) {
         setCounts({ messages: 0, offers: 0, total: 0 });
         setLoading(false);
         return;
       }
 
-      if (!messagesResponse.ok || !offersResponse.ok) {
+      if (!response.ok) {
         throw new Error('Failed to fetch unread counts');
       }
 
-      const messagesData = await messagesResponse.json();
-      const offersData = await offersResponse.json();
-
-      const messagesCount = messagesData.count || 0;
-      const offersCount = offersData.count || 0;
+      const data = await response.json();
 
       setCounts({
-        messages: messagesCount,
-        offers: offersCount,
-        total: messagesCount + offersCount,
+        messages: data.messages || 0,
+        offers: data.offers || 0,
+        total: data.total || 0,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');

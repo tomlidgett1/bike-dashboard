@@ -74,7 +74,7 @@ function buildApiUrl(params: MarketplaceDataParams): string {
   const { 
     viewMode, 
     page = 1, 
-    pageSize = 50, 
+    pageSize = 200, // Default to 200 products per page
     level1, 
     level2, 
     level3, 
@@ -180,7 +180,8 @@ export function useMarketplaceData(
       revalidateOnFocus,
       revalidateOnReconnect: false,
       dedupingInterval,
-      // Keep previous data while fetching new data (prevents flash of empty state)
+      // Keep previous data while fetching (smooth filter transitions)
+      // This is fine now since we only use SWR for page 1
       keepPreviousData: true,
       // Retry once on error
       errorRetryCount: 1,
