@@ -25,6 +25,7 @@ interface Category {
   notSyncedProducts: number;
   products: any[];
   syncStatus: 'not_synced' | 'partial' | 'fully_synced';
+  autoSyncEnabled: boolean;
   lastSyncedAt: string | null;
 }
 

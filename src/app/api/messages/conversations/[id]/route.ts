@@ -124,16 +124,18 @@ export async function GET(
     
     // Mark conversation as read - do this separately to not block the response
     // Update the participant record to mark as read
-    supabase
+    const { error: updateError } = await supabase
       .from('conversation_participants')
       .update({
         last_read_at: new Date().toISOString(),
         unread_count: 0
       })
       .eq('conversation_id', id)
-      .eq('user_id', user.id)
-      .then(() => {})
-      .catch((err) => console.error('Error marking conversation as read:', err));
+      .eq('user_id', user.id);
+    
+    if (updateError) {
+      console.error('Error marking conversation as read:', updateError);
+    }
     console.log(`[Conversation API] Batch 2 took: ${Date.now() - batch2Start}ms`);
     console.log(`[Conversation API] Total time: ${Date.now() - batch1Start}ms`);
 
