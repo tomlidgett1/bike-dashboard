@@ -185,7 +185,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
       <motion.header
         style={{
           boxShadow: headerShadow,
-          backgroundColor: isMobile ? '#ffde59' : headerBg,
+          backgroundColor: headerBg,
         }}
         className="fixed top-0 left-0 right-0 z-40 w-full border-b border-gray-200 backdrop-blur-sm"
       >
@@ -194,7 +194,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
             {/* Mobile Menu Button - Left of logo */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 -ml-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer"
+              className="lg:hidden p-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer z-10"
               aria-label="Open menu"
             >
               <Menu className="h-5 w-5 text-gray-700 stroke-[1.5]" />
@@ -203,23 +203,14 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
             {/* Logo */}
             <button
               onClick={() => router.push('/marketplace')}
-              className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 -ml-12 sm:-ml-3"
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 -ml-2 sm:ml-0"
             >
-              {/* Mobile Logo */}
-              <Image 
-                src="/yjsmall.svg" 
-                alt="Yellow Jersey" 
-                width={120} 
-                height={24}
-                className="h-20 sm:hidden"
-              />
-              {/* Desktop Logo */}
               <Image 
                 src="/yj.svg" 
                 alt="Yellow Jersey" 
                 width={220} 
                 height={36}
-                className="hidden sm:block h-36 sm:h-40"
+                className="h-16 sm:h-40"
               />
             </button>
 

@@ -7,9 +7,10 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 // ============================================================
 // Product Page - Server Component with Parallel Data Fetching
 // Fetches all data on server for optimal performance
+// Uses ISR (Incremental Static Regeneration) for cached, fast loads
 // ============================================================
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60; // Revalidate every 60 seconds - balances freshness and speed
 
 interface SellerInfo {
   id: string;
@@ -187,38 +188,126 @@ async function fetchProduct(productId: string): Promise<MarketplaceProduct | nul
   }
 }
 
-// Helper function to fetch similar products
+// Helper function to fetch similar products - DIRECTLY from Supabase (no API call)
 async function fetchSimilarProducts(productId: string): Promise<MarketplaceProduct[]> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    const response = await fetch(`${baseUrl}/api/marketplace/products/${productId}/similar?limit=12`, {
-      next: { revalidate: 300 } // Cache for 5 minutes
-    });
+    const supabase = await createClient();
     
-    if (!response.ok) return [];
+    // Get source product category
+    const { data: sourceProduct } = await supabase
+      .from('products')
+      .select('marketplace_category, marketplace_subcategory')
+      .eq('id', productId)
+      .single();
     
-    const data = await response.json();
-    return data.products || [];
+    if (!sourceProduct?.marketplace_category) return [];
+    
+    // Fetch similar products from same category
+    const { data: products } = await supabase
+      .from('products')
+      .select(`
+        id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
+        marketplace_level_3_category, created_at, user_id, images,
+        users!user_id (business_name, logo_url, account_type)
+      `)
+      .eq('marketplace_category', sourceProduct.marketplace_category)
+      .eq('is_active', true)
+      .neq('id', productId)
+      .or('listing_status.is.null,listing_status.eq.active')
+      .limit(12);
+    
+    if (!products) return [];
+    
+    return products.map((p: any) => ({
+      id: p.id,
+      description: p.description,
+      display_name: p.display_name,
+      price: p.price,
+      marketplace_category: p.marketplace_category,
+      marketplace_subcategory: p.marketplace_subcategory,
+      marketplace_level_3_category: p.marketplace_level_3_category,
+      qoh: p.qoh || 1,
+      model_year: p.model_year || null,
+      created_at: p.created_at,
+      user_id: p.user_id,
+      primary_image_url: p.images?.[0]?.cloudinaryUrl || p.images?.[0]?.url || null,
+      card_url: p.images?.[0]?.cardUrl || null,
+      store_name: p.users?.business_name || 'Unknown Seller',
+      store_logo_url: p.users?.logo_url || null,
+      store_account_type: p.users?.account_type || null,
+    } as MarketplaceProduct));
   } catch (error) {
     console.error('Error fetching similar products:', error);
     return [];
   }
 }
 
-// Helper function to fetch seller products
+// Helper function to fetch seller products - DIRECTLY from Supabase (no API call)
 async function fetchSellerProducts(productId: string): Promise<{ products: MarketplaceProduct[]; seller: SellerInfo | null }> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    const response = await fetch(`${baseUrl}/api/marketplace/products/${productId}/seller-products?limit=12`, {
-      next: { revalidate: 300 } // Cache for 5 minutes
-    });
+    const supabase = await createClient();
     
-    if (!response.ok) return { products: [], seller: null };
+    // Get seller ID from source product
+    const { data: sourceProduct } = await supabase
+      .from('products')
+      .select('user_id')
+      .eq('id', productId)
+      .single();
     
-    const data = await response.json();
+    if (!sourceProduct?.user_id) return { products: [], seller: null };
+    
+    // Fetch seller info
+    const { data: seller } = await supabase
+      .from('users')
+      .select('user_id, business_name, logo_url, account_type, seller_display_name, first_name, last_name')
+      .eq('user_id', sourceProduct.user_id)
+      .single();
+    
+    // Fetch seller's other products
+    const { data: products } = await supabase
+      .from('products')
+      .select(`
+        id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
+        created_at, user_id, images,
+        users!user_id (business_name, logo_url, account_type)
+      `)
+      .eq('user_id', sourceProduct.user_id)
+      .eq('is_active', true)
+      .neq('id', productId)
+      .or('listing_status.is.null,listing_status.eq.active')
+      .is('sold_at', null)
+      .order('created_at', { ascending: false })
+      .limit(12);
+    
+    const sellerInfo = seller ? {
+      id: seller.user_id,
+      name: seller.seller_display_name || seller.business_name || 
+            (seller.first_name && seller.last_name ? `${seller.first_name} ${seller.last_name}`.trim() : 'Unknown Seller'),
+      logo_url: seller.logo_url || null,
+      account_type: seller.account_type || null,
+    } : null;
+    
+    const formattedProducts = (products || []).map((p: any) => ({
+      id: p.id,
+      description: p.description,
+      display_name: p.display_name,
+      price: p.price,
+      marketplace_category: p.marketplace_category,
+      marketplace_subcategory: p.marketplace_subcategory,
+      qoh: p.qoh || 1,
+      model_year: p.model_year || null,
+      created_at: p.created_at,
+      user_id: p.user_id,
+      primary_image_url: p.images?.[0]?.cloudinaryUrl || p.images?.[0]?.url || null,
+      card_url: p.images?.[0]?.cardUrl || null,
+      store_name: p.users?.business_name || 'Unknown Seller',
+      store_logo_url: p.users?.logo_url || null,
+      store_account_type: p.users?.account_type || null,
+    } as MarketplaceProduct));
+    
     return {
-      products: data.products || [],
-      seller: data.seller || null
+      products: formattedProducts,
+      seller: sellerInfo
     };
   } catch (error) {
     console.error('Error fetching seller products:', error);
