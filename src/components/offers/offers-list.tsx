@@ -21,7 +21,7 @@ interface OffersListProps {
   onCounter?: (offerId: string) => void;
   onCancel?: (offerId: string) => void;
   loadingOfferId?: string | null;
-  loadingAction?: 'accept' | 'reject' | 'counter' | 'cancel' | null;
+  loadingAction?: 'accept' | 'reject' | 'counter' | 'cancel';
 }
 
 export function OffersList({

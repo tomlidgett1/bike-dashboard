@@ -68,7 +68,7 @@ function MessagesPageInner() {
   
   // Loading state for list
   const [loadingOfferId, setLoadingOfferId] = useState<string | null>(null);
-  const [loadingAction, setLoadingAction] = useState<'accept' | 'reject' | 'counter' | 'cancel' | null>(null);
+  const [loadingAction, setLoadingAction] = useState<'accept' | 'reject' | 'counter' | 'cancel' | undefined>(undefined);
   
   // Offer mutations
   const { acceptOffer, accepting } = useAcceptOffer();
@@ -176,7 +176,7 @@ function MessagesPageInner() {
       console.error('Error fetching offer:', error);
     } finally {
       setLoadingOfferId(null);
-      setLoadingAction(null);
+      setLoadingAction(undefined);
     }
   };
 
@@ -197,7 +197,7 @@ function MessagesPageInner() {
       console.error('Error fetching offer:', error);
     } finally {
       setLoadingOfferId(null);
-      setLoadingAction(null);
+      setLoadingAction(undefined);
     }
   };
   
@@ -230,7 +230,7 @@ function MessagesPageInner() {
       console.error('Error performing offer action:', error);
     } finally {
       setLoadingOfferId(null);
-      setLoadingAction(null);
+      setLoadingAction(undefined);
     }
   };
 
@@ -250,7 +250,7 @@ function MessagesPageInner() {
       console.error('Error fetching offer:', error);
     } finally {
       setLoadingOfferId(null);
-      setLoadingAction(null);
+      setLoadingAction(undefined);
     }
   };
 
@@ -290,7 +290,7 @@ function MessagesPageInner() {
       console.error('Error fetching offer:', error);
     } finally {
       setLoadingOfferId(null);
-      setLoadingAction(null);
+      setLoadingAction(undefined);
     }
   };
   
