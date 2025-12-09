@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, MessageCircle } from "lucide-react";
+import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
@@ -231,7 +231,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                     className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
                     aria-label="Open search"
                   >
-                    <Search className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                    <Search className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
                   </button>
                   {mounted && user && (
                     <button
@@ -239,7 +239,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                       className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
                       aria-label="Messages"
                     >
-                      <MessageCircle className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                      <Mail className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
                       {unreadCount > 0 && (
                         <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
                           {unreadCount > 99 ? '99+' : unreadCount}
@@ -262,7 +262,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                     className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
                     aria-label="Open search"
                   >
-                    <Search className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                    <Search className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
                   </button>
                   {mounted && user && (
                     <button
@@ -270,7 +270,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                       className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
                       aria-label="Messages"
                     >
-                      <MessageCircle className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                      <Mail className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
                       {unreadCount > 0 && (
                         <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
                           {unreadCount > 99 ? '99+' : unreadCount}
@@ -294,7 +294,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                       className="relative h-9 w-9 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center"
                       aria-label="Messages"
                     >
-                      <MessageCircle className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                      <Mail className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
                       {unreadCount > 0 && (
                         <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
                           {unreadCount > 99 ? '99+' : unreadCount}
@@ -628,7 +628,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                         }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left hover:bg-gray-100 transition-colors relative"
                       >
-                        <MessageCircle className="h-5 w-5 text-gray-500 flex-shrink-0" />
+                        <Mail className="h-[18px] w-[18px] text-gray-500 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900">Messages</p>
                         </div>
