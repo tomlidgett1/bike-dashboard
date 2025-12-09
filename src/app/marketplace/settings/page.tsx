@@ -182,7 +182,7 @@ export default function MarketplaceSettingsPage() {
       <>
         <MarketplaceHeader compactSearchOnMobile />
         <MarketplaceLayout>
-          <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-24 sm:pb-8">
+          <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-44 sm:pb-8">
             <div className="flex items-center justify-center py-24">
               <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
             </div>
@@ -210,7 +210,7 @@ export default function MarketplaceSettingsPage() {
       <MarketplaceHeader compactSearchOnMobile />
 
       <MarketplaceLayout>
-        <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-32 sm:pb-8">
+        <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-44 sm:pb-8">
           {/* Page Header */}
           <div className="border-b border-gray-200 bg-white">
             <div className="max-w-[1920px] mx-auto px-4 sm:px-6 py-4 sm:py-6">

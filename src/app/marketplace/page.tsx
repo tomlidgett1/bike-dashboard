@@ -558,7 +558,7 @@ function MarketplacePageContent() {
       <MarketplaceHeader compactSearchOnMobile />
 
       <MarketplaceLayout showFooter={false} showStoreCTA={isStoresView}>
-        <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20 pb-24 sm:pb-8">
+        <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20 pb-44 sm:pb-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
