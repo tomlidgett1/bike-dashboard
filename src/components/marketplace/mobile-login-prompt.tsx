@@ -103,60 +103,8 @@ export function MobileLoginPrompt() {
     }
   };
 
-  // Don't show while loading auth state or if user is logged in
-  if (loading || user) {
-    return null;
-  }
-
-  return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ y: 100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 100, opacity: 0 }}
-        transition={{ 
-          duration: 0.4, 
-          ease: [0.04, 0.62, 0.23, 0.98],
-          delay: 0.5
-        }}
-        className="fixed bottom-0 left-0 right-0 z-40 lg:hidden"
-      >
-        <div className="bg-white border-t border-gray-200 px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
-          <p className="text-xs text-gray-500 text-center mb-2">
-            Continue with
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleGoogleSignIn}
-              disabled={googleLoading || appleLoading}
-              className="flex-1 h-10 text-sm font-medium rounded-md border-gray-300 hover:bg-gray-50 active:scale-[0.98] transition-transform"
-            >
-              {googleLoading ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : (
-                <GoogleIcon className="mr-1.5 h-4 w-4" />
-              )}
-              Google
-            </Button>
-            <Button
-              type="button"
-              onClick={handleAppleSignIn}
-              disabled={googleLoading || appleLoading}
-              className="flex-1 h-10 text-sm font-medium rounded-md bg-black hover:bg-gray-800 text-white active:scale-[0.98] transition-transform"
-            >
-              {appleLoading ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : (
-                <AppleIcon className="mr-1.5 h-4 w-4" />
-              )}
-              Apple
-            </Button>
-          </div>
-        </div>
-      </motion.div>
-    </AnimatePresence>
-  );
+  // Hidden - using combined List Item button in header instead
+  // This reduces clutter and provides a cleaner mobile experience
+  return null;
 }
 

@@ -447,12 +447,9 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
         </div>
       </motion.header>
 
-      {/* Mobile Floating List Item Button - Position changes based on auth state */}
+      {/* Mobile Floating List Item Button - Single button for both states */}
       {compactSearchOnMobile && mounted && (
-        <div className={cn(
-          "sm:hidden fixed left-4 right-4 z-50",
-          user ? "bottom-6" : "bottom-[88px]" // Higher position when logged out to sit above login prompt
-        )}>
+        <div className="sm:hidden fixed bottom-6 left-4 right-4 z-50">
           <Button
             onClick={() => {
               if (user) {
@@ -461,10 +458,11 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                 setSellRequirementModalOpen(true);
               }
             }}
-            className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-lg h-12"
+            className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-lg h-12 flex items-center justify-center gap-2"
           >
-            <Plus className="h-5 w-5 mr-2" />
-            List Item
+            <Plus className="h-5 w-5" />
+            <span>List Item</span>
+            {!user && <span className="text-xs opacity-80">(Sign in required)</span>}
           </Button>
         </div>
       )}
