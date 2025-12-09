@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2 } from "lucide-react";
+import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Upload } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
@@ -109,9 +109,11 @@ function MobileNavItem({ icon: Icon, label, subtitle, onClick }: MobileNavItemPr
 interface MarketplaceHeaderProps {
   /** When true, shows a search icon button on mobile that expands to full search */
   compactSearchOnMobile?: boolean;
+  /** When true, shows the floating List Item button on mobile */
+  showFloatingButton?: boolean;
 }
 
-export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceHeaderProps) {
+export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingButton = false }: MarketplaceHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
   const [sellRequirementModalOpen, setSellRequirementModalOpen] = React.useState(false);
@@ -470,6 +472,16 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                         </div>
                       </DropdownMenuItem>
                       <DropdownMenuItem
+                        onClick={() => router.push('/marketplace/sell?mode=bulk')}
+                        className="cursor-pointer rounded-md"
+                      >
+                        <Upload className="mr-2 h-4 w-4" />
+                        <div className="flex flex-col">
+                          <span className="font-medium">Bulk Upload</span>
+                          <span className="text-xs text-gray-500">Upload multiple products</span>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
                         onClick={() => router.push('/marketplace/sell?mode=manual')}
                         className="cursor-pointer rounded-md"
                       >
@@ -526,6 +538,16 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                         onClick={() => setSellRequirementModalOpen(true)}
                         className="cursor-pointer rounded-md"
                       >
+                        <Upload className="mr-2 h-4 w-4" />
+                        <div className="flex flex-col">
+                          <span className="font-medium">Bulk Upload</span>
+                          <span className="text-xs text-gray-500">Upload multiple products</span>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setSellRequirementModalOpen(true)}
+                        className="cursor-pointer rounded-md"
+                      >
                         <FileText className="mr-2 h-4 w-4" />
                         <div className="flex flex-col">
                           <span className="font-medium">Standard Upload</span>
@@ -542,8 +564,8 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
         </div>
       </motion.header>
 
-      {/* Mobile Floating List Item Button - Single button for both states */}
-      {compactSearchOnMobile && mounted && (
+      {/* Mobile Floating List Item Button - Only shown on homepage and product pages */}
+      {showFloatingButton && mounted && (
         <div className="sm:hidden fixed bottom-6 left-4 right-4 z-50">
           <Button
             onClick={() => {
@@ -695,6 +717,19 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                         <p className="text-xs text-gray-500">Import from Facebook</p>
                       </div>
                     </button>
+                    <MobileNavItem
+                      icon={Upload}
+                      label="Bulk Upload"
+                      subtitle="Upload multiple products"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        if (user) {
+                          router.push('/marketplace/sell?mode=bulk');
+                        } else {
+                          setSellRequirementModalOpen(true);
+                        }
+                      }}
+                    />
                     <MobileNavItem
                       icon={FileText}
                       label="Standard Upload"
@@ -928,6 +963,9 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
         }}
         onSelectFacebook={() => {
           setFacebookModalOpen(true);
+        }}
+        onSelectBulk={() => {
+          router.push('/marketplace/sell?mode=bulk');
         }}
         onSelectComprehensive={() => {
           router.push('/marketplace/sell');

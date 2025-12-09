@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Zap, Link2, FileText, X } from "lucide-react";
+import { Zap, Link2, FileText, X, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,6 +23,7 @@ interface MobileUploadMethodDialogProps {
   onClose: () => void;
   onSelectQuick: () => void;
   onSelectFacebook: () => void;
+  onSelectBulk: () => void;
   onSelectComprehensive: () => void;
 }
 
@@ -31,6 +32,7 @@ export function MobileUploadMethodDialog({
   onClose,
   onSelectQuick,
   onSelectFacebook,
+  onSelectBulk,
   onSelectComprehensive,
 }: MobileUploadMethodDialogProps) {
   return (
@@ -92,6 +94,32 @@ export function MobileUploadMethodDialog({
                   </h3>
                   <p className="text-xs text-gray-600">
                     Import from Facebook link
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.button>
+
+          {/* Bulk Upload */}
+          <motion.button
+            onClick={() => {
+              onClose();
+              onSelectBulk();
+            }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full text-left"
+          >
+            <div className="p-4 bg-white border-2 border-gray-200 rounded-md hover:border-gray-300 hover:shadow-md transition-all">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
+                  <Upload className="h-5 w-5 text-gray-700" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-bold text-gray-900 mb-0.5">
+                    Bulk Upload
+                  </h3>
+                  <p className="text-xs text-gray-600">
+                    Upload multiple products at once
                   </p>
                 </div>
               </div>
