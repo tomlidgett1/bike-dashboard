@@ -159,3 +159,4 @@ COMMENT ON COLUMN canonical_products.upc IS 'Universal Product Code - unique whe
 
 
 
+

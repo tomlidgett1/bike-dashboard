@@ -110,9 +110,10 @@ Deno.serve(async (req) => {
     const timestamp = Math.floor(Date.now() / 1000)
     const publicId = `bike-marketplace/canonical/${canonicalProductId}/${timestamp}-${sortOrder || 0}`
     
-    // Eager transformations: thumbnail (100px), mobile_card (200px), card (400px), detail (800px)
-    // Card variants use ar_1:1,c_fill for square cropping (center gravity)
-    const eagerTransforms = 'w_100,c_limit,q_auto:low,f_webp|w_200,ar_1:1,c_fill,q_auto:good,f_webp|w_400,ar_1:1,c_fill,q_auto:good,f_webp|w_800,c_limit,q_auto:best,f_webp'
+    // Eager transformations: thumbnail (100px), mobile_card (200px), card (400px), gallery (1200px), detail (2000px)
+    // Card variants use c_fill,g_center for predictable center cropping (no borders)
+    // Gallery uses ar_4:3,c_pad with white background for full product display on detail pages
+    const eagerTransforms = 'w_100,c_limit,q_auto:low,f_webp|w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp|w_2000,c_limit,q_auto:best,f_webp'
     
     const signatureString = `eager=${eagerTransforms}&eager_async=false&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`
     const encoder = new TextEncoder()
@@ -156,9 +157,10 @@ Deno.serve(async (req) => {
     // Build optimised URLs
     const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`
     const thumbnailUrl = `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${cloudinaryResult.public_id}`
-    const mobileCardUrl = `${baseUrl}/w_200,ar_1:1,c_fill,q_auto:good,f_webp/${cloudinaryResult.public_id}`
-    const cardUrl = `${baseUrl}/w_400,ar_1:1,c_fill,q_auto:good,f_webp/${cloudinaryResult.public_id}`
-    const detailUrl = `${baseUrl}/w_800,c_limit,q_auto:best,f_webp/${cloudinaryResult.public_id}`
+    const mobileCardUrl = `${baseUrl}/w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${cloudinaryResult.public_id}`
+    const cardUrl = `${baseUrl}/w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${cloudinaryResult.public_id}`
+    const galleryUrl = `${baseUrl}/w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp/${cloudinaryResult.public_id}`
+    const detailUrl = `${baseUrl}/w_2000,c_limit,q_auto:best,f_webp/${cloudinaryResult.public_id}`
 
     // Update product_images record with Cloudinary URLs
     const { error: updateError } = await supabase
@@ -169,6 +171,7 @@ Deno.serve(async (req) => {
         thumbnail_url: thumbnailUrl,
         mobile_card_url: mobileCardUrl,
         card_url: cardUrl,
+        gallery_url: galleryUrl,
         detail_url: detailUrl,
         is_downloaded: true,
         width: cloudinaryResult.width || 800,

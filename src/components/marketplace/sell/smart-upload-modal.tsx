@@ -198,6 +198,8 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
               url: result.data.url,
               cardUrl: result.data.cardUrl,
               thumbnailUrl: result.data.thumbnailUrl,
+              galleryUrl: result.data.galleryUrl,
+              detailUrl: result.data.detailUrl,
             };
           })
         );

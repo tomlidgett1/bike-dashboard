@@ -93,3 +93,4 @@ COMMENT ON FUNCTION get_products_with_pending_images IS 'Returns products that h
 
 
 
+

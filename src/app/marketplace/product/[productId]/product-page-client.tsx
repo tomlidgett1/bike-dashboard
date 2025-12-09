@@ -131,20 +131,17 @@ export function ProductPageClient({
               </div>
 
               {/* Right Column - Product Details */}
-              <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-hidden">
+              <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-hidden lg:border lg:border-gray-200">
                 <ProductDetailsPanel product={product} />
               </div>
             </div>
           </div>
 
           {/* Recommendation Carousels */}
-          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 mt-6 sm:mt-10 pt-4 sm:pt-6 border-t border-gray-200">
+          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 mt-8 sm:mt-12 pt-4 sm:pt-5 border-t border-gray-200">
             {/* Similar Items Carousel */}
             <RecommendationCarousel
               title="Similar Items"
-              subtitle={product.marketplace_subcategory 
-                ? `More ${product.marketplace_subcategory.toLowerCase()} you might like`
-                : "Items you might also like"}
               products={similarProducts}
               isLoading={false}
               icon="sparkles"
@@ -154,15 +151,12 @@ export function ProductPageClient({
 
             {/* More from Seller Carousel */}
             <RecommendationCarousel
-              title="More from this Seller"
-              subtitle={sellerInfo?.name ? `See more listings from ${sellerInfo.name}` : undefined}
+              title={sellerInfo?.name ? `More from ${sellerInfo.name}` : "More from this Seller"}
               products={sellerProducts}
               isLoading={false}
               icon="store"
               seeAllHref={sellerSeeAllHref}
               seeAllLabel="View All Listings"
-              seller={sellerInfo}
-              className="mt-2"
             />
           </div>
         </motion.div>

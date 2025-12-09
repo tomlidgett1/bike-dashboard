@@ -121,7 +121,33 @@ function MarketplaceSidebarContent() {
   const router = useRouter();
   const { user } = useAuth();
   const { profile } = useUserProfile();
-  const { isCollapsed, toggle, mounted } = useSidebarState();
+  const { isCollapsed, toggle, mounted, isHovered, setIsHovered } = useSidebarState();
+  
+  // Delay before collapsing when hover ends
+  const hoverTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  
+  const handleMouseEnter = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    setIsHovered(true);
+  };
+  
+  const handleMouseLeave = () => {
+    // Add a small delay before collapsing to prevent flickering
+    hoverTimeoutRef.current = setTimeout(() => {
+      setIsHovered(false);
+    }, 100);
+  };
+  
+  // Cleanup timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Determine active view based on pathname and search params
   const getActiveView = () => {
@@ -215,7 +241,7 @@ function MarketplaceSidebarContent() {
           <div 
             className={cn(
               "h-px bg-gray-200 transition-all duration-400",
-              isCollapsed ? "w-[32px] mx-auto" : "w-full"
+              isExpanded ? "w-full" : "w-[32px] mx-auto"
             )}
           />
         </div>
@@ -249,6 +275,7 @@ function MarketplaceSidebarContent() {
       <button
         key={item.value}
         onClick={handleClick}
+        onMouseEnter={handleMouseEnter}
         className={cn(
           "group flex items-center rounded-md text-sm font-medium transition-all duration-150 text-left w-full relative h-[38px] cursor-pointer",
           isActive
@@ -269,7 +296,7 @@ function MarketplaceSidebarContent() {
         </div>
         
         {/* Text label with smooth fade */}
-        {!isCollapsed && (
+        {isExpanded && (
           <motion.span
             initial={{ opacity: 0, width: 0 }}
             animate={{ opacity: 1, width: "auto" }}
@@ -283,8 +310,8 @@ function MarketplaceSidebarContent() {
       </button>
     );
 
-    // Wrap with tooltip when collapsed
-    if (isCollapsed && mounted) {
+    // Wrap with tooltip when collapsed and not hovered
+    if (!isExpanded && mounted) {
       return (
         <Tooltip key={item.value} delayDuration={100}>
           <TooltipTrigger asChild>
@@ -300,27 +327,32 @@ function MarketplaceSidebarContent() {
     return buttonContent;
   };
 
+  // Determine if sidebar should be expanded (manually toggled open OR hovered while collapsed)
+  const isExpanded = !isCollapsed || (isCollapsed && isHovered);
+  
   return (
     <TooltipProvider>
       <motion.aside
         initial={false}
         animate={{
-          width: isCollapsed ? 56 : 200,
+          width: isExpanded ? 200 : 56,
         }}
         transition={{
-          duration: 0.4,
+          duration: 0.2,
           ease: [0.04, 0.62, 0.23, 0.98],
         }}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         className={cn(
-          "fixed left-0 top-16 z-[45] hidden h-[calc(100vh-4rem)] flex-col border-r border-sidebar-border bg-sidebar lg:flex overflow-x-hidden"
+          "fixed left-0 top-16 z-[45] hidden h-[calc(100vh-4rem)] flex-col border-r border-t border-sidebar-border bg-sidebar lg:flex overflow-x-hidden"
         )}
       >
         {/* Header with Collapse Button */}
         <div className={cn(
           "relative flex items-center px-2 pt-4 pb-2 bg-sidebar shrink-0",
-          isCollapsed ? "justify-center" : "justify-between"
+          isExpanded ? "justify-between" : "justify-center"
         )}>
-          {!isCollapsed && (
+          {isExpanded && (
             <motion.span
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -367,7 +399,7 @@ function MarketplaceSidebarContent() {
                 console.log('🟡 [SIDEBAR] Rendering "Account awaiting admin approval" badge');
                 return null;
               })()}
-              {isCollapsed ? (
+              {!isExpanded ? (
                 <Tooltip delayDuration={100}>
                   <TooltipTrigger asChild>
                     <div className="bg-white rounded-md border border-gray-200 py-2 shadow-sm flex items-center justify-center">
@@ -398,7 +430,7 @@ function MarketplaceSidebarContent() {
         {user && (
           <div className="border-t border-sidebar-border p-2">
             <DropdownMenu modal={false}>
-              {isCollapsed ? (
+              {!isExpanded ? (
                 <>
                   <Tooltip delayDuration={100}>
                     <TooltipTrigger asChild>
@@ -501,7 +533,7 @@ function MarketplaceSidebarContent() {
 
         {/* Help and Support Button */}
         <div className="border-t border-sidebar-border p-2 pb-4">
-          {isCollapsed ? (
+          {!isExpanded ? (
             <Tooltip delayDuration={100}>
               <TooltipTrigger asChild>
                 <button

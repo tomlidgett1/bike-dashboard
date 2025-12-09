@@ -52,6 +52,8 @@ export function OverviewCard({ product }: OverviewCardProps) {
 
 function BikeOverview({ product }: { product: MarketplaceProduct }) {
   const items = [
+    { label: "Model Year", value: product.model_year },
+    { label: "Type", value: product.bike_type },
     { label: "Frame Size", value: product.frame_size },
     { label: "Material", value: product.frame_material },
     { label: "Groupset", value: product.groupset },

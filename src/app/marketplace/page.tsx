@@ -12,6 +12,7 @@ import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType 
 import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type AdvancedFiltersState } from "@/components/marketplace/advanced-filters";
 import { StoresGrid } from "@/components/marketplace/stores-grid";
 import { SellersGrid } from "@/components/marketplace/sellers-grid";
+import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-modal";
 import type { IndividualSeller } from "@/app/api/marketplace/sellers/route";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -110,6 +111,20 @@ function MarketplacePageContent() {
   // Products state (for pagination accumulation)
   const [accumulatedProducts, setAccumulatedProducts] = React.useState<MarketplaceProduct[]>([]);
   const [currentPage, setCurrentPage] = React.useState(1);
+
+  // Image Discovery Modal state (admin only)
+  const [imageDiscoveryModal, setImageDiscoveryModal] = React.useState<{
+    isOpen: boolean;
+    productId: string;
+    productName: string;
+  }>({
+    isOpen: false,
+    productId: '',
+    productName: '',
+  });
+
+  // Check if user is admin (tom@lidgett.net)
+  const isAdmin = user?.email === 'tom@lidgett.net';
 
   // Track filter changes to know when to reset
   const filterKey = React.useMemo(() => 
@@ -871,6 +886,17 @@ function MarketplacePageContent() {
                           key={product.id} 
                           product={product}
                           priority={index < 18} // Prioritize first 18 images (top 3 rows on XL screens)
+                          isAdmin={isAdmin}
+                          onImageDiscoveryClick={(productId) => {
+                            // Use canonical_product_id if available (for private listings)
+                            // Otherwise use product id (for store inventory which IS the canonical product)
+                            const canonicalId = product.canonical_product_id || product.id;
+                            setImageDiscoveryModal({
+                              isOpen: true,
+                              productId: canonicalId,
+                              productName: (product as any).display_name || product.description,
+                            });
+                          }}
                         />
                       ))}
                     </div>
@@ -944,6 +970,20 @@ function MarketplacePageContent() {
           </motion.div>
         </div>
       </MarketplaceLayout>
+
+      {/* Image Discovery Modal (admin only) */}
+      {isAdmin && (
+        <ImageDiscoveryModal
+          isOpen={imageDiscoveryModal.isOpen}
+          onClose={() => setImageDiscoveryModal({ isOpen: false, productId: '', productName: '' })}
+          productId={imageDiscoveryModal.productId}
+          productName={imageDiscoveryModal.productName}
+          onComplete={() => {
+            // Optionally refresh products after completion
+            console.log('[IMAGE DISCOVERY] Completed for product:', imageDiscoveryModal.productId);
+          }}
+        />
+      )}
     </>
   );
 }

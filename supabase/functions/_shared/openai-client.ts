@@ -165,10 +165,10 @@ export async function discoverProductImages(
   const brandName = await extractBrandName(productName, manufacturer);
   console.log(`🏷️ [IMAGE SEARCH] Brand name: "${brandName}"`);
   
-  // Clean product name for better e-commerce search results
-  const cleanedProductName = await cleanProductName(productName, manufacturer, category);
+  // Use raw product name with "cycling" prefix
+  const searchProductName = `cycling ${productName}`;
   
-  console.log(`🧹 [IMAGE SEARCH] Cleaned product name: "${cleanedProductName}"`);
+  console.log(`🔍 [IMAGE SEARCH] Search product name: "${searchProductName}"`);
   
   // Strategy: Two searches for better coverage
   // Search 1: UPC + product name (7 images) - most precise
@@ -194,7 +194,7 @@ export async function discoverProductImages(
     if (hasValidUPC) {
       return await dualSearchWithUPC(
         upc!,
-        cleanedProductName,
+        searchProductName,
         manufacturer,
         category,
         SERPER_API_KEY,
@@ -204,12 +204,7 @@ export async function discoverProductImages(
     }
     
     // Otherwise do single search
-    const searchParts = ['bicycle', cleanedProductName];
-    if (manufacturer) searchParts.push(manufacturer);
-    if (category && !cleanedProductName.toLowerCase().includes(category.toLowerCase())) {
-      searchParts.push(category);
-    }
-    const searchQuery = searchParts.join(' ') + ' product photo white background e-commerce';
+    const searchQuery = searchProductName;
     
     return await singleSearch(searchQuery, SERPER_API_KEY, maxImages);
   }
@@ -223,7 +218,7 @@ export async function discoverProductImages(
  */
 async function dualSearchWithUPC(
   upc: string,
-  cleanedName: string,
+  searchProductName: string,
   manufacturer: string | null | undefined,
   category: string | null | undefined,
   apiKey: string,
@@ -233,19 +228,12 @@ async function dualSearchWithUPC(
   console.log(`🔍 [DUAL SEARCH] Strategy: 7 with UPC + 8 without UPC = 15 total`);
   
   // Search 1: UPC + Product Name (precise)
-  const upcSearchParts = [upc, 'bicycle', cleanedName];
-  if (manufacturer) upcSearchParts.push(manufacturer);
-  const upcQuery = upcSearchParts.join(' ') + ' product photo white background';
+  const upcQuery = `${upc} ${searchProductName}`;
   
   console.log(`🔍 [SEARCH 1] UPC Query: "${upcQuery}"`);
   
   // Search 2: Product Name Only (broader)
-  const nameSearchParts = ['bicycle', cleanedName];
-  if (manufacturer) nameSearchParts.push(manufacturer);
-  if (category && !cleanedName.toLowerCase().includes(category.toLowerCase())) {
-    nameSearchParts.push(category);
-  }
-  const nameQuery = nameSearchParts.join(' ') + ' product photo white background e-commerce';
+  const nameQuery = searchProductName;
   
   console.log(`🔍 [SEARCH 2] Name Query: "${nameQuery}"`);
   
@@ -255,12 +243,12 @@ async function dualSearchWithUPC(
       fetch('https://google.serper.dev/images', {
         method: 'POST',
         headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ q: upcQuery, num: 20, gl: 'au', hl: 'en', tbs: 'isz:l' }),
+        body: JSON.stringify({ q: upcQuery }),
       }),
       fetch('https://google.serper.dev/images', {
         method: 'POST',
         headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ q: nameQuery, num: 20, gl: 'au', hl: 'en', tbs: 'isz:l' }),
+        body: JSON.stringify({ q: nameQuery }),
       }),
     ]);
     
@@ -279,8 +267,8 @@ async function dualSearchWithUPC(
     console.log(`✅ [SEARCH 2] Name search found ${nameImages.length} images`);
     
     // Process and score images from both searches with brand awareness
-    const processedUpcImages = processAndScoreImages(upcImages, cleanedName, brandName);
-    const processedNameImages = processAndScoreImages(nameImages, cleanedName, brandName);
+    const processedUpcImages = processAndScoreImages(upcImages, searchProductName, brandName);
+    const processedNameImages = processAndScoreImages(nameImages, searchProductName, brandName);
     
     // Take top 7 from UPC search, top 8 from name search
     const top7UPC = processedUpcImages.slice(0, 7);
@@ -307,7 +295,7 @@ async function dualSearchWithUPC(
       .slice(0, maxImages)
       .map((img, idx) => ({
         url: img.imageUrl,
-        description: img.title || `${cleanedName} - ${img.source}`,
+        description: img.title || `${searchProductName} - ${img.source}`,
         source: img.domain || extractDomain(img.imageUrl),
         isPrimary: idx === 0,
         rank: idx + 1,
@@ -436,7 +424,7 @@ async function singleSearch(
     const response = await fetch('https://google.serper.dev/images', {
       method: 'POST',
       headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: searchQuery, num: 50, gl: 'au', hl: 'en', tbs: 'isz:l' }),
+      body: JSON.stringify({ q: searchQuery }),
     });
     
     if (!response.ok) {

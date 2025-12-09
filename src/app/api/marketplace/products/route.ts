@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
     // Only join users table for store name (small table, fast lookup)
     const fastFields = `
         id,
+        canonical_product_id,
         display_name,
         description,
         price,
@@ -281,6 +282,7 @@ export async function GET(request: NextRequest) {
       
       return {
         id: product.id,
+        canonical_product_id: product.canonical_product_id,
         description: product.description,
         display_name: product.display_name,
         price: parseFloat(product.price) || 0,

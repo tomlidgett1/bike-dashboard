@@ -298,3 +298,4 @@ All upload methods (Lightspeed, Facebook, Smart Upload, Manual) now leverage the
 
 The system is designed to be fail-proof: every product MUST be linked to a canonical product, and every canonical product MUST have categories (enforced through AI categorisation). This architecture ensures that no product can exist in the marketplace without proper categorisation.
 
+

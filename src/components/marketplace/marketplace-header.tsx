@@ -191,28 +191,31 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
       >
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6">
           <div className="flex h-14 sm:h-16 items-center justify-start gap-2 sm:gap-4">
-            {/* Mobile Menu Button - Left of logo */}
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer z-10"
-              aria-label="Open menu"
-            >
-              <Menu className="h-5 w-5 text-gray-700 stroke-[1.5]" />
-            </button>
+            {/* Mobile Menu Button and Logo Container */}
+            <div className="flex items-center gap-2 lg:gap-2">
+              {/* Mobile Menu Button - Left of logo */}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className="lg:hidden p-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer z-10"
+                aria-label="Open menu"
+              >
+                <Menu className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+              </button>
 
-            {/* Logo */}
-            <button
-              onClick={() => router.push('/marketplace')}
-              className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 -ml-2 sm:ml-0"
-            >
-              <Image 
-                src="/yj.svg" 
-                alt="Yellow Jersey" 
-                width={220} 
-                height={36}
-                className="h-16 sm:h-40"
-              />
-            </button>
+              {/* Logo */}
+              <button
+                onClick={() => router.push('/marketplace')}
+                className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 cursor-pointer"
+              >
+                <Image 
+                  src="/yj.svg" 
+                  alt="Yellow Jersey" 
+                  width={220} 
+                  height={36}
+                  className="h-24 w-auto sm:h-32"
+                />
+              </button>
+            </div>
 
             {/* Desktop Search Bar (always visible) + Mobile Search (conditional) */}
             {compactSearchOnMobile ? (
@@ -222,10 +225,10 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                   <InstantSearch />
                 </div>
                 {/* Mobile: Search icon button, Messages button (if logged in), and Sell button */}
-                <div className="sm:hidden flex items-center gap-1 ml-auto">
+                <div className="sm:hidden flex items-center gap-2 ml-auto">
                   <button
                     onClick={() => setMobileSearchOpen(true)}
-                    className="h-9 w-9 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center"
+                    className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
                     aria-label="Open search"
                   >
                     <Search className="h-5 w-5 text-gray-700 stroke-[1.5]" />
@@ -233,7 +236,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                   {mounted && user && (
                     <button
                       onClick={() => router.push('/messages')}
-                      className="relative h-9 w-9 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors flex items-center justify-center"
+                      className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
                       aria-label="Messages"
                     >
                       <MessageCircle className="h-5 w-5 text-gray-700 stroke-[1.5]" />
@@ -253,7 +256,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                       }
                     }}
                     size="sm"
-                    className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-3"
+                    className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-4"
                   >
                     Sell
                   </Button>
@@ -266,11 +269,11 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                   <InstantSearch />
                 </div>
                 {/* Mobile: Messages button (if logged in) and Sell button */}
-                <div className="sm:hidden flex items-center gap-1 ml-auto">
+                <div className="sm:hidden flex items-center gap-2 ml-auto">
                   {mounted && user && (
                     <button
                       onClick={() => router.push('/messages')}
-                      className="relative h-9 w-9 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors flex items-center justify-center"
+                      className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
                       aria-label="Messages"
                     >
                       <MessageCircle className="h-5 w-5 text-gray-700 stroke-[1.5]" />
@@ -290,7 +293,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                       }
                     }}
                     size="sm"
-                    className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-6"
+                    className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-4"
                   >
                     Sell
                   </Button>
@@ -412,15 +415,16 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                   >
                     Sign In
                   </Button>
-                  <DropdownMenu modal={false}>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                      >
-                        Sell Item
-                        <ChevronDown className="ml-1.5 h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
+                  {mounted && (
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
+                        >
+                          Sell Item
+                          <ChevronDown className="ml-1.5 h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
                       <DropdownMenuItem
                         onClick={() => setSellRequirementModalOpen(true)}
@@ -454,6 +458,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  )}
                 </>
               )}
             </div>

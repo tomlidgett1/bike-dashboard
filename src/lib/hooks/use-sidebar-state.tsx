@@ -9,6 +9,8 @@ interface SidebarState {
   isCollapsed: boolean;
   toggle: () => void;
   mounted: boolean;
+  isHovered: boolean;
+  setIsHovered: (hovered: boolean) => void;
 }
 
 const SidebarContext = createContext<SidebarState | undefined>(undefined);
@@ -17,7 +19,8 @@ const SidebarContext = createContext<SidebarState | undefined>(undefined);
  * Provider component for sidebar state
  */
 export function SidebarStateProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(true); // Default to collapsed
+  const [isHovered, setIsHovered] = useState<boolean>(false);
   const [mounted, setMounted] = useState(false);
 
   // Load initial state from localStorage on mount
@@ -26,6 +29,9 @@ export function SidebarStateProvider({ children }: { children: ReactNode }): Rea
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored !== null) {
         setIsCollapsed(stored === "true");
+      } else {
+        // If no stored value, default to collapsed (true)
+        setIsCollapsed(true);
       }
       setMounted(true);
     }
@@ -43,7 +49,7 @@ export function SidebarStateProvider({ children }: { children: ReactNode }): Rea
   };
 
   return (
-    <SidebarContext.Provider value={{ isCollapsed, toggle, mounted }}>
+    <SidebarContext.Provider value={{ isCollapsed, toggle, mounted, isHovered, setIsHovered }}>
       {children}
     </SidebarContext.Provider>
   );

@@ -143,3 +143,4 @@ CREATE TRIGGER update_canonical_products_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_canonical_updated_at();
 
+

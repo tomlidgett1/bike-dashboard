@@ -20,12 +20,12 @@ interface MarketplaceLayoutProps {
 }
 
 function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = false }: MarketplaceLayoutProps) {
-  const { isCollapsed, mounted } = useSidebarState();
+  const { mounted } = useSidebarState();
 
   // Log state for debugging
   React.useEffect(() => {
-    console.log('MarketplaceLayout - isCollapsed:', isCollapsed, 'mounted:', mounted);
-  }, [isCollapsed, mounted]);
+    console.log('MarketplaceLayout - mounted:', mounted);
+  }, [mounted]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -35,8 +35,7 @@ function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = 
       {/* Header is included in each marketplace page for more control */}
       <main 
         className={cn(
-          "w-full transition-all duration-[400ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
-          isCollapsed ? "lg:pl-[56px]" : "lg:pl-[200px]",
+          "w-full lg:pl-[56px]",
           showStoreCTA && "mb-32"
         )}
       >
@@ -49,10 +48,7 @@ function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = 
       {/* Call to Action & Simple Footer - Only for Stores Page */}
       {showStoreCTA && (
         <div 
-          className={cn(
-            "fixed bottom-0 left-0 right-0 z-10 transition-all duration-[400ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
-            isCollapsed ? "lg:left-[56px]" : "lg:left-[200px]"
-          )}
+          className="fixed bottom-0 left-0 right-0 z-10 transition-all duration-[400ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]"
         >
           {/* Call to Action for Bike Stores */}
           <div className="bg-white border-t border-gray-200 py-4">

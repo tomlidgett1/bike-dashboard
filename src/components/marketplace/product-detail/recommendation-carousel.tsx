@@ -105,7 +105,7 @@ export function RecommendationCarousel({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
-      className={cn("py-4 sm:py-6", className)}
+      className={cn("py-4", className)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -117,7 +117,7 @@ export function RecommendationCarousel({
             <IconComponent className="h-4.5 w-4.5 text-gray-600" />
           </div>
           
-          {/* Title and Subtitle */}
+          {/* Title */}
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 sm:gap-2">
               <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{title}</h3>
@@ -127,36 +127,7 @@ export function RecommendationCarousel({
                 </span>
               )}
             </div>
-            {/* Subtitle - Hidden on mobile */}
-            {subtitle && (
-              <p className="hidden sm:block text-sm text-gray-500">{subtitle}</p>
-            )}
           </div>
-
-          {/* Seller Avatar (for "More from Seller") - Hidden on mobile */}
-          {seller && (
-            <Link
-              href={`/marketplace/${seller.account_type === 'bicycle_store' ? 'store' : 'seller'}/${seller.id}`}
-              className="hidden sm:flex items-center gap-2 ml-2 px-3 py-1.5 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0"
-            >
-              {seller.logo_url ? (
-                <Image
-                  src={seller.logo_url}
-                  alt={seller.name}
-                  width={24}
-                  height={24}
-                  className="rounded-full object-cover"
-                />
-              ) : (
-                <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
-                  <User className="h-3 w-3 text-gray-500" />
-                </div>
-              )}
-              <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate">
-                {seller.name}
-              </span>
-            </Link>
-          )}
         </div>
 
         {/* See All Link */}

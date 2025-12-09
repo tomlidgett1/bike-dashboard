@@ -104,8 +104,37 @@ export function getMobileCardImageUrl(
 }
 
 /**
- * Get the best image URL for detail pages
- * - Uses detailUrl if available (pre-generated on Cloudinary)
+ * Get the best image URL for gallery/detail pages
+ * - Uses galleryUrl if available (1200px landscape, padded - shows full product)
+ * - Falls back to detailUrl, then original URL for legacy images
+ */
+export function getGalleryImageUrl(
+  imageData: { url?: string; galleryUrl?: string; detailUrl?: string } | string | null | undefined
+): string | null {
+  if (!imageData) return null;
+  
+  // If it's just a string URL
+  if (typeof imageData === 'string') {
+    return imageData;
+  }
+  
+  // Prefer pre-generated galleryUrl (Cloudinary - optimized for product pages)
+  if (imageData.galleryUrl) {
+    return imageData.galleryUrl;
+  }
+  
+  // Fallback to detailUrl
+  if (imageData.detailUrl) {
+    return imageData.detailUrl;
+  }
+  
+  // Fallback to original URL
+  return imageData.url || null;
+}
+
+/**
+ * Get the best image URL for fullscreen/zoom
+ * - Uses detailUrl if available (2000px high-res)
  * - Falls back to original URL for legacy images
  */
 export function getDetailImageUrl(
@@ -140,6 +169,7 @@ export async function uploadToCloudinary(
   cardUrl: string;
   mobileCardUrl: string;
   thumbnailUrl: string;
+  galleryUrl?: string;
   detailUrl?: string;
   id: string;
 }> {
@@ -170,6 +200,7 @@ export async function uploadToCloudinary(
     cardUrl: result.data.cardUrl,
     mobileCardUrl: result.data.mobileCardUrl,
     thumbnailUrl: result.data.thumbnailUrl,
+    galleryUrl: result.data.galleryUrl,
     detailUrl: result.data.detailUrl,
     id: result.data.id,
   };

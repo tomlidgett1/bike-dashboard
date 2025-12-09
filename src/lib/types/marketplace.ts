@@ -27,6 +27,7 @@ export const MARKETPLACE_SUBCATEGORIES: MarketplaceSubcategories = {
 
 export interface MarketplaceProduct {
   id: string;
+  canonical_product_id?: string | null; // Link to canonical product for image discovery
   description: string;
   display_name?: string; // AI-cleaned product name for display
   price: number;

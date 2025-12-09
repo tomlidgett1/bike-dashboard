@@ -92,8 +92,18 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
           </div>
 
           {/* Quick Stats - Minimal Pills */}
-          {(product.frame_size || product.size || product.condition_rating) && (
+          {(product.frame_size || product.size || product.condition_rating || product.bike_type || product.model_year) && (
             <div className="flex items-center gap-2 flex-wrap">
+              {product.model_year && (
+                <span className="px-3 py-1.5 bg-gray-50 text-gray-700 text-sm font-medium rounded-full">
+                  {product.model_year}
+                </span>
+              )}
+              {product.bike_type && (
+                <span className="px-3 py-1.5 bg-gray-50 text-gray-700 text-sm font-medium rounded-full">
+                  {product.bike_type}
+                </span>
+              )}
               {(product.frame_size || product.size) && (
                 <span className="px-3 py-1.5 bg-gray-50 text-gray-700 text-sm font-medium rounded-full">
                   Size {product.frame_size || product.size}

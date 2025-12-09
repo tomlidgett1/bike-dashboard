@@ -38,6 +38,27 @@ interface QuickListingData {
   searchUrls?: any[];
   structuredMetadata?: any;
   fieldConfidence?: any;
+  
+  // Bike-specific fields
+  frameSize?: string;
+  frameMaterial?: string;
+  bikeType?: string;
+  groupset?: string;
+  wheelSize?: string;
+  suspensionType?: string;
+  colorPrimary?: string;
+  colorSecondary?: string;
+  
+  // Part-specific fields
+  partTypeDetail?: string;
+  compatibilityNotes?: string;
+  material?: string;
+  weight?: string;
+  
+  // Apparel-specific fields
+  size?: string;
+  genderFit?: string;
+  apparelMaterial?: string;
 }
 
 interface Step1ItemTypeProps {
@@ -57,6 +78,235 @@ const CONDITION_OPTIONS: { value: ConditionRating; label: string }[] = [
   { value: "Fair", label: "Fair" },
   { value: "Well Used", label: "Well Used" },
 ];
+
+// ============================================================
+// Category-Specific Field Components
+// ============================================================
+
+const BikeSpecificFields = ({ data, onChange }: { data: QuickListingData; onChange: (data: QuickListingData) => void }) => (
+  <div className="space-y-4 mt-5 pt-5 border-t border-gray-200">
+    <h3 className="text-sm font-semibold text-gray-900">Bicycle Details</h3>
+    
+    {/* Row 1: Frame Size & Material */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Frame Size <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Input
+          value={data.frameSize || ''}
+          onChange={(e) => onChange({ ...data, frameSize: e.target.value })}
+          placeholder="e.g., 54cm, Medium, Large"
+          className="rounded-md h-11 text-base"
+        />
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Frame Material <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Input
+          value={data.frameMaterial || ''}
+          onChange={(e) => onChange({ ...data, frameMaterial: e.target.value })}
+          placeholder="e.g., Carbon, Aluminium, Steel"
+          className="rounded-md h-11 text-base"
+        />
+      </div>
+    </div>
+
+    {/* Row 2: Bike Type & Groupset */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Bike Type <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Select value={data.bikeType} onValueChange={(value) => onChange({ ...data, bikeType: value })}>
+          <SelectTrigger className="rounded-md h-11">
+            <SelectValue placeholder="Select type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Road">Road</SelectItem>
+            <SelectItem value="Mountain">Mountain</SelectItem>
+            <SelectItem value="Gravel">Gravel</SelectItem>
+            <SelectItem value="Hybrid">Hybrid</SelectItem>
+            <SelectItem value="Cyclocross">Cyclocross</SelectItem>
+            <SelectItem value="Track">Track</SelectItem>
+            <SelectItem value="BMX">BMX</SelectItem>
+            <SelectItem value="Kids">Kids</SelectItem>
+            <SelectItem value="Electric">Electric</SelectItem>
+            <SelectItem value="Other">Other</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Groupset <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Input
+          value={data.groupset || ''}
+          onChange={(e) => onChange({ ...data, groupset: e.target.value })}
+          placeholder="e.g., Shimano 105, SRAM Force"
+          className="rounded-md h-11 text-base"
+        />
+      </div>
+    </div>
+
+      {/* Row 3: Wheel Size & Suspension */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-gray-900">Wheel Size <span className="text-gray-500 font-normal">(Optional)</span></label>
+          <Select value={data.wheelSize} onValueChange={(value) => onChange({ ...data, wheelSize: value })}>
+            <SelectTrigger className="rounded-md h-11">
+              <SelectValue placeholder="Select wheel size" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="700c">700c (Road)</SelectItem>
+              <SelectItem value="650b">650b (27.5&quot;)</SelectItem>
+              <SelectItem value="29&quot;">29&quot; (29er)</SelectItem>
+              <SelectItem value="27.5&quot;">27.5&quot;</SelectItem>
+              <SelectItem value="26&quot;">26&quot;</SelectItem>
+              <SelectItem value="24&quot;">24&quot; (Kids)</SelectItem>
+              <SelectItem value="20&quot;">20&quot; (BMX/Kids)</SelectItem>
+              <SelectItem value="16&quot;">16&quot; (Kids)</SelectItem>
+              <SelectItem value="12&quot;">12&quot; (Kids)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Suspension <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Select value={data.suspensionType} onValueChange={(value) => onChange({ ...data, suspensionType: value })}>
+          <SelectTrigger className="rounded-md h-11">
+            <SelectValue placeholder="Select suspension" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="None">None / Rigid</SelectItem>
+            <SelectItem value="Front">Front Suspension</SelectItem>
+            <SelectItem value="Full">Full Suspension</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+
+    {/* Row 4: Colours */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Primary Colour <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Input
+          value={data.colorPrimary || ''}
+          onChange={(e) => onChange({ ...data, colorPrimary: e.target.value })}
+          placeholder="e.g., Black, Red, Blue"
+          className="rounded-md h-11 text-base"
+        />
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Secondary Colour <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Input
+          value={data.colorSecondary || ''}
+          onChange={(e) => onChange({ ...data, colorSecondary: e.target.value })}
+          placeholder="e.g., White, Silver"
+          className="rounded-md h-11 text-base"
+        />
+      </div>
+    </div>
+  </div>
+);
+
+const PartSpecificFields = ({ data, onChange }: { data: QuickListingData; onChange: (data: QuickListingData) => void }) => (
+  <div className="space-y-4 mt-5 pt-5 border-t border-gray-200">
+    <h3 className="text-sm font-semibold text-gray-900">Part Details</h3>
+    
+    {/* Row 1: Part Type & Material */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Part Type <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Input
+          value={data.partTypeDetail || ''}
+          onChange={(e) => onChange({ ...data, partTypeDetail: e.target.value })}
+          placeholder="e.g., Rear Derailleur, Crankset"
+          className="rounded-md h-11 text-base"
+        />
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Material <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Input
+          value={data.material || ''}
+          onChange={(e) => onChange({ ...data, material: e.target.value })}
+          placeholder="e.g., Carbon, Aluminium, Steel"
+          className="rounded-md h-11 text-base"
+        />
+      </div>
+    </div>
+
+    {/* Row 2: Weight */}
+    <div className="space-y-2">
+      <label className="text-sm font-semibold text-gray-900">Weight <span className="text-gray-500 font-normal">(Optional)</span></label>
+      <div className="relative">
+        <Input
+          value={data.weight || ''}
+          onChange={(e) => onChange({ ...data, weight: e.target.value })}
+          placeholder="e.g., 250g, 1.2kg"
+          className="rounded-md h-11 text-base pr-10"
+        />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">g</span>
+      </div>
+    </div>
+
+    {/* Row 3: Compatibility */}
+    <div className="space-y-2">
+      <label className="text-sm font-semibold text-gray-900">Compatibility Notes <span className="text-gray-500 font-normal">(Optional)</span></label>
+      <textarea
+        value={data.compatibilityNotes || ''}
+        onChange={(e) => onChange({ ...data, compatibilityNotes: e.target.value })}
+        placeholder="e.g., Compatible with Shimano 11-speed, fits 68mm bottom bracket"
+        rows={3}
+        className="w-full px-3 py-2.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none"
+      />
+    </div>
+  </div>
+);
+
+const ApparelSpecificFields = ({ data, onChange }: { data: QuickListingData; onChange: (data: QuickListingData) => void }) => (
+  <div className="space-y-4 mt-5 pt-5 border-t border-gray-200">
+    <h3 className="text-sm font-semibold text-gray-900">Apparel Details</h3>
+    
+    {/* Row 1: Size & Gender Fit */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Size <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Select value={data.size} onValueChange={(value) => onChange({ ...data, size: value })}>
+          <SelectTrigger className="rounded-md h-11">
+            <SelectValue placeholder="Select size" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="XS">XS</SelectItem>
+            <SelectItem value="S">S</SelectItem>
+            <SelectItem value="M">M</SelectItem>
+            <SelectItem value="L">L</SelectItem>
+            <SelectItem value="XL">XL</SelectItem>
+            <SelectItem value="XXL">XXL</SelectItem>
+            <SelectItem value="XXXL">XXXL</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-gray-500">For shoes, use the input field below to enter the size</p>
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-gray-900">Gender Fit <span className="text-gray-500 font-normal">(Optional)</span></label>
+        <Select value={data.genderFit} onValueChange={(value) => onChange({ ...data, genderFit: value })}>
+          <SelectTrigger className="rounded-md h-11">
+            <SelectValue placeholder="Select fit" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Men's">Men&apos;s</SelectItem>
+            <SelectItem value="Women's">Women&apos;s</SelectItem>
+            <SelectItem value="Unisex">Unisex</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+
+    {/* Row 2: Material */}
+    <div className="space-y-2">
+      <label className="text-sm font-semibold text-gray-900">Material <span className="text-gray-500 font-normal">(Optional)</span></label>
+      <Input
+        value={data.apparelMaterial || ''}
+        onChange={(e) => onChange({ ...data, apparelMaterial: e.target.value })}
+        placeholder="e.g., Merino Wool, Polyester, Gore-Tex"
+        className="rounded-md h-11 text-base"
+      />
+    </div>
+  </div>
+);
 
 export function Step1ItemType({ 
   selectedType, 
@@ -79,11 +329,34 @@ export function Step1ItemType({
         [quickListingData.brand, quickListingData.model].filter(Boolean).join(' ') ||
         '';
       
+      const metadata = quickListingData.structuredMetadata;
+      
       setQuickData({
         ...quickListingData,
         title: generatedTitle,
         brand: quickListingData.brand,
         model: quickListingData.model,
+        
+        // Extract bike fields from AI analysis
+        frameSize: metadata?.bike?.frame_size,
+        frameMaterial: metadata?.bike?.frame_material,
+        bikeType: metadata?.bike?.bike_type,
+        groupset: metadata?.bike?.groupset,
+        wheelSize: metadata?.bike?.wheel_size,
+        suspensionType: metadata?.bike?.suspension_type,
+        colorPrimary: metadata?.bike?.color_primary,
+        colorSecondary: metadata?.bike?.color_secondary,
+        
+        // Extract part fields from AI analysis
+        partTypeDetail: metadata?.part?.part_type_detail,
+        material: metadata?.part?.material,
+        weight: metadata?.part?.weight,
+        compatibilityNotes: metadata?.part?.compatibility_notes,
+        
+        // Extract apparel fields from AI analysis
+        size: metadata?.apparel?.size,
+        genderFit: metadata?.apparel?.gender_fit,
+        apparelMaterial: metadata?.apparel?.apparel_material,
       });
     }
   }, [quickListingData]);
@@ -254,26 +527,28 @@ export function Step1ItemType({
         <button
           onClick={() => setListingMode('quick')}
           className={cn(
-            "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-colors",
+            "flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap",
             listingMode === 'quick'
               ? "text-gray-800 bg-white shadow-sm"
               : "text-gray-600 hover:bg-gray-200/70"
           )}
         >
-          <Zap size={15} />
-          Quick List
+          <Zap className="h-3.5 w-3.5 sm:h-[15px] sm:w-[15px]" />
+          <span className="hidden xs:inline">Quick List</span>
+          <span className="xs:hidden">Quick</span>
         </button>
         <button
           onClick={() => setListingMode('comprehensive')}
           className={cn(
-            "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-colors",
+            "flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap",
             listingMode === 'comprehensive'
               ? "text-gray-800 bg-white shadow-sm"
               : "text-gray-600 hover:bg-gray-200/70"
           )}
         >
-          <Bike size={15} />
-          Comprehensive Listing
+          <Bike className="h-3.5 w-3.5 sm:h-[15px] sm:w-[15px]" />
+          <span className="hidden xs:inline">Comprehensive Listing</span>
+          <span className="xs:hidden">Complete</span>
         </button>
       </div>
 
@@ -299,8 +574,69 @@ export function Step1ItemType({
               </div>
             </div>
 
-            {/* Main Form Area */}
-            <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-8">
+            {/* Item Type Selector */}
+            <div className="bg-white rounded-md border border-gray-200 p-4 lg:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Item Category</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Change if AI detected the wrong type</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setQuickData({ ...quickData, itemType: 'bike' })}
+                  className={cn(
+                    "flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-all",
+                    quickData.itemType === 'bike'
+                      ? "border-gray-900 bg-gray-50"
+                      : "border-gray-200 hover:border-gray-300"
+                  )}
+                >
+                  <Bike className={cn("h-6 w-6", quickData.itemType === 'bike' ? "text-gray-900" : "text-gray-400")} />
+                  <span className={cn("text-sm font-medium", quickData.itemType === 'bike' ? "text-gray-900" : "text-gray-600")}>
+                    Bicycle
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setQuickData({ ...quickData, itemType: 'part' })}
+                  className={cn(
+                    "flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-all",
+                    quickData.itemType === 'part'
+                      ? "border-gray-900 bg-gray-50"
+                      : "border-gray-200 hover:border-gray-300"
+                  )}
+                >
+                  <Wrench className={cn("h-6 w-6", quickData.itemType === 'part' ? "text-gray-900" : "text-gray-400")} />
+                  <span className={cn("text-sm font-medium", quickData.itemType === 'part' ? "text-gray-900" : "text-gray-600")}>
+                    Part
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setQuickData({ ...quickData, itemType: 'apparel' })}
+                  className={cn(
+                    "flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-all",
+                    quickData.itemType === 'apparel'
+                      ? "border-gray-900 bg-gray-50"
+                      : "border-gray-200 hover:border-gray-300"
+                  )}
+                >
+                  <ShoppingBag className={cn("h-6 w-6", quickData.itemType === 'apparel' ? "text-gray-900" : "text-gray-400")} />
+                  <span className={cn("text-sm font-medium", quickData.itemType === 'apparel' ? "text-gray-900" : "text-gray-600")}>
+                    Apparel
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Main Form Area - White box on desktop only */}
+            <div className="lg:bg-white lg:rounded-md lg:border lg:border-gray-200 lg:p-6">
+              <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-8">
               {/* Left - Form Fields */}
               <div className="space-y-5">
                 {/* Title */}
@@ -338,6 +674,19 @@ export function Step1ItemType({
                     />
                   </div>
                 </div>
+
+                {/* Category-Specific Fields */}
+                {quickData.itemType === 'bike' && (
+                  <BikeSpecificFields data={quickData} onChange={setQuickData} />
+                )}
+
+                {quickData.itemType === 'part' && (
+                  <PartSpecificFields data={quickData} onChange={setQuickData} />
+                )}
+
+                {quickData.itemType === 'apparel' && (
+                  <ApparelSpecificFields data={quickData} onChange={setQuickData} />
+                )}
 
                 {/* Description */}
                 <div className="space-y-2">
@@ -498,6 +847,7 @@ export function Step1ItemType({
                   className="hidden"
                 />
               </div>
+            </div>
             </div>
 
             {/* Publish Section */}

@@ -90,6 +90,30 @@ export function SellWizard() {
       }
       
       // Build the listing data for quick publish
+      // Map itemType to marketplace_category
+      // IMPORTANT: Determine category based on which fields are filled
+      let itemType = quickData.itemType || formData.itemType;
+      
+      // Fallback: Infer from filled fields if itemType not set
+      if (!itemType) {
+        if (quickData.frameSize || quickData.groupset || quickData.wheelSize || quickData.frameMaterial) {
+          itemType = 'bike';
+        } else if (quickData.partTypeDetail || quickData.compatibilityNotes) {
+          itemType = 'part';
+        } else if (quickData.size || quickData.genderFit || quickData.apparelMaterial) {
+          itemType = 'apparel';
+        } else {
+          itemType = 'bike'; // Ultimate fallback
+        }
+      }
+      
+      const categoryMap = {
+        'bike': 'Bicycles',
+        'part': 'Parts',
+        'apparel': 'Apparel'
+      } as const;
+      const marketplace_category = categoryMap[itemType as keyof typeof categoryMap];
+      
       const listingData = {
         // Basic required fields
         title: quickData.title || [quickData.brand, quickData.model].filter(Boolean).join(' '),
@@ -98,8 +122,9 @@ export function SellWizard() {
         price: quickData.price,
         conditionRating: quickData.conditionRating || 'Good',
         
-        // Item type - default to bike if not detected
-        itemType: quickData.itemType || formData.itemType || 'bike',
+        // Item type and marketplace category
+        itemType: itemType,
+        marketplace_category: marketplace_category,
         
         // Images - ensure primary is set
         images: images,
@@ -115,6 +140,27 @@ export function SellWizard() {
         model: quickData.model,
         modelYear: quickData.modelYear,
         pickupLocation: quickData.pickupLocation,
+        
+        // Bike-specific fields
+        frameSize: quickData.frameSize,
+        frameMaterial: quickData.frameMaterial,
+        bikeType: quickData.bikeType,
+        groupset: quickData.groupset,
+        wheelSize: quickData.wheelSize,
+        suspensionType: quickData.suspensionType,
+        colorPrimary: quickData.colorPrimary,
+        colorSecondary: quickData.colorSecondary,
+        
+        // Part-specific fields
+        partTypeDetail: quickData.partTypeDetail,
+        material: quickData.material,
+        weight: quickData.weight,
+        compatibilityNotes: quickData.compatibilityNotes,
+        
+        // Apparel-specific fields
+        size: quickData.size,
+        genderFit: quickData.genderFit,
+        apparelMaterial: quickData.apparelMaterial,
       };
 
       console.log('🚀 [QUICK LIST] Publishing with data:', listingData);

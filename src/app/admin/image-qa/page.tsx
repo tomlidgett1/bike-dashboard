@@ -3,9 +3,10 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Loader2, CheckCircle2, XCircle, Sparkles, Star } from 'lucide-react';
+import { Search, Loader2, CheckCircle2, XCircle, Sparkles, Star, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 
@@ -33,6 +34,9 @@ interface Product {
   upc: string | null;
   category: string | null;
   manufacturer: string | null;
+  marketplace_category: string | null;
+  marketplace_subcategory: string | null;
+  marketplace_level_3_category: string | null;
   images: ProductImage[];
   isDiscovering: boolean;
 }
@@ -47,6 +51,18 @@ export default function ImageQAPage() {
   const [stats, setStats] = useState({ total: 0, completed: 0, needsReview: 0 });
   const [discovering, setDiscovering] = useState<Set<string>>(new Set());
   const [completedProducts, setCompletedProducts] = useState<Set<string>>(new Set());
+
+  // Filter states
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>('');
+  const [selectedLevel3, setSelectedLevel3] = useState<string>('');
+  const [selectedManufacturer, setSelectedManufacturer] = useState<string>('');
+
+  // Available filter options
+  const [categories, setCategories] = useState<string[]>([]);
+  const [subcategories, setSubcategories] = useState<string[]>([]);
+  const [level3Categories, setLevel3Categories] = useState<string[]>([]);
+  const [manufacturers, setManufacturers] = useState<string[]>([]);
 
   const supabase = createClient();
 
@@ -68,6 +84,38 @@ export default function ImageQAPage() {
     localStorage.setItem('imageqa_completed_products', JSON.stringify([...completedProducts]));
   }, [completedProducts]);
 
+  // Fetch unique filter values on mount using efficient database function
+  const fetchFilterOptions = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_canonical_filter_options');
+      
+      if (error) {
+        console.error('[FILTERS] Error fetching filter options:', error);
+        return;
+      }
+      
+      if (data) {
+        setCategories(data.categories || []);
+        setSubcategories(data.subcategories || []);
+        setLevel3Categories(data.level3_categories || []);
+        setManufacturers(data.manufacturers || []);
+        
+        console.log('[FILTERS] Loaded filter options:', {
+          categories: data.categories?.length || 0,
+          subcategories: data.subcategories?.length || 0,
+          level3: data.level3_categories?.length || 0,
+          manufacturers: data.manufacturers?.length || 0
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch filter options:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchFilterOptions();
+  }, []);
+
   // Fetch products with images
   const fetchProducts = async (pageNum: number = 1, searchTerm: string = '') => {
     try {
@@ -79,6 +127,9 @@ export default function ImageQAPage() {
           upc,
           category,
           manufacturer,
+          marketplace_category,
+          marketplace_subcategory,
+          marketplace_level_3_category,
           product_images (
             id,
             storage_path,
@@ -101,6 +152,20 @@ export default function ImageQAPage() {
 
       if (searchTerm) {
         query = query.or(`normalized_name.ilike.%${searchTerm}%,upc.ilike.%${searchTerm}%`);
+      }
+
+      // Apply category filters
+      if (selectedCategory) {
+        query = query.eq('marketplace_category', selectedCategory);
+      }
+      if (selectedSubcategory) {
+        query = query.eq('marketplace_subcategory', selectedSubcategory);
+      }
+      if (selectedLevel3) {
+        query = query.eq('marketplace_level_3_category', selectedLevel3);
+      }
+      if (selectedManufacturer) {
+        query = query.eq('manufacturer', selectedManufacturer);
       }
 
       const { data, error } = await query;
@@ -225,8 +290,9 @@ export default function ImageQAPage() {
   };
 
   useEffect(() => {
+    setPage(1);
     fetchProducts(1, search);
-  }, [activeTab]);
+  }, [activeTab, selectedCategory, selectedSubcategory, selectedLevel3, selectedManufacturer]);
 
   // Disabled auto-discovery - only manual triggering now
   // useEffect(() => {
@@ -790,6 +856,145 @@ export default function ImageQAPage() {
               Search
             </Button>
           </div>
+
+          {/* Filters */}
+          <div className="grid grid-cols-4 gap-3 mt-4">
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1.5 block">Category</label>
+              <Select 
+                value={selectedCategory || '_all'} 
+                onValueChange={(val) => setSelectedCategory(val === '_all' ? '' : val)}
+              >
+                <SelectTrigger className="rounded-md w-full">
+                  <SelectValue placeholder="All categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">All categories</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1.5 block">Subcategory</label>
+              <Select 
+                value={selectedSubcategory || '_all'} 
+                onValueChange={(val) => setSelectedSubcategory(val === '_all' ? '' : val)}
+              >
+                <SelectTrigger className="rounded-md w-full">
+                  <SelectValue placeholder="All subcategories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">All subcategories</SelectItem>
+                  {subcategories.map((sub) => (
+                    <SelectItem key={sub} value={sub}>{sub}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1.5 block">Level 3</label>
+              <Select 
+                value={selectedLevel3 || '_all'} 
+                onValueChange={(val) => setSelectedLevel3(val === '_all' ? '' : val)}
+              >
+                <SelectTrigger className="rounded-md w-full">
+                  <SelectValue placeholder="All level 3" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">All level 3</SelectItem>
+                  {level3Categories.map((l3) => (
+                    <SelectItem key={l3} value={l3}>{l3}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1.5 block">Manufacturer</label>
+              <Select 
+                value={selectedManufacturer || '_all'} 
+                onValueChange={(val) => setSelectedManufacturer(val === '_all' ? '' : val)}
+              >
+                <SelectTrigger className="rounded-md w-full">
+                  <SelectValue placeholder="All manufacturers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">All manufacturers</SelectItem>
+                  {manufacturers.map((mfr) => (
+                    <SelectItem key={mfr} value={mfr}>{mfr}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Active Filters Display */}
+          {(selectedCategory || selectedSubcategory || selectedLevel3 || selectedManufacturer) && (
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
+              <span className="text-xs font-medium text-gray-600">Active filters:</span>
+              {selectedCategory && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-300 rounded-md text-xs">
+                  <span className="text-gray-700">Category: {selectedCategory}</span>
+                  <button 
+                    onClick={() => setSelectedCategory('')}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+              {selectedSubcategory && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-300 rounded-md text-xs">
+                  <span className="text-gray-700">Subcategory: {selectedSubcategory}</span>
+                  <button 
+                    onClick={() => setSelectedSubcategory('')}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+              {selectedLevel3 && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-300 rounded-md text-xs">
+                  <span className="text-gray-700">Level 3: {selectedLevel3}</span>
+                  <button 
+                    onClick={() => setSelectedLevel3('')}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+              {selectedManufacturer && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-300 rounded-md text-xs">
+                  <span className="text-gray-700">Manufacturer: {selectedManufacturer}</span>
+                  <button 
+                    onClick={() => setSelectedManufacturer('')}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => {
+                  setSelectedCategory('');
+                  setSelectedSubcategory('');
+                  setSelectedLevel3('');
+                  setSelectedManufacturer('');
+                }}
+                className="text-xs h-7 px-2 rounded-md"
+              >
+                Clear all
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -837,7 +1042,12 @@ export default function ImageQAPage() {
                     </div>
                     <div className="flex items-center gap-3 text-sm text-gray-600">
                       {product.upc && <span>UPC: {product.upc}</span>}
-                      {product.category && <span>• {product.category}</span>}
+                      {product.marketplace_category && (
+                        <span>• {product.marketplace_category}
+                          {product.marketplace_subcategory && ` > ${product.marketplace_subcategory}`}
+                          {product.marketplace_level_3_category && ` > ${product.marketplace_level_3_category}`}
+                        </span>
+                      )}
                       {product.manufacturer && <span>• {product.manufacturer}</span>}
                     </div>
                   </div>

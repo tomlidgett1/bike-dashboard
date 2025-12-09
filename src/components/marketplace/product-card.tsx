@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Package, Heart } from "lucide-react";
+import { Package, Heart, Sparkles } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
@@ -18,10 +18,17 @@ import { getCardImageUrl } from "@/lib/utils/cloudinary";
 interface ProductCardProps {
   product: MarketplaceProduct;
   priority?: boolean;
+  isAdmin?: boolean;
+  onImageDiscoveryClick?: (productId: string) => void;
 }
 
 // Memoized product card to prevent unnecessary re-renders
-export const ProductCard = React.memo<ProductCardProps>(function ProductCard({ product, priority = false }) {
+export const ProductCard = React.memo<ProductCardProps>(function ProductCard({ 
+  product, 
+  priority = false,
+  isAdmin = false,
+  onImageDiscoveryClick 
+}) {
   const [imageError, setImageError] = React.useState(false);
   const [isVisible, setIsVisible] = React.useState(priority);
   const [isLiked, setIsLiked] = React.useState(false);
@@ -188,6 +195,23 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({ p
               style={{ filter: isLiked ? 'none' : 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}
             />
           </button>
+
+          {/* Admin: Image Discovery Button */}
+          {isAdmin && onImageDiscoveryClick && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onImageDiscoveryClick(product.id);
+              }}
+              className="absolute top-2.5 left-2.5 bg-white/95 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-white"
+            >
+              <div className="flex items-center gap-1">
+                <Sparkles className="h-3.5 w-3.5 text-purple-600" />
+                <span className="text-xs font-medium text-gray-700">New Image</span>
+              </div>
+            </button>
+          )}
         </div>
 
         {/* Product Info - Simple text below */}

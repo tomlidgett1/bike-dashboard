@@ -129,3 +129,4 @@ WHERE marketplace_category IS NULL
 ORDER BY product_count DESC
 LIMIT 10;
 
+
