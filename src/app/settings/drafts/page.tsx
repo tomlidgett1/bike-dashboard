@@ -353,7 +353,7 @@ export default function DraftsPage() {
       <MarketplaceHeader compactSearchOnMobile />
 
       <MarketplaceLayout>
-        <div className="min-h-screen bg-gray-50 pt-14 sm:pt-16">
+        <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-24 sm:pb-8">
           {/* Page Header */}
           <div className="border-b border-gray-200 bg-white">
             <div className="max-w-[1920px] mx-auto px-4 sm:px-6 py-4 sm:py-6">

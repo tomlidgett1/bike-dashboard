@@ -196,7 +196,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
               {/* Mobile Menu Button - Left of logo */}
               <button
                 onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden p-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer z-10"
+                className="lg:hidden p-2 -ml-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer z-10"
                 aria-label="Open menu"
               >
                 <Menu className="h-5 w-5 text-gray-700 stroke-[1.5]" />
@@ -205,7 +205,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
               {/* Logo */}
               <button
                 onClick={() => router.push('/marketplace')}
-                className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 cursor-pointer"
+                className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 cursor-pointer translate-y-[2px]"
               >
                 <Image 
                   src="/yj.svg" 
@@ -224,7 +224,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                 <div className="hidden sm:block flex-[2] ml-[14px]">
                   <InstantSearch />
                 </div>
-                {/* Mobile: Search icon button, Messages button (if logged in), and Sell button */}
+                {/* Mobile: Search icon and Messages button (if logged in) */}
                 <div className="sm:hidden flex items-center gap-2 ml-auto">
                   <button
                     onClick={() => setMobileSearchOpen(true)}
@@ -247,19 +247,6 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                       )}
                     </button>
                   )}
-                  <Button
-                    onClick={() => {
-                      if (user) {
-                        setMobileUploadMethodOpen(true);
-                      } else {
-                        setSellRequirementModalOpen(true);
-                      }
-                    }}
-                    size="sm"
-                    className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-4"
-                  >
-                    Sell
-                  </Button>
                 </div>
               </>
             ) : (
@@ -268,8 +255,15 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                 <div className="hidden sm:block flex-[2] ml-[14px]">
                   <InstantSearch />
                 </div>
-                {/* Mobile: Messages button (if logged in) and Sell button */}
+                {/* Mobile: Search icon and Messages button (if logged in) */}
                 <div className="sm:hidden flex items-center gap-2 ml-auto">
+                  <button
+                    onClick={() => setMobileSearchOpen(true)}
+                    className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
+                    aria-label="Open search"
+                  >
+                    <Search className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                  </button>
                   {mounted && user && (
                     <button
                       onClick={() => router.push('/messages')}
@@ -284,19 +278,6 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
                       )}
                     </button>
                   )}
-                  <Button
-                    onClick={() => {
-                      if (user) {
-                        setMobileUploadMethodOpen(true);
-                      } else {
-                        setSellRequirementModalOpen(true);
-                      }
-                    }}
-                    size="sm"
-                    className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm h-9 px-4"
-                  >
-                    Sell
-                  </Button>
                 </div>
               </>
             )}
@@ -465,6 +446,25 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
           </div>
         </div>
       </motion.header>
+
+      {/* Mobile Floating List Item Button - Bottom of screen, only on mobile with compactSearchOnMobile */}
+      {compactSearchOnMobile && (
+        <div className="sm:hidden fixed bottom-6 left-4 right-4 z-50">
+          <Button
+            onClick={() => {
+              if (user) {
+                setMobileUploadMethodOpen(true);
+              } else {
+                setSellRequirementModalOpen(true);
+              }
+            }}
+            className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-lg h-12"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            List Item
+          </Button>
+        </div>
+      )}
 
       {/* Mobile Slide-out Menu - Rendered outside header for proper positioning */}
       <AnimatePresence>

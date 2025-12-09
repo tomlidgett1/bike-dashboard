@@ -145,9 +145,11 @@ interface InstantSearchProps {
   onResultClick?: () => void;
   /** When true, renders in full-page mobile mode without sheet styling */
   mobileFullPage?: boolean;
+  /** Custom placeholder text (overrides typewriter effect) */
+  placeholder?: string;
 }
 
-export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage = false }: InstantSearchProps = {}) {
+export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage = false, placeholder: customPlaceholder }: InstantSearchProps = {}) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResults | null>(null);
@@ -240,8 +242,8 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
     }
   }, []);
   
-  // Typewriter effect for placeholder
-  const [placeholder, setPlaceholder] = React.useState("");
+  // Typewriter effect for placeholder (only if custom placeholder not provided)
+  const [placeholder, setPlaceholder] = React.useState(customPlaceholder || "");
   const placeholderTexts = [
     "Shimano 12 speed cassette...",
     "used road bicycle...",
@@ -250,6 +252,12 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
   ];
   
   React.useEffect(() => {
+    // Skip typewriter effect if custom placeholder is provided
+    if (customPlaceholder) {
+      setPlaceholder(customPlaceholder);
+      return;
+    }
+
     let currentTextIndex = 0;
     let currentCharIndex = 0;
     let isDeleting = false;
@@ -299,7 +307,7 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
     timeoutId = setTimeout(type, 500); // Initial delay
 
     return () => clearTimeout(timeoutId);
-  }, []);
+  }, [customPlaceholder]);
 
   // Product search only (AI search triggered manually via button)
   React.useEffect(() => {
