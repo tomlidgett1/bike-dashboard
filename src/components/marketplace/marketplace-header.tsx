@@ -447,17 +447,11 @@ export function MarketplaceHeader({ compactSearchOnMobile = true }: MarketplaceH
         </div>
       </motion.header>
 
-      {/* Mobile Floating List Item Button - Bottom of screen, only on mobile with compactSearchOnMobile */}
-      {compactSearchOnMobile && (
+      {/* Mobile Floating List Item Button - Bottom of screen, only shown when user is logged in */}
+      {compactSearchOnMobile && mounted && user && (
         <div className="sm:hidden fixed bottom-6 left-4 right-4 z-50">
           <Button
-            onClick={() => {
-              if (user) {
-                setMobileUploadMethodOpen(true);
-              } else {
-                setSellRequirementModalOpen(true);
-              }
-            }}
+            onClick={() => setMobileUploadMethodOpen(true)}
             className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-lg h-12"
           >
             <Plus className="h-5 w-5 mr-2" />
