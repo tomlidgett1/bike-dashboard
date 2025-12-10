@@ -302,7 +302,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
               {/* Logo */}
               <button
                 onClick={() => router.push('/marketplace')}
-                className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 cursor-pointer translate-y-[2px]"
+                className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 cursor-pointer translate-y-[1px]"
               >
                 <Image 
                   src="/yj.svg" 

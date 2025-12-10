@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { MapPin, Heart, Share2, Bell, Tag, User, Package } from "lucide-react";
+import { MapPin, Heart, Share2, Tag, User, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
@@ -74,30 +74,23 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
 
       {/* Action Buttons Row */}
       <div className="px-4 pb-4">
-        <div className="grid grid-cols-4 gap-3">
-          <button className="flex flex-col items-center gap-1.5 py-3">
-            <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-              <Bell className="h-5 w-5 text-gray-700" />
-            </div>
-            <span className="text-xs text-gray-700">Alerts</span>
-          </button>
-
-          <button 
-            onClick={(e) => {
-              e.preventDefault();
-              // Trigger make offer modal
-            }}
-            className="flex flex-col items-center gap-1.5 py-3"
-          >
-            <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-              <Tag className="h-5 w-5 text-gray-700" />
-            </div>
-            <span className="text-xs text-gray-700">Send offer</span>
-          </button>
+        <div className="flex items-center justify-around">
+          {/* Make Offer */}
+          <div className="flex flex-col items-center">
+            <MakeOfferButton
+              productId={product.id}
+              productName={(product as any).display_name || product.description}
+              productPrice={product.price}
+              sellerId={product.user_id}
+              productImage={product.all_images?.[0] || null}
+              variant="ghost"
+              className="flex flex-col items-center gap-1.5 py-3 hover:bg-gray-50 rounded-md h-auto px-6"
+            />
+          </div>
 
           <button 
             onClick={handleShare}
-            className="flex flex-col items-center gap-1.5 py-3"
+            className="flex flex-col items-center gap-1.5 py-3 px-6 hover:bg-gray-50 rounded-md transition-colors"
           >
             <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
               <Share2 className="h-5 w-5 text-gray-700" />
@@ -107,7 +100,7 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
 
           <button 
             onClick={() => setIsLiked(!isLiked)}
-            className="flex flex-col items-center gap-1.5 py-3"
+            className="flex flex-col items-center gap-1.5 py-3 px-6 hover:bg-gray-50 rounded-md transition-colors"
           >
             <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
               <Heart className={cn("h-5 w-5", isLiked ? "fill-red-500 text-red-500" : "text-gray-700")} />
