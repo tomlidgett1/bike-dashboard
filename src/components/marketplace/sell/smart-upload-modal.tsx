@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, Loader2, CheckCircle2, Monitor, Smartphone, Camera, ImageIcon } from "lucide-react";
+import { Upload, X, Loader2, CheckCircle2, Monitor, Smartphone, Camera, ImageIcon, Sparkles, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,6 +22,7 @@ import { compressImage, compressedToFile, shouldCompress } from "@/lib/utils/ima
 // - Client-side image compression (5MB → 200KB)
 // - Parallel uploads (3 concurrent)
 // - Supports both computer upload and mobile QR code upload
+// - Native mobile bottom sheet design
 // ============================================================
 
 const UPLOAD_CONCURRENCY = 3;
@@ -55,6 +56,16 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Prevent body scroll when modal is open on mobile
+  React.useEffect(() => {
+    if (isOpen && isMobile) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, [isOpen, isMobile]);
 
   // Reset state when modal opens/closes
   React.useEffect(() => {
@@ -365,19 +376,320 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
     setError(null);
   };
 
+  // Mobile Bottom Sheet Render
+  if (isMobile) {
+    return (
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/40 z-[100]"
+              onClick={stage === "upload" || stage === "error" ? onClose : undefined}
+            />
+            
+            {/* Bottom Sheet */}
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ 
+                type: "spring",
+                damping: 30,
+                stiffness: 400,
+              }}
+              className="fixed bottom-0 left-0 right-0 z-[101] bg-white rounded-t-2xl max-h-[90vh] overflow-hidden flex flex-col"
+            >
+              {/* Handle Bar */}
+              <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
+                <div className="w-10 h-1 bg-gray-300 rounded-full" />
+              </div>
+
+              <AnimatePresence mode="wait">
+                {/* Upload Stage */}
+                {stage === "upload" && (
+                  <motion.div
+                    key="upload"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex flex-col flex-1 overflow-hidden"
+                  >
+                    {/* Header */}
+                    <div className="px-5 pb-3 flex-shrink-0">
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-lg bg-gray-900 flex items-center justify-center">
+                          <Sparkles className="h-4 w-4 text-[#FFC72C]" />
+                        </div>
+                        <div>
+                          <h2 className="text-lg font-semibold text-gray-900">Smart Upload</h2>
+                          <p className="text-xs text-gray-500">AI will detect product details</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Photo Grid - Scrollable */}
+                    <div className="flex-1 overflow-y-auto px-4 pb-4">
+                      {photos.length === 0 ? (
+                        /* Empty state - upload buttons */
+                        <div className="space-y-3">
+                          {/* Camera - Primary action */}
+                          <motion.button
+                            onClick={() => cameraInputRef.current?.click()}
+                            whileTap={{ scale: 0.98 }}
+                            className="w-full"
+                          >
+                            <div className="bg-white border-2 border-gray-900 rounded-xl p-5 flex items-center gap-4">
+                              <div className="h-14 w-14 rounded-xl bg-gray-900 flex items-center justify-center flex-shrink-0">
+                                <Camera className="h-7 w-7 text-white" />
+                              </div>
+                              <div className="flex-1 text-left">
+                                <h3 className="text-base font-semibold text-gray-900">Take Photos</h3>
+                                <p className="text-xs text-gray-500 mt-0.5">Best for items nearby</p>
+                              </div>
+                            </div>
+                          </motion.button>
+                          <input
+                            ref={cameraInputRef}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleFileSelect}
+                            className="hidden"
+                          />
+
+                          {/* Gallery - Secondary action */}
+                          <motion.button
+                            onClick={() => fileInputRef.current?.click()}
+                            whileTap={{ scale: 0.98 }}
+                            className="w-full"
+                          >
+                            <div className="bg-white border border-gray-200 rounded-xl p-5 flex items-center gap-4 active:bg-gray-50">
+                              <div className="h-14 w-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                <ImageIcon className="h-7 w-7 text-gray-600" />
+                              </div>
+                              <div className="flex-1 text-left">
+                                <h3 className="text-base font-semibold text-gray-900">Choose from Gallery</h3>
+                                <p className="text-xs text-gray-500 mt-0.5">Select existing photos</p>
+                              </div>
+                            </div>
+                          </motion.button>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleFileSelect}
+                            className="hidden"
+                          />
+
+                          <p className="text-center text-xs text-gray-400 pt-2">
+                            Add up to 10 photos for best results
+                          </p>
+                        </div>
+                      ) : (
+                        /* Photo previews */
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-gray-700">{photos.length} photo{photos.length !== 1 ? 's' : ''} selected</p>
+                            <button
+                              onClick={() => fileInputRef.current?.click()}
+                              className="text-sm font-medium text-gray-900 flex items-center gap-1"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Add more
+                            </button>
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              onChange={handleFileSelect}
+                              className="hidden"
+                            />
+                          </div>
+                          
+                          <div className="grid grid-cols-3 gap-2">
+                            {photos.map((photo, index) => (
+                              <div key={index} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
+                                <img
+                                  src={photo.preview}
+                                  alt={`Photo ${index + 1}`}
+                                  className="w-full h-full object-cover"
+                                />
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removePhoto(index);
+                                  }}
+                                  className="absolute top-1.5 right-1.5 h-6 w-6 bg-black/60 rounded-full flex items-center justify-center"
+                                >
+                                  <X className="h-3.5 w-3.5 text-white" />
+                                </button>
+                                {index === 0 && (
+                                  <div className="absolute bottom-1.5 left-1.5 bg-black/60 px-2 py-0.5 rounded text-[10px] text-white font-medium">
+                                    Cover
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bottom Actions - Fixed */}
+                    <div className="px-4 pb-8 pt-3 border-t border-gray-100 flex-shrink-0 bg-white">
+                      <div className="flex gap-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={onClose}
+                          className="flex-1 h-12 rounded-xl border-gray-200"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={handleAnalyze}
+                          disabled={photos.length === 0}
+                          className="flex-1 h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
+                        >
+                          Continue
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Processing States */}
+                {(stage === "compressing" || stage === "uploading" || stage === "analyzing" || stage === "searching") && (
+                  <motion.div
+                    key="processing"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="px-5 py-12 flex flex-col items-center"
+                  >
+                    {/* Animated progress indicator */}
+                    <div className="relative mb-6">
+                      <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
+                        <Sparkles className="h-7 w-7 text-gray-400" />
+                      </div>
+                      <motion.div
+                        className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#FFC72C]"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                      />
+                    </div>
+                    
+                    <p className="text-base font-medium text-gray-900 mb-1">
+                      {stage === "compressing" && "Optimising photos..."}
+                      {stage === "uploading" && "Uploading photos..."}
+                      {stage === "analyzing" && "AI is analysing..."}
+                      {stage === "searching" && "Finding details..."}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {(stage === "compressing" || stage === "uploading") && (
+                        `${uploadProgress.current} of ${uploadProgress.total}`
+                      )}
+                      {stage === "analyzing" && "This won't take long"}
+                      {stage === "searching" && "Almost done"}
+                    </p>
+                    
+                    {/* Progress bar for upload stages */}
+                    {(stage === "compressing" || stage === "uploading") && uploadProgress.total > 0 && (
+                      <div className="w-48 h-1.5 bg-gray-200 rounded-full mt-4 overflow-hidden">
+                        <motion.div
+                          className="h-full bg-[#FFC72C] rounded-full"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                          transition={{ duration: 0.3 }}
+                        />
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+
+                {/* Success Stage */}
+                {stage === "success" && (
+                  <motion.div
+                    key="success"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="px-5 py-12 flex flex-col items-center"
+                  >
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", damping: 15, stiffness: 300 }}
+                      className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4"
+                    >
+                      <CheckCircle2 className="h-8 w-8 text-green-600" />
+                    </motion.div>
+                    <p className="text-base font-medium text-gray-900">All done!</p>
+                    <p className="text-sm text-gray-500 mt-1">Preparing your listing...</p>
+                  </motion.div>
+                )}
+
+                {/* Error Stage */}
+                {stage === "error" && (
+                  <motion.div
+                    key="error"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="px-5 py-8 flex flex-col items-center"
+                  >
+                    <div className="h-16 w-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
+                      <X className="h-8 w-8 text-red-600" />
+                    </div>
+                    <p className="text-base font-medium text-gray-900 mb-1">Something went wrong</p>
+                    <p className="text-sm text-gray-500 text-center mb-6 max-w-[240px]">{error}</p>
+                    
+                    <div className="flex gap-3 w-full max-w-xs">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={onClose}
+                        className="flex-1 h-12 rounded-xl"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={handleRetry}
+                        className="flex-1 h-12 rounded-xl bg-gray-900 hover:bg-gray-800"
+                      >
+                        Try Again
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              
+              {/* Safe area padding for iOS */}
+              <div className="h-safe-area-inset-bottom flex-shrink-0" />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    );
+  }
+
+  // Desktop Dialog Render
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className={cn(
-        "rounded-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out",
-        isMobile 
-          ? "w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] p-4" 
-          : "sm:max-w-[480px]"
-      )}>
+      <DialogContent className="sm:max-w-[480px] rounded-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
         <DialogHeader>
-          <DialogTitle className={cn("font-medium", isMobile ? "text-sm" : "text-base")}>
+          <DialogTitle className="text-base font-medium">
             Smart Upload
           </DialogTitle>
-          <DialogDescription className={cn(isMobile ? "text-xs" : "text-sm")}>
+          <DialogDescription className="text-sm">
             Yellow Jersey will detect product details from your photos
           </DialogDescription>
         </DialogHeader>
@@ -393,112 +705,64 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 exit={{ opacity: 0 }}
                 className="space-y-3"
               >
-                {/* Tab Switcher - Hidden on mobile */}
-                {!isMobile && (
-                  <div className="flex bg-gray-100 p-0.5 rounded-md">
-                    <button
-                      onClick={() => setActiveTab("computer")}
-                      className={cn(
-                        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-sm font-medium rounded-md transition-colors",
-                        activeTab === "computer"
-                          ? "bg-white text-gray-800 shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
-                      )}
-                    >
-                      <Monitor className="h-3.5 w-3.5" />
-                      Computer
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("phone")}
-                      className={cn(
-                        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-sm font-medium rounded-md transition-colors",
-                        activeTab === "phone"
-                          ? "bg-white text-gray-800 shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
-                      )}
-                    >
-                      <Smartphone className="h-3.5 w-3.5" />
-                      Phone
-                    </button>
-                  </div>
-                )}
-
-                {/* Computer Upload Tab - Always shown on mobile */}
-                {(activeTab === "computer" || isMobile) && (
-                  <div className="space-y-3">
-                    {/* Mobile: Two-button upload interface */}
-                    {isMobile ? (
-                      <div className="space-y-3">
-                        <p className="text-xs text-gray-600 text-center">Upload up to 10 photos</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {/* Camera button */}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => cameraInputRef.current?.click()}
-                            className="h-auto flex-col gap-2 py-4 rounded-md border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-                          >
-                            <Camera className="h-6 w-6 text-gray-600" />
-                            <span className="text-sm font-medium text-gray-700">Take Photo</span>
-                          </Button>
-                          <input
-                            ref={cameraInputRef}
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            onChange={handleFileSelect}
-                            className="hidden"
-                          />
-                          
-                          {/* Gallery button */}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="h-auto flex-col gap-2 py-4 rounded-md border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-                          >
-                            <ImageIcon className="h-6 w-6 text-gray-600" />
-                            <span className="text-sm font-medium text-gray-700">Select Photos</span>
-                          </Button>
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            onChange={handleFileSelect}
-                            className="hidden"
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      /* Desktop: Drop Zone */
-                      <div
-                        onDrop={handleDrop}
-                        onDragOver={(e) => e.preventDefault()}
-                        onClick={() => fileInputRef.current?.click()}
-                        className="border border-dashed border-gray-300 rounded-md p-5 text-center cursor-pointer hover:bg-gray-50 transition-colors"
-                      >
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          onChange={handleFileSelect}
-                          className="hidden"
-                        />
-                        <Upload className="text-gray-400 mx-auto mb-2 h-6 w-6" />
-                        <p className="text-sm text-gray-600">
-                          Drop photos or click to upload
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Up to 10 photos
-                        </p>
-                      </div>
+                {/* Tab Switcher */}
+                <div className="flex bg-gray-100 p-0.5 rounded-md">
+                  <button
+                    onClick={() => setActiveTab("computer")}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-sm font-medium rounded-md transition-colors",
+                      activeTab === "computer"
+                        ? "bg-white text-gray-800 shadow-sm"
+                        : "text-gray-600 hover:bg-gray-200/70"
                     )}
+                  >
+                    <Monitor className="h-3.5 w-3.5" />
+                    Computer
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("phone")}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-sm font-medium rounded-md transition-colors",
+                      activeTab === "phone"
+                        ? "bg-white text-gray-800 shadow-sm"
+                        : "text-gray-600 hover:bg-gray-200/70"
+                    )}
+                  >
+                    <Smartphone className="h-3.5 w-3.5" />
+                    Phone
+                  </button>
+                </div>
+
+                {/* Computer Upload Tab */}
+                {activeTab === "computer" && (
+                  <div className="space-y-3">
+                    {/* Desktop: Drop Zone */}
+                    <div
+                      onDrop={handleDrop}
+                      onDragOver={(e) => e.preventDefault()}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border border-dashed border-gray-300 rounded-md p-5 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleFileSelect}
+                        className="hidden"
+                      />
+                      <Upload className="text-gray-400 mx-auto mb-2 h-6 w-6" />
+                      <p className="text-sm text-gray-600">
+                        Drop photos or click to upload
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Up to 10 photos
+                      </p>
+                    </div>
 
                     {/* Photo Previews */}
                     {photos.length > 0 && (
-                      <div className={cn("grid gap-1.5", isMobile ? "grid-cols-4" : "grid-cols-5")}>
+                      <div className="grid grid-cols-5 gap-1.5">
                         {photos.map((photo, index) => (
                           <div key={index} className="relative aspect-square rounded-md overflow-hidden border border-gray-200 group">
                             <img
@@ -511,10 +775,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                                 e.stopPropagation();
                                 removePhoto(index);
                               }}
-                              className={cn(
-                                "absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full transition-opacity",
-                                isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                              )}
+                              className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                             >
                               <X className="h-3 w-3 text-white" />
                             </button>
@@ -524,13 +785,13 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     )}
 
                     {/* Actions */}
-                    <div className={cn("flex gap-2 pt-1", isMobile ? "justify-stretch" : "justify-end")}>
+                    <div className="flex gap-2 pt-1 justify-end">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         onClick={onClose}
-                        className={cn("text-gray-500", isMobile && "flex-1")}
+                        className="text-gray-500"
                       >
                         Cancel
                       </Button>
@@ -538,7 +799,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                         onClick={handleAnalyze}
                         disabled={photos.length === 0}
                         size="sm"
-                        className={cn("rounded-md bg-gray-900 hover:bg-gray-800 text-white", isMobile && "flex-1")}
+                        className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
                       >
                         Upload
                       </Button>
@@ -546,8 +807,8 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                   </div>
                 )}
 
-                {/* Phone QR Upload Tab - Hidden on mobile */}
-                {!isMobile && activeTab === "phone" && (
+                {/* Phone QR Upload Tab */}
+                {activeTab === "phone" && (
                   <QrUploadSection
                     onPhotosReady={handleQrPhotosReady}
                     onCancel={() => setActiveTab("computer")}
@@ -563,10 +824,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
+                className="flex flex-col items-center justify-center py-12"
               >
-                <Loader2 className={cn("animate-spin text-gray-400 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
-                <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
+                <p className="text-sm text-gray-600">
                   Optimising {uploadProgress.current}/{uploadProgress.total}...
                 </p>
               </motion.div>
@@ -579,10 +840,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
+                className="flex flex-col items-center justify-center py-12"
               >
-                <Loader2 className={cn("animate-spin text-gray-400 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
-                <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
+                <p className="text-sm text-gray-600">
                   Uploading {uploadProgress.current}/{uploadProgress.total}...
                 </p>
               </motion.div>
@@ -595,10 +856,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
+                className="flex flex-col items-center justify-center py-12"
               >
-                <Loader2 className={cn("animate-spin text-gray-400 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
-                <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>Analysing photos...</p>
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
+                <p className="text-sm text-gray-600">Analysing photos...</p>
               </motion.div>
             )}
 
@@ -609,10 +870,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
+                className="flex flex-col items-center justify-center py-12"
               >
-                <Loader2 className={cn("animate-spin text-gray-400 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
-                <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>Searching web for details...</p>
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
+                <p className="text-sm text-gray-600">Searching web for details...</p>
               </motion.div>
             )}
 
@@ -623,10 +884,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
+                className="flex flex-col items-center justify-center py-12"
               >
-                <CheckCircle2 className={cn("text-green-500 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
-                <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>Done!</p>
+                <CheckCircle2 className="h-6 w-6 text-green-500 mb-3" />
+                <p className="text-sm text-gray-600">Done!</p>
               </motion.div>
             )}
 
@@ -637,18 +898,18 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className={cn("flex flex-col items-center justify-center", isMobile ? "py-8" : "py-12")}
+                className="flex flex-col items-center justify-center py-12"
               >
-                <X className={cn("text-red-500 mb-3", isMobile ? "h-5 w-5" : "h-6 w-6")} />
-                <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Something went wrong</p>
-                <p className={cn("text-gray-400 mb-4", isMobile ? "text-[10px]" : "text-xs")}>{error}</p>
-                <div className={cn("flex gap-2", isMobile && "w-full")}>
+                <X className="h-6 w-6 text-red-500 mb-3" />
+                <p className="text-sm text-gray-600 mb-1">Something went wrong</p>
+                <p className="text-xs text-gray-400 mb-4">{error}</p>
+                <div className="flex gap-2">
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={onClose}
-                    className={cn("text-gray-500", isMobile && "flex-1")}
+                    className="text-gray-500"
                   >
                     Cancel
                   </Button>
@@ -656,7 +917,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     type="button"
                     size="sm"
                     onClick={handleRetry}
-                    className={cn("rounded-md", isMobile && "flex-1")}
+                    className="rounded-md"
                   >
                     Retry
                   </Button>
