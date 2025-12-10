@@ -3,6 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Package, Heart, Sparkles } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -19,6 +20,7 @@ interface ProductCardProps {
   product: MarketplaceProduct;
   priority?: boolean;
   isAdmin?: boolean;
+  onNavigate?: () => void;
   onImageDiscoveryClick?: (productId: string) => void;
 }
 
@@ -27,8 +29,10 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   product, 
   priority = false,
   isAdmin = false,
+  onNavigate,
   onImageDiscoveryClick 
 }) {
+  const router = useRouter();
   const [imageError, setImageError] = React.useState(false);
   const [isVisible, setIsVisible] = React.useState(priority);
   const [isLiked, setIsLiked] = React.useState(false);
@@ -102,7 +106,14 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   }, [product.id, product.image_variants, product.primary_image_url, (product as any).card_url]);
 
   // Memoize click handler to prevent recreating on every render
-  const handleClick = React.useCallback(() => {
+  const handleClick = React.useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    
+    // Trigger full-page loading overlay
+    if (onNavigate) {
+      onNavigate();
+    }
+    
     trackInteraction('click', {
       productId: product.id,
       metadata: {
@@ -111,7 +122,10 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         price: product.price,
       }
     });
-  }, [product.id, product.marketplace_category, product.price]);
+
+    // Navigate to product page
+    router.push(`/marketplace/product/${product.id}`);
+  }, [product.id, product.marketplace_category, product.price, router, onNavigate]);
 
   // Memoize like/unlike handler
   const handleLikeToggle = React.useCallback((e: React.MouseEvent) => {
@@ -129,13 +143,14 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     <Link 
       href={`/marketplace/product/${product.id}`}
       onClick={handleClick}
+      className="block"
     >
       <motion.div
         id={`product-${product.id}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-        className="group cursor-pointer"
+        className="group cursor-pointer relative"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >

@@ -4,7 +4,7 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon, User } from "lucide-react";
+import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon, User, Loader2 } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
@@ -45,6 +45,9 @@ function MarketplacePageContent() {
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
   const tracker = useInteractionTracker(user?.id);
+
+  // Navigation loading state
+  const [isNavigating, setIsNavigating] = React.useState(false);
 
   // Detect if we're in stores or sellers view from URL
   const urlView = searchParams.get('view');
@@ -887,6 +890,7 @@ function MarketplacePageContent() {
                           product={product}
                           priority={index < 18} // Prioritize first 18 images (top 3 rows on XL screens)
                           isAdmin={isAdmin}
+                          onNavigate={() => setIsNavigating(true)}
                           onImageDiscoveryClick={(productId) => {
                             // Use canonical_product_id if available (for private listings)
                             // Otherwise use product id (for store inventory which IS the canonical product)
@@ -984,6 +988,24 @@ function MarketplacePageContent() {
           }}
         />
       )}
+
+      {/* Full Page Loading Overlay */}
+      <AnimatePresence>
+        {isNavigating && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-white/95 backdrop-blur-sm z-[100] flex items-center justify-center"
+          >
+            <div className="text-center">
+              <Loader2 className="h-12 w-12 text-gray-900 animate-spin mx-auto mb-4" />
+              <p className="text-sm text-gray-600">Loading product...</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
