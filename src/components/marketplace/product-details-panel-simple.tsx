@@ -237,6 +237,46 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
                 <span className="text-sm font-medium text-gray-900">{(product as any).color_primary}</span>
               </div>
             )}
+            
+            {/* Apparel-Specific Fields */}
+            {(product as any).gender_fit && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Gender Fit</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).gender_fit}</span>
+              </div>
+            )}
+            {(product as any).apparel_material && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Material</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).apparel_material}</span>
+              </div>
+            )}
+            
+            {/* Part/Accessory Fields */}
+            {(product as any).part_type_detail && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Part Type</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).part_type_detail}</span>
+              </div>
+            )}
+            {(product as any).compatibility_notes && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Compatibility</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).compatibility_notes}</span>
+              </div>
+            )}
+            {(product as any).material && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Material</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).material}</span>
+              </div>
+            )}
+            {(product as any).weight && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Weight</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).weight}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
