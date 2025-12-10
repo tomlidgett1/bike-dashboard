@@ -170,7 +170,7 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
       <div className="border-t border-gray-200">
         <div className="px-4 py-4">
           <h2 className="text-lg font-bold text-gray-900 mb-3">Details</h2>
-          <div className="space-y-2">
+          <div className="space-y-0 divide-y divide-gray-100">
             {(product as any).condition_rating && (
               <div className="flex justify-between py-2">
                 <span className="text-sm text-gray-600">Condition</span>
@@ -195,10 +195,46 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
                 <span className="text-sm font-medium text-gray-900">{(product as any).model_year}</span>
               </div>
             )}
+            {(product as any).bike_type && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Type</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).bike_type}</span>
+              </div>
+            )}
             {((product as any).frame_size || (product as any).size) && (
               <div className="flex justify-between py-2">
                 <span className="text-sm text-gray-600">Size</span>
                 <span className="text-sm font-medium text-gray-900">{(product as any).frame_size || (product as any).size}</span>
+              </div>
+            )}
+            {(product as any).frame_material && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Frame Material</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).frame_material}</span>
+              </div>
+            )}
+            {(product as any).groupset && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Groupset</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).groupset}</span>
+              </div>
+            )}
+            {(product as any).wheel_size && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Wheel Size</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).wheel_size}</span>
+              </div>
+            )}
+            {(product as any).suspension_type && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Suspension</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).suspension_type}</span>
+              </div>
+            )}
+            {(product as any).color_primary && (
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-gray-600">Colour</span>
+                <span className="text-sm font-medium text-gray-900">{(product as any).color_primary}</span>
               </div>
             )}
           </div>
