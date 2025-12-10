@@ -113,6 +113,15 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
     });
   };
 
+  const setPrimaryPhoto = (index: number) => {
+    if (index === 0) return; // Already primary
+    setPhotos(prev => {
+      const newPhotos = [...prev];
+      const [primaryPhoto] = newPhotos.splice(index, 1);
+      return [primaryPhoto, ...newPhotos];
+    });
+  };
+
   // Handle photos received from QR mobile upload
   const handleQrPhotosReady = async (images: { id: string; url: string; uploadedAt: string }[]) => {
     if (images.length === 0) return;
@@ -519,29 +528,38 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                             />
                           </div>
                           
+                          <p className="text-xs text-gray-500">Tap a photo to set as cover image</p>
+                          
                           <div className="grid grid-cols-3 gap-2">
                             {photos.map((photo, index) => (
-                              <div key={index} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
+                              <button
+                                key={index}
+                                onClick={() => setPrimaryPhoto(index)}
+                                className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 active:scale-95 transition-transform"
+                              >
                                 <img
                                   src={photo.preview}
                                   alt={`Photo ${index + 1}`}
-                                  className="w-full h-full object-cover"
+                                  className={cn(
+                                    "w-full h-full object-cover",
+                                    index === 0 && "ring-2 ring-[#FFC72C] ring-inset"
+                                  )}
                                 />
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     removePhoto(index);
                                   }}
-                                  className="absolute top-1.5 right-1.5 h-6 w-6 bg-black/60 rounded-full flex items-center justify-center"
+                                  className="absolute top-1.5 right-1.5 h-6 w-6 bg-black/60 rounded-full flex items-center justify-center z-10"
                                 >
                                   <X className="h-3.5 w-3.5 text-white" />
                                 </button>
                                 {index === 0 && (
-                                  <div className="absolute bottom-1.5 left-1.5 bg-black/60 px-2 py-0.5 rounded text-[10px] text-white font-medium">
-                                    Cover
+                                  <div className="absolute bottom-1.5 left-1.5 bg-[#FFC72C] px-2 py-0.5 rounded text-[10px] text-gray-900 font-bold">
+                                    COVER
                                   </div>
                                 )}
-                              </div>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -773,25 +791,40 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
 
                     {/* Photo Previews */}
                     {photos.length > 0 && (
-                      <div className="grid grid-cols-5 gap-1.5">
-                        {photos.map((photo, index) => (
-                          <div key={index} className="relative aspect-square rounded-md overflow-hidden border border-gray-200 group">
-                            <img
-                              src={photo.preview}
-                              alt={`Photo ${index + 1}`}
-                              className="w-full h-full object-cover"
-                            />
+                      <div className="space-y-2">
+                        <p className="text-xs text-gray-500">Click a photo to set as cover image</p>
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {photos.map((photo, index) => (
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removePhoto(index);
-                              }}
-                              className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              key={index}
+                              onClick={() => setPrimaryPhoto(index)}
+                              className="relative aspect-square rounded-md overflow-hidden border border-gray-200 group hover:scale-105 transition-transform"
                             >
-                              <X className="h-3 w-3 text-white" />
+                              <img
+                                src={photo.preview}
+                                alt={`Photo ${index + 1}`}
+                                className={cn(
+                                  "w-full h-full object-cover",
+                                  index === 0 && "ring-2 ring-[#FFC72C] ring-inset"
+                                )}
+                              />
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removePhoto(index);
+                                }}
+                                className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                              >
+                                <X className="h-3 w-3 text-white" />
+                              </button>
+                              {index === 0 && (
+                                <div className="absolute bottom-0.5 left-0.5 bg-[#FFC72C] px-1.5 py-0.5 rounded text-[9px] text-gray-900 font-bold">
+                                  COVER
+                                </div>
+                              )}
                             </button>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     )}
 
