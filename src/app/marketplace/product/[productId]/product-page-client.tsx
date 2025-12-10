@@ -132,7 +132,7 @@ export function ProductPageClient({
               </div>
 
               {/* Right Column - Product Details */}
-              <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-hidden lg:border lg:border-gray-200">
+              <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-y-auto lg:border lg:border-gray-200">
                 {/* Mobile: Simple Panel */}
                 <div className="lg:hidden">
                   <ProductDetailsPanelSimple product={product} />
