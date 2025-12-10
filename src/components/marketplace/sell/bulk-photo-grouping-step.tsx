@@ -39,6 +39,17 @@ export function BulkPhotoGroupingStep({ photos, onComplete, onBack }: BulkPhotoG
   const [error, setError] = React.useState<string | null>(null);
   const [editingGroupId, setEditingGroupId] = React.useState<string | null>(null);
   const [editingName, setEditingName] = React.useState("");
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  // Detect if on mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Run AI grouping on mount
   React.useEffect(() => {
@@ -194,14 +205,28 @@ export function BulkPhotoGroupingStep({ photos, onComplete, onBack }: BulkPhotoG
 
   if (isAnalysing) {
     return (
-      <div className="min-h-screen bg-gray-50 pt-20 pb-20 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 pt-20 pb-20 flex items-center justify-center px-4">
         <div className="text-center">
-          <Loader2 className="h-12 w-12 text-gray-900 animate-spin mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            Analysing your photos...
+          {/* Animated progress indicator */}
+          <div className="relative inline-block mb-6">
+            <div className={cn(
+              "rounded-full bg-gray-100 flex items-center justify-center",
+              isMobile ? "h-16 w-16" : "h-20 w-20"
+            )}>
+              <Merge className={cn("text-gray-400", isMobile ? "h-7 w-7" : "h-9 w-9")} />
+            </div>
+            <motion.div
+              className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#FFC72C]"
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            />
+          </div>
+          
+          <h3 className={cn("font-semibold text-gray-900 mb-2", isMobile ? "text-base" : "text-lg")}>
+            Grouping your photos...
           </h3>
-          <p className="text-sm text-gray-600">
-            Our AI is grouping photos by product
+          <p className={cn("text-gray-500", isMobile ? "text-sm" : "text-base")}>
+            AI is detecting products
           </p>
         </div>
       </div>
@@ -209,38 +234,44 @@ export function BulkPhotoGroupingStep({ photos, onComplete, onBack }: BulkPhotoG
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-20 pb-20">
-      <div className="max-w-6xl mx-auto px-4">
+    <div className="min-h-screen bg-gray-50 pt-20 pb-24">
+      <div className={cn("mx-auto", isMobile ? "px-4" : "max-w-6xl px-4")}>
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Review Product Groups
+        <div className={cn("mb-6", isMobile ? "text-center" : "mb-8")}>
+          <h1 className={cn("font-bold text-gray-900 mb-2", isMobile ? "text-xl" : "text-3xl")}>
+            Review Groups
           </h1>
-          <p className="text-gray-600">
-            We've grouped your photos by product. Drag photos to reassign them or create new groups.
+          <p className={cn("text-gray-500", isMobile ? "text-sm" : "text-base")}>
+            {isMobile 
+              ? `${groups.length} product${groups.length !== 1 ? 's' : ''} detected`
+              : "We've grouped your photos by product. Drag photos to reassign them."
+            }
           </p>
         </div>
 
         {/* Error Message */}
         {error && (
-          <div className="bg-white border border-gray-200 rounded-md p-4 mb-6">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
             <p className="text-sm text-gray-700">
-              ⚠️ AI grouping had issues. We've created individual groups you can merge manually.
+              ⚠️ AI grouping had issues. We've created individual groups.
             </p>
           </div>
         )}
 
         {/* Groups */}
-        <div className="space-y-6">
-          {groups.map((group) => (
+        <div className={cn("space-y-4", isMobile ? "" : "space-y-6")}>
+          {groups.map((group, groupIndex) => (
             <motion.div
               key={group.id}
               layout
-              className="bg-white rounded-md p-6 border-2 border-gray-200"
+              className={cn(
+                "bg-white border-2 border-gray-200",
+                isMobile ? "rounded-xl p-4" : "rounded-md p-6"
+              )}
             >
               {/* Group Header */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex-1">
+              <div className={cn("flex items-start justify-between mb-3", isMobile ? "gap-2" : "mb-4")}>
+                <div className="flex-1 min-w-0">
                   {editingGroupId === group.id ? (
                     <div className="flex items-center gap-2">
                       <Input
@@ -253,61 +284,84 @@ export function BulkPhotoGroupingStep({ photos, onComplete, onBack }: BulkPhotoG
                             setEditingName("");
                           }
                         }}
-                        className="rounded-md"
+                        className={cn("rounded-xl", isMobile ? "h-10 text-sm" : "")}
                         autoFocus
                       />
                       <Button
                         size="sm"
                         onClick={finishEditing}
-                        className="rounded-md"
+                        className={cn("rounded-xl", isMobile ? "h-10 w-10 p-0" : "")}
                       >
                         <Check className="h-4 w-4" />
                       </Button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-semibold text-gray-900">
+                      <span className={cn(
+                        "flex-shrink-0 h-6 w-6 rounded-full bg-gray-900 text-white flex items-center justify-center text-xs font-bold",
+                        isMobile ? "h-5 w-5 text-[10px]" : ""
+                      )}>
+                        {groupIndex + 1}
+                      </span>
+                      <h3 className={cn("font-semibold text-gray-900 truncate", isMobile ? "text-base" : "text-lg")}>
                         {group.suggestedName}
                       </h3>
                       <button
                         onClick={() => startEditing(group.id, group.suggestedName)}
-                        className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+                        className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
                       >
-                        <Edit2 className="h-4 w-4 text-gray-400" />
+                        <Edit2 className={cn("text-gray-400", isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
                       </button>
                     </div>
                   )}
-                  <p className="text-sm text-gray-500 mt-1">
+                  <p className={cn("text-gray-500 mt-0.5", isMobile ? "text-xs ml-7" : "text-sm")}>
                     {group.photoIndexes.length} photo{group.photoIndexes.length !== 1 ? 's' : ''}
-                    {group.confidence < 80 && (
-                      <span className="ml-2 text-yellow-600">• Low confidence - please review</span>
+                    {group.confidence < 80 && !isMobile && (
+                      <span className="ml-2 text-yellow-600">• Review suggested</span>
                     )}
                   </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
+                <button
                   onClick={() => deleteGroup(group.id)}
                   disabled={groups.length === 1}
-                  className="rounded-md"
+                  className={cn(
+                    "flex-shrink-0 rounded-lg transition-colors disabled:opacity-30",
+                    isMobile 
+                      ? "p-2 hover:bg-red-50" 
+                      : "px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 border border-gray-200"
+                  )}
                 >
-                  <X className="h-4 w-4 mr-1" />
-                  Delete Group
-                </Button>
+                  {isMobile ? (
+                    <X className="h-4 w-4 text-gray-500" />
+                  ) : (
+                    <>
+                      <X className="h-4 w-4 mr-1 inline" />
+                      Delete
+                    </>
+                  )}
+                </button>
               </div>
 
               {/* Photos Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              <div className={cn(
+                "grid gap-2",
+                isMobile ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"
+              )}>
                 {group.photoIndexes.map((photoIndex) => {
                   const photo = photos[photoIndex];
                   return (
                     <div
                       key={photoIndex}
-                      className="relative aspect-square rounded-md overflow-hidden bg-gray-100 group cursor-move"
-                      draggable
+                      className={cn(
+                        "relative aspect-square overflow-hidden bg-gray-100 group",
+                        isMobile ? "rounded-xl" : "rounded-md cursor-move"
+                      )}
+                      draggable={!isMobile}
                       onDragStart={(e) => {
-                        e.dataTransfer.setData('photoIndex', photoIndex.toString());
-                        e.dataTransfer.setData('fromGroupId', group.id);
+                        if (!isMobile) {
+                          e.dataTransfer.setData('photoIndex', photoIndex.toString());
+                          e.dataTransfer.setData('fromGroupId', group.id);
+                        }
                       }}
                     >
                       <Image
@@ -316,56 +370,69 @@ export function BulkPhotoGroupingStep({ photos, onComplete, onBack }: BulkPhotoG
                         fill
                         className="object-cover"
                       />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                       <button
                         onClick={() => removePhotoFromGroup(photoIndex, group.id)}
-                        className="absolute top-2 right-2 p-1 bg-black/60 hover:bg-black/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        className={cn(
+                          "absolute p-1.5 bg-black/60 hover:bg-black/80 rounded-full transition-opacity",
+                          isMobile 
+                            ? "top-1.5 right-1.5 opacity-100" 
+                            : "top-2 right-2 opacity-0 group-hover:opacity-100"
+                        )}
                       >
                         <X className="h-3 w-3 text-white" />
                       </button>
-                      <div className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/60 rounded-md">
-                        <span className="text-xs text-white font-medium">{photoIndex + 1}</span>
+                      <div className={cn(
+                        "absolute px-1.5 py-0.5 bg-black/60 rounded",
+                        isMobile ? "bottom-1.5 left-1.5" : "bottom-2 left-2"
+                      )}>
+                        <span className="text-[10px] text-white font-medium">{photoIndex + 1}</span>
                       </div>
-                      <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Grip className="h-4 w-4 text-white drop-shadow" />
-                      </div>
+                      {!isMobile && (
+                        <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Grip className="h-4 w-4 text-white drop-shadow" />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
                 
-                {/* Drop Zone */}
-                <div
-                  className="aspect-square rounded-md border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-gray-400 hover:border-gray-400 hover:bg-gray-100 transition-colors"
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const photoIndex = parseInt(e.dataTransfer.getData('photoIndex'));
-                    const fromGroupId = e.dataTransfer.getData('fromGroupId');
-                    if (fromGroupId !== group.id) {
-                      movePhotoToGroup(photoIndex, fromGroupId, group.id);
-                    }
-                  }}
-                >
-                  <Plus className="h-6 w-6" />
-                </div>
+                {/* Drop Zone - Desktop only */}
+                {!isMobile && (
+                  <div
+                    className="aspect-square rounded-md border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-gray-400 hover:border-gray-400 hover:bg-gray-100 transition-colors"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const photoIndex = parseInt(e.dataTransfer.getData('photoIndex'));
+                      const fromGroupId = e.dataTransfer.getData('fromGroupId');
+                      if (fromGroupId !== group.id) {
+                        movePhotoToGroup(photoIndex, fromGroupId, group.id);
+                      }
+                    }}
+                  >
+                    <Plus className="h-6 w-6" />
+                  </div>
+                )}
               </div>
             </motion.div>
           ))}
         </div>
 
-        {/* Create New Group */}
-        <Button
-          onClick={createNewGroup}
-          variant="outline"
-          className="w-full mt-6 rounded-md border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Create New Group
-        </Button>
+        {/* Create New Group - Desktop only */}
+        {!isMobile && (
+          <Button
+            onClick={createNewGroup}
+            variant="outline"
+            className="w-full mt-6 rounded-md border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Create New Group
+          </Button>
+        )}
 
         {/* Actions */}
-        <div className="flex gap-3 mt-8">
-          {onBack && (
+        <div className={cn("flex gap-3 mt-6", isMobile ? "fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200" : "")}>
+          {onBack && !isMobile && (
             <Button
               variant="outline"
               onClick={onBack}
@@ -377,7 +444,10 @@ export function BulkPhotoGroupingStep({ photos, onComplete, onBack }: BulkPhotoG
           <Button
             onClick={() => onComplete(groups)}
             disabled={groups.length === 0 || groups.some(g => g.photoIndexes.length === 0)}
-            className="flex-1 rounded-md bg-gray-900 hover:bg-gray-800"
+            className={cn(
+              "flex-1 bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold",
+              isMobile ? "rounded-xl h-12" : "rounded-md"
+            )}
           >
             Continue with {groups.length} Product{groups.length !== 1 ? 's' : ''}
           </Button>
