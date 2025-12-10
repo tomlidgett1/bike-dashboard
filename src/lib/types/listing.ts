@@ -116,6 +116,11 @@ export interface ListingFormData {
   
   // Source tracking
   facebook_source_url?: string;
+  
+  // AI Metadata
+  structuredMetadata?: any;
+  searchUrls?: any[];
+  fieldConfidence?: any;
 }
 
 // ============================================================

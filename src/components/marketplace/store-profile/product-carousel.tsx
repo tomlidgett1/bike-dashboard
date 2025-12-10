@@ -75,7 +75,7 @@ export function ProductCarousel({
   return (
     <section className="py-2.5 sm:py-3">
       {/* Category Header */}
-      <div className="flex items-center justify-between mb-2.5 sm:mb-3 px-3 sm:px-0">
+      <div className="flex items-center justify-between mb-2.5 sm:mb-3">
         <h3 className="text-sm sm:text-base font-semibold text-gray-900">{categoryName}</h3>
         {hasMore && (
           <Button
@@ -99,7 +99,7 @@ export function ProductCarousel({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3 sm:gap-4 px-3 sm:px-0"
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3 sm:gap-4"
           >
             {displayedProducts.map((product, index) => (
               <ProductCard key={product.id} product={product} priority={index < 6} />
@@ -140,7 +140,7 @@ export function ProductCarousel({
             {/* Scrollable Container - Mobile Optimised */}
             <div
               ref={scrollContainerRef}
-              className="overflow-x-auto scrollbar-hide -mx-3 sm:-mx-2 px-3 sm:px-2 snap-x snap-mandatory sm:snap-none"
+              className="overflow-x-auto scrollbar-hide snap-x snap-mandatory sm:snap-none"
               style={{
                 scrollbarWidth: 'none',
                 msOverflowStyle: 'none',

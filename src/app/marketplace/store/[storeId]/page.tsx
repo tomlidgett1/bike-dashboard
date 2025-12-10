@@ -8,6 +8,7 @@ import { Loader2, User, Package } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
+import { ProductCard } from "@/components/marketplace/product-card";
 import { SellerHeader, SellerCategories } from "@/components/marketplace/seller-profile";
 import { useAuth } from "@/components/providers/auth-provider";
 import type { StoreProfile } from "@/lib/types/store";
@@ -95,9 +96,21 @@ export default function StoreProfilePage() {
   const [error, setError] = React.useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [selectedTab, setSelectedTab] = React.useState<'for-sale' | 'sold'>('for-sale');
+  const [isMobile, setIsMobile] = React.useState(false);
 
   // Check if viewing own profile
   const isOwnProfile = user?.id === storeId;
+
+  // Detect mobile view
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640); // sm breakpoint
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Fetch profile - try store and seller in parallel for faster loading
   React.useEffect(() => {
@@ -282,17 +295,50 @@ export default function StoreProfilePage() {
 
           {/* Category Tabs (For Sale/Sold) - Only for individual sellers */}
           {profileType === 'seller' && (
-            <SellerCategories
-              categories={categories}
-              soldCategories={soldCategories}
-              selectedTab={selectedTab}
-              selectedCategory={selectedCategory}
-              onTabSelect={(tab) => {
-                setSelectedTab(tab);
-                setSelectedCategory(null);
-              }}
-              onCategorySelect={setSelectedCategory}
-            />
+            isMobile ? (
+              // Mobile: Simple tab switcher without category filters
+              <div className="bg-white border-b border-gray-100 sticky top-16 z-30">
+                <div className="max-w-[1920px] mx-auto px-3">
+                  <div className="py-3">
+                    <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                      <button
+                        onClick={() => setSelectedTab('for-sale')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                          selectedTab === 'for-sale'
+                            ? "text-gray-800 bg-white shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70"
+                        }`}
+                      >
+                        For Sale
+                      </button>
+                      <button
+                        onClick={() => setSelectedTab('sold')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                          selectedTab === 'sold'
+                            ? "text-gray-800 bg-white shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70"
+                        }`}
+                      >
+                        Sold
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // Desktop: Full category filters
+              <SellerCategories
+                categories={categories}
+                soldCategories={soldCategories}
+                selectedTab={selectedTab}
+                selectedCategory={selectedCategory}
+                onTabSelect={(tab) => {
+                  setSelectedTab(tab);
+                  setSelectedCategory(null);
+                }}
+                onCategorySelect={setSelectedCategory}
+              />
+            )
           )}
 
           {/* Category Pills - For stores (no For Sale/Sold tabs) */}
@@ -343,19 +389,31 @@ export default function StoreProfilePage() {
           )}
 
           {/* Products by Category - Full Width Carousels */}
-          <div className="max-w-[1920px] mx-auto sm:px-6 lg:px-8 py-4 sm:py-6">
+          <div className="max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
             {hasProducts ? (
-              <div className="space-y-3 sm:space-y-4">
-                {displayedCarousels.map((carousel, index) => (
-                  carousel.products.length > 0 && (
-                    <ProductCarousel
-                      key={`${carousel.name}-${index}`}
-                      categoryName={carousel.name}
-                      products={carousel.products}
-                    />
-                  )
-                ))}
-              </div>
+              // For sellers on mobile: show simple 2-column grid without categories
+              profileType === 'seller' && isMobile ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {displayedCarousels
+                    .flatMap(carousel => carousel.products)
+                    .map((product, index) => (
+                      <ProductCard key={product.id} product={product} priority={index < 6} />
+                    ))}
+                </div>
+              ) : (
+                // For stores or desktop: show carousels by category
+                <div className="space-y-3 sm:space-y-4">
+                  {displayedCarousels.map((carousel, index) => (
+                    carousel.products.length > 0 && (
+                      <ProductCarousel
+                        key={`${carousel.name}-${index}`}
+                        categoryName={carousel.name}
+                        products={carousel.products}
+                      />
+                    )
+                  ))}
+                </div>
+              )
             ) : (
               <div className="flex items-center justify-center py-16 sm:py-24 px-4">
                 <div className="text-center">
