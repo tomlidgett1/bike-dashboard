@@ -3,10 +3,11 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { MapPin, Heart, Share2, Tag, User, Package, Store, Info } from "lucide-react";
+import { MapPin, Heart, Share2, Tag, User, Package, Store, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
+import { ProductLearnPanel } from "./product-learn-panel";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ interface ProductDetailsPanelSimpleProps {
 export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimpleProps) {
   const [isLiked, setIsLiked] = React.useState(false);
   const [logoError, setLogoError] = React.useState(false);
+  const [isLearnOpen, setIsLearnOpen] = React.useState(false);
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -123,11 +125,11 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
           </Link>
 
           <button 
-            onClick={() => {}}
+            onClick={() => setIsLearnOpen(true)}
             className="flex flex-col items-center gap-1.5 py-2 hover:opacity-70 transition-opacity"
           >
             <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-              <Info className="h-5 w-5 text-gray-700" />
+              <Sparkles className="h-5 w-5 text-gray-700" />
             </div>
             <span className="text-xs text-gray-700">Learn</span>
           </button>
@@ -308,6 +310,13 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
           </div>
         </div>
       )}
+
+      {/* AI Product Learn Panel */}
+      <ProductLearnPanel
+        product={product}
+        isOpen={isLearnOpen}
+        onClose={() => setIsLearnOpen(false)}
+      />
     </div>
   );
 }
