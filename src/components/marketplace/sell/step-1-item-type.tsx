@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save } from "lucide-react";
+import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt } from "lucide-react";
 import { ItemType, ListingImage, ConditionRating } from "@/lib/types/listing";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import {
@@ -320,7 +321,20 @@ export function Step1ItemType({
   const [quickData, setQuickData] = React.useState<QuickListingData>({});
   const [isPublishing, setIsPublishing] = React.useState(false);
   const [isUploadingPhotos, setIsUploadingPhotos] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
+  const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
+  const [showDetails, setShowDetails] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Detect if on mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Initialize quick data from props
   React.useEffect(() => {
@@ -513,7 +527,377 @@ export function Step1ItemType({
     );
   }
 
-  // With AI data - show tabbed interface
+  // With AI data - show mobile-optimized or desktop layout
+  // Mobile view - card-style layout
+  if (isMobile && listingMode === 'quick') {
+    const isBike = quickData.itemType === 'bike';
+    const isPart = quickData.itemType === 'part';
+    const isApparel = quickData.itemType === 'apparel';
+
+    return (
+      <div className="min-h-screen bg-gray-50 pb-32">
+        {/* Photo Gallery */}
+        <div className="relative aspect-square bg-gray-100">
+          {quickData.images && quickData.images.length > 0 ? (
+            <Image
+              src={quickData.images[primaryImageIndex]?.url || quickData.images[0].url}
+              alt="Product"
+              fill
+              className="object-contain"
+              priority
+            />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+              <Camera className="h-12 w-12 text-gray-300" />
+              <p className="text-sm text-gray-400">No photos yet</p>
+            </div>
+          )}
+          
+          {/* Photo count badge */}
+          {quickData.images && quickData.images.length > 0 && (
+            <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm rounded-lg px-2.5 py-1.5">
+              <span className="text-xs font-medium text-white">{quickData.images.length} photos</span>
+            </div>
+          )}
+        </div>
+
+        {/* Thumbnail Strip */}
+        {quickData.images && quickData.images.length > 1 && (
+          <div className="flex gap-2 p-3 border-b border-gray-200 overflow-x-auto bg-white">
+            {quickData.images.map((image, index) => (
+              <button
+                key={image.id || index}
+                onClick={() => setPrimaryImageIndex(index)}
+                className={cn(
+                  "relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors",
+                  index === primaryImageIndex
+                    ? "border-[#FFC72C]"
+                    : "border-gray-200"
+                )}
+              >
+                <Image
+                  src={image.url}
+                  alt={`Photo ${index + 1}`}
+                  fill
+                  className="object-cover"
+                />
+              </button>
+            ))}
+            {/* Add more button */}
+            {quickData.images.length < 10 && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingPhotos}
+                className="flex-shrink-0 w-14 h-14 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center"
+              >
+                {isUploadingPhotos ? (
+                  <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
+                ) : (
+                  <Upload className="h-5 w-5 text-gray-400" />
+                )}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Form Fields */}
+        <div className="p-4 space-y-4 bg-white">
+          {/* Title */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Title *</label>
+            <Input
+              value={quickData.title || ''}
+              onChange={(e) => setQuickData({ ...quickData, title: e.target.value })}
+              className="rounded-xl h-11 text-base"
+              placeholder="Product name"
+            />
+          </div>
+
+          {/* Price & Condition Row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Price (AUD) *</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                <Input
+                  type="number"
+                  value={quickData.price || ''}
+                  onChange={(e) => setQuickData({ ...quickData, price: parseInt(e.target.value) || undefined })}
+                  className="pl-7 rounded-xl h-11 text-base"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Condition *</label>
+              <Select
+                value={quickData.conditionRating}
+                onValueChange={(value) => setQuickData({ ...quickData, conditionRating: value as ConditionRating })}
+              >
+                <SelectTrigger className="rounded-xl h-11">
+                  <SelectValue placeholder="Select..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONDITION_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Brand & Model Row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Brand</label>
+              <Input
+                value={quickData.brand || ''}
+                onChange={(e) => setQuickData({ ...quickData, brand: e.target.value })}
+                className="rounded-xl h-11 text-base"
+                placeholder="Brand"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Model</label>
+              <Input
+                value={quickData.model || ''}
+                onChange={(e) => setQuickData({ ...quickData, model: e.target.value })}
+                className="rounded-xl h-11 text-base"
+                placeholder="Model"
+              />
+            </div>
+          </div>
+
+          {/* Type */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+            <Select
+              value={quickData.itemType || 'bike'}
+              onValueChange={(value) => setQuickData({ ...quickData, itemType: value as ItemType })}
+            >
+              <SelectTrigger className="rounded-xl h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bike">Bike</SelectItem>
+                <SelectItem value="part">Part/Component</SelectItem>
+                <SelectItem value="apparel">Apparel</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Location */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Location *</label>
+            <div className="relative">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                value={quickData.pickupLocation || ''}
+                onChange={(e) => setQuickData({ ...quickData, pickupLocation: e.target.value })}
+                className="pl-10 rounded-xl h-11 text-base"
+                placeholder="Suburb or area"
+              />
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+            <Textarea
+              value={quickData.description || ''}
+              onChange={(e) => setQuickData({ ...quickData, description: e.target.value })}
+              className="rounded-xl resize-none text-base"
+              rows={3}
+              placeholder="Describe your product..."
+            />
+          </div>
+
+          {/* Expandable Details Section */}
+          <div>
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="w-full flex items-center justify-between py-3 text-left"
+            >
+              <span className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                {isBike && <Package className="h-4 w-4" />}
+                {isPart && <Wrench className="h-4 w-4" />}
+                {isApparel && <Shirt className="h-4 w-4" />}
+                {isBike && "Bike Details"}
+                {isPart && "Part Details"}
+                {isApparel && "Apparel Details"}
+                {!isBike && !isPart && !isApparel && "Additional Details"}
+              </span>
+              <ChevronDown className={cn(
+                "h-5 w-5 text-gray-400 transition-transform duration-200",
+                showDetails && "rotate-180"
+              )} />
+            </button>
+
+            <AnimatePresence>
+              {showDetails && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                  className="overflow-hidden"
+                >
+                  <div className="space-y-3 pt-2 pb-2">
+                    {/* Bike-Specific Fields */}
+                    {isBike && (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Frame Size</label>
+                            <Input
+                              value={quickData.frameSize || ''}
+                              onChange={(e) => setQuickData({ ...quickData, frameSize: e.target.value })}
+                              className="rounded-xl h-11 text-base"
+                              placeholder="Medium"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Material</label>
+                            <Input
+                              value={quickData.frameMaterial || ''}
+                              onChange={(e) => setQuickData({ ...quickData, frameMaterial: e.target.value })}
+                              className="rounded-xl h-11 text-base"
+                              placeholder="Carbon"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Groupset</label>
+                            <Input
+                              value={quickData.groupset || ''}
+                              onChange={(e) => setQuickData({ ...quickData, groupset: e.target.value })}
+                              className="rounded-xl h-11 text-base"
+                              placeholder="Shimano"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Wheels</label>
+                            <Input
+                              value={quickData.wheelSize || ''}
+                              onChange={(e) => setQuickData({ ...quickData, wheelSize: e.target.value })}
+                              className="rounded-xl h-11 text-base"
+                              placeholder='29"'
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Colour</label>
+                          <Input
+                            value={quickData.colorPrimary || ''}
+                            onChange={(e) => setQuickData({ ...quickData, colorPrimary: e.target.value })}
+                            className="rounded-xl h-11 text-base"
+                            placeholder="Black"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Part-Specific Fields */}
+                    {isPart && (
+                      <>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Part Type</label>
+                          <Input
+                            value={quickData.partTypeDetail || ''}
+                            onChange={(e) => setQuickData({ ...quickData, partTypeDetail: e.target.value })}
+                            className="rounded-xl h-11 text-base"
+                            placeholder="e.g., Rear Derailleur"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Compatibility</label>
+                          <Textarea
+                            value={quickData.compatibilityNotes || ''}
+                            onChange={(e) => setQuickData({ ...quickData, compatibilityNotes: e.target.value })}
+                            className="rounded-xl resize-none text-base"
+                            rows={2}
+                            placeholder="Compatible with..."
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Apparel-Specific Fields */}
+                    {isApparel && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Size</label>
+                          <Input
+                            value={quickData.size || ''}
+                            onChange={(e) => setQuickData({ ...quickData, size: e.target.value })}
+                            className="rounded-xl h-11 text-base"
+                            placeholder="Medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Fit</label>
+                          <Select
+                            value={quickData.genderFit || ''}
+                            onValueChange={(value) => setQuickData({ ...quickData, genderFit: value })}
+                          >
+                            <SelectTrigger className="rounded-xl h-11">
+                              <SelectValue placeholder="Select..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Men's">Men's</SelectItem>
+                              <SelectItem value="Women's">Women's</SelectItem>
+                              <SelectItem value="Unisex">Unisex</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Hidden File Input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={handlePhotoUpload}
+          className="hidden"
+        />
+
+        {/* Fixed Bottom Actions */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-40">
+          <Button
+            onClick={handleQuickList}
+            disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || isPublishing}
+            className="w-full rounded-xl h-12 bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
+          >
+            {isPublishing ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Publishing...
+              </>
+            ) : (
+              <>
+                <Zap className="h-5 w-5 mr-2" />
+                Publish Listing
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop view - show tabbed interface
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
