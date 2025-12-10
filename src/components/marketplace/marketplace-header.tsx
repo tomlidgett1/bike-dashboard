@@ -309,7 +309,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                   alt="Yellow Jersey" 
                   width={220} 
                   height={36}
-                  className="h-24 w-auto sm:h-32"
+                  className="h-28 w-auto sm:h-32"
                 />
               </button>
             </div>
@@ -328,7 +328,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                     className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
                     aria-label="Open search"
                   >
-                    <Search className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
+                    <Search className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
                   </button>
                   {mounted && user && (
                     <button
@@ -336,7 +336,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                       className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
                       aria-label="Messages"
                     >
-                      <Mail className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
+                      <Mail className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
                       {unreadCount > 0 && (
                         <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
                           {unreadCount > 99 ? '99+' : unreadCount}
@@ -359,7 +359,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                     className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
                     aria-label="Open search"
                   >
-                    <Search className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
+                    <Search className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
                   </button>
                   {mounted && user && (
                     <button
@@ -367,7 +367,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                       className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
                       aria-label="Messages"
                     >
-                      <Mail className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
+                      <Mail className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
                       {unreadCount > 0 && (
                         <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
                           {unreadCount > 99 ? '99+' : unreadCount}

@@ -96,7 +96,7 @@ export function ProductPageClient({
 
   return (
     <>
-      <MarketplaceHeader compactSearchOnMobile showFloatingButton />
+      <MarketplaceHeader compactSearchOnMobile showFloatingButton={false} />
       
       {/* Main Content */}
       <div className="min-h-screen bg-white sm:bg-gray-50 pt-16 sm:pt-16 pb-24 sm:pb-8">
