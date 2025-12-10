@@ -7,6 +7,7 @@ import { Package } from "lucide-react";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
 import { ProductDetailsPanel } from "@/components/marketplace/product-details-panel";
+import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
 import { EnhancedImageGallery } from "@/components/marketplace/product-detail/enhanced-image-gallery";
 import { RecommendationCarousel } from "@/components/marketplace/product-detail/recommendation-carousel";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -118,8 +119,8 @@ export function ProductPageClient({
           {/* Two-Column Layout */}
           <div className="lg:max-w-[1400px] lg:mx-auto lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-[60%_40%] lg:gap-8">
-              {/* Left Column - Image Gallery */}
-              <div className="w-full px-4 sm:px-0">
+              {/* Left Column - Image Gallery (Full-width on mobile) */}
+              <div className="w-full">
                 <EnhancedImageGallery
                   images={images}
                   productName={(product as any).display_name || product.description}
@@ -131,8 +132,15 @@ export function ProductPageClient({
               </div>
 
               {/* Right Column - Product Details */}
-              <div className="px-4 sm:px-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-hidden lg:border lg:border-gray-200">
-                <ProductDetailsPanel product={product} />
+              <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-hidden lg:border lg:border-gray-200">
+                {/* Mobile: Simple Panel */}
+                <div className="lg:hidden">
+                  <ProductDetailsPanelSimple product={product} />
+                </div>
+                {/* Desktop: Detailed Panel */}
+                <div className="hidden lg:block">
+                  <ProductDetailsPanel product={product} />
+                </div>
               </div>
             </div>
           </div>
