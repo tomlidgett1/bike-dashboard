@@ -76,6 +76,8 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
 
       const result = await response.json();
       console.log('✅ [SMART UPLOAD] Analysis received:', result);
+      console.log('🔍 [SMART UPLOAD] Item type:', result.analysis?.item_type);
+      console.log('🔍 [SMART UPLOAD] Bike details:', result.analysis?.bike_details);
       console.log('🔍 [SMART UPLOAD] Web enrichment data:', result.analysis?.web_enrichment);
       console.log('🔍 [SMART UPLOAD] Search URLs:', result.analysis?.search_urls);
       console.log('🔍 [SMART UPLOAD] Data sources:', result.analysis?.data_sources);
@@ -100,6 +102,34 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
   const handleContinue = (editedAnalysis: ListingAnalysisResult) => {
     console.log('🎯 [SMART UPLOAD] Continue clicked, analysis:', editedAnalysis);
     
+    // Helper function to clean AI-generated text
+    const cleanAiText = (text: string | undefined | null): string | undefined => {
+      if (!text) return undefined;
+      
+      // Remove uncertainty phrases and clean up
+      let cleaned = text
+        .replace(/^(maybe|possibly|likely|probably|perhaps|approximately|about|around)\s+/gi, '')
+        .replace(/\s+(or so|ish|roughly)\s*$/gi, '')
+        .replace(/\s+or\s+/gi, '/') // Convert "Small or Medium" to "Small/Medium"
+        .trim();
+      
+      // Capitalize first letter of each word (for materials, colors, etc.)
+      cleaned = cleaned
+        .split(' ')
+        .map(word => {
+          // Handle hyphenated words and slashes
+          if (word.includes('-') || word.includes('/')) {
+            return word.split(/[-/]/).map(part => 
+              part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+            ).join(word.includes('-') ? '-' : '/');
+          }
+          return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+        })
+        .join(' ');
+      
+      return cleaned || undefined;
+    };
+    
     // Map analysis to form data structure matching ListingFormData interface
     const formData: any = {
       itemType: editedAnalysis.item_type,
@@ -117,32 +147,39 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
 
     // Add bike-specific fields
     if (editedAnalysis.item_type === 'bike' && editedAnalysis.bike_details) {
-      formData.bikeType = editedAnalysis.bike_details.bike_type;
-      formData.frameSize = editedAnalysis.bike_details.frame_size;
-      formData.frameMaterial = editedAnalysis.bike_details.frame_material;
-      formData.groupset = editedAnalysis.bike_details.groupset;
-      formData.wheelSize = editedAnalysis.bike_details.wheel_size;
-      formData.suspensionType = editedAnalysis.bike_details.suspension_type;
-      formData.colorPrimary = editedAnalysis.bike_details.color_primary;
-      formData.colorSecondary = editedAnalysis.bike_details.color_secondary;
-      formData.bikeWeight = editedAnalysis.bike_details.approximate_weight;
+      console.log('🚴 [SMART UPLOAD] Adding bike details:', editedAnalysis.bike_details);
+      formData.bikeType = cleanAiText(editedAnalysis.bike_details.bike_type);
+      formData.frameSize = cleanAiText(editedAnalysis.bike_details.frame_size);
+      formData.frameMaterial = cleanAiText(editedAnalysis.bike_details.frame_material);
+      formData.groupset = cleanAiText(editedAnalysis.bike_details.groupset);
+      formData.wheelSize = cleanAiText(editedAnalysis.bike_details.wheel_size);
+      formData.suspensionType = cleanAiText(editedAnalysis.bike_details.suspension_type);
+      formData.colorPrimary = cleanAiText(editedAnalysis.bike_details.color_primary);
+      formData.colorSecondary = cleanAiText(editedAnalysis.bike_details.color_secondary);
+      formData.bikeWeight = cleanAiText(editedAnalysis.bike_details.approximate_weight);
+      console.log('🚴 [SMART UPLOAD] Cleaned bike fields:', {
+        frameSize: formData.frameSize,
+        frameMaterial: formData.frameMaterial,
+        groupset: formData.groupset,
+        wheelSize: formData.wheelSize,
+      });
     }
 
     // Add part-specific fields
     if (editedAnalysis.item_type === 'part' && editedAnalysis.part_details) {
       formData.marketplace_subcategory = editedAnalysis.part_details.category;
-      formData.partTypeDetail = editedAnalysis.part_details.part_type;
+      formData.partTypeDetail = cleanAiText(editedAnalysis.part_details.part_type);
       formData.compatibilityNotes = editedAnalysis.part_details.compatibility;
-      formData.material = editedAnalysis.part_details.material;
-      formData.weight = editedAnalysis.part_details.weight;
+      formData.material = cleanAiText(editedAnalysis.part_details.material);
+      formData.weight = cleanAiText(editedAnalysis.part_details.weight);
     }
 
     // Add apparel-specific fields
     if (editedAnalysis.item_type === 'apparel' && editedAnalysis.apparel_details) {
       formData.marketplace_subcategory = editedAnalysis.apparel_details.category;
-      formData.size = editedAnalysis.apparel_details.size;
-      formData.genderFit = editedAnalysis.apparel_details.gender_fit;
-      formData.apparelMaterial = editedAnalysis.apparel_details.material;
+      formData.size = cleanAiText(editedAnalysis.apparel_details.size);
+      formData.genderFit = cleanAiText(editedAnalysis.apparel_details.gender_fit);
+      formData.apparelMaterial = cleanAiText(editedAnalysis.apparel_details.material);
     }
 
     // Add smart upload metadata (for database JSONB storage)
@@ -160,7 +197,17 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       formData.fieldConfidence = editedAnalysis.field_confidence;
     }
 
+    // Add images to formData
+    formData.images = photos.map((url, index) => ({
+      id: `ai-${index}`,
+      url,
+      order: index,
+      isPrimary: index === 0,
+    }));
+    formData.primaryImageUrl = photos[0];
+
     console.log('🎯 [SMART UPLOAD] Mapped form data:', formData);
+    console.log('🎯 [SMART UPLOAD] Images:', formData.images);
     
     onComplete(formData, photos);
   };

@@ -664,6 +664,35 @@ export function SellWizard() {
       itemType: formData.itemType,
       brand: formData.brand,
       model: formData.model,
+      modelYear: formData.modelYear,
+      pickupLocation: formData.pickupLocation,
+      
+      // Bike-specific fields
+      frameSize: formData.frameSize,
+      frameMaterial: formData.frameMaterial,
+      bikeType: formData.bikeType,
+      groupset: formData.groupset,
+      wheelSize: formData.wheelSize,
+      suspensionType: formData.suspensionType,
+      colorPrimary: formData.colorPrimary,
+      colorSecondary: formData.colorSecondary,
+      bikeWeight: formData.bikeWeight,
+      
+      // Part-specific fields
+      partTypeDetail: formData.partTypeDetail,
+      material: formData.material,
+      weight: formData.weight,
+      compatibilityNotes: formData.compatibilityNotes,
+      
+      // Apparel-specific fields
+      size: formData.size,
+      genderFit: formData.genderFit,
+      apparelMaterial: formData.apparelMaterial,
+      
+      // Metadata from AI
+      structuredMetadata: formData.structuredMetadata,
+      searchUrls: formData.searchUrls,
+      fieldConfidence: formData.fieldConfidence,
     };
 
     // Bike flow (13 steps)
@@ -1142,9 +1171,16 @@ export function SellWizard() {
           onComplete={(aiFormData, imageUrls) => {
             console.log('🎯 [WIZARD] AI Complete - Form data:', aiFormData);
             console.log('🎯 [WIZARD] AI Complete - Images:', imageUrls);
+            console.log('🚴 [WIZARD] Bike details received:', {
+              frameSize: aiFormData.frameSize,
+              frameMaterial: aiFormData.frameMaterial,
+              bikeType: aiFormData.bikeType,
+              groupset: aiFormData.groupset,
+              wheelSize: aiFormData.wheelSize,
+            });
             
             // Update form data directly (no redirect needed)
-            updateFormData({
+            const updatedFormData = {
               ...aiFormData,
               images: imageUrls.map((url, index) => ({
                 id: `ai-${index}`,
@@ -1154,7 +1190,17 @@ export function SellWizard() {
               })),
               // Set primary image URL explicitly
               primaryImageUrl: imageUrls[0],
+            };
+            
+            console.log('🚴 [WIZARD] Updated form data to pass:', {
+              frameSize: updatedFormData.frameSize,
+              frameMaterial: updatedFormData.frameMaterial,
+              bikeType: updatedFormData.bikeType,
+              groupset: updatedFormData.groupset,
+              wheelSize: updatedFormData.wheelSize,
             });
+            
+            updateFormData(updatedFormData);
             
             console.log('🎯 [WIZARD] Form data updated, navigating to step 1');
             

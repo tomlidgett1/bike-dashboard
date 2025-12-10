@@ -336,6 +336,34 @@ export function Step1ItemType({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Helper function to clean AI-generated text to be more professional
+  const cleanAiText = (text: string | undefined | null): string | undefined => {
+    if (!text) return undefined;
+    
+    // Remove uncertainty phrases
+    let cleaned = text
+      .replace(/^(maybe|possibly|likely|probably|perhaps|approximately|about|around)\s+/gi, '')
+      .replace(/\s+(or so|ish|roughly)\s*$/gi, '')
+      .replace(/\s+or\s+/gi, '/') // Convert "Small or Medium" to "Small/Medium"
+      .trim();
+    
+    // Capitalize first letter of each word (for materials, colors, etc.)
+    cleaned = cleaned
+      .split(' ')
+      .map(word => {
+        // Handle hyphenated words and slashes
+        if (word.includes('-') || word.includes('/')) {
+          return word.split(/[-/]/).map(part => 
+            part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+          ).join(word.includes('-') ? '-' : '/');
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(' ');
+    
+    return cleaned || undefined;
+  };
+
   // Initialize quick data from props
   React.useEffect(() => {
     if (quickListingData) {
@@ -346,34 +374,69 @@ export function Step1ItemType({
       
       const metadata = quickListingData.structuredMetadata;
       
-      setQuickData({
+      console.log('🎯 [QUICK LIST INIT] ============ START ============');
+      console.log('🎯 [QUICK LIST INIT] quickListingData:', quickListingData);
+      console.log('🎯 [QUICK LIST INIT] metadata:', metadata);
+      console.log('🎯 [QUICK LIST INIT] Direct bike fields from quickListingData:', {
+        frameSize: quickListingData.frameSize,
+        frameMaterial: quickListingData.frameMaterial,
+        bikeType: quickListingData.bikeType,
+        groupset: quickListingData.groupset,
+        wheelSize: quickListingData.wheelSize,
+        colorPrimary: quickListingData.colorPrimary,
+        suspensionType: quickListingData.suspensionType,
+      });
+      console.log('🎯 [QUICK LIST INIT] Metadata bike fields:', {
+        frameSize: metadata?.bike?.frame_size,
+        frameMaterial: metadata?.bike?.frame_material,
+        bikeType: metadata?.bike?.bike_type,
+        groupset: metadata?.bike?.groupset,
+        wheelSize: metadata?.bike?.wheel_size,
+      });
+      
+      const initialQuickData = {
         ...quickListingData,
         title: generatedTitle,
         brand: quickListingData.brand,
         model: quickListingData.model,
         
         // Extract bike fields - try direct fields first (from smart upload), then from metadata
-        frameSize: quickListingData.frameSize || metadata?.bike?.frame_size,
-        frameMaterial: quickListingData.frameMaterial || metadata?.bike?.frame_material,
-        bikeType: quickListingData.bikeType || metadata?.bike?.bike_type,
-        groupset: quickListingData.groupset || metadata?.bike?.groupset,
-        wheelSize: quickListingData.wheelSize || metadata?.bike?.wheel_size,
-        suspensionType: quickListingData.suspensionType || metadata?.bike?.suspension_type,
-        colorPrimary: quickListingData.colorPrimary || metadata?.bike?.color_primary,
-        colorSecondary: quickListingData.colorSecondary || metadata?.bike?.color_secondary,
-        bikeWeight: quickListingData.bikeWeight || metadata?.bike?.bike_weight,
+        frameSize: cleanAiText(quickListingData.frameSize || metadata?.bike?.frame_size),
+        frameMaterial: cleanAiText(quickListingData.frameMaterial || metadata?.bike?.frame_material),
+        bikeType: cleanAiText(quickListingData.bikeType || metadata?.bike?.bike_type),
+        groupset: cleanAiText(quickListingData.groupset || metadata?.bike?.groupset),
+        wheelSize: cleanAiText(quickListingData.wheelSize || metadata?.bike?.wheel_size),
+        suspensionType: cleanAiText(quickListingData.suspensionType || metadata?.bike?.suspension_type),
+        colorPrimary: cleanAiText(quickListingData.colorPrimary || metadata?.bike?.color_primary),
+        colorSecondary: cleanAiText(quickListingData.colorSecondary || metadata?.bike?.color_secondary),
+        bikeWeight: cleanAiText(quickListingData.bikeWeight || metadata?.bike?.bike_weight),
         
         // Extract part fields - try direct fields first (from smart upload), then from metadata
-        partTypeDetail: quickListingData.partTypeDetail || metadata?.part?.part_type_detail,
-        material: quickListingData.material || metadata?.part?.material,
-        weight: quickListingData.weight || metadata?.part?.weight,
+        partTypeDetail: cleanAiText(quickListingData.partTypeDetail || metadata?.part?.part_type_detail),
+        material: cleanAiText(quickListingData.material || metadata?.part?.material),
+        weight: cleanAiText(quickListingData.weight || metadata?.part?.weight),
         compatibilityNotes: quickListingData.compatibilityNotes || metadata?.part?.compatibility_notes,
         
         // Extract apparel fields - try direct fields first (from smart upload), then from metadata
-        size: quickListingData.size || metadata?.apparel?.size,
-        genderFit: quickListingData.genderFit || metadata?.apparel?.gender_fit,
-        apparelMaterial: quickListingData.apparelMaterial || metadata?.apparel?.apparel_material,
+        size: cleanAiText(quickListingData.size || metadata?.apparel?.size),
+        genderFit: cleanAiText(quickListingData.genderFit || metadata?.apparel?.gender_fit),
+        apparelMaterial: cleanAiText(quickListingData.apparelMaterial || metadata?.apparel?.apparel_material),
+      };
+      
+      console.log('🎯 [QUICK LIST INIT] Cleaned bike fields for setQuickData:', {
+        frameSize: initialQuickData.frameSize,
+        frameMaterial: initialQuickData.frameMaterial,
+        bikeType: initialQuickData.bikeType,
+        groupset: initialQuickData.groupset,
+        wheelSize: initialQuickData.wheelSize,
+        colorPrimary: initialQuickData.colorPrimary,
+        suspensionType: initialQuickData.suspensionType,
       });
+      
+      setQuickData(initialQuickData);
+      
+      console.log('🎯 [QUICK LIST INIT] setQuickData completed');
+      console.log('🎯 [QUICK LIST INIT] ============ END ============');
     }
   }, [quickListingData]);
 
@@ -608,7 +671,10 @@ export function Step1ItemType({
             <Input
               value={quickData.title || ''}
               onChange={(e) => setQuickData({ ...quickData, title: e.target.value })}
-              className="rounded-xl h-11 text-base"
+              className={cn(
+                "rounded-xl h-11 text-base",
+                !quickData.title && "border-red-500 focus:border-red-500 focus:ring-red-500"
+              )}
               placeholder="Product name"
             />
           </div>
@@ -623,7 +689,10 @@ export function Step1ItemType({
                   type="number"
                   value={quickData.price || ''}
                   onChange={(e) => setQuickData({ ...quickData, price: parseInt(e.target.value) || undefined })}
-                  className="pl-7 rounded-xl h-11 text-base"
+                  className={cn(
+                    "pl-7 rounded-xl h-11 text-base",
+                    !quickData.price && "border-red-500 focus:border-red-500 focus:ring-red-500"
+                  )}
                   placeholder="0"
                   min="0"
                 />
@@ -635,7 +704,10 @@ export function Step1ItemType({
                 value={quickData.conditionRating}
                 onValueChange={(value) => setQuickData({ ...quickData, conditionRating: value as ConditionRating })}
               >
-                <SelectTrigger className="rounded-xl h-11">
+                <SelectTrigger className={cn(
+                  "rounded-xl h-11",
+                  !quickData.conditionRating && "border-red-500 focus:border-red-500 focus:ring-red-500"
+                )}>
                   <SelectValue placeholder="Select..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -697,7 +769,10 @@ export function Step1ItemType({
               <Input
                 value={quickData.pickupLocation || ''}
                 onChange={(e) => setQuickData({ ...quickData, pickupLocation: e.target.value })}
-                className="pl-10 rounded-xl h-11 text-base"
+                className={cn(
+                  "pl-10 rounded-xl h-11 text-base",
+                  !quickData.pickupLocation && "border-red-500 focus:border-red-500 focus:ring-red-500"
+                )}
                 placeholder="Suburb or area"
               />
             </div>
@@ -705,11 +780,14 @@ export function Step1ItemType({
 
           {/* Description */}
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Description *</label>
             <Textarea
               value={quickData.description || ''}
               onChange={(e) => setQuickData({ ...quickData, description: e.target.value })}
-              className="rounded-xl resize-none text-base"
+              className={cn(
+                "rounded-xl resize-none text-base",
+                !quickData.description && "border-red-500 focus:border-red-500 focus:ring-red-500"
+              )}
               rows={3}
               placeholder="Describe your product..."
             />
@@ -877,7 +955,7 @@ export function Step1ItemType({
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-40">
           <Button
             onClick={handleQuickList}
-            disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || isPublishing}
+            disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || !quickData.conditionRating || !quickData.description || isPublishing}
             className="w-full rounded-xl h-12 bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
           >
             {isPublishing ? (
@@ -1267,7 +1345,7 @@ export function Step1ItemType({
               <div className="flex gap-2 w-full sm:w-auto">
                 <Button
                   onClick={handleQuickList}
-                  disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || isPublishing}
+                  disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || !quickData.conditionRating || !quickData.description || isPublishing}
                   size="lg"
                   className="rounded-md bg-gray-900 hover:bg-gray-800 text-white px-6 h-11 flex-1 sm:flex-none"
                 >

@@ -333,6 +333,60 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
     console.log('✅ [AI EDGE FUNCTION] Detected:', analysis.item_type, '-', analysis.brand, analysis.model);
 
     // ============================================================
+    // Convert flat bike/part/apparel fields to nested structure
+    // (OpenAI returns flat fields, frontend expects nested objects)
+    // ============================================================
+    
+    if (analysis.item_type === 'bike') {
+      analysis.bike_details = {
+        bike_type: analysis.bike_type,
+        frame_size: analysis.frame_size,
+        frame_material: analysis.frame_material,
+        groupset: analysis.groupset,
+        wheel_size: analysis.wheel_size,
+        suspension_type: analysis.suspension_type,
+        color_primary: analysis.color_primary,
+        color_secondary: analysis.color_secondary,
+        approximate_weight: analysis.approximate_weight,
+      };
+      console.log('✅ [AI EDGE FUNCTION] Created bike_details:', analysis.bike_details);
+    } else if (analysis.item_type === 'part') {
+      analysis.part_details = {
+        category: analysis.part_category,
+        part_type: analysis.part_type,
+        compatibility: analysis.compatibility,
+        material: analysis.material,
+        weight: analysis.weight,
+      };
+      console.log('✅ [AI EDGE FUNCTION] Created part_details:', analysis.part_details);
+    } else if (analysis.item_type === 'apparel') {
+      analysis.apparel_details = {
+        category: analysis.apparel_category,
+        size: analysis.size,
+        gender_fit: analysis.gender_fit,
+        material: analysis.apparel_material,
+      };
+      console.log('✅ [AI EDGE FUNCTION] Created apparel_details:', analysis.apparel_details);
+    }
+    
+    // Create price_estimate object from flat fields
+    if (analysis.price_min_aud || analysis.price_max_aud) {
+      analysis.price_estimate = {
+        min_aud: analysis.price_min_aud,
+        max_aud: analysis.price_max_aud,
+        reasoning: analysis.price_reasoning,
+      };
+    }
+    
+    // Create field_confidence object
+    analysis.field_confidence = {
+      brand: analysis.brand_confidence,
+      model: analysis.model_confidence,
+      condition: analysis.condition_confidence,
+      overall: analysis.overall_confidence,
+    };
+
+    // ============================================================
     // Phase 2: Web Search Enrichment (NEW)
     // ============================================================
     let webEnrichment = null;
@@ -504,32 +558,32 @@ Return ONLY valid JSON (no markdown):
       
       // Build structured metadata for database
       mergedAnalysis.structured_metadata = {
-        confidence: analysis.field_confidence,
+        confidence: mergedAnalysis.field_confidence,
       };
       
-      if (analysis.item_type === 'bike' && analysis.bike_details) {
+      if (mergedAnalysis.item_type === 'bike' && mergedAnalysis.bike_details) {
         mergedAnalysis.structured_metadata.bike = {
-          frame_size: analysis.bike_details.frame_size,
-          frame_material: analysis.bike_details.frame_material,
-          bike_type: analysis.bike_details.bike_type,
-          groupset: analysis.bike_details.groupset,
-          wheel_size: analysis.bike_details.wheel_size,
-          suspension_type: analysis.bike_details.suspension_type,
-          color_primary: analysis.bike_details.color_primary,
-          color_secondary: analysis.bike_details.color_secondary,
+          frame_size: mergedAnalysis.bike_details.frame_size,
+          frame_material: mergedAnalysis.bike_details.frame_material,
+          bike_type: mergedAnalysis.bike_details.bike_type,
+          groupset: mergedAnalysis.bike_details.groupset,
+          wheel_size: mergedAnalysis.bike_details.wheel_size,
+          suspension_type: mergedAnalysis.bike_details.suspension_type,
+          color_primary: mergedAnalysis.bike_details.color_primary,
+          color_secondary: mergedAnalysis.bike_details.color_secondary,
         };
-      } else if (analysis.item_type === 'part' && analysis.part_details) {
+      } else if (mergedAnalysis.item_type === 'part' && mergedAnalysis.part_details) {
         mergedAnalysis.structured_metadata.part = {
-          part_type_detail: analysis.part_details.part_type,
-          compatibility_notes: analysis.part_details.compatibility,
-          material: analysis.part_details.material,
-          weight: analysis.part_details.weight,
+          part_type_detail: mergedAnalysis.part_details.part_type,
+          compatibility_notes: mergedAnalysis.part_details.compatibility,
+          material: mergedAnalysis.part_details.material,
+          weight: mergedAnalysis.part_details.weight,
         };
-      } else if (analysis.item_type === 'apparel' && analysis.apparel_details) {
+      } else if (mergedAnalysis.item_type === 'apparel' && mergedAnalysis.apparel_details) {
         mergedAnalysis.structured_metadata.apparel = {
-          size: analysis.apparel_details.size,
-          gender_fit: analysis.apparel_details.gender_fit,
-          apparel_material: analysis.apparel_details.material,
+          size: mergedAnalysis.apparel_details.size,
+          gender_fit: mergedAnalysis.apparel_details.gender_fit,
+          apparel_material: mergedAnalysis.apparel_details.material,
         };
       }
       

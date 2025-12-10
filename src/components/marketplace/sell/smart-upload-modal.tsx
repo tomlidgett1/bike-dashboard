@@ -282,6 +282,8 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
 
       const result = await response.json();
       console.log('✅ [SMART UPLOAD MODAL] Analysis received:', result);
+      console.log('🔍 [SMART UPLOAD MODAL] Item type:', result.analysis?.item_type);
+      console.log('🚴 [SMART UPLOAD MODAL] Bike details from AI:', result.analysis?.bike_details);
       console.log('🔍 [SMART UPLOAD MODAL] Web enrichment data:', result.analysis?.web_enrichment);
       console.log('🔍 [SMART UPLOAD MODAL] Search URLs:', result.analysis?.search_urls);
       console.log('🔍 [SMART UPLOAD MODAL] Data sources:', result.analysis?.data_sources);
@@ -308,34 +310,78 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
           : undefined,
       };
 
+      // Helper function to clean AI-generated text
+      const cleanAiText = (text: string | undefined | null): string | undefined => {
+        if (!text) return undefined;
+        
+        // Remove uncertainty phrases and clean up
+        let cleaned = text
+          .replace(/^(maybe|possibly|likely|probably|perhaps|approximately|about|around)\s+/gi, '')
+          .replace(/\s+(or so|ish|roughly)\s*$/gi, '')
+          .replace(/\s+or\s+/gi, '/') // Convert "Small or Medium" to "Small/Medium"
+          .trim();
+        
+        // Capitalize first letter of each word (for materials, colors, etc.)
+        cleaned = cleaned
+          .split(' ')
+          .map(word => {
+            // Handle hyphenated words and slashes
+            if (word.includes('-') || word.includes('/')) {
+              return word.split(/[-/]/).map(part => 
+                part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+              ).join(word.includes('-') ? '-' : '/');
+            }
+            return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+          })
+          .join(' ');
+        
+        return cleaned || undefined;
+      };
+
       // Add bike-specific fields
-      if (analysis.item_type === 'bike' && analysis.bike_details) {
-        formData.bikeType = analysis.bike_details.bike_type;
-        formData.frameSize = analysis.bike_details.frame_size;
-        formData.frameMaterial = analysis.bike_details.frame_material;
-        formData.groupset = analysis.bike_details.groupset;
-        formData.wheelSize = analysis.bike_details.wheel_size;
-        formData.suspensionType = analysis.bike_details.suspension_type;
-        formData.colorPrimary = analysis.bike_details.color_primary;
-        formData.colorSecondary = analysis.bike_details.color_secondary;
-        formData.bikeWeight = analysis.bike_details.approximate_weight;
+      if (analysis.item_type === 'bike') {
+        console.log('🚴 [SMART UPLOAD MODAL] Processing bike details...');
+        console.log('🚴 [SMART UPLOAD MODAL] analysis.bike_details exists:', !!analysis.bike_details);
+        
+        if (analysis.bike_details) {
+          formData.bikeType = cleanAiText(analysis.bike_details.bike_type);
+          formData.frameSize = cleanAiText(analysis.bike_details.frame_size);
+          formData.frameMaterial = cleanAiText(analysis.bike_details.frame_material);
+          formData.groupset = cleanAiText(analysis.bike_details.groupset);
+          formData.wheelSize = cleanAiText(analysis.bike_details.wheel_size);
+          formData.suspensionType = cleanAiText(analysis.bike_details.suspension_type);
+          formData.colorPrimary = cleanAiText(analysis.bike_details.color_primary);
+          formData.colorSecondary = cleanAiText(analysis.bike_details.color_secondary);
+          formData.bikeWeight = cleanAiText(analysis.bike_details.approximate_weight);
+          
+          console.log('🚴 [SMART UPLOAD MODAL] Mapped bike fields:', {
+            bikeType: formData.bikeType,
+            frameSize: formData.frameSize,
+            frameMaterial: formData.frameMaterial,
+            groupset: formData.groupset,
+            wheelSize: formData.wheelSize,
+            colorPrimary: formData.colorPrimary,
+          });
+        } else {
+          console.warn('⚠️ [SMART UPLOAD MODAL] No bike_details in analysis response!');
+        }
       }
 
       // Add part-specific fields
       if (analysis.item_type === 'part' && analysis.part_details) {
         formData.marketplace_subcategory = analysis.part_details.category;
-        formData.partTypeDetail = analysis.part_details.part_type;
+        formData.partTypeDetail = cleanAiText(analysis.part_details.part_type);
         formData.compatibilityNotes = analysis.part_details.compatibility;
-        formData.material = analysis.part_details.material;
-        formData.weight = analysis.part_details.weight;
+        formData.material = cleanAiText(analysis.part_details.material);
+        formData.weight = cleanAiText(analysis.part_details.weight);
       }
 
       // Add apparel-specific fields
       if (analysis.item_type === 'apparel' && analysis.apparel_details) {
         formData.marketplace_subcategory = analysis.apparel_details.category;
-        formData.size = analysis.apparel_details.size;
-        formData.genderFit = analysis.apparel_details.gender_fit;
-        formData.apparelMaterial = analysis.apparel_details.material;
+        formData.size = cleanAiText(analysis.apparel_details.size);
+        formData.genderFit = cleanAiText(analysis.apparel_details.gender_fit);
+        formData.apparelMaterial = cleanAiText(analysis.apparel_details.material);
       }
 
       // Add smart upload metadata (for database JSONB storage)
@@ -365,6 +411,15 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       
       // Set the primary image URL explicitly (use cardUrl for faster loading)
       formData.primaryImageUrl = uploadedImages?.[0]?.cardUrl || urls[0];
+
+      console.log('🎯 [SMART UPLOAD MODAL] Final formData being sent:', formData);
+      console.log('🎯 [SMART UPLOAD MODAL] Final formData bike fields:', {
+        bikeType: formData.bikeType,
+        frameSize: formData.frameSize,
+        frameMaterial: formData.frameMaterial,
+        groupset: formData.groupset,
+        wheelSize: formData.wheelSize,
+      });
 
       setStage("success");
 
