@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Package, Heart, Sparkles, Zap } from "lucide-react";
+import { Package, Heart, Sparkles } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
@@ -38,6 +38,24 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   const [isLiked, setIsLiked] = React.useState(false);
   const [isHovered, setIsHovered] = React.useState(false);
   const imageRef = React.useRef<HTMLDivElement>(null);
+
+  // Get relative time for new listings (show for products < 24 hours old)
+  const relativeTime = React.useMemo(() => {
+    if (!product.created_at) return null;
+    const createdAt = new Date(product.created_at);
+    const now = new Date();
+    const hoursDiff = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+    
+    // Only show for products listed in last 24 hours
+    if (hoursDiff > 24) return null;
+    
+    if (hoursDiff < 1) {
+      const minutes = Math.floor(hoursDiff * 60);
+      return `${minutes}m ago`;
+    } else {
+      return `${Math.floor(hoursDiff)}h ago`;
+    }
+  }, [product.created_at]);
 
   // Intersection Observer for lazy loading
   React.useEffect(() => {
@@ -139,15 +157,6 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     });
   }, [isLiked, product.id]);
 
-  // Check if product was listed within the last 24 hours
-  const isNewListing = React.useMemo(() => {
-    if (!product.created_at) return false;
-    const createdAt = new Date(product.created_at);
-    const now = new Date();
-    const hoursDiff = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
-    return hoursDiff < 24;
-  }, [product.created_at]);
-
   return (
     <Link 
       href={`/marketplace/product/${product.id}`}
@@ -201,21 +210,6 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </div>
           </div>
 
-          {/* New Listing Badge - Sleek gradient with subtle glow */}
-          {isNewListing && (
-            <div className="absolute top-2.5 left-2.5 z-10">
-              <div className="relative">
-                {/* Glow effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-amber-400 to-orange-500 rounded-md blur-sm opacity-60" />
-                {/* Badge */}
-                <div className="relative flex items-center gap-1 bg-gradient-to-r from-amber-400 to-orange-500 px-2 py-0.5 rounded-md shadow-sm">
-                  <Zap className="h-3 w-3 text-white fill-white" />
-                  <span className="text-[10px] font-bold text-white uppercase tracking-wide">New</span>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Wishlist Button */}
           <button
             onClick={handleLikeToggle}
@@ -243,7 +237,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
                 e.stopPropagation();
                 onImageDiscoveryClick(product.id);
               }}
-              className={`absolute ${isNewListing ? 'top-10' : 'top-2.5'} left-2.5 bg-white/95 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-white`}
+              className="absolute top-2.5 left-2.5 bg-white/95 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-white z-20"
             >
               <div className="flex items-center gap-1">
                 <Sparkles className="h-3.5 w-3.5 text-purple-600" />
@@ -260,10 +254,20 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             {(product as any).display_name || product.description}
           </h3>
 
-          {/* Store Name */}
-          <p className="text-xs text-gray-500">
-            {product.store_name}
-          </p>
+          {/* Store Name with optional time badge */}
+          <div className="flex items-center gap-1.5">
+            <p className="text-xs text-gray-500">
+              {product.store_name}
+            </p>
+            {relativeTime && (
+              <>
+                <span className="text-gray-300">•</span>
+                <span className="text-xs font-medium text-emerald-600">
+                  {relativeTime}
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </motion.div>
     </Link>
