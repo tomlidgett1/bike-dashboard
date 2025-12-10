@@ -2,19 +2,15 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import { BulkPhotoUploadStep } from "./bulk-photo-upload-step";
 import { BulkPhotoGroupingStep } from "./bulk-photo-grouping-step";
 import { BulkProductCarousel } from "./bulk-product-carousel";
 import { BulkProductCard } from "./bulk-product-card";
 import { BulkReviewStep } from "./bulk-review-step";
-import { Loader2, CheckCircle } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Loader2, CheckCircle, ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 // ============================================================
 // Bulk Upload Flow
@@ -62,6 +58,17 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
   const [products, setProducts] = React.useState<ProductData[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [successListingIds, setSuccessListingIds] = React.useState<string[]>([]);
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  // Detect if on mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Upload photos complete
   const handlePhotosUploaded = (uploadedPhotos: UploadedPhoto[]) => {
@@ -415,27 +422,130 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
   }
 
   if (stage === "success") {
+    // Calculate total value
+    const totalValue = products.reduce((sum, p) => sum + (p.formData?.price || 0), 0);
+
     return (
-      <Dialog open={true}>
-        <DialogContent className="sm:max-w-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
-          <DialogHeader>
-            <div className="mx-auto mb-4">
-              <div className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center">
-                <CheckCircle className="h-8 w-8 text-green-600" />
+      <div className={cn(
+        "min-h-screen bg-gray-50 flex flex-col items-center justify-center",
+        isMobile ? "px-6 py-12" : "px-8 py-16"
+      )}>
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ 
+            type: "spring",
+            stiffness: 200,
+            damping: 20
+          }}
+          className="text-center"
+        >
+          {/* Success Icon */}
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ 
+              delay: 0.2,
+              type: "spring",
+              stiffness: 300,
+              damping: 15
+            }}
+            className="mx-auto mb-6"
+          >
+            <div className={cn(
+              "rounded-full bg-[#FFC72C] flex items-center justify-center",
+              isMobile ? "h-20 w-20" : "h-24 w-24"
+            )}>
+              <CheckCircle className={cn("text-gray-900", isMobile ? "h-10 w-10" : "h-12 w-12")} />
+            </div>
+          </motion.div>
+
+          {/* Title */}
+          <motion.h1
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className={cn(
+              "font-bold text-gray-900 mb-2",
+              isMobile ? "text-2xl" : "text-3xl"
+            )}
+          >
+            {successListingIds.length === 1 ? 'Listing Published!' : 'Listings Published!'}
+          </motion.h1>
+
+          {/* Subtitle */}
+          <motion.p
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className={cn("text-gray-600 mb-8", isMobile ? "text-base" : "text-lg")}
+          >
+            {successListingIds.length} {successListingIds.length === 1 ? 'item is' : 'items are'} now live on the marketplace
+          </motion.p>
+
+          {/* Stats */}
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className={cn(
+              "bg-white rounded-2xl border border-gray-200 p-5 mb-8 w-full max-w-sm mx-auto",
+              isMobile ? "shadow-sm" : "shadow-md"
+            )}
+          >
+            <div className="flex justify-between items-center">
+              <div className="text-left">
+                <p className="text-xs text-gray-500 mb-1">Total Items</p>
+                <p className="text-2xl font-bold text-gray-900">{successListingIds.length}</p>
+              </div>
+              <div className="h-10 w-px bg-gray-200" />
+              <div className="text-right">
+                <p className="text-xs text-gray-500 mb-1">Total Value</p>
+                <p className="text-2xl font-bold text-gray-900">${totalValue.toLocaleString()}</p>
               </div>
             </div>
-            <DialogTitle className="text-center text-xl font-semibold text-gray-900">
-              Listings Published!
-            </DialogTitle>
-            <DialogDescription className="text-center text-gray-600">
-              Successfully published {successListingIds.length} listing{successListingIds.length !== 1 ? 's' : ''} to the marketplace
-            </DialogDescription>
-          </DialogHeader>
-          <p className="text-sm text-center text-gray-500 mt-4">
-            Redirecting to marketplace...
-          </p>
-        </DialogContent>
-      </Dialog>
+          </motion.div>
+
+          {/* Action Buttons */}
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            className="space-y-3 w-full max-w-sm mx-auto"
+          >
+            <Button
+              onClick={() => router.push('/marketplace')}
+              className={cn(
+                "w-full bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold rounded-xl",
+                isMobile ? "h-12" : "h-11"
+              )}
+            >
+              View on Marketplace
+              <ExternalLink className="h-4 w-4 ml-2" />
+            </Button>
+            <Button
+              onClick={() => router.push('/settings/my-listings')}
+              variant="outline"
+              className={cn(
+                "w-full rounded-xl",
+                isMobile ? "h-12" : "h-11"
+              )}
+            >
+              Manage My Listings
+            </Button>
+          </motion.div>
+
+          {/* Auto-redirect notice */}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1 }}
+            className="text-xs text-gray-400 mt-6"
+          >
+            Redirecting to marketplace in 3 seconds...
+          </motion.p>
+        </motion.div>
+      </div>
     );
   }
 

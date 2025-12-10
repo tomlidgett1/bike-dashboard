@@ -1,12 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw, FileText } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { RefreshCw, FileText, ChevronDown, DollarSign, Package, AlertCircle, Shirt, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ListingAnalysisResult } from "@/lib/ai/schemas";
 import { InlineEditField } from "./inline-edit-field";
 import { ConfidenceBadge } from "./confidence-badge";
 import { cn } from "@/lib/utils";
+import Image from "next/image";
+import { CONDITION_RATINGS } from "@/lib/types/listing";
 
 // ============================================================
 // AI Results Review Screen
@@ -28,6 +34,19 @@ export function AIResultsReview({
   onSwitchToManual,
 }: AIResultsReviewProps) {
   const [editedData, setEditedData] = React.useState(analysis);
+  const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
+  const [showDetails, setShowDetails] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  // Detect if on mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const updateField = (path: string, value: any) => {
     setEditedData(prev => {
@@ -60,6 +79,388 @@ export function AIResultsReview({
     return confidence?.[field] || editedData.overall_confidence || 80;
   };
 
+  const isBike = editedData.item_type === 'bike';
+  const isPart = editedData.item_type === 'part';
+  const isApparel = editedData.item_type === 'apparel';
+  const isLowConfidence = (editedData.overall_confidence || 80) < 70;
+
+  // Calculate suggested price
+  const suggestedPrice = editedData.price_estimate
+    ? Math.round((editedData.price_estimate.min_aud + editedData.price_estimate.max_aud) / 2)
+    : 0;
+
+  // Mobile view - card-style like BulkProductCard
+  if (isMobile) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-32">
+        {/* Photo Gallery */}
+        <div className="relative aspect-square bg-gray-100">
+          {photos.length > 0 && (
+            <Image
+              src={photos[primaryImageIndex]}
+              alt="Product"
+              fill
+              className="object-contain"
+              priority
+            />
+          )}
+          
+          {/* Confidence Warning */}
+          {isLowConfidence && (
+            <div className="absolute top-3 left-3 right-3">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex items-center gap-2">
+                <AlertCircle className="h-3.5 w-3.5 text-yellow-600 flex-shrink-0" />
+                <p className="text-[11px] font-medium text-yellow-800">
+                  Low confidence - please review
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* AI Badge */}
+          <div className="absolute bottom-3 right-3">
+            <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1 flex items-center gap-1.5 border border-gray-200">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-500" />
+              <span className="text-[10px] font-medium text-gray-700">AI Detected</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Thumbnail Strip */}
+        {photos.length > 1 && (
+          <div className="flex gap-2 p-3 border-b border-gray-200 overflow-x-auto bg-white">
+            {photos.map((url, index) => (
+              <button
+                key={index}
+                onClick={() => setPrimaryImageIndex(index)}
+                className={cn(
+                  "relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors",
+                  index === primaryImageIndex
+                    ? "border-[#FFC72C]"
+                    : "border-gray-200"
+                )}
+              >
+                <Image
+                  src={url}
+                  alt={`Photo ${index + 1}`}
+                  fill
+                  className="object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Form Fields */}
+        <div className="p-4 space-y-4 bg-white">
+          {/* Generated Title */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Title</label>
+            <Input
+              value={`${editedData.model_year || ''} ${editedData.brand || ''} ${editedData.model || ''}`.trim() || 'Product'}
+              onChange={(e) => {
+                const parts = e.target.value.split(' ');
+                // Simple parsing - just update brand for now
+                updateField('brand', e.target.value);
+              }}
+              className="rounded-xl h-11 text-base"
+              placeholder="Product name"
+            />
+          </div>
+
+          {/* Price & Condition Row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Price (AUD)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                <Input
+                  type="number"
+                  value={suggestedPrice}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value) || 0;
+                    updateField('price_estimate', {
+                      ...editedData.price_estimate,
+                      min_aud: value * 0.9,
+                      max_aud: value * 1.1
+                    });
+                  }}
+                  className="pl-7 rounded-xl h-11 text-base"
+                  min="0"
+                />
+              </div>
+              {editedData.price_estimate?.reasoning && (
+                <p className="text-[10px] text-gray-500 mt-1 line-clamp-2">
+                  {editedData.price_estimate.reasoning}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Condition</label>
+              <Select
+                value={editedData.condition_rating || 'Good'}
+                onValueChange={(value) => updateField('condition_rating', value)}
+              >
+                <SelectTrigger className="rounded-xl h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONDITION_RATINGS.map((rating) => (
+                    <SelectItem key={rating} value={rating}>
+                      {rating}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Brand & Model Row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Brand</label>
+              <Input
+                value={getFieldValue('brand')}
+                onChange={(e) => updateField('brand', e.target.value)}
+                className="rounded-xl h-11 text-base"
+                placeholder="Brand"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Model</label>
+              <Input
+                value={getFieldValue('model')}
+                onChange={(e) => updateField('model', e.target.value)}
+                className="rounded-xl h-11 text-base"
+                placeholder="Model"
+              />
+            </div>
+          </div>
+
+          {/* Year */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Year</label>
+            <Input
+              value={getFieldValue('model_year')}
+              onChange={(e) => updateField('model_year', e.target.value)}
+              className="rounded-xl h-11 text-base"
+              placeholder="2023"
+            />
+          </div>
+
+          {/* Type */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+            <Select
+              value={editedData.item_type || 'bike'}
+              onValueChange={(value) => updateField('item_type', value)}
+            >
+              <SelectTrigger className="rounded-xl h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bike">Bike</SelectItem>
+                <SelectItem value="part">Part/Component</SelectItem>
+                <SelectItem value="apparel">Apparel</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+            <Textarea
+              value={getFieldValue('condition_details')}
+              onChange={(e) => updateField('condition_details', e.target.value)}
+              className="rounded-xl resize-none text-base"
+              rows={3}
+              placeholder="Describe your product..."
+            />
+          </div>
+
+          {/* Expandable Details Section */}
+          <div>
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="w-full flex items-center justify-between py-3 text-left"
+            >
+              <span className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                {isBike && <Package className="h-4 w-4" />}
+                {isPart && <Wrench className="h-4 w-4" />}
+                {isApparel && <Shirt className="h-4 w-4" />}
+                {isBike && "Bike Details"}
+                {isPart && "Part Details"}
+                {isApparel && "Apparel Details"}
+                {!isBike && !isPart && !isApparel && "Additional Details"}
+              </span>
+              <ChevronDown className={cn(
+                "h-5 w-5 text-gray-400 transition-transform duration-200",
+                showDetails && "rotate-180"
+              )} />
+            </button>
+
+            <AnimatePresence>
+              {showDetails && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                  className="overflow-hidden"
+                >
+                  <div className="space-y-3 pt-2 pb-2">
+                    {/* Bike-Specific Fields */}
+                    {isBike && editedData.bike_details && (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Frame Size</label>
+                            <Input
+                              value={getFieldValue('bike_details.frame_size')}
+                              onChange={(e) => updateField('bike_details.frame_size', e.target.value)}
+                              className="rounded-xl h-11 text-base"
+                              placeholder="Medium"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Material</label>
+                            <Input
+                              value={getFieldValue('bike_details.frame_material')}
+                              onChange={(e) => updateField('bike_details.frame_material', e.target.value)}
+                              className="rounded-xl h-11 text-base"
+                              placeholder="Carbon"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Groupset</label>
+                            <Input
+                              value={getFieldValue('bike_details.groupset')}
+                              onChange={(e) => updateField('bike_details.groupset', e.target.value)}
+                              className="rounded-xl h-11 text-base"
+                              placeholder="Shimano"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Wheels</label>
+                            <Input
+                              value={getFieldValue('bike_details.wheel_size')}
+                              onChange={(e) => updateField('bike_details.wheel_size', e.target.value)}
+                              className="rounded-xl h-11 text-base"
+                              placeholder='29"'
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Colour</label>
+                          <Input
+                            value={getFieldValue('bike_details.color_primary')}
+                            onChange={(e) => updateField('bike_details.color_primary', e.target.value)}
+                            className="rounded-xl h-11 text-base"
+                            placeholder="Black"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Part-Specific Fields */}
+                    {isPart && editedData.part_details && (
+                      <>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Part Type</label>
+                          <Input
+                            value={getFieldValue('part_details.part_type')}
+                            onChange={(e) => updateField('part_details.part_type', e.target.value)}
+                            className="rounded-xl h-11 text-base"
+                            placeholder="e.g., Rear Derailleur"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Compatibility</label>
+                          <Textarea
+                            value={getFieldValue('part_details.compatibility')}
+                            onChange={(e) => updateField('part_details.compatibility', e.target.value)}
+                            className="rounded-xl resize-none text-base"
+                            rows={2}
+                            placeholder="Compatible with..."
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Apparel-Specific Fields */}
+                    {isApparel && editedData.apparel_details && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Size</label>
+                          <Input
+                            value={getFieldValue('apparel_details.size')}
+                            onChange={(e) => updateField('apparel_details.size', e.target.value)}
+                            className="rounded-xl h-11 text-base"
+                            placeholder="Medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Fit</label>
+                          <Select
+                            value={getFieldValue('apparel_details.gender_fit') || ''}
+                            onValueChange={(value) => updateField('apparel_details.gender_fit', value)}
+                          >
+                            <SelectTrigger className="rounded-xl h-11">
+                              <SelectValue placeholder="Select..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Men's">Men's</SelectItem>
+                              <SelectItem value="Women's">Women's</SelectItem>
+                              <SelectItem value="Unisex">Unisex</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Condition Notes */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Condition Notes</label>
+                      <Textarea
+                        value={getFieldValue('wear_notes')}
+                        onChange={(e) => updateField('wear_notes', e.target.value)}
+                        className="rounded-xl resize-none text-base"
+                        rows={2}
+                        placeholder="Any wear or damage..."
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Fixed Bottom Actions */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-40">
+          <div className="flex gap-3">
+            <Button
+              onClick={onReanalyze}
+              variant="outline"
+              className="rounded-xl h-12 px-4"
+            >
+              <RefreshCw className="h-5 w-5" />
+            </Button>
+            <Button
+              onClick={() => onContinue(editedData)}
+              className="flex-1 rounded-xl h-12 bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold"
+            >
+              Continue to Listing
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop view - original layout
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
@@ -244,134 +645,6 @@ export function AIResultsReview({
         </div>
       </div>
 
-      {/* Web Enrichment - Product Description */}
-      {editedData.web_enrichment?.product_description && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-900">Product Description</h3>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md border border-blue-200">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500" />
-              From Web
-            </span>
-          </div>
-          <div className="bg-white rounded-md p-4 border border-gray-200">
-            <p className="text-sm text-gray-700 leading-relaxed">
-              {editedData.web_enrichment.product_description}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Web Enrichment - Technical Specifications */}
-      {editedData.web_enrichment?.technical_specs && Object.keys(editedData.web_enrichment.technical_specs).length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-900">Technical Specifications</h3>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md border border-blue-200">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500" />
-              From Web
-            </span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {Object.entries(editedData.web_enrichment.technical_specs).map(([key, value]) => (
-              <div key={key} className="bg-white rounded-md p-3 border border-gray-200">
-                <p className="text-xs font-medium text-gray-500 mb-1">
-                  {key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                </p>
-                <p className="text-sm font-medium text-gray-900">{value as string}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Web Enrichment - Category Classification */}
-      {editedData.web_enrichment?.category_classification && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-900">Category Classification</h3>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md border border-blue-200">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500" />
-              From Web
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            {editedData.web_enrichment.category_classification.level1 && (
-              <>
-                <span className="font-medium text-gray-900">
-                  {editedData.web_enrichment.category_classification.level1}
-                </span>
-                {editedData.web_enrichment.category_classification.level2 && (
-                  <>
-                    <span className="text-gray-400">›</span>
-                    <span className="font-medium text-gray-900">
-                      {editedData.web_enrichment.category_classification.level2}
-                    </span>
-                  </>
-                )}
-                {editedData.web_enrichment.category_classification.level3 && (
-                  <>
-                    <span className="text-gray-400">›</span>
-                    <span className="font-medium text-gray-900">
-                      {editedData.web_enrichment.category_classification.level3}
-                    </span>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Web Enrichment - Market Pricing */}
-      {editedData.web_enrichment?.market_pricing && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-900">Market Pricing (Web)</h3>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-green-700 bg-green-50 rounded-md border border-green-200">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
-              Australian Retailers
-            </span>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <p className="text-xl font-bold text-gray-900">
-                ${editedData.web_enrichment.market_pricing.min_aud?.toLocaleString() || 'N/A'} - $
-                {editedData.web_enrichment.market_pricing.max_aud?.toLocaleString() || 'N/A'} AUD
-              </p>
-            </div>
-            {editedData.web_enrichment.market_pricing.sources && editedData.web_enrichment.market_pricing.sources.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                <span className="text-xs text-gray-600">Sources:</span>
-                {editedData.web_enrichment.market_pricing.sources.map((source, idx) => (
-                  <span key={idx} className="inline-flex items-center px-2 py-0.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-md">
-                    {source}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Web Enrichment - Compatibility Info */}
-      {editedData.web_enrichment?.compatibility_info && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-900">Compatibility Information</h3>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md border border-blue-200">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500" />
-              From Web
-            </span>
-          </div>
-          <div className="bg-white rounded-md p-4 border border-gray-200">
-            <p className="text-sm text-gray-700">
-              {editedData.web_enrichment.compatibility_info}
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Price Suggestion */}
       {editedData.price_estimate && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
@@ -391,82 +664,6 @@ export function AIResultsReview({
             </div>
           </div>
         </div>
-      )}
-
-      {/* Data Sources Summary */}
-      {editedData.data_sources && Object.keys(editedData.data_sources).length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-          <h3 className="text-base font-semibold text-gray-900">Data Sources</h3>
-          <p className="text-xs text-gray-600">
-            How each field was determined
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(editedData.data_sources).map(([field, source]) => (
-              <div key={field} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-white border border-gray-200 rounded-md">
-                <span className="text-gray-700 capitalize">
-                  {field.replace(/_/g, ' ')}:
-                </span>
-                <span className={cn(
-                  "inline-flex items-center gap-1",
-                  source === 'image' ? 'text-purple-700' :
-                  source === 'web' ? 'text-blue-700' :
-                  'text-green-700'
-                )}>
-                  <span className={cn(
-                    "inline-block w-1.5 h-1.5 rounded-full",
-                    source === 'image' ? 'bg-purple-500' :
-                    source === 'web' ? 'bg-blue-500' :
-                    'bg-green-500'
-                  )} />
-                  {source === 'both' ? 'Image + Web' : source.charAt(0).toUpperCase() + source.slice(1)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Web Search Sources */}
-      {editedData.search_urls && editedData.search_urls.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-          <h3 className="text-base font-semibold text-gray-900">
-            Information Sources
-          </h3>
-          <p className="text-xs text-gray-600">
-            Data enriched from web search of cycling retailers and manufacturers
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {editedData.search_urls.slice(0, 5).map((source, index) => (
-              <a
-                key={index}
-                href={source.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
-              >
-                <span className={cn(
-                  "inline-block w-1.5 h-1.5 rounded-full",
-                  source.type === 'manufacturer' ? 'bg-blue-500' :
-                  source.type === 'retailer' ? 'bg-green-500' :
-                  'bg-gray-400'
-                )} />
-                {new URL(source.url).hostname.replace('www.', '')}
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Debug: Full Analysis Data */}
-      {process.env.NODE_ENV === 'development' && (
-        <details className="bg-gray-50 rounded-xl border border-gray-300 p-5">
-          <summary className="text-sm font-semibold text-gray-900 cursor-pointer hover:text-gray-700">
-            🔍 Debug: View Full Analysis Data
-          </summary>
-          <pre className="mt-3 text-xs text-gray-700 overflow-auto max-h-96 bg-white p-4 rounded-md border border-gray-200">
-            {JSON.stringify(editedData, null, 2)}
-          </pre>
-        </details>
       )}
 
       {/* Actions */}
