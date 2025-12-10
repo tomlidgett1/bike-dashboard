@@ -545,10 +545,25 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
                 {/* Loading State - Compact Bottom Bar */}
                 {isLoading && !result && (
                   <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="bg-white rounded-t-xl border-t-2 border-x-2 border-[#FFC72C] shadow-xl"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ 
+                      opacity: 1, 
+                      y: 0,
+                      boxShadow: [
+                        "0 -4px 20px rgba(0, 0, 0, 0.15)",
+                        "0 -4px 25px rgba(0, 0, 0, 0.2)",
+                        "0 -4px 20px rgba(0, 0, 0, 0.15)"
+                      ]
+                    }}
+                    exit={{ opacity: 0, y: 20 }}
+                    transition={{ 
+                      boxShadow: {
+                        duration: 2,
+                        repeat: Infinity,
+                        ease: "easeInOut"
+                      }
+                    }}
+                    className="bg-white rounded-t-xl border-t border-x border-gray-300"
                   >
                     <div className="px-4 py-4">
                       {/* Header Row */}
