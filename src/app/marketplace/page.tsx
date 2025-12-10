@@ -563,9 +563,8 @@ function MarketplacePageContent() {
       <MarketplaceLayout showFooter={false} showStoreCTA={isStoresView}>
         {/* Sticky Filter Bar on Mobile */}
         {!isStoresView && !isSellersView && (
-          <div className="sticky top-14 sm:top-16 z-30 bg-white sm:hidden w-full">
-            <div className="px-3">
-              <UnifiedFilterBar
+          <div className="sticky top-14 sm:top-16 z-30 bg-white sm:hidden">
+            <UnifiedFilterBar
               viewMode={viewMode}
               onViewModeChange={handleViewModeChange}
               showForYouBadge={!user && viewMode !== 'for-you'}
@@ -588,7 +587,6 @@ function MarketplacePageContent() {
                 />
               }
             />
-            </div>
           </div>
         )}
 

@@ -221,15 +221,15 @@ export function UnifiedFilterBar({
   return (
     <div className="space-y-3">
       {/* Primary Row: View Mode Tabs + Source Filter Tabs (desktop only) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-3 -mx-3 sm:mx-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-3">
         {/* View Mode Tabs - Full width edge-to-edge on mobile, pills on desktop */}
-        <div className="flex sm:items-center sm:bg-gray-100 sm:p-0.5 sm:rounded-md w-full sm:w-auto sm:border-0">
+        <div className="flex sm:items-center bg-gray-50 sm:bg-gray-100 sm:p-0.5 sm:rounded-md w-full sm:w-auto sm:border-0">
           <button
             onClick={() => onViewModeChange('trending')}
             className={cn(
               "relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0",
               viewMode === 'trending'
-                ? "text-gray-900 sm:bg-white sm:shadow-sm border-gray-900"
+                ? "text-gray-900 sm:bg-white sm:shadow-sm border-gray-900 bg-gray-50"
                 : "text-gray-600 hover:text-gray-800 sm:hover:bg-gray-200/60 border-transparent"
             )}
           >
@@ -243,7 +243,7 @@ export function UnifiedFilterBar({
             className={cn(
               "relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0",
               viewMode === 'for-you'
-                ? "text-gray-900 sm:bg-white sm:shadow-sm border-gray-900"
+                ? "text-gray-900 sm:bg-white sm:shadow-sm border-gray-900 bg-gray-50"
                 : "text-gray-600 hover:text-gray-800 sm:hover:bg-gray-200/60 border-transparent"
             )}
           >
@@ -260,7 +260,7 @@ export function UnifiedFilterBar({
             className={cn(
               "relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0",
               viewMode === 'all'
-                ? "text-gray-900 sm:bg-white sm:shadow-sm border-gray-900"
+                ? "text-gray-900 sm:bg-white sm:shadow-sm border-gray-900 bg-gray-50"
                 : "text-gray-600 hover:text-gray-800 sm:hover:bg-gray-200/60 border-transparent"
             )}
           >
@@ -271,7 +271,7 @@ export function UnifiedFilterBar({
 
         {/* Source Filter Tabs + Advanced Filters - only on Browse mode - Same row on desktop */}
         {isOnBrowseMode && (
-          <div className="flex items-stretch gap-2">
+          <div className="flex items-stretch gap-2 px-3 sm:px-0">
             {/* Listing Type Filter Tabs - Full width on mobile, auto on desktop */}
             <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-full sm:w-auto">
               <button
@@ -339,7 +339,7 @@ export function UnifiedFilterBar({
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className="overflow-hidden"
+            className="overflow-hidden px-3 sm:px-0"
           >
             {/* Breadcrumb Trail - Compact, clickable */}
             {breadcrumbs.length > 0 && (
