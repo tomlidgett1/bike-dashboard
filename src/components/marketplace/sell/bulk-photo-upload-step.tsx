@@ -39,9 +39,20 @@ export function BulkPhotoUploadStep({ onComplete, onBack }: BulkPhotoUploadStepP
   const [uploadProgress, setUploadProgress] = React.useState({ current: 0, total: 0 });
   const [error, setError] = React.useState<string | null>(null);
   const [dragActive, setDragActive] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
   
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Detect if on mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Cleanup preview URLs on unmount
   React.useEffect(() => {
@@ -207,85 +218,160 @@ export function BulkPhotoUploadStep({ onComplete, onBack }: BulkPhotoUploadStepP
     <div className="min-h-screen bg-gray-50 pt-20 pb-20">
       <div className="max-w-4xl mx-auto px-4">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Upload Your Photos
+        <div className={cn("mb-6", isMobile ? "text-center" : "")}>
+          <h1 className={cn("font-bold text-gray-900 mb-2", isMobile ? "text-2xl" : "text-3xl")}>
+            Bulk Upload
           </h1>
-          <p className="text-gray-600">
-            Upload 20+ photos to create multiple product listings at once
+          <p className={cn("text-gray-600", isMobile ? "text-sm" : "")}>
+            Upload 20+ photos to create multiple product listings
           </p>
         </div>
 
         {/* Upload Zone */}
-        {!isProcessing && (
-          <div
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            className={cn(
-              "border-2 border-dashed rounded-md p-12 text-center bg-white transition-colors",
-              dragActive ? "border-gray-900 bg-gray-50" : "border-gray-300"
-            )}
-          >
-            <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Drag and drop photos here
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">
-              or use the buttons below
-            </p>
-            
-            <div className="flex gap-3 justify-center">
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                className="rounded-md bg-gray-900 hover:bg-gray-800"
-              >
-                <ImageIcon className="h-4 w-4 mr-2" />
-                Choose Files
-              </Button>
-              <Button
-                onClick={() => cameraInputRef.current?.click()}
-                variant="outline"
-                className="rounded-md"
-              >
-                <Camera className="h-4 w-4 mr-2" />
-                Take Photos
-              </Button>
-            </div>
+        {!isProcessing && photos.length === 0 && (
+          <>
+            {isMobile ? (
+              /* Mobile: Two-button interface */
+              <div className="space-y-3">
+                <motion.button
+                  onClick={() => cameraInputRef.current?.click()}
+                  whileTap={{ scale: 0.98 }}
+                  className="w-full"
+                >
+                  <div className="bg-white border-2 border-[#FFC72C] rounded-xl p-5 flex items-center gap-4">
+                    <div className="h-14 w-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                      <Camera className="h-7 w-7 text-gray-700" />
+                    </div>
+                    <div className="flex-1 text-left">
+                      <h3 className="text-base font-semibold text-gray-900">Take Photos</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">Capture multiple items</p>
+                    </div>
+                  </div>
+                </motion.button>
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <input
-              ref={cameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-          </div>
+                <motion.button
+                  onClick={() => fileInputRef.current?.click()}
+                  whileTap={{ scale: 0.98 }}
+                  className="w-full"
+                >
+                  <div className="bg-white border border-gray-200 rounded-xl p-5 flex items-center gap-4 active:bg-gray-50">
+                    <div className="h-14 w-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                      <ImageIcon className="h-7 w-7 text-gray-600" />
+                    </div>
+                    <div className="flex-1 text-left">
+                      <h3 className="text-base font-semibold text-gray-900">Choose from Gallery</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">Select existing photos</p>
+                    </div>
+                  </div>
+                </motion.button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+
+                <p className="text-center text-xs text-gray-400 pt-2">
+                  Upload 20+ photos for best results
+                </p>
+              </div>
+            ) : (
+              /* Desktop: Drop zone */
+              <div
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                className={cn(
+                  "border-2 border-dashed rounded-md p-12 text-center bg-white transition-colors",
+                  dragActive ? "border-gray-900 bg-gray-50" : "border-gray-300"
+                )}
+              >
+                <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Drag and drop photos here
+                </h3>
+                <p className="text-sm text-gray-600 mb-6">
+                  or use the buttons below
+                </p>
+                
+                <div className="flex gap-3 justify-center">
+                  <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="rounded-md bg-gray-900 hover:bg-gray-800"
+                  >
+                    <ImageIcon className="h-4 w-4 mr-2" />
+                    Choose Files
+                  </Button>
+                  <Button
+                    onClick={() => cameraInputRef.current?.click()}
+                    variant="outline"
+                    className="rounded-md"
+                  >
+                    <Camera className="h-4 w-4 mr-2" />
+                    Take Photos
+                  </Button>
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </div>
+            )}
+          </>
         )}
 
         {/* Processing Status */}
         {isProcessing && (
-          <div className="bg-white rounded-md p-8 text-center">
-            <Loader2 className="h-12 w-12 text-gray-900 animate-spin mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {isCompressing ? 'Compressing images...' : 'Uploading to cloud...'}
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              {uploadProgress.current} of {uploadProgress.total} ({progressPercent}%)
-            </p>
-            <div className="w-full max-w-xs mx-auto h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className="bg-white rounded-xl p-8 text-center">
+            {/* Animated progress indicator */}
+            <div className="relative inline-block mb-6">
+              <div className={cn(
+                "rounded-full bg-gray-100 flex items-center justify-center",
+                isMobile ? "h-16 w-16" : "h-20 w-20"
+              )}>
+                <Upload className={cn("text-gray-400", isMobile ? "h-7 w-7" : "h-9 w-9")} />
+              </div>
               <motion.div
-                className="h-full bg-gray-900"
+                className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#FFC72C]"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+              />
+            </div>
+            
+            <h3 className={cn("font-semibold text-gray-900 mb-2", isMobile ? "text-base" : "text-lg")}>
+              {isCompressing ? 'Optimising photos...' : 'Uploading photos...'}
+            </h3>
+            <p className={cn("text-gray-600 mb-4", isMobile ? "text-sm" : "text-base")}>
+              {uploadProgress.current} of {uploadProgress.total}
+            </p>
+            <div className={cn("h-1.5 bg-gray-200 rounded-full overflow-hidden mx-auto", isMobile ? "w-48" : "w-64")}>
+              <motion.div
+                className="h-full bg-[#FFC72C]"
                 initial={{ width: 0 }}
                 animate={{ width: `${progressPercent}%` }}
                 transition={{ duration: 0.3 }}
@@ -303,9 +389,9 @@ export function BulkPhotoUploadStep({ onComplete, onBack }: BulkPhotoUploadStepP
 
         {/* Photo Grid */}
         {photos.length > 0 && !isProcessing && (
-          <div className="mt-8">
+          <div className={cn("mt-6", isMobile && "bg-white rounded-xl p-4")}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
+              <h3 className={cn("font-semibold text-gray-900", isMobile ? "text-base" : "text-lg")}>
                 {photos.length} Photo{photos.length !== 1 ? 's' : ''} Selected
               </h3>
               <Button
@@ -315,15 +401,21 @@ export function BulkPhotoUploadStep({ onComplete, onBack }: BulkPhotoUploadStepP
                   photos.forEach(p => URL.revokeObjectURL(p.preview));
                   setPhotos([]);
                 }}
-                className="rounded-md"
+                className="rounded-md text-xs"
               >
                 Clear All
               </Button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className={cn(
+              "grid gap-2",
+              isMobile ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"
+            )}>
               {photos.map((photo, index) => (
-                <div key={index} className="relative aspect-square rounded-md overflow-hidden bg-gray-100 group">
+                <div key={index} className={cn(
+                  "relative aspect-square overflow-hidden bg-gray-100 group",
+                  isMobile ? "rounded-xl" : "rounded-md"
+                )}>
                   <Image
                     src={photo.preview}
                     alt={`Photo ${index + 1}`}
@@ -332,11 +424,17 @@ export function BulkPhotoUploadStep({ onComplete, onBack }: BulkPhotoUploadStepP
                   />
                   <button
                     onClick={() => removePhoto(index)}
-                    className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    className={cn(
+                      "absolute p-1.5 bg-black/60 hover:bg-black/80 rounded-full transition-opacity",
+                      isMobile ? "top-1.5 right-1.5 opacity-100" : "top-2 right-2 opacity-0 group-hover:opacity-100"
+                    )}
                   >
                     <X className="h-3.5 w-3.5 text-white" />
                   </button>
-                  <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/60 rounded-md">
+                  <div className={cn(
+                    "absolute px-2 py-0.5 rounded-md",
+                    isMobile ? "bottom-1.5 left-1.5 bg-black/60" : "bottom-2 left-2 bg-black/60"
+                  )}>
                     <span className="text-xs text-white font-medium">{index + 1}</span>
                   </div>
                 </div>
@@ -345,10 +443,13 @@ export function BulkPhotoUploadStep({ onComplete, onBack }: BulkPhotoUploadStepP
               {/* Add More Button */}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="aspect-square rounded-md bg-gray-100 border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-200 transition-colors flex items-center justify-center"
+                className={cn(
+                  "aspect-square bg-gray-100 border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-200 transition-colors flex items-center justify-center",
+                  isMobile ? "rounded-xl" : "rounded-md"
+                )}
               >
                 <div className="text-center">
-                  <Upload className="h-6 w-6 text-gray-400 mx-auto mb-1" />
+                  <Upload className={cn("text-gray-400 mx-auto mb-1", isMobile ? "h-5 w-5" : "h-6 w-6")} />
                   <span className="text-xs text-gray-500 font-medium">Add More</span>
                 </div>
               </button>
@@ -358,8 +459,8 @@ export function BulkPhotoUploadStep({ onComplete, onBack }: BulkPhotoUploadStepP
 
         {/* Actions */}
         {photos.length > 0 && !isProcessing && (
-          <div className="flex gap-3 mt-8">
-            {onBack && (
+          <div className="flex gap-3 mt-6">
+            {onBack && !isMobile && (
               <Button
                 variant="outline"
                 onClick={onBack}
@@ -371,7 +472,10 @@ export function BulkPhotoUploadStep({ onComplete, onBack }: BulkPhotoUploadStepP
             <Button
               onClick={handleUpload}
               disabled={photos.length === 0}
-              className="flex-1 rounded-md bg-gray-900 hover:bg-gray-800"
+              className={cn(
+                "flex-1 bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold",
+                isMobile ? "rounded-xl h-12" : "rounded-md"
+              )}
             >
               Continue with {photos.length} Photo{photos.length !== 1 ? 's' : ''}
             </Button>
