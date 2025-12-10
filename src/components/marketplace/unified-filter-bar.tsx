@@ -71,6 +71,9 @@ interface UnifiedFilterBarProps {
   
   // Additional filters slot (e.g., AdvancedFilters component)
   additionalFilters?: React.ReactNode;
+  
+  // Ref for tracking scroll position (mobile only)
+  categoryPillsRef?: React.Ref<HTMLDivElement>;
 }
 
 // Category icon mapping - now uses BikeIcon component
@@ -93,6 +96,7 @@ export function UnifiedFilterBar({
   onListingTypeChange,
   productCount,
   additionalFilters,
+  categoryPillsRef,
 }: UnifiedFilterBarProps) {
   const [categories, setCategories] = React.useState<CategoryHierarchy[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -389,6 +393,7 @@ export function UnifiedFilterBar({
               </div>
             ) : (
               <motion.div
+                ref={categoryPillsRef}
                 key={`${selectedLevel1}-${selectedLevel2}`}
                 initial={{ opacity: 0, x: 10 }}
                 animate={{ opacity: 1, x: 0 }}

@@ -4,7 +4,7 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon, User, Loader2 } from "lucide-react";
+import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon, User, Loader2, Clock, DollarSign, SlidersHorizontal } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
@@ -15,11 +15,13 @@ import { SellersGrid } from "@/components/marketplace/sellers-grid";
 import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-modal";
 import type { IndividualSeller } from "@/app/api/marketplace/sellers/route";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { useInteractionTracker } from "@/lib/tracking/interaction-tracker";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { useMarketplaceData } from "@/lib/hooks/use-marketplace-data";
+import { cn } from "@/lib/utils";
 
 // ============================================================
 // Marketplace Page - Discovery-Focused Homepage
@@ -111,6 +113,75 @@ function MarketplacePageContent() {
   const [advancedFilters, setAdvancedFilters] = React.useState<AdvancedFiltersState>(DEFAULT_ADVANCED_FILTERS);
   const activeFilterCount = countActiveFilters(advancedFilters);
 
+  // Quick filter state (for mobile floating bar)
+  const [privateOnly, setPrivateOnly] = React.useState(false);
+  const [quickPriceRange, setQuickPriceRange] = React.useState<string | null>(null);
+  const [recentlyAdded, setRecentlyAdded] = React.useState<string | null>(null);
+
+  // Handler for private only toggle
+  const handlePrivateOnlyChange = (checked: boolean) => {
+    setPrivateOnly(checked);
+    if (checked) {
+      // Switch to individuals filter
+      setAccumulatedProducts([]);
+      processedDataRef.current = new Set();
+      setCurrentPage(1);
+      setListingTypeFilter('individuals');
+    } else {
+      // Switch back to all
+      setAccumulatedProducts([]);
+      processedDataRef.current = new Set();
+      setCurrentPage(1);
+      setListingTypeFilter('all');
+    }
+  };
+
+  // Handler for quick price range
+  const handleQuickPriceChange = (priceId: string | null) => {
+    setQuickPriceRange(priceId);
+    
+    let minPrice = '';
+    let maxPrice = '';
+    
+    if (priceId) {
+      switch (priceId) {
+        case 'under50':
+          maxPrice = '50';
+          break;
+        case '50-100':
+          minPrice = '50';
+          maxPrice = '100';
+          break;
+        case '100-250':
+          minPrice = '100';
+          maxPrice = '250';
+          break;
+        case '250plus':
+          minPrice = '250';
+          break;
+      }
+    }
+    
+    setAdvancedFilters(prev => ({ ...prev, minPrice, maxPrice }));
+    // Trigger refresh
+    setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setCurrentPage(1);
+  };
+
+  // Handler for recently added filter
+  const handleRecentlyAddedChange = (timeId: string | null) => {
+    setRecentlyAdded(timeId);
+    // Update sort and trigger refresh
+    setAdvancedFilters(prev => ({ 
+      ...prev, 
+      sortBy: timeId ? 'newest' : prev.sortBy 
+    }));
+    setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setCurrentPage(1);
+  };
+
   // Products state (for pagination accumulation)
   const [accumulatedProducts, setAccumulatedProducts] = React.useState<MarketplaceProduct[]>([]);
   const [currentPage, setCurrentPage] = React.useState(1);
@@ -129,15 +200,92 @@ function MarketplacePageContent() {
   // Check if user is admin (tom@lidgett.net)
   const isAdmin = user?.email === 'tom@lidgett.net';
 
+  // Sticky filter header state (mobile only)
+  const [showStickyFilters, setShowStickyFilters] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
+  const categoryPillsRef = React.useRef<HTMLDivElement>(null!);
+  const sentinelRef = React.useRef<HTMLDivElement>(null); // Sentinel for tracking scroll
+
+  // Track if we're on mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 640;
+      setIsMobile(mobile);
+      // Reset sticky filters when switching to desktop
+      if (!mobile) {
+        setShowStickyFilters(false);
+      }
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Detect when filters scroll out of view (mobile only, Browse mode only)
+  React.useEffect(() => {
+    // Only run on mobile, in Browse mode, and when not on stores/sellers view
+    if (!isMobile || viewMode !== 'all' || isStoresView || isSellersView) {
+      setShowStickyFilters(false);
+      return;
+    }
+
+    if (!sentinelRef.current) {
+      console.log('[Sticky Filters] Sentinel ref not available');
+      return;
+    }
+
+    console.log('[Sticky Filters] Setting up observer for sentinel');
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        // Show sticky filters when sentinel scrolls out of view
+        const shouldShow = !entry.isIntersecting;
+        console.log('[Sticky Filters] Intersection changed:', { 
+          isIntersecting: entry.isIntersecting, 
+          shouldShow
+        });
+        setShowStickyFilters(shouldShow);
+      },
+      {
+        threshold: 0,
+        rootMargin: '-56px 0px 0px 0px', // Account for mobile header height
+      }
+    );
+
+    const element = sentinelRef.current;
+    observer.observe(element);
+
+    return () => {
+      observer.unobserve(element);
+    };
+  }, [isMobile, viewMode, isStoresView, isSellersView]);
+
   // Track filter changes to know when to reset
   const filterKey = React.useMemo(() => 
-    `${viewMode}-${listingTypeFilter}-${selectedLevel1}-${selectedLevel2}-${selectedLevel3}-${searchQuery}-${advancedFilters.minPrice}-${advancedFilters.maxPrice}-${advancedFilters.condition}-${advancedFilters.sortBy}`,
-    [viewMode, listingTypeFilter, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, advancedFilters]
+    `${viewMode}-${listingTypeFilter}-${selectedLevel1}-${selectedLevel2}-${selectedLevel3}-${searchQuery}-${advancedFilters.minPrice}-${advancedFilters.maxPrice}-${advancedFilters.condition}-${advancedFilters.sortBy}-${recentlyAdded}`,
+    [viewMode, listingTypeFilter, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, advancedFilters, recentlyAdded]
   );
   const prevFilterKeyRef = React.useRef(filterKey);
   const processedDataRef = React.useRef<Set<string>>(new Set());
   const lastProcessedPageRef = React.useRef(0);
   const lastDataHashRef = React.useRef<string>('');
+
+  // Calculate created after date based on recentlyAdded filter
+  const createdAfter = React.useMemo(() => {
+    if (!recentlyAdded) return null;
+    const now = new Date();
+    switch (recentlyAdded) {
+      case '24h':
+        return new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      case '7d':
+        return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      case '30d':
+        return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      default:
+        return null;
+    }
+  }, [recentlyAdded]);
 
   // Create stable params object - DON'T include page in SWR key for pagination
   const marketplaceParams = React.useMemo(() => ({
@@ -157,7 +305,9 @@ function MarketplacePageContent() {
     condition: advancedFilters.condition !== 'all' ? advancedFilters.condition : null,
     sortBy: advancedFilters.sortBy,
     brand: advancedFilters.brand || null,
-  }), [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, advancedFilters]);
+    // Add recently added filter
+    createdAfter: createdAfter,
+  }), [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, advancedFilters, createdAfter]);
 
   // Use SWR for products data with intelligent caching
   const { 
@@ -558,36 +708,135 @@ function MarketplacePageContent() {
 
   return (
     <>
-      <MarketplaceHeader compactSearchOnMobile showFloatingButton />
+      {/* Main header - hidden on mobile when sticky filters show */}
+      <div className={cn(
+        showStickyFilters ? "hidden sm:block" : "block"
+      )}>
+        <MarketplaceHeader compactSearchOnMobile showFloatingButton />
+      </div>
+
+      {/* Sticky Filter Header - Mobile Only (appears when category pills scroll out) */}
+      <AnimatePresence>
+        {showStickyFilters && !isStoresView && !isSellersView && viewMode === 'all' && (
+          <motion.div
+            initial={{ y: -80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -80, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.04, 0.62, 0.23, 0.98] }}
+            className="sm:hidden fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-md"
+          >
+            {/* Top Row - Private Only Switch + All Filters Button */}
+            <div className="flex items-center justify-between px-3 pt-2.5 pb-2">
+              {/* Private Only Switch */}
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={privateOnly}
+                  onCheckedChange={handlePrivateOnlyChange}
+                  className="data-[state=checked]:bg-gray-900"
+                />
+                <span className="text-xs font-medium text-gray-700">Private Only</span>
+              </div>
+
+              {/* All Filters Button */}
+              <AdvancedFilters
+                filters={advancedFilters}
+                onFiltersChange={handleAdvancedFiltersChange}
+                onApply={handleAdvancedFiltersApply}
+                onReset={handleAdvancedFiltersReset}
+                activeFilterCount={activeFilterCount}
+                variant="compact"
+              />
+            </div>
+
+            {/* Bottom Row - Scrollable Quick Filters */}
+            <div className="flex items-center gap-2 px-3 pb-2.5 overflow-x-auto scrollbar-hide">
+              {/* Price Pills */}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <DollarSign className="h-3.5 w-3.5 text-gray-400" />
+                {[
+                  { id: 'under50', label: '<$50' },
+                  { id: '50-100', label: '$50-100' },
+                  { id: '100-250', label: '$100-250' },
+                  { id: '250plus', label: '$250+' },
+                ].map((price) => (
+                  <button
+                    key={price.id}
+                    onClick={() => handleQuickPriceChange(quickPriceRange === price.id ? null : price.id)}
+                    className={cn(
+                      "px-2.5 py-1 text-xs font-medium rounded-md border transition-all whitespace-nowrap",
+                      quickPriceRange === price.id
+                        ? "bg-gray-900 text-white border-gray-900"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                    )}
+                  >
+                    {price.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Divider */}
+              <div className="h-5 w-px bg-gray-200 flex-shrink-0" />
+
+              {/* Recently Added Pills */}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <Clock className="h-3.5 w-3.5 text-gray-400" />
+                {[
+                  { id: '24h', label: '24h' },
+                  { id: '7d', label: '7 days' },
+                  { id: '30d', label: '30 days' },
+                ].map((time) => (
+                  <button
+                    key={time.id}
+                    onClick={() => handleRecentlyAddedChange(recentlyAdded === time.id ? null : time.id)}
+                    className={cn(
+                      "px-2.5 py-1 text-xs font-medium rounded-md border transition-all whitespace-nowrap",
+                      recentlyAdded === time.id
+                        ? "bg-gray-900 text-white border-gray-900"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                    )}
+                  >
+                    {time.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <MarketplaceLayout showFooter={false} showStoreCTA={isStoresView}>
         {/* Sticky Filter Bar on Mobile */}
         {!isStoresView && !isSellersView && (
-          <div className="sticky top-14 sm:top-16 z-30 bg-white sm:hidden">
-            <UnifiedFilterBar
-              viewMode={viewMode}
-              onViewModeChange={handleViewModeChange}
-              showForYouBadge={!user && viewMode !== 'for-you'}
-              selectedLevel1={selectedLevel1}
-              selectedLevel2={selectedLevel2}
-              selectedLevel3={selectedLevel3}
-              onLevel1Change={handleLevel1Change}
-              onLevel2Change={handleLevel2Change}
-              onLevel3Change={handleLevel3Change}
-              listingTypeFilter={listingTypeFilter}
-              onListingTypeChange={handleListingTypeChange}
-              productCount={!searchQuery ? totalCount : undefined}
-              additionalFilters={
-                <AdvancedFilters
-                  filters={advancedFilters}
-                  onFiltersChange={handleAdvancedFiltersChange}
-                  onApply={handleAdvancedFiltersApply}
-                  onReset={handleAdvancedFiltersReset}
-                  activeFilterCount={activeFilterCount}
-                />
-              }
-            />
-          </div>
+          <>
+            <div className="sticky top-14 sm:top-16 z-30 bg-white sm:hidden">
+              <UnifiedFilterBar
+                viewMode={viewMode}
+                onViewModeChange={handleViewModeChange}
+                showForYouBadge={!user && viewMode !== 'for-you'}
+                selectedLevel1={selectedLevel1}
+                selectedLevel2={selectedLevel2}
+                selectedLevel3={selectedLevel3}
+                onLevel1Change={handleLevel1Change}
+                onLevel2Change={handleLevel2Change}
+                onLevel3Change={handleLevel3Change}
+                listingTypeFilter={listingTypeFilter}
+                onListingTypeChange={handleListingTypeChange}
+                productCount={!searchQuery ? totalCount : undefined}
+                categoryPillsRef={categoryPillsRef}
+                additionalFilters={
+                  <AdvancedFilters
+                    filters={advancedFilters}
+                    onFiltersChange={handleAdvancedFiltersChange}
+                    onApply={handleAdvancedFiltersApply}
+                    onReset={handleAdvancedFiltersReset}
+                    activeFilterCount={activeFilterCount}
+                  />
+                }
+              />
+            </div>
+            {/* Sentinel div for scroll tracking - invisible marker */}
+            <div ref={sentinelRef} className="sm:hidden h-px" aria-hidden="true" />
+          </>
         )}
 
         <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20 pb-24 sm:pb-8">
@@ -651,6 +900,7 @@ function MarketplacePageContent() {
                   listingTypeFilter={listingTypeFilter}
                   onListingTypeChange={handleListingTypeChange}
                   productCount={!searchQuery ? totalCount : undefined}
+                  categoryPillsRef={categoryPillsRef}
                   additionalFilters={
                     <AdvancedFilters
                       filters={advancedFilters}

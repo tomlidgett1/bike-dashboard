@@ -22,6 +22,8 @@ interface MarketplaceDataParams {
   condition?: string | null;
   sortBy?: 'newest' | 'oldest' | 'price_asc' | 'price_desc';
   brand?: string | null;
+  // Time filter
+  createdAfter?: string | null;
 }
 
 interface MarketplaceDataResponse {
@@ -85,6 +87,7 @@ function buildApiUrl(params: MarketplaceDataParams): string {
     condition,
     sortBy,
     brand,
+    createdAfter,
   } = params;
   
   let endpoint = '';
@@ -102,6 +105,7 @@ function buildApiUrl(params: MarketplaceDataParams): string {
   if (condition && condition !== 'all') urlParams.set('condition', condition);
   if (sortBy && sortBy !== 'newest') urlParams.set('sortBy', sortBy);
   if (brand) urlParams.set('brand', brand);
+  if (createdAfter) urlParams.set('createdAfter', createdAfter);
 
   // Handle search queries
   if (search) {

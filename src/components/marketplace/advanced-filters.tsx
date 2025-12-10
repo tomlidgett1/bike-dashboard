@@ -55,6 +55,8 @@ interface AdvancedFiltersProps {
   onApply: () => void;
   onReset: () => void;
   activeFilterCount: number;
+  /** Variant: 'default' for normal filter button, 'compact' for floating bar style */
+  variant?: 'default' | 'compact';
 }
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -400,6 +402,7 @@ export function AdvancedFilters({
   onApply,
   onReset,
   activeFilterCount,
+  variant = 'default',
 }: AdvancedFiltersProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [isDesktopOpen, setIsDesktopOpen] = React.useState(false);
@@ -416,7 +419,8 @@ export function AdvancedFilters({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const triggerButton = (
+  // Default trigger button style
+  const triggerButton = variant === 'default' ? (
     <button
       className={cn(
         "flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
@@ -433,7 +437,63 @@ export function AdvancedFilters({
         </span>
       )}
     </button>
+  ) : (
+    // Compact variant for floating bar
+    <button
+      className={cn(
+        "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-all",
+        activeFilterCount > 0
+          ? "bg-gray-900 text-white border-gray-900"
+          : "bg-white text-gray-700 border-gray-300 hover:border-gray-400"
+      )}
+    >
+      <SlidersHorizontal className="h-3.5 w-3.5" />
+      All Filters
+      {activeFilterCount > 0 && (
+        <span className="ml-0.5 bg-white/20 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-md">
+          {activeFilterCount}
+        </span>
+      )}
+    </button>
   );
+
+  // For compact variant, always use sheet (since it's for mobile floating bar)
+  if (variant === 'compact') {
+    return (
+      <Sheet open={isOpen} onOpenChange={setIsOpen}>
+        <SheetTrigger asChild>
+          {triggerButton}
+        </SheetTrigger>
+        <SheetContent 
+          side="bottom" 
+          className="h-[80vh] rounded-t-2xl px-4"
+          showCloseButton={false}
+        >
+          <SheetHeader className="pb-3 border-b border-gray-100">
+            <div className="flex items-center justify-between">
+              <SheetTitle className="text-lg font-semibold">Filters</SheetTitle>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="p-2 -mr-2 text-gray-500 hover:text-gray-700 rounded-md hover:bg-gray-100 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </SheetHeader>
+          <div className="flex-1 overflow-hidden pt-3">
+            <FilterContent
+              filters={filters}
+              onFiltersChange={onFiltersChange}
+              onApply={onApply}
+              onReset={onReset}
+              activeFilterCount={activeFilterCount}
+              onClose={() => setIsOpen(false)}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+    );
+  }
 
   return (
     <>
