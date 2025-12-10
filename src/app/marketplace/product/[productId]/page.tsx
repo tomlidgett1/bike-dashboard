@@ -81,6 +81,7 @@ async function fetchProduct(productId: string): Promise<MarketplaceProduct | nul
         seller_email,
         users!user_id (
           business_name,
+          name,
           logo_url,
           account_type
         ),
@@ -143,12 +144,27 @@ async function fetchProduct(productId: string): Promise<MarketplaceProduct | nul
       allImages = ['/placeholder-product.svg'];
     }
     
+    // Format seller name: For bike stores use business_name, for individuals use "FirstName L."
+    let displayName = 'Unknown Seller';
+    if (user?.account_type === 'bicycle_store' && user?.business_name) {
+      displayName = user.business_name;
+    } else if (user?.name) {
+      const nameParts = user.name.trim().split(' ');
+      if (nameParts.length >= 2) {
+        // Format as "FirstName L."
+        displayName = `${nameParts[0]} ${nameParts[nameParts.length - 1].charAt(0)}.`;
+      } else {
+        // Just use the first name if only one name provided
+        displayName = nameParts[0];
+      }
+    }
+
     return {
       ...product,
       primary_image_url: primaryImageUrl,
       all_images: allImages,
       image_variants: null,
-      store_name: user?.business_name || 'Unknown Store',
+      store_name: displayName,
       store_logo_url: user?.logo_url || null,
       store_account_type: user?.account_type || null,
     };
@@ -178,7 +194,7 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
       .select(`
         id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
         marketplace_level_3_category, created_at, user_id, images,
-        users!user_id (business_name, logo_url, account_type)
+        users!user_id (business_name, name, logo_url, account_type)
       `)
       .eq('marketplace_category', sourceProduct.marketplace_category)
       .eq('is_active', true)
@@ -188,24 +204,41 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
     
     if (!products) return [];
     
-    return products.map((p: any) => ({
-      id: p.id,
-      description: p.description,
-      display_name: p.display_name,
-      price: p.price,
-      marketplace_category: p.marketplace_category,
-      marketplace_subcategory: p.marketplace_subcategory,
-      marketplace_level_3_category: p.marketplace_level_3_category,
-      qoh: p.qoh || 1,
-      model_year: p.model_year || null,
-      created_at: p.created_at,
-      user_id: p.user_id,
-      primary_image_url: p.images?.[0]?.cloudinaryUrl || p.images?.[0]?.url || null,
-      card_url: p.images?.[0]?.cardUrl || null,
-      store_name: p.users?.business_name || 'Unknown Seller',
-      store_logo_url: p.users?.logo_url || null,
-      store_account_type: p.users?.account_type || null,
-    } as MarketplaceProduct));
+    return products.map((p: any) => {
+      // Format seller name: For bike stores use business_name, for individuals use "FirstName L."
+      let displayName = 'Unknown Seller';
+      if (p.users?.account_type === 'bicycle_store' && p.users?.business_name) {
+        displayName = p.users.business_name;
+      } else if (p.users?.name) {
+        const nameParts = p.users.name.trim().split(' ');
+        if (nameParts.length >= 2) {
+          // Format as "FirstName L."
+          displayName = `${nameParts[0]} ${nameParts[nameParts.length - 1].charAt(0)}.`;
+        } else {
+          // Just use the first name if only one name provided
+          displayName = nameParts[0];
+        }
+      }
+
+      return {
+        id: p.id,
+        description: p.description,
+        display_name: p.display_name,
+        price: p.price,
+        marketplace_category: p.marketplace_category,
+        marketplace_subcategory: p.marketplace_subcategory,
+        marketplace_level_3_category: p.marketplace_level_3_category,
+        qoh: p.qoh || 1,
+        model_year: p.model_year || null,
+        created_at: p.created_at,
+        user_id: p.user_id,
+        primary_image_url: p.images?.[0]?.cloudinaryUrl || p.images?.[0]?.url || null,
+        card_url: p.images?.[0]?.cardUrl || null,
+        store_name: displayName,
+        store_logo_url: p.users?.logo_url || null,
+        store_account_type: p.users?.account_type || null,
+      } as MarketplaceProduct;
+    });
   } catch (error) {
     console.error('Error fetching similar products:', error);
     return [];
@@ -239,7 +272,7 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
       .select(`
         id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
         created_at, user_id, images,
-        users!user_id (business_name, logo_url, account_type)
+        users!user_id (business_name, name, logo_url, account_type)
       `)
       .eq('user_id', sourceProduct.user_id)
       .eq('is_active', true)
@@ -257,23 +290,40 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
       account_type: seller.account_type || null,
     } : null;
     
-    const formattedProducts = (products || []).map((p: any) => ({
-      id: p.id,
-      description: p.description,
-      display_name: p.display_name,
-      price: p.price,
-      marketplace_category: p.marketplace_category,
-      marketplace_subcategory: p.marketplace_subcategory,
-      qoh: p.qoh || 1,
-      model_year: p.model_year || null,
-      created_at: p.created_at,
-      user_id: p.user_id,
-      primary_image_url: p.images?.[0]?.cloudinaryUrl || p.images?.[0]?.url || null,
-      card_url: p.images?.[0]?.cardUrl || null,
-      store_name: p.users?.business_name || 'Unknown Seller',
-      store_logo_url: p.users?.logo_url || null,
-      store_account_type: p.users?.account_type || null,
-    } as MarketplaceProduct));
+    const formattedProducts = (products || []).map((p: any) => {
+      // Format seller name: For bike stores use business_name, for individuals use "FirstName L."
+      let displayName = 'Unknown Seller';
+      if (p.users?.account_type === 'bicycle_store' && p.users?.business_name) {
+        displayName = p.users.business_name;
+      } else if (p.users?.name) {
+        const nameParts = p.users.name.trim().split(' ');
+        if (nameParts.length >= 2) {
+          // Format as "FirstName L."
+          displayName = `${nameParts[0]} ${nameParts[nameParts.length - 1].charAt(0)}.`;
+        } else {
+          // Just use the first name if only one name provided
+          displayName = nameParts[0];
+        }
+      }
+
+      return {
+        id: p.id,
+        description: p.description,
+        display_name: p.display_name,
+        price: p.price,
+        marketplace_category: p.marketplace_category,
+        marketplace_subcategory: p.marketplace_subcategory,
+        qoh: p.qoh || 1,
+        model_year: p.model_year || null,
+        created_at: p.created_at,
+        user_id: p.user_id,
+        primary_image_url: p.images?.[0]?.cloudinaryUrl || p.images?.[0]?.url || null,
+        card_url: p.images?.[0]?.cardUrl || null,
+        store_name: displayName,
+        store_logo_url: p.users?.logo_url || null,
+        store_account_type: p.users?.account_type || null,
+      } as MarketplaceProduct;
+    });
     
     return {
       products: formattedProducts,

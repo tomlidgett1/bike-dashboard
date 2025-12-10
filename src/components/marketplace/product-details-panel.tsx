@@ -156,7 +156,7 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
                 variant="outline"
                 size="lg"
                 fullWidth
-                className="rounded-xl h-12 text-sm font-semibold border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                className="rounded-xl h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
               />
             </div>
             <div className="flex-1">

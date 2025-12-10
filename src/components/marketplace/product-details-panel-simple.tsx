@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { MapPin, Heart, Share2, Tag, User, Package } from "lucide-react";
+import { MapPin, Heart, Share2, Tag, User, Package, Store, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
@@ -60,37 +60,41 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
         )}
       </div>
 
-      {/* Send Message Button */}
+      {/* Action Buttons - Make Offer & Send Message */}
       <div className="px-4 pb-4">
-        <ProductInquiryButton
-          productId={product.id}
-          productName={(product as any).display_name || product.description}
-          sellerId={product.user_id}
-          size="lg"
-          fullWidth
-          className="rounded-md h-12 bg-white border-2 border-gray-900 text-gray-900 font-semibold hover:bg-gray-50"
-        />
-      </div>
-
-      {/* Action Buttons Row */}
-      <div className="px-4 pb-4">
-        <div className="flex items-center justify-around">
-          {/* Make Offer */}
-          <div className="flex flex-col items-center">
+        <div className="flex gap-2">
+          <div className="flex-1">
             <MakeOfferButton
               productId={product.id}
               productName={(product as any).display_name || product.description}
               productPrice={product.price}
               sellerId={product.user_id}
               productImage={product.all_images?.[0] || null}
-              variant="ghost"
-              className="flex flex-col items-center gap-1.5 py-3 hover:bg-gray-50 rounded-md h-auto px-6"
+              variant="outline"
+              size="lg"
+              fullWidth
+              className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
             />
           </div>
+          <div className="flex-1">
+            <ProductInquiryButton
+              productId={product.id}
+              productName={(product as any).display_name || product.description}
+              sellerId={product.user_id}
+              size="lg"
+              fullWidth
+              className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+            />
+          </div>
+        </div>
+      </div>
 
+      {/* Secondary Actions - Share, Save, Visit Store, Learn */}
+      <div className="px-4 pb-4">
+        <div className="flex items-center justify-around">
           <button 
             onClick={handleShare}
-            className="flex flex-col items-center gap-1.5 py-3 px-6 hover:bg-gray-50 rounded-md transition-colors"
+            className="flex flex-col items-center gap-1.5 py-2 hover:opacity-70 transition-opacity"
           >
             <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
               <Share2 className="h-5 w-5 text-gray-700" />
@@ -100,12 +104,32 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
 
           <button 
             onClick={() => setIsLiked(!isLiked)}
-            className="flex flex-col items-center gap-1.5 py-3 px-6 hover:bg-gray-50 rounded-md transition-colors"
+            className="flex flex-col items-center gap-1.5 py-2 hover:opacity-70 transition-opacity"
           >
             <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
               <Heart className={cn("h-5 w-5", isLiked ? "fill-red-500 text-red-500" : "text-gray-700")} />
             </div>
             <span className="text-xs text-gray-700">Save</span>
+          </button>
+
+          <Link
+            href={`/marketplace/store/${product.user_id}`}
+            className="flex flex-col items-center gap-1.5 py-2 hover:opacity-70 transition-opacity"
+          >
+            <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
+              <Store className="h-5 w-5 text-gray-700" />
+            </div>
+            <span className="text-xs text-gray-700">Visit Store</span>
+          </Link>
+
+          <button 
+            onClick={() => {}}
+            className="flex flex-col items-center gap-1.5 py-2 hover:opacity-70 transition-opacity"
+          >
+            <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
+              <Info className="h-5 w-5 text-gray-700" />
+            </div>
+            <span className="text-xs text-gray-700">Learn</span>
           </button>
         </div>
       </div>
