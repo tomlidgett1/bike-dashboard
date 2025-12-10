@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import { Package } from "lucide-react";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
-import { ProductDetailsPanel } from "@/components/marketplace/product-details-panel";
 import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
 import { EnhancedImageGallery } from "@/components/marketplace/product-detail/enhanced-image-gallery";
 import { RecommendationCarousel } from "@/components/marketplace/product-detail/recommendation-carousel";
@@ -133,14 +132,7 @@ export function ProductPageClient({
 
               {/* Right Column - Product Details */}
               <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-y-auto lg:border lg:border-gray-200">
-                {/* Mobile: Simple Panel */}
-                <div className="lg:hidden">
-                  <ProductDetailsPanelSimple product={product} />
-                </div>
-                {/* Desktop: Detailed Panel */}
-                <div className="hidden lg:block">
-                  <ProductDetailsPanel product={product} />
-                </div>
+                <ProductDetailsPanelSimple product={product} />
               </div>
             </div>
           </div>
