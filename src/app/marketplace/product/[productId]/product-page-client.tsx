@@ -99,7 +99,7 @@ export function ProductPageClient({
       <MarketplaceHeader compactSearchOnMobile showFloatingButton />
       
       {/* Main Content */}
-      <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-24 sm:pb-8">
+      <div className="min-h-screen bg-white sm:bg-gray-50 pt-16 sm:pt-16 pb-24 sm:pb-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
