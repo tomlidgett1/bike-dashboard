@@ -744,6 +744,8 @@ function MarketplacePageContent() {
                 onApply={handleAdvancedFiltersApply}
                 onReset={handleAdvancedFiltersReset}
                 activeFilterCount={activeFilterCount}
+                listingTypeFilter={listingTypeFilter}
+                onListingTypeChange={handleListingTypeChange}
                 variant="compact"
               />
             </div>
@@ -830,6 +832,8 @@ function MarketplacePageContent() {
                     onApply={handleAdvancedFiltersApply}
                     onReset={handleAdvancedFiltersReset}
                     activeFilterCount={activeFilterCount}
+                    listingTypeFilter={listingTypeFilter}
+                    onListingTypeChange={handleListingTypeChange}
                   />
                 }
               />
@@ -908,6 +912,8 @@ function MarketplacePageContent() {
                       onApply={handleAdvancedFiltersApply}
                       onReset={handleAdvancedFiltersReset}
                       activeFilterCount={activeFilterCount}
+                      listingTypeFilter={listingTypeFilter}
+                      onListingTypeChange={handleListingTypeChange}
                     />
                   }
                 />

@@ -270,50 +270,48 @@ export function UnifiedFilterBar({
           </button>
         </div>
 
-        {/* Source Filter Tabs + Advanced Filters - only on Browse mode - Same row on desktop */}
+        {/* Source Filter Tabs + Advanced Filters - only on Browse mode - Desktop only */}
         {isOnBrowseMode && (
-          <div className="flex items-stretch gap-2 px-3 sm:px-0">
-            {/* Listing Type Filter Tabs - Full width on mobile, auto on desktop */}
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-full sm:w-auto">
+          <div className="hidden sm:flex items-stretch gap-2">
+            {/* Listing Type Filter Tabs - Desktop only */}
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
               <button
                 onClick={() => onListingTypeChange('all')}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'all'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
                 )}
               >
-                <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span className="hidden xs:inline">All Listings</span>
-                <span className="xs:hidden">All</span>
+                <Package className="h-4 w-4" />
+                All Listings
               </button>
               
               <button
                 onClick={() => onListingTypeChange('stores')}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'stores'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
                 )}
               >
-                <Store className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <Store className="h-4 w-4" />
                 Stores
               </button>
               
               <button
                 onClick={() => onListingTypeChange('individuals')}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-3 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+                  "flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
                   listingTypeFilter === 'individuals'
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"
                 )}
               >
-                <User className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span className="hidden xs:inline">Private Sellers</span>
-                <span className="xs:hidden">Private</span>
+                <User className="h-4 w-4" />
+                Private Sellers
               </button>
             </div>
 
@@ -400,6 +398,11 @@ export function UnifiedFilterBar({
                 transition={{ duration: 0.2 }}
                 className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1"
               >
+                {/* Filters Button - Mobile only, first in line */}
+                <div className="sm:hidden flex-shrink-0">
+                  {additionalFilters}
+                </div>
+                
                 {categoryOptions.map((option) => {
                   const iconName = 'iconName' in option ? option.iconName : undefined;
                   

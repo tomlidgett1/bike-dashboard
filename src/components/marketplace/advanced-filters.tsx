@@ -12,7 +12,10 @@ import {
   Sparkles,
   RotateCcw,
   Search,
-  Tag
+  Tag,
+  Package,
+  Store,
+  User
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -57,6 +60,10 @@ interface AdvancedFiltersProps {
   activeFilterCount: number;
   /** Variant: 'default' for normal filter button, 'compact' for floating bar style */
   variant?: 'default' | 'compact';
+  /** Listing type filter state */
+  listingTypeFilter?: 'all' | 'stores' | 'individuals';
+  /** Callback for listing type changes */
+  onListingTypeChange?: (filter: 'all' | 'stores' | 'individuals') => void;
 }
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -131,6 +138,8 @@ function FilterContent({
   onApply,
   onReset,
   onClose,
+  listingTypeFilter,
+  onListingTypeChange,
 }: AdvancedFiltersProps & { onClose?: () => void }) {
   const [localFilters, setLocalFilters] = React.useState(filters);
   const [brandSearch, setBrandSearch] = React.useState('');
@@ -204,6 +213,52 @@ function FilterContent({
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto px-1">
         <div className="space-y-5 py-2">
+          {/* Listing Type Filter - Mobile only */}
+          {listingTypeFilter && onListingTypeChange && (
+            <FilterSection title="Listing Type" icon={Package} compact>
+              <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+                <button
+                  onClick={() => onListingTypeChange('all')}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all cursor-pointer",
+                    listingTypeFilter === 'all'
+                      ? "text-gray-800 bg-white shadow-sm"
+                      : "text-gray-600 hover:bg-gray-200/70"
+                  )}
+                >
+                  <Package className="h-4 w-4" />
+                  All
+                </button>
+                
+                <button
+                  onClick={() => onListingTypeChange('stores')}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all cursor-pointer",
+                    listingTypeFilter === 'stores'
+                      ? "text-gray-800 bg-white shadow-sm"
+                      : "text-gray-600 hover:bg-gray-200/70"
+                  )}
+                >
+                  <Store className="h-4 w-4" />
+                  Stores
+                </button>
+                
+                <button
+                  onClick={() => onListingTypeChange('individuals')}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all cursor-pointer",
+                    listingTypeFilter === 'individuals'
+                      ? "text-gray-800 bg-white shadow-sm"
+                      : "text-gray-600 hover:bg-gray-200/70"
+                  )}
+                >
+                  <User className="h-4 w-4" />
+                  Private
+                </button>
+              </div>
+            </FilterSection>
+          )}
+
           {/* Brand Filter */}
           <FilterSection title="Brand" icon={Tag}>
             <div className="relative" ref={brandDropdownRef}>
@@ -403,6 +458,8 @@ export function AdvancedFilters({
   onReset,
   activeFilterCount,
   variant = 'default',
+  listingTypeFilter,
+  onListingTypeChange,
 }: AdvancedFiltersProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [isDesktopOpen, setIsDesktopOpen] = React.useState(false);
@@ -419,20 +476,25 @@ export function AdvancedFilters({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Default trigger button style
+  // Default trigger button style - matches category pill design
   const triggerButton = variant === 'default' ? (
     <button
       className={cn(
-        "flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+        "group flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-md font-medium transition-all whitespace-nowrap flex-shrink-0 cursor-pointer",
         activeFilterCount > 0
-          ? "text-gray-800 bg-white shadow-sm"
-          : "text-gray-600 hover:bg-gray-200/70"
+          ? "bg-gray-900 text-white shadow-md"
+          : "bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:shadow-sm"
       )}
     >
-      <SlidersHorizontal className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-      <span className="hidden sm:inline">Filters</span>
+      <SlidersHorizontal className={cn(
+        "transition-opacity",
+        activeFilterCount > 0 ? "opacity-100" : "opacity-60 group-hover:opacity-80"
+      )} 
+      style={{ width: activeFilterCount > 0 ? 20 : 18, height: activeFilterCount > 0 ? 20 : 18 }} 
+      />
+      <span className="text-xs sm:text-sm">Filters</span>
       {activeFilterCount > 0 && (
-        <span className="flex items-center justify-center h-4 w-4 text-[10px] font-bold rounded-full bg-gray-900 text-white">
+        <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded-md font-medium bg-white/20 text-white">
           {activeFilterCount}
         </span>
       )}
@@ -487,6 +549,8 @@ export function AdvancedFilters({
               onApply={onApply}
               onReset={onReset}
               activeFilterCount={activeFilterCount}
+              listingTypeFilter={listingTypeFilter}
+              onListingTypeChange={onListingTypeChange}
               onClose={() => setIsOpen(false)}
             />
           </div>
@@ -526,6 +590,8 @@ export function AdvancedFilters({
                 onApply={onApply}
                 onReset={onReset}
                 activeFilterCount={activeFilterCount}
+                listingTypeFilter={listingTypeFilter}
+                onListingTypeChange={onListingTypeChange}
                 onClose={() => setIsOpen(false)}
               />
             </div>
@@ -555,6 +621,8 @@ export function AdvancedFilters({
                   onApply={onApply}
                   onReset={onReset}
                   activeFilterCount={activeFilterCount}
+                  listingTypeFilter={listingTypeFilter}
+                  onListingTypeChange={onListingTypeChange}
                   onClose={() => setIsDesktopOpen(false)}
                 />
               </div>

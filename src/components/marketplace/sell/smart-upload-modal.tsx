@@ -618,7 +618,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     <p className="text-base font-medium text-gray-900 mb-1">
                       {stage === "compressing" && "Optimising photos..."}
                       {stage === "uploading" && "Uploading photos..."}
-                      {stage === "analyzing" && "AI is analysing..."}
+                      {stage === "analyzing" && "Yellow Jersey is analysing..."}
                       {stage === "searching" && "Finding details..."}
                     </p>
                     <p className="text-sm text-gray-500">
