@@ -1137,7 +1137,7 @@ export function SellWizard() {
   // Handle Smart Upload mode
   if (mode === 'smart') {
     return (
-      <div className="pt-16 min-h-screen bg-gray-50 flex flex-col">
+      <div className="sm:pt-16 min-h-screen bg-gray-50 flex flex-col">
         <SmartUploadFlow
           onComplete={(aiFormData, imageUrls) => {
             console.log('🎯 [WIZARD] AI Complete - Form data:', aiFormData);
@@ -1271,12 +1271,21 @@ export function SellWizard() {
     );
   }
 
+  // Check if we're in quick listing mobile mode (step 1 with AI data on mobile)
+  const isQuickListingMobile = currentStep === 1 && hasAiData;
+
   return (
-    <div className="pt-16 min-h-screen bg-gray-50 flex flex-col">
+    <div className={cn(
+      "min-h-screen bg-gray-50 flex flex-col",
+      // No top padding on mobile for quick listing, standard padding otherwise
+      isQuickListingMobile ? "sm:pt-16" : "pt-16"
+    )}>
       {/* Main Content */}
       <div className={cn(
-        "flex-1 py-8 px-6",
-        currentStep !== getTotalSteps() && !(currentStep === 1 && hasAiData) && "pb-32" // Extra bottom padding for fixed footer, except on review step and quick listing
+        "flex-1",
+        // No padding on mobile for quick listing (edge-to-edge), standard padding otherwise
+        isQuickListingMobile ? "sm:py-8 sm:px-6" : "py-8 px-6",
+        currentStep !== getTotalSteps() && !isQuickListingMobile && "pb-32" // Extra bottom padding for fixed footer, except on review step and quick listing
       )}>
         <AnimatePresence mode="wait">
           <motion.div
@@ -1293,7 +1302,7 @@ export function SellWizard() {
 
       {/* Navigation Footer - Fixed at bottom */}
       {/* Hide navigation when in quick listing mode (step 1 with AI data) */}
-      {currentStep !== getTotalSteps() && !(currentStep === 1 && hasAiData) && (
+      {currentStep !== getTotalSteps() && !isQuickListingMobile && (
         <div className="fixed bottom-0 left-0 right-0 lg:left-[200px] z-40">
           <WizardNavigation
             currentStep={currentStep}

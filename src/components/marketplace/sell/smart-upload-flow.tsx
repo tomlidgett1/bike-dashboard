@@ -23,6 +23,17 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
   const [photos, setPhotos] = React.useState<string[]>([]);
   const [analysis, setAnalysis] = React.useState<ListingAnalysisResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  // Detect if on mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const handlePhotosUploaded = async (imageUrls: string[]) => {
     setPhotos(imageUrls);
@@ -155,13 +166,13 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-6">
+    <div className={isMobile ? "min-h-screen bg-gray-50" : "min-h-screen bg-gray-50 py-12 px-6"}>
       <AnimatePresence mode="wait">
         <motion.div
           key={stage}
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: isMobile ? 0 : 20 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
+          exit={{ opacity: 0, y: isMobile ? 0 : -20 }}
           transition={{ duration: 0.3 }}
         >
           {stage === "upload" && (
@@ -187,7 +198,7 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
           )}
 
           {stage === "error" && (
-            <div className="max-w-2xl mx-auto">
+            <div className={isMobile ? "p-4" : "max-w-2xl mx-auto"}>
               <div className="bg-white rounded-xl border border-red-200 p-8 text-center space-y-4">
                 <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto">
                   <span className="text-3xl">❌</span>
