@@ -6,8 +6,10 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = 
     request.nextUrl.pathname.startsWith('/auth') ||
     request.nextUrl.pathname === '/marketplace' ||
+    request.nextUrl.pathname.startsWith('/marketplace/product') ||
     request.nextUrl.pathname.startsWith('/marketplace/store') ||
     request.nextUrl.pathname.startsWith('/marketplace/used-products') ||
+    request.nextUrl.pathname.startsWith('/marketplace/new-products') ||
     request.nextUrl.pathname.startsWith('/api/marketplace')
   
   if (isPublicRoute) {
