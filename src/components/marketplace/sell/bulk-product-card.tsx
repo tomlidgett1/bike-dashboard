@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
-import { AlertCircle, Trash2, DollarSign, Package } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { AlertCircle, Trash2, DollarSign, Package, ChevronDown, Shirt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -60,7 +60,18 @@ export function BulkProductCard({
   });
 
   const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
-  const [showAdvanced, setShowAdvanced] = React.useState(false);
+  const [showDetails, setShowDetails] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  // Detect if on mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Update parent when form changes
   React.useEffect(() => {
@@ -77,9 +88,12 @@ export function BulkProductCard({
   const isApparel = formData.itemType === 'apparel';
 
   return (
-    <div className="bg-white rounded-md border border-gray-200 overflow-hidden">
+    <div className={cn(
+      "bg-white overflow-hidden",
+      isMobile ? "rounded-none" : "rounded-md border border-gray-200"
+    )}>
       {/* Photo Gallery */}
-      <div className="relative aspect-[4/3] bg-gray-100">
+      <div className={cn("relative bg-gray-100", isMobile ? "aspect-square" : "aspect-[4/3]")}>
         <Image
           src={imageUrls[primaryImageIndex]}
           alt="Product"
@@ -90,14 +104,15 @@ export function BulkProductCard({
         
         {/* Confidence Warning */}
         {isLowConfidence && (
-          <div className="absolute top-4 left-4 right-4">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-yellow-600 flex-shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-yellow-800">
-                  Low AI confidence - Please review carefully
-                </p>
-              </div>
+          <div className={cn("absolute left-3 right-3", isMobile ? "top-3" : "top-4 left-4 right-4")}>
+            <div className={cn(
+              "bg-yellow-50 border border-yellow-200 flex items-center gap-2",
+              isMobile ? "rounded-lg p-2" : "rounded-md p-3"
+            )}>
+              <AlertCircle className={cn("text-yellow-600 flex-shrink-0", isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
+              <p className={cn("font-medium text-yellow-800", isMobile ? "text-[11px]" : "text-xs")}>
+                Low confidence - please review
+              </p>
             </div>
           </div>
         )}
@@ -106,25 +121,32 @@ export function BulkProductCard({
         {onDelete && (
           <button
             onClick={onDelete}
-            className="absolute top-4 right-4 p-2 bg-red-500 hover:bg-red-600 text-white rounded-md shadow-lg transition-colors"
+            className={cn(
+              "absolute bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-colors",
+              isMobile ? "top-3 right-3 p-2" : "top-4 right-4 p-2"
+            )}
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} />
           </button>
         )}
       </div>
 
       {/* Thumbnail Strip */}
       {imageUrls.length > 1 && (
-        <div className="flex gap-2 p-4 border-b border-gray-200 overflow-x-auto">
+        <div className={cn(
+          "flex gap-2 border-b border-gray-200 overflow-x-auto",
+          isMobile ? "p-3" : "p-4"
+        )}>
           {imageUrls.map((url, index) => (
             <button
               key={index}
               onClick={() => setPrimaryImageIndex(index)}
               className={cn(
-                "relative flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-colors",
+                "relative flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors",
                 index === primaryImageIndex
-                  ? "border-gray-900"
-                  : "border-gray-200 hover:border-gray-300"
+                  ? "border-[#FFC72C]"
+                  : "border-gray-200",
+                isMobile ? "w-14 h-14" : "w-16 h-16"
               )}
             >
               <Image
@@ -139,18 +161,98 @@ export function BulkProductCard({
       )}
 
       {/* Form Fields */}
-      <div className="p-6 space-y-6">
-        {/* Basic Info */}
-        <div className="space-y-4">
+      <div className={cn(isMobile ? "p-4 space-y-4" : "p-6 space-y-6")}>
+        {/* Essential Fields - Always visible */}
+        <div className="space-y-3">
+          {/* Title */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Product Type
+            <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+              Title
+            </label>
+            <Input
+              value={formData.title}
+              onChange={(e) => updateField('title', e.target.value)}
+              placeholder="Product name"
+              className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+            />
+          </div>
+
+          {/* Price & Condition Row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                Price (AUD)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                <Input
+                  type="number"
+                  value={formData.price}
+                  onChange={(e) => updateField('price', parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  className={cn("pl-7 rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+                  min="0"
+                />
+              </div>
+            </div>
+            <div>
+              <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                Condition
+              </label>
+              <Select
+                value={formData.conditionRating}
+                onValueChange={(value) => updateField('conditionRating', value)}
+              >
+                <SelectTrigger className={cn("rounded-xl", isMobile ? "h-11" : "rounded-md")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONDITION_RATINGS.map((rating) => (
+                    <SelectItem key={rating} value={rating}>
+                      {rating}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Brand & Model Row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                Brand
+              </label>
+              <Input
+                value={formData.brand}
+                onChange={(e) => updateField('brand', e.target.value)}
+                placeholder="Brand"
+                className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+              />
+            </div>
+            <div>
+              <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                Model
+              </label>
+              <Input
+                value={formData.model}
+                onChange={(e) => updateField('model', e.target.value)}
+                placeholder="Model"
+                className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+              />
+            </div>
+          </div>
+
+          {/* Product Type */}
+          <div>
+            <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+              Type
             </label>
             <Select
               value={formData.itemType}
               onValueChange={(value) => updateField('itemType', value)}
             >
-              <SelectTrigger className="rounded-md">
+              <SelectTrigger className={cn("rounded-xl", isMobile ? "h-11" : "rounded-md")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -161,312 +263,208 @@ export function BulkProductCard({
             </Select>
           </div>
 
+          {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Product Title
-            </label>
-            <Input
-              value={formData.title}
-              onChange={(e) => updateField('title', e.target.value)}
-              placeholder="e.g., Trek Fuel EX 9.8 Mountain Bike"
-              className="rounded-md"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
               Description
             </label>
             <Textarea
               value={formData.description}
               onChange={(e) => updateField('description', e.target.value)}
               placeholder="Describe your product..."
-              className="rounded-md"
-              rows={4}
+              className={cn("rounded-xl resize-none", isMobile ? "text-base" : "rounded-md")}
+              rows={isMobile ? 3 : 4}
             />
-            {aiData?.overall_confidence && aiData.overall_confidence < 70 && (
-              <p className="text-xs text-gray-500 mt-1">
-                ⚠️ AI confidence: {aiData.overall_confidence}% - Please review carefully
-              </p>
+          </div>
+        </div>
+
+        {/* Expandable Details Section */}
+        <div>
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="w-full flex items-center justify-between py-3 text-left"
+          >
+            <span className={cn("font-medium text-gray-900", isMobile ? "text-sm" : "text-sm")}>
+              {isBike && "Bike Details"}
+              {isPart && "Part Details"}
+              {isApparel && "Apparel Details"}
+              {!isBike && !isPart && !isApparel && "Additional Details"}
+            </span>
+            <ChevronDown className={cn(
+              "h-5 w-5 text-gray-400 transition-transform duration-200",
+              showDetails && "rotate-180"
+            )} />
+          </button>
+
+          <AnimatePresence>
+            {showDetails && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                className="overflow-hidden"
+              >
+                <div className="space-y-3 pt-2 pb-2">
+                  {/* Bike-Specific Fields */}
+                  {isBike && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                            Year
+                          </label>
+                          <Input
+                            value={formData.modelYear}
+                            onChange={(e) => updateField('modelYear', e.target.value)}
+                            placeholder="2023"
+                            className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+                          />
+                        </div>
+                        <div>
+                          <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                            Frame Size
+                          </label>
+                          <Input
+                            value={formData.frameSize}
+                            onChange={(e) => updateField('frameSize', e.target.value)}
+                            placeholder="Medium"
+                            className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                            Material
+                          </label>
+                          <Input
+                            value={formData.frameMaterial}
+                            onChange={(e) => updateField('frameMaterial', e.target.value)}
+                            placeholder="Carbon"
+                            className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+                          />
+                        </div>
+                        <div>
+                          <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                            Groupset
+                          </label>
+                          <Input
+                            value={formData.groupset}
+                            onChange={(e) => updateField('groupset', e.target.value)}
+                            placeholder="Shimano"
+                            className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                            Wheels
+                          </label>
+                          <Input
+                            value={formData.wheelSize}
+                            onChange={(e) => updateField('wheelSize', e.target.value)}
+                            placeholder='29"'
+                            className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+                          />
+                        </div>
+                        <div>
+                          <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                            Colour
+                          </label>
+                          <Input
+                            value={formData.colorPrimary}
+                            onChange={(e) => updateField('colorPrimary', e.target.value)}
+                            placeholder="Black"
+                            className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Part-Specific Fields */}
+                  {isPart && (
+                    <>
+                      <div>
+                        <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                          Part Type
+                        </label>
+                        <Input
+                          value={formData.partTypeDetail}
+                          onChange={(e) => updateField('partTypeDetail', e.target.value)}
+                          placeholder="e.g., Rear Derailleur"
+                          className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+                        />
+                      </div>
+                      <div>
+                        <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                          Compatibility
+                        </label>
+                        <Textarea
+                          value={formData.compatibilityNotes}
+                          onChange={(e) => updateField('compatibilityNotes', e.target.value)}
+                          placeholder="Compatible with..."
+                          className={cn("rounded-xl resize-none", isMobile ? "text-base" : "rounded-md")}
+                          rows={2}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Apparel-Specific Fields */}
+                  {isApparel && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                          Size
+                        </label>
+                        <Input
+                          value={formData.size}
+                          onChange={(e) => updateField('size', e.target.value)}
+                          placeholder="Medium"
+                          className={cn("rounded-xl", isMobile ? "h-11 text-base" : "rounded-md")}
+                        />
+                      </div>
+                      <div>
+                        <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                          Fit
+                        </label>
+                        <Select
+                          value={formData.genderFit}
+                          onValueChange={(value) => updateField('genderFit', value)}
+                        >
+                          <SelectTrigger className={cn("rounded-xl", isMobile ? "h-11" : "rounded-md")}>
+                            <SelectValue placeholder="Select..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Men's">Men's</SelectItem>
+                            <SelectItem value="Women's">Women's</SelectItem>
+                            <SelectItem value="Unisex">Unisex</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Condition Details */}
+                  <div>
+                    <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+                      Condition Notes
+                    </label>
+                    <Textarea
+                      value={formData.conditionDetails}
+                      onChange={(e) => updateField('conditionDetails', e.target.value)}
+                      placeholder="Any wear or damage..."
+                      className={cn("rounded-xl resize-none", isMobile ? "text-base" : "rounded-md")}
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              </motion.div>
             )}
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Brand
-              </label>
-              <Input
-                value={formData.brand}
-                onChange={(e) => updateField('brand', e.target.value)}
-                placeholder="e.g., Trek, Specialized"
-                className="rounded-md"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Model
-              </label>
-              <Input
-                value={formData.model}
-                onChange={(e) => updateField('model', e.target.value)}
-                placeholder="e.g., Fuel EX 9.8"
-                className="rounded-md"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Model Year
-            </label>
-            <Input
-              value={formData.modelYear}
-              onChange={(e) => updateField('modelYear', e.target.value)}
-              placeholder="e.g., 2023"
-              className="rounded-md"
-            />
-          </div>
-        </div>
-
-        {/* Bike-Specific Fields */}
-        {isBike && (
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-              <Package className="h-4 w-4" />
-              Bike Details
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Bike Type
-                </label>
-                <Input
-                  value={formData.bikeType}
-                  onChange={(e) => updateField('bikeType', e.target.value)}
-                  placeholder="e.g., Mountain, Road"
-                  className="rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Frame Size
-                </label>
-                <Input
-                  value={formData.frameSize}
-                  onChange={(e) => updateField('frameSize', e.target.value)}
-                  placeholder="e.g., Medium, 54cm"
-                  className="rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Frame Material
-                </label>
-                <Input
-                  value={formData.frameMaterial}
-                  onChange={(e) => updateField('frameMaterial', e.target.value)}
-                  placeholder="e.g., Carbon, Aluminium"
-                  className="rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Groupset
-                </label>
-                <Input
-                  value={formData.groupset}
-                  onChange={(e) => updateField('groupset', e.target.value)}
-                  placeholder="e.g., Shimano XT"
-                  className="rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Wheel Size
-                </label>
-                <Input
-                  value={formData.wheelSize}
-                  onChange={(e) => updateField('wheelSize', e.target.value)}
-                  placeholder='e.g., 29", 700c'
-                  className="rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Colour
-                </label>
-                <Input
-                  value={formData.colorPrimary}
-                  onChange={(e) => updateField('colorPrimary', e.target.value)}
-                  placeholder="e.g., Red, Blue"
-                  className="rounded-md"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Part-Specific Fields */}
-        {isPart && (
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-gray-900">Part Details</h3>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Part Type
-              </label>
-              <Input
-                value={formData.partTypeDetail}
-                onChange={(e) => updateField('partTypeDetail', e.target.value)}
-                placeholder="e.g., Rear Derailleur, Crankset"
-                className="rounded-md"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Compatibility
-              </label>
-              <Textarea
-                value={formData.compatibilityNotes}
-                onChange={(e) => updateField('compatibilityNotes', e.target.value)}
-                placeholder="e.g., Fits Shimano 11-speed systems"
-                className="rounded-md"
-                rows={2}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Apparel-Specific Fields */}
-        {isApparel && (
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-gray-900">Apparel Details</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Size
-                </label>
-                <Input
-                  value={formData.size}
-                  onChange={(e) => updateField('size', e.target.value)}
-                  placeholder="e.g., Medium, Large"
-                  className="rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Gender Fit
-                </label>
-                <Select
-                  value={formData.genderFit}
-                  onValueChange={(value) => updateField('genderFit', value)}
-                >
-                  <SelectTrigger className="rounded-md">
-                    <SelectValue placeholder="Select..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Men's">Men's</SelectItem>
-                    <SelectItem value="Women's">Women's</SelectItem>
-                    <SelectItem value="Unisex">Unisex</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Condition */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-gray-900">Condition</h3>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Condition Rating
-            </label>
-            <Select
-              value={formData.conditionRating}
-              onValueChange={(value) => updateField('conditionRating', value)}
-            >
-              <SelectTrigger className="rounded-md">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CONDITION_RATINGS.map((rating) => (
-                  <SelectItem key={rating} value={rating}>
-                    {rating}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Condition Details
-            </label>
-            <Textarea
-              value={formData.conditionDetails}
-              onChange={(e) => updateField('conditionDetails', e.target.value)}
-              placeholder="Describe the overall condition..."
-              className="rounded-md"
-              rows={3}
-            />
-          </div>
-          {formData.wearNotes && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Wear Notes
-              </label>
-              <Textarea
-                value={formData.wearNotes}
-                onChange={(e) => updateField('wearNotes', e.target.value)}
-                placeholder="Any scratches, marks, or wear..."
-                className="rounded-md"
-                rows={2}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Pricing */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-            <DollarSign className="h-4 w-4" />
-            Pricing
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Asking Price (AUD)
-              </label>
-              <Input
-                type="number"
-                value={formData.price}
-                onChange={(e) => updateField('price', parseFloat(e.target.value) || 0)}
-                placeholder="0"
-                className="rounded-md"
-                min="0"
-                step="1"
-              />
-              {aiData?.price_reasoning && (
-                <p className="text-xs text-gray-500 mt-1">
-                  AI: {aiData.price_reasoning}
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Original RRP (AUD)
-              </label>
-              <Input
-                type="number"
-                value={formData.originalRrp}
-                onChange={(e) => updateField('originalRrp', parseFloat(e.target.value) || 0)}
-                placeholder="0"
-                className="rounded-md"
-                min="0"
-                step="1"
-              />
-            </div>
-          </div>
+          </AnimatePresence>
         </div>
       </div>
     </div>
