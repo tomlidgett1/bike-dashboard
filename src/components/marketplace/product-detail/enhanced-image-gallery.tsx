@@ -239,8 +239,8 @@ export function EnhancedImageGallery({
 
   return (
     <>
-      {/* Mobile: Swipeable Single Image */}
-      <div className="sm:hidden relative">
+      {/* Mobile: Swipeable Single Image - Full Width No Padding */}
+      <div className="sm:hidden relative -mx-4">
         <div className="relative aspect-square bg-gray-100 overflow-hidden">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -268,27 +268,9 @@ export function EnhancedImageGallery({
             </motion.div>
           </AnimatePresence>
 
-          {/* Like Button - Top Right */}
-          {onLikeToggle && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onLikeToggle();
-              }}
-              className="absolute top-3 right-3 p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all z-10"
-            >
-              <Heart
-                className={cn(
-                  "h-5 w-5 transition-colors",
-                  isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
-                )}
-              />
-            </button>
-          )}
-
-          {/* Pagination Dots */}
+          {/* Pagination Dots - Overlaid on Image */}
           {images.length > 1 && (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
               {images.map((_, index) => (
                 <button
                   key={index}
@@ -299,8 +281,8 @@ export function EnhancedImageGallery({
                   className={cn(
                     "rounded-full transition-all",
                     index === mobileImageIndex
-                      ? "w-6 h-2 bg-white"
-                      : "w-2 h-2 bg-white/50"
+                      ? "w-6 h-2 bg-white shadow-sm"
+                      : "w-2 h-2 bg-white/60"
                   )}
                   aria-label={`Go to image ${index + 1}`}
                 />

@@ -118,8 +118,8 @@ export function ProductPageClient({
           {/* Two-Column Layout */}
           <div className="lg:max-w-[1400px] lg:mx-auto lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-[60%_40%] lg:gap-8">
-              {/* Left Column - Image Gallery (Full-width on mobile) */}
-              <div className="w-full">
+              {/* Left Column - Image Gallery */}
+              <div className="w-full px-4 sm:px-0">
                 <EnhancedImageGallery
                   images={images}
                   productName={(product as any).display_name || product.description}
@@ -131,7 +131,7 @@ export function ProductPageClient({
               </div>
 
               {/* Right Column - Product Details */}
-              <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-hidden lg:border lg:border-gray-200">
+              <div className="px-4 sm:px-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-hidden lg:border lg:border-gray-200">
                 <ProductDetailsPanel product={product} />
               </div>
             </div>
