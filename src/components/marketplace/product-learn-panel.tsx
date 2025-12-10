@@ -548,7 +548,7 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="bg-white rounded-t-xl border-t border-x border-gray-200 shadow-xl"
+                    className="bg-white rounded-t-xl border-t-2 border-x-2 border-[#FFC72C] shadow-xl"
                   >
                     <div className="px-4 py-4">
                       {/* Header Row */}
