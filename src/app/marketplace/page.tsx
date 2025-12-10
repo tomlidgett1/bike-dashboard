@@ -561,6 +561,37 @@ function MarketplacePageContent() {
       <MarketplaceHeader compactSearchOnMobile showFloatingButton />
 
       <MarketplaceLayout showFooter={false} showStoreCTA={isStoresView}>
+        {/* Sticky Filter Bar on Mobile */}
+        {!isStoresView && !isSellersView && (
+          <div className="sticky top-14 sm:top-16 z-30 bg-white sm:hidden w-full">
+            <div className="px-3">
+              <UnifiedFilterBar
+              viewMode={viewMode}
+              onViewModeChange={handleViewModeChange}
+              showForYouBadge={!user && viewMode !== 'for-you'}
+              selectedLevel1={selectedLevel1}
+              selectedLevel2={selectedLevel2}
+              selectedLevel3={selectedLevel3}
+              onLevel1Change={handleLevel1Change}
+              onLevel2Change={handleLevel2Change}
+              onLevel3Change={handleLevel3Change}
+              listingTypeFilter={listingTypeFilter}
+              onListingTypeChange={handleListingTypeChange}
+              productCount={!searchQuery ? totalCount : undefined}
+              additionalFilters={
+                <AdvancedFilters
+                  filters={advancedFilters}
+                  onFiltersChange={handleAdvancedFiltersChange}
+                  onApply={handleAdvancedFiltersApply}
+                  onReset={handleAdvancedFiltersReset}
+                  activeFilterCount={activeFilterCount}
+                />
+              }
+            />
+            </div>
+          </div>
+        )}
+
         <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20 pb-24 sm:pb-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -607,8 +638,9 @@ function MarketplacePageContent() {
             {/* Products View */}
             {!isStoresView && !isSellersView && (
               <>
-                {/* Unified Filter Bar - View modes, categories, source filter */}
-                <UnifiedFilterBar
+                {/* Desktop Filter Bar - View modes, categories, source filter */}
+                <div className="hidden sm:block">
+                  <UnifiedFilterBar
                   viewMode={viewMode}
                   onViewModeChange={handleViewModeChange}
                   showForYouBadge={!user && viewMode !== 'for-you'}
@@ -631,6 +663,7 @@ function MarketplacePageContent() {
                     />
                   }
                 />
+                </div>
 
                 {/* Active Advanced Filters Summary */}
                 {viewMode === 'all' && activeFilterCount > 0 && (

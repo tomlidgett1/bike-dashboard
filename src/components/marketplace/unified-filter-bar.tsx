@@ -221,16 +221,16 @@ export function UnifiedFilterBar({
   return (
     <div className="space-y-3">
       {/* Primary Row: View Mode Tabs + Source Filter Tabs (desktop only) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        {/* View Mode Tabs - Full width on mobile */}
-        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-full sm:w-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-3 -mx-3 sm:mx-0">
+        {/* View Mode Tabs - Full width edge-to-edge on mobile, pills on desktop */}
+        <div className="flex sm:items-center sm:bg-gray-100 sm:p-0.5 sm:rounded-md w-full sm:w-auto sm:border-0">
           <button
             onClick={() => onViewModeChange('trending')}
             className={cn(
-              "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+              "relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0",
               viewMode === 'trending'
-                ? "text-gray-900 bg-white shadow-sm"
-                : "text-gray-600 hover:text-gray-800 hover:bg-gray-200/60"
+                ? "text-gray-900 sm:bg-white sm:shadow-sm border-gray-900"
+                : "text-gray-600 hover:text-gray-800 sm:hover:bg-gray-200/60 border-transparent"
             )}
           >
             <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -241,27 +241,27 @@ export function UnifiedFilterBar({
           <button
             onClick={() => onViewModeChange('for-you')}
             className={cn(
-              "relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+              "relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0",
               viewMode === 'for-you'
-                ? "text-gray-900 bg-white shadow-sm"
-                : "text-gray-600 hover:text-gray-800 hover:bg-gray-200/60"
+                ? "text-gray-900 sm:bg-white sm:shadow-sm border-gray-900"
+                : "text-gray-600 hover:text-gray-800 sm:hover:bg-gray-200/60 border-transparent"
             )}
           >
             <Heart className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             <span className="hidden xs:inline">For You</span>
             <span className="xs:hidden">You</span>
             {showForYouBadge && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#FFC72C] rounded-full" />
+              <span className="absolute -top-0.5 -right-0.5 sm:static sm:ml-1 w-2 h-2 bg-[#FFC72C] rounded-full" />
             )}
           </button>
           
           <button
             onClick={() => onViewModeChange('all')}
             className={cn(
-              "flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
+              "relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0",
               viewMode === 'all'
-                ? "text-gray-900 bg-white shadow-sm"
-                : "text-gray-600 hover:text-gray-800 hover:bg-gray-200/60"
+                ? "text-gray-900 sm:bg-white sm:shadow-sm border-gray-900"
+                : "text-gray-600 hover:text-gray-800 sm:hover:bg-gray-200/60 border-transparent"
             )}
           >
             <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
