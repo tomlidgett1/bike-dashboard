@@ -996,13 +996,10 @@ function MarketplacePageContent() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-white/95 backdrop-blur-sm z-[100] flex items-center justify-center"
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center"
           >
-            <div className="text-center">
-              <Loader2 className="h-12 w-12 text-gray-900 animate-spin mx-auto mb-4" />
-              <p className="text-sm text-gray-600">Loading product...</p>
-            </div>
+            <Loader2 className="h-10 w-10 text-white animate-spin" />
           </motion.div>
         )}
       </AnimatePresence>

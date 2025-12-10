@@ -35,6 +35,7 @@ export function EnhancedImageGallery({
 }: EnhancedImageGalleryProps) {
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [fullscreenIndex, setFullscreenIndex] = React.useState(0);
+  const [mobileImageIndex, setMobileImageIndex] = React.useState(0);
 
   const handlePrev = () => {
     setFullscreenIndex(fullscreenIndex === 0 ? images.length - 1 : fullscreenIndex - 1);
@@ -217,10 +218,100 @@ export function EnhancedImageGallery({
     );
   };
 
+  const handleMobilePrev = () => {
+    setMobileImageIndex(mobileImageIndex === 0 ? images.length - 1 : mobileImageIndex - 1);
+  };
+
+  const handleMobileNext = () => {
+    setMobileImageIndex(mobileImageIndex === images.length - 1 ? 0 : mobileImageIndex + 1);
+  };
+
+  const handleMobileDragEnd = (event: any, info: any) => {
+    const swipeThreshold = 50;
+    if (Math.abs(info.offset.x) > swipeThreshold) {
+      if (info.offset.x > 0) {
+        handleMobilePrev();
+      } else {
+        handleMobileNext();
+      }
+    }
+  };
+
   return (
     <>
-      {/* Main Gallery Grid */}
-      <div className="relative">
+      {/* Mobile: Swipeable Single Image */}
+      <div className="sm:hidden relative">
+        <div className="relative aspect-square bg-gray-100 overflow-hidden">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={mobileImageIndex}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.2}
+              onDragEnd={handleMobileDragEnd}
+              className="absolute inset-0 cursor-grab active:cursor-grabbing"
+              onClick={() => openFullscreen(mobileImageIndex)}
+            >
+              <Image
+                src={images[mobileImageIndex]}
+                alt={`${productName} - Image ${mobileImageIndex + 1}`}
+                fill
+                className="object-cover"
+                sizes="100vw"
+                priority={mobileImageIndex === 0}
+                quality={85}
+              />
+            </motion.div>
+          </AnimatePresence>
+
+          {/* Like Button - Top Right */}
+          {onLikeToggle && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onLikeToggle();
+              }}
+              className="absolute top-3 right-3 p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all z-10"
+            >
+              <Heart
+                className={cn(
+                  "h-5 w-5 transition-colors",
+                  isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
+                )}
+              />
+            </button>
+          )}
+
+          {/* Pagination Dots */}
+          {images.length > 1 && (
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
+              {images.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMobileImageIndex(index);
+                  }}
+                  className={cn(
+                    "rounded-full transition-all",
+                    index === mobileImageIndex
+                      ? "w-6 h-2 bg-white"
+                      : "w-2 h-2 bg-white/50"
+                  )}
+                  aria-label={`Go to image ${index + 1}`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Desktop: Gallery Grid */}
+      <div className="hidden sm:block relative">
         {renderImageGrid()}
 
         {/* Like Button - Top Left of first image */}
