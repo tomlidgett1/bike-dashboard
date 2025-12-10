@@ -284,11 +284,48 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
       console.log('Raw output:', outputText);
       
       // Try to extract JSON from markdown code blocks
-      const jsonMatch = outputText.match(/```json\n([\s\S]*?)\n```/) || outputText.match(/```\n([\s\S]*?)\n```/);
+      let jsonMatch = outputText.match(/```json\n([\s\S]*?)\n```/) || outputText.match(/```\n([\s\S]*?)\n```/);
       if (jsonMatch) {
-        analysis = JSON.parse(jsonMatch[1]);
-      } else {
-        throw new Error('Failed to parse AI response as JSON');
+        try {
+          analysis = JSON.parse(jsonMatch[1]);
+        } catch (e) {
+          console.error('❌ [AI EDGE FUNCTION] Failed to parse markdown JSON:', e);
+        }
+      }
+      
+      // If still no match, try to extract JSON object by finding first { and matching }
+      if (!analysis) {
+        console.log('✓ [AI EDGE FUNCTION] Attempting to extract JSON object from text...');
+        const firstBrace = outputText.indexOf('{');
+        if (firstBrace !== -1) {
+          // Find the matching closing brace
+          let braceCount = 0;
+          let endIndex = -1;
+          for (let i = firstBrace; i < outputText.length; i++) {
+            if (outputText[i] === '{') braceCount++;
+            if (outputText[i] === '}') braceCount--;
+            if (braceCount === 0) {
+              endIndex = i + 1;
+              break;
+            }
+          }
+          
+          if (endIndex !== -1) {
+            const jsonString = outputText.substring(firstBrace, endIndex);
+            console.log('✓ [AI EDGE FUNCTION] Extracted JSON string length:', jsonString.length);
+            try {
+              analysis = JSON.parse(jsonString);
+              console.log('✓ [AI EDGE FUNCTION] Successfully parsed extracted JSON');
+            } catch (e) {
+              console.error('❌ [AI EDGE FUNCTION] Failed to parse extracted JSON:', e);
+              throw new Error('Failed to parse AI response as JSON');
+            }
+          } else {
+            throw new Error('Failed to find complete JSON object in response');
+          }
+        } else {
+          throw new Error('Failed to parse AI response as JSON');
+        }
       }
     }
 
