@@ -355,7 +355,7 @@ function MessagesPageInner() {
         {/* Left Sidebar: Conversation List or Offers List */}
         <div
           className={cn(
-            'w-full md:w-96 bg-white md:border-r border-gray-200 flex flex-col h-full pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0',
+            'w-full md:w-[576px] bg-white md:border-r border-gray-200 flex flex-col h-full pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0',
             (showConversationOnMobile || showOfferDetailOnMobile) && 'hidden md:flex'
           )}
         >
