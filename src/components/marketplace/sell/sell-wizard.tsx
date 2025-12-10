@@ -151,6 +151,7 @@ export function SellWizard() {
         suspensionType: quickData.suspensionType,
         colorPrimary: quickData.colorPrimary,
         colorSecondary: quickData.colorSecondary,
+        bikeWeight: quickData.bikeWeight,
         
         // Part-specific fields
         partTypeDetail: quickData.partTypeDetail,

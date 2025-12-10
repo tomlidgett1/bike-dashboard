@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import { 
-  Bike, Settings, Shirt, Apple, Package, Loader2, X, 
+  Package, Loader2, X, 
   ChevronRight, Store, User, TrendingUp, Heart
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { preload } from "swr";
+import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 
 // ============================================================
 // Unified Filter Bar
@@ -72,14 +73,10 @@ interface UnifiedFilterBarProps {
   additionalFilters?: React.ReactNode;
 }
 
-// Category icon mapping
+// Category icon mapping - now uses BikeIcon component
 const getCategoryIcon = (categoryName: string) => {
-  const name = categoryName.toLowerCase();
-  if (name.includes('bike') || name.includes('bicycle')) return Bike;
-  if (name.includes('apparel') || name.includes('clothing')) return Shirt;
-  if (name.includes('nutrition') || name.includes('food')) return Apple;
-  if (name.includes('part') || name.includes('component')) return Settings;
-  return Package;
+  // Return the icon name instead of a component
+  return getCategoryIconName(categoryName);
 };
 
 export function UnifiedFilterBar({
@@ -166,7 +163,7 @@ export function UnifiedFilterBar({
       level: 1 as const,
       isActive: selectedLevel1 === cat.level1,
       hasChildren: cat.level2Categories.length > 0,
-      icon: getCategoryIcon(cat.level1),
+      iconName: getCategoryIcon(cat.level1),
     }));
   };
 
@@ -399,7 +396,7 @@ export function UnifiedFilterBar({
                 className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1"
               >
                 {categoryOptions.map((option) => {
-                  const Icon = 'icon' in option ? option.icon : undefined;
+                  const iconName = 'iconName' in option ? option.iconName : undefined;
                   
                   return (
                     <button
@@ -417,11 +414,15 @@ export function UnifiedFilterBar({
                           : "bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:shadow-sm"
                       )}
                     >
-                      {Icon && (
-                        <Icon className={cn(
-                          "h-4 w-4 sm:h-5 sm:w-5 transition-colors",
-                          option.isActive ? "text-white" : "text-gray-500 group-hover:text-gray-700"
-                        )} />
+                      {iconName && (
+                        <BikeIcon 
+                          iconName={iconName} 
+                          size={option.isActive ? 20 : 18}
+                          className={cn(
+                            "transition-opacity",
+                            option.isActive ? "opacity-100" : "opacity-60 group-hover:opacity-80"
+                          )} 
+                        />
                       )}
                       <span className="text-xs sm:text-sm">{option.name}</span>
                       {option.count > 0 && (

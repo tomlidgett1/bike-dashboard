@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Bike, Settings, Shirt, Apple } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 
 // ============================================================
 // Category Pills
@@ -16,10 +16,10 @@ interface CategoryPillsProps {
 }
 
 const CATEGORIES = [
-  { name: 'Bicycles', icon: Bike, color: 'text-blue-600' },
-  { name: 'Parts', icon: Settings, color: 'text-gray-600' },
-  { name: 'Apparel', icon: Shirt, color: 'text-purple-600' },
-  { name: 'Nutrition', icon: Apple, color: 'text-green-600' },
+  { name: 'Bicycles' },
+  { name: 'Parts' },
+  { name: 'Apparel' },
+  { name: 'Nutrition' },
 ] as const;
 
 export function CategoryPills({ 
@@ -29,9 +29,10 @@ export function CategoryPills({
 }: CategoryPillsProps) {
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {CATEGORIES.map(({ name, icon: Icon, color }) => {
+      {CATEGORIES.map(({ name }) => {
         const isActive = selectedCategory === name;
         const count = counts?.[name] || 0;
+        const iconName = getCategoryIconName(name);
 
         return (
           <button
@@ -44,10 +45,12 @@ export function CategoryPills({
                 : "bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:shadow-sm"
             )}
           >
-            <Icon 
+            <BikeIcon 
+              iconName={iconName}
+              size={20}
               className={cn(
-                "h-5 w-5 transition-colors",
-                isActive ? color : "text-gray-500"
+                "transition-opacity",
+                isActive ? "opacity-100" : "opacity-60"
               )} 
             />
             <span className="text-sm">{name}</span>

@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, Loader2, CheckCircle2, Monitor, Smartphone, Camera, ImageIcon, Sparkles, Plus } from "lucide-react";
+import { Upload, X, Loader2, CheckCircle2, Monitor, Smartphone, Camera, ImageIcon, Plus } from "lucide-react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -422,11 +423,16 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     {/* Header */}
                     <div className="px-5 pb-3 flex-shrink-0">
                       <div className="flex items-center gap-2">
-                        <div className="h-8 w-8 rounded-lg bg-gray-900 flex items-center justify-center">
-                          <Sparkles className="h-4 w-4 text-[#FFC72C]" />
+                        <div className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                          <Image 
+                            src="/icons/noun-bicycle-753190.png" 
+                            alt="Quick Upload" 
+                            width={20} 
+                            height={20}
+                          />
                         </div>
                         <div>
-                          <h2 className="text-lg font-semibold text-gray-900">Smart Upload</h2>
+                          <h2 className="text-lg font-semibold text-gray-900">Quick Upload</h2>
                           <p className="text-xs text-gray-500">AI will detect product details</p>
                         </div>
                       </div>
@@ -444,8 +450,8 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                             className="w-full"
                           >
                             <div className="bg-white border-2 border-gray-900 rounded-xl p-5 flex items-center gap-4">
-                              <div className="h-14 w-14 rounded-xl bg-gray-900 flex items-center justify-center flex-shrink-0">
-                                <Camera className="h-7 w-7 text-white" />
+                              <div className="h-14 w-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                <Camera className="h-7 w-7 text-gray-700" />
                               </div>
                               <div className="flex-1 text-left">
                                 <h3 className="text-base font-semibold text-gray-900">Take Photos</h3>
@@ -577,10 +583,15 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     {/* Animated progress indicator */}
                     <div className="relative mb-6">
                       <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
-                        <Sparkles className="h-7 w-7 text-gray-400" />
+                        <Image 
+                          src="/icons/noun-bicycle-753190.png" 
+                          alt="Processing" 
+                          width={28} 
+                          height={28}
+                        />
                       </div>
                       <motion.div
-                        className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#FFC72C]"
+                        className="absolute inset-0 rounded-full border-2 border-transparent border-t-gray-900"
                         animate={{ rotate: 360 }}
                         transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                       />
@@ -687,7 +698,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       <DialogContent className="sm:max-w-[480px] rounded-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
         <DialogHeader>
           <DialogTitle className="text-base font-medium">
-            Smart Upload
+            Quick Upload
           </DialogTitle>
           <DialogDescription className="text-sm">
             Yellow Jersey will detect product details from your photos

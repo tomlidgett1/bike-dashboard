@@ -48,6 +48,7 @@ interface QuickListingData {
   suspensionType?: string;
   colorPrimary?: string;
   colorSecondary?: string;
+  bikeWeight?: string;
   
   // Part-specific fields
   partTypeDetail?: string;
@@ -337,26 +338,27 @@ export function Step1ItemType({
         brand: quickListingData.brand,
         model: quickListingData.model,
         
-        // Extract bike fields from AI analysis
-        frameSize: metadata?.bike?.frame_size,
-        frameMaterial: metadata?.bike?.frame_material,
-        bikeType: metadata?.bike?.bike_type,
-        groupset: metadata?.bike?.groupset,
-        wheelSize: metadata?.bike?.wheel_size,
-        suspensionType: metadata?.bike?.suspension_type,
-        colorPrimary: metadata?.bike?.color_primary,
-        colorSecondary: metadata?.bike?.color_secondary,
+        // Extract bike fields - try direct fields first (from smart upload), then from metadata
+        frameSize: quickListingData.frameSize || metadata?.bike?.frame_size,
+        frameMaterial: quickListingData.frameMaterial || metadata?.bike?.frame_material,
+        bikeType: quickListingData.bikeType || metadata?.bike?.bike_type,
+        groupset: quickListingData.groupset || metadata?.bike?.groupset,
+        wheelSize: quickListingData.wheelSize || metadata?.bike?.wheel_size,
+        suspensionType: quickListingData.suspensionType || metadata?.bike?.suspension_type,
+        colorPrimary: quickListingData.colorPrimary || metadata?.bike?.color_primary,
+        colorSecondary: quickListingData.colorSecondary || metadata?.bike?.color_secondary,
+        bikeWeight: quickListingData.bikeWeight || metadata?.bike?.bike_weight,
         
-        // Extract part fields from AI analysis
-        partTypeDetail: metadata?.part?.part_type_detail,
-        material: metadata?.part?.material,
-        weight: metadata?.part?.weight,
-        compatibilityNotes: metadata?.part?.compatibility_notes,
+        // Extract part fields - try direct fields first (from smart upload), then from metadata
+        partTypeDetail: quickListingData.partTypeDetail || metadata?.part?.part_type_detail,
+        material: quickListingData.material || metadata?.part?.material,
+        weight: quickListingData.weight || metadata?.part?.weight,
+        compatibilityNotes: quickListingData.compatibilityNotes || metadata?.part?.compatibility_notes,
         
-        // Extract apparel fields from AI analysis
-        size: metadata?.apparel?.size,
-        genderFit: metadata?.apparel?.gender_fit,
-        apparelMaterial: metadata?.apparel?.apparel_material,
+        // Extract apparel fields - try direct fields first (from smart upload), then from metadata
+        size: quickListingData.size || metadata?.apparel?.size,
+        genderFit: quickListingData.genderFit || metadata?.apparel?.gender_fit,
+        apparelMaterial: quickListingData.apparelMaterial || metadata?.apparel?.apparel_material,
       });
     }
   }, [quickListingData]);
@@ -646,7 +648,10 @@ export function Step1ItemType({
                     value={quickData.title || ''}
                     onChange={(e) => setQuickData({ ...quickData, title: e.target.value })}
                     placeholder="e.g., Trek Domane SL6 Road Bike"
-                    className="rounded-md h-11 text-base"
+                    className={cn(
+                      "rounded-md h-11 text-base",
+                      !quickData.title && "border-red-500 focus:border-red-500 focus:ring-red-500"
+                    )}
                   />
                 </div>
 
@@ -696,7 +701,12 @@ export function Step1ItemType({
                     onChange={(e) => setQuickData({ ...quickData, description: e.target.value })}
                     placeholder="Describe your item (condition, features, why you're selling...)"
                     rows={4}
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none"
+                    className={cn(
+                      "w-full px-3 py-2.5 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none",
+                      !quickData.description 
+                        ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                        : "border-gray-300 focus:ring-gray-900 focus:border-transparent"
+                    )}
                   />
                 </div>
 
@@ -712,7 +722,10 @@ export function Step1ItemType({
                         value={quickData.price || ''}
                         onChange={(e) => setQuickData({ ...quickData, price: parseInt(e.target.value) || undefined })}
                         placeholder="0"
-                        className="pl-9 rounded-md h-11 text-base"
+                        className={cn(
+                          "pl-9 rounded-md h-11 text-base",
+                          !quickData.price && "border-red-500 focus:border-red-500 focus:ring-red-500"
+                        )}
                       />
                     </div>
                   </div>
@@ -724,7 +737,10 @@ export function Step1ItemType({
                       value={quickData.conditionRating} 
                       onValueChange={(value) => setQuickData({ ...quickData, conditionRating: value as ConditionRating })}
                     >
-                      <SelectTrigger className="rounded-md h-11">
+                      <SelectTrigger className={cn(
+                        "rounded-md h-11",
+                        !quickData.conditionRating && "border-red-500 focus:border-red-500 focus:ring-red-500"
+                      )}>
                         <SelectValue placeholder="Select condition" />
                       </SelectTrigger>
                       <SelectContent>
@@ -747,7 +763,10 @@ export function Step1ItemType({
                       value={quickData.pickupLocation || ''}
                       onChange={(e) => setQuickData({ ...quickData, pickupLocation: e.target.value })}
                       placeholder="e.g., Sydney CBD, Melbourne East"
-                      className="pl-10 rounded-md h-11 text-base"
+                      className={cn(
+                        "pl-10 rounded-md h-11 text-base",
+                        !quickData.pickupLocation && "border-red-500 focus:border-red-500 focus:ring-red-500"
+                      )}
                     />
                   </div>
                   <p className="text-xs text-gray-500">Enter suburb or area (don't include your full address)</p>

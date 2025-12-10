@@ -457,7 +457,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                       >
                         <Sparkles className="mr-2 h-4 w-4" />
                         <div className="flex flex-col">
-                          <span className="font-medium">Smart Upload</span>
+                          <span className="font-medium">Quick Upload</span>
                           <span className="text-xs text-gray-500">AI-powered analysis</span>
                         </div>
                       </DropdownMenuItem>
@@ -520,7 +520,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                       >
                         <Sparkles className="mr-2 h-4 w-4" />
                         <div className="flex flex-col">
-                          <span className="font-medium">Smart Upload</span>
+                          <span className="font-medium">Quick Upload</span>
                           <span className="text-xs text-gray-500">AI-powered analysis</span>
                         </div>
                       </DropdownMenuItem>
@@ -689,7 +689,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                   <nav className="space-y-1">
                     <MobileNavItem
                       icon={Sparkles}
-                      label="Smart Upload"
+                      label="Quick Upload"
                       subtitle="AI-powered analysis"
                       onClick={() => {
                         setMobileMenuOpen(false);

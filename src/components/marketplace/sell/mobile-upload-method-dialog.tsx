@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Link2, FileText, X, Upload, ChevronRight } from "lucide-react";
+import { Link2, FileText, X, Upload, ChevronRight } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
@@ -81,7 +81,7 @@ export function MobileUploadMethodDialog({
             
             {/* Options */}
             <div className="px-4 pb-8 space-y-2">
-              {/* Recommended: Smart Upload */}
+              {/* Recommended: Quick Upload */}
               <motion.button
                 onClick={() => {
                   onClose();
@@ -92,12 +92,17 @@ export function MobileUploadMethodDialog({
               >
                 <div className="bg-white border-2 border-gray-900 rounded-xl p-4">
                   <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-xl bg-gray-900 flex items-center justify-center flex-shrink-0">
-                      <Sparkles className="h-6 w-6 text-[#FFC72C]" />
+                    <div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                      <Image 
+                        src="/icons/noun-bicycle-753190.png" 
+                        alt="Quick Upload" 
+                        width={28} 
+                        height={28}
+                      />
                     </div>
                     <div className="flex-1 min-w-0 text-left">
                       <h3 className="text-base font-semibold text-gray-900">
-                        Smart Upload
+                        Quick Upload
                       </h3>
                       <p className="text-xs text-gray-500 mt-0.5">
                         AI fills in details from your photos

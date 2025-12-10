@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Bike, Settings, Shirt, Apple } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { MarketplaceCategory } from "@/lib/types/marketplace";
 import { MARKETPLACE_SUBCATEGORIES } from "@/lib/types/marketplace";
+import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 
 // ============================================================
 // Category Filters
@@ -20,13 +21,6 @@ interface CategoryFiltersProps {
   onSubcategoryChange: (subcategory: string | null) => void;
   categoryCounts?: Record<MarketplaceCategory, number>;
 }
-
-const CATEGORY_ICONS: Record<MarketplaceCategory, React.ComponentType<{ className?: string }>> = {
-  Bicycles: Bike,
-  Parts: Settings,
-  Apparel: Shirt,
-  Nutrition: Apple,
-};
 
 export function CategoryFilters({
   selectedCategory,
@@ -86,7 +80,7 @@ export function CategoryFilters({
 
         {/* Category Pills */}
         {categories.map((category) => {
-          const Icon = CATEGORY_ICONS[category];
+          const iconName = getCategoryIconName(category);
           const count = categoryCounts[category] || 0;
           const isActive = selectedCategory === category;
 
@@ -101,7 +95,7 @@ export function CategoryFilters({
                   : "text-gray-600 bg-gray-100 hover:bg-gray-200/70 border border-transparent"
               )}
             >
-              <Icon className="h-4 w-4" />
+              <BikeIcon iconName={iconName} size={16} className={isActive ? "opacity-100" : "opacity-60"} />
               {category}
               {count > 0 && (
                 <Badge
