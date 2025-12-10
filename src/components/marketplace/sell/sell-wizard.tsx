@@ -8,6 +8,7 @@ import { useListingForm } from "@/lib/hooks/use-listing-form";
 import { UploadMethodChoice } from "./upload-method-choice";
 import { SmartUploadFlow } from "./smart-upload-flow";
 import { FacebookImportFlow } from "./facebook-import-flow";
+import { BulkUploadFlow } from "./bulk-upload-flow";
 import { WizardNavigation } from "./wizard-navigation";
 import { Step1ItemType } from "./step-1-item-type";
 // New granular step components
@@ -1113,6 +1114,24 @@ export function SellWizard() {
       />
     );
   };
+
+  // Handle Bulk Upload mode
+  if (mode === 'bulk') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <BulkUploadFlow
+          onComplete={(listingIds) => {
+            console.log('🎯 [WIZARD] Bulk upload complete - Created listings:', listingIds);
+            // BulkUploadFlow handles navigation to marketplace
+          }}
+          onSwitchToManual={() => {
+            window.history.pushState({}, '', '/marketplace/sell?mode=manual');
+            router.push('/marketplace/sell?mode=manual');
+          }}
+        />
+      </div>
+    );
+  }
 
   // Handle Smart Upload mode
   if (mode === 'smart') {
