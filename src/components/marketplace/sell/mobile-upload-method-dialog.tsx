@@ -90,7 +90,7 @@ export function MobileUploadMethodDialog({
                 whileTap={{ scale: 0.98 }}
                 className="w-full"
               >
-                <div className="bg-white border-2 border-gray-900 rounded-xl p-4">
+                <div className="bg-white border-2 border-[#FFC72C] rounded-xl p-4">
                   <div className="flex items-center gap-4">
                     <div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
                       <Image 

@@ -449,7 +449,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                             whileTap={{ scale: 0.98 }}
                             className="w-full"
                           >
-                            <div className="bg-white border-2 border-gray-900 rounded-xl p-5 flex items-center gap-4">
+                            <div className="bg-white border-2 border-[#FFC72C] rounded-xl p-5 flex items-center gap-4">
                               <div className="h-14 w-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
                                 <Camera className="h-7 w-7 text-gray-700" />
                               </div>
