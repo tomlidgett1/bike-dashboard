@@ -144,8 +144,8 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
             {/* Name, Location & Action Buttons */}
             <div className="flex-1 min-w-0">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
-                {/* Name and Location */}
-                <div className="min-w-0">
+                {/* Name, Location & Bio */}
+                <div className="min-w-0 flex-1">
                   <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">
                     {seller.display_name}
                   </h1>
@@ -153,6 +153,34 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
                     <div className="flex items-center gap-1.5 text-gray-600 mt-1">
                       <MapPin className="h-4 w-4 flex-shrink-0" />
                       <span className="text-sm font-medium truncate">{seller.location}</span>
+                    </div>
+                  )}
+                  {/* Bio - Below Location */}
+                  {seller.bio && (
+                    <div className="mt-2">
+                      <p 
+                        ref={bioRef}
+                        className={cn(
+                          "text-gray-600 text-xs sm:text-sm leading-relaxed transition-all duration-300",
+                          !bioExpanded && "line-clamp-2"
+                        )}
+                      >
+                        {seller.bio}
+                      </p>
+                      {showReadMore && (
+                        <button
+                          onClick={() => setBioExpanded(!bioExpanded)}
+                          className="flex items-center gap-1 mt-1 text-xs sm:text-sm font-medium text-gray-900 hover:text-gray-700 transition-colors"
+                        >
+                          {bioExpanded ? 'Show less' : 'Read more'}
+                          <ChevronDown 
+                            className={cn(
+                              "h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform duration-200",
+                              bioExpanded && "rotate-180"
+                            )} 
+                          />
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -281,35 +309,6 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
               <span className="sm:hidden">{memberSince}</span>
             </div>
           </div>
-
-          {/* Bio Section */}
-          {seller.bio && (
-            <div>
-              <p 
-                ref={bioRef}
-                className={cn(
-                  "text-gray-700 text-xs sm:text-sm leading-relaxed transition-all duration-300",
-                  !bioExpanded && "line-clamp-2"
-                )}
-              >
-                {seller.bio}
-              </p>
-              {showReadMore && (
-                <button
-                  onClick={() => setBioExpanded(!bioExpanded)}
-                  className="flex items-center gap-1 mt-1.5 text-xs sm:text-sm font-medium text-gray-900 hover:text-gray-700 transition-colors"
-                >
-                  {bioExpanded ? 'Show less' : 'Read more'}
-                  <ChevronDown 
-                    className={cn(
-                      "h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform duration-200",
-                      bioExpanded && "rotate-180"
-                    )} 
-                  />
-                </button>
-              )}
-            </div>
-          )}
 
           {/* Social Links */}
           {hasSocialLinks && (

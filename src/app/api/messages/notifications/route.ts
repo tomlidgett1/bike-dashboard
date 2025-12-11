@@ -82,9 +82,15 @@ export async function GET(request: NextRequest) {
       type: notification.type,
       conversation_id: notification.conversation_id,
       message_id: notification.message_id,
+      offer_id: notification.offer_id,
+      notification_category: notification.notification_category,
+      priority: notification.priority,
       is_read: notification.is_read,
       is_emailed: notification.is_emailed,
       email_sent_at: notification.email_sent_at,
+      email_scheduled_for: notification.email_scheduled_for,
+      email_delivery_status: notification.email_delivery_status,
+      batch_key: notification.batch_key,
       created_at: notification.created_at,
       read_at: notification.read_at,
       conversation: notification.conversations
@@ -132,6 +138,7 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
 
 
 
