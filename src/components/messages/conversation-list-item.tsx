@@ -2,6 +2,7 @@
 // CONVERSATION LIST ITEM COMPONENT
 // ============================================================
 // Single conversation item for inbox list
+// Mobile-optimised with larger touch targets and clear unread indicators
 
 'use client';
 
@@ -9,7 +10,6 @@ import { cn } from '@/lib/utils';
 import type { ConversationListItem } from '@/lib/types/message';
 import { formatDistanceToNow } from 'date-fns';
 import Image from 'next/image';
-import { Package } from 'lucide-react';
 
 interface ConversationListItemProps {
   conversation: ConversationListItem;
@@ -27,20 +27,29 @@ export function ConversationListItem({
     otherParticipant?.business_name ||
     otherParticipant?.name ||
     'Unknown User';
+  
+  const hasUnread = conversation.unread_count > 0;
 
   return (
     <button
       onClick={onClick}
       className={cn(
-        'w-full px-4 py-3 text-left border-b border-gray-200 hover:bg-gray-50 transition-colors',
-        active && 'bg-blue-50 hover:bg-blue-50'
+        'w-full px-4 py-4 text-left border-b border-gray-100 hover:bg-gray-50 active:bg-gray-100 transition-colors',
+        active && 'bg-blue-50 hover:bg-blue-50 active:bg-blue-100'
       )}
     >
-      <div className="flex gap-3">
+      <div className="flex items-start gap-3">
+        {/* Unread Indicator - Blue dot */}
+        <div className="flex-shrink-0 w-2 pt-5">
+          {hasUnread && (
+            <div className="w-2 h-2 rounded-full bg-blue-500" />
+          )}
+        </div>
+
         {/* Avatar or Product Image */}
         <div className="flex-shrink-0">
           {conversation.product?.primary_image_url ? (
-            <div className="w-12 h-12 rounded-md overflow-hidden border border-gray-200">
+            <div className="w-12 h-12 rounded-md overflow-hidden border border-gray-200 bg-gray-100">
               <Image
                 src={conversation.product.primary_image_url}
                 alt={conversation.product.display_name || conversation.product.description}
@@ -52,7 +61,7 @@ export function ConversationListItem({
           ) : (
             <div
               className={cn(
-                'w-12 h-12 rounded-full flex items-center justify-center text-white font-medium',
+                'w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-base',
                 active ? 'bg-blue-600' : 'bg-gray-500'
               )}
             >
@@ -64,45 +73,41 @@ export function ConversationListItem({
         {/* Content */}
         <div className="flex-1 min-w-0">
           {/* Header: Name + Timestamp */}
-          <div className="flex items-start justify-between mb-1">
-            <h3 className="font-semibold text-[15px] text-gray-900 truncate pr-2">
+          <div className="flex items-center justify-between gap-2 mb-0.5">
+            <h3 className={cn(
+              'text-[15px] text-gray-900 truncate',
+              hasUnread ? 'font-semibold' : 'font-medium'
+            )}>
               {displayName}
             </h3>
-            <span className="text-xs text-gray-500 flex-shrink-0">
+            <span className={cn(
+              'text-xs flex-shrink-0',
+              hasUnread ? 'text-blue-600 font-medium' : 'text-gray-500'
+            )}>
               {formatDistanceToNow(new Date(conversation.last_message_at), {
                 addSuffix: false,
               })}
             </span>
           </div>
 
-          {/* Subject/Product */}
+          {/* Product Name - if exists */}
           {conversation.product && (
-            <div className="flex items-center gap-1 text-xs text-gray-600 mb-1">
-              <Package className="h-3 w-3 flex-shrink-0" />
-              <span className="truncate">
-                {conversation.product.display_name || conversation.product.description}
-              </span>
-            </div>
+            <p className="text-xs text-gray-500 truncate mb-0.5">
+              {conversation.product.display_name || conversation.product.description}
+            </p>
           )}
 
           {/* Last Message Preview */}
           {conversation.last_message && (
-            <p className="text-sm text-gray-600 truncate">
+            <p className={cn(
+              'text-sm truncate leading-snug',
+              hasUnread ? 'text-gray-900 font-medium' : 'text-gray-500'
+            )}>
               {conversation.last_message.content}
             </p>
-          )}
-
-          {/* Unread Badge */}
-          {conversation.unread_count > 0 && (
-            <div className="mt-2">
-              <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium text-white bg-blue-500 rounded-full">
-                {conversation.unread_count} unread
-              </span>
-            </div>
           )}
         </div>
       </div>
     </button>
   );
 }
-

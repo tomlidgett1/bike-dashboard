@@ -2,6 +2,7 @@
 // OFFER CARD COMPONENT
 // ============================================================
 // Individual offer card for list view
+// Mobile-optimised: cleaner layout, no inline actions (tap for details)
 
 'use client';
 
@@ -9,7 +10,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import { OfferStatusBadge } from './offer-status-badge';
 import { Button } from '@/components/ui/button';
-import { Check, X, Reply, Ban, MessageCircle, ChevronRight, Loader2 } from 'lucide-react';
+import { Check, X, Reply, Ban, ChevronRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { OfferCardProps } from '@/lib/types/offer';
 import { canAcceptOffer, canRejectOffer, canCounterOffer, canCancelOffer, calculateSavings } from '@/lib/types/offer';
@@ -49,11 +50,12 @@ export function OfferCard({
   const showReject = user && canRejectOffer(offer, user.id);
   const showCounter = user && canCounterOffer(offer, user.id);
   const showCancel = user && canCancelOffer(offer, user.id);
+  const hasActions = showAccept || showReject || showCounter || showCancel;
 
   return (
     <div
       className={cn(
-        'bg-white border border-gray-200 rounded-md hover:shadow-md transition-all cursor-pointer',
+        'bg-white border border-gray-200 rounded-md hover:shadow-md active:bg-gray-50 transition-all cursor-pointer',
         compact ? 'p-3' : 'p-4'
       )}
       onClick={() => onViewDetails?.(offer.id)}
@@ -63,7 +65,7 @@ export function OfferCard({
         {productImage && !imageError ? (
           <div className={cn(
             'relative rounded-md overflow-hidden bg-gray-100 flex-shrink-0',
-            compact ? 'h-16 w-16' : 'h-20 w-20'
+            compact ? 'h-14 w-14' : 'h-16 w-16 md:h-20 md:w-20'
           )}>
             <Image
               src={productImage}
@@ -76,7 +78,7 @@ export function OfferCard({
         ) : (
           <div className={cn(
             'relative rounded-md overflow-hidden bg-gray-100 flex-shrink-0 flex items-center justify-center',
-            compact ? 'h-16 w-16' : 'h-20 w-20'
+            compact ? 'h-14 w-14' : 'h-16 w-16 md:h-20 md:w-20'
           )}>
             <span className="text-gray-400 text-xs">No Image</span>
           </div>
@@ -84,23 +86,39 @@ export function OfferCard({
 
         {/* Offer Details */}
         <div className="flex-1 min-w-0">
+          {/* Header Row: Product Name + Chevron */}
           <div className="flex items-start justify-between gap-2 mb-1">
             <h3 className={cn(
-              'font-semibold text-gray-900 truncate',
-              compact ? 'text-sm' : 'text-base'
+              'font-semibold text-gray-900 truncate leading-tight',
+              compact ? 'text-sm' : 'text-[15px]'
             )}>
               {productName}
             </h3>
-            <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
+            <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0 mt-0.5" />
           </div>
 
-          <p className="text-xs text-gray-600 mb-2">
-            {role === 'buyer' ? 'To:' : 'From:'} {otherPartyName}
+          {/* Seller/Buyer Info */}
+          <p className="text-xs text-gray-500 mb-2">
+            {role === 'buyer' ? 'To' : 'From'} {otherPartyName}
           </p>
 
-          <OfferStatusBadge status={offer.status} expiresAt={offer.expires_at} />
+          {/* Status Badge + Price Row */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <OfferStatusBadge status={offer.status} expiresAt={offer.expires_at} />
+            
+            {/* Simplified Price Display - Mobile */}
+            <div className="flex items-baseline gap-2 md:hidden">
+              <span className="text-xs text-gray-400 line-through">
+                ${offer.original_price.toLocaleString('en-AU')}
+              </span>
+              <span className="text-base font-bold text-gray-900">
+                ${offer.offer_amount.toLocaleString('en-AU')}
+              </span>
+            </div>
+          </div>
 
-          <div className={cn('mt-3 space-y-1', compact ? 'text-xs' : 'text-sm')}>
+          {/* Detailed Price Display - Desktop only */}
+          <div className={cn('hidden md:block mt-3 space-y-1', compact ? 'text-xs' : 'text-sm')}>
             <div className="flex justify-between">
               <span className="text-gray-600">Original:</span>
               <span className="text-gray-900 line-through">
@@ -121,9 +139,9 @@ export function OfferCard({
             </div>
           </div>
 
-          {/* Action Buttons */}
-          {!compact && (showAccept || showReject || showCounter || showCancel) && (
-            <div className="flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
+          {/* Action Buttons - Desktop only (Mobile: tap card for detail view) */}
+          {!compact && hasActions && (
+            <div className="hidden md:flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
               {showAccept && (
                 <Button
                   size="sm"
@@ -212,8 +230,9 @@ export function OfferCard({
         </div>
       </div>
 
+      {/* Message Preview - Desktop only */}
       {offer.message && !compact && (
-        <div className="mt-3 pt-3 border-t border-gray-100">
+        <div className="hidden md:block mt-3 pt-3 border-t border-gray-100">
           <p className="text-xs text-gray-600 italic line-clamp-2">
             "{offer.message}"
           </p>
@@ -222,4 +241,3 @@ export function OfferCard({
     </div>
   );
 }
-

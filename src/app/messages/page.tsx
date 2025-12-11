@@ -359,109 +359,140 @@ function MessagesPageInner() {
             (showConversationOnMobile || showOfferDetailOnMobile) && 'hidden md:flex'
           )}
         >
-          {/* Header */}
-          <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
-            {/* Mobile: Back to Marketplace Button */}
-            <div className="lg:hidden mb-3">
-              <button
-                onClick={handleBackToMarketplace}
-                className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back to Marketplace
-              </button>
+          {/* Mobile Header - Compact Design */}
+          <div className="border-b border-gray-200 flex-shrink-0">
+            {/* Top Row: Back button + Title + Filter */}
+            <div className="px-4 pt-3 pb-2 lg:pt-4">
+              <div className="flex items-center gap-3 mb-3">
+                {/* Back to Marketplace - Mobile only */}
+                <button
+                  onClick={handleBackToMarketplace}
+                  className="lg:hidden p-2 -ml-2 hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors"
+                  aria-label="Back to Marketplace"
+                >
+                  <ArrowLeft className="h-5 w-5 text-gray-700" />
+                </button>
+                <h1 className="text-lg font-semibold text-gray-900 flex-1">Inbox</h1>
+                
+                {/* Sub-filter dropdown indicator - Mobile */}
+                <div className="lg:hidden">
+                  {activeTab === 'messages' ? (
+                    <button
+                      onClick={() => setShowArchived(!showArchived)}
+                      className={cn(
+                        'px-3 py-1.5 text-xs font-medium rounded-md border transition-colors',
+                        showArchived 
+                          ? 'bg-gray-100 border-gray-300 text-gray-700' 
+                          : 'bg-white border-gray-200 text-gray-600'
+                      )}
+                    >
+                      {showArchived ? 'Archived' : 'Active'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setOfferRole(offerRole === 'buyer' ? 'seller' : 'buyer')}
+                      className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-white text-gray-600 transition-colors"
+                    >
+                      {offerRole === 'buyer' ? 'Sent' : 'Received'}
+                    </button>
+                  )}
+                </div>
+              </div>
+              
+              {/* Main Tab Navigation - Full width on mobile */}
+              <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-full md:w-fit">
+                <button
+                  onClick={() => handleTabChange('messages')}
+                  className={cn(
+                    'flex-1 md:flex-none flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-colors relative',
+                    activeTab === 'messages'
+                      ? 'text-gray-800 bg-white shadow-sm'
+                      : 'text-gray-600 hover:bg-gray-200/70'
+                  )}
+                >
+                  <MessageCircle size={16} />
+                  Messages
+                  {unreadCounts.messages > 0 && (
+                    <span className="ml-1 h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+                      {unreadCounts.messages > 99 ? '99+' : unreadCounts.messages}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => handleTabChange('offers')}
+                  className={cn(
+                    'flex-1 md:flex-none flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-colors relative',
+                    activeTab === 'offers'
+                      ? 'text-gray-800 bg-white shadow-sm'
+                      : 'text-gray-600 hover:bg-gray-200/70'
+                  )}
+                >
+                  <Tag size={16} />
+                  Offers
+                  {unreadCounts.offers > 0 && (
+                    <span className="ml-1 h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+                      {unreadCounts.offers > 99 ? '99+' : unreadCounts.offers}
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
-          {/* Main Tab Navigation */}
-          <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit mb-3">
-            <button
-              onClick={() => handleTabChange('messages')}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors relative',
-                activeTab === 'messages'
-                  ? 'text-gray-800 bg-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-200/70'
+            
+            {/* Desktop Sub Tabs - Hidden on mobile (moved to top row filter) */}
+            <div className="hidden lg:flex px-4 pb-3">
+              {activeTab === 'messages' ? (
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                  <button
+                    onClick={() => setShowArchived(false)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                      !showArchived
+                        ? 'text-gray-800 bg-white shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-200/70'
+                    )}
+                  >
+                    Active
+                  </button>
+                  <button
+                    onClick={() => setShowArchived(true)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                      showArchived
+                        ? 'text-gray-800 bg-white shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-200/70'
+                    )}
+                  >
+                    Archived
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                  <button
+                    onClick={() => setOfferRole('buyer')}
+                    className={cn(
+                      'flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors',
+                      offerRole === 'buyer'
+                        ? 'text-gray-800 bg-white shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-200/70'
+                    )}
+                  >
+                    Sent
+                  </button>
+                  <button
+                    onClick={() => setOfferRole('seller')}
+                    className={cn(
+                      'flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors',
+                      offerRole === 'seller'
+                        ? 'text-gray-800 bg-white shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-200/70'
+                    )}
+                  >
+                    Received
+                  </button>
+                </div>
               )}
-            >
-              <MessageCircle size={15} />
-              Messages
-              {unreadCounts.messages > 0 && (
-                <span className="ml-1 h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-                  {unreadCounts.messages > 99 ? '99+' : unreadCounts.messages}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => handleTabChange('offers')}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors relative',
-                activeTab === 'offers'
-                  ? 'text-gray-800 bg-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-200/70'
-              )}
-            >
-              <Tag size={15} />
-              Offers
-              {unreadCounts.offers > 0 && (
-                <span className="ml-1 h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-                  {unreadCounts.offers > 99 ? '99+' : unreadCounts.offers}
-                </span>
-              )}
-            </button>
+            </div>
           </div>
-          
-          {/* Sub Tabs - Different per main tab */}
-          {activeTab === 'messages' ? (
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-              <button
-                onClick={() => setShowArchived(false)}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-                  !showArchived
-                    ? 'text-gray-800 bg-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-200/70'
-                )}
-              >
-                Active
-              </button>
-              <button
-                onClick={() => setShowArchived(true)}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-                  showArchived
-                    ? 'text-gray-800 bg-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-200/70'
-                )}
-              >
-                Archived
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-              <button
-                onClick={() => setOfferRole('buyer')}
-                className={cn(
-                  'flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors',
-                  offerRole === 'buyer'
-                    ? 'text-gray-800 bg-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-200/70'
-                )}
-              >
-                Sent
-              </button>
-              <button
-                onClick={() => setOfferRole('seller')}
-                className={cn(
-                  'flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors',
-                  offerRole === 'seller'
-                    ? 'text-gray-800 bg-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-200/70'
-                )}
-              >
-                Received
-              </button>
-            </div>
-          )}
-        </div>
 
         {/* Content - Either Conversations or Offers */}
         <div className="flex-1 overflow-y-auto">
@@ -472,10 +503,17 @@ function MessagesPageInner() {
                 <div className="h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : conversations.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-500 px-4 py-12">
-                <MessageCircle className="h-12 w-12 mb-4 text-gray-400" />
-                <p className="text-sm text-center">
-                  {showArchived ? 'No archived conversations' : 'No conversations yet'}
+              <div className="flex flex-col items-center justify-center h-full text-gray-500 px-6 py-16">
+                <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center mb-5">
+                  <MessageCircle className="h-10 w-10 text-gray-400" />
+                </div>
+                <p className="text-base font-medium text-gray-900 text-center mb-1">
+                  {showArchived ? 'No archived messages' : 'No messages yet'}
+                </p>
+                <p className="text-sm text-gray-500 text-center max-w-[240px]">
+                  {showArchived 
+                    ? 'Messages you archive will appear here' 
+                    : 'Start a conversation by contacting a seller on the marketplace'}
                 </p>
               </div>
             ) : (
