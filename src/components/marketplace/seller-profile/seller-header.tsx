@@ -146,13 +146,13 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
                 {/* Name and Location */}
                 <div className="min-w-0">
-                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1 truncate">
+                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">
                     {seller.display_name}
                   </h1>
                   {seller.location && (
-                    <div className="flex items-center gap-1.5 text-gray-500">
-                      <MapPin className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
-                      <span className="text-xs sm:text-sm truncate">{seller.location}</span>
+                    <div className="flex items-center gap-1.5 text-gray-600 mt-1">
+                      <MapPin className="h-4 w-4 flex-shrink-0" />
+                      <span className="text-sm font-medium truncate">{seller.location}</span>
                     </div>
                   )}
                 </div>
