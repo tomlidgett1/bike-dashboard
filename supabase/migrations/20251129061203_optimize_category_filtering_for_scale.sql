@@ -156,3 +156,4 @@ COMMENT ON MATERIALIZED VIEW marketplace_category_counts IS
 
 
 
+

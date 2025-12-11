@@ -369,7 +369,7 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
             Analysing your products...
           </h3>
           <p className="text-sm text-gray-600">
-            AI is extracting details from {groups.length} product{groups.length !== 1 ? 's' : ''}
+            Yellow Jersey is extracting details from {groups.length} product{groups.length !== 1 ? 's' : ''}
           </p>
         </div>
       </div>

@@ -262,6 +262,9 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                             productId={product.id}
                             productName={(product as any).display_name || product.description}
                             sellerId={product.user_id}
+                            sellerName={product.store_name}
+                            productImage={product.all_images?.[0] || product.primary_image_url || null}
+                            productPrice={product.price}
                             variant="default"
                             fullWidth
                             className="bg-gray-900 hover:bg-gray-800 text-white rounded-md h-11"

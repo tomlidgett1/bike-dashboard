@@ -169,13 +169,14 @@ export function useCreateOffer() {
         body: JSON.stringify(request),
       });
 
-      const data: CreateOfferResponse = await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to create offer');
+        // API returns { error: '...' } for errors
+        throw new Error(data.error || data.message || 'Failed to create offer');
       }
 
-      return data.offer;
+      return (data as CreateOfferResponse).offer;
     } catch (err) {
       console.error('Error creating offer:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to create offer';

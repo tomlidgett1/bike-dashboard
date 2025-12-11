@@ -36,8 +36,57 @@ export async function GET(
 
 // ============================================================
 // PUT /api/marketplace/listings/[id]
-// Update a listing
+// Update a listing with change logging
 // ============================================================
+
+// Field mapping from request body keys to database column names
+const FIELD_MAPPING: Record<string, string> = {
+  listingStatus: "listing_status",
+  title: "description",
+  conditionDetails: "condition_details",
+  price: "price",
+  marketplace_subcategory: "marketplace_subcategory",
+  frameSize: "frame_size",
+  frameMaterial: "frame_material",
+  bikeType: "bike_type",
+  groupset: "groupset",
+  wheelSize: "wheel_size",
+  suspensionType: "suspension_type",
+  bikeWeight: "bike_weight",
+  colorPrimary: "color_primary",
+  colorSecondary: "color_secondary",
+  partTypeDetail: "part_type_detail",
+  compatibilityNotes: "compatibility_notes",
+  material: "material",
+  weight: "weight",
+  size: "size",
+  genderFit: "gender_fit",
+  apparelMaterial: "apparel_material",
+  conditionRating: "condition_rating",
+  wearNotes: "wear_notes",
+  usageEstimate: "usage_estimate",
+  purchaseLocation: "purchase_location",
+  purchaseDate: "purchase_date",
+  serviceHistory: "service_history",
+  upgradesModifications: "upgrades_modifications",
+  reasonForSelling: "reason_for_selling",
+  isNegotiable: "is_negotiable",
+  shippingAvailable: "shipping_available",
+  shippingCost: "shipping_cost",
+  pickupLocation: "pickup_location",
+  includedAccessories: "included_accessories",
+  sellerContactPreference: "seller_contact_preference",
+  sellerPhone: "seller_phone",
+  sellerEmail: "seller_email",
+  images: "images",
+  primaryImageUrl: "primary_image_url",
+  publishedAt: "published_at",
+  expiresAt: "expires_at",
+  brand: "brand",
+  model: "model",
+  modelYear: "model_year",
+  displayName: "display_name",
+};
 
 export async function PUT(
   request: NextRequest,
@@ -57,10 +106,10 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Verify ownership
+    // Fetch full existing product for change comparison
     const { data: existing, error: fetchError } = await supabase
       .from("products")
-      .select("user_id")
+      .select("*")
       .eq("id", id)
       .single();
 
@@ -73,6 +122,7 @@ export async function PUT(
     }
 
     const body = await request.json();
+    const logChanges = body.logChanges !== false; // Default to true
 
     // Build update data - only include fields that are provided
     const updateData: Record<string, any> = {};
@@ -87,7 +137,11 @@ export async function PUT(
     if (body.title !== undefined || body.conditionDetails !== undefined) {
       updateData.description = body.conditionDetails || body.title;
     }
+    if (body.displayName !== undefined) updateData.display_name = body.displayName;
     if (body.price !== undefined) updateData.price = body.price;
+    if (body.brand !== undefined) updateData.brand = body.brand;
+    if (body.model !== undefined) updateData.model = body.model;
+    if (body.modelYear !== undefined) updateData.model_year = body.modelYear;
     if (body.itemType !== undefined) {
       updateData.marketplace_category =
         body.itemType === "bike"
@@ -140,6 +194,7 @@ export async function PUT(
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
+    // Perform the update
     const { data: listing, error } = await supabase
       .from("products")
       .update(updateData)
@@ -150,6 +205,48 @@ export async function PUT(
     if (error) {
       console.error("Error updating listing:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Log changes if enabled
+    if (logChanges) {
+      const changeLogs: Array<{
+        listing_id: string;
+        user_id: string;
+        field_name: string;
+        old_value: any;
+        new_value: any;
+      }> = [];
+
+      // Compare old vs new values for each updated field
+      for (const [dbField, newValue] of Object.entries(updateData)) {
+        const oldValue = existing[dbField];
+        
+        // Only log if the value actually changed
+        const oldJson = JSON.stringify(oldValue);
+        const newJson = JSON.stringify(newValue);
+        
+        if (oldJson !== newJson) {
+          changeLogs.push({
+            listing_id: id,
+            user_id: user.id,
+            field_name: dbField,
+            old_value: oldValue,
+            new_value: newValue,
+          });
+        }
+      }
+
+      // Insert change logs if there are any
+      if (changeLogs.length > 0) {
+        const { error: logError } = await supabase
+          .from("listing_edit_logs")
+          .insert(changeLogs);
+
+        if (logError) {
+          // Don't fail the request, just log the error
+          console.error("Error inserting edit logs:", logError);
+        }
+      }
     }
 
     return NextResponse.json({ listing });

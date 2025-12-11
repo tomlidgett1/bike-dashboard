@@ -15,3 +15,4 @@ WHERE gallery_url IS NOT NULL;
 -- Comment on column for documentation
 COMMENT ON COLUMN product_images.gallery_url IS 'Cloudinary 1200px landscape image (4:3 aspect, padded) for product detail page galleries - preserves full product without cropping';
 
+

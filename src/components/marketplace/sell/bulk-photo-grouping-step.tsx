@@ -226,7 +226,7 @@ export function BulkPhotoGroupingStep({ photos, onComplete, onBack }: BulkPhotoG
             Grouping your photos...
           </h3>
           <p className={cn("text-gray-500", isMobile ? "text-sm" : "text-base")}>
-            AI is detecting products
+            Yellow Jersey is detecting products
           </p>
         </div>
       </div>

@@ -75,3 +75,4 @@ BEGIN
   RAISE NOTICE 'Backfill complete! Synced % canonical products', sync_count;
 END $$;
 
+

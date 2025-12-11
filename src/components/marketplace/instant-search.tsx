@@ -147,9 +147,11 @@ interface InstantSearchProps {
   mobileFullPage?: boolean;
   /** Custom placeholder text (overrides typewriter effect) */
   placeholder?: string;
+  /** Optional element to render to the left of the search input (e.g., close button) */
+  leftSlot?: React.ReactNode;
 }
 
-export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage = false, placeholder: customPlaceholder }: InstantSearchProps = {}) {
+export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage = false, placeholder: customPlaceholder, leftSlot }: InstantSearchProps = {}) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResults | null>(null);
@@ -171,10 +173,13 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
   // Auto-focus input when prop is set
   React.useEffect(() => {
     if (autoFocus && inputRef.current) {
-      // Small delay to ensure the element is visible after animations
+      // Focus immediately for mobile keyboard responsiveness
+      inputRef.current.focus();
+      
+      // Also try again after a small delay to ensure visibility after animations
       const timer = setTimeout(() => {
         inputRef.current?.focus();
-      }, 100);
+      }, 50);
       return () => clearTimeout(timer);
     }
   }, [autoFocus]);
@@ -589,12 +594,12 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
     <>
       {loading && !results ? (
         // Minimal loading state - appears instantly while searching
-        <div className="p-6 text-center">
+        <div className={cn("text-center", mobileFullPage ? "py-12" : "p-6")}>
           <Loader2 className="h-6 w-6 animate-spin text-gray-400 mx-auto" />
         </div>
       ) : !hasResults && !aiResponse && !aiLoading ? (
         // No results state - only shows when ALL loading is complete
-        <div className="p-8 text-center">
+        <div className={cn("text-center", mobileFullPage ? "py-16" : "p-8")}>
           <Search className="h-8 w-8 text-gray-300 mx-auto mb-3" />
           <p className="text-sm font-medium text-gray-900 mb-1">No results found</p>
           <p className="text-xs text-gray-500">Try a different search term</p>
@@ -608,50 +613,61 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
 
           {/* AI Response Section */}
           {aiResponse && !aiLoading && (
-            <div className="border-b border-gray-200">
+            <div className={cn(mobileFullPage ? "border-b border-gray-100" : "border-b border-gray-200")}>
               <AISearchResponseDisplay response={aiResponse.response} />
             </div>
           )}
 
           {/* AI Search CTA Button */}
           {showAiButton && !aiLoading && !aiResponse && (results?.products || results?.stores) && (
-            <div className={cn("border-t border-gray-100 py-2 bg-gray-50", mobileFullPage ? "px-3" : "px-4")}>
+            <div className={cn(
+              "py-2",
+              mobileFullPage ? "px-3 bg-white" : "px-4 border-t border-gray-100 bg-gray-50"
+            )}>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   triggerAiSearch();
                 }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-white rounded-md transition-all duration-200 group border border-transparent hover:border-gray-200"
+                className={cn(
+                  "w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-all duration-200 group",
+                  mobileFullPage 
+                    ? "text-gray-700 active:bg-gray-100 rounded-lg bg-gray-50" 
+                    : "text-gray-600 hover:text-gray-900 hover:bg-white rounded-md border border-transparent hover:border-gray-200"
+                )}
               >
-                <Sparkles className="h-3.5 w-3.5 text-gray-400 group-hover:text-[#FFC72C] transition-colors" />
-                <span className="font-medium">
-                  Ask Cycling Expert
-                </span>
-                <ArrowRight className="h-3.5 w-3.5 ml-auto text-gray-400 group-hover:text-gray-600 transition-colors" />
+                <Sparkles className="h-4 w-4 text-[#FFC72C]" />
+                <span className="font-medium">Ask Cycling Expert</span>
+                <ArrowRight className="h-4 w-4 ml-auto text-gray-400" />
               </button>
             </div>
           )}
 
           {/* Products Section */}
           {results?.products && results.products.length > 0 && (
-            <div className="border-b border-gray-100">
-              <div className={cn("py-2 bg-gray-50", mobileFullPage ? "px-3" : "px-4")}>
-                <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                  <Package className="h-3.5 w-3.5" />
-                  Products
-                </div>
+            <div className={cn(mobileFullPage ? "" : "border-b border-gray-100")}>
+              {/* Section Header */}
+              <div className={cn(
+                "py-2 flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide",
+                mobileFullPage ? "px-3 pt-2" : "px-4 bg-gray-50"
+              )}>
+                <Package className="h-3.5 w-3.5" />
+                Products
               </div>
-              <div className="py-1">
+              {/* Product List */}
+              <div className={cn(mobileFullPage ? "" : "py-1")}>
                 {results.products.map((product, index) => (
                   <button
                     key={product.id}
                     onClick={() => handleSelectItem(index)}
                     className={cn(
-                      "w-full flex items-center gap-3 py-3 transition-colors text-left",
-                      mobileFullPage ? "px-3" : "px-4",
-                      selectedIndex === index
-                        ? "bg-gray-100"
-                        : "hover:bg-gray-50"
+                      "w-full flex items-center gap-3 transition-colors text-left",
+                      mobileFullPage 
+                        ? "px-3 py-3 active:bg-gray-50 border-b border-gray-100 last:border-b-0" 
+                        : cn(
+                            "px-4 py-3",
+                            selectedIndex === index ? "bg-gray-100" : "hover:bg-gray-50"
+                          )
                     )}
                   >
                     {/* Product Image */}
@@ -689,23 +705,28 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
           {/* Stores Section */}
           {results?.stores && results.stores.length > 0 && (
             <div>
-              <div className={cn("py-2 bg-gray-50", mobileFullPage ? "px-3" : "px-4")}>
-                <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                  <Store className="h-3.5 w-3.5" />
-                  Stores
-                </div>
+              {/* Section Header */}
+              <div className={cn(
+                "py-2 flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide",
+                mobileFullPage ? "px-3 pt-2" : "px-4 bg-gray-50"
+              )}>
+                <Store className="h-3.5 w-3.5" />
+                Stores
               </div>
-              <div className="py-1">
+              {/* Store List */}
+              <div className={cn(mobileFullPage ? "" : "py-1")}>
                 {results.stores.map((store, index) => (
                   <button
                     key={store.id}
                     onClick={() => handleSelectItem(results.products.length + index)}
                     className={cn(
-                      "w-full flex items-center gap-3 py-3 transition-colors text-left",
-                      mobileFullPage ? "px-3" : "px-4",
-                      selectedIndex === results.products.length + index
-                        ? "bg-gray-100"
-                        : "hover:bg-gray-50"
+                      "w-full flex items-center gap-3 transition-colors text-left",
+                      mobileFullPage 
+                        ? "px-3 py-3 active:bg-gray-50 border-b border-gray-100 last:border-b-0" 
+                        : cn(
+                            "px-4 py-3",
+                            selectedIndex === results.products.length + index ? "bg-gray-100" : "hover:bg-gray-50"
+                          )
                     )}
                   >
                     {/* Store Logo */}
@@ -742,10 +763,19 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
 
           {/* View All Results */}
           {query && (
-            <div className={cn("border-t border-gray-100", mobileFullPage ? "p-2 px-3" : "p-2")}>
+            <div className={cn(
+              mobileFullPage 
+                ? "px-3 py-4 mt-2" 
+                : "border-t border-gray-100 p-2"
+            )}>
               <button
                 onClick={handleFullSearch}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                className={cn(
+                  "w-full flex items-center justify-center gap-2 text-sm font-medium transition-colors",
+                  mobileFullPage 
+                    ? "px-4 py-3 bg-gray-900 text-white rounded-lg active:bg-gray-800" 
+                    : "px-4 py-2 text-gray-700 hover:bg-gray-50 rounded-md"
+                )}
               >
                 View all results for "{query}"
                 <ArrowRight className="h-4 w-4" />
@@ -761,22 +791,32 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
   const renderRecentSearchesContent = () => (
     <>
       {/* Header */}
-      <div className={cn("py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between", mobileFullPage ? "px-3" : "px-4")}>
-        <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
+      <div className={cn(
+        "flex items-center justify-between",
+        mobileFullPage 
+          ? "px-3 pt-2 pb-1" 
+          : "py-2.5 px-4 bg-gray-50 border-b border-gray-100"
+      )}>
+        <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
           <Clock className="h-3.5 w-3.5" />
           Recent Searches
         </div>
         <button
           onClick={clearAllRecentSearches}
-          className="text-xs text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
+          className={cn(
+            "text-xs transition-colors flex items-center gap-1",
+            mobileFullPage 
+              ? "text-gray-500 active:text-gray-700" 
+              : "text-gray-500 hover:text-gray-700"
+          )}
         >
           <Trash2 className="h-3 w-3" />
-          Clear all
+          Clear
         </button>
       </div>
       
       {/* Recent Searches List */}
-      <div className="py-1">
+      <div className={cn(mobileFullPage ? "" : "py-1")}>
         {recentSearches.map((recentQuery, index) => (
           <div
             key={`${recentQuery}-${index}`}
@@ -789,7 +829,12 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
                 handleRecentSearchClick(recentQuery);
               }
             }}
-            className={cn("w-full flex items-center gap-3 py-2.5 hover:bg-gray-50 transition-colors text-left group cursor-pointer", mobileFullPage ? "px-3" : "px-4")}
+            className={cn(
+              "w-full flex items-center gap-3 transition-colors text-left cursor-pointer",
+              mobileFullPage 
+                ? "px-3 py-3 active:bg-gray-50 border-b border-gray-100 last:border-b-0" 
+                : "px-4 py-2.5 hover:bg-gray-50 group"
+            )}
           >
             <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
             <span className="flex-1 text-sm text-gray-700 truncate">
@@ -797,10 +842,15 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
             </span>
             <button
               onClick={(e) => removeRecentSearch(recentQuery, e)}
-              className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-gray-200 transition-all"
+              className={cn(
+                "p-1.5 rounded-md transition-all",
+                mobileFullPage 
+                  ? "text-gray-400 active:bg-gray-200" 
+                  : "opacity-0 group-hover:opacity-100 hover:bg-gray-200"
+              )}
               aria-label="Remove search"
             >
-              <X className="h-3 w-3 text-gray-400" />
+              <X className={cn("text-gray-400", mobileFullPage ? "h-4 w-4" : "h-3 w-3")} />
             </button>
           </div>
         ))}
@@ -810,62 +860,85 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
 
   return (
     <div className={cn("relative w-full flex flex-col", mobileFullPage ? "h-full" : "")}>
-      {/* Search Input */}
-      <div className="relative flex-shrink-0">
-        <Search className="absolute left-3 sm:left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+      {/* Search Input Row */}
+      <div className={cn(
+        "flex-shrink-0",
+        leftSlot ? "flex items-center gap-1" : "",
+        mobileFullPage ? "px-3 pt-2 pb-1" : ""
+      )}>
+        {/* Optional left slot (e.g., close button) */}
+        {leftSlot}
         
-        <Input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onFocus={() => {
-            setIsFocused(true);
-            if (mobileFullPage) {
-              // In mobile full page mode, always show content area
-              setShowDropdown(true);
-            } else if (results && query.length >= 2) {
-              setShowDropdown(true);
-            } else if (query.length < 2 && recentSearches.length > 0) {
-              // Show recent searches when focused with no query
-              setShowDropdown(true);
-            }
-          }}
-          onBlur={() => setIsFocused(false)}
-          placeholder={placeholder}
-          className="pl-10 pr-16 sm:pl-11 sm:pr-20 h-9 rounded-md border-gray-300 focus:border-gray-400 focus:ring-gray-400 text-sm bg-white"
-        />
-
-        <div className="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-          {loading && (
-            <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin text-gray-400" />
-          )}
+        {/* Search Input */}
+        <div className={cn("relative", leftSlot ? "flex-1 min-w-0" : "")}>
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" />
           
-          {query && !loading && (
-            <button
-              onClick={handleClear}
-              className="p-1 rounded-md hover:bg-gray-100 transition-colors"
-              aria-label="Clear search"
-            >
-              <X className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-gray-400" />
-            </button>
-          )}
+          <Input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => {
+              setIsFocused(true);
+              if (mobileFullPage) {
+                // In mobile full page mode, always show content area
+                setShowDropdown(true);
+              } else if (results && query.length >= 2) {
+                setShowDropdown(true);
+              } else if (query.length < 2 && recentSearches.length > 0) {
+                // Show recent searches when focused with no query
+                setShowDropdown(true);
+              }
+            }}
+            onBlur={() => setIsFocused(false)}
+            placeholder={placeholder}
+            className={cn(
+              "text-sm",
+              mobileFullPage 
+                ? "h-10 pl-10 pr-10 rounded-lg border-0 bg-gray-100 focus:ring-2 focus:ring-gray-200 placeholder:text-gray-500" 
+                : "h-9 pl-10 pr-16 sm:pl-11 sm:pr-20 rounded-md border-gray-300 focus:border-gray-400 focus:ring-gray-400 bg-white"
+            )}
+          />
 
-          <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
-            <span className="text-xs">⌘</span>K
-          </kbd>
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            {loading && (
+              <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+            )}
+            
+            {query && !loading && (
+              <button
+                onClick={handleClear}
+                className="p-1 rounded-md active:bg-gray-200 transition-colors"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4 text-gray-500" />
+              </button>
+            )}
+
+            {!mobileFullPage && (
+              <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                <span className="text-xs">⌘</span>K
+              </kbd>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Mobile Full Page Mode - Render inline */}
+      {/* Mobile Full Page Mode - Render inline (edge-to-edge) */}
       {mobileFullPage && (
         <div className="flex-1 overflow-y-auto bg-white mt-2">
           {query.length < 2 && recentSearches.length > 0 ? (
             renderRecentSearchesContent()
           ) : query.length >= 2 ? (
             renderResultsContent()
-          ) : null}
+          ) : (
+            // Empty state when no query and no recent searches
+            <div className="py-20 text-center px-4">
+              <Search className="h-12 w-12 text-gray-200 mx-auto mb-3" />
+              <p className="text-sm text-gray-400">Search for bikes, parts, apparel...</p>
+            </div>
+          )}
         </div>
       )}
 

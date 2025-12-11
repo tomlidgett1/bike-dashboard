@@ -13,6 +13,7 @@ import {
   Edit,
   Instagram,
   ShieldCheck,
+  Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -277,6 +278,18 @@ export function MobileSidebar() {
             </span>
           </SheetTitle>
         </SheetHeader>
+
+        {/* Sell Item Button */}
+        <div className="px-3 py-3 border-b border-sidebar-border">
+          <Link
+            href="/marketplace/sell"
+            onClick={() => setOpen(false)}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-[#FFC72C] hover:bg-[#E6B328] px-4 py-2.5 text-sm font-medium text-gray-900 transition-colors"
+          >
+            <Tag className="h-4 w-4" />
+            Sell Item
+          </Link>
+        </div>
 
         <ScrollArea className="flex-1 px-3 py-4">
           <nav className="flex flex-col gap-1">

@@ -3,27 +3,48 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { MapPin, Heart, Share2, Tag, User, Package, Store, Sparkles } from "lucide-react";
+import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
 import { ProductLearnPanel } from "./product-learn-panel";
+import { EditProductDrawer } from "./edit-product-drawer";
+import { useAuth } from "@/components/providers/auth-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
 
 // ============================================================
 // Simple Product Details Panel - Facebook Marketplace Style
 // Clean, minimal design optimized for mobile
+// Shows "Edit" button instead of offer/message for product owners
 // ============================================================
 
 interface ProductDetailsPanelSimpleProps {
   product: MarketplaceProduct;
+  onProductUpdate?: (updatedProduct: MarketplaceProduct) => void;
 }
 
-export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimpleProps) {
+export function ProductDetailsPanelSimple({ product: initialProduct, onProductUpdate }: ProductDetailsPanelSimpleProps) {
+  const { user } = useAuth();
+  const [product, setProduct] = React.useState(initialProduct);
   const [isLiked, setIsLiked] = React.useState(false);
   const [logoError, setLogoError] = React.useState(false);
   const [isLearnOpen, setIsLearnOpen] = React.useState(false);
+  const [isEditOpen, setIsEditOpen] = React.useState(false);
+
+  // Check if current user owns this product
+  const isOwner = user?.id === product.user_id;
+
+  // Sync product state with prop
+  React.useEffect(() => {
+    setProduct(initialProduct);
+  }, [initialProduct]);
+
+  // Handle product update from edit drawer
+  const handleProductUpdate = (updatedProduct: MarketplaceProduct) => {
+    setProduct(updatedProduct);
+    onProductUpdate?.(updatedProduct);
+  };
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -62,33 +83,49 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
         )}
       </div>
 
-      {/* Action Buttons - Make Offer & Send Message */}
+      {/* Action Buttons - Edit for owners, Make Offer & Send Message for others */}
       <div className="px-4 pb-4">
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <MakeOfferButton
-              productId={product.id}
-              productName={(product as any).display_name || product.description}
-              productPrice={product.price}
-              sellerId={product.user_id}
-              productImage={product.all_images?.[0] || null}
-              variant="outline"
-              size="lg"
-              fullWidth
-              className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-            />
+        {isOwner ? (
+          /* Owner View: Edit Button */
+          <Button
+            onClick={() => setIsEditOpen(true)}
+            size="lg"
+            className="w-full h-12 rounded-md text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white"
+          >
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit Listing
+          </Button>
+        ) : (
+          /* Buyer View: Make Offer & Send Message */
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <MakeOfferButton
+                productId={product.id}
+                productName={(product as any).display_name || product.description}
+                productPrice={product.price}
+                sellerId={product.user_id}
+                productImage={product.all_images?.[0] || null}
+                variant="outline"
+                size="lg"
+                fullWidth
+                className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+              />
+            </div>
+            <div className="flex-1">
+              <ProductInquiryButton
+                productId={product.id}
+                productName={(product as any).display_name || product.description}
+                sellerId={product.user_id}
+                sellerName={product.store_name}
+                productImage={product.all_images?.[0] || product.primary_image_url || null}
+                productPrice={product.price}
+                size="lg"
+                fullWidth
+                className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+              />
+            </div>
           </div>
-          <div className="flex-1">
-            <ProductInquiryButton
-              productId={product.id}
-              productName={(product as any).display_name || product.description}
-              sellerId={product.user_id}
-              size="lg"
-              fullWidth
-              className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-            />
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Secondary Actions - Share, Save, Visit Store, Learn */}
@@ -317,6 +354,16 @@ export function ProductDetailsPanelSimple({ product }: ProductDetailsPanelSimple
         isOpen={isLearnOpen}
         onClose={() => setIsLearnOpen(false)}
       />
+
+      {/* Edit Product Drawer - Only for owners */}
+      {isOwner && (
+        <EditProductDrawer
+          product={product}
+          isOpen={isEditOpen}
+          onClose={() => setIsEditOpen(false)}
+          onUpdate={handleProductUpdate}
+        />
+      )}
     </div>
   );
 }

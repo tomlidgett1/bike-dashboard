@@ -90,14 +90,13 @@ export function MobileUploadMethodDialog({
                 whileTap={{ scale: 0.98 }}
                 className="w-full"
               >
-                <div className="bg-white border-2 border-[#FFC72C] rounded-xl p-4">
+                <div className="bg-white border border-gray-300 rounded-xl p-4">
                   <div className="flex items-center gap-4">
                     <div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <Image 
-                        src="/icons/noun-bicycle-753190.png" 
+                      <img 
+                        src="/icons/noun-fast-4767027.svg" 
                         alt="Quick Upload" 
-                        width={28} 
-                        height={28}
+                        className="w-7 h-7"
                       />
                     </div>
                     <div className="flex-1 min-w-0 text-left">

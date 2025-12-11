@@ -77,7 +77,7 @@ export function OfferDetailCard({
   const isAnyLoading = accepting || rejecting || countering || cancelling;
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="flex-1 flex flex-col bg-gray-50 min-h-0">
       {/* Scrollable Content */}
       <div className={cn(
         "flex-1 overflow-y-auto",

@@ -243,7 +243,7 @@ export function FacebookImportModal({ isOpen, onClose, onComplete }: FacebookImp
                         setFacebookUrl(e.target.value);
                         setError(null);
                       }}
-                      className="rounded-xl h-12 text-base border-gray-200"
+                      className="rounded-xl h-12 text-base border-gray-200 focus-visible:ring-0 focus-visible:outline-none focus:outline-none"
                       autoFocus
                     />
                     {error && (

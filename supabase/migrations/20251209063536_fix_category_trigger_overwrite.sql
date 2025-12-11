@@ -31,3 +31,4 @@ $$ LANGUAGE plpgsql;
 -- Comment explaining the fix
 COMMENT ON FUNCTION sync_categories_from_canonical() IS 'Syncs categories from canonical_products to products, but preserves product categories if canonical has NULL (for manual listings)';
 
+

@@ -7,7 +7,21 @@ export type ConversationStatus = 'active' | 'archived' | 'closed';
 export type ParticipantRole = 'buyer' | 'seller' | 'participant';
 export type NotificationPreference = 'all' | 'none';
 export type MessageType = 'user' | 'system';
-export type NotificationType = 'new_message' | 'new_conversation';
+export type NotificationType = 
+  | 'new_message' 
+  | 'new_conversation'
+  | 'offer_received'
+  | 'offer_accepted'
+  | 'offer_rejected'
+  | 'offer_countered'
+  | 'offer_expired'
+  | 'purchase_complete'
+  | 'listing_sold';
+
+export type NotificationCategory = 'message' | 'offer' | 'transaction' | 'system';
+export type NotificationPriority = 'critical' | 'high' | 'normal' | 'low';
+export type EmailDeliveryStatus = 'pending' | 'scheduled' | 'sent' | 'skipped' | 'failed';
+export type EmailFrequency = 'instant' | 'smart' | 'digest' | 'critical_only';
 
 // ============================================================
 // DATABASE ENTITIES
@@ -66,11 +80,29 @@ export interface Notification {
   type: NotificationType;
   conversation_id: string;
   message_id: string | null;
+  offer_id: string | null;
+  notification_category: NotificationCategory;
+  priority: NotificationPriority;
   is_read: boolean;
   is_emailed: boolean;
   email_sent_at: string | null;
+  email_scheduled_for: string | null;
+  email_delivery_status: EmailDeliveryStatus;
+  batch_key: string | null;
   created_at: string;
   read_at: string | null;
+}
+
+export interface NotificationPreferences {
+  id: string;
+  user_id: string;
+  email_enabled: boolean;
+  email_frequency: EmailFrequency;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // ============================================================

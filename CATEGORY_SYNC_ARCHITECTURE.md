@@ -198,3 +198,4 @@ Added columns to `products` table:
 
 
 
+

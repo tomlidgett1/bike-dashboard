@@ -114,3 +114,4 @@ COMMENT ON COLUMN products.size IS 'Size for apparel/parts (e.g., XS, S, M, L, X
 COMMENT ON COLUMN products.gender_fit IS 'Gender fit for apparel (e.g., Men''s, Women''s, Unisex)';
 COMMENT ON COLUMN products.apparel_material IS 'Material composition for apparel (e.g., Merino Wool, Polyester, Gore-Tex)';
 
+

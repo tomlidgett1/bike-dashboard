@@ -606,13 +606,13 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
               className="fixed top-0 left-0 bottom-0 w-[300px] bg-white z-[101] lg:hidden flex flex-col shadow-2xl"
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-4 h-14 border-b border-gray-200 flex-shrink-0">
+              <div className="flex items-center justify-between pl-0 pr-4 h-16 border-b border-gray-200 flex-shrink-0">
                 <Image 
                   src="/yj.svg" 
                   alt="Yellow Jersey" 
-                  width={140} 
-                  height={28}
-                  className="h-7"
+                  width={280} 
+                  height={56}
+                  className="h-20 w-auto ml-4"
                 />
                 <button
                   onClick={() => setMobileMenuOpen(false)}
@@ -649,6 +649,24 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                   </div>
                 </div>
               )}
+
+              {/* Sell Item Button */}
+              <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    if (user) {
+                      setSmartUploadModalOpen(true);
+                    } else {
+                      setSellRequirementModalOpen(true);
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 rounded-md bg-[#FFC72C] hover:bg-[#E6B328] px-4 py-2.5 text-sm font-medium text-gray-900 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  Sell Item
+                </button>
+              </div>
 
               {/* Navigation - Scrollable */}
               <div className="flex-1 overflow-y-auto">
@@ -980,27 +998,23 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[102] bg-white sm:hidden flex flex-col overflow-hidden"
+            className="fixed inset-0 z-[102] bg-white sm:hidden flex flex-col"
           >
-            {/* Search Header */}
-            <div className="flex items-center gap-2 px-3 py-3 border-b border-gray-200 flex-shrink-0">
-              {/* Back/Close button */}
-              <button
-                onClick={() => setMobileSearchOpen(false)}
-                className="p-2 -ml-1 rounded-full hover:bg-gray-100 transition-colors flex-shrink-0"
-                aria-label="Close search"
-              >
-                <X className="h-5 w-5 text-gray-700 stroke-[1.5]" />
-              </button>
-              <span className="text-sm font-medium text-gray-900">Search</span>
-            </div>
-            
-            {/* Search input and results - full page mode */}
-            <div className="flex-1 flex flex-col min-h-0 px-3 py-3 overflow-hidden">
+            {/* Full-height search with close button */}
+            <div className="flex-1 flex flex-col min-h-0">
               <InstantSearch 
                 autoFocus 
                 onResultClick={() => setMobileSearchOpen(false)} 
-                mobileFullPage 
+                mobileFullPage
+                leftSlot={
+                  <button
+                    onClick={() => setMobileSearchOpen(false)}
+                    className="p-2 rounded-md active:bg-gray-100 transition-colors flex-shrink-0"
+                    aria-label="Close search"
+                  >
+                    <X className="h-5 w-5 text-gray-500" />
+                  </button>
+                }
               />
             </div>
           </motion.div>

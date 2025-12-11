@@ -168,6 +168,9 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
                   (product as any).display_name || product.description
                 }
                 sellerId={product.user_id}
+                sellerName={product.store_name}
+                productImage={product.all_images?.[0] || product.primary_image_url || null}
+                productPrice={product.price}
                 variant="outline"
                 size="lg"
                 fullWidth

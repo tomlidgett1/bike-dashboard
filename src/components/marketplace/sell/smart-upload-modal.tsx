@@ -488,11 +488,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     <div className="px-5 pb-3 flex-shrink-0">
                       <div className="flex items-center gap-2">
                         <div className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center">
-                          <Image 
-                            src="/icons/noun-bicycle-753190.png" 
+                          <img 
+                            src="/icons/noun-fast-4767027.svg" 
                             alt="Quick Upload" 
-                            width={20} 
-                            height={20}
+                            className="w-5 h-5"
                           />
                         </div>
                         <div>
@@ -513,7 +512,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                             whileTap={{ scale: 0.98 }}
                             className="w-full"
                           >
-                            <div className="bg-white border-2 border-[#FFC72C] rounded-xl p-5 flex items-center gap-4">
+                            <div className="bg-white border border-gray-300 rounded-xl p-5 flex items-center gap-4">
                               <div className="h-14 w-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
                                 <Camera className="h-7 w-7 text-gray-700" />
                               </div>
@@ -656,11 +655,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     {/* Animated progress indicator */}
                     <div className="relative mb-6">
                       <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
-                        <Image 
-                          src="/icons/noun-bicycle-753190.png" 
+                        <img 
+                          src="/icons/noun-fast-4767027.svg" 
                           alt="Processing" 
-                          width={28} 
-                          height={28}
+                          className="w-7 h-7"
                         />
                       </div>
                       <motion.div
