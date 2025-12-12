@@ -23,6 +23,9 @@ import {
   HelpCircle,
   X,
   Filter,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,6 +69,9 @@ interface Purchase {
   purchase_date: string;
   shipped_at: string | null;
   delivered_at: string | null;
+  funds_status: 'held' | 'released' | 'auto_released' | 'disputed' | 'refunded';
+  funds_release_at: string | null;
+  buyer_confirmed_at: string | null;
   product: {
     id: string;
     description: string;
@@ -102,6 +108,8 @@ interface ActionSheetProps {
   onViewProduct: (id: string) => void;
   onContactSeller: (id: string) => void;
   onGetHelp: (id: string) => void;
+  onConfirmReceipt: (id: string) => void;
+  confirmingId: string | null;
   getSellerName: (seller: Purchase["seller"]) => string;
   getStatusBadge: (status: string) => React.ReactNode;
 }
@@ -114,10 +122,15 @@ function MobileActionSheet({
   onViewProduct,
   onContactSeller,
   onGetHelp,
+  onConfirmReceipt,
+  confirmingId,
   getSellerName,
   getStatusBadge,
 }: ActionSheetProps) {
   if (!purchase) return null;
+
+  const canConfirmReceipt = purchase.funds_status === 'held';
+  const isConfirming = confirmingId === purchase.id;
 
   return (
     <AnimatePresence>
@@ -179,6 +192,32 @@ function MobileActionSheet({
 
             {/* Actions */}
             <div className="py-2 pb-[calc(env(safe-area-inset-bottom)+8px)]">
+              {/* Confirm Receipt - Only show if funds are held */}
+              {canConfirmReceipt && (
+                <>
+                  <button
+                    onClick={() => {
+                      onConfirmReceipt(purchase.id);
+                    }}
+                    disabled={isConfirming}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-green-50 active:bg-green-100 transition-colors"
+                  >
+                    {isConfirming ? (
+                      <Loader2 className="h-5 w-5 text-green-600 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    )}
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-green-700">
+                        {isConfirming ? 'Confirming...' : 'Confirm Receipt'}
+                      </span>
+                      <p className="text-xs text-gray-500">Release payment to seller</p>
+                    </div>
+                  </button>
+                  <div className="my-2 mx-4 h-px bg-gray-100" />
+                </>
+              )}
+
               <button
                 onClick={() => {
                   onViewDetails(purchase.id);
@@ -607,6 +646,7 @@ export default function PurchasesPage() {
   const [debouncedSearch, setDebouncedSearch] = React.useState("");
   const [actionSheetOpen, setActionSheetOpen] = React.useState(false);
   const [selectedPurchase, setSelectedPurchase] = React.useState<Purchase | null>(null);
+  const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
 
   // Debounce search input
   React.useEffect(() => {
@@ -690,6 +730,41 @@ export default function PurchasesPage() {
     console.log("Get help for order:", orderId);
   };
 
+  const handleConfirmReceipt = async (purchaseId: string) => {
+    if (confirmingId) return; // Prevent double-clicks
+    
+    const confirmed = window.confirm(
+      "Are you sure you want to confirm receipt? This will release the payment to the seller."
+    );
+    
+    if (!confirmed) return;
+    
+    setConfirmingId(purchaseId);
+    
+    try {
+      const response = await fetch(`/api/marketplace/purchases/${purchaseId}/confirm-receipt`, {
+        method: 'POST',
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to confirm receipt');
+      }
+      
+      // Refresh the purchases list
+      await fetchPurchases(pagination.page);
+      setActionSheetOpen(false);
+      
+      // Show success message
+      alert('Receipt confirmed! Payment has been released to the seller.');
+    } catch (error) {
+      console.error('Error confirming receipt:', error);
+      alert(error instanceof Error ? error.message : 'Failed to confirm receipt');
+    } finally {
+      setConfirmingId(null);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -737,6 +812,65 @@ export default function PurchasesPage() {
         {config.label}
       </span>
     );
+  };
+
+  const getFundsStatusInfo = (purchase: Purchase) => {
+    const { funds_status, funds_release_at, buyer_confirmed_at } = purchase;
+    
+    switch (funds_status) {
+      case 'held':
+        const releaseDate = funds_release_at ? new Date(funds_release_at) : null;
+        const daysLeft = releaseDate 
+          ? Math.ceil((releaseDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+          : null;
+        return {
+          label: daysLeft && daysLeft > 0 ? `Escrow (${daysLeft}d)` : 'Escrow',
+          icon: Clock,
+          color: 'text-amber-600',
+          bgColor: 'bg-amber-50',
+          borderColor: 'border-amber-200',
+        };
+      case 'released':
+        return {
+          label: 'Released',
+          icon: CheckCircle2,
+          color: 'text-green-600',
+          bgColor: 'bg-green-50',
+          borderColor: 'border-green-200',
+        };
+      case 'auto_released':
+        return {
+          label: 'Auto Released',
+          icon: CheckCircle2,
+          color: 'text-green-600',
+          bgColor: 'bg-green-50',
+          borderColor: 'border-green-200',
+        };
+      case 'disputed':
+        return {
+          label: 'Disputed',
+          icon: AlertTriangle,
+          color: 'text-red-600',
+          bgColor: 'bg-red-50',
+          borderColor: 'border-red-200',
+        };
+      case 'refunded':
+        return {
+          label: 'Refunded',
+          icon: X,
+          color: 'text-gray-600',
+          bgColor: 'bg-gray-50',
+          borderColor: 'border-gray-200',
+        };
+      default:
+        return {
+          label: funds_status || 'Unknown',
+          icon: Clock,
+          color: 'text-gray-600',
+          bgColor: 'bg-gray-50',
+          borderColor: 'border-gray-200',
+        };
+    }
   };
 
   const getSellerName = (seller: Purchase["seller"]) => {
@@ -855,6 +989,7 @@ export default function PurchasesPage() {
                         <TableHead>Date</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Payment</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -926,17 +1061,54 @@ export default function PurchasesPage() {
                             {getStatusBadge(purchase.status)}
                           </TableCell>
 
+                          {/* Funds Status */}
+                          <TableCell>
+                            {(() => {
+                              const fundsInfo = getFundsStatusInfo(purchase);
+                              const IconComponent = fundsInfo.icon;
+                              return (
+                                <span className={cn(
+                                  "inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded-md border",
+                                  fundsInfo.color,
+                                  fundsInfo.bgColor,
+                                  fundsInfo.borderColor
+                                )}>
+                                  <IconComponent className="h-3 w-3" />
+                                  {fundsInfo.label}
+                                </span>
+                              );
+                            })()}
+                          </TableCell>
+
                           {/* Actions */}
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="rounded-md"
-                              onClick={() => handleViewDetails(purchase.id)}
-                            >
-                              <Eye className="h-4 w-4 mr-2" />
-                              View
-                            </Button>
+                            <div className="flex items-center justify-end gap-2">
+                              {purchase.funds_status === 'held' && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="rounded-md border-green-200 text-green-700 hover:bg-green-50"
+                                  onClick={() => handleConfirmReceipt(purchase.id)}
+                                  disabled={confirmingId === purchase.id}
+                                >
+                                  {confirmingId === purchase.id ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                                  )}
+                                  Confirm
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="rounded-md"
+                                onClick={() => handleViewDetails(purchase.id)}
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                View
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -967,6 +1139,8 @@ export default function PurchasesPage() {
         onViewProduct={handleViewProduct}
         onContactSeller={handleContactSeller}
         onGetHelp={handleGetHelp}
+        onConfirmReceipt={handleConfirmReceipt}
+        confirmingId={confirmingId}
         getSellerName={getSellerName}
         getStatusBadge={getStatusBadge}
       />
