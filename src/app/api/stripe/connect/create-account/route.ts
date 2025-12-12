@@ -10,6 +10,8 @@ import { getStripe } from '@/lib/stripe';
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('[Stripe Connect] Create account request received');
+    
     const supabase = await createClient();
     const stripe = getStripe();
 
@@ -19,6 +21,7 @@ export async function POST(request: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
 
     console.log('[Stripe Connect] Using base URL:', baseUrl);
+    console.log('[Stripe Connect] Headers:', { protocol, host });
 
     // Check authentication
     const {
@@ -27,11 +30,14 @@ export async function POST(request: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
+      console.error('[Stripe Connect] Auth error:', authError);
       return NextResponse.json(
         { error: 'Unauthorised' },
         { status: 401 }
       );
     }
+
+    console.log('[Stripe Connect] User authenticated:', user.id);
 
     // Get user profile
     const { data: profile, error: profileError } = await supabase
@@ -118,8 +124,14 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('[Stripe Connect] Error creating account:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[Stripe Connect] Error details:', {
+      message: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
+      error
+    });
     return NextResponse.json(
-      { error: 'Failed to create Stripe account' },
+      { error: 'Failed to create Stripe account', details: errorMessage },
       { status: 500 }
     );
   }

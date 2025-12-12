@@ -14,8 +14,15 @@ function getServiceClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+  console.log('[Stripe Webhook] Supabase URL exists:', !!supabaseUrl);
+  console.log('[Stripe Webhook] Supabase Service Key exists:', !!supabaseServiceKey);
+
   if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error('Missing Supabase environment variables');
+    console.error('[Stripe Webhook] MISSING ENV VARS:', {
+      hasUrl: !!supabaseUrl,
+      hasServiceKey: !!supabaseServiceKey,
+    });
+    throw new Error('Missing Supabase environment variables - SUPABASE_SERVICE_ROLE_KEY required');
   }
 
   return createClient(supabaseUrl, supabaseServiceKey);
@@ -23,6 +30,25 @@ function getServiceClient() {
 
 // Disable body parsing - Stripe needs the raw body for signature verification
 export const runtime = 'nodejs';
+
+// Health check endpoint
+export async function GET() {
+  const hasWebhookSecret = !!process.env.STRIPE_WEBHOOK_SECRET;
+  const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const hasSupabaseUrl = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const hasStripeKey = !!process.env.STRIPE_SECRET_KEY;
+
+  return NextResponse.json({
+    status: 'ok',
+    webhook: 'active',
+    config: {
+      STRIPE_WEBHOOK_SECRET: hasWebhookSecret ? '✓ Set' : '✗ MISSING',
+      SUPABASE_SERVICE_ROLE_KEY: hasServiceKey ? '✓ Set' : '✗ MISSING',
+      NEXT_PUBLIC_SUPABASE_URL: hasSupabaseUrl ? '✓ Set' : '✗ MISSING',
+      STRIPE_SECRET_KEY: hasStripeKey ? '✓ Set' : '✗ MISSING',
+    },
+  });
+}
 
 export async function POST(request: NextRequest) {
   const stripe = getStripe();
@@ -124,14 +150,21 @@ export async function POST(request: NextRequest) {
 // ============================================================
 
 async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
+  console.log('[Stripe Webhook] ====== CHECKOUT COMPLETE START ======');
+  console.log('[Stripe Webhook] Session ID:', session.id);
+  console.log('[Stripe Webhook] Payment Status:', session.payment_status);
+  console.log('[Stripe Webhook] Amount Total:', session.amount_total);
+  
   const supabase = getServiceClient();
 
-  console.log('[Stripe Webhook] Processing checkout complete:', session.id);
+  console.log('[Stripe Webhook] Supabase client created');
 
   // Extract metadata
   const metadata = session.metadata;
+  console.log('[Stripe Webhook] Metadata:', JSON.stringify(metadata, null, 2));
+  
   if (!metadata) {
-    console.error('[Stripe Webhook] No metadata in session');
+    console.error('[Stripe Webhook] No metadata in session - ABORTING');
     return;
   }
 
@@ -146,8 +179,10 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     seller_payout,
   } = metadata;
 
+  console.log('[Stripe Webhook] Extracted IDs:', { product_id, buyer_id, seller_id });
+
   if (!product_id || !buyer_id || !seller_id) {
-    console.error('[Stripe Webhook] Missing required metadata:', metadata);
+    console.error('[Stripe Webhook] Missing required metadata - ABORTING:', metadata);
     return;
   }
 
@@ -246,6 +281,7 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   // TODO: Create notification for seller
 
   console.log(`[Stripe Webhook] Funds held until: ${fundsReleaseAt.toISOString()}`);
+  console.log('[Stripe Webhook] ====== CHECKOUT COMPLETE SUCCESS ======');
 }
 
 // ============================================================

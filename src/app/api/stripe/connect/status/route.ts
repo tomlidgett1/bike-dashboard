@@ -9,6 +9,8 @@ import { getStripe } from '@/lib/stripe';
 
 export async function GET(request: NextRequest) {
   try {
+    console.log('[Stripe Connect Status] Request received');
+    
     const supabase = await createClient();
     const stripe = getStripe();
 
@@ -19,11 +21,14 @@ export async function GET(request: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
+      console.error('[Stripe Connect Status] Auth error:', authError);
       return NextResponse.json(
         { error: 'Unauthorised' },
         { status: 401 }
       );
     }
+
+    console.log('[Stripe Connect Status] User authenticated:', user.id);
 
     // Get user profile with Stripe info
     // Try to fetch Stripe columns - they may not exist if migration hasn't run
@@ -153,9 +158,11 @@ export async function GET(request: NextRequest) {
     }
 
   } catch (error) {
-    console.error('[Stripe Connect Status] Error:', error);
+    console.error('[Stripe Connect Status] Unexpected error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[Stripe Connect Status] Error details:', errorMessage);
     return NextResponse.json(
-      { error: 'Failed to fetch status' },
+      { error: 'Failed to fetch status', details: errorMessage },
       { status: 500 }
     );
   }

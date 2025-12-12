@@ -59,14 +59,17 @@ export function StripeConnectCard({ className }: StripeConnectCardProps) {
       const response = await fetch("/api/stripe/connect/status");
       
       if (!response.ok) {
-        throw new Error("Failed to fetch status");
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        console.error("[StripeConnectCard] API Error:", response.status, errorData);
+        throw new Error(errorData.error || `Failed to fetch status (${response.status})`);
       }
 
       const data = await response.json();
+      console.log("[StripeConnectCard] Status loaded:", data);
       setStatus(data);
     } catch (err) {
       console.error("[StripeConnectCard] Error:", err);
-      setError("Failed to load payment status");
+      setError(err instanceof Error ? err.message : "Failed to load payment status");
     } finally {
       setLoading(false);
     }
