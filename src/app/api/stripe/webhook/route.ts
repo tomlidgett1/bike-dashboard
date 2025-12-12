@@ -51,8 +51,14 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  console.log('[Stripe Webhook] ========== WEBHOOK REQUEST RECEIVED ==========');
+  console.log('[Stripe Webhook] Timestamp:', new Date().toISOString());
+  
   const stripe = getStripe();
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  console.log('[Stripe Webhook] Has webhook secret:', !!webhookSecret);
+  console.log('[Stripe Webhook] Secret length:', webhookSecret?.length || 0);
 
   if (!webhookSecret) {
     console.error('[Stripe Webhook] STRIPE_WEBHOOK_SECRET not configured');
@@ -65,6 +71,10 @@ export async function POST(request: NextRequest) {
   // Get the raw body and signature
   const body = await request.text();
   const signature = request.headers.get('stripe-signature');
+
+  console.log('[Stripe Webhook] Body length:', body.length);
+  console.log('[Stripe Webhook] Has signature:', !!signature);
+  console.log('[Stripe Webhook] Signature preview:', signature?.substring(0, 50) + '...');
 
   if (!signature) {
     console.error('[Stripe Webhook] No signature header');
@@ -79,23 +89,29 @@ export async function POST(request: NextRequest) {
   // Verify webhook signature
   try {
     event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+    console.log('[Stripe Webhook] ✓ Signature verified successfully');
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[Stripe Webhook] Signature verification failed:', message);
+    console.error('[Stripe Webhook] ✗ Signature verification FAILED:', message);
+    console.error('[Stripe Webhook] This usually means STRIPE_WEBHOOK_SECRET is wrong');
     return NextResponse.json(
       { error: `Webhook signature verification failed: ${message}` },
       { status: 400 }
     );
   }
 
-  console.log('[Stripe Webhook] Received event:', event.type, event.id);
+  console.log('[Stripe Webhook] ✓ Received event:', event.type, event.id);
 
   // Handle the event
   try {
+    console.log('[Stripe Webhook] Processing event type:', event.type);
+    
     switch (event.type) {
       case 'checkout.session.completed': {
+        console.log('[Stripe Webhook] >>> HANDLING checkout.session.completed <<<');
         const session = event.data.object as Stripe.Checkout.Session;
         await handleCheckoutComplete(session);
+        console.log('[Stripe Webhook] >>> COMPLETED checkout.session.completed <<<');
         break;
       }
 
@@ -224,40 +240,47 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   fundsReleaseAt.setDate(fundsReleaseAt.getDate() + 7);
 
   // Create purchase record with escrow fields
+  const purchaseData = {
+    buyer_id,
+    seller_id,
+    product_id,
+    order_number: orderNumber,
+    item_price: parseFloat(item_price),
+    shipping_cost: parseFloat(shipping_cost || '0'),
+    total_amount: parseFloat(total_amount),
+    platform_fee: parseFloat(platform_fee),
+    seller_payout_amount: parseFloat(seller_payout),
+    stripe_session_id: session.id,
+    stripe_payment_intent_id: typeof session.payment_intent === 'string' 
+      ? session.payment_intent 
+      : session.payment_intent?.id || null,
+    status: 'paid',
+    payment_status: 'paid',
+    payment_method: 'stripe',
+    payment_date: new Date().toISOString(),
+    payout_status: 'pending',
+    // Escrow fields
+    funds_status: 'held',
+    funds_release_at: fundsReleaseAt.toISOString(),
+  };
+
+  console.log('[Stripe Webhook] Inserting purchase with data:', JSON.stringify(purchaseData, null, 2));
+
   const { data: purchase, error: purchaseError } = await supabase
     .from('purchases')
-    .insert({
-      buyer_id,
-      seller_id,
-      product_id,
-      order_number: orderNumber,
-      item_price: parseFloat(item_price),
-      shipping_cost: parseFloat(shipping_cost || '0'),
-      total_amount: parseFloat(total_amount),
-      platform_fee: parseFloat(platform_fee),
-      seller_payout_amount: parseFloat(seller_payout),
-      stripe_session_id: session.id,
-      stripe_payment_intent_id: typeof session.payment_intent === 'string' 
-        ? session.payment_intent 
-        : session.payment_intent?.id || null,
-      status: 'paid',
-      payment_status: 'paid',
-      payment_method: 'stripe',
-      payment_date: new Date().toISOString(),
-      payout_status: 'pending',
-      // Escrow fields
-      funds_status: 'held',
-      funds_release_at: fundsReleaseAt.toISOString(),
-    })
+    .insert(purchaseData)
     .select()
     .single();
 
   if (purchaseError) {
-    console.error('[Stripe Webhook] Failed to create purchase:', purchaseError);
+    console.error('[Stripe Webhook] ✗ Failed to create purchase:', JSON.stringify(purchaseError, null, 2));
+    console.error('[Stripe Webhook] Error code:', purchaseError.code);
+    console.error('[Stripe Webhook] Error message:', purchaseError.message);
+    console.error('[Stripe Webhook] Error details:', purchaseError.details);
     throw purchaseError;
   }
 
-  console.log('[Stripe Webhook] Purchase created:', purchase.id, orderNumber);
+  console.log('[Stripe Webhook] ✓ Purchase created:', purchase.id, orderNumber);
 
   // Mark product as sold
   const { error: updateError } = await supabase
