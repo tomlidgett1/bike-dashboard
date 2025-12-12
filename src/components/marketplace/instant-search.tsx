@@ -29,6 +29,7 @@ interface SearchProduct {
   thumbnailUrl?: string; // Pre-generated 100px thumbnail for instant loading
   storeName: string;
   inStock: boolean;
+  listingType?: 'store_inventory' | 'private_listing';
 }
 
 // Product Image Thumbnail - uses Cloudinary thumbnailUrl when available
@@ -149,9 +150,18 @@ interface InstantSearchProps {
   placeholder?: string;
   /** Optional element to render to the left of the search input (e.g., close button) */
   leftSlot?: React.ReactNode;
+  /** Filter search results by listing type (space context) */
+  listingType?: 'store_inventory' | 'private_listing' | null;
 }
 
-export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage = false, placeholder: customPlaceholder, leftSlot }: InstantSearchProps = {}) {
+export function InstantSearch({ 
+  autoFocus = false, 
+  onResultClick, 
+  mobileFullPage = false, 
+  placeholder: customPlaceholder, 
+  leftSlot,
+  listingType,
+}: InstantSearchProps = {}) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResults | null>(null);
@@ -169,6 +179,18 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
   const aiCacheRef = React.useRef<Map<string, AISearchResult>>(new Map());
   const abortControllerRef = React.useRef<AbortController | null>(null);
   const aiAbortControllerRef = React.useRef<AbortController | null>(null);
+
+  // Helper to generate search URL that preserves space context
+  const getSearchUrl = React.useCallback((searchTerm: string) => {
+    const params = new URLSearchParams();
+    params.set('search', searchTerm);
+    // Add space param based on listing type filter
+    if (listingType === 'store_inventory') {
+      params.set('space', 'stores');
+    }
+    // Marketplace space is default, no param needed for private_listing
+    return `/marketplace?${params.toString()}`;
+  }, [listingType]);
 
   // Auto-focus input when prop is set
   React.useEffect(() => {
@@ -366,8 +388,11 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
       abortControllerRef.current = productAbortController;
       
       try {
+        // Search all products - API returns listingType for UI labeling
+        const searchUrl = `/api/marketplace/search?q=${encodeURIComponent(query)}`;
+        
         const response = await fetch(
-          `/api/marketplace/search?q=${encodeURIComponent(query)}`,
+          searchUrl,
           { signal: productAbortController.signal }
         );
         
@@ -511,17 +536,17 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
     const productCount = results.products.length;
     
     if (index < productCount) {
-      // Navigate to product - use full page reload
+      // Navigate to product search - use full page reload, preserve space context
       const product = results.products[index];
       saveRecentSearch(query.trim());
       onResultClick?.();
-      window.location.href = `/marketplace?search=${encodeURIComponent(product.name)}`;
+      window.location.href = getSearchUrl(product.name);
     } else {
       // Navigate to store - use full page reload
       const store = results.stores[index - productCount];
       saveRecentSearch(query.trim());
       onResultClick?.();
-      window.location.href = `/marketplace?view=stores&store=${store.id}`;
+      window.location.href = `/marketplace?space=stores&store=${store.id}`;
     }
 
     setShowDropdown(false);
@@ -532,7 +557,7 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
     if (query.trim()) {
       saveRecentSearch(query.trim());
       onResultClick?.();
-      window.location.href = `/marketplace?search=${encodeURIComponent(query)}`;
+      window.location.href = getSearchUrl(query);
       setShowDropdown(false);
     }
   };
@@ -541,7 +566,7 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
   const handleRecentSearchClick = (searchQuery: string) => {
     saveRecentSearch(searchQuery);
     onResultClick?.();
-    window.location.href = `/marketplace?search=${encodeURIComponent(searchQuery)}`;
+    window.location.href = getSearchUrl(searchQuery);
     setShowDropdown(false);
   };
 
@@ -678,9 +703,16 @@ export function InstantSearch({ autoFocus = false, onResultClick, mobileFullPage
 
                     {/* Product Info */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {product.name}
-                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {product.name}
+                        </p>
+                        {product.listingType === 'store_inventory' && (
+                          <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 rounded-md">
+                            Store
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-xs text-gray-500">{product.storeName}</span>
                         {!product.inStock && (

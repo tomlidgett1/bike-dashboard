@@ -10,6 +10,7 @@ import { MakeOfferButton } from "./make-offer-button";
 import { ProductLearnPanel } from "./product-learn-panel";
 import { EditProductDrawer } from "./edit-product-drawer";
 import { useAuth } from "@/components/providers/auth-provider";
+import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ interface ProductDetailsPanelSimpleProps {
 
 export function ProductDetailsPanelSimple({ product: initialProduct, onProductUpdate }: ProductDetailsPanelSimpleProps) {
   const { user } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const [product, setProduct] = React.useState(initialProduct);
   const [isLiked, setIsLiked] = React.useState(false);
   const [logoError, setLogoError] = React.useState(false);
@@ -162,13 +164,19 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
           </Link>
 
           <button 
-            onClick={() => setIsLearnOpen(true)}
-            className="flex flex-col items-center gap-1.5 py-2 hover:opacity-70 transition-opacity"
+            onClick={() => {
+              if (!user) {
+                openAuthModal();
+                return;
+              }
+              setIsLearnOpen(true);
+            }}
+            className="flex flex-col items-center gap-1.5 py-2 hover:opacity-80 transition-opacity"
           >
-            <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-              <Sparkles className="h-5 w-5 text-gray-700" />
+            <div className="h-10 w-10 rounded-full bg-gray-900 flex items-center justify-center">
+              <Sparkles className="h-5 w-5 text-white" />
             </div>
-            <span className="text-xs text-gray-700">Learn</span>
+            <span className="text-xs text-gray-700">Research</span>
           </button>
         </div>
       </div>

@@ -16,6 +16,8 @@ interface MarketplaceDataParams {
   level3?: string | null;
   search?: string | null;
   listingType?: 'store_inventory' | 'private_listing';
+  // Store filter (for stores space)
+  storeId?: string | null;
   // Advanced filters
   minPrice?: string | null;
   maxPrice?: string | null;
@@ -82,6 +84,7 @@ function buildApiUrl(params: MarketplaceDataParams): string {
     level3, 
     search, 
     listingType,
+    storeId,
     minPrice,
     maxPrice,
     condition,
@@ -97,6 +100,11 @@ function buildApiUrl(params: MarketplaceDataParams): string {
   // Add listing type filter if specified
   if (listingType) {
     urlParams.set('listingType', listingType);
+  }
+
+  // Add store filter if specified (for stores space)
+  if (storeId) {
+    urlParams.set('storeId', storeId);
   }
 
   // Add advanced filters

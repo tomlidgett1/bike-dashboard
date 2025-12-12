@@ -2,6 +2,9 @@
 // Marketplace Types
 // ============================================================
 
+// The two distinct "spaces" in the marketplace
+export type MarketplaceSpace = 'marketplace' | 'stores';
+
 export type MarketplaceCategory = 'Bicycles' | 'Parts' | 'Apparel' | 'Nutrition';
 
 export interface MarketplaceSubcategories {
@@ -50,6 +53,8 @@ export interface MarketplaceProduct {
   store_name: string;
   store_logo_url: string | null;
   store_account_type?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   
   // Extended fields for private listings
   listing_type?: 'store_inventory' | 'private_listing';

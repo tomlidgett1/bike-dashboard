@@ -16,6 +16,7 @@ import {
   Search
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/providers/auth-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 
 // ============================================================
@@ -158,6 +159,7 @@ function SkeletonLine({ width = "100%" }: { width?: string }) {
 // ============================================================
 
 export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPanelProps) {
+  const { user } = useAuth();
   const [isLoading, setIsLoading] = React.useState(false);
   const [messageIndex, setMessageIndex] = React.useState(0);
   const [result, setResult] = React.useState<LearnResult | null>(null);
@@ -186,9 +188,12 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
     return () => clearInterval(interval);
   }, [isLoading]);
 
-  // Fetch product research when panel opens
+  // Convert user to boolean for stable dependency
+  const isLoggedIn = !!user;
+
+  // Fetch product research when panel opens (only if logged in)
   React.useEffect(() => {
-    if (!isOpen || result || isLoading) return;
+    if (!isOpen || result || isLoading || !isLoggedIn) return;
 
     const fetchResearch = async () => {
       setIsLoading(true);
@@ -228,7 +233,7 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
     };
 
     fetchResearch();
-  }, [isOpen, result, isLoading, product]);
+  }, [isOpen, result, isLoading, product, isLoggedIn]);
 
   // Reset state when panel closes
   const handleClose = () => {
@@ -401,12 +406,12 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
                   {/* Header */}
                   <div className="flex-shrink-0 flex items-center justify-between p-5 border-b border-gray-200">
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-md bg-gray-900 flex items-center justify-center">
+                      <div className="h-10 w-10 rounded-full bg-gray-900 flex items-center justify-center">
                         <Sparkles className="h-5 w-5 text-white" />
                       </div>
                       <div>
-                        <h2 className="text-lg font-semibold text-gray-900">Product Research</h2>
-                        <p className="text-sm text-gray-500">AI-powered insights</p>
+                        <h2 className="text-lg font-semibold text-gray-900">AI Research</h2>
+                        <p className="text-sm text-gray-500">Powered by AI</p>
                       </div>
                     </div>
                     <button
@@ -569,12 +574,12 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
                       {/* Header Row */}
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <div className="h-8 w-8 rounded-md bg-gray-900 flex items-center justify-center">
+                          <div className="h-8 w-8 rounded-full bg-gray-900 flex items-center justify-center">
                             <Sparkles className="h-4 w-4 text-white" />
                           </div>
                           <div>
-                            <p className="text-sm font-semibold text-gray-900">Researching Product</p>
-                            <p className="text-xs text-gray-500">Powered by AI</p>
+                            <p className="text-sm font-semibold text-gray-900">AI Research</p>
+                            <p className="text-xs text-gray-500">Analysing product...</p>
                           </div>
                         </div>
                         <button
@@ -681,11 +686,11 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
                     {/* Header */}
                     <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-200">
                       <div className="flex items-center gap-2">
-                        <div className="h-8 w-8 rounded-md bg-gray-900 flex items-center justify-center">
+                        <div className="h-8 w-8 rounded-full bg-gray-900 flex items-center justify-center">
                           <Sparkles className="h-4 w-4 text-white" />
                         </div>
                         <div>
-                          <p className="text-base font-semibold text-gray-900">Product Research</p>
+                          <p className="text-base font-semibold text-gray-900">AI Research</p>
                           <p className="text-xs text-gray-500">Powered by AI</p>
                         </div>
                       </div>

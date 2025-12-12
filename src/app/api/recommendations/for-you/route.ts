@@ -91,12 +91,16 @@ async function cacheRecommendations(
  */
 async function getAnonymousRecommendations(
   supabase: any,
-  limit: number
+  limit: number,
+  listingType?: string | null
 ): Promise<string[]> {
   try {
     // Use the getTrendingProducts algorithm instead
     const { getTrendingProducts } = await import('@/lib/recommendations/algorithms');
-    const result = await getTrendingProducts(supabase, { limit });
+    const result = await getTrendingProducts(supabase, { 
+      limit,
+      listingType: listingType as 'store_inventory' | 'private_listing' | undefined,
+    });
     return result.productIds;
   } catch (error) {
     console.error('[Recommendations API] Anonymous fallback exception:', error);
@@ -323,23 +327,24 @@ export async function GET(request: NextRequest) {
       console.log('[Recommendations API] Cache miss, generating fresh recommendations...');
       
       if (userId) {
-        // Personalized recommendations
-        console.log('[Recommendations API] Generating personalized for user:', userId);
+        // Personalized recommendations - respect listing type filter
+        console.log('[Recommendations API] Generating personalized for user:', userId, 'listingType:', listingType);
         productIds = await generateHybridRecommendations(supabase, userId, {
           limit,
           diversityFactor: 0.2,
+          listingType: listingType as 'store_inventory' | 'private_listing' | undefined,
         });
         console.log('[Recommendations API] Generated', productIds.length, 'personalized recommendations');
 
-        // Cache the results
-        if (productIds.length > 0) {
+        // Cache the results (note: cache is per-user, not per-listingType)
+        if (productIds.length > 0 && !listingType) {
           await cacheRecommendations(supabase, userId, productIds, 'personalized');
           console.log('[Recommendations API] Cached recommendations');
         }
       } else {
         // Anonymous recommendations (trending)
         console.log('[Recommendations API] Generating anonymous trending recommendations');
-        productIds = await getAnonymousRecommendations(supabase, limit);
+        productIds = await getAnonymousRecommendations(supabase, limit, listingType);
         console.log('[Recommendations API] Generated', productIds.length, 'anonymous recommendations');
       }
     } else {
@@ -349,7 +354,7 @@ export async function GET(request: NextRequest) {
     // Fallback to trending if no recommendations
     if (productIds.length === 0) {
       console.log('[Recommendations API] No recommendations found, using fallback...');
-      productIds = await getAnonymousRecommendations(supabase, limit);
+      productIds = await getAnonymousRecommendations(supabase, limit, listingType);
       console.log('[Recommendations API] Fallback returned', productIds.length, 'products');
     }
 

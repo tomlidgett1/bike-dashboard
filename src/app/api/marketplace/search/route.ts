@@ -87,8 +87,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Show all products regardless of listing type - UI will display source labels
+    const rawProducts = productsResult.data || [];
+
     // IMPORTANT: Only show products with Cloudinary images
-    const products = (productsResult.data || [])
+    const products = rawProducts
       .map((product: any) => {
         let imageUrl = null;
         let thumbnailUrl = null;
@@ -145,6 +148,7 @@ export async function GET(request: NextRequest) {
           thumbnailUrl, // Pre-generated thumbnail for instant loading
           storeName: product.business_name || 'Unknown Store',
           inStock: (product.qoh || 0) > 0,
+          listingType: product.listing_type, // For UI to show source labels
         };
       })
       .filter(Boolean); // Remove nulls (no cloudinary image)
@@ -153,7 +157,7 @@ export async function GET(request: NextRequest) {
     
     // Products are already sorted by relevance from the function
 
-    // Transform stores data (already includes product counts from optimized query)
+    // Transform stores data (always show stores in search results)
     const stores = (storesResult.data || [])
       .filter((store: any) => (store.product_count || 0) > 0)
       .map((store: any) => ({

@@ -34,28 +34,22 @@ interface NavItem {
   icon?: React.ComponentType<{ className?: string }>;
 }
 
-// Common browsing items shown to all users
+// Common browsing items shown to all users - Three distinct spaces
 const browsingNavItems: NavItem[] = [
   {
     type: 'item',
-    title: "All Products",
-    value: "products",
-    icon: Package,
+    title: "Marketplace",
+    value: "marketplace",
+    icon: ShoppingBag,
   },
   {
     type: 'separator',
   },
   {
     type: 'item',
-    title: "Stores",
+    title: "Bike Stores",
     value: "stores",
     icon: Store,
-  },
-  {
-    type: 'item',
-    title: "Individual Sellers",
-    value: "sellers",
-    icon: User,
   },
 ];
 
@@ -161,7 +155,11 @@ function MarketplaceSidebarContent() {
     if (storeMatch && (storeMatch[1] === profile?.user_id || storeMatch[1] === user?.id)) {
       return "my-store";
     }
-    return searchParams.get("view") || "products";
+    // Check for space param (new) or view param (legacy)
+    const spaceParam = searchParams.get("space");
+    const viewParam = searchParams.get("view");
+    if (spaceParam === "stores" || viewParam === "stores") return "stores";
+    return "marketplace"; // Default to marketplace
   };
   
   const activeView = getActiveView();
@@ -253,8 +251,12 @@ function MarketplaceSidebarContent() {
 
     const handleClick = () => {
       let url: string;
-      if (item.value === "products") {
+      if (item.value === "marketplace") {
+        // Default marketplace (private sellers)
         url = "/marketplace";
+      } else if (item.value === "stores") {
+        // Bike Stores space
+        url = "/marketplace?space=stores";
       } else if (item.value === "settings") {
         url = isVerifiedStore ? "/settings" : "/marketplace/settings";
       } else if (item.value === "my-listings") {
@@ -266,7 +268,7 @@ function MarketplaceSidebarContent() {
       } else if (item.value === "my-store") {
         url = `/marketplace/store/${profile?.user_id || user?.id}`;
       } else {
-        url = `/marketplace?view=${item.value}`;
+        url = `/marketplace?space=${item.value}`;
       }
       router.push(url);
     };

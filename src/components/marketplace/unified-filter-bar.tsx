@@ -3,7 +3,7 @@
 import * as React from "react";
 import { 
   Package, Loader2, X, 
-  ChevronRight, Store, User, TrendingUp, Heart
+  ChevronRight, TrendingUp, Heart, Store
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -15,8 +15,9 @@ import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 // Clean, modern filter experience combining:
 // - View modes (Trending, For You, Browse)
 // - Category navigation (3-level hierarchy)
-// - Source filter (All, Stores, Individuals)
+// - Advanced filters (price, condition, etc.)
 // Mobile-first with smooth animations
+// Note: Source filtering moved to SpaceNavigator component
 // ============================================================
 
 // Prefetch function for category products
@@ -74,6 +75,9 @@ interface UnifiedFilterBarProps {
   
   // Ref for tracking scroll position (mobile only)
   categoryPillsRef?: React.Ref<HTMLDivElement>;
+  
+  // Navigate to Bike Stores
+  onNavigateToStores?: () => void;
 }
 
 // Category icon mapping - now uses BikeIcon component
@@ -91,6 +95,7 @@ export function UnifiedFilterBar({
   selectedLevel3,
   onLevel1Change,
   onLevel2Change,
+  onNavigateToStores,
   onLevel3Change,
   listingTypeFilter,
   onListingTypeChange,
@@ -268,54 +273,28 @@ export function UnifiedFilterBar({
             <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             Browse
           </button>
+          
+          {/* Separator */}
+          <div className="hidden sm:block w-px h-5 bg-gray-300 mx-1" />
+          
+          {/* Bike Stores Tab */}
+          <button
+            onClick={onNavigateToStores}
+            className={cn(
+              "relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0",
+              "text-gray-600 hover:text-gray-800 sm:hover:bg-gray-200/60 border-transparent"
+            )}
+          >
+            <Store className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Bike Stores</span>
+            <span className="sm:hidden">Stores</span>
+          </button>
         </div>
 
-        {/* Source Filter Tabs + Advanced Filters - only on Browse mode - Desktop only */}
+        {/* Advanced Filters + Product Count - only on Browse mode - Desktop only */}
         {isOnBrowseMode && (
           <div className="hidden sm:flex items-stretch gap-2">
-            {/* Listing Type Filter Tabs - Desktop only */}
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
-              <button
-                onClick={() => onListingTypeChange('all')}
-                className={cn(
-                  "flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
-                  listingTypeFilter === 'all'
-                    ? "text-gray-800 bg-white shadow-sm"
-                    : "text-gray-600 hover:bg-gray-200/70"
-                )}
-              >
-                <Package className="h-4 w-4" />
-                All Listings
-              </button>
-              
-              <button
-                onClick={() => onListingTypeChange('stores')}
-                className={cn(
-                  "flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
-                  listingTypeFilter === 'stores'
-                    ? "text-gray-800 bg-white shadow-sm"
-                    : "text-gray-600 hover:bg-gray-200/70"
-                )}
-              >
-                <Store className="h-4 w-4" />
-                Stores
-              </button>
-              
-              <button
-                onClick={() => onListingTypeChange('individuals')}
-                className={cn(
-                  "flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
-                  listingTypeFilter === 'individuals'
-                    ? "text-gray-800 bg-white shadow-sm"
-                    : "text-gray-600 hover:bg-gray-200/70"
-                )}
-              >
-                <User className="h-4 w-4" />
-                Private Sellers
-              </button>
-            </div>
-
-            {/* Additional Filters Slot (e.g., AdvancedFilters) - Matches height exactly */}
+            {/* Additional Filters Slot (e.g., AdvancedFilters) */}
             <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
               {additionalFilters}
             </div>

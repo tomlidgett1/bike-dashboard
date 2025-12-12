@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Package, Heart, Sparkles } from "lucide-react";
+import { Package, Heart, Sparkles, Store } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
@@ -254,10 +254,29 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             {(product as any).display_name || product.description}
           </h3>
 
-          {/* Store Name with optional time badge */}
-          <div className="flex items-center gap-1.5">
+          {/* Seller info with type badge and optional time */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Store badge for store inventory items */}
+            {(product as any).listing_type === 'store_inventory' && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded">
+                <Store className="h-2.5 w-2.5" />
+                Store
+              </span>
+            )}
             <p className="text-xs text-gray-500">
-              {product.store_name}
+              {(() => {
+                const productAny = product as any;
+                // For bike stores, show business name or "Bike Store"
+                if (productAny.store_account_type === 'bicycle_store' || productAny.listing_type === 'store_inventory') {
+                  return product.store_name || 'Bike Store';
+                }
+                // For individual users, show "FirstName L."
+                if (productAny.first_name && productAny.last_name) {
+                  return `${productAny.first_name} ${productAny.last_name.charAt(0)}.`;
+                }
+                // Fallback to store_name
+                return product.store_name || 'Seller';
+              })()}
             </p>
             {relativeTime && (
               <>

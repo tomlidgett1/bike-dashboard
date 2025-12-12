@@ -31,7 +31,9 @@ import {
 import { FacebookImportModal } from "./sell/facebook-import-modal";
 import { SmartUploadModal } from "./sell/smart-upload-modal";
 import { MobileUploadMethodDialog } from "./sell/mobile-upload-method-dialog";
+import { FixedMobileSpaceNavigator } from "./space-navigator";
 import type { ListingImage } from "@/lib/types/listing";
+import type { MarketplaceSpace } from "@/lib/types/marketplace";
 
 // ============================================================
 // OAuth Icon Components
@@ -111,9 +113,21 @@ interface MarketplaceHeaderProps {
   compactSearchOnMobile?: boolean;
   /** When true, shows the floating List Item button on mobile */
   showFloatingButton?: boolean;
+  /** When true, shows the mobile space navigator below the header */
+  showSpaceNavigator?: boolean;
+  /** Current space for the space navigator */
+  currentSpace?: MarketplaceSpace;
+  /** Callback when space changes */
+  onSpaceChange?: (space: MarketplaceSpace) => void;
 }
 
-export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingButton = false }: MarketplaceHeaderProps) {
+export function MarketplaceHeader({ 
+  compactSearchOnMobile = true, 
+  showFloatingButton = false,
+  showSpaceNavigator = false,
+  currentSpace = 'marketplace',
+  onSpaceChange,
+}: MarketplaceHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
   const [sellRequirementModalOpen, setSellRequirementModalOpen] = React.useState(false);
@@ -127,6 +141,13 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const { scrollY } = useScroll();
   const router = useRouter();
+  
+  // Derive listing type for search from current space
+  const searchListingType = currentSpace === 'stores' 
+    ? 'store_inventory' as const
+    : currentSpace === 'marketplace' 
+      ? 'private_listing' as const
+      : null;
   const { user } = useAuth();
   const { profile, loading } = useUserProfile();
   const { openAuthModal } = useAuthModal();
@@ -319,7 +340,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
               <>
                 {/* Desktop: Full search bar */}
                 <div className="hidden sm:block flex-[2] ml-[14px]">
-                  <InstantSearch />
+                  <InstantSearch listingType={searchListingType} />
                 </div>
                 {/* Mobile: Search icon and Messages button (if logged in) */}
                 <div className="sm:hidden flex items-center gap-2 ml-auto">
@@ -350,7 +371,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
               <>
                 {/* Always hide search on mobile, show on desktop */}
                 <div className="hidden sm:block flex-[2] ml-[14px]">
-                  <InstantSearch />
+                  <InstantSearch listingType={searchListingType} />
                 </div>
                 {/* Mobile: Search icon and Messages button (if logged in) */}
                 <div className="sm:hidden flex items-center gap-2 ml-auto">
@@ -564,6 +585,14 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
         </div>
       </motion.header>
 
+      {/* Mobile Space Navigator - Shows below header when enabled */}
+      {showSpaceNavigator && onSpaceChange && (
+        <FixedMobileSpaceNavigator
+          currentSpace={currentSpace}
+          onSpaceChange={onSpaceChange}
+        />
+      )}
+
       {/* Mobile Floating List Item Button - Only shown on homepage and product pages */}
       {showFloatingButton && mounted && (
         <div className="sm:hidden fixed bottom-6 left-4 right-4 z-50">
@@ -670,13 +699,14 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
 
               {/* Navigation - Scrollable */}
               <div className="flex-1 overflow-y-auto">
-                {/* Browse Section */}
+                {/* Browse Section - Two Distinct Spaces */}
                 <div className="px-4 py-3">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Browse</p>
                   <nav className="space-y-1">
                     <MobileNavItem
-                      icon={Package}
-                      label="All Products"
+                      icon={ShoppingBag}
+                      label="Marketplace"
+                      subtitle="Private sellers"
                       onClick={() => {
                         router.push('/marketplace');
                         setMobileMenuOpen(false);
@@ -684,17 +714,10 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                     />
                     <MobileNavItem
                       icon={Store}
-                      label="Stores"
+                      label="Bike Stores"
+                      subtitle="Products from bike shops"
                       onClick={() => {
-                        router.push('/marketplace?view=stores');
-                        setMobileMenuOpen(false);
-                      }}
-                    />
-                    <MobileNavItem
-                      icon={User}
-                      label="Individual Sellers"
-                      onClick={() => {
-                        router.push('/marketplace?view=sellers');
+                        router.push('/marketplace?space=stores');
                         setMobileMenuOpen(false);
                       }}
                     />
@@ -1006,6 +1029,7 @@ export function MarketplaceHeader({ compactSearchOnMobile = true, showFloatingBu
                 autoFocus 
                 onResultClick={() => setMobileSearchOpen(false)} 
                 mobileFullPage
+                listingType={searchListingType}
                 leftSlot={
                   <button
                     onClick={() => setMobileSearchOpen(false)}

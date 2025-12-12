@@ -79,7 +79,9 @@ export async function GET(request: NextRequest) {
         users!user_id (
           business_name,
           logo_url,
-          account_type
+          account_type,
+          first_name,
+          last_name
         )
       `;
     
@@ -130,6 +132,13 @@ export async function GET(request: NextRequest) {
     // Apply listing type filter
     if (listingType) {
       query = query.eq('listing_type', listingType);
+    }
+
+    // Apply store filter (filter products by specific store/user)
+    const storeId = searchParams.get('storeId');
+    if (storeId) {
+      query = query.eq('user_id', storeId);
+      console.log(`🏪 [FILTER] Applying store filter: "${storeId}"`);
     }
 
     // Apply condition filter (for private listings with condition rating)
@@ -302,6 +311,9 @@ export async function GET(request: NextRequest) {
         user_id: product.user_id,
         store_name: product.users?.business_name || 'Bike Store',
         store_logo_url: product.users?.logo_url || null,
+        store_account_type: product.users?.account_type || null,
+        first_name: product.users?.first_name || null,
+        last_name: product.users?.last_name || null,
         listing_type: product.listing_type,
         listing_status: product.listing_status,
         condition_rating: product.condition_rating || null,

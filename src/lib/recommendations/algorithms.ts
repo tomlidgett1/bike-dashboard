@@ -40,9 +40,10 @@ export async function getTrendingProducts(
     limit?: number;
     categoryFilter?: string;
     excludeProductIds?: string[];
+    listingType?: 'store_inventory' | 'private_listing';
   } = {}
 ): Promise<RecommendationResult> {
-  const { limit = 50, categoryFilter, excludeProductIds = [] } = options;
+  const { limit = 50, categoryFilter, excludeProductIds = [], listingType } = options;
 
   try {
     // Simplified query - get product IDs from product_scores first
@@ -69,15 +70,23 @@ export async function getTrendingProducts(
     // Get product IDs
     let productIds = scores.map(s => s.product_id);
 
-    // Filter by category if needed
-    if (categoryFilter) {
-      const { data: products } = await supabase
+    // Filter by category and/or listing type if needed
+    if (categoryFilter || listingType) {
+      let query = supabase
         .from('products')
         .select('id')
         .in('id', productIds)
-        .eq('marketplace_category', categoryFilter)
         .eq('is_active', true);
       
+      if (categoryFilter) {
+        query = query.eq('marketplace_category', categoryFilter);
+      }
+      
+      if (listingType) {
+        query = query.eq('listing_type', listingType);
+      }
+      
+      const { data: products } = await query;
       productIds = products?.map(p => p.id) || [];
     }
 
@@ -446,9 +455,10 @@ export async function getPopularProducts(
   options: {
     limit?: number;
     excludeProductIds?: string[];
+    listingType?: 'store_inventory' | 'private_listing';
   } = {}
 ): Promise<RecommendationResult> {
-  const { limit = 50, excludeProductIds = [] } = options;
+  const { limit = 50, excludeProductIds = [], listingType } = options;
 
   try {
     // Simplified query - get from product_scores first
@@ -465,6 +475,18 @@ export async function getPopularProducts(
     }
 
     let productIds = scores.map(s => s.product_id);
+
+    // Filter by listing type if specified
+    if (listingType) {
+      const { data: products } = await supabase
+        .from('products')
+        .select('id')
+        .in('id', productIds)
+        .eq('is_active', true)
+        .eq('listing_type', listingType);
+      
+      productIds = products?.map(p => p.id) || [];
+    }
 
     // Exclude specified IDs
     if (excludeProductIds.length > 0) {
@@ -497,9 +519,10 @@ export async function generateHybridRecommendations(
   options: {
     limit?: number;
     diversityFactor?: number; // 0-1, higher = more diversity
+    listingType?: 'store_inventory' | 'private_listing';
   } = {}
 ): Promise<string[]> {
-  const { limit = 50, diversityFactor = 0.2 } = options;
+  const { limit = 50, diversityFactor = 0.2, listingType } = options;
 
   try {
     console.log('[Hybrid] Starting hybrid recommendations for user:', userId || 'anonymous', 'limit:', limit);
@@ -533,9 +556,9 @@ export async function generateHybridRecommendations(
       }
     }
 
-    // Non-personalized algorithms
-    promises.push(getTrendingProducts(supabase, { limit: 30 }));
-    promises.push(getPopularProducts(supabase, { limit: 30 }));
+    // Non-personalized algorithms - respect listing type filter
+    promises.push(getTrendingProducts(supabase, { limit: 30, listingType }));
+    promises.push(getPopularProducts(supabase, { limit: 30, listingType }));
 
     console.log('[Hybrid] Running', promises.length, 'algorithms...');
     const results = await Promise.all(promises);
@@ -575,8 +598,24 @@ export async function generateHybridRecommendations(
 
     console.log('[Hybrid] Ranked products:', ranked.length);
 
-    // Simplify diversity for now - just return top scored products
-    const finalRecommendations = ranked.slice(0, limit).map(([id]) => id);
+    // Get top scored product IDs
+    let candidateIds = ranked.slice(0, limit * 2).map(([id]) => id); // Get extra for filtering
+    
+    // Filter by listing type if specified (final filter to catch any that slip through)
+    if (listingType && candidateIds.length > 0) {
+      const { data: filteredProducts } = await supabase
+        .from('products')
+        .select('id')
+        .in('id', candidateIds)
+        .eq('is_active', true)
+        .eq('listing_type', listingType);
+      
+      const validIds = new Set(filteredProducts?.map(p => p.id) || []);
+      candidateIds = candidateIds.filter(id => validIds.has(id));
+      console.log('[Hybrid] Filtered to', candidateIds.length, 'products with listing_type:', listingType);
+    }
+    
+    const finalRecommendations = candidateIds.slice(0, limit);
     
     console.log('[Hybrid] Final recommendations count:', finalRecommendations.length);
     console.log('[Hybrid] Sample IDs:', finalRecommendations.slice(0, 3));

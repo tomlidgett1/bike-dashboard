@@ -24,6 +24,119 @@ export const runtime = 'edge';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
+// Helper function to check if a product has a Cloudinary image
+function hasCloudinaryImageUrl(product: any): { hasImage: boolean; primaryUrl: string | null; allImages: string[] } {
+  let primaryImageUrl = product.primary_image_url;
+  let allImages: string[] = [];
+  let hasCloudinaryImage = false;
+  
+  // Priority 1: Private listing images - check for cloudinary URLs
+  if (product.listing_type === 'private_listing' && Array.isArray(product.images) && product.images.length > 0) {
+    const cloudinaryImage = product.images.find((img: any) => 
+      img.url?.includes('cloudinary') || img.cloudinaryUrl
+    );
+    if (cloudinaryImage) {
+      hasCloudinaryImage = true;
+      const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
+      if (primaryImage?.url) {
+        primaryImageUrl = primaryImage.url;
+      }
+      allImages = product.images.map((img: any) => img.url).filter(Boolean);
+    }
+  }
+  // Priority 2: Custom store image - check for cloudinary URL
+  else if (product.use_custom_image && product.custom_image_url) {
+    if (product.custom_image_url.includes('cloudinary')) {
+      hasCloudinaryImage = true;
+      primaryImageUrl = product.custom_image_url;
+      allImages.push(product.custom_image_url);
+    }
+  }
+  // Priority 3: Check if primary_image_url is from cloudinary
+  else if (primaryImageUrl && primaryImageUrl.includes('cloudinary')) {
+    hasCloudinaryImage = true;
+    allImages.push(primaryImageUrl);
+  }
+  
+  return {
+    hasImage: hasCloudinaryImage && !!primaryImageUrl,
+    primaryUrl: primaryImageUrl,
+    allImages,
+  };
+}
+
+// Helper function to transform product to API response format
+function transformProduct(product: any, imageInfo: { primaryUrl: string | null; allImages: string[] }) {
+  return {
+    id: product.id,
+    description: product.description,
+    display_name: product.display_name,
+    price: parseFloat(product.price) || 0,
+    marketplace_category: product.marketplace_category,
+    marketplace_subcategory: product.marketplace_subcategory,
+    primary_image_url: imageInfo.primaryUrl,
+    all_images: imageInfo.allImages.length > 0 ? imageInfo.allImages : [imageInfo.primaryUrl],
+    user_id: product.user_id,
+    store_name: product.store_name || product.users?.business_name || 'Unknown Store',
+    store_logo_url: product.store_logo_url || product.users?.logo_url || null,
+    listing_type: product.listing_type,
+    images: product.images,
+    created_at: product.created_at,
+  };
+}
+
+// Helper function to fetch fallback products (newest with Cloudinary images)
+async function getFallbackProducts(
+  supabase: any,
+  limit: number,
+  category: string | null,
+  listingType: string | null
+): Promise<any[]> {
+  console.log('[TRENDING] No trending products found, fetching newest products as fallback');
+  
+  let query = supabase
+    .from('products')
+    .select(`
+      *,
+      users!user_id (
+        business_name,
+        logo_url
+      )
+    `)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(limit * 3); // Fetch more to account for Cloudinary filtering
+  
+  if (category) {
+    query = query.eq('marketplace_category', category);
+  }
+  
+  if (listingType) {
+    query = query.eq('listing_type', listingType);
+  }
+  
+  const { data: products, error } = await query;
+  
+  if (error || !products) {
+    console.error('[TRENDING] Fallback query error:', error);
+    return [];
+  }
+  
+  // Filter to only products with Cloudinary images and transform
+  const result: any[] = [];
+  for (const product of products) {
+    if (result.length >= limit) break;
+    
+    const imageInfo = hasCloudinaryImageUrl(product);
+    if (imageInfo.hasImage) {
+      result.push(transformProduct(product, imageInfo));
+    }
+  }
+  
+  console.log(`[TRENDING] Fallback returned ${result.length} newest products with Cloudinary images`);
+  return result;
+}
+
 export async function GET(request: NextRequest) {
   const startTime = performance.now();
   
@@ -49,82 +162,40 @@ export async function GET(request: NextRequest) {
     if (!rpcError && products) {
       // RPC successful - transform and return
       // IMPORTANT: Only show products with Cloudinary images
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      
       const enriched = (products || []).map((product: any) => {
-        let primaryImageUrl = product.primary_image_url;
-        let allImages: string[] = [];
-        let hasCloudinaryImage = false;
-        
-        // Priority 1: Private listing images - check for cloudinary URLs
-        if (product.listing_type === 'private_listing' && Array.isArray(product.images) && product.images.length > 0) {
-          const cloudinaryImage = product.images.find((img: any) => 
-            img.url?.includes('cloudinary') || img.cloudinaryUrl
-          );
-          if (cloudinaryImage) {
-            hasCloudinaryImage = true;
-            const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
-            if (primaryImage?.url) {
-              primaryImageUrl = primaryImage.url;
-            }
-            allImages = product.images.map((img: any) => img.url).filter(Boolean);
-          }
-        }
-        // Priority 2: Custom store image - check for cloudinary URL
-        else if (product.use_custom_image && product.custom_image_url) {
-          if (product.custom_image_url.includes('cloudinary')) {
-            hasCloudinaryImage = true;
-            primaryImageUrl = product.custom_image_url;
-            allImages.push(product.custom_image_url);
-          }
-        }
-        // Priority 3: Check if primary_image_url is from cloudinary
-        else if (primaryImageUrl && primaryImageUrl.includes('cloudinary')) {
-          hasCloudinaryImage = true;
-          allImages.push(primaryImageUrl);
-        }
-        
-        // FILTER: Skip products without cloudinary images
-        if (!hasCloudinaryImage || !primaryImageUrl) {
-          return null;
-        }
-      
-        return {
-          id: product.id,
-          description: product.description,
-          display_name: product.display_name,
-          price: parseFloat(product.price) || 0,
-          marketplace_category: product.marketplace_category,
-          marketplace_subcategory: product.marketplace_subcategory,
-          primary_image_url: primaryImageUrl,
-          all_images: allImages.length > 0 ? allImages : [primaryImageUrl],
-          user_id: product.user_id,
-          store_name: product.store_name || 'Unknown Store',
-          store_logo_url: product.store_logo_url || null,
-          listing_type: product.listing_type,
-          images: product.images,
-          created_at: product.created_at,
-        };
-      }).filter(Boolean); // Filter out null products (no cloudinary image)
+        const imageInfo = hasCloudinaryImageUrl(product);
+        if (!imageInfo.hasImage) return null;
+        return transformProduct(product, imageInfo);
+      }).filter(Boolean);
       
       console.log(`🖼️ [TRENDING] Filtered to ${enriched.length} products with Cloudinary images`);
 
+      // FALLBACK: If no trending products with Cloudinary images, fetch newest products
+      let finalProducts = enriched;
+      let usedFallback = false;
+      
+      if (enriched.length === 0) {
+        finalProducts = await getFallbackProducts(supabase, limit, category, listingType);
+        usedFallback = true;
+      }
+
       const queryTime = performance.now() - startTime;
-      console.log(`⚡ [TRENDING] Fetched ${enriched.length} products in ${queryTime.toFixed(0)}ms (RPC)`);
+      console.log(`⚡ [TRENDING] Fetched ${finalProducts.length} products in ${queryTime.toFixed(0)}ms (RPC${usedFallback ? ' + fallback' : ''})`);
 
       return NextResponse.json({
         success: true,
-        products: enriched,
+        products: finalProducts,
         pagination: {
           page: 1,
           limit,
-          total: enriched.length,
+          total: finalProducts.length,
           hasMore: false,
         },
         meta: {
           view_mode: 'trending',
           category_filter: category,
           response_time_ms: queryTime.toFixed(0),
+          used_fallback: usedFallback,
         },
       });
     }
@@ -149,11 +220,20 @@ export async function GET(request: NextRequest) {
     }
 
     if (!scores || scores.length === 0) {
+      // FALLBACK: No trending scores exist, return newest products
+      const fallbackProducts = await getFallbackProducts(supabase, limit, category, listingType);
+      const queryTime = performance.now() - startTime;
+      
       return NextResponse.json({
         success: true,
-        products: [],
-        pagination: { page: 1, limit, total: 0, hasMore: false },
-        meta: { view_mode: 'trending', category_filter: category },
+        products: fallbackProducts,
+        pagination: { page: 1, limit, total: fallbackProducts.length, hasMore: false },
+        meta: { 
+          view_mode: 'trending', 
+          category_filter: category,
+          response_time_ms: queryTime.toFixed(0),
+          used_fallback: true,
+        },
       });
     }
 
@@ -192,62 +272,24 @@ export async function GET(request: NextRequest) {
 
     // Transform to marketplace format - only products with Cloudinary images
     const enriched = (fallbackProducts || []).map((product: any) => {
-      let primaryImageUrl = product.primary_image_url;
-      let allImages: string[] = [];
-      let hasCloudinaryImage = false;
-      
-      if (product.listing_type === 'private_listing' && Array.isArray(product.images) && product.images.length > 0) {
-        const cloudinaryImage = product.images.find((img: any) => 
-          img.url?.includes('cloudinary') || img.cloudinaryUrl
-        );
-        if (cloudinaryImage) {
-          hasCloudinaryImage = true;
-          const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
-          if (primaryImage?.url) {
-            primaryImageUrl = primaryImage.url;
-          }
-          allImages = product.images.map((img: any) => img.url).filter(Boolean);
-        }
-      } else if (product.use_custom_image && product.custom_image_url) {
-        if (product.custom_image_url.includes('cloudinary')) {
-          hasCloudinaryImage = true;
-          primaryImageUrl = product.custom_image_url;
-          allImages.push(product.custom_image_url);
-        }
-      } else if (primaryImageUrl && primaryImageUrl.includes('cloudinary')) {
-        hasCloudinaryImage = true;
-        allImages.push(primaryImageUrl);
-      }
-      
-      // FILTER: Skip products without cloudinary images
-      if (!hasCloudinaryImage || !primaryImageUrl) {
-        return null;
-      }
-    
-      return {
-        id: product.id,
-        description: product.description,
-        display_name: product.display_name,
-        price: parseFloat(product.price) || 0,
-        marketplace_category: product.marketplace_category,
-        marketplace_subcategory: product.marketplace_subcategory,
-        primary_image_url: primaryImageUrl,
-        all_images: allImages.length > 0 ? allImages : [primaryImageUrl],
-        user_id: product.user_id,
-        store_name: product.users?.business_name || 'Unknown Store',
-        store_logo_url: product.users?.logo_url || null,
-        listing_type: product.listing_type,
-        images: product.images,
-        created_at: product.created_at,
-      };
+      const imageInfo = hasCloudinaryImageUrl(product);
+      if (!imageInfo.hasImage) return null;
+      return transformProduct(product, imageInfo);
     }).filter(Boolean);
 
     // Maintain trending order
     const productMap = new Map(enriched.map((p: any) => [p.id, p]));
-    const ordered = productIds.map(id => productMap.get(id)).filter(Boolean);
+    let ordered = productIds.map(id => productMap.get(id)).filter(Boolean);
+    let usedFallback = false;
+
+    // FALLBACK: If no trending products with Cloudinary images, fetch newest products
+    if (ordered.length === 0) {
+      ordered = await getFallbackProducts(supabase, limit, category, listingType);
+      usedFallback = true;
+    }
 
     const queryTime = performance.now() - startTime;
-    console.log(`⚡ [TRENDING] Fetched ${ordered.length} products in ${queryTime.toFixed(0)}ms (fallback)`);
+    console.log(`⚡ [TRENDING] Fetched ${ordered.length} products in ${queryTime.toFixed(0)}ms (2-query${usedFallback ? ' + fallback' : ''})`);
 
     return NextResponse.json({
       success: true,
@@ -262,6 +304,7 @@ export async function GET(request: NextRequest) {
         view_mode: 'trending',
         category_filter: category,
         response_time_ms: queryTime.toFixed(0),
+        used_fallback: usedFallback,
       },
     });
 
