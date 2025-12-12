@@ -121,3 +121,4 @@ COMMENT ON COLUMN purchases.funds_status IS 'Escrow status: held, released, auto
 COMMENT ON COLUMN purchases.funds_release_at IS 'Timestamp when funds auto-release (7 days after purchase)';
 COMMENT ON COLUMN purchases.buyer_confirmed_at IS 'When buyer confirmed receipt of item';
 COMMENT ON TABLE seller_payouts IS 'History of payouts made to sellers via Stripe Connect';
+

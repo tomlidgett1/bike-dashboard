@@ -33,3 +33,4 @@ COMMENT ON COLUMN purchases.stripe_payment_intent_id IS 'Stripe Payment Intent I
 COMMENT ON COLUMN purchases.platform_fee IS 'Yellow Jersey 3% platform fee amount';
 COMMENT ON COLUMN purchases.seller_payout_amount IS 'Amount to be paid out to seller (total - platform_fee)';
 COMMENT ON COLUMN purchases.payout_status IS 'Status of seller payout: pending, processing, completed, failed';
+
