@@ -45,6 +45,7 @@ import { useAuth } from '@/components/providers/auth-provider'
 import { MarketplaceLayout } from '@/components/layout/marketplace-layout'
 import { MarketplaceHeader } from '@/components/marketplace/marketplace-header'
 import { MobileSettingsView } from '@/components/marketplace/settings'
+import { StripeConnectCard } from '@/components/settings/stripe-connect-card'
 
 // Strava icon component (not in lucide)
 function StravaIcon({ className }: { className?: string }) {
@@ -455,6 +456,22 @@ export default function MarketplaceSettingsPage() {
                     </div>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Payment Settings - Stripe Connect */}
+            <Card className="bg-white rounded-md shadow-sm overflow-hidden">
+              <CardHeader className="px-6 py-6">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <DollarSign className="h-5 w-5" />
+                  Payments & Payouts
+                </CardTitle>
+                <CardDescription className="text-sm">
+                  Connect your bank account to receive payouts when you sell items
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-6 pb-6">
+                <StripeConnectCard />
               </CardContent>
             </Card>
 

@@ -58,6 +58,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
+import { StripeConnectCard } from "@/components/settings/stripe-connect-card";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -616,6 +617,30 @@ export default function SettingsPage() {
                     />
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Payment Settings - Stripe Connect */}
+          <motion.div variants={itemVariants}>
+            <Card className="bg-white dark:bg-card rounded-md border-border">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
+                    <Zap className="h-5 w-5 text-foreground" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base font-semibold">
+                      Payments & Payouts
+                    </CardTitle>
+                    <CardDescription className="text-sm">
+                      Connect your bank account to receive payouts when you sell items
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <StripeConnectCard />
               </CardContent>
             </Card>
           </motion.div>

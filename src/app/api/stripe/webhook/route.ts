@@ -87,6 +87,23 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      // ============================================================
+      // Stripe Connect Account Events
+      // ============================================================
+
+      case 'account.updated': {
+        const account = event.data.object as Stripe.Account;
+        await handleAccountUpdated(account);
+        break;
+      }
+
+      case 'account.application.deauthorized': {
+        const application = event.data.object as Stripe.Application;
+        console.log('[Stripe Webhook] Account deauthorized:', application.id);
+        // Handle account disconnection if needed
+        break;
+      }
+
       default:
         console.log('[Stripe Webhook] Unhandled event type:', event.type);
     }
@@ -167,7 +184,11 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   // Generate order number
   const orderNumber = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
-  // Create purchase record
+  // Calculate funds release date (7 days from now)
+  const fundsReleaseAt = new Date();
+  fundsReleaseAt.setDate(fundsReleaseAt.getDate() + 7);
+
+  // Create purchase record with escrow fields
   const { data: purchase, error: purchaseError } = await supabase
     .from('purchases')
     .insert({
@@ -189,6 +210,9 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
       payment_method: 'stripe',
       payment_date: new Date().toISOString(),
       payout_status: 'pending',
+      // Escrow fields
+      funds_status: 'held',
+      funds_release_at: fundsReleaseAt.toISOString(),
     })
     .select()
     .single();
@@ -220,4 +244,43 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
 
   // TODO: Send confirmation emails to buyer and seller
   // TODO: Create notification for seller
+
+  console.log(`[Stripe Webhook] Funds held until: ${fundsReleaseAt.toISOString()}`);
+}
+
+// ============================================================
+// Handle Connect Account Updated
+// ============================================================
+
+async function handleAccountUpdated(account: Stripe.Account) {
+  const supabase = getServiceClient();
+
+  console.log('[Stripe Webhook] Account updated:', account.id);
+
+  // Determine new status
+  let status = 'pending';
+  if (account.details_submitted && account.payouts_enabled) {
+    status = 'active';
+  } else if (account.requirements?.disabled_reason) {
+    status = 'restricted';
+  } else if (account.details_submitted) {
+    status = 'pending';
+  }
+
+  // Update user record
+  const { error } = await supabase
+    .from('users')
+    .update({
+      stripe_account_status: status,
+      stripe_payouts_enabled: account.payouts_enabled || false,
+      stripe_details_submitted: account.details_submitted || false,
+      stripe_onboarding_complete: account.details_submitted && account.payouts_enabled,
+    })
+    .eq('stripe_account_id', account.id);
+
+  if (error) {
+    console.error('[Stripe Webhook] Failed to update user:', error);
+  } else {
+    console.log('[Stripe Webhook] User updated with status:', status);
+  }
 }

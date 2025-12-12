@@ -26,6 +26,7 @@ import { SettingsProfileHeader } from "./settings-profile-header";
 import { SettingsBottomSheet } from "./settings-bottom-sheet";
 import { EditProfileSheet } from "./edit-profile-sheet";
 import { EditSocialLinksSheet } from "./edit-social-links-sheet";
+import { StripeConnectCard } from "@/components/settings/stripe-connect-card";
 
 interface FormData {
   firstName: string;
@@ -225,6 +226,13 @@ export function MobileSettingsView({
             type="navigation"
             onClick={() => setActiveSheet("social")}
           />
+        </SettingsSection>
+
+        {/* Payments Section */}
+        <SettingsSection title="Payments & Payouts">
+          <div className="px-4 py-2">
+            <StripeConnectCard />
+          </div>
         </SettingsSection>
 
         {/* Notifications Section */}
