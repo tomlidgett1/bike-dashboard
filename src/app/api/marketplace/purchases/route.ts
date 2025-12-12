@@ -40,9 +40,12 @@ export async function GET(request: NextRequest) {
           description,
           display_name,
           primary_image_url,
+          cached_image_url,
+          images,
           price,
           marketplace_category,
-          marketplace_subcategory
+          marketplace_subcategory,
+          listing_type
         )
       `,
         { count: "exact" }
