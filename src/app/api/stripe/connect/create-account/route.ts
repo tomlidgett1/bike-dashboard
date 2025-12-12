@@ -13,6 +13,13 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient();
     const stripe = getStripe();
 
+    // Get base URL from request or environment
+    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    const host = request.headers.get('host') || 'yellowjersey.store';
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
+
+    console.log('[Stripe Connect] Using base URL:', baseUrl);
+
     // Check authentication
     const {
       data: { user },
@@ -46,8 +53,8 @@ export async function POST(request: NextRequest) {
       // Generate new onboarding link for existing account
       const accountLink = await stripe.accountLinks.create({
         account: profile.stripe_account_id,
-        refresh_url: `${process.env.NEXT_PUBLIC_APP_URL}/marketplace/settings?stripe=refresh`,
-        return_url: `${process.env.NEXT_PUBLIC_APP_URL}/marketplace/settings?stripe=success`,
+        refresh_url: `${baseUrl}/marketplace/settings?stripe=refresh`,
+        return_url: `${baseUrl}/marketplace/settings?stripe=success`,
         type: 'account_onboarding',
       });
 
@@ -96,8 +103,8 @@ export async function POST(request: NextRequest) {
     // Generate onboarding link
     const accountLink = await stripe.accountLinks.create({
       account: account.id,
-      refresh_url: `${process.env.NEXT_PUBLIC_APP_URL}/marketplace/settings?stripe=refresh`,
-      return_url: `${process.env.NEXT_PUBLIC_APP_URL}/marketplace/settings?stripe=success`,
+      refresh_url: `${baseUrl}/marketplace/settings?stripe=refresh`,
+      return_url: `${baseUrl}/marketplace/settings?stripe=success`,
       type: 'account_onboarding',
     });
 
