@@ -55,13 +55,16 @@ export async function POST(request: NextRequest) {
   console.log('[Stripe Webhook] Timestamp:', new Date().toISOString());
   
   const stripe = getStripe();
+  
+  // Support multiple webhook secrets (one for "Your account", one for "Connected accounts")
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const webhookSecretConnect = process.env.STRIPE_WEBHOOK_SECRET_CONNECT;
 
-  console.log('[Stripe Webhook] Has webhook secret:', !!webhookSecret);
-  console.log('[Stripe Webhook] Secret length:', webhookSecret?.length || 0);
+  console.log('[Stripe Webhook] Has primary secret:', !!webhookSecret);
+  console.log('[Stripe Webhook] Has connect secret:', !!webhookSecretConnect);
 
-  if (!webhookSecret) {
-    console.error('[Stripe Webhook] STRIPE_WEBHOOK_SECRET not configured');
+  if (!webhookSecret && !webhookSecretConnect) {
+    console.error('[Stripe Webhook] No webhook secrets configured');
     return NextResponse.json(
       { error: 'Webhook secret not configured' },
       { status: 500 }
@@ -74,7 +77,6 @@ export async function POST(request: NextRequest) {
 
   console.log('[Stripe Webhook] Body length:', body.length);
   console.log('[Stripe Webhook] Has signature:', !!signature);
-  console.log('[Stripe Webhook] Signature preview:', signature?.substring(0, 50) + '...');
 
   if (!signature) {
     console.error('[Stripe Webhook] No signature header');
@@ -84,18 +86,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let event: Stripe.Event;
+  let event: Stripe.Event | null = null;
 
-  // Verify webhook signature
-  try {
-    event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-    console.log('[Stripe Webhook] ✓ Signature verified successfully');
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[Stripe Webhook] ✗ Signature verification FAILED:', message);
-    console.error('[Stripe Webhook] This usually means STRIPE_WEBHOOK_SECRET is wrong');
+  // Try primary secret first, then connect secret
+  const secretsToTry = [webhookSecret, webhookSecretConnect].filter(Boolean) as string[];
+
+  for (const secret of secretsToTry) {
+    try {
+      event = stripe.webhooks.constructEvent(body, signature, secret);
+      console.log('[Stripe Webhook] ✓ Signature verified with secret:', secret.substring(0, 15) + '...');
+      break;
+    } catch (err) {
+      console.log('[Stripe Webhook] Secret did not match:', secret.substring(0, 15) + '...');
+      continue;
+    }
+  }
+
+  if (!event) {
+    console.error('[Stripe Webhook] ✗ Signature verification FAILED with all secrets');
     return NextResponse.json(
-      { error: `Webhook signature verification failed: ${message}` },
+      { error: 'Webhook signature verification failed' },
       { status: 400 }
     );
   }
