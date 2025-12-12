@@ -69,9 +69,9 @@ interface Purchase {
   purchase_date: string;
   shipped_at: string | null;
   delivered_at: string | null;
-  funds_status: 'held' | 'released' | 'auto_released' | 'disputed' | 'refunded';
-  funds_release_at: string | null;
-  buyer_confirmed_at: string | null;
+  funds_status?: 'held' | 'released' | 'auto_released' | 'disputed' | 'refunded' | null;
+  funds_release_at?: string | null;
+  buyer_confirmed_at?: string | null;
   product: {
     id: string;
     description: string;
@@ -673,12 +673,12 @@ export default function PurchasesPage() {
         });
 
         const response = await fetch(`/api/marketplace/purchases?${params}`);
+        const data = await response.json();
 
         if (!response.ok) {
-          throw new Error("Failed to fetch purchases");
+          console.error("Purchases API error:", data);
+          throw new Error(data.error || "Failed to fetch purchases");
         }
-
-        const data = await response.json();
         setPurchases(data.purchases || []);
         setPagination(data.pagination);
       } catch (error) {
@@ -815,7 +815,19 @@ export default function PurchasesPage() {
   };
 
   const getFundsStatusInfo = (purchase: Purchase) => {
-    const { funds_status, funds_release_at, buyer_confirmed_at } = purchase;
+    const funds_status = purchase.funds_status;
+    const funds_release_at = purchase.funds_release_at;
+    
+    // If no funds_status (old purchase or migration not run), show N/A
+    if (!funds_status) {
+      return {
+        label: 'N/A',
+        icon: Clock,
+        color: 'text-gray-400',
+        bgColor: 'bg-gray-50',
+        borderColor: 'border-gray-200',
+      };
+    }
     
     switch (funds_status) {
       case 'held':
@@ -864,7 +876,7 @@ export default function PurchasesPage() {
         };
       default:
         return {
-          label: funds_status || 'Unknown',
+          label: String(funds_status),
           icon: Clock,
           color: 'text-gray-600',
           bgColor: 'bg-gray-50',
@@ -1083,7 +1095,7 @@ export default function PurchasesPage() {
                           {/* Actions */}
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
-                              {purchase.funds_status === 'held' && (
+                              {purchase.funds_status && purchase.funds_status === 'held' && (
                                 <Button
                                   variant="outline"
                                   size="sm"
