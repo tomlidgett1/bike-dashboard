@@ -26,16 +26,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user profile with Stripe info
+    // Try to fetch Stripe columns - they may not exist if migration hasn't run
     const { data: profile, error: profileError } = await supabase
       .from('users')
-      .select(`
-        stripe_account_id,
-        stripe_account_status,
-        stripe_onboarding_complete,
-        stripe_payouts_enabled,
-        stripe_details_submitted,
-        stripe_connected_at
-      `)
+      .select('user_id')
       .eq('user_id', user.id)
       .single();
 
@@ -47,8 +41,49 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Try to fetch Stripe-specific columns (may not exist yet)
+    let stripeProfile: {
+      stripe_account_id?: string | null;
+      stripe_account_status?: string | null;
+      stripe_onboarding_complete?: boolean | null;
+      stripe_payouts_enabled?: boolean | null;
+      stripe_details_submitted?: boolean | null;
+      stripe_connected_at?: string | null;
+    } = {};
+
+    const { data: stripeData, error: stripeColumnsError } = await supabase
+      .from('users')
+      .select(`
+        stripe_account_id,
+        stripe_account_status,
+        stripe_onboarding_complete,
+        stripe_payouts_enabled,
+        stripe_details_submitted,
+        stripe_connected_at
+      `)
+      .eq('user_id', user.id)
+      .single();
+    
+    if (stripeColumnsError) {
+      // Columns likely don't exist yet - migration not run
+      // Return not connected state gracefully
+      console.log('[Stripe Connect Status] Stripe columns not found - migration may not have run:', stripeColumnsError.message);
+      return NextResponse.json({
+        connected: false,
+        status: 'not_connected',
+        payoutsEnabled: false,
+        detailsSubmitted: false,
+        onboardingComplete: false,
+        migrationRequired: true,
+      });
+    }
+    
+    if (stripeData) {
+      stripeProfile = stripeData;
+    }
+
     // If no Stripe account, return not connected
-    if (!profile.stripe_account_id) {
+    if (!stripeProfile.stripe_account_id) {
       return NextResponse.json({
         connected: false,
         status: 'not_connected',
@@ -60,7 +95,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch latest status from Stripe
     try {
-      const account = await stripe.accounts.retrieve(profile.stripe_account_id);
+      const account = await stripe.accounts.retrieve(stripeProfile.stripe_account_id);
 
       // Determine status
       let status = 'pending';
@@ -74,9 +109,9 @@ export async function GET(request: NextRequest) {
 
       // Update local database if status changed
       if (
-        status !== profile.stripe_account_status ||
-        account.payouts_enabled !== profile.stripe_payouts_enabled ||
-        account.details_submitted !== profile.stripe_details_submitted
+        status !== stripeProfile.stripe_account_status ||
+        account.payouts_enabled !== stripeProfile.stripe_payouts_enabled ||
+        account.details_submitted !== stripeProfile.stripe_details_submitted
       ) {
         await supabase
           .from('users')
@@ -91,14 +126,14 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         connected: true,
-        accountId: profile.stripe_account_id,
+        accountId: stripeProfile.stripe_account_id,
         status,
         payoutsEnabled: account.payouts_enabled || false,
         detailsSubmitted: account.details_submitted || false,
         onboardingComplete: account.details_submitted && account.payouts_enabled,
         chargesEnabled: account.charges_enabled || false,
         requirements: account.requirements?.currently_due || [],
-        connectedAt: profile.stripe_connected_at,
+        connectedAt: stripeProfile.stripe_connected_at,
       });
 
     } catch (stripeError) {
@@ -107,12 +142,12 @@ export async function GET(request: NextRequest) {
       // Return cached status if Stripe API fails
       return NextResponse.json({
         connected: true,
-        accountId: profile.stripe_account_id,
-        status: profile.stripe_account_status,
-        payoutsEnabled: profile.stripe_payouts_enabled,
-        detailsSubmitted: profile.stripe_details_submitted,
-        onboardingComplete: profile.stripe_onboarding_complete,
-        connectedAt: profile.stripe_connected_at,
+        accountId: stripeProfile.stripe_account_id,
+        status: stripeProfile.stripe_account_status || 'pending',
+        payoutsEnabled: stripeProfile.stripe_payouts_enabled || false,
+        detailsSubmitted: stripeProfile.stripe_details_submitted || false,
+        onboardingComplete: stripeProfile.stripe_onboarding_complete || false,
+        connectedAt: stripeProfile.stripe_connected_at,
         cached: true,
       });
     }
