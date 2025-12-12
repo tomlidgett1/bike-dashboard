@@ -682,6 +682,27 @@ function MessagesPageInner() {
               />
             )}
           </>
+        ) : activeTab === 'messages' && activeConversationId && loadingConversation ? (
+          // Loading state for messages
+          <div className="flex-1 flex flex-col bg-white h-full">
+            {/* Header with back button on mobile */}
+            <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-3 flex-shrink-0 bg-white w-full md:hidden">
+              <button
+                onClick={handleBackToList}
+                className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full flex-shrink-0"
+                aria-label="Back to conversations"
+              >
+                <ArrowLeft className="h-5 w-5 text-gray-700" />
+              </button>
+              <div className="h-9 w-9 rounded-full bg-gray-200 animate-pulse" />
+              <div className="flex-1">
+                <div className="h-4 w-24 bg-gray-200 rounded animate-pulse" />
+              </div>
+            </div>
+            <div className="flex-1 flex items-center justify-center">
+              <div className="h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          </div>
         ) : activeTab === 'offers' && activeOfferId && loadingActiveOffer ? (
           <div className="flex items-center justify-center h-full">
             <div className="h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />

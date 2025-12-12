@@ -7,6 +7,7 @@ import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
+import { BuyNowButton } from "./buy-now-button";
 import { ProductLearnPanel } from "./product-learn-panel";
 import { EditProductDrawer } from "./edit-product-drawer";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -98,33 +99,50 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
             Edit Listing
           </Button>
         ) : (
-          /* Buyer View: Make Offer & Send Message */
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <MakeOfferButton
-                productId={product.id}
-                productName={(product as any).display_name || product.description}
-                productPrice={product.price}
-                sellerId={product.user_id}
-                productImage={product.all_images?.[0] || null}
-                variant="outline"
-                size="lg"
-                fullWidth
-                className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-              />
-            </div>
-            <div className="flex-1">
-              <ProductInquiryButton
-                productId={product.id}
-                productName={(product as any).display_name || product.description}
-                sellerId={product.user_id}
-                sellerName={product.store_name}
-                productImage={product.all_images?.[0] || product.primary_image_url || null}
-                productPrice={product.price}
-                size="lg"
-                fullWidth
-                className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-              />
+          /* Buyer View: Buy Now, Make Offer & Send Message */
+          <div className="space-y-3">
+            {/* Primary CTA: Buy Now */}
+            <BuyNowButton
+              productId={product.id}
+              productName={(product as any).display_name || product.description}
+              productPrice={product.price}
+              sellerId={product.user_id}
+              shippingCost={(product as any).shipping_available ? ((product as any).shipping_cost || 0) : 0}
+              variant="default"
+              size="lg"
+              fullWidth
+              className="h-12"
+              showStripeBranding={true}
+            />
+
+            {/* Secondary CTAs: Make Offer & Send Message */}
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <MakeOfferButton
+                  productId={product.id}
+                  productName={(product as any).display_name || product.description}
+                  productPrice={product.price}
+                  sellerId={product.user_id}
+                  productImage={product.all_images?.[0] || null}
+                  variant="outline"
+                  size="lg"
+                  fullWidth
+                  className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                />
+              </div>
+              <div className="flex-1">
+                <ProductInquiryButton
+                  productId={product.id}
+                  productName={(product as any).display_name || product.description}
+                  sellerId={product.user_id}
+                  sellerName={product.store_name}
+                  productImage={product.all_images?.[0] || product.primary_image_url || null}
+                  productPrice={product.price}
+                  size="lg"
+                  fullWidth
+                  className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -176,7 +194,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
             <div className="h-10 w-10 rounded-full bg-gray-900 flex items-center justify-center">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
-            <span className="text-xs text-gray-700">Research</span>
+            <span className="text-xs text-gray-700">outlResearch</span>
           </button>
         </div>
       </div>

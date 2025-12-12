@@ -122,22 +122,23 @@ export async function GET(
         : Promise.resolve({ data: null })
     ]);
     
-    // Mark conversation as read - do this separately to not block the response
-    // Update the participant record to mark as read
-    const { error: updateError } = await supabase
+    console.log(`[Conversation API] Batch 2 took: ${Date.now() - batch2Start}ms`);
+    console.log(`[Conversation API] Total time: ${Date.now() - batch1Start}ms`);
+    
+    // Mark conversation as read - fire and forget (don't await, don't block response)
+    supabase
       .from('conversation_participants')
       .update({
         last_read_at: new Date().toISOString(),
         unread_count: 0
       })
       .eq('conversation_id', id)
-      .eq('user_id', user.id);
-    
-    if (updateError) {
-      console.error('Error marking conversation as read:', updateError);
-    }
-    console.log(`[Conversation API] Batch 2 took: ${Date.now() - batch2Start}ms`);
-    console.log(`[Conversation API] Total time: ${Date.now() - batch1Start}ms`);
+      .eq('user_id', user.id)
+      .then(({ error: updateError }) => {
+        if (updateError) {
+          console.error('Error marking conversation as read:', updateError);
+        }
+      });
 
     // Build maps for efficient lookup
     const attachmentsMap = new Map();

@@ -5,12 +5,15 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   ConversationWithMessages,
   GetConversationResponse,
   MessageWithAttachments,
 } from '@/lib/types/message';
+
+// Simple in-memory cache for conversations
+const conversationCache = new Map<string, ConversationWithMessages>();
 
 export function useConversation(conversationId: string | null) {
   const [conversation, setConversation] =
@@ -18,20 +21,38 @@ export function useConversation(conversationId: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sendingMessage, setSendingMessage] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const fetchConversation = useCallback(async () => {
+  const fetchConversation = useCallback(async (showCachedFirst = true) => {
     if (!conversationId) {
       setConversation(null);
       setLoading(false);
       return;
     }
 
-    try {
+    // Cancel any in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
+    // Show cached data immediately if available AND it's the right conversation
+    const cached = conversationCache.get(conversationId);
+    if (cached && cached.id === conversationId && showCachedFirst) {
+      setConversation(cached);
+      setLoading(false); // Don't show loading spinner if we have cached data
+    } else {
+      // Clear old conversation immediately to prevent showing wrong data
+      setConversation(null);
       setLoading(true);
+    }
+
+    try {
       setError(null);
 
       const response = await fetch(
-        `/api/messages/conversations/${conversationId}`
+        `/api/messages/conversations/${conversationId}`,
+        { signal: abortControllerRef.current.signal }
       );
 
       if (!response.ok) {
@@ -39,8 +60,15 @@ export function useConversation(conversationId: string | null) {
       }
 
       const data: GetConversationResponse = await response.json();
+      
+      // Update cache and state
+      conversationCache.set(conversationId, data.conversation);
       setConversation(data.conversation);
     } catch (err) {
+      // Ignore abort errors
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Unknown error');
       console.error('Error fetching conversation:', err);
     } finally {
@@ -49,7 +77,14 @@ export function useConversation(conversationId: string | null) {
   }, [conversationId]);
 
   useEffect(() => {
-    fetchConversation();
+    fetchConversation(true);
+    
+    // Cleanup: abort any in-flight requests when unmounting or changing conversation
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [fetchConversation]);
 
   const sendMessage = useCallback(
@@ -85,13 +120,15 @@ export function useConversation(conversationId: string | null) {
         const data = await response.json();
         const newMessage: MessageWithAttachments = data.message;
 
-        // Add message to local state
-        if (conversation) {
-          setConversation({
+        // Add message to local state and cache
+        if (conversation && conversationId) {
+          const updatedConversation = {
             ...conversation,
             messages: [...conversation.messages, newMessage],
             message_count: conversation.message_count + 1,
-          });
+          };
+          setConversation(updatedConversation);
+          conversationCache.set(conversationId, updatedConversation);
         }
 
         return newMessage;
@@ -136,7 +173,8 @@ export function useConversation(conversationId: string | null) {
   );
 
   const refresh = useCallback(() => {
-    fetchConversation();
+    // Force refresh - show loading state
+    fetchConversation(false);
   }, [fetchConversation]);
 
   return {

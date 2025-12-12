@@ -145,20 +145,21 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/60 z-50"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 animate-in fade-in duration-200"
             onClick={onClose}
           />
 
           {/* Modal */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            initial={{ opacity: 0, scale: 0.95, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            exit={{ opacity: 0, scale: 0.95, y: 16 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300"
+            style={{ animationDelay: '50ms' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="relative bg-gray-50 rounded-md shadow-2xl w-[95vw] max-w-[1400px] h-[90vh] flex flex-col overflow-hidden">
+            <div className="relative bg-gray-50 rounded-xl shadow-2xl w-[95vw] max-w-[1400px] h-[90vh] flex flex-col overflow-hidden">
               {/* Close Button */}
               <button
                 onClick={onClose}
