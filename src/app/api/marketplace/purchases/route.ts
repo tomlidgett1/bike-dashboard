@@ -28,7 +28,8 @@ export async function GET(request: NextRequest) {
 
     const offset = (page - 1) * pageSize;
 
-    // Build query for purchases with product and seller details
+    // Build query for purchases with product details
+    // Note: We fetch seller info separately to avoid foreign key issues
     let query = supabase
       .from("purchases")
       .select(
@@ -42,12 +43,6 @@ export async function GET(request: NextRequest) {
           price,
           marketplace_category,
           marketplace_subcategory
-        ),
-        seller:users!purchases_seller_id_fkey(
-          user_id,
-          name,
-          business_name,
-          account_type
         )
       `,
         { count: "exact" }
@@ -79,8 +74,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Fetch seller info for each purchase
+    const purchasesWithSellers = await Promise.all(
+      (purchases || []).map(async (purchase) => {
+        if (!purchase.seller_id) {
+          return { ...purchase, seller: null };
+        }
+        
+        const { data: seller } = await supabase
+          .from("users")
+          .select("user_id, name, business_name, account_type")
+          .eq("user_id", purchase.seller_id)
+          .single();
+        
+        return { ...purchase, seller };
+      })
+    );
+
     return NextResponse.json({
-      purchases: purchases || [],
+      purchases: purchasesWithSellers,
       pagination: {
         page,
         pageSize,
