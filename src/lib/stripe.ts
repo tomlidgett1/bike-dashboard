@@ -56,12 +56,20 @@ export function getStripeClient(): Promise<StripeClient | null> {
 // Constants
 // ============================================================
 
-// Yellow Jersey platform fee percentage (3%)
+// Yellow Jersey platform fee percentage (3% from seller)
 export const PLATFORM_FEE_PERCENTAGE = 0.03;
 
-// Calculate platform fee from total amount
+// Buyer service fee percentage (0.5%)
+export const BUYER_FEE_PERCENTAGE = 0.005;
+
+// Calculate platform fee from total amount (seller pays this)
 export function calculatePlatformFee(totalAmount: number): number {
   return Math.round(totalAmount * PLATFORM_FEE_PERCENTAGE * 100) / 100;
+}
+
+// Calculate buyer service fee (buyer pays this)
+export function calculateBuyerFee(itemPrice: number): number {
+  return Math.round(itemPrice * BUYER_FEE_PERCENTAGE * 100) / 100;
 }
 
 // Calculate seller payout amount (total - platform fee)

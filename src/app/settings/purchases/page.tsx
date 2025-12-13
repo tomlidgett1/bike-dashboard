@@ -3,14 +3,13 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
   Package,
   Loader2,
   RefreshCw,
-  ChevronLeft,
   ChevronRight,
   ChevronDown,
   ShoppingBag,
@@ -29,16 +28,15 @@ import {
   Shield,
   PackageCheck,
   Info,
+  Mail,
+  DollarSign,
+  Star,
+  Archive,
+  AlertCircle,
+  Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
@@ -93,16 +91,17 @@ interface PaginationInfo {
   totalPages: number;
 }
 
-// Helper to normalize product data
+type ViewMode = 'buying' | 'selling';
+type CategoryFilter = 'all' | 'active' | 'completed' | 'disputes' | 'archived';
+type QuickFilter = 'awaiting_shipment' | 'in_transit' | 'pending_confirmation' | null;
+
+// Helper functions
 function normalizeProduct(product: any): Purchase['product'] | null {
   if (!product) return null;
-  if (Array.isArray(product)) {
-    return product.length > 0 ? product[0] : null;
-  }
+  if (Array.isArray(product)) return product.length > 0 ? product[0] : null;
   return product;
 }
 
-// Helper to get the best available image URL
 function getProductImageUrl(product: any): string | null {
   const p = normalizeProduct(product);
   if (!p) return null;
@@ -116,7 +115,6 @@ function getProductImageUrl(product: any): string | null {
   return null;
 }
 
-// Helper to get product display name
 function getProductName(product: any): string {
   const p = normalizeProduct(product);
   if (!p) return "Unknown Product";
@@ -127,10 +125,7 @@ function getProductName(product: any): string {
 // Status Configuration
 // ============================================================
 
-const statusConfig: Record<string, { 
-  label: string; 
-  color: string;
-}> = {
+const statusConfig: Record<string, { label: string; color: string }> = {
   pending: { label: "Pending", color: "text-amber-600" },
   confirmed: { label: "Confirmed", color: "text-blue-600" },
   paid: { label: "Paid", color: "text-emerald-600" },
@@ -141,15 +136,70 @@ const statusConfig: Record<string, {
 };
 
 // ============================================================
-// Detail Row Component (Stripe Link Style)
+// Sidebar Navigation
 // ============================================================
 
-function DetailRow({ 
+interface SidebarItemProps {
+  icon: React.ElementType;
+  label: string;
+  count?: number;
+  isActive: boolean;
+  onClick: () => void;
+}
+
+function SidebarItem({ icon: Icon, label, count, isActive, onClick }: SidebarItemProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors",
+        isActive 
+          ? "bg-gray-100 text-gray-900 font-medium" 
+          : "text-gray-600 hover:bg-gray-50"
+      )}
+    >
+      <Icon className={cn("h-5 w-5", isActive ? "text-gray-700" : "text-gray-400")} />
+      <span className="flex-1 text-sm">{label}</span>
+      {count !== undefined && count > 0 && (
+        <span className="text-xs text-gray-400">{count}</span>
+      )}
+    </button>
+  );
+}
+
+// ============================================================
+// Quick Filter Pills
+// ============================================================
+
+function QuickFilterPill({ 
   label, 
-  value, 
-  action,
-  muted = false 
+  isActive, 
+  onClick 
 }: { 
+  label: string; 
+  isActive: boolean; 
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap",
+        isActive 
+          ? "bg-gray-900 text-white" 
+          : "bg-white border border-gray-200 text-gray-700 hover:border-gray-300"
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ============================================================
+// Purchase Detail Panel
+// ============================================================
+
+function DetailRow({ label, value, action, muted = false }: { 
   label: string; 
   value: React.ReactNode; 
   action?: React.ReactNode;
@@ -159,28 +209,11 @@ function DetailRow({
     <div className="flex items-center justify-between py-4 border-b border-gray-100 last:border-b-0">
       <span className="text-gray-500 text-sm">{label}</span>
       <div className="flex items-center gap-2">
-        <span className={cn("text-sm", muted ? "text-gray-400" : "text-gray-900")}>
-          {value}
-        </span>
+        <span className={cn("text-sm", muted ? "text-gray-400" : "text-gray-900")}>{value}</span>
         {action}
       </div>
     </div>
   );
-}
-
-// ============================================================
-// Purchase Detail Panel (Stripe Link Style)
-// ============================================================
-
-interface DetailPanelProps {
-  purchase: Purchase | null;
-  isOpen: boolean;
-  onClose: () => void;
-  onViewProduct: (id: string) => void;
-  onContactSeller: (id: string) => void;
-  onConfirmReceipt: (id: string) => void;
-  confirmingId: string | null;
-  getSellerName: (seller: Purchase["seller"]) => string;
 }
 
 function PurchaseDetailPanel({
@@ -192,7 +225,18 @@ function PurchaseDetailPanel({
   onConfirmReceipt,
   confirmingId,
   getSellerName,
-}: DetailPanelProps) {
+  viewMode,
+}: {
+  purchase: Purchase | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onViewProduct: (id: string) => void;
+  onContactSeller: (id: string) => void;
+  onConfirmReceipt: (id: string) => void;
+  confirmingId: string | null;
+  getSellerName: (seller: Purchase["seller"]) => string;
+  viewMode: ViewMode;
+}) {
   const [copied, setCopied] = React.useState(false);
 
   const handleCopy = () => {
@@ -205,7 +249,7 @@ function PurchaseDetailPanel({
   if (!purchase) return null;
 
   const status = statusConfig[purchase.status] || statusConfig.pending;
-  const canConfirmReceipt = purchase.funds_status === 'held';
+  const canConfirmReceipt = purchase.funds_status === 'held' && viewMode === 'buying';
   const isConfirming = confirmingId === purchase.id;
   const productImage = getProductImageUrl(purchase.product);
   const productName = getProductName(purchase.product);
@@ -223,7 +267,7 @@ function PurchaseDetailPanel({
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Mobile: Bottom Sheet */}
+          {/* Mobile Bottom Sheet */}
           <div className="lg:hidden">
             <motion.div
               initial={{ opacity: 0 }}
@@ -242,7 +286,7 @@ function PurchaseDetailPanel({
               <div className="flex justify-center pt-3 pb-2">
                 <div className="w-10 h-1 bg-gray-200 rounded-full" />
               </div>
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto pb-safe">
                 <DetailContent 
                   purchase={purchase}
                   status={status}
@@ -259,12 +303,13 @@ function PurchaseDetailPanel({
                   onClose={onClose}
                   getSellerName={getSellerName}
                   formatDate={formatDate}
+                  viewMode={viewMode}
                 />
               </div>
             </motion.div>
           </div>
 
-          {/* Desktop: Side Panel */}
+          {/* Desktop Side Panel */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -289,6 +334,7 @@ function PurchaseDetailPanel({
                 onClose={onClose}
                 getSellerName={getSellerName}
                 formatDate={formatDate}
+                viewMode={viewMode}
               />
             </div>
           </motion.div>
@@ -298,7 +344,6 @@ function PurchaseDetailPanel({
   );
 }
 
-// Shared detail content
 function DetailContent({
   purchase,
   status,
@@ -315,6 +360,7 @@ function DetailContent({
   onClose,
   getSellerName,
   formatDate,
+  viewMode,
 }: {
   purchase: Purchase;
   status: typeof statusConfig[string];
@@ -331,32 +377,23 @@ function DetailContent({
   onClose: () => void;
   getSellerName: (seller: Purchase["seller"]) => string;
   formatDate: (date: string) => string;
+  viewMode: ViewMode;
 }) {
   return (
     <div>
-      {/* Header with close */}
       <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
         <h3 className="font-semibold text-gray-900">Order Details</h3>
-        <button 
-          onClick={onClose}
-          className="p-1 rounded-full hover:bg-gray-100 transition-colors"
-        >
+        <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-100 transition-colors">
           <X className="h-5 w-5 text-gray-400" />
         </button>
       </div>
 
-      {/* Product Section */}
+      {/* Product */}
       <div className="px-5 py-4 border-b border-gray-100">
         <div className="flex gap-4">
           <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-gray-50 flex-shrink-0">
             {productImage ? (
-              <Image
-                src={productImage}
-                alt={productName}
-                fill
-                className="object-cover"
-                sizes="64px"
-              />
+              <Image src={productImage} alt={productName} fill className="object-cover" sizes="64px" />
             ) : (
               <div className="flex h-full w-full items-center justify-center">
                 <Package className="h-6 w-6 text-gray-300" />
@@ -364,13 +401,9 @@ function DetailContent({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-gray-900 line-clamp-2 text-sm">
-              {productName}
-            </p>
+            <p className="font-medium text-gray-900 line-clamp-2 text-sm">{productName}</p>
             {product?.marketplace_category && (
-              <p className="text-xs text-gray-500 mt-1">
-                {product.marketplace_category}
-              </p>
+              <p className="text-xs text-gray-500 mt-1">{product.marketplace_category}</p>
             )}
           </div>
         </div>
@@ -383,31 +416,19 @@ function DetailContent({
           value={`#${purchase.order_number}`}
           action={
             <button onClick={onCopy} className="p-1 -mr-1 hover:bg-gray-100 rounded transition-colors">
-              {copied ? (
-                <Check className="h-4 w-4 text-emerald-500" />
-              ) : (
-                <Copy className="h-4 w-4 text-gray-400" />
-              )}
+              {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4 text-gray-400" />}
             </button>
           }
         />
-        <DetailRow 
-          label="Status" 
-          value={
-            <span className={cn("font-medium", status.color)}>
-              {status.label}
-            </span>
-          }
-        />
-        <DetailRow 
-          label="Date" 
-          value={formatDate(purchase.purchase_date)}
-        />
+        <DetailRow label="Status" value={<span className={cn("font-medium", status.color)}>{status.label}</span>} />
+        <DetailRow label="Date" value={formatDate(purchase.purchase_date)} />
       </div>
 
-      {/* Seller */}
+      {/* Seller/Buyer */}
       <div className="px-5 py-4 border-t border-gray-100">
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Seller</p>
+        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
+          {viewMode === 'buying' ? 'Seller' : 'Buyer'}
+        </p>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100">
@@ -426,11 +447,11 @@ function DetailContent({
               )}
             </div>
           </div>
-          <ChevronDown className="h-5 w-5 text-gray-300" />
+          <ChevronRight className="h-5 w-5 text-gray-300" />
         </div>
       </div>
 
-      {/* Payment Summary */}
+      {/* Payment */}
       <div className="px-5 py-4 border-t border-gray-100">
         <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Payment</p>
         <div className="space-y-2">
@@ -440,9 +461,7 @@ function DetailContent({
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-500">Shipping</span>
-            <span className="text-gray-900">
-              {purchase.shipping_cost === 0 ? 'Free' : `$${purchase.shipping_cost.toFixed(2)}`}
-            </span>
+            <span className="text-gray-900">{purchase.shipping_cost === 0 ? 'Free' : `$${purchase.shipping_cost.toFixed(2)}`}</span>
           </div>
           {purchase.tax_amount > 0 && (
             <div className="flex justify-between text-sm">
@@ -457,7 +476,7 @@ function DetailContent({
         </div>
       </div>
 
-      {/* Escrow Status */}
+      {/* Escrow */}
       {purchase.funds_status && (
         <div className="px-5 py-4 border-t border-gray-100">
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
@@ -470,12 +489,9 @@ function DetailContent({
                  purchase.funds_status === 'disputed' ? 'Under Dispute' : 'Refunded'}
               </p>
               {purchase.funds_status === 'held' && purchase.funds_release_at && (
-                <p className="text-xs text-gray-500">
-                  Auto-releases {formatDate(purchase.funds_release_at)}
-                </p>
+                <p className="text-xs text-gray-500">Auto-releases {formatDate(purchase.funds_release_at)}</p>
               )}
             </div>
-            <Info className="h-4 w-4 text-gray-400" />
           </div>
         </div>
       )}
@@ -488,44 +504,30 @@ function DetailContent({
             disabled={isConfirming}
             className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-medium rounded-lg transition-colors"
           >
-            {isConfirming ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4" />
-            )}
+            {isConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             {isConfirming ? 'Confirming...' : 'Confirm Receipt'}
           </button>
-          <p className="text-xs text-gray-500 text-center mt-2">
-            This will release payment to the seller
-          </p>
+          <p className="text-xs text-gray-500 text-center mt-2">This will release payment to the seller</p>
         </div>
       )}
 
       {/* Actions */}
       <div className="px-5 py-4 border-t border-gray-100 space-y-2">
-        <button
-          onClick={() => onViewProduct(purchase.product_id)}
-          className="w-full flex items-center justify-between py-3 px-4 hover:bg-gray-50 rounded-lg transition-colors"
-        >
+        <button onClick={() => onViewProduct(purchase.product_id)} className="w-full flex items-center justify-between py-3 px-4 hover:bg-gray-50 rounded-lg transition-colors">
           <div className="flex items-center gap-3">
             <ExternalLink className="h-5 w-5 text-gray-400" />
             <span className="text-sm text-gray-700">View Product</span>
           </div>
           <ChevronRight className="h-5 w-5 text-gray-300" />
         </button>
-        <button
-          onClick={() => onContactSeller(purchase.seller_id)}
-          className="w-full flex items-center justify-between py-3 px-4 hover:bg-gray-50 rounded-lg transition-colors"
-        >
+        <button onClick={() => onContactSeller(purchase.seller_id)} className="w-full flex items-center justify-between py-3 px-4 hover:bg-gray-50 rounded-lg transition-colors">
           <div className="flex items-center gap-3">
             <MessageCircle className="h-5 w-5 text-gray-400" />
-            <span className="text-sm text-gray-700">Contact Seller</span>
+            <span className="text-sm text-gray-700">{viewMode === 'buying' ? 'Contact Seller' : 'Contact Buyer'}</span>
           </div>
           <ChevronRight className="h-5 w-5 text-gray-300" />
         </button>
-        <button
-          className="w-full flex items-center justify-between py-3 px-4 hover:bg-gray-50 rounded-lg transition-colors"
-        >
+        <button className="w-full flex items-center justify-between py-3 px-4 hover:bg-gray-50 rounded-lg transition-colors">
           <div className="flex items-center gap-3">
             <HelpCircle className="h-5 w-5 text-gray-400" />
             <span className="text-sm text-gray-700">Get Help</span>
@@ -538,7 +540,7 @@ function DetailContent({
 }
 
 // ============================================================
-// Purchase Row Component (Clean Minimal Style)
+// Purchase Row
 // ============================================================
 
 function PurchaseRow({
@@ -546,21 +548,20 @@ function PurchaseRow({
   isSelected,
   onClick,
   getSellerName,
+  viewMode,
 }: {
   purchase: Purchase;
   isSelected: boolean;
   onClick: () => void;
   getSellerName: (seller: Purchase["seller"]) => string;
+  viewMode: ViewMode;
 }) {
   const status = statusConfig[purchase.status] || statusConfig.pending;
   const productImage = getProductImageUrl(purchase.product);
   const productName = getProductName(purchase.product);
 
   const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('en-AU', {
-      day: 'numeric',
-      month: 'short',
-    });
+    return new Date(date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
   };
 
   return (
@@ -571,39 +572,25 @@ function PurchaseRow({
         isSelected && "bg-gray-50"
       )}
     >
-      {/* Image */}
       <div className="relative h-14 w-14 rounded-lg overflow-hidden bg-gray-50 flex-shrink-0">
         {productImage ? (
-          <Image
-            src={productImage}
-            alt={productName}
-            fill
-            className="object-cover"
-            sizes="56px"
-          />
+          <Image src={productImage} alt={productName} fill className="object-cover" sizes="56px" />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <Package className="h-5 w-5 text-gray-300" />
           </div>
         )}
       </div>
-
-      {/* Content */}
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-gray-900 text-sm truncate">
-          {productName}
-        </p>
+        <p className="font-medium text-gray-900 text-sm truncate">{productName}</p>
         <p className="text-xs text-gray-500 mt-0.5">
-          {getSellerName(purchase.seller)} • {formatDate(purchase.purchase_date)}
+          {viewMode === 'buying' ? `From ${getSellerName(purchase.seller)}` : `Sold to buyer`} • {formatDate(purchase.purchase_date)}
         </p>
       </div>
-
-      {/* Right side */}
       <div className="text-right flex-shrink-0">
         <p className="font-medium text-gray-900 text-sm">${purchase.total_amount.toFixed(2)}</p>
         <p className={cn("text-xs mt-0.5", status.color)}>{status.label}</p>
       </div>
-
       <ChevronRight className="h-5 w-5 text-gray-300 flex-shrink-0" />
     </button>
   );
@@ -613,138 +600,149 @@ function PurchaseRow({
 // Empty State
 // ============================================================
 
-function EmptyState({ onBrowse }: { onBrowse: () => void }) {
+function EmptyState({ viewMode, category, onBrowse }: { viewMode: ViewMode; category: CategoryFilter; onBrowse: () => void }) {
+  const getMessage = () => {
+    if (viewMode === 'selling') {
+      if (category === 'active') return "No active sales";
+      if (category === 'completed') return "No completed sales yet";
+      if (category === 'disputes') return "No disputes";
+      return "No sales yet";
+    }
+    if (category === 'active') return "No active orders";
+    if (category === 'completed') return "No completed orders";
+    if (category === 'disputes') return "No disputes";
+    return "No purchases yet";
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center py-20 px-4">
-      <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-        <ShoppingBag className="h-7 w-7 text-gray-400" />
+    <div className="flex flex-col items-center justify-center py-16 px-4">
+      <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+        {viewMode === 'selling' ? <Tag className="h-6 w-6 text-gray-400" /> : <ShoppingBag className="h-6 w-6 text-gray-400" />}
       </div>
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">
-        No purchases yet
-      </h3>
-      <p className="text-gray-500 text-sm text-center max-w-xs mb-6">
-        When you buy items from the marketplace, they'll appear here.
+      <h3 className="text-base font-semibold text-gray-900 mb-1">{getMessage()}</h3>
+      <p className="text-gray-500 text-sm text-center max-w-xs mb-5">
+        {viewMode === 'selling' 
+          ? "When you sell items, they'll appear here."
+          : "When you buy items, they'll appear here."}
       </p>
       <button
         onClick={onBrowse}
         className="px-5 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors"
       >
-        Browse Marketplace
+        {viewMode === 'selling' ? 'List an Item' : 'Browse Marketplace'}
       </button>
     </div>
   );
 }
 
 // ============================================================
-// Main Page Component
+// Main Page
 // ============================================================
 
 export default function PurchasesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const [viewMode, setViewMode] = React.useState<ViewMode>('buying');
+  const [category, setCategory] = React.useState<CategoryFilter>('all');
+  const [quickFilter, setQuickFilter] = React.useState<QuickFilter>(null);
+  const [search, setSearch] = React.useState("");
+  const [debouncedSearch, setDebouncedSearch] = React.useState("");
+  
   const [purchases, setPurchases] = React.useState<Purchase[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
-  const [pagination, setPagination] = React.useState<PaginationInfo>({
-    page: 1,
-    pageSize: 20,
-    total: 0,
-    totalPages: 0,
-  });
-  const [search, setSearch] = React.useState("");
-  const [statusFilter, setStatusFilter] = React.useState<string>("all");
-  const [debouncedSearch, setDebouncedSearch] = React.useState("");
+  const [pagination, setPagination] = React.useState<PaginationInfo>({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
   const [selectedPurchase, setSelectedPurchase] = React.useState<Purchase | null>(null);
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
+  
+  // Counts for sidebar
+  const [counts, setCounts] = React.useState({ all: 0, active: 0, completed: 0, disputes: 0, archived: 0 });
 
-  // Debounce search
   React.useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Fetch purchases
-  const fetchPurchases = React.useCallback(
-    async (page: number, isInitialLoad = false) => {
-      if (isInitialLoad) setLoading(true);
+  // Map category/quickFilter to API status
+  const getStatusFilter = () => {
+    if (quickFilter === 'awaiting_shipment') return 'paid';
+    if (quickFilter === 'in_transit') return 'shipped';
+    if (quickFilter === 'pending_confirmation') return 'delivered';
+    
+    if (category === 'active') return 'active'; // pending, paid, shipped
+    if (category === 'completed') return 'completed'; // delivered
+    if (category === 'disputes') return 'disputed';
+    return 'all';
+  };
 
-      try {
-        const params = new URLSearchParams({
-          page: page.toString(),
-          pageSize: pagination.pageSize.toString(),
-          search: debouncedSearch,
-          status: statusFilter,
-        });
+  const fetchPurchases = React.useCallback(async (page: number, isInitialLoad = false) => {
+    if (isInitialLoad) setLoading(true);
 
-        const response = await fetch(`/api/marketplace/purchases?${params}`);
-        const data = await response.json();
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        pageSize: pagination.pageSize.toString(),
+        search: debouncedSearch,
+        status: getStatusFilter(),
+        mode: viewMode,
+      });
 
-        if (!response.ok) throw new Error(data.error || "Failed to fetch");
-        
-        setPurchases(data.purchases || []);
-        setPagination(data.pagination);
-      } catch (error) {
-        console.error("Error fetching purchases:", error);
-      } finally {
-        if (isInitialLoad) setLoading(false);
-        setRefreshing(false);
+      const response = await fetch(`/api/marketplace/purchases?${params}`);
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error || "Failed to fetch");
+      
+      setPurchases(data.purchases || []);
+      setPagination(data.pagination);
+      
+      // Update counts if available
+      if (data.counts) {
+        setCounts(data.counts);
+      } else {
+        setCounts(prev => ({ ...prev, all: data.pagination.total }));
       }
-    },
-    [debouncedSearch, statusFilter, pagination.pageSize]
-  );
+    } catch (error) {
+      console.error("Error fetching purchases:", error);
+    } finally {
+      if (isInitialLoad) setLoading(false);
+      setRefreshing(false);
+    }
+  }, [debouncedSearch, category, quickFilter, viewMode, pagination.pageSize]);
 
   React.useEffect(() => {
-    fetchPurchases(1, loading);
-  }, [debouncedSearch, statusFilter, pagination.pageSize]);
+    fetchPurchases(1, true);
+  }, [debouncedSearch, category, quickFilter, viewMode]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchPurchases(pagination.page);
   };
 
-  const handleViewProduct = (productId: string) => {
-    router.push(`/marketplace/product/${productId}`);
-  };
-
-  const handleContactSeller = (sellerId: string) => {
-    console.log("Contact seller:", sellerId);
-  };
+  const handleViewProduct = (productId: string) => router.push(`/marketplace/product/${productId}`);
+  const handleContactSeller = (sellerId: string) => console.log("Contact:", sellerId);
 
   const handleConfirmReceipt = async (purchaseId: string) => {
     if (confirmingId) return;
-    
-    const confirmed = window.confirm(
-      "Are you sure you want to confirm receipt? This will release the payment to the seller."
-    );
-    if (!confirmed) return;
+    if (!window.confirm("Confirm receipt? This releases payment to the seller.")) return;
     
     setConfirmingId(purchaseId);
-    
     try {
-      const response = await fetch(`/api/marketplace/purchases/${purchaseId}/confirm-receipt`, {
-        method: 'POST',
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to confirm receipt');
-      }
-      
+      const response = await fetch(`/api/marketplace/purchases/${purchaseId}/confirm-receipt`, { method: 'POST' });
+      if (!response.ok) throw new Error('Failed');
       await fetchPurchases(pagination.page);
       setSelectedPurchase(null);
-      alert('Receipt confirmed! Payment has been released to the seller.');
+      alert('Receipt confirmed!');
     } catch (error) {
-      console.error('Error confirming receipt:', error);
-      alert(error instanceof Error ? error.message : 'Failed to confirm receipt');
+      alert('Failed to confirm receipt');
     } finally {
       setConfirmingId(null);
     }
   };
 
   const getSellerName = (seller: Purchase["seller"]) => {
-    if (seller?.account_type === "bicycle_store" && seller.business_name) {
-      return seller.business_name;
-    }
-    return seller?.name || "Unknown Seller";
+    if (seller?.account_type === "bicycle_store" && seller.business_name) return seller.business_name;
+    return seller?.name || "Unknown";
   };
 
   return (
@@ -753,135 +751,277 @@ export default function PurchasesPage() {
 
       <MarketplaceLayout>
         <div className="min-h-screen bg-gray-50 pt-16 pb-24 sm:pb-8">
-          {/* Content */}
           <div className="px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col lg:flex-row gap-6">
-              {/* Left: Purchase List */}
-              <div className={cn(
-                "flex-1 transition-all duration-200",
-                selectedPurchase ? "lg:max-w-[55%]" : "lg:max-w-3xl lg:mx-auto"
-              )}>
-                {/* Header Card */}
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  {/* Title */}
-                  <div className="px-5 py-4 border-b border-gray-100">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h1 className="text-lg font-semibold text-gray-900">My Purchases</h1>
-                        <p className="text-sm text-gray-500 mt-0.5">
-                          {pagination.total} order{pagination.total !== 1 ? 's' : ''}
-                        </p>
-                      </div>
-                      <button
-                        onClick={handleRefresh}
-                        disabled={refreshing}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                      >
-                        <RefreshCw className={cn("h-5 w-5 text-gray-400", refreshing && "animate-spin")} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Search & Filter */}
-                  <div className="px-5 py-3 border-b border-gray-100 flex gap-3">
-                    <div className="relative flex-1">
+            <div className="flex gap-6">
+              
+              {/* Sidebar - Desktop */}
+              <div className="hidden lg:block w-64 flex-shrink-0">
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden sticky top-20">
+                  {/* Search */}
+                  <div className="p-4 border-b border-gray-100">
+                    <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                       <Input
                         type="text"
-                        placeholder="Search orders..."
+                        placeholder={`Search ${viewMode === 'buying' ? 'purchases' : 'sales'}...`}
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         className="pl-9 border-gray-200 rounded-lg bg-gray-50 focus:bg-white h-10"
                       />
                     </div>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-[130px] border-gray-200 rounded-lg bg-gray-50 h-10">
-                        <SelectValue placeholder="Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="paid">Paid</SelectItem>
-                        <SelectItem value="shipped">Shipped</SelectItem>
-                        <SelectItem value="delivered">Delivered</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </div>
 
-                  {/* List */}
-                  {loading ? (
-                    <div className="flex items-center justify-center py-16">
-                      <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                  {/* Buy/Sell Tabs */}
+                  <div className="px-4 pt-4">
+                    <div className="flex border-b border-gray-200">
+                      <button
+                        onClick={() => { setViewMode('selling'); setCategory('all'); setQuickFilter(null); }}
+                        className={cn(
+                          "flex-1 pb-3 text-sm font-medium border-b-2 transition-colors",
+                          viewMode === 'selling' 
+                            ? "border-emerald-500 text-gray-900" 
+                            : "border-transparent text-gray-500 hover:text-gray-700"
+                        )}
+                      >
+                        Sell
+                      </button>
+                      <button
+                        onClick={() => { setViewMode('buying'); setCategory('all'); setQuickFilter(null); }}
+                        className={cn(
+                          "flex-1 pb-3 text-sm font-medium border-b-2 transition-colors",
+                          viewMode === 'buying' 
+                            ? "border-emerald-500 text-gray-900" 
+                            : "border-transparent text-gray-500 hover:text-gray-700"
+                        )}
+                      >
+                        Buy
+                      </button>
                     </div>
-                  ) : purchases.length === 0 ? (
-                    <EmptyState onBrowse={() => router.push("/marketplace")} />
-                  ) : (
-                    <div>
-                      {purchases.map((purchase) => (
-                        <PurchaseRow
-                          key={purchase.id}
-                          purchase={purchase}
-                          isSelected={selectedPurchase?.id === purchase.id}
-                          onClick={() => setSelectedPurchase(
-                            selectedPurchase?.id === purchase.id ? null : purchase
-                          )}
-                          getSellerName={getSellerName}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  </div>
 
-                  {/* Pagination */}
-                  {pagination.totalPages > 1 && (
-                    <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-                      <span className="text-sm text-gray-500">
-                        Page {pagination.page} of {pagination.totalPages}
-                      </span>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => fetchPurchases(pagination.page - 1)}
-                          disabled={pagination.page <= 1}
-                          className="p-2 hover:bg-gray-100 disabled:opacity-50 disabled:hover:bg-transparent rounded-lg transition-colors"
-                        >
-                          <ChevronLeft className="h-5 w-5 text-gray-600" />
-                        </button>
-                        <button
-                          onClick={() => fetchPurchases(pagination.page + 1)}
-                          disabled={pagination.page >= pagination.totalPages}
-                          className="p-2 hover:bg-gray-100 disabled:opacity-50 disabled:hover:bg-transparent rounded-lg transition-colors"
-                        >
-                          <ChevronRight className="h-5 w-5 text-gray-600" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  {/* Categories */}
+                  <div className="p-4 space-y-1">
+                    <SidebarItem 
+                      icon={Mail} 
+                      label="All" 
+                      count={counts.all}
+                      isActive={category === 'all'} 
+                      onClick={() => { setCategory('all'); setQuickFilter(null); }} 
+                    />
+                    <SidebarItem 
+                      icon={Package} 
+                      label="Active Orders" 
+                      count={counts.active}
+                      isActive={category === 'active'} 
+                      onClick={() => { setCategory('active'); setQuickFilter(null); }} 
+                    />
+                    <SidebarItem 
+                      icon={DollarSign} 
+                      label="Completed" 
+                      count={counts.completed}
+                      isActive={category === 'completed'} 
+                      onClick={() => { setCategory('completed'); setQuickFilter(null); }} 
+                    />
+                    <SidebarItem 
+                      icon={AlertCircle} 
+                      label="Disputes" 
+                      count={counts.disputes}
+                      isActive={category === 'disputes'} 
+                      onClick={() => { setCategory('disputes'); setQuickFilter(null); }} 
+                    />
+                    <SidebarItem 
+                      icon={Archive} 
+                      label="Archived" 
+                      count={counts.archived}
+                      isActive={category === 'archived'} 
+                      onClick={() => { setCategory('archived'); setQuickFilter(null); }} 
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Right: Detail Panel (Desktop) */}
-              <AnimatePresence mode="wait">
-                {selectedPurchase && (
-                  <motion.div
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: "45%" }}
-                    exit={{ opacity: 0, width: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="hidden lg:block sticky top-20 h-fit"
+              {/* Main Content */}
+              <div className="flex-1 min-w-0">
+                {/* Mobile Header */}
+                <div className="lg:hidden mb-4">
+                  <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    {/* Search */}
+                    <div className="relative mb-4">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        placeholder="Search orders..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="pl-9 border-gray-200 rounded-lg bg-gray-50 h-10"
+                      />
+                    </div>
+                    
+                    {/* Buy/Sell Toggle */}
+                    <div className="flex border-b border-gray-200 mb-4">
+                      <button
+                        onClick={() => setViewMode('selling')}
+                        className={cn(
+                          "flex-1 pb-3 text-sm font-medium border-b-2",
+                          viewMode === 'selling' ? "border-emerald-500 text-gray-900" : "border-transparent text-gray-500"
+                        )}
+                      >
+                        Sell
+                      </button>
+                      <button
+                        onClick={() => setViewMode('buying')}
+                        className={cn(
+                          "flex-1 pb-3 text-sm font-medium border-b-2",
+                          viewMode === 'buying' ? "border-emerald-500 text-gray-900" : "border-transparent text-gray-500"
+                        )}
+                      >
+                        Buy
+                      </button>
+                    </div>
+
+                    {/* Category Pills */}
+                    <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
+                      {['all', 'active', 'completed', 'disputes'].map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setCategory(cat as CategoryFilter)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors",
+                            category === cat
+                              ? "bg-gray-900 text-white"
+                              : "bg-gray-100 text-gray-600"
+                          )}
+                        >
+                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Filters */}
+                <div className="mb-4 flex items-center gap-3 overflow-x-auto pb-1">
+                  <QuickFilterPill 
+                    label="Awaiting Shipment" 
+                    isActive={quickFilter === 'awaiting_shipment'} 
+                    onClick={() => setQuickFilter(quickFilter === 'awaiting_shipment' ? null : 'awaiting_shipment')} 
+                  />
+                  <QuickFilterPill 
+                    label="In Transit" 
+                    isActive={quickFilter === 'in_transit'} 
+                    onClick={() => setQuickFilter(quickFilter === 'in_transit' ? null : 'in_transit')} 
+                  />
+                  <QuickFilterPill 
+                    label="Pending Confirmation" 
+                    isActive={quickFilter === 'pending_confirmation'} 
+                    onClick={() => setQuickFilter(quickFilter === 'pending_confirmation' ? null : 'pending_confirmation')} 
+                  />
+                  
+                  <div className="flex-1" />
+                  
+                  <button
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    className="p-2 hover:bg-white rounded-lg border border-gray-200 bg-white transition-colors"
                   >
-                    <PurchaseDetailPanel
-                      purchase={selectedPurchase}
-                      isOpen={true}
-                      onClose={() => setSelectedPurchase(null)}
-                      onViewProduct={handleViewProduct}
-                      onContactSeller={handleContactSeller}
-                      onConfirmReceipt={handleConfirmReceipt}
-                      confirmingId={confirmingId}
-                      getSellerName={getSellerName}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    <RefreshCw className={cn("h-4 w-4 text-gray-500", refreshing && "animate-spin")} />
+                  </button>
+                </div>
+
+                {/* Orders List */}
+                <div className={cn("flex gap-6", selectedPurchase && "lg:max-w-none")}>
+                  <div className={cn("flex-1 min-w-0", selectedPurchase && "lg:max-w-[55%]")}>
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      {/* Header */}
+                      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                        <div>
+                          <h1 className="text-base font-semibold text-gray-900">
+                            {viewMode === 'buying' ? 'My Purchases' : 'My Sales'}
+                          </h1>
+                          <p className="text-sm text-gray-500">
+                            {pagination.total} {viewMode === 'buying' ? 'order' : 'sale'}{pagination.total !== 1 ? 's' : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* List */}
+                      {loading ? (
+                        <div className="flex items-center justify-center py-16">
+                          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                        </div>
+                      ) : purchases.length === 0 ? (
+                        <EmptyState 
+                          viewMode={viewMode} 
+                          category={category}
+                          onBrowse={() => router.push(viewMode === 'selling' ? '/marketplace/sell' : '/marketplace')} 
+                        />
+                      ) : (
+                        <div>
+                          {purchases.map((purchase) => (
+                            <PurchaseRow
+                              key={purchase.id}
+                              purchase={purchase}
+                              isSelected={selectedPurchase?.id === purchase.id}
+                              onClick={() => setSelectedPurchase(selectedPurchase?.id === purchase.id ? null : purchase)}
+                              getSellerName={getSellerName}
+                              viewMode={viewMode}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Pagination */}
+                      {pagination.totalPages > 1 && (
+                        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+                          <span className="text-sm text-gray-500">Page {pagination.page} of {pagination.totalPages}</span>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => fetchPurchases(pagination.page - 1)}
+                              disabled={pagination.page <= 1}
+                              className="p-2 hover:bg-gray-100 disabled:opacity-50 rounded-lg"
+                            >
+                              <ChevronRight className="h-5 w-5 text-gray-600 rotate-180" />
+                            </button>
+                            <button
+                              onClick={() => fetchPurchases(pagination.page + 1)}
+                              disabled={pagination.page >= pagination.totalPages}
+                              className="p-2 hover:bg-gray-100 disabled:opacity-50 rounded-lg"
+                            >
+                              <ChevronRight className="h-5 w-5 text-gray-600" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Detail Panel - Desktop */}
+                  <AnimatePresence mode="wait">
+                    {selectedPurchase && (
+                      <motion.div
+                        initial={{ opacity: 0, width: 0 }}
+                        animate={{ opacity: 1, width: "45%" }}
+                        exit={{ opacity: 0, width: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="hidden lg:block"
+                      >
+                        <div className="sticky top-20">
+                          <PurchaseDetailPanel
+                            purchase={selectedPurchase}
+                            isOpen={true}
+                            onClose={() => setSelectedPurchase(null)}
+                            onViewProduct={handleViewProduct}
+                            onContactSeller={handleContactSeller}
+                            onConfirmReceipt={handleConfirmReceipt}
+                            confirmingId={confirmingId}
+                            getSellerName={getSellerName}
+                            viewMode={viewMode}
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -898,6 +1038,7 @@ export default function PurchasesPage() {
           onConfirmReceipt={handleConfirmReceipt}
           confirmingId={confirmingId}
           getSellerName={getSellerName}
+          viewMode={viewMode}
         />
       </div>
     </>

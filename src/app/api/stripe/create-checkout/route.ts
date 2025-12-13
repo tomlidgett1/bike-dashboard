@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getStripe, calculatePlatformFee, calculateSellerPayout } from '@/lib/stripe';
+import { getStripe, calculatePlatformFee, calculateSellerPayout, calculateBuyerFee } from '@/lib/stripe';
 
 export async function POST(request: NextRequest) {
   try {
@@ -106,7 +106,8 @@ export async function POST(request: NextRequest) {
     // Calculate totals
     const itemPrice = product.price;
     const shippingCost = product.shipping_available ? (product.shipping_cost || 0) : 0;
-    const totalAmount = itemPrice + shippingCost;
+    const buyerFee = calculateBuyerFee(itemPrice); // 0.5% buyer service fee
+    const totalAmount = itemPrice + shippingCost + buyerFee;
 
     // Get product image for Stripe checkout display
     let productImage: string | undefined;
@@ -158,6 +159,18 @@ export async function POST(request: NextRequest) {
           },
           quantity: 1,
         }] : []),
+        // Buyer service fee (0.5%)
+        ...(buyerFee > 0 ? [{
+          price_data: {
+            currency: 'aud',
+            product_data: {
+              name: 'Service Fee',
+              description: 'Yellow Jersey marketplace fee',
+            },
+            unit_amount: Math.round(buyerFee * 100),
+          },
+          quantity: 1,
+        }] : []),
       ],
       // Collect shipping address from buyer
       shipping_address_collection: {
@@ -173,9 +186,10 @@ export async function POST(request: NextRequest) {
         seller_id: product.user_id,
         item_price: itemPrice.toString(),
         shipping_cost: shippingCost.toString(),
+        buyer_fee: buyerFee.toString(),
         total_amount: totalAmount.toString(),
-        platform_fee: calculatePlatformFee(totalAmount).toString(),
-        seller_payout: calculateSellerPayout(totalAmount).toString(),
+        platform_fee: calculatePlatformFee(itemPrice).toString(), // 3% of item price (seller pays)
+        seller_payout: calculateSellerPayout(itemPrice).toString(), // Item price minus platform fee
       },
       success_url: `${appUrl}/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/marketplace/checkout/cancel?product_id=${productId}`,

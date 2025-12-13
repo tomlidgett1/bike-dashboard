@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 
 // ============================================================
 // GET /api/marketplace/purchases
-// Get user's purchase history
+// Get user's purchase history (as buyer or seller)
 // ============================================================
 
 export async function GET(request: NextRequest) {
@@ -21,15 +21,18 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get("status");
+    const status = searchParams.get("status") || "all";
+    const mode = searchParams.get("mode") || "buying"; // 'buying' or 'selling'
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("pageSize") || "20");
     const search = searchParams.get("search") || "";
 
     const offset = (page - 1) * pageSize;
+    
+    // Determine which ID field to filter by based on mode
+    const userIdField = mode === "selling" ? "seller_id" : "buyer_id";
 
     // Build query for purchases with product details
-    // Note: We fetch seller info separately to avoid foreign key issues
     let query = supabase
       .from("purchases")
       .select(
@@ -50,21 +53,22 @@ export async function GET(request: NextRequest) {
       `,
         { count: "exact" }
       )
-      .eq("buyer_id", user.id)
+      .eq(userIdField, user.id)
       .order("purchase_date", { ascending: false });
 
-    // Filter by status if provided
-    if (status && status !== "all") {
+    // Filter by status category
+    if (status === "active") {
+      // Active = pending, confirmed, paid, shipped
+      query = query.in("status", ["pending", "confirmed", "paid", "shipped"]);
+    } else if (status === "completed") {
+      // Completed = delivered
+      query = query.eq("status", "delivered");
+    } else if (status === "disputed") {
+      // Disputed orders
+      query = query.eq("funds_status", "disputed");
+    } else if (status !== "all") {
+      // Specific status filter
       query = query.eq("status", status);
-    }
-
-    // Search by product name/description if provided
-    if (search) {
-      // Note: This is a simple approach. For better search, we'd need to use full-text search
-      // For now, we'll filter client-side or use a more complex query
-      query = query.or(
-        `product.description.ilike.%${search}%,product.display_name.ilike.%${search}%`
-      );
     }
 
     // Apply pagination
@@ -77,31 +81,73 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Fetch seller info for each purchase
-    const purchasesWithSellers = await Promise.all(
+    // Fetch counts for sidebar categories
+    const countQueries = await Promise.all([
+      // All
+      supabase
+        .from("purchases")
+        .select("id", { count: "exact", head: true })
+        .eq(userIdField, user.id),
+      // Active
+      supabase
+        .from("purchases")
+        .select("id", { count: "exact", head: true })
+        .eq(userIdField, user.id)
+        .in("status", ["pending", "confirmed", "paid", "shipped"]),
+      // Completed
+      supabase
+        .from("purchases")
+        .select("id", { count: "exact", head: true })
+        .eq(userIdField, user.id)
+        .eq("status", "delivered"),
+      // Disputes
+      supabase
+        .from("purchases")
+        .select("id", { count: "exact", head: true })
+        .eq(userIdField, user.id)
+        .eq("funds_status", "disputed"),
+    ]);
+
+    const counts = {
+      all: countQueries[0].count || 0,
+      active: countQueries[1].count || 0,
+      completed: countQueries[2].count || 0,
+      disputes: countQueries[3].count || 0,
+      archived: 0, // TODO: Add archived field to purchases table
+    };
+
+    // Fetch seller/buyer info for each purchase
+    const purchasesWithUsers = await Promise.all(
       (purchases || []).map(async (purchase) => {
-        if (!purchase.seller_id) {
-          return { ...purchase, seller: null };
+        // For buying mode, get seller info. For selling mode, get buyer info.
+        const otherUserId = mode === "selling" ? purchase.buyer_id : purchase.seller_id;
+        
+        if (!otherUserId) {
+          return { ...purchase, seller: null, buyer: null };
         }
         
-        const { data: seller } = await supabase
+        const { data: otherUser } = await supabase
           .from("users")
           .select("user_id, name, business_name, account_type")
-          .eq("user_id", purchase.seller_id)
+          .eq("user_id", otherUserId)
           .single();
         
-        return { ...purchase, seller };
+        if (mode === "selling") {
+          return { ...purchase, buyer: otherUser, seller: null };
+        }
+        return { ...purchase, seller: otherUser, buyer: null };
       })
     );
 
     return NextResponse.json({
-      purchases: purchasesWithSellers,
+      purchases: purchasesWithUsers,
       pagination: {
         page,
         pageSize,
         total: count || 0,
         totalPages: Math.ceil((count || 0) / pageSize),
       },
+      counts,
     });
   } catch (error) {
     console.error("Error in GET /api/marketplace/purchases:", error);
