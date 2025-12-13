@@ -14,7 +14,7 @@ import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
 import { useCombinedUnreadCount } from "@/lib/hooks/use-combined-unread-count";
-import { useOrderNotificationCount } from "@/lib/hooks/use-order-notifications";
+import { NotificationsDropdown } from "@/components/layout/notifications-dropdown";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -173,9 +173,6 @@ export function MarketplaceHeader({
   // Only fetch unread count if user is authenticated AND deferral period has passed
   const { counts } = useCombinedUnreadCount(user && shouldFetchUnread ? 30000 : 0); // 0 = disabled polling
   const unreadCount = counts.total;
-  
-  // Order notifications count
-  const { count: orderNotificationCount } = useOrderNotificationCount(user && shouldFetchUnread ? 30000 : 0);
 
   // Ensure component only renders auth UI on client-side
   React.useEffect(() => {
@@ -395,18 +392,7 @@ export function MarketplaceHeader({
                   </button>
                   {mounted && user && (
                     <>
-                      <button
-                        onClick={() => router.push('/settings/purchases')}
-                        className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
-                        aria-label="Notifications"
-                      >
-                        <Bell className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
-                        {orderNotificationCount > 0 && (
-                          <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-                            {orderNotificationCount > 99 ? '99+' : orderNotificationCount}
-                          </span>
-                        )}
-                      </button>
+                      <NotificationsDropdown />
                       <button
                         onClick={() => router.push('/messages')}
                         className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
@@ -440,18 +426,7 @@ export function MarketplaceHeader({
                   </button>
                   {mounted && user && (
                     <>
-                      <button
-                        onClick={() => router.push('/settings/purchases')}
-                        className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
-                        aria-label="Notifications"
-                      >
-                        <Bell className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
-                        {orderNotificationCount > 0 && (
-                          <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-                            {orderNotificationCount > 99 ? '99+' : orderNotificationCount}
-                          </span>
-                        )}
-                      </button>
+                      <NotificationsDropdown />
                       <button
                         onClick={() => router.push('/messages')}
                         className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
@@ -477,18 +452,7 @@ export function MarketplaceHeader({
                   {/* Icons Group - Messages and Profile */}
                   <div className="flex items-center gap-3">
                     {/* Messages Button */}
-                    <button
-                      onClick={() => router.push('/settings/purchases')}
-                      className="relative h-9 w-9 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center"
-                      aria-label="Notifications"
-                    >
-                      <Bell className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
-                      {orderNotificationCount > 0 && (
-                        <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-                          {orderNotificationCount > 99 ? '99+' : orderNotificationCount}
-                        </span>
-                      )}
-                    </button>
+                    <NotificationsDropdown />
 
                     <button
                       onClick={() => router.push('/messages')}
@@ -875,24 +839,15 @@ export function MarketplaceHeader({
                   <div className="px-4 py-3 border-t border-gray-100">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Your Account</p>
                     <nav className="space-y-1">
-                      {/* Notifications with badge */}
-                      <button
+                      {/* Notifications */}
+                      <MobileNavItem
+                        icon={Bell}
+                        label="Notifications"
                         onClick={() => {
                           router.push('/settings/purchases');
                           setMobileMenuOpen(false);
                         }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left hover:bg-gray-100 transition-colors relative"
-                      >
-                        <Bell className="h-[18px] w-[18px] text-gray-500 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900">Notifications</p>
-                        </div>
-                        {orderNotificationCount > 0 && (
-                          <span className="flex-shrink-0 h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-                            {orderNotificationCount > 99 ? '99+' : orderNotificationCount}
-                          </span>
-                        )}
-                      </button>
+                      />
                       
                       {/* Messages with badge */}
                       <button
