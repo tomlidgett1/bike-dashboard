@@ -174,7 +174,20 @@ function getListingImage(listing: Listing): string | null {
 // Status Badge Component
 // ============================================================
 
-function StatusBadge({ status, type = 'order' }: { status: string; type?: 'order' | 'listing' }) {
+function StatusBadge({ 
+  status, 
+  type = 'order',
+  fundsStatus,
+}: { 
+  status: string; 
+  type?: 'order' | 'listing';
+  fundsStatus?: string | null;
+}) {
+  // For orders with held funds that are shipped - show "Confirm Receipt"
+  if (type === 'order' && fundsStatus === 'held' && (status === 'shipped' || status === 'paid')) {
+    return <Badge variant="default" className="rounded-md bg-amber-500 hover:bg-amber-500">Confirm Receipt</Badge>;
+  }
+
   const orderVariants: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
     pending: { label: "Pending", variant: "secondary" },
     confirmed: { label: "Confirmed", variant: "secondary" },
@@ -296,7 +309,7 @@ function MobileOrderCard({
             {otherParty} · {formatDate(purchase.purchase_date)}
           </p>
           <div className="flex items-center justify-between mt-2">
-            <StatusBadge status={purchase.status} />
+            <StatusBadge status={purchase.status} fundsStatus={purchase.funds_status} />
             <span className="font-semibold text-sm">${purchase.total_amount.toFixed(2)}</span>
           </div>
         </div>
@@ -459,7 +472,7 @@ function OrderDetailContent({
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-medium">{productName}</p>
-          <StatusBadge status={purchase.status} />
+          <StatusBadge status={purchase.status} fundsStatus={purchase.funds_status} />
         </div>
       </div>
 
@@ -628,7 +641,7 @@ function DesktopOrdersTable({
               </TableCell>
               <TableCell>{otherParty}</TableCell>
               <TableCell>{formatDate(order.purchase_date)}</TableCell>
-              <TableCell><StatusBadge status={order.status} /></TableCell>
+              <TableCell><StatusBadge status={order.status} fundsStatus={order.funds_status} /></TableCell>
               <TableCell className="text-right font-medium">${order.total_amount.toFixed(2)}</TableCell>
               <TableCell onClick={(e) => e.stopPropagation()}>
                 <DropdownMenu>
@@ -1076,7 +1089,7 @@ export default function OrderManagementPage() {
                       </Button>
                     </div>
 
-                    <DesktopListingsTable listings={listings} onRowClick={() => {}} loading={listingsLoading} />
+                    <DesktopListingsTable listings={listings} onRowClick={(listing) => router.push(`/marketplace/product/${listing.id}`)} loading={listingsLoading} />
                   </div>
                 </TabsContent>
 
@@ -1186,7 +1199,7 @@ export default function OrderManagementPage() {
                     </div>
                   ) : (
                     listings.map((listing) => (
-                      <MobileListingCard key={listing.id} listing={listing} onClick={() => {}} />
+                      <MobileListingCard key={listing.id} listing={listing} onClick={() => router.push(`/marketplace/product/${listing.id}`)} />
                     ))
                   )}
                 </div>

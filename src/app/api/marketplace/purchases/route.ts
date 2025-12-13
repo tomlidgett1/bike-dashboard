@@ -93,14 +93,19 @@ export async function GET(request: NextRequest) {
         // If product is null or empty, fetch it directly
         if (!purchase.product || (Array.isArray(purchase.product) && purchase.product.length === 0)) {
           console.log("[PURCHASES API] Product missing for purchase:", purchase.id, "- fetching product_id:", purchase.product_id);
-          const { data: productData } = await supabase
+          const { data: productData, error: productError } = await supabase
             .from("products")
             .select("id, description, display_name, primary_image_url, cached_image_url, images, price, marketplace_category, marketplace_subcategory, listing_type")
             .eq("id", purchase.product_id)
             .single();
           
+          if (productError) {
+            console.error("[PURCHASES API] Error fetching product:", productError.message, productError.code);
+          }
           if (productData) {
-            console.log("[PURCHASES API] Fetched product:", productData.description || productData.display_name);
+            console.log("[PURCHASES API] Fetched product successfully:", productData.description || productData.display_name);
+          } else {
+            console.log("[PURCHASES API] Product not found for id:", purchase.product_id);
           }
           return { ...purchase, product: productData };
         }
