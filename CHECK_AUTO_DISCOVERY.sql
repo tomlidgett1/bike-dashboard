@@ -146,3 +146,4 @@ WHERE event_object_table = 'canonical_products';
 
 
 
+

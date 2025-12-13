@@ -28,10 +28,12 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
   const isLogin = pathname?.startsWith('/login') || false;
   const isAuth = pathname?.startsWith('/auth') || false;
   const isOnboarding = pathname?.startsWith('/onboarding') || false;
+  // Purchases page uses MarketplaceLayout, so don't wrap with dashboard layout
+  const isPurchases = pathname === '/settings/purchases';
 
-  // Don't wrap marketplace, messages, login, auth, or onboarding pages with dashboard layout
+  // Don't wrap marketplace, messages, login, auth, onboarding, or purchases pages with dashboard layout
   // These pages manage their own layout
-  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding) {
+  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isPurchases) {
     return <>{children}</>;
   }
 

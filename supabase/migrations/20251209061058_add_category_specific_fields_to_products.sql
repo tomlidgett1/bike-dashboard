@@ -115,3 +115,4 @@ COMMENT ON COLUMN products.gender_fit IS 'Gender fit for apparel (e.g., Men''s, 
 COMMENT ON COLUMN products.apparel_material IS 'Material composition for apparel (e.g., Merino Wool, Polyester, Gore-Tex)';
 
 
+

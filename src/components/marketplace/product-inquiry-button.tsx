@@ -36,6 +36,7 @@ interface ProductInquiryButtonProps {
   size?: 'default' | 'sm' | 'lg';
   fullWidth?: boolean;
   className?: string;
+  buttonLabel?: string;
 }
 
 // Quick reply suggestions
@@ -58,6 +59,7 @@ export function ProductInquiryButton({
   size = 'default',
   fullWidth = false,
   className,
+  buttonLabel = 'Send Message',
 }: ProductInquiryButtonProps) {
   const router = useRouter();
   const { user } = useAuth();
@@ -189,7 +191,7 @@ export function ProductInquiryButton({
           style={fullWidth ? { width: '100%' } : undefined}
         >
           <MessageCircle className="h-4 w-4 mr-2" />
-          Send Message
+          {buttonLabel}
         </Button>
 
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -326,7 +328,7 @@ export function ProductInquiryButton({
         style={fullWidth ? { width: '100%' } : undefined}
       >
         <MessageCircle className="h-4 w-4 mr-2" />
-        Send Message
+        {buttonLabel}
       </Button>
 
       <AnimatePresence>

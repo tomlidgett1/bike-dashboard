@@ -91,6 +91,12 @@ const storeUserItems: NavItem[] = [
   },
   {
     type: 'item',
+    title: "Order Management",
+    value: "purchases",
+    icon: ShoppingBag,
+  },
+  {
+    type: 'item',
     title: "Settings",
     value: "settings",
     icon: Settings,
@@ -135,7 +141,7 @@ function MarketplaceSidebarContent() {
   const getActiveView = () => {
     const path = pathname;
     if (path === "/settings" || path === "/marketplace/settings") return "settings";
-    if (path === "/settings/purchases") return "purchases";
+    if (path === "/settings/purchases" || path === "/marketplace/purchases") return "purchases";
     // Check if user is viewing their own store
     const storeMatch = path.match(/^\/marketplace\/store\/(.+)$/);
     if (storeMatch && (storeMatch[1] === profile?.user_id || storeMatch[1] === user?.id)) {
@@ -246,7 +252,8 @@ function MarketplaceSidebarContent() {
       } else if (item.value === "settings") {
         url = isVerifiedStore ? "/settings" : "/marketplace/settings";
       } else if (item.value === "purchases") {
-        url = "/settings/purchases";
+        // Bicycle stores use marketplace route, individual users use settings route
+        url = isVerifiedStore ? "/marketplace/purchases" : "/settings/purchases";
       } else if (item.value === "my-store") {
         url = `/marketplace/store/${profile?.user_id || user?.id}`;
       } else {

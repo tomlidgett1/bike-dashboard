@@ -3,8 +3,8 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil, Zap, Truck } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { motion, AnimatePresence } from "framer-motion";
+import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil, Zap, Shield, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
@@ -18,9 +18,8 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
 
 // ============================================================
-// Simple Product Details Panel - Facebook Marketplace Style
-// Clean, minimal design optimized for mobile
-// Shows "Edit" button instead of offer/message for product owners
+// Product Details Panel - Underline Tabs Design
+// Clean, modern design with tabbed navigation
 // ============================================================
 
 interface ProductDetailsPanelSimpleProps {
@@ -36,9 +35,13 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
   const [logoError, setLogoError] = React.useState(false);
   const [isLearnOpen, setIsLearnOpen] = React.useState(false);
   const [isEditOpen, setIsEditOpen] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<'overview' | 'specs'>('overview');
 
   // Check if current user owns this product
   const isOwner = user?.id === product.user_id;
+  
+  // Check if product is sold
+  const isSold = !!(product as any).sold_at || (product as any).listing_status === 'sold';
 
   // Sync product state with prop
   React.useEffect(() => {
@@ -70,40 +73,64 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
 
   return (
     <div className="bg-white">
-      {/* Title, Price, Location */}
-      <div className="px-4 py-4 space-y-3">
-        <h1 className="text-2xl font-bold text-gray-900 leading-tight">
+      {/* Header: Title, Price, Save/Share */}
+      <div className="px-4 pt-4 pb-3">
+        <h1 className="text-xl font-bold text-gray-900 leading-tight">
           {(product as any).display_name || product.description}
         </h1>
-
-        <p className="text-3xl font-bold text-gray-900">
-          ${product.price.toLocaleString("en-AU")}
-        </p>
-
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-2xl font-bold text-gray-900">
+            ${product.price.toLocaleString("en-AU")}
+          </p>
+          <div className="flex gap-1.5">
+            <button 
+              onClick={() => setIsLiked(!isLiked)}
+              className="h-9 w-9 rounded-md bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+            >
+              <Heart className={cn("h-4 w-4", isLiked ? "fill-red-500 text-red-500" : "text-gray-600")} />
+            </button>
+            <button 
+              onClick={handleShare}
+              className="h-9 w-9 rounded-md bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+            >
+              <Share2 className="h-4 w-4 text-gray-600" />
+            </button>
+          </div>
+        </div>
         {(product as any).pickup_location && (
-          <div className="flex items-center gap-1.5 text-gray-600">
-            <MapPin className="h-4 w-4" />
-            <span className="text-sm">Nearby • {(product as any).pickup_location}</span>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <MapPin className="h-3.5 w-3.5 text-gray-400" />
+            <span className="text-xs text-gray-500">
+              {(product as any).pickup_location}
+              {(product as any).condition_rating && ` • ${(product as any).condition_rating}`}
+            </span>
           </div>
         )}
       </div>
 
-      {/* Action Buttons - Edit for owners, Make Offer & Send Message for others */}
-      <div className="px-4 pb-4">
-        {isOwner ? (
+      {/* Action Buttons */}
+      <div className="px-4 pb-4 space-y-2">
+        {isSold ? (
+          /* Sold View: Show sold banner */
+          <div className="p-4 bg-gray-100 rounded-md text-center">
+            <Badge className="rounded-md bg-gray-200 text-gray-600 border-0 text-sm px-4 py-1.5 font-medium mb-2">
+              Sold
+            </Badge>
+            <p className="text-sm text-gray-500">This item has been sold</p>
+          </div>
+        ) : isOwner ? (
           /* Owner View: Edit Button */
           <Button
             onClick={() => setIsEditOpen(true)}
             size="lg"
-            className="w-full h-12 rounded-md text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white"
+            className="w-full h-11 rounded-md text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white"
           >
             <Pencil className="h-4 w-4 mr-2" />
             Edit Listing
           </Button>
         ) : (
           /* Buyer View: Buy Now, Make Offer & Send Message */
-          <div className="space-y-3">
-            {/* Primary CTA: Buy Now */}
+          <>
             <BuyNowButton
               productId={product.id}
               productName={(product as any).display_name || product.description}
@@ -113,11 +140,9 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               variant="default"
               size="lg"
               fullWidth
-              className="h-12"
+              className="h-11"
               showStripeBranding={true}
             />
-
-            {/* Secondary CTAs: Make Offer & Send Message */}
             <div className="flex gap-2">
               <div className="flex-1">
                 <MakeOfferButton
@@ -129,7 +154,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                   variant="outline"
                   size="lg"
                   fullWidth
-                  className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                  className="rounded-md h-10 text-sm font-medium"
                 />
               </div>
               <div className="flex-1">
@@ -140,117 +165,35 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                   sellerName={product.store_name}
                   productImage={product.all_images?.[0] || product.primary_image_url || null}
                   productPrice={product.price}
+                  variant="outline"
                   size="lg"
                   fullWidth
-                  className="rounded-md h-12 text-sm font-medium border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                  className="rounded-md h-10 text-sm font-medium bg-white"
+                  buttonLabel="Message"
                 />
               </div>
             </div>
-          </div>
+          </>
         )}
       </div>
 
-      {/* Express Delivery USP Banner */}
-      <div className="px-4 pb-4">
-        <Card className="bg-white border border-gray-200 rounded-md py-0 shadow-sm">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex-shrink-0 h-10 w-10 rounded-md bg-gray-900 flex items-center justify-center">
-                <Zap className="h-5 w-5 text-white" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-gray-900">1-Hour Express Delivery</span>
-                  <Badge variant="secondary" className="rounded-md text-[10px] px-1.5 py-0 h-5 bg-gray-100 text-gray-600 border-0">
-                    On-demand
-                  </Badge>
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Order now, delivered to your door today
-                </p>
-              </div>
-              <Truck className="h-5 w-5 text-gray-400 flex-shrink-0" />
-            </div>
-          </CardContent>
-        </Card>
+      {/* Feature Badges */}
+      <div className="px-4 pb-4 flex gap-2">
+        <Badge className="rounded-md bg-amber-50 text-amber-700 border-0 text-xs px-2.5 py-1 font-medium">
+          <Zap className="h-3 w-3 mr-1" />
+          1-Hour Express
+        </Badge>
+        <Badge className="rounded-md bg-emerald-50 text-emerald-700 border-0 text-xs px-2.5 py-1 font-medium">
+          <Shield className="h-3 w-3 mr-1" />
+          Buyer Protection
+        </Badge>
       </div>
 
-      {/* Secondary Actions - Share, Save, Visit Store, Learn */}
-      <div className="px-4 pb-4">
-        <div className="flex items-center justify-around">
-          <button 
-            onClick={handleShare}
-            className="flex flex-col items-center gap-1.5 py-2 hover:opacity-70 transition-opacity"
-          >
-            <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-              <Share2 className="h-5 w-5 text-gray-700" />
-            </div>
-            <span className="text-xs text-gray-700">Share</span>
-          </button>
-
-          <button 
-            onClick={() => setIsLiked(!isLiked)}
-            className="flex flex-col items-center gap-1.5 py-2 hover:opacity-70 transition-opacity"
-          >
-            <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-              <Heart className={cn("h-5 w-5", isLiked ? "fill-red-500 text-red-500" : "text-gray-700")} />
-            </div>
-            <span className="text-xs text-gray-700">Save</span>
-          </button>
-
-          <Link
-            href={`/marketplace/store/${product.user_id}`}
-            className="flex flex-col items-center gap-1.5 py-2 hover:opacity-70 transition-opacity"
-          >
-            <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-              <Store className="h-5 w-5 text-gray-700" />
-            </div>
-            <span className="text-xs text-gray-700">Visit Store</span>
-          </Link>
-
-          <button 
-            onClick={() => {
-              if (!user) {
-                openAuthModal();
-                return;
-              }
-              setIsLearnOpen(true);
-            }}
-            className="flex flex-col items-center gap-1.5 py-2 hover:opacity-80 transition-opacity"
-          >
-            <div className="h-10 w-10 rounded-full bg-gray-900 flex items-center justify-center">
-              <Sparkles className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-xs text-gray-700">Research</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Description */}
-      <div className="border-t border-gray-200">
-        <div className="px-4 py-4">
-          <h2 className="text-lg font-bold text-gray-900 mb-3">Description</h2>
-          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-            {(product as any).condition_details || (product as any).display_name || product.description}
-          </p>
-        </div>
-      </div>
-
-      {/* Seller Information */}
-      <div className="border-t border-gray-200">
-        <div className="px-4 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold text-gray-900">Seller information</h2>
-            <Link 
-              href={`/marketplace/${product.store_account_type === 'bicycle_store' ? 'store' : 'seller'}/${product.user_id}`}
-              className="text-sm text-blue-600 font-medium"
-            >
-              Seller Details
-            </Link>
-          </div>
-
+      {/* Seller Row */}
+      <div className="px-4 py-3 border-t border-b border-gray-100">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="relative h-12 w-12 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
+            <div className="relative h-10 w-10 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
               {product.store_logo_url && !logoError ? (
                 <Image
                   src={product.store_logo_url}
@@ -265,141 +208,228 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                 </div>
               )}
             </div>
-            <div className="flex-1">
-              <p className="font-semibold text-gray-900">{product.store_name}</p>
-              <p className="text-sm text-gray-600">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">{product.store_name}</p>
+              <p className="text-xs text-gray-500">
                 {product.store_account_type === 'bicycle_store' ? 'Bicycle Store' : 'Individual Seller'}
               </p>
             </div>
           </div>
+          <Button variant="ghost" size="sm" className="text-xs" asChild>
+            <Link href={`/marketplace/store/${product.user_id}`}>
+              View Store
+              <ChevronRight className="h-3 w-3 ml-1" />
+            </Link>
+          </Button>
         </div>
       </div>
 
-      {/* Details */}
-      <div className="border-t border-gray-200">
-        <div className="px-4 py-4">
-          <h2 className="text-lg font-bold text-gray-900 mb-3">Details</h2>
-          <div className="space-y-0 divide-y divide-gray-100">
-            {(product as any).condition_rating && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Condition</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).condition_rating}</span>
-              </div>
+      {/* Underline Tabs */}
+      <div className="px-4 pt-3 border-b border-gray-200">
+        <div className="flex">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={cn(
+              "flex-1 pb-3 text-sm font-medium border-b-2 transition-colors",
+              activeTab === 'overview'
+                ? "border-gray-900 text-gray-900"
+                : "border-transparent text-gray-500 hover:text-gray-700"
             )}
-            {(product as any).brand && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Brand</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).brand}</span>
-              </div>
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('specs')}
+            className={cn(
+              "flex-1 pb-3 text-sm font-medium border-b-2 transition-colors",
+              activeTab === 'specs'
+                ? "border-gray-900 text-gray-900"
+                : "border-transparent text-gray-500 hover:text-gray-700"
             )}
-            {(product as any).model && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Model</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).model}</span>
-              </div>
-            )}
-            {(product as any).model_year && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Year</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).model_year}</span>
-              </div>
-            )}
-            {(product as any).bike_type && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Type</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).bike_type}</span>
-              </div>
-            )}
-            {((product as any).frame_size || (product as any).size) && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Size</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).frame_size || (product as any).size}</span>
-              </div>
-            )}
-            {(product as any).frame_material && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Frame Material</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).frame_material}</span>
-              </div>
-            )}
-            {(product as any).groupset && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Groupset</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).groupset}</span>
-              </div>
-            )}
-            {(product as any).wheel_size && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Wheel Size</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).wheel_size}</span>
-              </div>
-            )}
-            {(product as any).suspension_type && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Suspension</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).suspension_type}</span>
-              </div>
-            )}
-            {(product as any).color_primary && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Colour</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).color_primary}</span>
-              </div>
-            )}
-            
-            {/* Apparel-Specific Fields */}
-            {(product as any).gender_fit && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Gender Fit</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).gender_fit}</span>
-              </div>
-            )}
-            {(product as any).apparel_material && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Material</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).apparel_material}</span>
-              </div>
-            )}
-            
-            {/* Part/Accessory Fields */}
-            {(product as any).part_type_detail && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Part Type</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).part_type_detail}</span>
-              </div>
-            )}
-            {(product as any).compatibility_notes && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Compatibility</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).compatibility_notes}</span>
-              </div>
-            )}
-            {(product as any).material && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Material</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).material}</span>
-              </div>
-            )}
-            {(product as any).weight && (
-              <div className="flex justify-between py-2">
-                <span className="text-sm text-gray-600">Weight</span>
-                <span className="text-sm font-medium text-gray-900">{(product as any).weight}</span>
-              </div>
-            )}
-          </div>
+          >
+            Specs
+          </button>
         </div>
       </div>
 
-      {/* Location */}
-      {(product as any).pickup_location && (
-        <div className="border-t border-gray-200">
-          <div className="px-4 py-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Location</h2>
-            <p className="text-sm text-gray-900 font-medium">{(product as any).pickup_location}</p>
-            <p className="text-sm text-gray-600 mt-1">Location is approximate</p>
-          </div>
-        </div>
-      )}
+      {/* Tab Content */}
+      <div className="px-4 py-4">
+        <AnimatePresence mode="wait">
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <motion.div
+              key="overview"
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 10 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-4"
+            >
+              {/* Description */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Description</h3>
+                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                  {(product as any).condition_details || (product as any).display_name || product.description}
+                </p>
+                {/* Research with AI */}
+                {!isOwner && (
+                  <button 
+                    onClick={() => {
+                      if (!user) {
+                        openAuthModal();
+                        return;
+                      }
+                      setIsLearnOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 mt-4 text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Research with AI
+                  </button>
+                )}
+              </div>
+
+              {/* Location */}
+              {(product as any).pickup_location && (
+                <div className="pt-3 border-t border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Location</h3>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm text-gray-600">{(product as any).pickup_location}</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1 ml-6">Location is approximate</p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Specs Tab */}
+          {activeTab === 'specs' && (
+            <motion.div
+              key="specs"
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 10 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-0 divide-y divide-gray-100"
+            >
+              {(product as any).condition_rating && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Condition</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).condition_rating}</span>
+                </div>
+              )}
+              {(product as any).brand && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Brand</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).brand}</span>
+                </div>
+              )}
+              {(product as any).model && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Model</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).model}</span>
+                </div>
+              )}
+              {(product as any).model_year && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Year</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).model_year}</span>
+                </div>
+              )}
+              {(product as any).bike_type && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Type</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).bike_type}</span>
+                </div>
+              )}
+              {((product as any).frame_size || (product as any).size) && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Size</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).frame_size || (product as any).size}</span>
+                </div>
+              )}
+              {(product as any).frame_material && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Frame Material</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).frame_material}</span>
+                </div>
+              )}
+              {(product as any).groupset && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Groupset</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).groupset}</span>
+                </div>
+              )}
+              {(product as any).wheel_size && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Wheel Size</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).wheel_size}</span>
+                </div>
+              )}
+              {(product as any).suspension_type && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Suspension</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).suspension_type}</span>
+                </div>
+              )}
+              {(product as any).color_primary && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Colour</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).color_primary}</span>
+                </div>
+              )}
+              {/* Apparel-Specific Fields */}
+              {(product as any).gender_fit && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Gender Fit</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).gender_fit}</span>
+                </div>
+              )}
+              {(product as any).apparel_material && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Material</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).apparel_material}</span>
+                </div>
+              )}
+              {/* Part/Accessory Fields */}
+              {(product as any).part_type_detail && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Part Type</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).part_type_detail}</span>
+                </div>
+              )}
+              {(product as any).compatibility_notes && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Compatibility</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).compatibility_notes}</span>
+                </div>
+              )}
+              {(product as any).material && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Material</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).material}</span>
+                </div>
+              )}
+              {(product as any).weight && (
+                <div className="flex justify-between py-2.5">
+                  <span className="text-sm text-gray-500">Weight</span>
+                  <span className="text-sm font-medium text-gray-900">{(product as any).weight}</span>
+                </div>
+              )}
+              {/* If no specs exist, show a message */}
+              {!(product as any).condition_rating && 
+               !(product as any).brand && 
+               !(product as any).model && 
+               !(product as any).bike_type && (
+                <div className="py-4 text-center text-sm text-gray-400">
+                  No specifications available
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* AI Product Learn Panel */}
       <ProductLearnPanel
@@ -420,4 +450,3 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
     </div>
   );
 }
-

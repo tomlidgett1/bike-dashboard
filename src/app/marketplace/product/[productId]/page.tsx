@@ -20,11 +20,13 @@ interface SellerInfo {
 }
 
 // Helper function to fetch product data
-async function fetchProduct(productId: string): Promise<MarketplaceProduct | null> {
+// allowSoldProducts: When true, allows fetching products regardless of listing_status
+// This is used when viewing purchased products from order history
+async function fetchProduct(productId: string, allowSoldProducts: boolean = false): Promise<MarketplaceProduct | null> {
   try {
     const supabase = await createClient();
 
-    const { data: product, error: productError } = await supabase
+    let query = supabase
       .from('products')
       .select(`
         id,
@@ -46,6 +48,7 @@ async function fetchProduct(productId: string): Promise<MarketplaceProduct | nul
         listing_source,
         listing_status,
         published_at,
+        sold_at,
         frame_size,
         frame_material,
         bike_type,
@@ -96,9 +99,14 @@ async function fetchProduct(productId: string): Promise<MarketplaceProduct | nul
           )
         )
       `)
-      .eq('id', productId)
-      .or('listing_status.is.null,listing_status.eq.active')
-      .single();
+      .eq('id', productId);
+
+    // Only filter by listing_status if not allowing sold products
+    if (!allowSoldProducts) {
+      query = query.or('listing_status.is.null,listing_status.eq.active');
+    }
+
+    const { data: product, error: productError } = await query.single();
 
     if (productError || !product) {
       return null;
@@ -335,12 +343,22 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
   }
 }
 
-export default async function ProductPage({ params }: { params: Promise<{ productId: string }> }) {
+export default async function ProductPage({ 
+  params,
+  searchParams 
+}: { 
+  params: Promise<{ productId: string }>;
+  searchParams: Promise<{ fromPurchase?: string }>;
+}) {
   const { productId } = await params;
+  const { fromPurchase } = await searchParams;
+  
+  // Allow viewing sold products if coming from purchase history
+  const allowSoldProducts = fromPurchase === 'true';
 
   // Fetch all data in parallel for maximum performance
   const [product, similarProducts, sellerData] = await Promise.all([
-    fetchProduct(productId),
+    fetchProduct(productId, allowSoldProducts),
     fetchSimilarProducts(productId),
     fetchSellerProducts(productId),
   ]);

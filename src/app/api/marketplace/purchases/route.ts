@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
     const userIdField = mode === "selling" ? "seller_id" : "buyer_id";
 
     // Build query for purchases with product details
+    // Note: shipping_address is JSONB with structure: {name, phone, line1, line2, city, state, postal_code, country}
     let query = supabase
       .from("purchases")
       .select(
@@ -267,6 +268,95 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ purchase }, { status: 201 });
   } catch (error) {
     console.error("Error in POST /api/marketplace/purchases:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+// ============================================================
+// PATCH /api/marketplace/purchases/:id
+// Update purchase status (for sellers to mark as shipped, etc.)
+// ============================================================
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+
+    // Check authentication
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const purchaseId = searchParams.get("id");
+    
+    if (!purchaseId) {
+      return NextResponse.json({ error: "Purchase ID required" }, { status: 400 });
+    }
+
+    const body = await request.json();
+    const { status, tracking_number, seller_notes } = body;
+
+    // Verify the user is the seller for this purchase
+    const { data: purchase, error: fetchError } = await supabase
+      .from("purchases")
+      .select("seller_id, status")
+      .eq("id", purchaseId)
+      .single();
+
+    if (fetchError || !purchase) {
+      return NextResponse.json({ error: "Purchase not found" }, { status: 404 });
+    }
+
+    if (purchase.seller_id !== user.id) {
+      return NextResponse.json({ error: "Unauthorised" }, { status: 403 });
+    }
+
+    // Prepare update data
+    const updateData: any = {};
+    
+    if (status) {
+      updateData.status = status;
+      
+      // Update timestamp based on status
+      if (status === "shipped" && purchase.status !== "shipped") {
+        updateData.shipped_at = new Date().toISOString();
+      } else if (status === "delivered" && purchase.status !== "delivered") {
+        updateData.delivered_at = new Date().toISOString();
+      }
+    }
+    
+    if (tracking_number !== undefined) {
+      updateData.tracking_number = tracking_number;
+    }
+    
+    if (seller_notes !== undefined) {
+      updateData.seller_notes = seller_notes;
+    }
+
+    // Update the purchase
+    const { data: updatedPurchase, error: updateError } = await supabase
+      .from("purchases")
+      .update(updateData)
+      .eq("id", purchaseId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error("Error updating purchase:", updateError);
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ purchase: updatedPurchase });
+  } catch (error) {
+    console.error("Error in PATCH /api/marketplace/purchases:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

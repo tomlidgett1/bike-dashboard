@@ -1,7 +1,6 @@
 'use client'
 
 import * as React from 'react'
-import { Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
@@ -15,16 +14,13 @@ import {
   DollarSign,
   Star,
   ShoppingBag,
-  Settings as SettingsIcon,
   Store,
   Camera,
   MapPin,
   Instagram,
   Facebook,
   ExternalLink,
-  ImageIcon,
   Eye,
-  ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -63,14 +59,42 @@ function StravaIcon({ className }: { className?: string }) {
 // Force dynamic rendering to avoid useSearchParams SSR issues
 export const dynamic = 'force-dynamic'
 
+// Settings navigation tabs
+type SettingsTab = 'profile' | 'payments' | 'notifications' | 'preferences'
+
+interface NavItemProps {
+  icon: React.ReactNode
+  label: string
+  isActive: boolean
+  onClick: () => void
+}
+
+function NavItem({ icon, label, isActive, onClick }: NavItemProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium rounded-md transition-colors text-left",
+        isActive
+          ? "text-gray-900 bg-white shadow-sm"
+          : "text-gray-600 hover:bg-gray-200/70"
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
 export default function MarketplaceSettingsPage() {
   const { user } = useAuth()
   const router = useRouter()
   const [saved, setSaved] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [formReady, setFormReady] = React.useState(false)
+  const [activeTab, setActiveTab] = React.useState<SettingsTab>('profile')
 
-  const { profile, loading: profileLoading, saving, saveProfile } = useUserProfile()
+  const { profile, loading: profileLoading, saving, saveProfile, refreshProfile } = useUserProfile()
 
   // Form state
   const [formData, setFormData] = React.useState({
@@ -92,6 +116,11 @@ export default function MarketplaceSettingsPage() {
     socialWebsite: '',
   })
 
+  // Fetch full profile on mount to ensure we have all fields (including seller_display_name, bio, etc.)
+  React.useEffect(() => {
+    refreshProfile()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Redirect bike stores to their settings page (before rendering content)
   React.useEffect(() => {
     if (!profileLoading && profile) {
@@ -102,9 +131,9 @@ export default function MarketplaceSettingsPage() {
     }
   }, [profile, profileLoading, router])
 
-  // Load profile data when available - set form ready AFTER data is loaded
+  // Sync form data with profile - runs whenever profile updates
   React.useEffect(() => {
-    if (profile && !formReady) {
+    if (profile) {
       setFormData({
         firstName: profile.first_name || '',
         lastName: profile.last_name || '',
@@ -125,7 +154,7 @@ export default function MarketplaceSettingsPage() {
       })
       setFormReady(true)
     }
-  }, [profile, formReady])
+  }, [profile])
 
   const handleSave = async () => {
     try {
@@ -152,6 +181,9 @@ export default function MarketplaceSettingsPage() {
           website: formData.socialWebsite || undefined,
         },
       })
+
+      // Refresh profile to get the latest data from server
+      await refreshProfile()
 
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -201,6 +233,7 @@ export default function MarketplaceSettingsPage() {
   const experienceLevel = preferences.experience_level || 'Not set'
   const budgetRange = preferences.budget_range || 'Not set'
   const interests = preferences.interests || []
+  const hasPreferences = ridingStyles.length > 0 || preferredBrands.length > 0 || interests.length > 0
 
   // Get display name for preview
   const displayName = formData.sellerDisplayName || 
@@ -224,525 +257,589 @@ export default function MarketplaceSettingsPage() {
         />
       </div>
 
-      {/* Desktop View - Card-based layout */}
+      {/* Desktop View - Sidebar Navigation Layout */}
       <div className="hidden sm:block">
         <MarketplaceHeader compactSearchOnMobile />
 
         <MarketplaceLayout>
-          <div className="min-h-screen bg-gray-50 pt-16 pb-8">
-            {/* Page Header */}
-            <div className="border-b border-gray-200 bg-white">
-              <div className="max-w-[1920px] mx-auto px-6 py-6">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex items-center justify-center w-12 h-12 rounded-md bg-gray-100 flex-shrink-0">
-                      <SettingsIcon className="h-6 w-6 text-gray-700" />
+          <div className="min-h-screen bg-gray-50 pt-16">
+            <div className="flex w-full">
+              {/* Sidebar */}
+              <aside className="w-72 flex-shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-4rem)]">
+                <div className="sticky top-16 p-6 space-y-6">
+                  {/* Profile Summary */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-14 w-14 rounded-full border-2 border-gray-200 bg-gray-100 overflow-hidden flex-shrink-0">
+                        {formData.logoUrl ? (
+                          <Image
+                            src={formData.logoUrl}
+                            alt="Profile"
+                            width={56}
+                            height={56}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                            <span className="text-xl font-bold text-gray-400">
+                              {displayName.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-gray-900 truncate">{displayName}</p>
+                        {formData.location && (
+                          <p className="text-xs text-gray-500 flex items-center gap-1 truncate">
+                            <MapPin className="h-3 w-3 flex-shrink-0" />
+                            {formData.location}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <h1 className="text-2xl font-bold text-gray-900">Account Settings</h1>
-                      <p className="text-sm text-gray-600">
-                        Manage your profile and preferences
-                      </p>
-                    </div>
+                    {user?.id && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full rounded-md"
+                        onClick={() => router.push(`/marketplace/store/${user.id}`)}
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        View Public Profile
+                      </Button>
+                    )}
                   </div>
-                  {/* View Profile Button */}
-                  {user?.id && (
+
+                  <Separator />
+
+                  {/* Navigation */}
+                  <nav className="space-y-1">
+                    <div className="bg-gray-100 p-1 rounded-md space-y-0.5">
+                      <NavItem
+                        icon={<Store className="h-4 w-4" />}
+                        label="Profile"
+                        isActive={activeTab === 'profile'}
+                        onClick={() => setActiveTab('profile')}
+                      />
+                      <NavItem
+                        icon={<DollarSign className="h-4 w-4" />}
+                        label="Payments"
+                        isActive={activeTab === 'payments'}
+                        onClick={() => setActiveTab('payments')}
+                      />
+                      <NavItem
+                        icon={<Bell className="h-4 w-4" />}
+                        label="Notifications"
+                        isActive={activeTab === 'notifications'}
+                        onClick={() => setActiveTab('notifications')}
+                      />
+                      {hasPreferences && (
+                        <NavItem
+                          icon={<Star className="h-4 w-4" />}
+                          label="Preferences"
+                          isActive={activeTab === 'preferences'}
+                          onClick={() => setActiveTab('preferences')}
+                        />
+                      )}
+                    </div>
+                  </nav>
+
+                  {/* Save Button - in sidebar */}
+                  <div className="pt-4">
                     <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-md flex-shrink-0"
-                      onClick={() => router.push(`/marketplace/store/${user.id}`)}
+                      onClick={handleSave}
+                      disabled={!hasChanges || saving}
+                      className={cn(
+                        'w-full rounded-md',
+                        saved && 'bg-green-600 hover:bg-green-700'
+                      )}
                     >
-                      <Eye className="h-4 w-4 mr-2" />
-                      View Profile
+                      {saving ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : saved ? (
+                        <>
+                          <Check className="mr-2 h-4 w-4" />
+                          Saved!
+                        </>
+                      ) : (
+                        <>
+                          <Save className="mr-2 h-4 w-4" />
+                          Save Changes
+                        </>
+                      )}
                     </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="max-w-[1920px] mx-auto px-6 py-8 space-y-6">
-            
-            {/* Seller Profile Section */}
-            <Card className="bg-white rounded-md shadow-sm overflow-hidden">
-              <CardHeader className="px-6 py-6">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Store className="h-5 w-5" />
-                  Seller Profile
-                </CardTitle>
-                <CardDescription className="text-sm">
-                  Customise how your profile appears to other users
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-6 pb-6 space-y-6">
-                {/* Profile Photo Preview */}
-                <div className="flex items-center gap-4">
-                  <div className="h-20 w-20 rounded-full border-2 border-gray-200 bg-gray-100 overflow-hidden flex-shrink-0">
-                    {formData.logoUrl ? (
-                      <Image
-                        src={formData.logoUrl}
-                        alt="Profile"
-                        width={80}
-                        height={80}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="h-full w-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                        <span className="text-2xl font-bold text-gray-400">
-                          {displayName.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-lg font-semibold text-gray-900 truncate">{displayName}</p>
-                    {formData.location && (
-                      <p className="text-sm text-gray-500 flex items-center gap-1">
-                        <MapPin className="h-3.5 w-3.5" />
-                        {formData.location}
-                      </p>
-                    )}
                   </div>
                 </div>
+              </aside>
 
-                <Separator />
-
-                {/* Display Name */}
-                <div className="space-y-2">
-                  <Label htmlFor="sellerDisplayName" className="text-sm">Display Name</Label>
-                  <Input
-                    id="sellerDisplayName"
-                    value={formData.sellerDisplayName}
-                    onChange={(e) =>
-                      setFormData({ ...formData, sellerDisplayName: e.target.value })
-                    }
-                    placeholder="e.g. John's Bikes, MTB Enthusiast"
-                    className="rounded-md"
-                  />
-                  <p className="text-xs text-gray-500">
-                    Custom name for your seller profile. Leave blank to use your full name.
-                  </p>
-                </div>
-
-                {/* Bio */}
-                <div className="space-y-2">
-                  <Label htmlFor="bio" className="text-sm">Bio</Label>
-                  <Textarea
-                    id="bio"
-                    value={formData.bio}
-                    onChange={(e) =>
-                      setFormData({ ...formData, bio: e.target.value })
-                    }
-                    placeholder="Tell other cyclists about yourself..."
-                    className="rounded-md min-h-[100px] resize-none"
-                    maxLength={500}
-                  />
-                  <p className="text-xs text-gray-500 text-right">
-                    {formData.bio.length}/500
-                  </p>
-                </div>
-
-                {/* Location */}
-                <div className="space-y-2">
-                  <Label htmlFor="location" className="text-sm">Location</Label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="location"
-                      value={formData.location}
-                      onChange={(e) =>
-                        setFormData({ ...formData, location: e.target.value })
-                      }
-                      placeholder="e.g. Sydney, NSW"
-                      className="rounded-md pl-10"
-                    />
-                  </div>
-                </div>
-
-                {/* Profile Image URL */}
-                <div className="space-y-2">
-                  <Label htmlFor="logoUrl" className="text-sm">Profile Photo URL</Label>
-                  <div className="relative">
-                    <Camera className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="logoUrl"
-                      value={formData.logoUrl}
-                      onChange={(e) =>
-                        setFormData({ ...formData, logoUrl: e.target.value })
-                      }
-                      placeholder="https://example.com/photo.jpg"
-                      className="rounded-md pl-10"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Paste a URL to your profile photo
-                  </p>
-                </div>
-
-                <Separator />
-
-                {/* Social Links */}
-                <div className="space-y-4">
-                  <Label className="text-sm font-medium">Social Links</Label>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* Instagram */}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="socialInstagram" className="text-xs flex items-center gap-1.5 text-gray-600">
-                        <Instagram className="h-3.5 w-3.5" />
-                        Instagram
-                      </Label>
-                      <Input
-                        id="socialInstagram"
-                        value={formData.socialInstagram}
-                        onChange={(e) =>
-                          setFormData({ ...formData, socialInstagram: e.target.value })
-                        }
-                        placeholder="@yourusername"
-                        className="rounded-md h-10"
-                      />
-                    </div>
-
-                    {/* Facebook */}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="socialFacebook" className="text-xs flex items-center gap-1.5 text-gray-600">
-                        <Facebook className="h-3.5 w-3.5" />
-                        Facebook
-                      </Label>
-                      <Input
-                        id="socialFacebook"
-                        value={formData.socialFacebook}
-                        onChange={(e) =>
-                          setFormData({ ...formData, socialFacebook: e.target.value })
-                        }
-                        placeholder="Your page URL"
-                        className="rounded-md h-10"
-                      />
-                    </div>
-
-                    {/* Strava */}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="socialStrava" className="text-xs flex items-center gap-1.5 text-gray-600">
-                        <StravaIcon className="h-3.5 w-3.5" />
-                        Strava
-                      </Label>
-                      <Input
-                        id="socialStrava"
-                        value={formData.socialStrava}
-                        onChange={(e) =>
-                          setFormData({ ...formData, socialStrava: e.target.value })
-                        }
-                        placeholder="Profile URL"
-                        className="rounded-md h-10"
-                      />
-                    </div>
-
-                    {/* Website */}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="socialWebsite" className="text-xs flex items-center gap-1.5 text-gray-600">
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        Website
-                      </Label>
-                      <Input
-                        id="socialWebsite"
-                        value={formData.socialWebsite}
-                        onChange={(e) =>
-                          setFormData({ ...formData, socialWebsite: e.target.value })
-                        }
-                        placeholder="https://..."
-                        className="rounded-md h-10"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Payment Settings - Stripe Connect */}
-            <Card className="bg-white rounded-md shadow-sm overflow-hidden">
-              <CardHeader className="px-6 py-6">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <DollarSign className="h-5 w-5" />
-                  Payments & Payouts
-                </CardTitle>
-                <CardDescription className="text-sm">
-                  Connect your bank account to receive payouts when you sell items
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-6 pb-6">
-                <StripeConnectCard />
-              </CardContent>
-            </Card>
-
-            {/* Personal Information */}
-            <Card className="bg-white rounded-md shadow-sm overflow-hidden">
-              <CardHeader className="px-6 py-6">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <User className="h-5 w-5" />
-                  Personal Information
-                </CardTitle>
-                <CardDescription className="text-sm">
-                  Update your personal details and contact information
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-6 pb-6 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="firstName" className="text-sm">First Name</Label>
-                    <Input
-                      id="firstName"
-                      value={formData.firstName}
-                      onChange={(e) =>
-                        setFormData({ ...formData, firstName: e.target.value })
-                      }
-                      className="rounded-md"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="lastName" className="text-sm">Last Name</Label>
-                    <Input
-                      id="lastName"
-                      value={formData.lastName}
-                      onChange={(e) =>
-                        setFormData({ ...formData, lastName: e.target.value })
-                      }
-                      className="rounded-md"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-sm">Email Address</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    className="rounded-md bg-gray-50"
-                    disabled
-                  />
-                  <p className="text-xs text-gray-500">
-                    Contact support to change your email
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="phone" className="text-sm">Phone Number</Label>
-                  <Input
-                    id="phone"
-                    value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
-                    }
-                    placeholder="Optional"
-                    className="rounded-md"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Notifications */}
-            <Card className="bg-white rounded-md shadow-sm overflow-hidden">
-              <CardHeader className="px-6 py-6">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Bell className="h-5 w-5" />
-                  Notifications
-                </CardTitle>
-                <CardDescription className="text-sm">
-                  Choose what notifications you want to receive
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-6 pb-6 space-y-0">
-                {/* Email Notifications */}
-                <div className="flex items-center justify-between py-3">
-                  <div className="flex-1 min-w-0 pr-4">
-                    <Label className="text-sm font-medium">Email Notifications</Label>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Receive important updates via email
-                    </p>
-                  </div>
-                  <Switch
-                    checked={formData.emailNotifications}
-                    onCheckedChange={(checked) =>
-                      setFormData({ ...formData, emailNotifications: checked })
-                    }
-                  />
-                </div>
-                <Separator />
-                {/* Order Alerts */}
-                <div className="flex items-center justify-between py-3">
-                  <div className="flex-1 min-w-0 pr-4">
-                    <Label className="text-sm font-medium">Order Alerts</Label>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Get notified about orders and purchases
-                    </p>
-                  </div>
-                  <Switch
-                    checked={formData.orderAlerts}
-                    onCheckedChange={(checked) =>
-                      setFormData({ ...formData, orderAlerts: checked })
-                    }
-                  />
-                </div>
-                <Separator />
-                {/* Marketing Emails */}
-                <div className="flex items-center justify-between py-3">
-                  <div className="flex-1 min-w-0 pr-4">
-                    <Label className="text-sm font-medium">Marketing Emails</Label>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Tips, offers, and recommendations
-                    </p>
-                  </div>
-                  <Switch
-                    checked={formData.marketingEmails}
-                    onCheckedChange={(checked) =>
-                      setFormData({ ...formData, marketingEmails: checked })
-                    }
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Personalization Preferences */}
-            {(ridingStyles.length > 0 || preferredBrands.length > 0 || interests.length > 0) && (
-              <Card className="bg-white rounded-md shadow-sm overflow-hidden">
-                <CardHeader className="px-6 py-6">
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <Star className="h-5 w-5" />
-                    Your Preferences
-                  </CardTitle>
-                  <CardDescription className="text-sm">
-                    Preferences you set during onboarding
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="px-6 pb-6 space-y-4">
-                  {ridingStyles.length > 0 && (
-                    <div>
-                      <Label className="flex items-center gap-2 mb-2 text-sm">
-                        <Bike className="h-4 w-4" />
-                        Riding Styles
-                      </Label>
-                      <div className="flex flex-wrap gap-2">
-                        {ridingStyles.map((style: string) => (
-                          <span
-                            key={style}
-                            className="px-2.5 py-1 bg-gray-100 text-gray-700 text-sm rounded-md"
-                          >
-                            {style.charAt(0).toUpperCase() + style.slice(1).replace('-', ' ')}
-                          </span>
-                        ))}
-                      </div>
+              {/* Main Content */}
+              <main className="flex-1 p-8 min-w-0">
+                <div className="max-w-4xl space-y-6">
+                  {/* Error Message */}
+                  {error && (
+                    <div className="bg-white border border-red-200 rounded-md p-4">
+                      <p className="text-sm text-red-600">{error}</p>
                     </div>
                   )}
 
-                  {preferredBrands.length > 0 && (
-                    <div>
-                      <Label className="flex items-center gap-2 mb-2 text-sm">
-                        <ShoppingBag className="h-4 w-4" />
-                        Preferred Brands
-                      </Label>
-                      <div className="flex flex-wrap gap-2">
-                        {preferredBrands.map((brand: string) => (
-                          <span
-                            key={brand}
-                            className="px-2.5 py-1 bg-gray-100 text-gray-700 text-sm rounded-md"
-                          >
-                            {brand}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+                  {/* Profile Tab */}
+                  {activeTab === 'profile' && (
+                    <>
+                      {/* Seller Profile Card */}
+                      <Card className="bg-white rounded-md shadow-sm">
+                        <CardHeader className="px-6 py-5">
+                          <CardTitle className="flex items-center gap-2 text-lg">
+                            <Store className="h-5 w-5" />
+                            Seller Profile
+                          </CardTitle>
+                          <CardDescription className="text-sm">
+                            Customise how your profile appears to other users
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="px-6 pb-6 space-y-6">
+                          {/* Profile Photo Preview */}
+                          <div className="flex items-center gap-4">
+                            <div className="h-20 w-20 rounded-full border-2 border-gray-200 bg-gray-100 overflow-hidden flex-shrink-0">
+                              {formData.logoUrl ? (
+                                <Image
+                                  src={formData.logoUrl}
+                                  alt="Profile"
+                                  width={80}
+                                  height={80}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="h-full w-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                                  <span className="text-2xl font-bold text-gray-400">
+                                    {displayName.charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-lg font-semibold text-gray-900 truncate">{displayName}</p>
+                              {formData.location && (
+                                <p className="text-sm text-gray-500 flex items-center gap-1">
+                                  <MapPin className="h-3.5 w-3.5" />
+                                  {formData.location}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <Separator />
+
+                          {/* Display Name */}
+                          <div className="space-y-2">
+                            <Label htmlFor="sellerDisplayName" className="text-sm">Display Name</Label>
+                            <Input
+                              id="sellerDisplayName"
+                              value={formData.sellerDisplayName}
+                              onChange={(e) =>
+                                setFormData({ ...formData, sellerDisplayName: e.target.value })
+                              }
+                              placeholder="e.g. John's Bikes, MTB Enthusiast"
+                              className="rounded-md"
+                            />
+                            <p className="text-xs text-gray-500">
+                              Custom name for your seller profile. Leave blank to use your full name.
+                            </p>
+                          </div>
+
+                          {/* Bio */}
+                          <div className="space-y-2">
+                            <Label htmlFor="bio" className="text-sm">Bio</Label>
+                            <Textarea
+                              id="bio"
+                              value={formData.bio}
+                              onChange={(e) =>
+                                setFormData({ ...formData, bio: e.target.value })
+                              }
+                              placeholder="Tell other cyclists about yourself..."
+                              className="rounded-md min-h-[100px] resize-none"
+                              maxLength={500}
+                            />
+                            <p className="text-xs text-gray-500 text-right">
+                              {formData.bio.length}/500
+                            </p>
+                          </div>
+
+                          {/* Location */}
+                          <div className="space-y-2">
+                            <Label htmlFor="location" className="text-sm">Location</Label>
+                            <div className="relative">
+                              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                              <Input
+                                id="location"
+                                value={formData.location}
+                                onChange={(e) =>
+                                  setFormData({ ...formData, location: e.target.value })
+                                }
+                                placeholder="e.g. Sydney, NSW"
+                                className="rounded-md pl-10"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Profile Image URL */}
+                          <div className="space-y-2">
+                            <Label htmlFor="logoUrl" className="text-sm">Profile Photo URL</Label>
+                            <div className="relative">
+                              <Camera className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                              <Input
+                                id="logoUrl"
+                                value={formData.logoUrl}
+                                onChange={(e) =>
+                                  setFormData({ ...formData, logoUrl: e.target.value })
+                                }
+                                placeholder="https://example.com/photo.jpg"
+                                className="rounded-md pl-10"
+                              />
+                            </div>
+                            <p className="text-xs text-gray-500">
+                              Paste a URL to your profile photo
+                            </p>
+                          </div>
+
+                          <Separator />
+
+                          {/* Social Links */}
+                          <div className="space-y-4">
+                            <Label className="text-sm font-medium">Social Links</Label>
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                              {/* Instagram */}
+                              <div className="space-y-1.5">
+                                <Label htmlFor="socialInstagram" className="text-xs flex items-center gap-1.5 text-gray-600">
+                                  <Instagram className="h-3.5 w-3.5" />
+                                  Instagram
+                                </Label>
+                                <Input
+                                  id="socialInstagram"
+                                  value={formData.socialInstagram}
+                                  onChange={(e) =>
+                                    setFormData({ ...formData, socialInstagram: e.target.value })
+                                  }
+                                  placeholder="@yourusername"
+                                  className="rounded-md h-10"
+                                />
+                              </div>
+
+                              {/* Facebook */}
+                              <div className="space-y-1.5">
+                                <Label htmlFor="socialFacebook" className="text-xs flex items-center gap-1.5 text-gray-600">
+                                  <Facebook className="h-3.5 w-3.5" />
+                                  Facebook
+                                </Label>
+                                <Input
+                                  id="socialFacebook"
+                                  value={formData.socialFacebook}
+                                  onChange={(e) =>
+                                    setFormData({ ...formData, socialFacebook: e.target.value })
+                                  }
+                                  placeholder="Your page URL"
+                                  className="rounded-md h-10"
+                                />
+                              </div>
+
+                              {/* Strava */}
+                              <div className="space-y-1.5">
+                                <Label htmlFor="socialStrava" className="text-xs flex items-center gap-1.5 text-gray-600">
+                                  <StravaIcon className="h-3.5 w-3.5" />
+                                  Strava
+                                </Label>
+                                <Input
+                                  id="socialStrava"
+                                  value={formData.socialStrava}
+                                  onChange={(e) =>
+                                    setFormData({ ...formData, socialStrava: e.target.value })
+                                  }
+                                  placeholder="Profile URL"
+                                  className="rounded-md h-10"
+                                />
+                              </div>
+
+                              {/* Website */}
+                              <div className="space-y-1.5">
+                                <Label htmlFor="socialWebsite" className="text-xs flex items-center gap-1.5 text-gray-600">
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                  Website
+                                </Label>
+                                <Input
+                                  id="socialWebsite"
+                                  value={formData.socialWebsite}
+                                  onChange={(e) =>
+                                    setFormData({ ...formData, socialWebsite: e.target.value })
+                                  }
+                                  placeholder="https://..."
+                                  className="rounded-md h-10"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Personal Information Card */}
+                      <Card className="bg-white rounded-md shadow-sm">
+                        <CardHeader className="px-6 py-5">
+                          <CardTitle className="flex items-center gap-2 text-lg">
+                            <User className="h-5 w-5" />
+                            Personal Information
+                          </CardTitle>
+                          <CardDescription className="text-sm">
+                            Update your personal details and contact information
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="px-6 pb-6 space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <Label htmlFor="firstName" className="text-sm">First Name</Label>
+                              <Input
+                                id="firstName"
+                                value={formData.firstName}
+                                onChange={(e) =>
+                                  setFormData({ ...formData, firstName: e.target.value })
+                                }
+                                className="rounded-md"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="lastName" className="text-sm">Last Name</Label>
+                              <Input
+                                id="lastName"
+                                value={formData.lastName}
+                                onChange={(e) =>
+                                  setFormData({ ...formData, lastName: e.target.value })
+                                }
+                                className="rounded-md"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="email" className="text-sm">Email Address</Label>
+                            <Input
+                              id="email"
+                              type="email"
+                              value={formData.email}
+                              className="rounded-md bg-gray-50"
+                              disabled
+                            />
+                            <p className="text-xs text-gray-500">
+                              Contact support to change your email
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="phone" className="text-sm">Phone Number</Label>
+                            <Input
+                              id="phone"
+                              value={formData.phone}
+                              onChange={(e) =>
+                                setFormData({ ...formData, phone: e.target.value })
+                              }
+                              placeholder="Optional"
+                              className="rounded-md"
+                            />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </>
                   )}
 
-                  {experienceLevel !== 'Not set' && (
-                    <div>
-                      <Label className="flex items-center gap-2 mb-2 text-sm">
-                        <Star className="h-4 w-4" />
-                        Experience Level
-                      </Label>
-                      <span className="px-2.5 py-1 bg-gray-100 text-gray-700 text-sm rounded-md">
-                        {experienceLevel.charAt(0).toUpperCase() + experienceLevel.slice(1)}
-                      </span>
-                    </div>
+                  {/* Payments Tab */}
+                  {activeTab === 'payments' && (
+                    <Card className="bg-white rounded-md shadow-sm">
+                      <CardHeader className="px-6 py-5">
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <DollarSign className="h-5 w-5" />
+                          Payments & Payouts
+                        </CardTitle>
+                        <CardDescription className="text-sm">
+                          Connect your bank account to receive payouts when you sell items
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="px-6 pb-6">
+                        <StripeConnectCard />
+                      </CardContent>
+                    </Card>
                   )}
 
-                  {budgetRange !== 'Not set' && (
-                    <div>
-                      <Label className="flex items-center gap-2 mb-2 text-sm">
-                        <DollarSign className="h-4 w-4" />
-                        Budget Range
-                      </Label>
-                      <span className="px-2.5 py-1 bg-gray-100 text-gray-700 text-sm rounded-md">
-                        {budgetRange.replace('-', ' - ').replace('under-', 'Under $').replace('over-', 'Over $')}
-                      </span>
-                    </div>
+                  {/* Notifications Tab */}
+                  {activeTab === 'notifications' && (
+                    <Card className="bg-white rounded-md shadow-sm">
+                      <CardHeader className="px-6 py-5">
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <Bell className="h-5 w-5" />
+                          Notifications
+                        </CardTitle>
+                        <CardDescription className="text-sm">
+                          Choose what notifications you want to receive
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="px-6 pb-6 space-y-0">
+                        {/* Email Notifications */}
+                        <div className="flex items-center justify-between py-4">
+                          <div className="flex-1 min-w-0 pr-4">
+                            <Label className="text-sm font-medium">Email Notifications</Label>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              Receive important updates via email
+                            </p>
+                          </div>
+                          <Switch
+                            checked={formData.emailNotifications}
+                            onCheckedChange={(checked) =>
+                              setFormData({ ...formData, emailNotifications: checked })
+                            }
+                          />
+                        </div>
+                        <Separator />
+                        {/* Order Alerts */}
+                        <div className="flex items-center justify-between py-4">
+                          <div className="flex-1 min-w-0 pr-4">
+                            <Label className="text-sm font-medium">Order Alerts</Label>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              Get notified about orders and purchases
+                            </p>
+                          </div>
+                          <Switch
+                            checked={formData.orderAlerts}
+                            onCheckedChange={(checked) =>
+                              setFormData({ ...formData, orderAlerts: checked })
+                            }
+                          />
+                        </div>
+                        <Separator />
+                        {/* Marketing Emails */}
+                        <div className="flex items-center justify-between py-4">
+                          <div className="flex-1 min-w-0 pr-4">
+                            <Label className="text-sm font-medium">Marketing Emails</Label>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              Tips, offers, and recommendations
+                            </p>
+                          </div>
+                          <Switch
+                            checked={formData.marketingEmails}
+                            onCheckedChange={(checked) =>
+                              setFormData({ ...formData, marketingEmails: checked })
+                            }
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
                   )}
 
-                  {interests.length > 0 && (
-                    <div>
-                      <Label className="flex items-center gap-2 mb-2 text-sm">
-                        <ShoppingBag className="h-4 w-4" />
-                        Interests
-                      </Label>
-                      <div className="flex flex-wrap gap-2">
-                        {interests.map((interest: string) => (
-                          <span
-                            key={interest}
-                            className="px-2.5 py-1 bg-gray-100 text-gray-700 text-sm rounded-md"
-                          >
-                            {interest.charAt(0).toUpperCase() + interest.slice(1).replace('-', ' ')}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+                  {/* Preferences Tab */}
+                  {activeTab === 'preferences' && hasPreferences && (
+                    <Card className="bg-white rounded-md shadow-sm">
+                      <CardHeader className="px-6 py-5">
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <Star className="h-5 w-5" />
+                          Your Preferences
+                        </CardTitle>
+                        <CardDescription className="text-sm">
+                          Preferences you set during onboarding
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="px-6 pb-6 space-y-6">
+                        {ridingStyles.length > 0 && (
+                          <div>
+                            <Label className="flex items-center gap-2 mb-3 text-sm font-medium">
+                              <Bike className="h-4 w-4" />
+                              Riding Styles
+                            </Label>
+                            <div className="flex flex-wrap gap-2">
+                              {ridingStyles.map((style: string) => (
+                                <span
+                                  key={style}
+                                  className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-md"
+                                >
+                                  {style.charAt(0).toUpperCase() + style.slice(1).replace('-', ' ')}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {preferredBrands.length > 0 && (
+                          <div>
+                            <Label className="flex items-center gap-2 mb-3 text-sm font-medium">
+                              <ShoppingBag className="h-4 w-4" />
+                              Preferred Brands
+                            </Label>
+                            <div className="flex flex-wrap gap-2">
+                              {preferredBrands.map((brand: string) => (
+                                <span
+                                  key={brand}
+                                  className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-md"
+                                >
+                                  {brand}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {experienceLevel !== 'Not set' && (
+                          <div>
+                            <Label className="flex items-center gap-2 mb-3 text-sm font-medium">
+                              <Star className="h-4 w-4" />
+                              Experience Level
+                            </Label>
+                            <span className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-md">
+                              {experienceLevel.charAt(0).toUpperCase() + experienceLevel.slice(1)}
+                            </span>
+                          </div>
+                        )}
+
+                        {budgetRange !== 'Not set' && (
+                          <div>
+                            <Label className="flex items-center gap-2 mb-3 text-sm font-medium">
+                              <DollarSign className="h-4 w-4" />
+                              Budget Range
+                            </Label>
+                            <span className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-md">
+                              {budgetRange.replace('-', ' - ').replace('under-', 'Under $').replace('over-', 'Over $')}
+                            </span>
+                          </div>
+                        )}
+
+                        {interests.length > 0 && (
+                          <div>
+                            <Label className="flex items-center gap-2 mb-3 text-sm font-medium">
+                              <ShoppingBag className="h-4 w-4" />
+                              Interests
+                            </Label>
+                            <div className="flex flex-wrap gap-2">
+                              {interests.map((interest: string) => (
+                                <span
+                                  key={interest}
+                                  className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-md"
+                                >
+                                  {interest.charAt(0).toUpperCase() + interest.slice(1).replace('-', ' ')}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="pt-2">
+                          <p className="text-xs text-gray-500">
+                            Contact support to update these preferences.
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
                   )}
-
-                  <p className="text-xs text-gray-500 pt-2">
-                    Contact support to update these preferences.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Error Message */}
-            {error && (
-              <div className="bg-white border border-red-200 rounded-md p-4">
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
-            )}
-
-            {/* Save Button */}
-            <div className="flex justify-end">
-              <Button
-                onClick={handleSave}
-                disabled={!hasChanges || saving}
-                size="lg"
-                className={cn(
-                  'rounded-md min-w-[120px]',
-                  saved && 'bg-green-600 hover:bg-green-700'
-                )}
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Saving...
-                  </>
-                ) : saved ? (
-                  <>
-                    <Check className="mr-2 h-5 w-5" />
-                    Saved!
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-5 w-5" />
-                    Save Changes
-                  </>
-                )}
-              </Button>
+                </div>
+              </main>
             </div>
           </div>
-        </div>
-      </MarketplaceLayout>
+        </MarketplaceLayout>
       </div>
     </>
   )

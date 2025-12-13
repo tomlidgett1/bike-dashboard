@@ -23,6 +23,13 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // Unsplash - for demo/test images
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
     // AVIF first for better compression (30% smaller than WebP)
     formats: ['image/avif', 'image/webp'],

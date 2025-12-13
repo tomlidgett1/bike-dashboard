@@ -21,8 +21,13 @@ export function MobileNavProvider({ children }: { children: React.ReactNode }) {
 
 export function useMobileNav() {
   const context = useContext(MobileNavContext);
+  // Return a no-op default during SSR or when provider is not available
+  // This prevents hydration errors when the provider hasn't mounted yet
   if (context === undefined) {
-    throw new Error('useMobileNav must be used within MobileNavProvider');
+    return {
+      isHidden: false,
+      setIsHidden: () => {},
+    };
   }
   return context;
 }
