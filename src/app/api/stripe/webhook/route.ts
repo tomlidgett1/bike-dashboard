@@ -261,14 +261,14 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   console.log('[Stripe Webhook] Shipping address:', JSON.stringify(shippingAddress, null, 2));
 
   // Create purchase record with escrow fields
-  const purchaseData = {
+  // Note: Only include fields that exist in the database
+  const purchaseData: Record<string, any> = {
     buyer_id,
     seller_id,
     product_id,
     order_number: orderNumber,
     item_price: parseFloat(item_price),
     shipping_cost: parseFloat(shipping_cost || '0'),
-    buyer_fee: parseFloat(buyer_fee || '0'),
     total_amount: parseFloat(total_amount),
     platform_fee: parseFloat(platform_fee),
     seller_payout_amount: parseFloat(seller_payout),
@@ -281,22 +281,78 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     payment_method: 'stripe',
     payment_date: new Date().toISOString(),
     payout_status: 'pending',
-    // Shipping address
-    shipping_address: shippingAddress,
-    buyer_phone: customerDetails?.phone || null,
-    buyer_email: customerDetails?.email || null,
     // Escrow fields
     funds_status: 'held',
     funds_release_at: fundsReleaseAt.toISOString(),
   };
 
+  // Add optional fields if they have values (columns may not exist yet)
+  if (shippingAddress) {
+    purchaseData.shipping_address = shippingAddress;
+  }
+  if (customerDetails?.phone) {
+    purchaseData.buyer_phone = customerDetails.phone;
+  }
+  if (customerDetails?.email) {
+    purchaseData.buyer_email = customerDetails.email;
+  }
+  if (buyer_fee) {
+    purchaseData.buyer_fee = parseFloat(buyer_fee);
+  }
+
   console.log('[Stripe Webhook] Inserting purchase with data:', JSON.stringify(purchaseData, null, 2));
 
-  const { data: purchase, error: purchaseError } = await supabase
+  // Try to insert with all fields, fallback to core fields if new columns don't exist
+  let purchase: any;
+  let purchaseError: any;
+
+  // First attempt with all fields
+  const result1 = await supabase
     .from('purchases')
     .insert(purchaseData)
     .select()
     .single();
+
+  if (result1.error) {
+    console.log('[Stripe Webhook] First insert attempt failed, trying with core fields only');
+    console.log('[Stripe Webhook] Error was:', result1.error.message);
+    
+    // Remove potentially missing columns and retry
+    const coreData = {
+      buyer_id,
+      seller_id,
+      product_id,
+      order_number: orderNumber,
+      item_price: parseFloat(item_price),
+      shipping_cost: parseFloat(shipping_cost || '0'),
+      total_amount: parseFloat(total_amount),
+      platform_fee: parseFloat(platform_fee),
+      seller_payout_amount: parseFloat(seller_payout),
+      stripe_session_id: session.id,
+      stripe_payment_intent_id: typeof session.payment_intent === 'string' 
+        ? session.payment_intent 
+        : session.payment_intent?.id || null,
+      status: 'paid',
+      payment_status: 'paid',
+      payment_method: 'stripe',
+      payment_date: new Date().toISOString(),
+      payout_status: 'pending',
+      funds_status: 'held',
+      funds_release_at: fundsReleaseAt.toISOString(),
+    };
+
+    const result2 = await supabase
+      .from('purchases')
+      .insert(coreData)
+      .select()
+      .single();
+
+    purchase = result2.data;
+    purchaseError = result2.error;
+  } else {
+    purchase = result1.data;
+    purchaseError = result1.error;
+  }
 
   if (purchaseError) {
     console.error('[Stripe Webhook] ✗ Failed to create purchase:', JSON.stringify(purchaseError, null, 2));
