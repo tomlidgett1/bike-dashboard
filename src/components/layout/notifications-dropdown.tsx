@@ -2,9 +2,11 @@
 // ORDER NOTIFICATIONS DROPDOWN COMPONENT
 // ============================================================
 // Header dropdown for viewing order-related notifications
+// Uses Sheet on mobile for better UX, Dropdown on desktop
 
 'use client';
 
+import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,6 +16,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { 
   Bell, 
   Package, 
@@ -24,6 +32,7 @@ import {
   MapPin,
   ShoppingBag,
   CreditCard,
+  X,
 } from 'lucide-react';
 import { useOrderNotifications, type OrderNotification } from '@/lib/hooks/use-order-notifications';
 import { formatDistanceToNow } from 'date-fns';
@@ -106,8 +115,91 @@ function getProductName(notification: OrderNotification): string {
   return product.display_name || product.description || 'Unknown Product';
 }
 
+// Shared notification item component
+function NotificationItem({ 
+  notification, 
+  onClick 
+}: { 
+  notification: OrderNotification; 
+  onClick: () => void;
+}) {
+  const display = getNotificationDisplay(notification.type);
+  const Icon = display.icon;
+  const productImage = getProductImage(notification);
+  const productName = getProductName(notification);
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'w-full text-left p-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0 cursor-pointer',
+        !notification.is_read && 'bg-amber-50/50'
+      )}
+    >
+      <div className="flex items-start gap-3">
+        {/* Product Image or Icon */}
+        <div className="flex-shrink-0 relative">
+          {productImage ? (
+            <div className="w-12 h-12 rounded-md overflow-hidden bg-gray-100 relative">
+              <Image 
+                src={productImage} 
+                alt={productName} 
+                fill 
+                className="object-cover" 
+                sizes="48px"
+              />
+              {/* Icon badge */}
+              <div className={cn(
+                "absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center",
+                display.color
+              )}>
+                <Icon className="h-2.5 w-2.5 text-white" />
+              </div>
+            </div>
+          ) : (
+            <div className={cn(
+              "w-12 h-12 rounded-md flex items-center justify-center",
+              display.color
+            )}>
+              <Icon className="h-6 w-6 text-white" />
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-gray-900">
+            {display.title}
+          </p>
+          <p className="text-sm text-gray-600 truncate mt-0.5">
+            {productName}
+          </p>
+          {notification.purchase?.order_number && (
+            <p className="text-xs text-gray-500 mt-0.5">
+              Order #{notification.purchase.order_number}
+            </p>
+          )}
+          <p className="text-xs text-gray-400 mt-1">
+            {formatDistanceToNow(new Date(notification.created_at), {
+              addSuffix: true,
+            })}
+          </p>
+        </div>
+
+        {/* Unread Indicator */}
+        {!notification.is_read && (
+          <div className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-amber-500 mt-1" />
+        )}
+      </div>
+    </button>
+  );
+}
+
 export function NotificationsDropdown() {
   const router = useRouter();
+  const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
+  
   const { 
     notifications, 
     unreadCount, 
@@ -116,16 +208,25 @@ export function NotificationsDropdown() {
     refresh 
   } = useOrderNotifications(10, false);
 
+  // Detect mobile
+  React.useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 640);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const handleNotificationClick = async (notification: OrderNotification) => {
     if (!notification.is_read) {
       await markAsRead(notification.id);
     }
-    // Navigate to order details
+    setMobileSheetOpen(false);
     router.push('/settings/purchases');
     refresh();
   };
 
   const handleViewAll = () => {
+    setMobileSheetOpen(false);
     router.push('/settings/purchases');
   };
 
@@ -135,6 +236,103 @@ export function NotificationsDropdown() {
     await markAllAsRead();
   };
 
+  const handleBellClick = () => {
+    if (isMobile) {
+      setMobileSheetOpen(true);
+    }
+  };
+
+  // Notification content - shared between dropdown and sheet
+  const NotificationContent = () => (
+    <>
+      {notifications.length === 0 ? (
+        <div className="p-8 text-center text-gray-500">
+          <Bell className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+          <p className="font-medium text-gray-900">No notifications yet</p>
+          <p className="text-sm text-gray-500 mt-1">
+            You&apos;ll be notified about order updates here
+          </p>
+        </div>
+      ) : (
+        <div>
+          {notifications.map((notification) => (
+            <NotificationItem
+              key={notification.id}
+              notification={notification}
+              onClick={() => handleNotificationClick(notification)}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  // Mobile: Use Sheet
+  if (isMobile) {
+    return (
+      <>
+        <button
+          onClick={handleBellClick}
+          className="relative h-9 w-9 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center"
+          aria-label="Notifications"
+        >
+          <Bell className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </button>
+
+        <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
+          <SheetContent side="bottom" className="h-[85vh] rounded-t-2xl p-0">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <SheetTitle className="text-lg font-semibold">Notifications</SheetTitle>
+                <div className="flex items-center gap-3">
+                  {unreadCount > 0 && (
+                    <button 
+                      onClick={handleMarkAllRead}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setMobileSheetOpen(false)}
+                    className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
+                  >
+                    <X className="h-5 w-5 text-gray-500" />
+                  </button>
+                </div>
+              </div>
+              {unreadCount > 0 && (
+                <p className="text-sm text-gray-500 mt-1">{unreadCount} unread</p>
+              )}
+            </div>
+
+            {/* Notifications List */}
+            <div className="flex-1 overflow-y-auto">
+              <NotificationContent />
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 safe-area-bottom">
+              <Button
+                onClick={handleViewAll}
+                className="w-full rounded-md"
+              >
+                View All Orders
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </>
+    );
+  }
+
+  // Desktop: Use Dropdown
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
@@ -150,7 +348,7 @@ export function NotificationsDropdown() {
           )}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[calc(100vw-2rem)] max-w-96">
+      <DropdownMenuContent align="end" className="w-96">
         <DropdownMenuLabel className="font-normal">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold">Notifications</span>
@@ -174,101 +372,17 @@ export function NotificationsDropdown() {
         <DropdownMenuSeparator />
 
         {/* Notifications List */}
-        <div className="max-h-[50vh] sm:max-h-[400px] overflow-y-auto">
-          {notifications.length === 0 ? (
-            <div className="p-3 sm:p-4 text-center text-gray-500 text-xs sm:text-sm">
-              <Bell className="h-7 w-7 sm:h-8 sm:w-8 mx-auto mb-2 text-gray-400" />
-              <p>No notifications yet</p>
-              <p className="text-xs text-gray-400 mt-1">
-                You&apos;ll be notified about order updates here
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {notifications.map((notification) => {
-                const display = getNotificationDisplay(notification.type);
-                const Icon = display.icon;
-                const productImage = getProductImage(notification);
-                const productName = getProductName(notification);
-
-                return (
-                  <button
-                    key={notification.id}
-                    onClick={() => handleNotificationClick(notification)}
-                    className={cn(
-                      'w-full text-left p-2.5 sm:p-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0 cursor-pointer',
-                      !notification.is_read && 'bg-amber-50/50'
-                    )}
-                  >
-                    <div className="flex items-start gap-2 sm:gap-3">
-                      {/* Product Image or Icon */}
-                      <div className="flex-shrink-0 relative">
-                        {productImage ? (
-                          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-md overflow-hidden bg-gray-100 relative">
-                            <Image 
-                              src={productImage} 
-                              alt={productName} 
-                              fill 
-                              className="object-cover" 
-                              sizes="48px"
-                            />
-                            {/* Icon badge */}
-                            <div className={cn(
-                              "absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center",
-                              display.color
-                            )}>
-                              <Icon className="h-2.5 w-2.5 text-white" />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className={cn(
-                            "w-10 h-10 sm:w-12 sm:h-12 rounded-md flex items-center justify-center",
-                            display.color
-                          )}>
-                            <Icon className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm font-medium text-gray-900">
-                          {display.title}
-                        </p>
-                        <p className="text-xs text-gray-600 truncate mt-0.5">
-                          {productName}
-                        </p>
-                        {notification.purchase?.order_number && (
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            Order #{notification.purchase.order_number}
-                          </p>
-                        )}
-                        <p className="text-xs text-gray-400 mt-0.5 sm:mt-1">
-                          {formatDistanceToNow(new Date(notification.created_at), {
-                            addSuffix: true,
-                          })}
-                        </p>
-                      </div>
-
-                      {/* Unread Indicator */}
-                      {!notification.is_read && (
-                        <div className="flex-shrink-0 w-2 h-2 rounded-full bg-amber-500 mt-1" />
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+        <div className="max-h-[400px] overflow-y-auto">
+          <NotificationContent />
         </div>
 
         <DropdownMenuSeparator />
 
         {/* View All Button */}
-        <div className="p-1.5 sm:p-2">
+        <div className="p-2">
           <Button
             variant="ghost"
-            className="w-full rounded-md text-xs sm:text-sm cursor-pointer"
+            className="w-full rounded-md text-sm cursor-pointer"
             onClick={handleViewAll}
           >
             View All Orders
