@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -11,7 +11,6 @@ import {
   Loader2,
   RefreshCw,
   ChevronRight,
-  ChevronDown,
   ShoppingBag,
   ExternalLink,
   MessageCircle,
@@ -19,21 +18,18 @@ import {
   X,
   CheckCircle2,
   Clock,
-  AlertTriangle,
   Truck,
-  CreditCard,
   Copy,
   Check,
   Store,
   Shield,
-  PackageCheck,
-  Info,
   Mail,
   DollarSign,
-  Star,
   Archive,
   AlertCircle,
   Tag,
+  MoreVertical,
+  ArrowUpRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,7 +91,7 @@ type ViewMode = 'buying' | 'selling';
 type CategoryFilter = 'all' | 'active' | 'completed' | 'disputes' | 'archived';
 type QuickFilter = 'awaiting_shipment' | 'in_transit' | 'pending_confirmation' | null;
 
-// Helper functions
+// Helpers
 function normalizeProduct(product: any): Purchase['product'] | null {
   if (!product) return null;
   if (Array.isArray(product)) return product.length > 0 ? product[0] : null;
@@ -122,56 +118,65 @@ function getProductName(product: any): string {
 }
 
 // ============================================================
-// Status Configuration
+// Status Config - Yellow/Amber Theme
 // ============================================================
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-  pending: { label: "Pending", color: "text-amber-600" },
-  confirmed: { label: "Confirmed", color: "text-blue-600" },
-  paid: { label: "Paid", color: "text-emerald-600" },
-  shipped: { label: "Shipped", color: "text-violet-600" },
-  delivered: { label: "Delivered", color: "text-emerald-600" },
-  cancelled: { label: "Cancelled", color: "text-gray-500" },
-  refunded: { label: "Refunded", color: "text-red-600" },
+const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+  pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-50" },
+  confirmed: { label: "Confirmed", color: "text-blue-700", bg: "bg-blue-50" },
+  paid: { label: "Paid", color: "text-emerald-700", bg: "bg-emerald-50" },
+  shipped: { label: "Shipped", color: "text-violet-700", bg: "bg-violet-50" },
+  delivered: { label: "Delivered", color: "text-emerald-700", bg: "bg-emerald-50" },
+  cancelled: { label: "Cancelled", color: "text-neutral-500", bg: "bg-neutral-100" },
+  refunded: { label: "Refunded", color: "text-red-700", bg: "bg-red-50" },
 };
 
 // ============================================================
-// Sidebar Navigation
+// Navigation Item (Nova Style)
 // ============================================================
 
-interface SidebarItemProps {
-  icon: React.ElementType;
-  label: string;
-  count?: number;
-  isActive: boolean;
+function NavItem({ 
+  icon: Icon, 
+  label, 
+  count, 
+  isActive, 
+  onClick 
+}: { 
+  icon: React.ElementType; 
+  label: string; 
+  count?: number; 
+  isActive: boolean; 
   onClick: () => void;
-}
-
-function SidebarItem({ icon: Icon, label, count, isActive, onClick }: SidebarItemProps) {
+}) {
   return (
     <button
       onClick={onClick}
       className={cn(
-        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors",
+        "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all",
         isActive 
-          ? "bg-gray-100 text-gray-900 font-medium" 
-          : "text-gray-600 hover:bg-gray-50"
+          ? "bg-amber-50 text-amber-900 font-medium" 
+          : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
       )}
     >
-      <Icon className={cn("h-5 w-5", isActive ? "text-gray-700" : "text-gray-400")} />
-      <span className="flex-1 text-sm">{label}</span>
+      <Icon className={cn("h-4 w-4", isActive ? "text-amber-600" : "text-neutral-400")} />
+      <span className="flex-1 text-left">{label}</span>
       {count !== undefined && count > 0 && (
-        <span className="text-xs text-gray-400">{count}</span>
+        <span className={cn(
+          "text-xs tabular-nums",
+          isActive ? "text-amber-600" : "text-neutral-400"
+        )}>
+          {count}
+        </span>
       )}
     </button>
   );
 }
 
 // ============================================================
-// Quick Filter Pills
+// Quick Filter Chip (Nova Yellow Theme)
 // ============================================================
 
-function QuickFilterPill({ 
+function FilterChip({ 
   label, 
   isActive, 
   onClick 
@@ -184,10 +189,10 @@ function QuickFilterPill({
     <button
       onClick={onClick}
       className={cn(
-        "px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap",
+        "px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap",
         isActive 
-          ? "bg-gray-900 text-white" 
-          : "bg-white border border-gray-200 text-gray-700 hover:border-gray-300"
+          ? "bg-amber-500 text-white shadow-sm" 
+          : "bg-white text-neutral-600 border border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50"
       )}
     >
       {label}
@@ -196,354 +201,10 @@ function QuickFilterPill({
 }
 
 // ============================================================
-// Purchase Detail Panel
+// Order Card (Nova Style)
 // ============================================================
 
-function DetailRow({ label, value, action, muted = false }: { 
-  label: string; 
-  value: React.ReactNode; 
-  action?: React.ReactNode;
-  muted?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between py-4 border-b border-gray-100 last:border-b-0">
-      <span className="text-gray-500 text-sm">{label}</span>
-      <div className="flex items-center gap-2">
-        <span className={cn("text-sm", muted ? "text-gray-400" : "text-gray-900")}>{value}</span>
-        {action}
-      </div>
-    </div>
-  );
-}
-
-function PurchaseDetailPanel({
-  purchase,
-  isOpen,
-  onClose,
-  onViewProduct,
-  onContactSeller,
-  onConfirmReceipt,
-  confirmingId,
-  getSellerName,
-  viewMode,
-}: {
-  purchase: Purchase | null;
-  isOpen: boolean;
-  onClose: () => void;
-  onViewProduct: (id: string) => void;
-  onContactSeller: (id: string) => void;
-  onConfirmReceipt: (id: string) => void;
-  confirmingId: string | null;
-  getSellerName: (seller: Purchase["seller"]) => string;
-  viewMode: ViewMode;
-}) {
-  const [copied, setCopied] = React.useState(false);
-
-  const handleCopy = () => {
-    if (!purchase) return;
-    navigator.clipboard.writeText(purchase.order_number);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  if (!purchase) return null;
-
-  const status = statusConfig[purchase.status] || statusConfig.pending;
-  const canConfirmReceipt = purchase.funds_status === 'held' && viewMode === 'buying';
-  const isConfirming = confirmingId === purchase.id;
-  const productImage = getProductImageUrl(purchase.product);
-  const productName = getProductName(purchase.product);
-  const p = normalizeProduct(purchase.product);
-
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  };
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Mobile Bottom Sheet */}
-          <div className="lg:hidden">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/40 z-[100]"
-              onClick={onClose}
-            />
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-              className="fixed bottom-0 left-0 right-0 bg-white z-[101] rounded-t-2xl max-h-[90vh] overflow-hidden flex flex-col"
-            >
-              <div className="flex justify-center pt-3 pb-2">
-                <div className="w-10 h-1 bg-gray-200 rounded-full" />
-              </div>
-              <div className="flex-1 overflow-y-auto pb-safe">
-                <DetailContent 
-                  purchase={purchase}
-                  status={status}
-                  productImage={productImage}
-                  productName={productName}
-                  product={p}
-                  canConfirmReceipt={canConfirmReceipt}
-                  isConfirming={isConfirming}
-                  copied={copied}
-                  onCopy={handleCopy}
-                  onConfirmReceipt={onConfirmReceipt}
-                  onViewProduct={onViewProduct}
-                  onContactSeller={onContactSeller}
-                  onClose={onClose}
-                  getSellerName={getSellerName}
-                  formatDate={formatDate}
-                  viewMode={viewMode}
-                />
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Desktop Side Panel */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.2 }}
-            className="hidden lg:block"
-          >
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <DetailContent 
-                purchase={purchase}
-                status={status}
-                productImage={productImage}
-                productName={productName}
-                product={p}
-                canConfirmReceipt={canConfirmReceipt}
-                isConfirming={isConfirming}
-                copied={copied}
-                onCopy={handleCopy}
-                onConfirmReceipt={onConfirmReceipt}
-                onViewProduct={onViewProduct}
-                onContactSeller={onContactSeller}
-                onClose={onClose}
-                getSellerName={getSellerName}
-                formatDate={formatDate}
-                viewMode={viewMode}
-              />
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  );
-}
-
-function DetailContent({
-  purchase,
-  status,
-  productImage,
-  productName,
-  product,
-  canConfirmReceipt,
-  isConfirming,
-  copied,
-  onCopy,
-  onConfirmReceipt,
-  onViewProduct,
-  onContactSeller,
-  onClose,
-  getSellerName,
-  formatDate,
-  viewMode,
-}: {
-  purchase: Purchase;
-  status: typeof statusConfig[string];
-  productImage: string | null;
-  productName: string;
-  product: Purchase['product'] | null;
-  canConfirmReceipt: boolean;
-  isConfirming: boolean;
-  copied: boolean;
-  onCopy: () => void;
-  onConfirmReceipt: (id: string) => void;
-  onViewProduct: (id: string) => void;
-  onContactSeller: (id: string) => void;
-  onClose: () => void;
-  getSellerName: (seller: Purchase["seller"]) => string;
-  formatDate: (date: string) => string;
-  viewMode: ViewMode;
-}) {
-  return (
-    <div>
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-        <h3 className="font-semibold text-gray-900">Order Details</h3>
-        <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-100 transition-colors">
-          <X className="h-5 w-5 text-gray-400" />
-        </button>
-      </div>
-
-      {/* Product */}
-      <div className="px-5 py-4 border-b border-gray-100">
-        <div className="flex gap-4">
-          <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-gray-50 flex-shrink-0">
-            {productImage ? (
-              <Image src={productImage} alt={productName} fill className="object-cover" sizes="64px" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center">
-                <Package className="h-6 w-6 text-gray-300" />
-              </div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-gray-900 line-clamp-2 text-sm">{productName}</p>
-            {product?.marketplace_category && (
-              <p className="text-xs text-gray-500 mt-1">{product.marketplace_category}</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Order Info */}
-      <div className="px-5">
-        <DetailRow 
-          label="Order" 
-          value={`#${purchase.order_number}`}
-          action={
-            <button onClick={onCopy} className="p-1 -mr-1 hover:bg-gray-100 rounded transition-colors">
-              {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4 text-gray-400" />}
-            </button>
-          }
-        />
-        <DetailRow label="Status" value={<span className={cn("font-medium", status.color)}>{status.label}</span>} />
-        <DetailRow label="Date" value={formatDate(purchase.purchase_date)} />
-      </div>
-
-      {/* Seller/Buyer */}
-      <div className="px-5 py-4 border-t border-gray-100">
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
-          {viewMode === 'buying' ? 'Seller' : 'Buyer'}
-        </p>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100">
-              {purchase.seller.account_type === 'bicycle_store' ? (
-                <Store className="h-5 w-5 text-gray-500" />
-              ) : (
-                <span className="text-sm font-medium text-gray-600">
-                  {getSellerName(purchase.seller).charAt(0).toUpperCase()}
-                </span>
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">{getSellerName(purchase.seller)}</p>
-              {purchase.seller.account_type === 'bicycle_store' && (
-                <p className="text-xs text-gray-500">Verified Store</p>
-              )}
-            </div>
-          </div>
-          <ChevronRight className="h-5 w-5 text-gray-300" />
-        </div>
-      </div>
-
-      {/* Payment */}
-      <div className="px-5 py-4 border-t border-gray-100">
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Payment</p>
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Item</span>
-            <span className="text-gray-900">${purchase.item_price.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Shipping</span>
-            <span className="text-gray-900">{purchase.shipping_cost === 0 ? 'Free' : `$${purchase.shipping_cost.toFixed(2)}`}</span>
-          </div>
-          {purchase.tax_amount > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">GST</span>
-              <span className="text-gray-900">${purchase.tax_amount.toFixed(2)}</span>
-            </div>
-          )}
-          <div className="flex justify-between pt-2 border-t border-gray-100">
-            <span className="font-medium text-gray-900">Total</span>
-            <span className="font-semibold text-gray-900">${purchase.total_amount.toFixed(2)}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Escrow */}
-      {purchase.funds_status && (
-        <div className="px-5 py-4 border-t border-gray-100">
-          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-            <Shield className="h-5 w-5 text-gray-400" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-700">
-                {purchase.funds_status === 'held' ? 'Payment Protected' : 
-                 purchase.funds_status === 'released' ? 'Payment Released' :
-                 purchase.funds_status === 'auto_released' ? 'Auto Released' :
-                 purchase.funds_status === 'disputed' ? 'Under Dispute' : 'Refunded'}
-              </p>
-              {purchase.funds_status === 'held' && purchase.funds_release_at && (
-                <p className="text-xs text-gray-500">Auto-releases {formatDate(purchase.funds_release_at)}</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Confirm Receipt */}
-      {canConfirmReceipt && (
-        <div className="px-5 py-4 border-t border-gray-100">
-          <button
-            onClick={() => onConfirmReceipt(purchase.id)}
-            disabled={isConfirming}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-medium rounded-lg transition-colors"
-          >
-            {isConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            {isConfirming ? 'Confirming...' : 'Confirm Receipt'}
-          </button>
-          <p className="text-xs text-gray-500 text-center mt-2">This will release payment to the seller</p>
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="px-5 py-4 border-t border-gray-100 space-y-2">
-        <button onClick={() => onViewProduct(purchase.product_id)} className="w-full flex items-center justify-between py-3 px-4 hover:bg-gray-50 rounded-lg transition-colors">
-          <div className="flex items-center gap-3">
-            <ExternalLink className="h-5 w-5 text-gray-400" />
-            <span className="text-sm text-gray-700">View Product</span>
-          </div>
-          <ChevronRight className="h-5 w-5 text-gray-300" />
-        </button>
-        <button onClick={() => onContactSeller(purchase.seller_id)} className="w-full flex items-center justify-between py-3 px-4 hover:bg-gray-50 rounded-lg transition-colors">
-          <div className="flex items-center gap-3">
-            <MessageCircle className="h-5 w-5 text-gray-400" />
-            <span className="text-sm text-gray-700">{viewMode === 'buying' ? 'Contact Seller' : 'Contact Buyer'}</span>
-          </div>
-          <ChevronRight className="h-5 w-5 text-gray-300" />
-        </button>
-        <button className="w-full flex items-center justify-between py-3 px-4 hover:bg-gray-50 rounded-lg transition-colors">
-          <div className="flex items-center gap-3">
-            <HelpCircle className="h-5 w-5 text-gray-400" />
-            <span className="text-sm text-gray-700">Get Help</span>
-          </div>
-          <ChevronRight className="h-5 w-5 text-gray-300" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// Purchase Row
-// ============================================================
-
-function PurchaseRow({
+function OrderCard({
   purchase,
   isSelected,
   onClick,
@@ -568,31 +229,367 @@ function PurchaseRow({
     <button
       onClick={onClick}
       className={cn(
-        "w-full text-left py-4 px-5 flex items-center gap-4 border-b border-gray-100 hover:bg-gray-50 transition-colors",
-        isSelected && "bg-gray-50"
+        "w-full text-left p-4 rounded-xl border transition-all group",
+        isSelected 
+          ? "bg-amber-50/50 border-amber-200 ring-1 ring-amber-200" 
+          : "bg-white border-neutral-200 hover:border-neutral-300 hover:shadow-sm"
       )}
     >
-      <div className="relative h-14 w-14 rounded-lg overflow-hidden bg-gray-50 flex-shrink-0">
-        {productImage ? (
-          <Image src={productImage} alt={productName} fill className="object-cover" sizes="56px" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center">
-            <Package className="h-5 w-5 text-gray-300" />
+      <div className="flex gap-4">
+        {/* Image */}
+        <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-neutral-100 flex-shrink-0">
+          {productImage ? (
+            <Image 
+              src={productImage} 
+              alt={productName} 
+              fill 
+              className="object-cover" 
+              sizes="64px" 
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Package className="h-6 w-6 text-neutral-300" />
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="font-medium text-neutral-900 truncate text-sm">
+                {productName}
+              </p>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                {viewMode === 'buying' ? getSellerName(purchase.seller) : 'Buyer'} • {formatDate(purchase.purchase_date)}
+              </p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="font-semibold text-neutral-900 text-sm">
+                ${purchase.total_amount.toFixed(2)}
+              </p>
+            </div>
+          </div>
+          
+          {/* Status Badge */}
+          <div className="mt-2 flex items-center gap-2">
+            <span className={cn(
+              "inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium",
+              status.color,
+              status.bg
+            )}>
+              {status.label}
+            </span>
+            {purchase.funds_status === 'held' && (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-600">
+                <Shield className="h-3 w-3" />
+                Protected
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Arrow */}
+        <div className="flex items-center">
+          <ChevronRight className={cn(
+            "h-5 w-5 transition-all",
+            isSelected ? "text-amber-500" : "text-neutral-300 group-hover:text-neutral-400"
+          )} />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// ============================================================
+// Detail Panel (Nova Style with Yellow Accents)
+// ============================================================
+
+function DetailPanel({
+  purchase,
+  isOpen,
+  onClose,
+  onViewProduct,
+  onContactSeller,
+  onConfirmReceipt,
+  confirmingId,
+  getSellerName,
+  viewMode,
+}: {
+  purchase: Purchase | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onViewProduct: (id: string) => void;
+  onContactSeller: (id: string) => void;
+  onConfirmReceipt: (id: string) => void;
+  confirmingId: string | null;
+  getSellerName: (seller: Purchase["seller"]) => string;
+  viewMode: ViewMode;
+}) {
+  const [copied, setCopied] = React.useState(false);
+
+  if (!purchase) return null;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(purchase.order_number);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const status = statusConfig[purchase.status] || statusConfig.pending;
+  const canConfirmReceipt = purchase.funds_status === 'held' && viewMode === 'buying';
+  const isConfirming = confirmingId === purchase.id;
+  const productImage = getProductImageUrl(purchase.product);
+  const productName = getProductName(purchase.product);
+  const p = normalizeProduct(purchase.product);
+
+  const formatDate = (date: string) => new Date(date).toLocaleDateString('en-AU', {
+    day: 'numeric', month: 'short', year: 'numeric'
+  });
+
+  const content = (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between flex-shrink-0">
+        <h3 className="font-semibold text-neutral-900">Order Details</h3>
+        <button 
+          onClick={onClose} 
+          className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
+        >
+          <X className="h-4 w-4 text-neutral-500" />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Product */}
+        <div className="p-5 border-b border-neutral-100">
+          <div className="flex gap-4">
+            <div className="relative h-20 w-20 rounded-xl overflow-hidden bg-neutral-100 flex-shrink-0">
+              {productImage ? (
+                <Image src={productImage} alt={productName} fill className="object-cover" sizes="80px" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center">
+                  <Package className="h-8 w-8 text-neutral-300" />
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-neutral-900 line-clamp-2">{productName}</p>
+              {p?.marketplace_category && (
+                <p className="text-sm text-neutral-500 mt-1">{p.marketplace_category}</p>
+              )}
+              <div className="mt-2">
+                <span className={cn(
+                  "inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium",
+                  status.color, status.bg
+                )}>
+                  {status.label}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Order Info */}
+        <div className="p-5 border-b border-neutral-100 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">Order number</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-mono text-neutral-900">#{purchase.order_number}</span>
+              <button onClick={handleCopy} className="p-1 hover:bg-neutral-100 rounded transition-colors">
+                {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-neutral-400" />}
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">Date</span>
+            <span className="text-sm text-neutral-900">{formatDate(purchase.purchase_date)}</span>
+          </div>
+        </div>
+
+        {/* Seller/Buyer */}
+        <div className="p-5 border-b border-neutral-100">
+          <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-3">
+            {viewMode === 'buying' ? 'Seller' : 'Buyer'}
+          </p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center">
+              {purchase.seller.account_type === 'bicycle_store' ? (
+                <Store className="h-5 w-5 text-neutral-500" />
+              ) : (
+                <span className="text-sm font-medium text-neutral-600">
+                  {getSellerName(purchase.seller).charAt(0).toUpperCase()}
+                </span>
+              )}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-neutral-900">{getSellerName(purchase.seller)}</p>
+              {purchase.seller.account_type === 'bicycle_store' && (
+                <p className="text-xs text-neutral-500">Verified Store</p>
+              )}
+            </div>
+            <button className="p-2 hover:bg-neutral-100 rounded-lg transition-colors">
+              <MessageCircle className="h-4 w-4 text-neutral-500" />
+            </button>
+          </div>
+        </div>
+
+        {/* Payment */}
+        <div className="p-5 border-b border-neutral-100">
+          <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-3">Payment</p>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-neutral-500">Item</span>
+              <span className="text-neutral-900">${purchase.item_price.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-neutral-500">Shipping</span>
+              <span className="text-neutral-900">
+                {purchase.shipping_cost === 0 ? 'Free' : `$${purchase.shipping_cost.toFixed(2)}`}
+              </span>
+            </div>
+            {purchase.tax_amount > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-neutral-500">GST</span>
+                <span className="text-neutral-900">${purchase.tax_amount.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between pt-2 border-t border-neutral-100">
+              <span className="text-sm font-medium text-neutral-900">Total</span>
+              <span className="font-semibold text-neutral-900">${purchase.total_amount.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Escrow */}
+        {purchase.funds_status && (
+          <div className="p-5 border-b border-neutral-100">
+            <div className={cn(
+              "flex items-center gap-3 p-3 rounded-lg",
+              purchase.funds_status === 'held' ? "bg-amber-50" : "bg-neutral-50"
+            )}>
+              <Shield className={cn(
+                "h-5 w-5",
+                purchase.funds_status === 'held' ? "text-amber-500" : "text-neutral-400"
+              )} />
+              <div className="flex-1">
+                <p className={cn(
+                  "text-sm font-medium",
+                  purchase.funds_status === 'held' ? "text-amber-900" : "text-neutral-700"
+                )}>
+                  {purchase.funds_status === 'held' ? 'Payment Protected' : 
+                   purchase.funds_status === 'released' ? 'Payment Released' :
+                   purchase.funds_status === 'auto_released' ? 'Auto Released' :
+                   purchase.funds_status === 'disputed' ? 'Under Dispute' : 'Refunded'}
+                </p>
+                {purchase.funds_status === 'held' && purchase.funds_release_at && (
+                  <p className="text-xs text-amber-700">
+                    Auto-releases {formatDate(purchase.funds_release_at)}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         )}
+
+        {/* Confirm Receipt CTA */}
+        {canConfirmReceipt && (
+          <div className="p-5 border-b border-neutral-100">
+            <button
+              onClick={() => onConfirmReceipt(purchase.id)}
+              disabled={isConfirming}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-medium rounded-xl transition-colors"
+            >
+              {isConfirming ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              {isConfirming ? 'Confirming...' : 'Confirm Receipt'}
+            </button>
+            <p className="text-xs text-neutral-500 text-center mt-2">
+              This will release payment to the seller
+            </p>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="p-5 space-y-1">
+          <button
+            onClick={() => onViewProduct(purchase.product_id)}
+            className="w-full flex items-center justify-between py-3 px-3 hover:bg-neutral-50 rounded-lg transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <ArrowUpRight className="h-4 w-4 text-neutral-400" />
+              <span className="text-sm text-neutral-700">View Product</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-neutral-300" />
+          </button>
+          <button
+            onClick={() => onContactSeller(purchase.seller_id)}
+            className="w-full flex items-center justify-between py-3 px-3 hover:bg-neutral-50 rounded-lg transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <MessageCircle className="h-4 w-4 text-neutral-400" />
+              <span className="text-sm text-neutral-700">
+                {viewMode === 'buying' ? 'Contact Seller' : 'Contact Buyer'}
+              </span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-neutral-300" />
+          </button>
+          <button className="w-full flex items-center justify-between py-3 px-3 hover:bg-neutral-50 rounded-lg transition-colors">
+            <div className="flex items-center gap-3">
+              <HelpCircle className="h-4 w-4 text-neutral-400" />
+              <span className="text-sm text-neutral-700">Get Help</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-neutral-300" />
+          </button>
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-gray-900 text-sm truncate">{productName}</p>
-        <p className="text-xs text-gray-500 mt-0.5">
-          {viewMode === 'buying' ? `From ${getSellerName(purchase.seller)}` : `Sold to buyer`} • {formatDate(purchase.purchase_date)}
-        </p>
-      </div>
-      <div className="text-right flex-shrink-0">
-        <p className="font-medium text-gray-900 text-sm">${purchase.total_amount.toFixed(2)}</p>
-        <p className={cn("text-xs mt-0.5", status.color)}>{status.label}</p>
-      </div>
-      <ChevronRight className="h-5 w-5 text-gray-300 flex-shrink-0" />
-    </button>
+    </div>
+  );
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Mobile */}
+          <div className="lg:hidden">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 z-[100]"
+              onClick={onClose}
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+              className="fixed bottom-0 left-0 right-0 bg-white z-[101] rounded-t-2xl max-h-[90vh] overflow-hidden"
+            >
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-10 h-1 bg-neutral-200 rounded-full" />
+              </div>
+              {content}
+            </motion.div>
+          </div>
+
+          {/* Desktop */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.2 }}
+            className="hidden lg:block bg-white rounded-xl border border-neutral-200 overflow-hidden h-[calc(100vh-8rem)]"
+          >
+            {content}
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -600,34 +597,27 @@ function PurchaseRow({
 // Empty State
 // ============================================================
 
-function EmptyState({ viewMode, category, onBrowse }: { viewMode: ViewMode; category: CategoryFilter; onBrowse: () => void }) {
-  const getMessage = () => {
-    if (viewMode === 'selling') {
-      if (category === 'active') return "No active sales";
-      if (category === 'completed') return "No completed sales yet";
-      if (category === 'disputes') return "No disputes";
-      return "No sales yet";
-    }
-    if (category === 'active') return "No active orders";
-    if (category === 'completed') return "No completed orders";
-    if (category === 'disputes') return "No disputes";
-    return "No purchases yet";
-  };
-
+function EmptyState({ viewMode, onAction }: { viewMode: ViewMode; onAction: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4">
-      <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-        {viewMode === 'selling' ? <Tag className="h-6 w-6 text-gray-400" /> : <ShoppingBag className="h-6 w-6 text-gray-400" />}
+      <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center mb-4">
+        {viewMode === 'selling' ? (
+          <Tag className="h-7 w-7 text-amber-500" />
+        ) : (
+          <ShoppingBag className="h-7 w-7 text-amber-500" />
+        )}
       </div>
-      <h3 className="text-base font-semibold text-gray-900 mb-1">{getMessage()}</h3>
-      <p className="text-gray-500 text-sm text-center max-w-xs mb-5">
+      <h3 className="text-lg font-semibold text-neutral-900 mb-1">
+        {viewMode === 'selling' ? 'No sales yet' : 'No purchases yet'}
+      </h3>
+      <p className="text-neutral-500 text-sm text-center max-w-xs mb-6">
         {viewMode === 'selling' 
           ? "When you sell items, they'll appear here."
           : "When you buy items, they'll appear here."}
       </p>
       <button
-        onClick={onBrowse}
-        className="px-5 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors"
+        onClick={onAction}
+        className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-xl transition-colors"
       >
         {viewMode === 'selling' ? 'List an Item' : 'Browse Marketplace'}
       </button>
@@ -641,7 +631,6 @@ function EmptyState({ viewMode, category, onBrowse }: { viewMode: ViewMode; cate
 
 export default function PurchasesPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   
   const [viewMode, setViewMode] = React.useState<ViewMode>('buying');
   const [category, setCategory] = React.useState<CategoryFilter>('all');
@@ -655,8 +644,6 @@ export default function PurchasesPage() {
   const [pagination, setPagination] = React.useState<PaginationInfo>({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
   const [selectedPurchase, setSelectedPurchase] = React.useState<Purchase | null>(null);
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
-  
-  // Counts for sidebar
   const [counts, setCounts] = React.useState({ all: 0, active: 0, completed: 0, disputes: 0, archived: 0 });
 
   React.useEffect(() => {
@@ -664,14 +651,12 @@ export default function PurchasesPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Map category/quickFilter to API status
   const getStatusFilter = () => {
     if (quickFilter === 'awaiting_shipment') return 'paid';
     if (quickFilter === 'in_transit') return 'shipped';
     if (quickFilter === 'pending_confirmation') return 'delivered';
-    
-    if (category === 'active') return 'active'; // pending, paid, shipped
-    if (category === 'completed') return 'completed'; // delivered
+    if (category === 'active') return 'active';
+    if (category === 'completed') return 'completed';
     if (category === 'disputes') return 'disputed';
     return 'all';
   };
@@ -695,15 +680,9 @@ export default function PurchasesPage() {
       
       setPurchases(data.purchases || []);
       setPagination(data.pagination);
-      
-      // Update counts if available
-      if (data.counts) {
-        setCounts(data.counts);
-      } else {
-        setCounts(prev => ({ ...prev, all: data.pagination.total }));
-      }
+      if (data.counts) setCounts(data.counts);
     } catch (error) {
-      console.error("Error fetching purchases:", error);
+      console.error("Error:", error);
     } finally {
       if (isInitialLoad) setLoading(false);
       setRefreshing(false);
@@ -719,9 +698,6 @@ export default function PurchasesPage() {
     fetchPurchases(pagination.page);
   };
 
-  const handleViewProduct = (productId: string) => router.push(`/marketplace/product/${productId}`);
-  const handleContactSeller = (sellerId: string) => console.log("Contact:", sellerId);
-
   const handleConfirmReceipt = async (purchaseId: string) => {
     if (confirmingId) return;
     if (!window.confirm("Confirm receipt? This releases payment to the seller.")) return;
@@ -732,7 +708,6 @@ export default function PurchasesPage() {
       if (!response.ok) throw new Error('Failed');
       await fetchPurchases(pagination.page);
       setSelectedPurchase(null);
-      alert('Receipt confirmed!');
     } catch (error) {
       alert('Failed to confirm receipt');
     } finally {
@@ -750,48 +725,47 @@ export default function PurchasesPage() {
       <MarketplaceHeader compactSearchOnMobile />
 
       <MarketplaceLayout>
-        <div className="min-h-screen bg-gray-50 pt-16 pb-24 sm:pb-8">
+        <div className="min-h-screen bg-neutral-50 pt-16 pb-24 sm:pb-8">
           <div className="px-4 sm:px-6 lg:px-8 py-6">
             <div className="flex gap-6">
               
-              {/* Sidebar - Desktop */}
-              <div className="hidden lg:block w-64 flex-shrink-0">
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden sticky top-20">
+              {/* Sidebar */}
+              <div className="hidden lg:block w-60 flex-shrink-0">
+                <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden sticky top-20">
                   {/* Search */}
-                  <div className="p-4 border-b border-gray-100">
+                  <div className="p-4 border-b border-neutral-100">
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
                       <Input
-                        type="text"
-                        placeholder={`Search ${viewMode === 'buying' ? 'purchases' : 'sales'}...`}
+                        placeholder="Search..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        className="pl-9 border-gray-200 rounded-lg bg-gray-50 focus:bg-white h-10"
+                        className="pl-9 border-neutral-200 rounded-lg h-9 text-sm"
                       />
                     </div>
                   </div>
 
-                  {/* Buy/Sell Tabs */}
-                  <div className="px-4 pt-4">
-                    <div className="flex border-b border-gray-200">
+                  {/* Sell/Buy Toggle */}
+                  <div className="p-2 border-b border-neutral-100">
+                    <div className="flex p-1 bg-neutral-100 rounded-lg">
                       <button
-                        onClick={() => { setViewMode('selling'); setCategory('all'); setQuickFilter(null); }}
+                        onClick={() => { setViewMode('selling'); setCategory('all'); }}
                         className={cn(
-                          "flex-1 pb-3 text-sm font-medium border-b-2 transition-colors",
+                          "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
                           viewMode === 'selling' 
-                            ? "border-emerald-500 text-gray-900" 
-                            : "border-transparent text-gray-500 hover:text-gray-700"
+                            ? "bg-white text-neutral-900 shadow-sm" 
+                            : "text-neutral-500 hover:text-neutral-700"
                         )}
                       >
                         Sell
                       </button>
                       <button
-                        onClick={() => { setViewMode('buying'); setCategory('all'); setQuickFilter(null); }}
+                        onClick={() => { setViewMode('buying'); setCategory('all'); }}
                         className={cn(
-                          "flex-1 pb-3 text-sm font-medium border-b-2 transition-colors",
+                          "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
                           viewMode === 'buying' 
-                            ? "border-emerald-500 text-gray-900" 
-                            : "border-transparent text-gray-500 hover:text-gray-700"
+                            ? "bg-white text-neutral-900 shadow-sm" 
+                            : "text-neutral-500 hover:text-neutral-700"
                         )}
                       >
                         Buy
@@ -799,169 +773,74 @@ export default function PurchasesPage() {
                     </div>
                   </div>
 
-                  {/* Categories */}
-                  <div className="p-4 space-y-1">
-                    <SidebarItem 
-                      icon={Mail} 
-                      label="All" 
-                      count={counts.all}
-                      isActive={category === 'all'} 
-                      onClick={() => { setCategory('all'); setQuickFilter(null); }} 
-                    />
-                    <SidebarItem 
-                      icon={Package} 
-                      label="Active Orders" 
-                      count={counts.active}
-                      isActive={category === 'active'} 
-                      onClick={() => { setCategory('active'); setQuickFilter(null); }} 
-                    />
-                    <SidebarItem 
-                      icon={DollarSign} 
-                      label="Completed" 
-                      count={counts.completed}
-                      isActive={category === 'completed'} 
-                      onClick={() => { setCategory('completed'); setQuickFilter(null); }} 
-                    />
-                    <SidebarItem 
-                      icon={AlertCircle} 
-                      label="Disputes" 
-                      count={counts.disputes}
-                      isActive={category === 'disputes'} 
-                      onClick={() => { setCategory('disputes'); setQuickFilter(null); }} 
-                    />
-                    <SidebarItem 
-                      icon={Archive} 
-                      label="Archived" 
-                      count={counts.archived}
-                      isActive={category === 'archived'} 
-                      onClick={() => { setCategory('archived'); setQuickFilter(null); }} 
-                    />
+                  {/* Nav Items */}
+                  <div className="p-2 space-y-0.5">
+                    <NavItem icon={Mail} label="All" count={counts.all} isActive={category === 'all'} onClick={() => { setCategory('all'); setQuickFilter(null); }} />
+                    <NavItem icon={Package} label="Active Orders" count={counts.active} isActive={category === 'active'} onClick={() => { setCategory('active'); setQuickFilter(null); }} />
+                    <NavItem icon={DollarSign} label="Completed" count={counts.completed} isActive={category === 'completed'} onClick={() => { setCategory('completed'); setQuickFilter(null); }} />
+                    <NavItem icon={AlertCircle} label="Disputes" count={counts.disputes} isActive={category === 'disputes'} onClick={() => { setCategory('disputes'); setQuickFilter(null); }} />
+                    <NavItem icon={Archive} label="Archived" count={counts.archived} isActive={category === 'archived'} onClick={() => { setCategory('archived'); setQuickFilter(null); }} />
                   </div>
                 </div>
               </div>
 
-              {/* Main Content */}
+              {/* Main */}
               <div className="flex-1 min-w-0">
                 {/* Mobile Header */}
-                <div className="lg:hidden mb-4">
-                  <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    {/* Search */}
-                    <div className="relative mb-4">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        placeholder="Search orders..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="pl-9 border-gray-200 rounded-lg bg-gray-50 h-10"
-                      />
-                    </div>
-                    
-                    {/* Buy/Sell Toggle */}
-                    <div className="flex border-b border-gray-200 mb-4">
-                      <button
-                        onClick={() => setViewMode('selling')}
-                        className={cn(
-                          "flex-1 pb-3 text-sm font-medium border-b-2",
-                          viewMode === 'selling' ? "border-emerald-500 text-gray-900" : "border-transparent text-gray-500"
-                        )}
-                      >
-                        Sell
-                      </button>
-                      <button
-                        onClick={() => setViewMode('buying')}
-                        className={cn(
-                          "flex-1 pb-3 text-sm font-medium border-b-2",
-                          viewMode === 'buying' ? "border-emerald-500 text-gray-900" : "border-transparent text-gray-500"
-                        )}
-                      >
-                        Buy
-                      </button>
-                    </div>
-
-                    {/* Category Pills */}
-                    <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
-                      {['all', 'active', 'completed', 'disputes'].map((cat) => (
-                        <button
-                          key={cat}
-                          onClick={() => setCategory(cat as CategoryFilter)}
-                          className={cn(
-                            "px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors",
-                            category === cat
-                              ? "bg-gray-900 text-white"
-                              : "bg-gray-100 text-gray-600"
-                          )}
-                        >
-                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                        </button>
-                      ))}
-                    </div>
+                <div className="lg:hidden mb-4 bg-white rounded-xl border border-neutral-200 p-4">
+                  <div className="relative mb-3">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                    <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-10" />
+                  </div>
+                  <div className="flex p-1 bg-neutral-100 rounded-lg mb-3">
+                    <button onClick={() => setViewMode('selling')} className={cn("flex-1 py-1.5 text-sm font-medium rounded-md", viewMode === 'selling' ? "bg-white shadow-sm" : "text-neutral-500")}>Sell</button>
+                    <button onClick={() => setViewMode('buying')} className={cn("flex-1 py-1.5 text-sm font-medium rounded-md", viewMode === 'buying' ? "bg-white shadow-sm" : "text-neutral-500")}>Buy</button>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {(['all', 'active', 'completed', 'disputes'] as const).map((c) => (
+                      <button key={c} onClick={() => setCategory(c)} className={cn("px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap", category === c ? "bg-amber-500 text-white" : "bg-neutral-100 text-neutral-600")}>{c.charAt(0).toUpperCase() + c.slice(1)}</button>
+                    ))}
                   </div>
                 </div>
 
                 {/* Quick Filters */}
-                <div className="mb-4 flex items-center gap-3 overflow-x-auto pb-1">
-                  <QuickFilterPill 
-                    label="Awaiting Shipment" 
-                    isActive={quickFilter === 'awaiting_shipment'} 
-                    onClick={() => setQuickFilter(quickFilter === 'awaiting_shipment' ? null : 'awaiting_shipment')} 
-                  />
-                  <QuickFilterPill 
-                    label="In Transit" 
-                    isActive={quickFilter === 'in_transit'} 
-                    onClick={() => setQuickFilter(quickFilter === 'in_transit' ? null : 'in_transit')} 
-                  />
-                  <QuickFilterPill 
-                    label="Pending Confirmation" 
-                    isActive={quickFilter === 'pending_confirmation'} 
-                    onClick={() => setQuickFilter(quickFilter === 'pending_confirmation' ? null : 'pending_confirmation')} 
-                  />
-                  
+                <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1">
+                  <FilterChip label="Awaiting Shipment" isActive={quickFilter === 'awaiting_shipment'} onClick={() => setQuickFilter(quickFilter === 'awaiting_shipment' ? null : 'awaiting_shipment')} />
+                  <FilterChip label="In Transit" isActive={quickFilter === 'in_transit'} onClick={() => setQuickFilter(quickFilter === 'in_transit' ? null : 'in_transit')} />
+                  <FilterChip label="Pending Confirmation" isActive={quickFilter === 'pending_confirmation'} onClick={() => setQuickFilter(quickFilter === 'pending_confirmation' ? null : 'pending_confirmation')} />
                   <div className="flex-1" />
-                  
-                  <button
-                    onClick={handleRefresh}
-                    disabled={refreshing}
-                    className="p-2 hover:bg-white rounded-lg border border-gray-200 bg-white transition-colors"
-                  >
-                    <RefreshCw className={cn("h-4 w-4 text-gray-500", refreshing && "animate-spin")} />
+                  <button onClick={handleRefresh} disabled={refreshing} className="p-2 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50">
+                    <RefreshCw className={cn("h-4 w-4 text-neutral-500", refreshing && "animate-spin")} />
                   </button>
                 </div>
 
-                {/* Orders List */}
-                <div className={cn("flex gap-6", selectedPurchase && "lg:max-w-none")}>
+                {/* Content */}
+                <div className={cn("flex gap-6", selectedPurchase && "lg:flex-row")}>
                   <div className={cn("flex-1 min-w-0", selectedPurchase && "lg:max-w-[55%]")}>
-                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                      {/* Header */}
-                      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+                      <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
                         <div>
-                          <h1 className="text-base font-semibold text-gray-900">
+                          <h1 className="font-semibold text-neutral-900">
                             {viewMode === 'buying' ? 'My Purchases' : 'My Sales'}
                           </h1>
-                          <p className="text-sm text-gray-500">
-                            {pagination.total} {viewMode === 'buying' ? 'order' : 'sale'}{pagination.total !== 1 ? 's' : ''}
-                          </p>
+                          <p className="text-sm text-neutral-500">{pagination.total} {viewMode === 'buying' ? 'order' : 'sale'}{pagination.total !== 1 ? 's' : ''}</p>
                         </div>
                       </div>
 
-                      {/* List */}
                       {loading ? (
                         <div className="flex items-center justify-center py-16">
-                          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                          <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
                         </div>
                       ) : purchases.length === 0 ? (
-                        <EmptyState 
-                          viewMode={viewMode} 
-                          category={category}
-                          onBrowse={() => router.push(viewMode === 'selling' ? '/marketplace/sell' : '/marketplace')} 
-                        />
+                        <EmptyState viewMode={viewMode} onAction={() => router.push(viewMode === 'selling' ? '/marketplace/sell' : '/marketplace')} />
                       ) : (
-                        <div>
-                          {purchases.map((purchase) => (
-                            <PurchaseRow
-                              key={purchase.id}
-                              purchase={purchase}
-                              isSelected={selectedPurchase?.id === purchase.id}
-                              onClick={() => setSelectedPurchase(selectedPurchase?.id === purchase.id ? null : purchase)}
+                        <div className="p-3 space-y-2">
+                          {purchases.map((p) => (
+                            <OrderCard
+                              key={p.id}
+                              purchase={p}
+                              isSelected={selectedPurchase?.id === p.id}
+                              onClick={() => setSelectedPurchase(selectedPurchase?.id === p.id ? null : p)}
                               getSellerName={getSellerName}
                               viewMode={viewMode}
                             />
@@ -969,32 +848,19 @@ export default function PurchasesPage() {
                         </div>
                       )}
 
-                      {/* Pagination */}
                       {pagination.totalPages > 1 && (
-                        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-                          <span className="text-sm text-gray-500">Page {pagination.page} of {pagination.totalPages}</span>
+                        <div className="px-5 py-3 border-t border-neutral-100 flex items-center justify-between">
+                          <span className="text-sm text-neutral-500">Page {pagination.page} of {pagination.totalPages}</span>
                           <div className="flex gap-1">
-                            <button
-                              onClick={() => fetchPurchases(pagination.page - 1)}
-                              disabled={pagination.page <= 1}
-                              className="p-2 hover:bg-gray-100 disabled:opacity-50 rounded-lg"
-                            >
-                              <ChevronRight className="h-5 w-5 text-gray-600 rotate-180" />
-                            </button>
-                            <button
-                              onClick={() => fetchPurchases(pagination.page + 1)}
-                              disabled={pagination.page >= pagination.totalPages}
-                              className="p-2 hover:bg-gray-100 disabled:opacity-50 rounded-lg"
-                            >
-                              <ChevronRight className="h-5 w-5 text-gray-600" />
-                            </button>
+                            <button onClick={() => fetchPurchases(pagination.page - 1)} disabled={pagination.page <= 1} className="p-2 hover:bg-neutral-100 disabled:opacity-50 rounded-lg"><ChevronRight className="h-4 w-4 rotate-180" /></button>
+                            <button onClick={() => fetchPurchases(pagination.page + 1)} disabled={pagination.page >= pagination.totalPages} className="p-2 hover:bg-neutral-100 disabled:opacity-50 rounded-lg"><ChevronRight className="h-4 w-4" /></button>
                           </div>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Detail Panel - Desktop */}
+                  {/* Desktop Detail */}
                   <AnimatePresence mode="wait">
                     {selectedPurchase && (
                       <motion.div
@@ -1005,12 +871,12 @@ export default function PurchasesPage() {
                         className="hidden lg:block"
                       >
                         <div className="sticky top-20">
-                          <PurchaseDetailPanel
+                          <DetailPanel
                             purchase={selectedPurchase}
                             isOpen={true}
                             onClose={() => setSelectedPurchase(null)}
-                            onViewProduct={handleViewProduct}
-                            onContactSeller={handleContactSeller}
+                            onViewProduct={(id) => router.push(`/marketplace/product/${id}`)}
+                            onContactSeller={(id) => console.log(id)}
                             onConfirmReceipt={handleConfirmReceipt}
                             confirmingId={confirmingId}
                             getSellerName={getSellerName}
@@ -1027,14 +893,14 @@ export default function PurchasesPage() {
         </div>
       </MarketplaceLayout>
 
-      {/* Mobile Detail Panel */}
+      {/* Mobile Detail */}
       <div className="lg:hidden">
-        <PurchaseDetailPanel
+        <DetailPanel
           purchase={selectedPurchase}
           isOpen={!!selectedPurchase}
           onClose={() => setSelectedPurchase(null)}
-          onViewProduct={handleViewProduct}
-          onContactSeller={handleContactSeller}
+          onViewProduct={(id) => router.push(`/marketplace/product/${id}`)}
+          onContactSeller={(id) => console.log(id)}
           onConfirmReceipt={handleConfirmReceipt}
           confirmingId={confirmingId}
           getSellerName={getSellerName}
