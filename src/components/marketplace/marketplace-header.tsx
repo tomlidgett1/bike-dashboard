@@ -119,6 +119,8 @@ interface MarketplaceHeaderProps {
   currentSpace?: MarketplaceSpace;
   /** Callback when space changes */
   onSpaceChange?: (space: MarketplaceSpace) => void;
+  /** When true, shows a loading progress bar at the top of the header */
+  isNavigating?: boolean;
 }
 
 export function MarketplaceHeader({ 
@@ -127,6 +129,7 @@ export function MarketplaceHeader({
   showSpaceNavigator = false,
   currentSpace = 'marketplace',
   onSpaceChange,
+  isNavigating = false,
 }: MarketplaceHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
@@ -307,6 +310,41 @@ export function MarketplaceHeader({
         }}
         className="fixed top-0 left-0 right-0 z-40 w-full border-b border-gray-200 backdrop-blur-sm"
       >
+        {/* Navigation Loading Bar */}
+        <AnimatePresence>
+          {isNavigating && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="absolute top-0 left-0 right-0 h-1 bg-[#FFC72C] overflow-hidden z-50"
+            >
+              {/* Animated shimmer effect */}
+              <motion.div
+                initial={{ x: "-100%" }}
+                animate={{ x: "200%" }}
+                transition={{
+                  repeat: Infinity,
+                  duration: 1.2,
+                  ease: "easeInOut",
+                }}
+                className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent"
+              />
+              {/* Indeterminate progress animation */}
+              <motion.div
+                initial={{ left: "-40%", width: "40%" }}
+                animate={{ left: "100%", width: "40%" }}
+                transition={{
+                  repeat: Infinity,
+                  duration: 1,
+                  ease: [0.4, 0, 0.2, 1],
+                }}
+                className="absolute inset-y-0 bg-[#E6B328]"
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6">
           <div className="flex h-14 sm:h-16 items-center justify-start gap-2 sm:gap-4">
             {/* Mobile Menu Button and Logo Container */}

@@ -4,7 +4,7 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon, User, Loader2, Clock, DollarSign, SlidersHorizontal } from "lucide-react";
+import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon, User, Clock, DollarSign, SlidersHorizontal } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
@@ -747,6 +747,7 @@ function MarketplacePageContent() {
           showSpaceNavigator
           currentSpace={currentSpace}
           onSpaceChange={setSpace}
+          isNavigating={isNavigating}
         />
       </div>
 
@@ -1344,20 +1345,6 @@ function MarketplacePageContent() {
         />
       )}
 
-      {/* Full Page Loading Overlay */}
-      <AnimatePresence>
-        {isNavigating && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center"
-          >
-            <Loader2 className="h-10 w-10 text-white animate-spin" />
-          </motion.div>
-        )}
-      </AnimatePresence>
     </>
   );
 }

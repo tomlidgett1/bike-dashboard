@@ -159,6 +159,14 @@ export async function POST(request: NextRequest) {
           quantity: 1,
         }] : []),
       ],
+      // Collect shipping address from buyer
+      shipping_address_collection: {
+        allowed_countries: ['AU', 'NZ'], // Australia and New Zealand
+      },
+      // Collect phone number for delivery
+      phone_number_collection: {
+        enabled: true,
+      },
       metadata: {
         product_id: product.id,
         buyer_id: user.id,

@@ -239,6 +239,26 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   const fundsReleaseAt = new Date();
   fundsReleaseAt.setDate(fundsReleaseAt.getDate() + 7);
 
+  // Extract shipping address from session
+  // Use type assertion since Stripe's types may not include all fields
+  const sessionAny = session as any;
+  const shippingDetails = sessionAny.shipping_details || sessionAny.collected_information?.shipping_details;
+  const customerDetails = session.customer_details;
+  
+  // Format shipping address as JSON
+  const shippingAddress = shippingDetails?.address ? {
+    name: shippingDetails.name || customerDetails?.name || '',
+    phone: customerDetails?.phone || '',
+    line1: shippingDetails.address.line1 || '',
+    line2: shippingDetails.address.line2 || '',
+    city: shippingDetails.address.city || '',
+    state: shippingDetails.address.state || '',
+    postal_code: shippingDetails.address.postal_code || '',
+    country: shippingDetails.address.country || '',
+  } : null;
+
+  console.log('[Stripe Webhook] Shipping address:', JSON.stringify(shippingAddress, null, 2));
+
   // Create purchase record with escrow fields
   const purchaseData = {
     buyer_id,
@@ -259,6 +279,10 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     payment_method: 'stripe',
     payment_date: new Date().toISOString(),
     payout_status: 'pending',
+    // Shipping address
+    shipping_address: shippingAddress,
+    buyer_phone: customerDetails?.phone || null,
+    buyer_email: customerDetails?.email || null,
     // Escrow fields
     funds_status: 'held',
     funds_release_at: fundsReleaseAt.toISOString(),
