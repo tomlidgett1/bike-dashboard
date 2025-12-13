@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
-import { Package, Store, User, Clock, Settings, Edit, FileText, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle, LogOut } from "lucide-react";
+import { Package, Store, User, Clock, Settings, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle, LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -66,19 +66,7 @@ const individualUserItems: NavItem[] = [
   },
   {
     type: 'item',
-    title: "My Listings",
-    value: "my-listings",
-    icon: Edit,
-  },
-  {
-    type: 'item',
-    title: "Draft Listings",
-    value: "drafts",
-    icon: FileText,
-  },
-  {
-    type: 'item',
-    title: "My Purchases",
+    title: "Order Management",
     value: "purchases",
     icon: ShoppingBag,
   },
@@ -147,8 +135,6 @@ function MarketplaceSidebarContent() {
   const getActiveView = () => {
     const path = pathname;
     if (path === "/settings" || path === "/marketplace/settings") return "settings";
-    if (path === "/settings/my-listings") return "my-listings";
-    if (path === "/settings/drafts") return "drafts";
     if (path === "/settings/purchases") return "purchases";
     // Check if user is viewing their own store
     const storeMatch = path.match(/^\/marketplace\/store\/(.+)$/);
@@ -259,10 +245,6 @@ function MarketplaceSidebarContent() {
         url = "/marketplace?space=stores";
       } else if (item.value === "settings") {
         url = isVerifiedStore ? "/settings" : "/marketplace/settings";
-      } else if (item.value === "my-listings") {
-        url = "/settings/my-listings";
-      } else if (item.value === "drafts") {
-        url = "/settings/drafts";
       } else if (item.value === "purchases") {
         url = "/settings/purchases";
       } else if (item.value === "my-store") {

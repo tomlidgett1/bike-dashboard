@@ -65,6 +65,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
@@ -882,6 +892,10 @@ export default function OrderManagementPage() {
   const [selectedOrder, setSelectedOrder] = React.useState<Purchase | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
+  
+  // Confirm receipt dialog state
+  const [confirmDialogOpen, setConfirmDialogOpen] = React.useState(false);
+  const [orderToConfirm, setOrderToConfirm] = React.useState<string | null>(null);
 
   // Fetch orders
   const fetchOrders = React.useCallback(async () => {
@@ -948,19 +962,26 @@ export default function OrderManagementPage() {
     setSheetOpen(true);
   };
 
-  const handleConfirmReceipt = async (id: string) => {
-    if (confirmingId) return;
-    if (!confirm('Confirm receipt? This will release payment to the seller.')) return;
+  const handleConfirmReceipt = (id: string) => {
+    setOrderToConfirm(id);
+    setConfirmDialogOpen(true);
+  };
+
+  const executeConfirmReceipt = async () => {
+    if (!orderToConfirm || confirmingId) return;
     
-    setConfirmingId(id);
+    setConfirmingId(orderToConfirm);
+    setConfirmDialogOpen(false);
+    
     try {
-      await fetch(`/api/marketplace/purchases/${id}/confirm-receipt`, { method: 'POST' });
+      await fetch(`/api/marketplace/purchases/${orderToConfirm}/confirm-receipt`, { method: 'POST' });
       fetchOrders();
       setSheetOpen(false);
     } catch (e) {
-      alert('Failed to confirm');
+      alert('Failed to confirm receipt. Please try again.');
     } finally {
       setConfirmingId(null);
+      setOrderToConfirm(null);
     }
   };
 
@@ -1243,6 +1264,45 @@ export default function OrderManagementPage() {
         listingCount={activeListingCount}
         draftCount={drafts.length}
       />
+
+      {/* Confirm Receipt Dialog */}
+      <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <AlertDialogContent className="rounded-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-300">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Receipt</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                By confirming receipt, you acknowledge that:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>You have received the item</li>
+                <li>The item matches the listing description</li>
+                <li>You are satisfied with your purchase</li>
+              </ul>
+              <p className="font-medium text-foreground">
+                This action is irreversible and will release payment to the seller.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-md">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={executeConfirmReceipt}
+              className="rounded-md"
+              disabled={confirmingId !== null}
+            >
+              {confirmingId ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Confirming...
+                </>
+              ) : (
+                'Confirm Receipt'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Order Detail Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
