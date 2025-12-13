@@ -522,16 +522,13 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
           {/* ============================================================ */}
           {isMobile && (
             <>
-              {/* Backdrop - only show when expanded */}
+              {/* Backdrop - always show when panel is open */}
               <motion.div
                 initial={{ opacity: 0 }}
-                animate={{ opacity: result || error ? 1 : 0 }}
+                animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className={cn(
-                  "fixed inset-0 bg-black/50 z-50 lg:hidden",
-                  !(result || error) && "pointer-events-none"
-                )}
+                className="fixed inset-0 bg-black/50 z-[100] lg:hidden"
                 onClick={handleClose}
               />
 
@@ -545,7 +542,7 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
                   damping: 30,
                   stiffness: 300
                 }}
-                className="fixed bottom-0 left-0 right-0 z-50 lg:hidden"
+                className="fixed bottom-0 left-0 right-0 z-[100] lg:hidden"
               >
                 {/* Loading State - Compact Bottom Bar */}
                 {isLoading && !result && (
