@@ -276,7 +276,17 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false });
 
     if (status) {
-      query = query.eq("listing_status", status);
+      if (status === 'sold') {
+        // Sold items have sold_at set
+        query = query.not('sold_at', 'is', null);
+      } else if (status === 'active') {
+        // Active items: not sold and not archived
+        query = query.is('sold_at', null).neq('listing_status', 'archived');
+      } else if (status === 'archived') {
+        query = query.eq("listing_status", 'archived');
+      } else {
+        query = query.eq("listing_status", status);
+      }
     }
 
     const { data: listings, error } = await query;

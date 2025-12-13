@@ -79,6 +79,8 @@ import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
+import { EditProductDrawer } from "@/components/marketplace/edit-product-drawer";
+import type { MarketplaceProduct } from "@/lib/types/marketplace";
 
 // ============================================================
 // Types
@@ -337,20 +339,23 @@ function MobileOrderCard({
 function MobileListingCard({
   listing,
   onClick,
+  onEdit,
+  onArchive,
+  onDelete,
 }: {
   listing: Listing;
   onClick: () => void;
+  onEdit: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
 }) {
   const imageUrl = getListingImage(listing);
   const status = listing.sold_at ? 'sold' : (listing.listing_status || 'active');
 
   return (
-    <button
-      onClick={onClick}
-      className="w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors"
-    >
+    <div className="bg-card rounded-md border border-border p-3">
       <div className="flex gap-3">
-        <div className="relative h-16 w-16 rounded-md overflow-hidden bg-muted flex-shrink-0">
+        <button onClick={onClick} className="relative h-16 w-16 rounded-md overflow-hidden bg-muted flex-shrink-0">
           {imageUrl ? (
             <Image src={imageUrl} alt={listing.description} fill className="object-cover" sizes="64px" />
           ) : (
@@ -358,9 +363,9 @@ function MobileListingCard({
               <Tag className="h-6 w-6 text-muted-foreground" />
             </div>
           )}
-        </div>
+        </button>
 
-        <div className="flex-1 min-w-0">
+        <button onClick={onClick} className="flex-1 min-w-0 text-left">
           <p className="font-medium text-sm line-clamp-1">{listing.display_name || listing.description}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             {listing.marketplace_category} · {formatDate(listing.created_at)}
@@ -369,11 +374,29 @@ function MobileListingCard({
             <StatusBadge status={status} type="listing" />
             <span className="font-semibold text-sm">${listing.price.toFixed(2)}</span>
           </div>
-        </div>
+        </button>
 
-        <ChevronRight className="h-5 w-5 text-muted-foreground self-center flex-shrink-0" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" className="self-center flex-shrink-0">
+              <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onClick}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>
+            <DropdownMenuItem onClick={onEdit}><Edit3 className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onArchive}>
+              <Archive className="h-4 w-4 mr-2" />
+              {listing.listing_status === 'archived' ? 'Unarchive' : 'Archive'}
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+              <Trash2 className="h-4 w-4 mr-2" />Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -684,10 +707,16 @@ function DesktopOrdersTable({
 function DesktopListingsTable({
   listings,
   onRowClick,
+  onEdit,
+  onArchive,
+  onDelete,
   loading,
 }: {
   listings: Listing[];
   onRowClick: (listing: Listing) => void;
+  onEdit: (listing: Listing) => void;
+  onArchive: (listing: Listing) => void;
+  onDelete: (listing: Listing) => void;
   loading: boolean;
 }) {
   if (loading) {
@@ -757,11 +786,14 @@ function DesktopListingsTable({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>
-                    <DropdownMenuItem><Edit3 className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onRowClick(listing)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onEdit(listing)}><Edit3 className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem><Archive className="h-4 w-4 mr-2" />Archive</DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onArchive(listing)}>
+                      <Archive className="h-4 w-4 mr-2" />
+                      {listing.listing_status === 'archived' ? 'Unarchive' : 'Archive'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="text-destructive" onClick={() => onDelete(listing)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -897,6 +929,13 @@ export default function OrderManagementPage() {
   const [confirmDialogOpen, setConfirmDialogOpen] = React.useState(false);
   const [orderToConfirm, setOrderToConfirm] = React.useState<string | null>(null);
 
+  // Edit listing drawer state
+  const [editingListing, setEditingListing] = React.useState<Listing | null>(null);
+  const [isEditDrawerOpen, setIsEditDrawerOpen] = React.useState(false);
+  
+  // Listings filter state
+  const [listingsFilter, setListingsFilter] = React.useState<'all' | 'active' | 'sold' | 'archived'>('all');
+
   // Fetch orders
   const fetchOrders = React.useCallback(async () => {
     setOrdersLoading(true);
@@ -920,7 +959,11 @@ export default function OrderManagementPage() {
   const fetchListings = React.useCallback(async () => {
     setListingsLoading(true);
     try {
-      const res = await fetch('/api/marketplace/listings');
+      const params = new URLSearchParams();
+      if (listingsFilter !== 'all') {
+        params.set('status', listingsFilter);
+      }
+      const res = await fetch(`/api/marketplace/listings?${params}`);
       const data = await res.json();
       setListings(data.listings || []);
     } catch (e) {
@@ -928,7 +971,7 @@ export default function OrderManagementPage() {
     } finally {
       setListingsLoading(false);
     }
-  }, []);
+  }, [listingsFilter]);
 
   // Fetch drafts
   const fetchDrafts = React.useCallback(async () => {
@@ -955,6 +998,11 @@ export default function OrderManagementPage() {
   React.useEffect(() => {
     fetchOrders();
   }, [orderMode, statusFilter]);
+
+  // Refetch listings when filter changes
+  React.useEffect(() => {
+    fetchListings();
+  }, [listingsFilter]);
 
   // Handlers
   const handleOrderClick = (order: Purchase) => {
@@ -997,6 +1045,56 @@ export default function OrderManagementPage() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  // Listing handlers
+  const handleEditListing = (listing: Listing) => {
+    setEditingListing(listing);
+    setIsEditDrawerOpen(true);
+  };
+
+  const handleArchiveListing = async (listing: Listing) => {
+    const isArchived = listing.listing_status === 'archived';
+    const action = isArchived ? 'unarchive' : 'archive';
+    
+    try {
+      const res = await fetch(`/api/marketplace/listings/${listing.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          listing_status: isArchived ? 'active' : 'archived' 
+        }),
+      });
+      
+      if (!res.ok) throw new Error('Failed to update');
+      fetchListings();
+    } catch (e) {
+      alert(`Failed to ${action} listing`);
+    }
+  };
+
+  const handleDeleteListing = async (listing: Listing) => {
+    if (!confirm('Are you sure you want to delete this listing? This action cannot be undone.')) return;
+    
+    try {
+      const res = await fetch(`/api/marketplace/listings/${listing.id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!res.ok) throw new Error('Failed to delete');
+      fetchListings();
+    } catch (e) {
+      alert('Failed to delete listing');
+    }
+  };
+
+  const handleListingUpdate = (updatedProduct: MarketplaceProduct) => {
+    // Update the listing in the local state
+    setListings(prev => prev.map(l => 
+      l.id === updatedProduct.id 
+        ? { ...l, ...updatedProduct, display_name: (updatedProduct as any).display_name } 
+        : l
+    ));
   };
 
   // Counts
@@ -1100,17 +1198,37 @@ export default function OrderManagementPage() {
                 {/* Listings Tab */}
                 <TabsContent value="listings">
                   <div className="bg-card rounded-md border">
-                    <div className="p-4 border-b flex gap-3 items-center">
+                    <div className="p-4 border-b flex flex-wrap gap-3 items-center">
                       <div className="relative flex-1 max-w-xs">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input placeholder="Search listings..." className="pl-8" />
                       </div>
+                      
+                      <Select value={listingsFilter} onValueChange={(v) => setListingsFilter(v as any)}>
+                        <SelectTrigger className="w-[140px]">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Listings</SelectItem>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="sold">Sold</SelectItem>
+                          <SelectItem value="archived">Archived</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
                       <Button variant="outline" size="icon" onClick={fetchListings}>
                         <RefreshCw className={cn("h-4 w-4", listingsLoading && "animate-spin")} />
                       </Button>
                     </div>
 
-                    <DesktopListingsTable listings={listings} onRowClick={(listing) => router.push(`/marketplace/product/${listing.id}`)} loading={listingsLoading} />
+                    <DesktopListingsTable 
+                      listings={listings} 
+                      onRowClick={(listing) => router.push(`/marketplace/product/${listing.id}`)} 
+                      onEdit={handleEditListing}
+                      onArchive={handleArchiveListing}
+                      onDelete={handleDeleteListing}
+                      loading={listingsLoading} 
+                    />
                   </div>
                 </TabsContent>
 
@@ -1203,6 +1321,21 @@ export default function OrderManagementPage() {
                       <Plus className="h-4 w-4" />
                     </Button>
                   </div>
+                  
+                  {/* Filter chips */}
+                  <div className="flex gap-2 overflow-x-auto pb-2">
+                    {(['all', 'active', 'sold', 'archived'] as const).map((f) => (
+                      <Button 
+                        key={f} 
+                        variant={listingsFilter === f ? 'secondary' : 'outline'} 
+                        size="sm" 
+                        onClick={() => setListingsFilter(f)}
+                        className="flex-shrink-0"
+                      >
+                        {f.charAt(0).toUpperCase() + f.slice(1)}
+                      </Button>
+                    ))}
+                  </div>
 
                   {listingsLoading ? (
                     <div className="flex justify-center py-12">
@@ -1220,7 +1353,14 @@ export default function OrderManagementPage() {
                     </div>
                   ) : (
                     listings.map((listing) => (
-                      <MobileListingCard key={listing.id} listing={listing} onClick={() => router.push(`/marketplace/product/${listing.id}`)} />
+                      <MobileListingCard 
+                        key={listing.id} 
+                        listing={listing} 
+                        onClick={() => router.push(`/marketplace/product/${listing.id}`)}
+                        onEdit={() => handleEditListing(listing)}
+                        onArchive={() => handleArchiveListing(listing)}
+                        onDelete={() => handleDeleteListing(listing)}
+                      />
                     ))
                   )}
                 </div>
@@ -1323,6 +1463,19 @@ export default function OrderManagementPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Edit Listing Drawer */}
+      {editingListing && (
+        <EditProductDrawer
+          product={editingListing as unknown as MarketplaceProduct}
+          isOpen={isEditDrawerOpen}
+          onClose={() => {
+            setIsEditDrawerOpen(false);
+            setEditingListing(null);
+          }}
+          onUpdate={handleListingUpdate}
+        />
+      )}
     </>
   );
 }
