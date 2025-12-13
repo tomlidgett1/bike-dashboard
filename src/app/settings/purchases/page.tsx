@@ -975,7 +975,7 @@ export default function OrderManagementPage() {
 
       <MarketplaceLayout>
         <div className="min-h-screen bg-background pt-16 pb-20 sm:pb-8">
-          <div className="container max-w-6xl py-4 sm:py-6">
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
             {/* Header */}
             <div className="flex items-center justify-between mb-4 sm:mb-6">
               <div>
@@ -1238,7 +1238,7 @@ export default function OrderManagementPage() {
             <SheetTitle>Order Details</SheetTitle>
           </SheetHeader>
           {selectedOrder && (
-            <div className="mt-6">
+            <div className="px-4 pb-4">
               <OrderDetailContent
                 purchase={selectedOrder}
                 orderMode={orderMode}
