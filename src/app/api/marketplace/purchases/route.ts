@@ -81,6 +81,33 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Debug: Log raw purchase data
+    console.log("[PURCHASES API] Raw purchases count:", purchases?.length);
+    if (purchases && purchases.length > 0) {
+      console.log("[PURCHASES API] First purchase product:", JSON.stringify(purchases[0].product, null, 2));
+    }
+
+    // If product join didn't work, fetch products separately
+    const purchasesWithProducts = await Promise.all(
+      (purchases || []).map(async (purchase) => {
+        // If product is null or empty, fetch it directly
+        if (!purchase.product || (Array.isArray(purchase.product) && purchase.product.length === 0)) {
+          console.log("[PURCHASES API] Product missing for purchase:", purchase.id, "- fetching product_id:", purchase.product_id);
+          const { data: productData } = await supabase
+            .from("products")
+            .select("id, description, display_name, primary_image_url, cached_image_url, images, price, marketplace_category, marketplace_subcategory, listing_type")
+            .eq("id", purchase.product_id)
+            .single();
+          
+          if (productData) {
+            console.log("[PURCHASES API] Fetched product:", productData.description || productData.display_name);
+          }
+          return { ...purchase, product: productData };
+        }
+        return purchase;
+      })
+    );
+
     // Fetch counts for sidebar categories
     const countQueries = await Promise.all([
       // All
@@ -118,7 +145,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch seller/buyer info for each purchase
     const purchasesWithUsers = await Promise.all(
-      (purchases || []).map(async (purchase) => {
+      (purchasesWithProducts || []).map(async (purchase) => {
         // For buying mode, get seller info. For selling mode, get buyer info.
         const otherUserId = mode === "selling" ? purchase.buyer_id : purchase.seller_id;
         
