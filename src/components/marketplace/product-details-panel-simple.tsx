@@ -3,7 +3,9 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil } from "lucide-react";
+import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil, Zap, Clock, Truck } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
@@ -148,6 +150,31 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
         )}
       </div>
 
+      {/* Express Delivery USP Banner */}
+      <div className="px-4 pb-4">
+        <Card className="bg-white border border-gray-200 rounded-md py-0 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 h-10 w-10 rounded-md bg-gray-900 flex items-center justify-center">
+                <Zap className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-gray-900">1-Hour Express Delivery</span>
+                  <Badge variant="secondary" className="rounded-md text-[10px] px-1.5 py-0 h-5 bg-gray-100 text-gray-600 border-0">
+                    On-demand
+                  </Badge>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Order now, delivered to your door today
+                </p>
+              </div>
+              <Truck className="h-5 w-5 text-gray-400 flex-shrink-0" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Secondary Actions - Share, Save, Visit Store, Learn */}
       <div className="px-4 pb-4">
         <div className="flex items-center justify-around">
@@ -194,7 +221,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
             <div className="h-10 w-10 rounded-full bg-gray-900 flex items-center justify-center">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
-            <span className="text-xs text-gray-700">outlResearch</span>
+            <span className="text-xs text-gray-700">Research</span>
           </button>
         </div>
       </div>
