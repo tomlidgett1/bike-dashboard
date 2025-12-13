@@ -272,21 +272,19 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                   {(product as any).condition_details || (product as any).display_name || product.description}
                 </p>
                 {/* Research with AI */}
-                {!isOwner && (
-                  <button 
-                    onClick={() => {
-                      if (!user) {
-                        openAuthModal();
-                        return;
-                      }
-                      setIsLearnOpen(true);
-                    }}
-                    className="flex items-center gap-1.5 mt-4 text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Research with AI
-                  </button>
-                )}
+                <button 
+                  onClick={() => {
+                    if (!user) {
+                      openAuthModal();
+                      return;
+                    }
+                    setIsLearnOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 mt-4 text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Research with AI
+                </button>
               </div>
 
               {/* Location */}

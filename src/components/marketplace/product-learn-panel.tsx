@@ -389,7 +389,7 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className="fixed inset-0 bg-black/50 z-50 hidden lg:block"
+                className="fixed inset-0 bg-black/50 z-[100] hidden lg:block"
                 onClick={handleClose}
               />
 
@@ -399,7 +399,7 @@ export function ProductLearnPanel({ product, isOpen, onClose }: ProductLearnPane
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
                 transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-                className="fixed inset-0 z-50 hidden lg:flex items-center justify-center p-8"
+                className="fixed inset-0 z-[100] hidden lg:flex items-center justify-center p-8"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="relative bg-white rounded-md shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">

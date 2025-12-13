@@ -401,11 +401,10 @@ function MobileBottomNav({
   draftCount: number;
   claimsCount: number;
 }) {
+  // Only show Orders and Claims on mobile
   const tabs = [
     { id: 'orders' as MainTab, label: 'Orders', icon: ShoppingBag, count: orderCount },
-    { id: 'listings' as MainTab, label: 'Listings', icon: Tag, count: listingCount },
     { id: 'claims' as MainTab, label: 'Claims', icon: LifeBuoy, count: claimsCount },
-    { id: 'drafts' as MainTab, label: 'Drafts', icon: FileText, count: draftCount },
   ];
 
   return (
@@ -2294,7 +2293,11 @@ export default function OrderManagementPage() {
 
                     <DesktopListingsTable 
                       listings={listings} 
-                      onRowClick={(listing) => router.push(`/marketplace/product/${listing.id}`)} 
+                      onRowClick={(listing) => {
+                        const isSold = listing.sold_at || listing.listing_status === 'sold';
+                        const url = `/marketplace/product/${listing.id}${isSold ? '?fromPurchase=true' : ''}`;
+                        router.push(url);
+                      }}
                       onEdit={handleEditListing}
                       onArchive={handleArchiveListing}
                       onDelete={handleDeleteListing}
@@ -2592,16 +2595,20 @@ export default function OrderManagementPage() {
                       </Button>
                     </div>
                   ) : (
-                    listings.map((listing) => (
-                      <MobileListingCard 
-                        key={listing.id} 
-                        listing={listing} 
-                        onClick={() => router.push(`/marketplace/product/${listing.id}`)}
-                        onEdit={() => handleEditListing(listing)}
-                        onArchive={() => handleArchiveListing(listing)}
-                        onDelete={() => handleDeleteListing(listing)}
-                      />
-                    ))
+                    listings.map((listing) => {
+                      const isSold = listing.sold_at || listing.listing_status === 'sold';
+                      const url = `/marketplace/product/${listing.id}${isSold ? '?fromPurchase=true' : ''}`;
+                      return (
+                        <MobileListingCard 
+                          key={listing.id} 
+                          listing={listing} 
+                          onClick={() => router.push(url)}
+                          onEdit={() => handleEditListing(listing)}
+                          onArchive={() => handleArchiveListing(listing)}
+                          onDelete={() => handleDeleteListing(listing)}
+                        />
+                      );
+                    })
                   )}
                 </div>
               )}

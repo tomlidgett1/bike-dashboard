@@ -20,6 +20,7 @@ import { useUserProfile } from "@/lib/hooks/use-user-profile";
 import { useSyncStatus } from "@/lib/hooks/use-sync-status";
 import Image from "next/image";
 import { MessagesDropdown } from "./messages-dropdown";
+import { NotificationsDropdown } from "./notifications-dropdown";
 
 interface HeaderProps {
   title: string;
@@ -83,6 +84,7 @@ export function Header({ title, description }: HeaderProps) {
             </div>
           )}
           
+          {user && <NotificationsDropdown />}
           {user && <MessagesDropdown />}
           
           <ThemeToggle />

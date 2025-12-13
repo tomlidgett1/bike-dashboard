@@ -858,24 +858,8 @@ export function MarketplaceHeader({
                         }}
                       />
                       <MobileNavItem
-                        icon={Edit}
-                        label="My Listings"
-                        onClick={() => {
-                          router.push('/settings/my-listings');
-                          setMobileMenuOpen(false);
-                        }}
-                      />
-                      <MobileNavItem
-                        icon={FileText}
-                        label="Draft Listings"
-                        onClick={() => {
-                          router.push('/settings/drafts');
-                          setMobileMenuOpen(false);
-                        }}
-                      />
-                      <MobileNavItem
                         icon={ShoppingBag}
-                        label="My Purchases"
+                        label="Order Management"
                         onClick={() => {
                           router.push('/settings/purchases');
                           setMobileMenuOpen(false);
