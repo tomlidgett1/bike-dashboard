@@ -9,7 +9,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
 import { useCreateOffer } from '@/lib/hooks/use-offers';
@@ -23,6 +22,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Sheet,
+  SheetContent,
+} from '@/components/ui/sheet';
 import { Tag, Send, Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OFFER_PRESETS, calculateOfferPercentage } from '@/lib/types/offer';
@@ -95,31 +98,12 @@ function MobileOfferSheet({
   }, [isOpen]);
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/50 z-[100]"
-            onClick={!creating && !success ? onClose : undefined}
-          />
-
-          {/* Bottom Sheet */}
-          <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{
-              type: "spring",
-              damping: 30,
-              stiffness: 400,
-            }}
-            className="fixed bottom-0 left-0 right-0 z-[101] bg-white rounded-t-2xl max-h-[90vh] overflow-hidden flex flex-col"
-          >
+    <Sheet open={isOpen} onOpenChange={!creating && !success ? onClose : undefined}>
+      <SheetContent 
+        side="bottom" 
+        className="rounded-t-2xl p-0 max-h-[90vh] overflow-hidden flex flex-col gap-0"
+        showCloseButton={false}
+      >
             {!success ? (
               <>
                 {/* Handle Bar */}
@@ -173,14 +157,13 @@ function MobileOfferSheet({
                         const amount = preset.calculateAmount(productPrice);
                         const isSelected = selectedPreset === index;
                         return (
-                          <motion.button
+                          <button
                             key={index}
                             type="button"
                             onClick={() => onPresetClick(index)}
                             disabled={creating}
-                            whileTap={{ scale: 0.97 }}
                             className={cn(
-                              "relative py-4 px-4 rounded-xl border-2 transition-all text-left",
+                              "relative py-4 px-4 rounded-xl border-2 transition-all text-left active:scale-[0.97]",
                               isSelected
                                 ? "border-gray-900 bg-gray-900"
                                 : "border-gray-200 bg-white active:bg-gray-50"
@@ -199,15 +182,11 @@ function MobileOfferSheet({
                               {preset.percentage}% off
                             </div>
                             {isSelected && (
-                              <motion.div
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                className="absolute top-3 right-3 h-5 w-5 bg-white rounded-full flex items-center justify-center"
-                              >
+                              <div className="absolute top-3 right-3 h-5 w-5 bg-white rounded-full flex items-center justify-center">
                                 <Check className="h-3 w-3 text-gray-900" />
-                              </motion.div>
+                              </div>
                             )}
-                          </motion.button>
+                          </button>
                         );
                       })}
                     </div>
@@ -241,33 +220,25 @@ function MobileOfferSheet({
                   </div>
 
                   {/* Offer Summary */}
-                  <AnimatePresence>
-                    {offerAmount && savings !== null && savings > 0 && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-                        className="overflow-hidden mb-5"
-                      >
-                        <div className="bg-green-50 border border-green-100 rounded-xl p-4">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm text-green-800 font-medium">Your savings</p>
-                              <p className="text-2xl font-bold text-green-700">
-                                ${savings.toLocaleString('en-AU')}
-                              </p>
-                            </div>
-                            <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
-                              <span className="text-lg font-bold text-green-700">
-                                {offerPercentage?.toFixed(0)}%
-                              </span>
-                            </div>
+                  {offerAmount && savings !== null && savings > 0 && (
+                    <div className="mb-5">
+                      <div className="bg-green-50 border border-green-100 rounded-xl p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-green-800 font-medium">Your savings</p>
+                            <p className="text-2xl font-bold text-green-700">
+                              ${savings.toLocaleString('en-AU')}
+                            </p>
+                          </div>
+                          <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
+                            <span className="text-lg font-bold text-green-700">
+                              {offerPercentage?.toFixed(0)}%
+                            </span>
                           </div>
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Optional Message Toggle */}
                   <div className="mb-5">
@@ -282,53 +253,35 @@ function MobileOfferSheet({
                         showMessage && "rotate-180"
                       )} />
                     </button>
-                    <AnimatePresence>
-                      {showMessage && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-                          className="overflow-hidden"
-                        >
-                          <Textarea
-                            value={message}
-                            onChange={(e) => onMessageChange(e.target.value)}
-                            placeholder="Write a message to the seller..."
-                            rows={3}
-                            className="mt-3 rounded-xl border-gray-200 text-sm"
-                            disabled={creating}
-                          />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    {showMessage && (
+                      <Textarea
+                        value={message}
+                        onChange={(e) => onMessageChange(e.target.value)}
+                        placeholder="Write a message to the seller..."
+                        rows={3}
+                        className="mt-3 rounded-xl border-gray-200 text-sm"
+                        disabled={creating}
+                      />
+                    )}
                   </div>
 
                   {/* Error Message */}
-                  <AnimatePresence>
-                    {error && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden mb-5"
-                      >
-                        <div className="p-4 bg-white border border-red-200 rounded-xl text-sm text-red-600">
-                          {error}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  {error && (
+                    <div className="mb-5">
+                      <div className="p-4 bg-white border border-red-200 rounded-xl text-sm text-red-600">
+                        {error}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Submit Button */}
                   <div className="pb-8">
-                    <motion.button
+                    <button
                       type="button"
                       onClick={onSubmit}
                       disabled={creating || !offerAmount}
-                      whileTap={{ scale: 0.98 }}
                       className={cn(
-                        "w-full h-14 rounded-xl font-semibold text-base transition-all flex items-center justify-center gap-2",
+                        "w-full h-14 rounded-xl font-semibold text-base transition-all flex items-center justify-center gap-2 active:scale-[0.98]",
                         offerAmount
                           ? "bg-gray-900 text-white active:bg-gray-800"
                           : "bg-gray-100 text-gray-400 cursor-not-allowed"
@@ -350,7 +303,7 @@ function MobileOfferSheet({
                           </span>
                         </>
                       )}
-                    </motion.button>
+                    </button>
                   </div>
                 </div>
 
@@ -359,80 +312,29 @@ function MobileOfferSheet({
               </>
             ) : (
               /* Success State */
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.3 }}
-                className="py-12 px-6 text-center"
-              >
-                {/* Animated Checkmark */}
+              <div className="py-12 px-6 text-center animate-in fade-in duration-300">
+                {/* Checkmark */}
                 <div className="mb-6 flex justify-center">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{
-                      type: "spring",
-                      damping: 15,
-                      stiffness: 300,
-                      delay: 0.1
-                    }}
-                    className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center"
-                  >
-                    <motion.div
-                      initial={{ scale: 0, rotate: -45 }}
-                      animate={{ scale: 1, rotate: 0 }}
-                      transition={{
-                        type: "spring",
-                        damping: 12,
-                        stiffness: 200,
-                        delay: 0.3
-                      }}
-                    >
-                      <Check className="h-10 w-10 text-green-600" strokeWidth={3} />
-                    </motion.div>
-                  </motion.div>
+                  <div className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center animate-in zoom-in duration-300">
+                    <Check className="h-10 w-10 text-green-600" strokeWidth={3} />
+                  </div>
                 </div>
 
-                <motion.h3
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
-                  className="text-xl font-bold text-gray-900 mb-2"
-                >
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
                   Offer Sent!
-                </motion.h3>
+                </h3>
 
-                <motion.p
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="text-gray-600 mb-2"
-                >
+                <p className="text-gray-600 mb-2">
                   Your offer of <span className="font-semibold">${offerAmount?.toLocaleString('en-AU')}</span> has been sent.
-                </motion.p>
+                </p>
 
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.6 }}
-                  className="text-sm text-gray-400"
-                >
+                <p className="text-sm text-gray-400">
                   The seller will respond soon...
-                </motion.p>
-
-                {/* Progress indicator */}
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: "100%" }}
-                  transition={{ duration: 1.5, delay: 0.2 }}
-                  className="h-1 bg-green-500 rounded-full mt-8 mx-auto max-w-[200px]"
-                />
-              </motion.div>
+                </p>
+              </div>
             )}
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+      </SheetContent>
+    </Sheet>
   );
 }
 

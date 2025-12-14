@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Sheet,
+  SheetContent,
+} from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { MessageCircle, Send, X, CheckCircle2, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -331,75 +335,40 @@ export function ProductInquiryButton({
         {buttonLabel}
       </Button>
 
-      <AnimatePresence>
-        {isOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 bg-black/50 z-50"
+      <Sheet open={isOpen} onOpenChange={setIsOpen}>
+        <SheetContent 
+          side="bottom" 
+          className="rounded-t-2xl p-0 max-h-[90vh] overflow-hidden flex flex-col gap-0"
+          showCloseButton={false}
+        >
+          {/* Handle Bar */}
+          <div className="flex justify-center pt-3 pb-1">
+            <div className="w-10 h-1 rounded-full bg-gray-300" />
+          </div>
+
+          {/* Header with Close Button */}
+          <div className="flex items-center justify-between px-4 pb-3 border-b border-gray-100">
+            <h2 className="text-lg font-semibold text-gray-900">Send Message</h2>
+            <button
               onClick={handleClose}
-            />
-
-            {/* Bottom Sheet */}
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ 
-                type: 'spring',
-                damping: 30,
-                stiffness: 300,
-              }}
-              className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl max-h-[90vh] overflow-hidden flex flex-col"
+              className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center"
             >
-              {/* Handle Bar */}
-              <div className="flex justify-center pt-3 pb-2">
-                <div className="w-10 h-1 rounded-full bg-gray-300" />
-              </div>
+              <X className="h-4 w-4 text-gray-600" />
+            </button>
+          </div>
 
-              {/* Header with Close Button */}
-              <div className="flex items-center justify-between px-4 pb-3 border-b border-gray-100">
-                <h2 className="text-lg font-semibold text-gray-900">Send Message</h2>
-                <button
-                  onClick={handleClose}
-                  className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center"
-                >
-                  <X className="h-4 w-4 text-gray-600" />
-                </button>
+          {success ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 animate-in fade-in zoom-in duration-300">
+              <div className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center mb-5">
+                <CheckCircle2 className="h-10 w-10 text-green-600" />
               </div>
-
-              <AnimatePresence mode="wait">
-                {success ? (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    className="flex-1 flex flex-col items-center justify-center py-12 px-4"
-                  >
-                    <motion.div 
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: 'spring', delay: 0.1 }}
-                      className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center mb-5"
-                    >
-                      <CheckCircle2 className="h-10 w-10 text-green-600" />
-                    </motion.div>
-                    <p className="text-xl font-semibold text-gray-900">Message Sent!</p>
-                    <p className="text-sm text-gray-500 mt-2 text-center">
-                      Opening your conversation...
-                    </p>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="flex-1 overflow-y-auto"
-                  >
+              <p className="text-xl font-semibold text-gray-900">Message Sent!</p>
+              <p className="text-sm text-gray-500 mt-2 text-center">
+                Opening your conversation...
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
                     {/* Product Preview Card */}
                     <div className="px-4 py-4">
                       <div className="flex gap-3 p-3 bg-gray-50 rounded-md">
@@ -472,11 +441,10 @@ export function ProductInquiryButton({
                         </div>
                       </div>
                     )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+            </div>
+          )}
 
-              {/* Send Button - Fixed at Bottom */}
+          {/* Send Button - Fixed at Bottom */}
               {!success && (
                 <div className="p-4 border-t border-gray-100 bg-white">
                   <Button
@@ -498,10 +466,8 @@ export function ProductInquiryButton({
                   </Button>
                 </div>
               )}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

@@ -8,6 +8,7 @@ import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon, User,
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
+import { ListItemBanner } from "@/components/marketplace/list-item-banner";
 import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
 import { SpaceNavigator, useMarketplaceSpace } from "@/components/marketplace/space-navigator";
 import { StoreFilterPills } from "@/components/marketplace/store-filter-pills";
@@ -766,6 +767,41 @@ function MarketplacePageContent() {
             transition={{ duration: 0.25, ease: [0.04, 0.62, 0.23, 0.98] }}
             className="sm:hidden fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-md"
           >
+            {/* Navigation Loading Bar */}
+            <AnimatePresence>
+              {isNavigating && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute top-0 left-0 right-0 h-1 bg-[#FFC72C] overflow-hidden z-50"
+                >
+                  {/* Animated shimmer effect */}
+                  <motion.div
+                    initial={{ x: "-100%" }}
+                    animate={{ x: "200%" }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 1.2,
+                      ease: "easeInOut",
+                    }}
+                    className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent"
+                  />
+                  {/* Indeterminate progress animation */}
+                  <motion.div
+                    initial={{ left: "-40%", width: "40%" }}
+                    animate={{ left: "100%", width: "40%" }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 1,
+                      ease: [0.4, 0, 0.2, 1],
+                    }}
+                    className="absolute inset-y-0 bg-[#E6B328]"
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
             {/* Top Row - Filters Button */}
             <div className="flex items-center justify-between px-3 pt-2.5 pb-2">
               {/* Marketplace label */}
@@ -1225,23 +1261,28 @@ function MarketplacePageContent() {
                   {!searchQuery && products.length > 0 && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-4">
                       {products.map((product, index) => (
-                        <ProductCard 
-                          key={product.id} 
-                          product={product}
-                          priority={index < 18} // Prioritize first 18 images (top 3 rows on XL screens)
-                          isAdmin={isAdmin}
-                          onNavigate={() => setIsNavigating(true)}
-                          onImageDiscoveryClick={(productId) => {
-                            // Use canonical_product_id if available (for private listings)
-                            // Otherwise use product id (for store inventory which IS the canonical product)
-                            const canonicalId = product.canonical_product_id || product.id;
-                            setImageDiscoveryModal({
-                              isOpen: true,
-                              productId: canonicalId,
-                              productName: (product as any).display_name || product.description,
-                            });
-                          }}
-                        />
+                        <React.Fragment key={product.id}>
+                          <ProductCard 
+                            product={product}
+                            priority={index < 18} // Prioritize first 18 images (top 3 rows on XL screens)
+                            isAdmin={isAdmin}
+                            onNavigate={() => setIsNavigating(true)}
+                            onImageDiscoveryClick={(productId) => {
+                              // Use canonical_product_id if available (for private listings)
+                              // Otherwise use product id (for store inventory which IS the canonical product)
+                              const canonicalId = product.canonical_product_id || product.id;
+                              setImageDiscoveryModal({
+                                isOpen: true,
+                                productId: canonicalId,
+                                productName: (product as any).display_name || product.description,
+                              });
+                            }}
+                          />
+                          {/* Mobile-only promo banner after 6th row (12 products on 2-col grid) */}
+                          {index === 11 && isMarketplaceView && (
+                            <ListItemBanner className="sm:hidden" />
+                          )}
+                        </React.Fragment>
                       ))}
                     </div>
                   )}
