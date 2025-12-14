@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
+import { useSellModal } from "@/components/providers/sell-modal-provider";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
 import { useCombinedUnreadCount } from "@/lib/hooks/use-combined-unread-count";
@@ -159,6 +160,7 @@ export function MarketplaceHeader({
   const { user } = useAuth();
   const { profile, loading } = useUserProfile();
   const { openAuthModal } = useAuthModal();
+  const { registerHandler } = useSellModal();
   const supabase = createClient();
   
   // Defer unread count fetching until after initial render
@@ -182,6 +184,17 @@ export function MarketplaceHeader({
   React.useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Register the sell modal handler so other components can trigger it
+  React.useEffect(() => {
+    registerHandler(() => {
+      if (user) {
+        setMobileUploadMethodOpen(true);
+      } else {
+        setSellRequirementModalOpen(true);
+      }
+    });
+  }, [registerHandler, user]);
 
   // Detect if on mobile
   React.useEffect(() => {

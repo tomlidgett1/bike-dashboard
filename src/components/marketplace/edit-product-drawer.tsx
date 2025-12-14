@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
   Check,
@@ -16,6 +15,10 @@ import {
   Clock,
   AlertCircle,
 } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -432,27 +435,12 @@ export function EditProductDrawer({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 bg-black/50"
-            onClick={handleClose}
-          />
-
-          {/* Drawer */}
-          <motion.div
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "100%" }}
-            transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className="fixed inset-y-0 right-0 z-50 w-full sm:w-[480px] bg-white shadow-xl flex flex-col"
-          >
+    <Sheet open={isOpen} onOpenChange={handleClose}>
+      <SheetContent 
+        side="right" 
+        className="w-full sm:w-[480px] p-0 flex flex-col gap-0"
+        showCloseButton={false}
+      >
             {/* Header */}
             <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-4">
               <div className="flex items-center justify-between">
@@ -471,58 +459,32 @@ export function EditProductDrawer({
                     </h2>
                     <div className="flex items-center gap-2 mt-0.5">
                       {/* Save status indicator */}
-                      <AnimatePresence mode="wait">
-                        {saveStatus === "saving" && (
-                          <motion.div
-                            key="saving"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="flex items-center gap-1.5 text-xs text-gray-500"
-                          >
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            <span>Saving...</span>
-                          </motion.div>
-                        )}
-                        {saveStatus === "saved" && (
-                          <motion.div
-                            key="saved"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="flex items-center gap-1.5 text-xs text-green-600"
-                          >
-                            <Check className="h-3 w-3" />
-                            <span>Saved</span>
-                          </motion.div>
-                        )}
-                        {saveStatus === "error" && (
-                          <motion.div
-                            key="error"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="flex items-center gap-1.5 text-xs text-red-600"
-                          >
-                            <AlertCircle className="h-3 w-3" />
-                            <span>Failed to save</span>
-                          </motion.div>
-                        )}
-                        {saveStatus === "idle" && lastSavedAt && (
-                          <motion.div
-                            key="idle"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="flex items-center gap-1.5 text-xs text-gray-400"
-                          >
-                            <Clock className="h-3 w-3" />
-                            <span>
-                              Last saved {lastSavedAt.toLocaleTimeString()}
-                            </span>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                      {saveStatus === "saving" && (
+                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span>Saving...</span>
+                        </div>
+                      )}
+                      {saveStatus === "saved" && (
+                        <div className="flex items-center gap-1.5 text-xs text-green-600">
+                          <Check className="h-3 w-3" />
+                          <span>Saved</span>
+                        </div>
+                      )}
+                      {saveStatus === "error" && (
+                        <div className="flex items-center gap-1.5 text-xs text-red-600">
+                          <AlertCircle className="h-3 w-3" />
+                          <span>Failed to save</span>
+                        </div>
+                      )}
+                      {saveStatus === "idle" && lastSavedAt && (
+                        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                          <Clock className="h-3 w-3" />
+                          <span>
+                            Last saved {lastSavedAt.toLocaleTimeString()}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -563,51 +525,36 @@ export function EditProductDrawer({
                     </button>
 
                     {/* Section Content */}
-                    <AnimatePresence>
-                      {expandedSections.has(section.id) && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{
-                            duration: 0.4,
-                            ease: [0.04, 0.62, 0.23, 0.98],
-                          }}
-                          className="overflow-hidden"
-                        >
-                          <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
-                            {section.fields.map((field) => (
-                              <div key={field.key} className="pt-4">
-                                <div className="flex items-center justify-between mb-2">
-                                  <label className="text-sm font-medium text-gray-700">
-                                    {field.label}
-                                  </label>
-                                  {field.type === "switch" && renderField(field)}
-                                </div>
-                                {field.type !== "switch" && renderField(field)}
-                              </div>
-                            ))}
+                    {expandedSections.has(section.id) && (
+                      <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
+                        {section.fields.map((field) => (
+                          <div key={field.key} className="pt-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-sm font-medium text-gray-700">
+                                {field.label}
+                              </label>
+                              {field.type === "switch" && renderField(field)}
+                            </div>
+                            {field.type !== "switch" && renderField(field)}
                           </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-4">
-              <Button
-                onClick={handleClose}
-                className="w-full h-12 rounded-md font-medium"
-              >
-                Done Editing
-              </Button>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-4">
+          <Button
+            onClick={handleClose}
+            className="w-full h-12 rounded-md font-medium"
+          >
+            Done Editing
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
