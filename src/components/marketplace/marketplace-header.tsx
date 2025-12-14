@@ -32,7 +32,7 @@ import {
 import { FacebookImportModal } from "./sell/facebook-import-modal";
 import { SmartUploadModal } from "./sell/smart-upload-modal";
 import { MobileUploadMethodDialog } from "./sell/mobile-upload-method-dialog";
-import { FixedMobileSpaceNavigator } from "./space-navigator";
+// Space navigator import removed - now integrated into UnifiedFilterBar
 import type { ListingImage } from "@/lib/types/listing";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
 
@@ -632,13 +632,7 @@ export function MarketplaceHeader({
         </div>
       </motion.header>
 
-      {/* Mobile Space Navigator - Shows below header when enabled */}
-      {showSpaceNavigator && onSpaceChange && (
-        <FixedMobileSpaceNavigator
-          currentSpace={currentSpace}
-          onSpaceChange={onSpaceChange}
-        />
-      )}
+      {/* Mobile Space Navigator removed - now integrated into UnifiedFilterBar */}
 
       {/* Mobile Floating List Item Button - Only shown on homepage and product pages */}
       {showFloatingButton && mounted && (

@@ -11,13 +11,13 @@ import { preload } from "swr";
 import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 
 // ============================================================
-// Unified Filter Bar
+// Unified Filter Bar (Explore Bar)
 // Clean, modern filter experience combining:
-// - View modes (Trending, For You, Browse)
+// - View modes (Hot, For You, Browse, Stores)
 // - Category navigation (3-level hierarchy)
 // - Advanced filters (price, condition, etc.)
 // Mobile-first with smooth animations
-// Note: Source filtering moved to SpaceNavigator component
+// Consolidates all navigation into a single row
 // ============================================================
 
 // Prefetch function for category products
@@ -224,74 +224,201 @@ export function UnifiedFilterBar({
 
   const isOnBrowseMode = viewMode === 'all';
 
+  // Track if stores mode is active (passed in via onNavigateToStores being the current space)
+  const isStoresMode = listingTypeFilter === 'stores';
+
   return (
     <div className="space-y-3">
-      {/* Primary Row: View Mode Tabs + Source Filter Tabs (desktop only) */}
+      {/* Primary Row: Unified Explore Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-3">
-        {/* View Mode Tabs - Button pills on mobile, full tabs on desktop */}
-        <div className="flex items-center gap-1.5 sm:gap-0 px-3 sm:px-0 sm:bg-gray-100 sm:p-0.5 sm:rounded-md w-full sm:w-auto overflow-x-auto scrollbar-hide">
+        
+        {/* Mobile Explore Bar - Single unified navigation with animated indicator */}
+        <div className="sm:hidden pt-3">
+          <div className="bg-gray-100 rounded-md p-1 mx-3">
+            <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
+              {/* Hot Tab */}
+              <button
+                onClick={() => onViewModeChange('trending')}
+                className="relative flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap min-w-0"
+              >
+                {/* Animated Background Indicator */}
+                {viewMode === 'trending' && !isStoresMode && (
+                  <motion.div
+                    layoutId="mobile-tab-indicator"
+                    className="absolute inset-0 bg-white rounded-md shadow-sm"
+                    transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+                  />
+                )}
+                <span className={cn(
+                  "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+                  viewMode === 'trending' && !isStoresMode ? "text-gray-900" : "text-gray-600"
+                )}>
+                  <TrendingUp className="h-4 w-4 flex-shrink-0" />
+                  <span>Hot</span>
+                </span>
+              </button>
+              
+              {/* For You Tab */}
+              <button
+                onClick={() => onViewModeChange('for-you')}
+                className="relative flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap min-w-0"
+              >
+                {viewMode === 'for-you' && !isStoresMode && (
+                  <motion.div
+                    layoutId="mobile-tab-indicator"
+                    className="absolute inset-0 bg-white rounded-md shadow-sm"
+                    transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+                  />
+                )}
+                <span className={cn(
+                  "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+                  viewMode === 'for-you' && !isStoresMode ? "text-gray-900" : "text-gray-600"
+                )}>
+                  <Heart className="h-4 w-4 flex-shrink-0" />
+                  <span>For You</span>
+                </span>
+                {showForYouBadge && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#FFC72C] rounded-full z-20" />
+                )}
+              </button>
+              
+              {/* Browse Tab */}
+              <button
+                onClick={() => onViewModeChange('all')}
+                className="relative flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap min-w-0"
+              >
+                {viewMode === 'all' && !isStoresMode && (
+                  <motion.div
+                    layoutId="mobile-tab-indicator"
+                    className="absolute inset-0 bg-white rounded-md shadow-sm"
+                    transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+                  />
+                )}
+                <span className={cn(
+                  "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+                  viewMode === 'all' && !isStoresMode ? "text-gray-900" : "text-gray-600"
+                )}>
+                  <Package className="h-4 w-4 flex-shrink-0" />
+                  <span>Browse</span>
+                </span>
+              </button>
+              
+              {/* Stores Tab */}
+              <button
+                onClick={onNavigateToStores}
+                className="relative flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap min-w-0"
+              >
+                {isStoresMode && (
+                  <motion.div
+                    layoutId="mobile-tab-indicator"
+                    className="absolute inset-0 bg-white rounded-md shadow-sm"
+                    transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+                  />
+                )}
+                <span className={cn(
+                  "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+                  isStoresMode ? "text-gray-900" : "text-gray-600"
+                )}>
+                  <Store className="h-4 w-4 flex-shrink-0" />
+                  <span>Stores</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop View Mode Tabs with animated indicator */}
+        <div className="hidden sm:flex items-center gap-0 bg-gray-100 p-0.5 rounded-md w-auto">
           <button
             onClick={() => onViewModeChange('trending')}
-            className={cn(
-              "relative flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
-              viewMode === 'trending'
-                ? "text-gray-800 bg-white shadow-sm border border-gray-200 sm:border-0"
-                : "text-gray-600 hover:bg-gray-100 sm:hover:bg-gray-200/60"
-            )}
+            className="relative flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap"
           >
-            <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            <span className="hidden sm:inline">Trending</span>
-            <span className="sm:hidden">Hot</span>
+            {viewMode === 'trending' && !isStoresMode && (
+              <motion.div
+                layoutId="desktop-tab-indicator"
+                className="absolute inset-0 bg-white rounded-md shadow-sm"
+                transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+              />
+            )}
+            <span className={cn(
+              "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+              viewMode === 'trending' && !isStoresMode ? "text-gray-900" : "text-gray-600 hover:text-gray-800"
+            )}>
+              <TrendingUp className="h-4 w-4" />
+              Trending
+            </span>
           </button>
           
           <button
             onClick={() => onViewModeChange('for-you')}
-            className={cn(
-              "relative flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
-              viewMode === 'for-you'
-                ? "text-gray-800 bg-white shadow-sm border border-gray-200 sm:border-0"
-                : "text-gray-600 hover:bg-gray-100 sm:hover:bg-gray-200/60"
-            )}
+            className="relative flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap"
           >
-            <Heart className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            <span className="hidden xs:inline">For You</span>
-            <span className="xs:hidden">You</span>
-            {showForYouBadge && (
-              <span className="absolute -top-0.5 -right-0.5 sm:static sm:ml-1 w-2 h-2 bg-[#FFC72C] rounded-full" />
+            {viewMode === 'for-you' && !isStoresMode && (
+              <motion.div
+                layoutId="desktop-tab-indicator"
+                className="absolute inset-0 bg-white rounded-md shadow-sm"
+                transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+              />
             )}
+            <span className={cn(
+              "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+              viewMode === 'for-you' && !isStoresMode ? "text-gray-900" : "text-gray-600 hover:text-gray-800"
+            )}>
+              <Heart className="h-4 w-4" />
+              For You
+              {showForYouBadge && (
+                <span className="ml-1 w-2 h-2 bg-[#FFC72C] rounded-full" />
+              )}
+            </span>
           </button>
           
           <button
             onClick={() => onViewModeChange('all')}
-            className={cn(
-              "relative flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
-              viewMode === 'all'
-                ? "text-gray-800 bg-white shadow-sm border border-gray-200 sm:border-0"
-                : "text-gray-600 hover:bg-gray-100 sm:hover:bg-gray-200/60"
-            )}
+            className="relative flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap"
           >
-            <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            Browse
+            {viewMode === 'all' && !isStoresMode && (
+              <motion.div
+                layoutId="desktop-tab-indicator"
+                className="absolute inset-0 bg-white rounded-md shadow-sm"
+                transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+              />
+            )}
+            <span className={cn(
+              "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+              viewMode === 'all' && !isStoresMode ? "text-gray-900" : "text-gray-600 hover:text-gray-800"
+            )}>
+              <Package className="h-4 w-4" />
+              Browse
+            </span>
           </button>
           
-          {/* Separator - Desktop only */}
-          <div className="hidden sm:block w-px h-5 bg-gray-300 mx-1" />
+          {/* Separator */}
+          <div className="w-px h-5 bg-gray-300 mx-1" />
           
-          {/* Bike Stores Tab - Desktop only */}
+          {/* Bike Stores Tab */}
           <button
             onClick={onNavigateToStores}
-            className={cn(
-              "hidden sm:flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap",
-              "text-gray-600 hover:text-gray-800 hover:bg-gray-200/60"
-            )}
+            className="relative flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap"
           >
-            <Store className="h-4 w-4" />
-            Bike Stores
+            {isStoresMode && (
+              <motion.div
+                layoutId="desktop-tab-indicator"
+                className="absolute inset-0 bg-white rounded-md shadow-sm"
+                transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+              />
+            )}
+            <span className={cn(
+              "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+              isStoresMode ? "text-gray-900" : "text-gray-600 hover:text-gray-800"
+            )}>
+              <Store className="h-4 w-4" />
+              Bike Stores
+            </span>
           </button>
         </div>
 
         {/* Advanced Filters + Product Count - only on Browse mode - Desktop only */}
-        {isOnBrowseMode && (
+        {isOnBrowseMode && !isStoresMode && (
           <div className="hidden sm:flex items-stretch gap-2">
             {/* Additional Filters Slot (e.g., AdvancedFilters) */}
             <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
@@ -308,9 +435,9 @@ export function UnifiedFilterBar({
         )}
       </div>
 
-      {/* Category Navigation - Only on Browse mode */}
+      {/* Category Navigation - Only on Browse mode (not Stores) */}
       <AnimatePresence mode="wait">
-        {isOnBrowseMode && (
+        {isOnBrowseMode && !isStoresMode && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}

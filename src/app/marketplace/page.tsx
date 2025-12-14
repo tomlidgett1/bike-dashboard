@@ -574,8 +574,8 @@ function MarketplacePageContent() {
   };
 
   const handleViewModeChange = (mode: ViewMode) => {
-    // Don't reset if clicking the same tab
-    if (mode === viewMode) return;
+    // Don't reset if clicking the same tab and already in marketplace
+    if (mode === viewMode && !isStoresView) return;
     
     // Set transitioning state immediately for instant loading feedback
     setIsTransitioning(true);
@@ -584,6 +584,11 @@ function MarketplacePageContent() {
     setAccumulatedProducts([]);
     processedDataRef.current = new Set();
     setCurrentPage(1);
+    
+    // Switch back to marketplace space if we're on stores view
+    if (isStoresView) {
+      setSpace('marketplace');
+    }
     
     // Then change the mode
     setViewMode(mode);
@@ -836,44 +841,40 @@ function MarketplacePageContent() {
       </AnimatePresence>
 
       <MarketplaceLayout showFooter={false} showStoreCTA={isStoresView}>
-        {/* Sticky Filter Bar on Mobile */}
-        {!isStoresView && (
-          <>
-            <div className="sticky top-[120px] sm:top-16 z-30 bg-white sm:hidden">
-              <UnifiedFilterBar
-                viewMode={viewMode}
-                onViewModeChange={handleViewModeChange}
-                showForYouBadge={!user && viewMode !== 'for-you'}
-                selectedLevel1={selectedLevel1}
-                selectedLevel2={selectedLevel2}
-                selectedLevel3={selectedLevel3}
-                onLevel1Change={handleLevel1Change}
-                onLevel2Change={handleLevel2Change}
-                onLevel3Change={handleLevel3Change}
+        {/* Sticky Explore Bar on Mobile - Always visible for unified navigation */}
+        <div className="sticky top-14 sm:top-16 z-30 bg-white sm:hidden">
+          <UnifiedFilterBar
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
+            showForYouBadge={!user && viewMode !== 'for-you'}
+            selectedLevel1={selectedLevel1}
+            selectedLevel2={selectedLevel2}
+            selectedLevel3={selectedLevel3}
+            onLevel1Change={handleLevel1Change}
+            onLevel2Change={handleLevel2Change}
+            onLevel3Change={handleLevel3Change}
+            listingTypeFilter={listingTypeFilter}
+            onListingTypeChange={handleListingTypeChange}
+            productCount={!searchQuery ? totalCount : undefined}
+            categoryPillsRef={categoryPillsRef}
+            onNavigateToStores={() => setSpace('stores')}
+            additionalFilters={
+              <AdvancedFilters
+                filters={advancedFilters}
+                onFiltersChange={handleAdvancedFiltersChange}
+                onApply={handleAdvancedFiltersApply}
+                onReset={handleAdvancedFiltersReset}
+                activeFilterCount={activeFilterCount}
                 listingTypeFilter={listingTypeFilter}
                 onListingTypeChange={handleListingTypeChange}
-                productCount={!searchQuery ? totalCount : undefined}
-                categoryPillsRef={categoryPillsRef}
-                onNavigateToStores={() => setSpace('stores')}
-                additionalFilters={
-                  <AdvancedFilters
-                    filters={advancedFilters}
-                    onFiltersChange={handleAdvancedFiltersChange}
-                    onApply={handleAdvancedFiltersApply}
-                    onReset={handleAdvancedFiltersReset}
-                    activeFilterCount={activeFilterCount}
-                    listingTypeFilter={listingTypeFilter}
-                    onListingTypeChange={handleListingTypeChange}
-                  />
-                }
               />
-            </div>
-            {/* Sentinel div for scroll tracking - invisible marker */}
-            <div ref={sentinelRef} className="sm:hidden h-px" aria-hidden="true" />
-          </>
-        )}
+            }
+          />
+        </div>
+        {/* Sentinel div for scroll tracking - invisible marker */}
+        <div ref={sentinelRef} className="sm:hidden h-px" aria-hidden="true" />
 
-        <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-[120px] sm:pt-20 pb-24 sm:pb-8">
+        <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20 pb-24 sm:pb-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -883,54 +884,35 @@ function MarketplacePageContent() {
             {/* Stores View - Products from Stores with Store Filter */}
             {isStoresView && (
               <div className="space-y-4 sm:space-y-6">
-                {/* Navigation Tabs - Same level as marketplace tabs */}
-                <div className="flex sm:items-center bg-gray-50 sm:bg-gray-100 sm:p-0.5 sm:rounded-md w-full sm:w-fit sm:border-0">
-                  <button
-                    onClick={() => {
-                      setViewMode('trending');
-                      setSpace('marketplace');
-                    }}
-                    className="relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0 text-gray-600 hover:text-gray-800 sm:hover:bg-gray-200/60 border-transparent"
-                  >
-                    <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    <span className="hidden sm:inline">Trending</span>
-                    <span className="sm:hidden">Hot</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      setViewMode('for-you');
-                      setSpace('marketplace');
-                    }}
-                    className="relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0 text-gray-600 hover:text-gray-800 sm:hover:bg-gray-200/60 border-transparent"
-                  >
-                    <Heart className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    <span className="hidden xs:inline">For You</span>
-                    <span className="xs:hidden">You</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      setViewMode('all');
-                      setSpace('marketplace');
-                    }}
-                    className="relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0 text-gray-600 hover:text-gray-800 sm:hover:bg-gray-200/60 border-transparent"
-                  >
-                    <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    Browse
-                  </button>
-                  
-                  {/* Separator */}
-                  <div className="hidden sm:block w-px h-5 bg-gray-300 mx-1" />
-                  
-                  {/* Active Bike Stores Tab */}
-                  <button
-                    className="relative flex items-center justify-center gap-1.5 flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-3 sm:py-1.5 text-xs sm:text-sm font-medium sm:rounded-md transition-all cursor-pointer whitespace-nowrap border-b-2 sm:border-0 text-gray-900 sm:bg-white sm:shadow-sm border-gray-900 bg-gray-50"
-                  >
-                    <StoreIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    <span className="hidden sm:inline">Bike Stores</span>
-                    <span className="sm:hidden">Stores</span>
-                  </button>
+                {/* Desktop Unified Filter Bar for Stores */}
+                <div className="hidden sm:block">
+                  <UnifiedFilterBar
+                    viewMode={viewMode}
+                    onViewModeChange={handleViewModeChange}
+                    showForYouBadge={!user && viewMode !== 'for-you'}
+                    selectedLevel1={selectedLevel1}
+                    selectedLevel2={selectedLevel2}
+                    selectedLevel3={selectedLevel3}
+                    onLevel1Change={handleLevel1Change}
+                    onLevel2Change={handleLevel2Change}
+                    onLevel3Change={handleLevel3Change}
+                    listingTypeFilter={listingTypeFilter}
+                    onListingTypeChange={handleListingTypeChange}
+                    productCount={!searchQuery ? totalCount : undefined}
+                    categoryPillsRef={categoryPillsRef}
+                    onNavigateToStores={() => setSpace('stores')}
+                    additionalFilters={
+                      <AdvancedFilters
+                        filters={advancedFilters}
+                        onFiltersChange={handleAdvancedFiltersChange}
+                        onApply={handleAdvancedFiltersApply}
+                        onReset={handleAdvancedFiltersReset}
+                        activeFilterCount={activeFilterCount}
+                        listingTypeFilter={listingTypeFilter}
+                        onListingTypeChange={handleListingTypeChange}
+                      />
+                    }
+                  />
                 </div>
 
                 {/* Store Filter Pills */}
@@ -966,16 +948,18 @@ function MarketplacePageContent() {
                     )}
                   </div>
                   
-                  {/* Advanced Filters for Stores */}
-                  <AdvancedFilters
-                    filters={advancedFilters}
-                    onFiltersChange={handleAdvancedFiltersChange}
-                    onApply={handleAdvancedFiltersApply}
-                    onReset={handleAdvancedFiltersReset}
-                    activeFilterCount={activeFilterCount}
-                    listingTypeFilter={listingTypeFilter}
-                    onListingTypeChange={handleListingTypeChange}
-                  />
+                  {/* Advanced Filters for Stores - Mobile only (desktop has it in filter bar) */}
+                  <div className="sm:hidden">
+                    <AdvancedFilters
+                      filters={advancedFilters}
+                      onFiltersChange={handleAdvancedFiltersChange}
+                      onApply={handleAdvancedFiltersApply}
+                      onReset={handleAdvancedFiltersReset}
+                      activeFilterCount={activeFilterCount}
+                      listingTypeFilter={listingTypeFilter}
+                      onListingTypeChange={handleListingTypeChange}
+                    />
+                  </div>
                 </div>
               </div>
             )}
