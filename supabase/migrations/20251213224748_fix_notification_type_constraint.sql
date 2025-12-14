@@ -52,3 +52,5 @@ ALTER TABLE notifications ADD CONSTRAINT notifications_reference_check CHECK (
   OR purchase_id IS NOT NULL
 );
 
+
+

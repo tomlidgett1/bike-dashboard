@@ -71,6 +71,7 @@ export async function GET(
         apparel_material,
         condition_rating,
         condition_details,
+        seller_notes,
         wear_notes,
         usage_estimate,
         purchase_location,

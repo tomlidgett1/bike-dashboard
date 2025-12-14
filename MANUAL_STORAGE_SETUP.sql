@@ -102,3 +102,5 @@ WHERE tablename = 'objects' AND policyname LIKE '%logo%';
 
 
 
+
+

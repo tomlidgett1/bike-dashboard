@@ -24,7 +24,7 @@ import {
 
 interface QuickListingData {
   title?: string;
-  description?: string;
+  description?: string; // Product description (features, specs, what it is)
   price?: number;
   conditionRating?: ConditionRating;
   images?: ListingImage[];
@@ -33,7 +33,8 @@ interface QuickListingData {
   model?: string;
   modelYear?: string;
   pickupLocation?: string;
-  conditionDetails?: string;
+  conditionDetails?: string; // Product description (legacy - same as description)
+  sellerNotes?: string; // Seller's personal notes about condition, wear, why selling
   wearNotes?: string;
   usageEstimate?: string;
   searchUrls?: any[];
@@ -435,6 +436,15 @@ export function Step1ItemType({
       
       setQuickData(initialQuickData);
       
+      // Find and set the correct primary image index
+      if (quickListingData.images && quickListingData.images.length > 0) {
+        const primaryIdx = quickListingData.images.findIndex((img: any) => img.isPrimary);
+        if (primaryIdx > 0) {
+          setPrimaryImageIndex(primaryIdx);
+          console.log('🖼️ [QUICK LIST INIT] Set primaryImageIndex to:', primaryIdx);
+        }
+      }
+      
       console.log('🎯 [QUICK LIST INIT] setQuickData completed');
       console.log('🎯 [QUICK LIST INIT] ============ END ============');
     }
@@ -446,7 +456,16 @@ export function Step1ItemType({
     if (!onQuickList) return;
     setIsPublishing(true);
     try {
-      await onQuickList(quickData);
+      // Update images with correct isPrimary based on user's cover photo selection
+      const updatedImages = quickData.images?.map((img, index) => ({
+        ...img,
+        isPrimary: index === primaryImageIndex,
+      }));
+      
+      await onQuickList({
+        ...quickData,
+        images: updatedImages,
+      });
     } finally {
       setIsPublishing(false);
     }
@@ -523,9 +542,13 @@ export function Step1ItemType({
   const handleRemovePhoto = (indexToRemove: number) => {
     const updatedImages = (quickData.images || []).filter((_, index) => index !== indexToRemove);
     
-    // If we removed the primary image, make the first remaining image primary
-    if (updatedImages.length > 0 && quickData.images?.[indexToRemove]?.isPrimary) {
-      updatedImages[0].isPrimary = true;
+    // Update primaryImageIndex to stay in sync
+    if (indexToRemove === primaryImageIndex) {
+      // If we removed the primary image, reset to first image
+      setPrimaryImageIndex(0);
+    } else if (indexToRemove < primaryImageIndex) {
+      // If we removed an image before the primary, adjust the index
+      setPrimaryImageIndex(primaryImageIndex - 1);
     }
 
     setQuickData({
@@ -778,18 +801,30 @@ export function Step1ItemType({
             </div>
           </div>
 
-          {/* Description */}
+          {/* Description - Product description */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Description *</label>
             <Textarea
               value={quickData.description || ''}
-              onChange={(e) => setQuickData({ ...quickData, description: e.target.value })}
+              onChange={(e) => setQuickData({ ...quickData, description: e.target.value, conditionDetails: e.target.value })}
               className={cn(
                 "rounded-xl resize-none text-base",
                 !quickData.description && "border-red-500 focus:border-red-500 focus:ring-red-500"
               )}
               rows={3}
-              placeholder="Describe your product..."
+              placeholder="Product description - features, specs, what it is..."
+            />
+          </div>
+
+          {/* Notes - Seller notes */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Notes <span className="text-gray-400">(Optional)</span></label>
+            <Textarea
+              value={quickData.sellerNotes || ''}
+              onChange={(e) => setQuickData({ ...quickData, sellerNotes: e.target.value })}
+              className="rounded-xl resize-none text-base"
+              rows={2}
+              placeholder="Your notes - condition, wear, why selling..."
             />
           </div>
 
@@ -1155,20 +1190,32 @@ export function Step1ItemType({
                   <ApparelSpecificFields data={quickData} onChange={setQuickData} />
                 )}
 
-                {/* Description */}
+                {/* Description - Product description */}
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-gray-900">Description *</label>
                   <textarea
                     value={quickData.description || ''}
-                    onChange={(e) => setQuickData({ ...quickData, description: e.target.value })}
-                    placeholder="Describe your item (condition, features, why you're selling...)"
+                    onChange={(e) => setQuickData({ ...quickData, description: e.target.value, conditionDetails: e.target.value })}
+                    placeholder="Product description - features, specs, what it is..."
                     rows={4}
                     className={cn(
                       "w-full px-3 py-2.5 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none",
-                      !quickData.description 
+                      !quickData.description
                         ? "border-red-500 focus:ring-red-500 focus:border-red-500"
                         : "border-gray-300 focus:ring-gray-900 focus:border-transparent"
                     )}
+                  />
+                </div>
+
+                {/* Notes - Seller notes */}
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-900">Notes <span className="text-gray-400 font-normal">(Optional)</span></label>
+                  <textarea
+                    value={quickData.sellerNotes || ''}
+                    onChange={(e) => setQuickData({ ...quickData, sellerNotes: e.target.value })}
+                    placeholder="Your notes - condition, wear, why selling..."
+                    rows={2}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none"
                   />
                 </div>
 

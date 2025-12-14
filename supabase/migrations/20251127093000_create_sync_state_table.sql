@@ -62,3 +62,5 @@ CREATE POLICY "Users can delete own sync state" ON lightspeed_sync_state FOR DEL
 
 
 
+
+

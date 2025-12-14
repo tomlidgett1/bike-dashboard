@@ -46,3 +46,5 @@ COMMENT ON COLUMN users.onboarding_completed IS 'Flag indicating whether user ha
 
 
 
+
+

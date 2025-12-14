@@ -85,6 +85,7 @@ export interface MarketplaceProduct {
   // Condition & history
   condition_rating?: 'New' | 'Like New' | 'Excellent' | 'Good' | 'Fair' | 'Well Used';
   condition_details?: string;
+  seller_notes?: string; // Seller's personal notes about condition, wear, why selling
   wear_notes?: string;
   usage_estimate?: string;
   purchase_location?: string;

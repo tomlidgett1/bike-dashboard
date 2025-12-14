@@ -148,6 +148,7 @@ export async function POST(request: NextRequest) {
       // Condition
       condition_rating: body.conditionRating,
       condition_details: body.conditionDetails,
+      seller_notes: body.sellerNotes,
       wear_notes: body.wearNotes,
       usage_estimate: body.usageEstimate,
       purchase_location: body.purchaseLocation,
@@ -189,6 +190,14 @@ export async function POST(request: NextRequest) {
       ai_confidence_scores: body.fieldConfidence || {},
     };
 
+    // DEBUG: Log what we're saving
+    console.log('🖼️ [LISTINGS API] Images being saved:', body.images?.map((img: any, i: number) => ({
+      index: i,
+      isPrimary: img.isPrimary,
+      cardUrl: img.cardUrl?.substring(70, 110),
+    })));
+    console.log('🖼️ [LISTINGS API] primaryImageUrl:', body.primaryImageUrl?.substring(70, 110));
+
     const { data: listing, error } = await supabase
       .from("products")
       .insert(listingData)
@@ -223,6 +232,12 @@ export async function POST(request: NextRequest) {
         height: img.height || 800,
         mime_type: 'image/webp',
       }));
+      
+      console.log('🖼️ [LISTINGS API] Image records being inserted:', imageRecords.map((r: any) => ({
+        is_primary: r.is_primary,
+        sort_order: r.sort_order,
+        card_url: r.card_url?.substring(70, 110),
+      })));
 
       const { error: imageError } = await supabase
         .from("product_images")

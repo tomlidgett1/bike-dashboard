@@ -79,10 +79,18 @@ export function SellWizard() {
       const images = quickData.images || formData.images || [];
       
       // Find primary image URL - look for isPrimary flag or use first image
+      // Use cardUrl for faster product card loading!
       let primaryImageUrl: string | undefined;
       if (images.length > 0) {
         const primaryImage = images.find((img: any) => img.isPrimary);
-        primaryImageUrl = primaryImage?.url || images[0]?.url;
+        // Prefer cardUrl (optimized for cards) over url
+        primaryImageUrl = primaryImage?.cardUrl || primaryImage?.url || images[0]?.cardUrl || images[0]?.url;
+        
+        console.log('🖼️ [QUICK LIST] Found primary image:', {
+          isPrimary: primaryImage?.isPrimary,
+          cardUrl: primaryImage?.cardUrl?.substring(70, 110),
+          url: primaryImage?.url?.substring(70, 110),
+        });
         
         // Ensure at least one image is marked as primary
         if (!primaryImage && images.length > 0) {
@@ -119,7 +127,8 @@ export function SellWizard() {
         // Basic required fields
         title: quickData.title || [quickData.brand, quickData.model].filter(Boolean).join(' '),
         description: quickData.title || [quickData.brand, quickData.model].filter(Boolean).join(' '), // Legacy field - stores title
-        conditionDetails: quickData.description || '', // User's actual description
+        conditionDetails: quickData.description || quickData.conditionDetails || '', // Product description
+        sellerNotes: quickData.sellerNotes || '', // Seller's personal notes
         price: quickData.price,
         conditionRating: quickData.conditionRating || 'Good',
         
@@ -166,6 +175,9 @@ export function SellWizard() {
       };
 
       console.log('🚀 [QUICK LIST] Publishing with data:', listingData);
+      console.log('🖼️ [QUICK LIST] primaryImageUrl being published:', primaryImageUrl);
+      console.log('🖼️ [QUICK LIST] images being published:', images);
+      console.log('🖼️ [QUICK LIST] Primary image found:', images.find((img: any) => img.isPrimary));
 
       const response = await fetch('/api/marketplace/listings', {
         method: 'POST',
@@ -231,6 +243,9 @@ export function SellWizard() {
       try {
         const { formData: importedFormData, imageUrls } = JSON.parse(storedData);
         console.log('🎯 [WIZARD] Found Smart Upload data in sessionStorage:', importedFormData);
+        console.log('🖼️ [WIZARD] primaryImageUrl from sessionStorage:', importedFormData.primaryImageUrl);
+        console.log('🖼️ [WIZARD] images from sessionStorage:', importedFormData.images);
+        console.log('🖼️ [WIZARD] First image isPrimary:', importedFormData.images?.[0]?.isPrimary);
         
         // Clear the sessionStorage data so it doesn't get re-applied
         sessionStorage.removeItem('smartUploadData');

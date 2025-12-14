@@ -169,6 +169,7 @@ export async function PUT(
     if (body.apparelMaterial !== undefined) updateData.apparel_material = body.apparelMaterial;
     if (body.conditionRating !== undefined) updateData.condition_rating = body.conditionRating;
     if (body.conditionDetails !== undefined) updateData.condition_details = body.conditionDetails;
+    if (body.sellerNotes !== undefined) updateData.seller_notes = body.sellerNotes;
     if (body.wearNotes !== undefined) updateData.wear_notes = body.wearNotes;
     if (body.usageEstimate !== undefined) updateData.usage_estimate = body.usageEstimate;
     if (body.purchaseLocation !== undefined) updateData.purchase_location = body.purchaseLocation;

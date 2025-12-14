@@ -40,7 +40,7 @@ interface SmartUploadModalProps {
 export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadModalProps) {
   const [stage, setStage] = React.useState<FlowStage>("upload");
   const [activeTab, setActiveTab] = React.useState<UploadTab>("computer");
-  const [photos, setPhotos] = React.useState<{ file: File; preview: string }[]>([]);
+  const [photos, setPhotos] = React.useState<{ id: string; file: File; preview: string }[]>([]);
   const [uploadedUrls, setUploadedUrls] = React.useState<string[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = React.useState({ current: 0, total: 0 });
@@ -80,12 +80,16 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
     }
   }, [isOpen]);
 
-  // Cleanup preview URLs on unmount
+  // Track blob URLs for cleanup on unmount only
+  const blobUrlsRef = React.useRef<Set<string>>(new Set());
+  
+  // Cleanup preview URLs on unmount only
   React.useEffect(() => {
     return () => {
-      photos.forEach(p => URL.revokeObjectURL(p.preview));
+      blobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+      blobUrlsRef.current.clear();
     };
-  }, [photos]);
+  }, []); // Empty deps - only run cleanup on unmount
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -99,25 +103,34 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   };
 
   const addPhotos = (files: File[]) => {
-    const newPhotos = files.slice(0, 10 - photos.length).map(file => ({
-      file,
-      preview: URL.createObjectURL(file),
-    }));
+    const newPhotos = files.slice(0, 10 - photos.length).map(file => {
+      const preview = URL.createObjectURL(file);
+      blobUrlsRef.current.add(preview); // Track for cleanup
+      return {
+        id: crypto.randomUUID(), // Unique ID for stable React keys
+        file,
+        preview,
+      };
+    });
     setPhotos(prev => [...prev, ...newPhotos]);
   };
 
   const removePhoto = (index: number) => {
     setPhotos(prev => {
-      URL.revokeObjectURL(prev[index].preview);
+      const url = prev[index].preview;
+      URL.revokeObjectURL(url);
+      blobUrlsRef.current.delete(url); // Remove from tracking
       return prev.filter((_, i) => i !== index);
     });
   };
 
   const setPrimaryPhoto = (index: number) => {
     if (index === 0) return; // Already primary
+    console.log('🖼️ [SMART UPLOAD MODAL] Setting primary photo to index:', index);
     setPhotos(prev => {
       const newPhotos = [...prev];
       const [primaryPhoto] = newPhotos.splice(index, 1);
+      console.log('🖼️ [SMART UPLOAD MODAL] Reordered photos - new first photo:', primaryPhoto.file.name);
       return [primaryPhoto, ...newPhotos];
     });
   };
@@ -137,6 +150,9 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   const handleAnalyze = async () => {
     if (photos.length === 0) return;
 
+    console.log('🚀 [SMART UPLOAD] handleAnalyze called');
+    console.log('🖼️ [SMART UPLOAD] Photos at start of handleAnalyze:', photos.map((p, i) => `${i}: ${p.file.name} (id: ${p.id})`));
+    
     setError(null);
 
     try {
@@ -154,6 +170,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       setUploadProgress({ current: 0, total: photos.length });
       
       console.log('🗜️ [SMART UPLOAD] Compressing', photos.length, 'photos...');
+      console.log('🖼️ [SMART UPLOAD] Photos order for compression:', photos.map((p, i) => `${i}: ${p.file.name}`));
       
       const compressedFiles: File[] = [];
       for (let i = 0; i < photos.length; i++) {
@@ -215,6 +232,8 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
             
             const result = await response.json();
             console.log(`✅ [SMART UPLOAD] Image ${globalIndex + 1} uploaded to Cloudinary`);
+            console.log(`🖼️ [SMART UPLOAD] Image ${globalIndex}: url=${result.data.url?.substring(0, 80)}...`);
+            console.log(`🖼️ [SMART UPLOAD] Image ${globalIndex}: cardUrl=${result.data.cardUrl?.substring(0, 80)}...`);
             return {
               url: result.data.url,
               cardUrl: result.data.cardUrl,
@@ -226,10 +245,13 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         );
         
         uploadedImages.push(...batchResults);
+        console.log(`🖼️ [SMART UPLOAD] Batch complete. uploadedImages order:`, uploadedImages.map((img, idx) => `${idx}: ${img.cardUrl?.substring(70, 100)}`));
         setUploadProgress({ current: Math.min(i + UPLOAD_CONCURRENCY, compressedFiles.length), total: compressedFiles.length });
       }
 
       console.log('✅ [SMART UPLOAD] All photos uploaded to Cloudinary');
+      console.log('🖼️ [SMART UPLOAD] Final uploadedImages[0] cardUrl:', uploadedImages[0]?.cardUrl);
+      console.log('🖼️ [SMART UPLOAD] Final uploadedImages[1] cardUrl:', uploadedImages[1]?.cardUrl);
       const urls = uploadedImages.map(img => img.url);
       setUploadedUrls(urls);
       await runAiAnalysis(urls, uploadedImages);
@@ -295,6 +317,11 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       // Generate title from brand + model
       const generatedTitle = [analysis.brand, analysis.model].filter(Boolean).join(' ');
       
+      console.log('📝 [SMART UPLOAD MODAL] analysis.description:', analysis.description);
+      console.log('📝 [SMART UPLOAD MODAL] analysis.description LENGTH:', analysis.description?.length);
+      console.log('📝 [SMART UPLOAD MODAL] analysis.seller_notes:', analysis.seller_notes);
+      console.log('📝 [SMART UPLOAD MODAL] analysis.condition_details:', analysis.condition_details);
+      
       const formData: any = {
         itemType: analysis.item_type,
         title: generatedTitle || undefined,
@@ -302,7 +329,12 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         model: analysis.model,
         modelYear: analysis.model_year,
         conditionRating: analysis.condition_rating,
-        conditionDetails: analysis.condition_details,
+        // description is the product description (from web search or fallback)
+        description: analysis.description,
+        // sellerNotes is the seller's personal notes about condition
+        sellerNotes: analysis.seller_notes,
+        // Keep conditionDetails for backwards compat (use description)
+        conditionDetails: analysis.description,
         wearNotes: analysis.wear_notes,
         usageEstimate: analysis.usage_estimate,
         price: analysis.price_estimate 
@@ -400,6 +432,9 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       }
 
       // Add images to form data with variants (for instant loading)
+      console.log('🖼️ [SMART UPLOAD MODAL] uploadedImages:', uploadedImages);
+      console.log('🖼️ [SMART UPLOAD MODAL] urls:', urls);
+      
       formData.images = urls.map((url, index) => ({
         id: `ai-${index}`,
         url,
@@ -409,8 +444,15 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         isPrimary: index === 0,
       }));
       
+      console.log('🖼️ [SMART UPLOAD MODAL] formData.images with cardUrls:', formData.images?.map((img: any, i: number) => ({
+        index: i,
+        isPrimary: img.isPrimary,
+        cardUrl: img.cardUrl?.substring(70, 110),
+      })));
+      
       // Set the primary image URL explicitly (use cardUrl for faster loading)
       formData.primaryImageUrl = uploadedImages?.[0]?.cardUrl || urls[0];
+      console.log('🖼️ [SMART UPLOAD MODAL] primaryImageUrl set to:', formData.primaryImageUrl);
 
       console.log('🎯 [SMART UPLOAD MODAL] Final formData being sent:', formData);
       console.log('🎯 [SMART UPLOAD MODAL] Final formData bike fields:', {
@@ -420,6 +462,9 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         groupset: formData.groupset,
         wheelSize: formData.wheelSize,
       });
+      console.log('🖼️ [SMART UPLOAD MODAL] primaryImageUrl:', formData.primaryImageUrl);
+      console.log('🖼️ [SMART UPLOAD MODAL] images array:', formData.images);
+      console.log('🖼️ [SMART UPLOAD MODAL] First image URL:', formData.images?.[0]?.url);
 
       setStage("success");
 
@@ -487,13 +532,6 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     {/* Header */}
                     <div className="px-5 pb-3 flex-shrink-0">
                       <div className="flex items-center gap-2">
-                        <div className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center">
-                          <img 
-                            src="/icons/noun-fast-4767027.svg" 
-                            alt="Quick Upload" 
-                            className="w-5 h-5"
-                          />
-                        </div>
                         <div>
                           <h2 className="text-lg font-semibold text-gray-900">Quick Upload</h2>
                           <p className="text-xs text-gray-500">AI will detect product details</p>
@@ -587,7 +625,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                           <div className="grid grid-cols-3 gap-2">
                             {photos.map((photo, index) => (
                               <button
-                                key={index}
+                                key={photo.id}
                                 onClick={() => setPrimaryPhoto(index)}
                                 className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 active:scale-95 transition-transform"
                               >
@@ -849,7 +887,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                         <div className="grid grid-cols-5 gap-1.5">
                           {photos.map((photo, index) => (
                             <button
-                              key={index}
+                              key={photo.id}
                               onClick={() => setPrimaryPhoto(index)}
                               className="relative aspect-square rounded-md overflow-hidden border border-gray-200 group hover:scale-105 transition-transform"
                             >

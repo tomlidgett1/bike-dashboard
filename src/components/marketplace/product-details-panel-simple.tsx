@@ -287,6 +287,16 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                 </button>
               </div>
 
+              {/* Seller Notes */}
+              {(product as any).seller_notes && (
+                <div className="pt-3 border-t border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Seller Notes</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                    {(product as any).seller_notes}
+                  </p>
+                </div>
+              )}
+
               {/* Location */}
               {(product as any).pickup_location && (
                 <div className="pt-3 border-t border-gray-100">

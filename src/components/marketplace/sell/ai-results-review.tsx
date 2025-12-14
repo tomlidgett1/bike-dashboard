@@ -21,7 +21,7 @@ import { CONDITION_RATINGS } from "@/lib/types/listing";
 interface AIResultsReviewProps {
   analysis: ListingAnalysisResult;
   photos: string[];
-  onContinue: (editedData: any) => void;
+  onContinue: (editedData: any, primaryImageIndex: number) => void;
   onReanalyze: () => void;
   onSwitchToManual: () => void;
 }
@@ -37,6 +37,13 @@ export function AIResultsReview({
   const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
   const [showDetails, setShowDetails] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
+
+  // Debug logging
+  React.useEffect(() => {
+    console.log('📝 [AI RESULTS REVIEW] Analysis received:', analysis);
+    console.log('📝 [AI RESULTS REVIEW] Description:', analysis?.description);
+    console.log('📝 [AI RESULTS REVIEW] Seller notes:', analysis?.seller_notes);
+  }, [analysis]);
 
   // Detect if on mobile
   React.useEffect(() => {
@@ -266,15 +273,27 @@ export function AIResultsReview({
             </Select>
           </div>
 
-          {/* Description */}
+          {/* Description - Product description */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
             <Textarea
-              value={getFieldValue('condition_details')}
-              onChange={(e) => updateField('condition_details', e.target.value)}
+              value={getFieldValue('description')}
+              onChange={(e) => updateField('description', e.target.value)}
               className="rounded-xl resize-none text-base"
               rows={3}
-              placeholder="Describe your product..."
+              placeholder="Product description - features, specs, what it is..."
+            />
+          </div>
+
+          {/* Notes - Seller's personal notes */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
+            <Textarea
+              value={getFieldValue('seller_notes')}
+              onChange={(e) => updateField('seller_notes', e.target.value)}
+              className="rounded-xl resize-none text-base"
+              rows={2}
+              placeholder="Your notes - condition, wear, why selling..."
             />
           </div>
 
@@ -449,7 +468,7 @@ export function AIResultsReview({
               <RefreshCw className="h-5 w-5" />
             </Button>
             <Button
-              onClick={() => onContinue(editedData)}
+              onClick={() => onContinue(editedData, primaryImageIndex)}
               className="flex-1 rounded-xl h-12 bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold"
             >
               Continue to Listing
@@ -597,9 +616,22 @@ export function AIResultsReview({
         </div>
       )}
 
-      {/* Condition Assessment */}
+      {/* Product Description */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-        <h3 className="text-base font-semibold text-gray-900">Condition Assessment</h3>
+        <h3 className="text-base font-semibold text-gray-900">Product Description</h3>
+        <InlineEditField
+          label="Description"
+          value={getFieldValue('description')}
+          confidence={getConfidence('condition')}
+          onSave={(v) => updateField('description', v)}
+          multiline
+        />
+      </div>
+
+      {/* Seller Notes */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <h3 className="text-base font-semibold text-gray-900">Notes</h3>
+        <p className="text-xs text-gray-500 -mt-2">Your personal notes about condition, wear, why you're selling, etc.</p>
         <div className="space-y-4">
           <div>
             <label className="text-sm font-semibold text-gray-900 mb-2 block">
@@ -612,22 +644,12 @@ export function AIResultsReview({
           </div>
           
           <InlineEditField
-            label="Condition Details"
-            value={getFieldValue('condition_details')}
+            label="Seller Notes"
+            value={getFieldValue('seller_notes')}
             confidence={getConfidence('condition')}
-            onSave={(v) => updateField('condition_details', v)}
+            onSave={(v) => updateField('seller_notes', v)}
             multiline
           />
-
-          {editedData.wear_notes && (
-            <InlineEditField
-              label="Wear Notes"
-              value={getFieldValue('wear_notes')}
-              confidence={getConfidence('condition')}
-              onSave={(v) => updateField('wear_notes', v)}
-              multiline
-            />
-          )}
 
           {editedData.visible_issues && editedData.visible_issues.length > 0 && (
             <div className="bg-yellow-50 rounded-md p-4 border border-yellow-200">
@@ -669,7 +691,7 @@ export function AIResultsReview({
       {/* Actions */}
       <div className="flex flex-col md:flex-row gap-3">
         <Button
-          onClick={() => onContinue(editedData)}
+          onClick={() => onContinue(editedData, primaryImageIndex)}
           className="flex-1 bg-gray-900 hover:bg-gray-800 text-white rounded-md h-11"
         >
           Continue to Listing

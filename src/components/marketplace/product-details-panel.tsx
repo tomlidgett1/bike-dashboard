@@ -136,6 +136,16 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
               </p>
             </div>
           )}
+
+          {/* Seller Notes */}
+          {(product as any).seller_notes && (
+            <div className="pt-4 border-t border-gray-100">
+              <h4 className="text-sm font-semibold text-gray-900 mb-2">Seller Notes</h4>
+              <p className="text-base text-gray-700 leading-relaxed whitespace-pre-wrap">
+                {(product as any).seller_notes}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* ===== PRIMARY ACTIONS ===== */}

@@ -765,69 +765,6 @@ export function MarketplaceHeader({
                   </nav>
                 </div>
 
-                {/* Sell Section */}
-                <div className="px-4 py-3 border-t border-gray-100">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Sell</p>
-                  <nav className="space-y-1">
-                    <MobileNavItem
-                      icon={Sparkles}
-                      label="Quick Upload"
-                      subtitle="AI-powered analysis"
-                      onClick={() => {
-                        setMobileMenuOpen(false);
-                        if (user) {
-                          setSmartUploadModalOpen(true);
-                        } else {
-                          setSellRequirementModalOpen(true);
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => {
-                        setMobileMenuOpen(false);
-                        if (user) {
-                          setFacebookModalOpen(true);
-                        } else {
-                          setSellRequirementModalOpen(true);
-                        }
-                      }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left hover:bg-gray-100 transition-colors"
-                    >
-                      <Image src="/facebook.png" alt="Facebook" width={20} height={20} className="flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900">Facebook Import</p>
-                        <p className="text-xs text-gray-500">Import from Facebook</p>
-                      </div>
-                    </button>
-                    <MobileNavItem
-                      icon={Upload}
-                      label="Bulk Upload"
-                      subtitle="Upload multiple products"
-                      onClick={() => {
-                        setMobileMenuOpen(false);
-                        if (user) {
-                          router.push('/marketplace/sell?mode=bulk');
-                        } else {
-                          setSellRequirementModalOpen(true);
-                        }
-                      }}
-                    />
-                    <MobileNavItem
-                      icon={FileText}
-                      label="Standard Upload"
-                      subtitle="Manual form entry"
-                      onClick={() => {
-                        setMobileMenuOpen(false);
-                        if (user) {
-                          router.push('/marketplace/sell?mode=manual');
-                        } else {
-                          setSellRequirementModalOpen(true);
-                        }
-                      }}
-                    />
-                  </nav>
-                </div>
-
                 {/* User Section (if logged in) */}
                 {mounted && user && (
                   <div className="px-4 py-3 border-t border-gray-100">

@@ -91,3 +91,5 @@ COMMENT ON COLUMN public.lightspeed_category_sync_preferences.is_enabled IS 'Whe
 
 
 
+
+

@@ -156,7 +156,10 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
           aiData: analysis,
           formData: {
             title: generatedTitle,
-            description: analysis?.condition_details || '',
+            // description is the product description (from web search)
+            description: analysis?.description || '',
+            // sellerNotes is seller's notes about condition
+            sellerNotes: analysis?.seller_notes || '',
             brand: analysis?.brand || '',
             model: analysis?.model || '',
             modelYear: analysis?.model_year || '',
@@ -176,7 +179,7 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
             genderFit: apparelDetails.gender_fit || '',
             apparelMaterial: apparelDetails.apparel_material || '',
             conditionRating: analysis?.condition_rating || 'Good',
-            conditionDetails: analysis?.condition_details || '',
+            conditionDetails: analysis?.description || '',
             wearNotes: analysis?.wear_notes || '',
             usageEstimate: analysis?.usage_estimate || '',
             price: priceEstimate.min_aud ? Math.round((priceEstimate.min_aud + priceEstimate.max_aud) / 2) : 0,

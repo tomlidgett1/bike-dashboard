@@ -252,7 +252,9 @@ export type ListingAnalysisResult = {
     features?: string;
   };
   condition_rating: string;
-  condition_details: string;
+  condition_details?: string;
+  description?: string; // Product description (from web search)
+  seller_notes?: string; // Seller's personal notes about condition, wear, etc.
   wear_notes?: string;
   usage_estimate?: string;
   visible_issues?: string[];

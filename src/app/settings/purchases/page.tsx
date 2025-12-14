@@ -663,18 +663,32 @@ function MobileDraftCard({
   draft,
   onContinue,
   onDelete,
+  isSelected,
+  onToggleSelect,
 }: {
   draft: Draft;
   onContinue: () => void;
   onDelete: () => void;
+  isSelected: boolean;
+  onToggleSelect: () => void;
 }) {
   const imageUrl = draft.form_data?.images?.[0]?.url || draft.form_data?.primaryImage;
   const title = draft.draft_name || draft.form_data?.title || 'Untitled Draft';
   const progress = Math.round((draft.current_step / 5) * 100);
 
   return (
-    <div className="bg-card rounded-md border border-border p-3">
+    <div className={cn(
+      "bg-card rounded-md border p-3 transition-colors",
+      isSelected ? "border-primary bg-primary/5" : "border-border"
+    )}>
       <div className="flex gap-3">
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={onToggleSelect}
+          aria-label={`Select ${title}`}
+          className="mt-1"
+        />
+        
         <div className="relative h-14 w-14 rounded-md overflow-hidden bg-muted flex-shrink-0">
           {imageUrl ? (
             <Image src={imageUrl} alt={title} fill className="object-cover" sizes="56px" />
@@ -1560,11 +1574,17 @@ function DesktopDraftsTable({
   onContinue,
   onDelete,
   loading,
+  selectedDraftIds,
+  onToggleSelect,
+  onToggleSelectAll,
 }: {
   drafts: Draft[];
   onContinue: (id: string) => void;
   onDelete: (id: string) => void;
   loading: boolean;
+  selectedDraftIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onToggleSelectAll: () => void;
 }) {
   if (loading) {
     return (
@@ -1586,10 +1606,21 @@ function DesktopDraftsTable({
     );
   }
 
+  const allSelected = drafts.length > 0 && drafts.every(draft => selectedDraftIds.has(draft.id));
+  const someSelected = drafts.some(draft => selectedDraftIds.has(draft.id)) && !allSelected;
+
   return (
     <Table>
       <TableHeader>
         <TableRow>
+          <TableHead className="w-12">
+            <Checkbox
+              checked={allSelected}
+              onCheckedChange={onToggleSelectAll}
+              aria-label="Select all drafts"
+              className={cn(someSelected && "data-[state=unchecked]:bg-muted")}
+            />
+          </TableHead>
           <TableHead>Draft</TableHead>
           <TableHead>Progress</TableHead>
           <TableHead>Last Edited</TableHead>
@@ -1601,9 +1632,17 @@ function DesktopDraftsTable({
           const title = draft.draft_name || draft.form_data?.title || 'Untitled Draft';
           const progress = Math.round((draft.current_step / 5) * 100);
           const imageUrl = draft.form_data?.images?.[0]?.url;
+          const isSelected = selectedDraftIds.has(draft.id);
 
           return (
             <TableRow key={draft.id}>
+              <TableCell>
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => onToggleSelect(draft.id)}
+                  aria-label={`Select ${title}`}
+                />
+              </TableCell>
               <TableCell>
                 <div className="flex items-center gap-3">
                   <div className="relative h-10 w-10 rounded-md overflow-hidden bg-muted">
@@ -1697,6 +1736,9 @@ export default function OrderManagementPage() {
   const [buyingOrders, setBuyingOrders] = React.useState<Purchase[]>([]);
   const [sellingOrders, setSellingOrders] = React.useState<Purchase[]>([]);
 
+  // Draft selection state
+  const [selectedDraftIds, setSelectedDraftIds] = React.useState<Set<string>>(new Set());
+
   // Fetch orders
   const fetchOrders = React.useCallback(async () => {
     setOrdersLoading(true);
@@ -1755,6 +1797,13 @@ export default function OrderManagementPage() {
       const res = await fetch('/api/marketplace/drafts');
       const data = await res.json();
       setDrafts(data.drafts || []);
+      // Clear selection when refetching to avoid stale selections
+      setSelectedDraftIds(prev => {
+        const newDrafts = data.drafts || [];
+        const validIds = new Set(newDrafts.map((d: Draft) => d.id));
+        const filtered = new Set(Array.from(prev).filter(id => validIds.has(id)));
+        return filtered;
+      });
     } catch (e) {
       console.error(e);
     } finally {
@@ -1907,8 +1956,56 @@ export default function OrderManagementPage() {
     try {
       await fetch(`/api/marketplace/drafts/${id}`, { method: 'DELETE' });
       fetchDrafts();
+      // Remove from selection if it was selected
+      setSelectedDraftIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleToggleSelectDraft = (id: string) => {
+    setSelectedDraftIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const handleToggleSelectAllDrafts = () => {
+    if (selectedDraftIds.size === drafts.length) {
+      // All selected, deselect all
+      setSelectedDraftIds(new Set());
+    } else {
+      // Select all
+      setSelectedDraftIds(new Set(drafts.map(d => d.id)));
+    }
+  };
+
+  const handleBulkDeleteDrafts = async () => {
+    const count = selectedDraftIds.size;
+    if (count === 0) return;
+    
+    if (!confirm(`Delete ${count} draft${count > 1 ? 's' : ''}?`)) return;
+    
+    try {
+      await Promise.all(
+        Array.from(selectedDraftIds).map(id =>
+          fetch(`/api/marketplace/drafts/${id}`, { method: 'DELETE' })
+        )
+      );
+      setSelectedDraftIds(new Set());
+      fetchDrafts();
+    } catch (e) {
+      console.error(e);
+      alert('Failed to delete some drafts');
     }
   };
 
@@ -2416,15 +2513,41 @@ export default function OrderManagementPage() {
                 <TabsContent value="drafts">
                   <div className="bg-card rounded-md border">
                     <div className="p-4 border-b flex gap-3 items-center justify-between">
-                      <p className="text-sm text-muted-foreground">
-                        {drafts.length} draft{drafts.length !== 1 ? 's' : ''}
-                      </p>
+                      <div className="flex items-center gap-3">
+                        <p className="text-sm text-muted-foreground">
+                          {drafts.length} draft{drafts.length !== 1 ? 's' : ''}
+                        </p>
+                        {selectedDraftIds.size > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-foreground">
+                              {selectedDraftIds.size} selected
+                            </span>
+                            <Button 
+                              size="sm" 
+                              variant="destructive" 
+                              onClick={handleBulkDeleteDrafts}
+                              className="h-8"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                              Delete Selected
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                       <Button variant="outline" size="icon" onClick={fetchDrafts}>
                         <RefreshCw className={cn("h-4 w-4", draftsLoading && "animate-spin")} />
                       </Button>
                     </div>
 
-                    <DesktopDraftsTable drafts={drafts} onContinue={handleContinueDraft} onDelete={handleDeleteDraft} loading={draftsLoading} />
+                    <DesktopDraftsTable 
+                      drafts={drafts} 
+                      onContinue={handleContinueDraft} 
+                      onDelete={handleDeleteDraft} 
+                      loading={draftsLoading}
+                      selectedDraftIds={selectedDraftIds}
+                      onToggleSelect={handleToggleSelectDraft}
+                      onToggleSelectAll={handleToggleSelectAllDrafts}
+                    />
                   </div>
                 </TabsContent>
               </Tabs>
@@ -2655,7 +2778,36 @@ export default function OrderManagementPage() {
 
               {/* Mobile Drafts */}
               {activeTab === 'drafts' && (
-                <div className="space-y-2">
+                <div className="space-y-3">
+                  {/* Mobile Selection Actions */}
+                  {drafts.length > 0 && !draftsLoading && (
+                    <div className="bg-white rounded-md border border-border p-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={drafts.length > 0 && drafts.every(draft => selectedDraftIds.has(draft.id))}
+                          onCheckedChange={handleToggleSelectAllDrafts}
+                          aria-label="Select all drafts"
+                        />
+                        <span className="text-sm font-medium">
+                          {selectedDraftIds.size > 0 
+                            ? `${selectedDraftIds.size} selected` 
+                            : 'Select all'}
+                        </span>
+                      </div>
+                      {selectedDraftIds.size > 0 && (
+                        <Button 
+                          size="sm" 
+                          variant="destructive" 
+                          onClick={handleBulkDeleteDrafts}
+                          className="h-8"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                          Delete ({selectedDraftIds.size})
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
                   {draftsLoading ? (
                     <div className="flex justify-center py-12">
                       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -2667,14 +2819,18 @@ export default function OrderManagementPage() {
                       <p className="text-sm text-muted-foreground mt-1">Incomplete listings will appear here</p>
                     </div>
                   ) : (
-                    drafts.map((draft) => (
-                      <MobileDraftCard
-                        key={draft.id}
-                        draft={draft}
-                        onContinue={() => handleContinueDraft(draft.id)}
-                        onDelete={() => handleDeleteDraft(draft.id)}
-                      />
-                    ))
+                    <div className="space-y-2">
+                      {drafts.map((draft) => (
+                        <MobileDraftCard
+                          key={draft.id}
+                          draft={draft}
+                          onContinue={() => handleContinueDraft(draft.id)}
+                          onDelete={() => handleDeleteDraft(draft.id)}
+                          isSelected={selectedDraftIds.has(draft.id)}
+                          onToggleSelect={() => handleToggleSelectDraft(draft.id)}
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
               )}

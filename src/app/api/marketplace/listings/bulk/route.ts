@@ -75,6 +75,7 @@ async function createSingleListing(
       // Condition
       condition_rating: listing.conditionRating,
       condition_details: listing.conditionDetails,
+      seller_notes: listing.sellerNotes,
       wear_notes: listing.wearNotes,
       usage_estimate: listing.usageEstimate,
       purchase_location: listing.purchaseLocation,

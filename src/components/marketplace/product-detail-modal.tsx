@@ -243,6 +243,16 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                             </p>
                           </div>
                         )}
+
+                        {/* Seller Notes */}
+                        {(product as any).seller_notes && (
+                          <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                            <h4 className="text-xs font-semibold text-gray-600 mb-1.5">Seller Notes</h4>
+                            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                              {(product as any).seller_notes}
+                            </p>
+                          </div>
+                        )}
                         
                         <div className="flex items-baseline gap-2">
                           <p className="text-3xl lg:text-4xl font-black text-gray-900">

@@ -90,6 +90,24 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const productAny = product as any;
     
+    // DEBUG: Log product data for troubleshooting
+    if (productAny.listing_type === 'private_listing') {
+      console.log(`🖼️ [ProductCard ${product.id?.substring(0, 8)}] listing_type:`, productAny.listing_type);
+      console.log(`🖼️ [ProductCard ${product.id?.substring(0, 8)}] images array length:`, productAny.images?.length);
+      if (productAny.images?.[0]) {
+        console.log(`🖼️ [ProductCard ${product.id?.substring(0, 8)}] First image:`, {
+          isPrimary: productAny.images[0].isPrimary,
+          cardUrl: productAny.images[0].cardUrl?.substring(0, 60) + '...',
+        });
+        const primaryImg = productAny.images.find((img: any) => img.isPrimary);
+        if (primaryImg) {
+          console.log(`🖼️ [ProductCard ${product.id?.substring(0, 8)}] Primary image found:`, {
+            cardUrl: primaryImg.cardUrl?.substring(0, 60) + '...',
+          });
+        }
+      }
+    }
+    
     // Priority 1: Cloudinary card_url directly on product (canonical products)
     if (productAny.card_url) {
       return productAny.card_url;

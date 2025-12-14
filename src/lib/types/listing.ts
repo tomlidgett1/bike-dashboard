@@ -84,6 +84,7 @@ export interface ListingFormData {
   // Condition & History
   conditionRating?: ConditionRating;
   conditionDetails?: string;
+  sellerNotes?: string; // Seller's personal notes about condition, wear, why selling
   wearNotes?: string;
   usageEstimate?: string;
   purchaseLocation?: string;
@@ -254,6 +255,7 @@ export interface ListingProduct {
   // Condition
   condition_rating?: ConditionRating;
   condition_details?: string;
+  seller_notes?: string; // Seller's personal notes about condition, wear, why selling
   wear_notes?: string;
   usage_estimate?: string;
   purchase_location?: string;

@@ -78,7 +78,7 @@ const LISTING_SCHEMA = {
   
   // Condition (written naturally for customers)
   condition_rating: "string (New/Like New/Excellent/Good/Fair/Well Used)",
-  condition_details: "string - natural, conversational description of THIS specific item's condition",
+  condition_details: "string - natural, conversational description",
   wear_notes: "string - honest but casual tone",
   usage_estimate: "string",
   
@@ -333,60 +333,6 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
     console.log('✅ [AI EDGE FUNCTION] Detected:', analysis.item_type, '-', analysis.brand, analysis.model);
 
     // ============================================================
-    // Convert flat bike/part/apparel fields to nested structure
-    // (OpenAI returns flat fields, frontend expects nested objects)
-    // ============================================================
-    
-    if (analysis.item_type === 'bike') {
-      analysis.bike_details = {
-        bike_type: analysis.bike_type,
-        frame_size: analysis.frame_size,
-        frame_material: analysis.frame_material,
-        groupset: analysis.groupset,
-        wheel_size: analysis.wheel_size,
-        suspension_type: analysis.suspension_type,
-        color_primary: analysis.color_primary,
-        color_secondary: analysis.color_secondary,
-        approximate_weight: analysis.approximate_weight,
-      };
-      console.log('✅ [AI EDGE FUNCTION] Created bike_details:', analysis.bike_details);
-    } else if (analysis.item_type === 'part') {
-      analysis.part_details = {
-        category: analysis.part_category,
-        part_type: analysis.part_type,
-        compatibility: analysis.compatibility,
-        material: analysis.material,
-        weight: analysis.weight,
-      };
-      console.log('✅ [AI EDGE FUNCTION] Created part_details:', analysis.part_details);
-    } else if (analysis.item_type === 'apparel') {
-      analysis.apparel_details = {
-        category: analysis.apparel_category,
-        size: analysis.size,
-        gender_fit: analysis.gender_fit,
-        material: analysis.apparel_material,
-      };
-      console.log('✅ [AI EDGE FUNCTION] Created apparel_details:', analysis.apparel_details);
-    }
-    
-    // Create price_estimate object from flat fields
-    if (analysis.price_min_aud || analysis.price_max_aud) {
-      analysis.price_estimate = {
-        min_aud: analysis.price_min_aud,
-        max_aud: analysis.price_max_aud,
-        reasoning: analysis.price_reasoning,
-      };
-    }
-    
-    // Create field_confidence object
-    analysis.field_confidence = {
-      brand: analysis.brand_confidence,
-      model: analysis.model_confidence,
-      condition: analysis.condition_confidence,
-      overall: analysis.overall_confidence,
-    };
-
-    // ============================================================
     // Phase 2: Web Search Enrichment (NEW)
     // ============================================================
     let webEnrichment = null;
@@ -396,34 +342,23 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
       try {
         console.log('🔍 [AI EDGE FUNCTION] Starting web search enrichment...');
         
-        const searchPrompt = `Search for "${analysis.brand} ${analysis.model}" cycling product (${analysis.item_type}). Find comprehensive information and write a detailed, natural product description.
+        const searchPrompt = `Search for "${analysis.brand} ${analysis.model}" cycling product (${analysis.item_type}). Find comprehensive product information including:
 
-SEARCH FOR:
-1. Official product pages from manufacturer or authorised retailers
-2. Technical specifications and features
-3. Product reviews and expert opinions
-4. Current Australian market pricing (BikeExchange, 99Bikes, Pushys, etc.)
-5. Model year and variants
-6. Compatibility and fitment details
+1. Official product description from manufacturer or retailer websites
+2. Technical specifications:
+   ${analysis.item_type === 'bike' ? '- Frame material, size, groupset, wheel size, suspension type' : ''}
+   ${analysis.item_type === 'part' ? '- Compatibility, material, weight, dimensions' : ''}
+   ${analysis.item_type === 'apparel' ? '- Size, material, gender fit, features' : ''}
+3. Product category classification (be specific - e.g., "Mountain > Trail" or "Drivetrain > Rear Derailleur")
+4. Current Australian market pricing from retailers (BikeExchange, 99Bikes, Pushys, etc.)
+5. Model year identification if possible
+6. Any compatibility or fitment information
 
-WRITE A PRODUCT DESCRIPTION that:
-- Sounds natural and engaging (like a real person wrote it, not corporate marketing)
-- Includes key features and specifications in a conversational way
-- Highlights what makes this product special or unique
-- Mentions typical use cases or who it's suited for
-- Uses Australian English spelling
-- Is 2-3 paragraphs (comprehensive but not overly long)
-- Focuses on the PRODUCT ITSELF (not the specific used item's condition - we'll add that separately)
-
-Example good description:
-"The Specialized Tarmac SL7 is a high-performance road bike that's built for speed and efficiency. It features a lightweight FACT 10r carbon frame with Rider-First Engineered technology, ensuring optimal stiffness and responsiveness across all frame sizes. The geometry is race-focused but refined for all-day comfort on long rides.
-
-This model comes equipped with Shimano Ultegra R8000 groupset, offering precise 11-speed shifting and powerful hydraulic disc brakes. The DT Swiss wheels and 28mm tyres strike a great balance between aerodynamics and comfort. It's an excellent choice for serious road cyclists who want a bike that can handle everything from training rides to competitive events."
+Focus on cycling-specific sources. Prioritise Australian retailers for pricing.
 
 Return ONLY valid JSON (no markdown):
 {
-  "product_description": "2-3 paragraph natural description as shown above...",
-  "key_features": ["Feature 1", "Feature 2", "Feature 3"],
+  "product_description": "Detailed product description...",
   "technical_specs": {
     "frame_material": "Carbon",
     "groupset": "Shimano 105"
@@ -438,7 +373,7 @@ Return ONLY valid JSON (no markdown):
     "max_aud": 3000,
     "sources": ["BikeExchange", "99Bikes"]
   },
-  "typical_use_case": "Road racing, endurance riding",
+  "compatibility_info": "Compatible with...",
   "model_year_confirmed": "2021",
   "sources_consulted": [
     {"url": "https://...", "type": "manufacturer", "relevance": 95}
@@ -494,16 +429,14 @@ Return ONLY valid JSON (no markdown):
                 const parsed = JSON.parse(jsonMatch[jsonMatch.length === 2 ? 1 : 0]);
                 webEnrichment = {
                   product_description: parsed.product_description,
-                  key_features: parsed.key_features,
                   technical_specs: parsed.technical_specs,
                   category_classification: parsed.category_classification,
                   market_pricing: parsed.market_pricing,
-                  typical_use_case: parsed.typical_use_case,
+                  compatibility_info: parsed.compatibility_info,
                   model_year_confirmed: parsed.model_year_confirmed,
                 };
                 searchUrls = parsed.sources_consulted || [];
                 console.log('✅ [AI EDGE FUNCTION] Web enrichment parsed successfully');
-                console.log('✅ [AI EDGE FUNCTION] Product description length:', webEnrichment.product_description?.length);
               }
             } catch (parseError) {
               console.error('⚠️ [AI EDGE FUNCTION] Failed to parse web enrichment:', parseError);
@@ -525,20 +458,13 @@ Return ONLY valid JSON (no markdown):
     const dataSources: Record<string, "image" | "web" | "both"> = {};
     
     if (webEnrichment) {
-      // Add product description from web search (separate from condition details)
+      // Merge product description (prefer web for comprehensive description)
       if (webEnrichment.product_description) {
-        mergedAnalysis.description = webEnrichment.product_description;
-        dataSources.description = 'web';
-        console.log('✅ [AI EDGE FUNCTION] Added product description from web search');
+        mergedAnalysis.condition_details = `${webEnrichment.product_description}\n\nCondition: ${analysis.condition_details}`;
+        dataSources.description = 'both';
       }
       
-      // Add key features if available
-      if (webEnrichment.key_features && webEnrichment.key_features.length > 0) {
-        mergedAnalysis.key_features = webEnrichment.key_features;
-        dataSources.features = 'web';
-      }
-      
-      // Merge technical specs (web data enhances image analysis)
+      // Merge technical specs
       if (webEnrichment.technical_specs) {
         if (analysis.bike_details) {
           mergedAnalysis.bike_details = {
@@ -555,12 +481,12 @@ Return ONLY valid JSON (no markdown):
         }
       }
       
-      // Use web pricing if available (usually more accurate than image-based estimates)
+      // Use web pricing if more reliable (higher confidence)
       if (webEnrichment.market_pricing && webEnrichment.market_pricing.min_aud) {
         mergedAnalysis.price_estimate = {
           min_aud: webEnrichment.market_pricing.min_aud,
           max_aud: webEnrichment.market_pricing.max_aud || webEnrichment.market_pricing.min_aud * 1.2,
-          reasoning: `Australian market pricing from ${webEnrichment.market_pricing.sources?.join(', ') || 'retailers'}`,
+          reasoning: `Market pricing from ${webEnrichment.market_pricing.sources?.join(', ') || 'web search'}`,
         };
         dataSources.pricing = 'web';
       }
@@ -571,12 +497,6 @@ Return ONLY valid JSON (no markdown):
         dataSources.model_year = 'web';
       }
       
-      // Add typical use case if available
-      if (webEnrichment.typical_use_case) {
-        mergedAnalysis.typical_use_case = webEnrichment.typical_use_case;
-        dataSources.use_case = 'web';
-      }
-      
       // Add web enrichment data
       mergedAnalysis.web_enrichment = webEnrichment;
       mergedAnalysis.search_urls = searchUrls;
@@ -584,32 +504,32 @@ Return ONLY valid JSON (no markdown):
       
       // Build structured metadata for database
       mergedAnalysis.structured_metadata = {
-        confidence: mergedAnalysis.field_confidence,
+        confidence: analysis.field_confidence,
       };
       
-      if (mergedAnalysis.item_type === 'bike' && mergedAnalysis.bike_details) {
+      if (analysis.item_type === 'bike' && analysis.bike_details) {
         mergedAnalysis.structured_metadata.bike = {
-          frame_size: mergedAnalysis.bike_details.frame_size,
-          frame_material: mergedAnalysis.bike_details.frame_material,
-          bike_type: mergedAnalysis.bike_details.bike_type,
-          groupset: mergedAnalysis.bike_details.groupset,
-          wheel_size: mergedAnalysis.bike_details.wheel_size,
-          suspension_type: mergedAnalysis.bike_details.suspension_type,
-          color_primary: mergedAnalysis.bike_details.color_primary,
-          color_secondary: mergedAnalysis.bike_details.color_secondary,
+          frame_size: analysis.bike_details.frame_size,
+          frame_material: analysis.bike_details.frame_material,
+          bike_type: analysis.bike_details.bike_type,
+          groupset: analysis.bike_details.groupset,
+          wheel_size: analysis.bike_details.wheel_size,
+          suspension_type: analysis.bike_details.suspension_type,
+          color_primary: analysis.bike_details.color_primary,
+          color_secondary: analysis.bike_details.color_secondary,
         };
-      } else if (mergedAnalysis.item_type === 'part' && mergedAnalysis.part_details) {
+      } else if (analysis.item_type === 'part' && analysis.part_details) {
         mergedAnalysis.structured_metadata.part = {
-          part_type_detail: mergedAnalysis.part_details.part_type,
-          compatibility_notes: mergedAnalysis.part_details.compatibility,
-          material: mergedAnalysis.part_details.material,
-          weight: mergedAnalysis.part_details.weight,
+          part_type_detail: analysis.part_details.part_type,
+          compatibility_notes: analysis.part_details.compatibility,
+          material: analysis.part_details.material,
+          weight: analysis.part_details.weight,
         };
-      } else if (mergedAnalysis.item_type === 'apparel' && mergedAnalysis.apparel_details) {
+      } else if (analysis.item_type === 'apparel' && analysis.apparel_details) {
         mergedAnalysis.structured_metadata.apparel = {
-          size: mergedAnalysis.apparel_details.size,
-          gender_fit: mergedAnalysis.apparel_details.gender_fit,
-          apparel_material: mergedAnalysis.apparel_details.material,
+          size: analysis.apparel_details.size,
+          gender_fit: analysis.apparel_details.gender_fit,
+          apparel_material: analysis.apparel_details.material,
         };
       }
       

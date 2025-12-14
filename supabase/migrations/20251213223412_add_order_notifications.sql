@@ -260,3 +260,5 @@ CREATE INDEX IF NOT EXISTS idx_notifications_order_unread
 -- Enable realtime on notifications table for instant updates
 ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
 
+
+

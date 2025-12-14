@@ -146,3 +146,5 @@ CREATE TRIGGER update_canonical_products_updated_at
 
 
 
+
+

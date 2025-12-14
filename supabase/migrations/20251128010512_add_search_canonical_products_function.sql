@@ -54,3 +54,5 @@ COMMENT ON FUNCTION search_canonical_products_by_name IS 'Searches canonical pro
 
 
 
+
+

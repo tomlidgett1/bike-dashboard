@@ -36,7 +36,10 @@ export function BulkProductCard({
   const [formData, setFormData] = React.useState({
     itemType: aiData?.item_type || 'bike',
     title: suggestedName || '',
-    description: aiData?.condition_details || '',
+    // description is the product description (from web search)
+    description: aiData?.description || '',
+    // sellerNotes is seller's notes about condition
+    sellerNotes: aiData?.seller_notes || '',
     brand: aiData?.brand || '',
     model: aiData?.model || '',
     modelYear: aiData?.model_year || '',
@@ -52,7 +55,7 @@ export function BulkProductCard({
     size: aiData?.size || '',
     genderFit: aiData?.gender_fit || '',
     conditionRating: (aiData?.condition_rating || 'Good') as ConditionRating,
-    conditionDetails: aiData?.condition_details || '',
+    conditionDetails: aiData?.description || '',
     wearNotes: aiData?.wear_notes || '',
     usageEstimate: aiData?.usage_estimate || '',
     price: aiData?.price_min_aud || 0,

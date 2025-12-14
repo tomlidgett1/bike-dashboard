@@ -78,10 +78,11 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       console.log('✅ [SMART UPLOAD] Analysis received:', result);
       console.log('🔍 [SMART UPLOAD] Item type:', result.analysis?.item_type);
       console.log('🔍 [SMART UPLOAD] Bike details:', result.analysis?.bike_details);
+      console.log('📝 [SMART UPLOAD] DESCRIPTION:', result.analysis?.description);
+      console.log('📝 [SMART UPLOAD] DESCRIPTION LENGTH:', result.analysis?.description?.length);
+      console.log('📝 [SMART UPLOAD] SELLER NOTES:', result.analysis?.seller_notes);
       console.log('🔍 [SMART UPLOAD] Web enrichment data:', result.analysis?.web_enrichment);
-      console.log('🔍 [SMART UPLOAD] Search URLs:', result.analysis?.search_urls);
       console.log('🔍 [SMART UPLOAD] Data sources:', result.analysis?.data_sources);
-      console.log('🔍 [SMART UPLOAD] Structured metadata:', result.analysis?.structured_metadata);
 
       setAnalysis(result.analysis);
       setStage("review");
@@ -99,8 +100,19 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
     setError(null);
   };
 
-  const handleContinue = (editedAnalysis: ListingAnalysisResult) => {
+  const handleContinue = (editedAnalysis: ListingAnalysisResult, primaryImageIndex: number = 0) => {
     console.log('🎯 [SMART UPLOAD] Continue clicked, analysis:', editedAnalysis);
+    console.log('🎯 [SMART UPLOAD] Primary image index:', primaryImageIndex);
+    console.log('📝 [SMART UPLOAD] editedAnalysis.description:', editedAnalysis.description);
+    console.log('📝 [SMART UPLOAD] editedAnalysis.seller_notes:', editedAnalysis.seller_notes);
+    console.log('📝 [SMART UPLOAD] editedAnalysis.condition_details:', (editedAnalysis as any).condition_details);
+    
+    // Reorder photos so primary is first
+    const reorderedPhotos = [...photos];
+    if (primaryImageIndex > 0 && primaryImageIndex < reorderedPhotos.length) {
+      const [primaryPhoto] = reorderedPhotos.splice(primaryImageIndex, 1);
+      reorderedPhotos.unshift(primaryPhoto);
+    }
     
     // Helper function to clean AI-generated text
     const cleanAiText = (text: string | undefined | null): string | undefined => {
@@ -137,7 +149,12 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       model: editedAnalysis.model,
       modelYear: editedAnalysis.model_year,
       conditionRating: editedAnalysis.condition_rating as any,
-      conditionDetails: editedAnalysis.condition_details,
+      // description is the product description (from web search or fallback)
+      description: editedAnalysis.description,
+      // conditionDetails also gets the description (for database storage)
+      conditionDetails: editedAnalysis.description,
+      // sellerNotes is the seller's personal notes about condition, wear, etc.
+      sellerNotes: editedAnalysis.seller_notes,
       wearNotes: editedAnalysis.wear_notes,
       usageEstimate: editedAnalysis.usage_estimate,
       price: editedAnalysis.price_estimate 
@@ -197,19 +214,20 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       formData.fieldConfidence = editedAnalysis.field_confidence;
     }
 
-    // Add images to formData
-    formData.images = photos.map((url, index) => ({
+    // Add images to formData using reordered photos (primary is now first)
+    formData.images = reorderedPhotos.map((url, index) => ({
       id: `ai-${index}`,
       url,
       order: index,
       isPrimary: index === 0,
     }));
-    formData.primaryImageUrl = photos[0];
+    formData.primaryImageUrl = reorderedPhotos[0];
 
     console.log('🎯 [SMART UPLOAD] Mapped form data:', formData);
     console.log('🎯 [SMART UPLOAD] Images:', formData.images);
+    console.log('🎯 [SMART UPLOAD] Primary image URL:', formData.primaryImageUrl);
     
-    onComplete(formData, photos);
+    onComplete(formData, reorderedPhotos);
   };
 
   return (

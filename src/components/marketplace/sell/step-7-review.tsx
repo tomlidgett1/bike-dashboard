@@ -115,11 +115,19 @@ export function Step7Review({
             )}
           </div>
 
-          {/* Condition Details */}
+          {/* Description */}
           {data.conditionDetails && (
             <div className="space-y-2">
-              <h4 className="font-semibold text-gray-900">Condition</h4>
+              <h4 className="font-semibold text-gray-900">Description</h4>
               <p className="text-gray-700 text-sm leading-relaxed">{data.conditionDetails}</p>
+            </div>
+          )}
+
+          {/* Seller Notes */}
+          {data.sellerNotes && (
+            <div className="space-y-2">
+              <h4 className="font-semibold text-gray-900">Notes</h4>
+              <p className="text-gray-700 text-sm leading-relaxed">{data.sellerNotes}</p>
             </div>
           )}
         </div>
