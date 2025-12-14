@@ -120,7 +120,7 @@ export function HelpTicketPreview({ className, maxTickets = 3 }: HelpTicketPrevi
         </h3>
         <button
           onClick={() => router.push("/settings/purchases?tab=tickets")}
-          className="text-xs text-gray-600 hover:text-gray-900 font-medium flex items-center gap-0.5"
+          className="text-xs text-gray-600 hover:text-gray-900 font-medium flex items-center gap-0.5 cursor-pointer"
         >
           View All
           <ChevronRight className="h-3.5 w-3.5" />

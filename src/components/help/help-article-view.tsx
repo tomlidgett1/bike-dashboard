@@ -131,7 +131,7 @@ export function HelpArticleView({
       <div className="mb-6">
         <button
           onClick={handleBack}
-          className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 mb-4"
+          className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 mb-4 cursor-pointer"
         >
           <ArrowLeft className="h-4 w-4" />
           {category ? category.title : "Back to Help Centre"}

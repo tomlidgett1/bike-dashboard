@@ -25,7 +25,7 @@ export default function HelpArticlePage() {
             <p className="text-gray-500 mb-4">The article you're looking for doesn't exist.</p>
             <button
               onClick={() => router.push("/marketplace/help")}
-              className="text-gray-700 hover:text-gray-900 font-medium"
+              className="text-gray-700 hover:text-gray-900 font-medium cursor-pointer"
             >
               ← Back to Help Centre
             </button>
@@ -54,7 +54,7 @@ export default function HelpArticlePage() {
                   router.push("/marketplace/help");
                 }
               }}
-              className="flex items-center gap-1 text-gray-600"
+              className="flex items-center gap-1 text-gray-600 cursor-pointer"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />

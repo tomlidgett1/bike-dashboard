@@ -57,7 +57,7 @@ export function HelpContactCard({ className, compact }: HelpContactCardProps) {
             </p>
             <button
               onClick={handleEmailClick}
-              className="text-sm text-gray-700 hover:text-gray-900 font-medium flex items-center gap-1"
+              className="text-sm text-gray-700 hover:text-gray-900 font-medium flex items-center gap-1 cursor-pointer"
             >
               support@yellowjersey.com.au
               <ExternalLink className="h-3 w-3" />

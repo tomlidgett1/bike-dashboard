@@ -50,7 +50,7 @@ export function HelpArticleList({
           <button
             key={article.id}
             onClick={() => handleClick(article)}
-            className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
+            className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer"
           >
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900">{article.title}</p>

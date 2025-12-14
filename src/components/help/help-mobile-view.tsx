@@ -3,9 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, FileText, ExternalLink } from "lucide-react";
+import { ChevronLeft, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
 import { HelpSearch } from "./help-search";
 import { HelpQuickActions } from "./help-quick-actions";
 import { HelpCategoryList } from "./help-category-list";
@@ -91,7 +90,7 @@ export function HelpMobileView({ initialCategory, initialArticle }: HelpMobileVi
           <button
             type="button"
             onClick={handleBack}
-            className="flex items-center gap-1 text-gray-600 -ml-2 p-2 rounded-md hover:bg-gray-100 active:bg-gray-200 transition-colors"
+            className="flex items-center gap-1 text-gray-600 -ml-2 p-2 rounded-md hover:bg-gray-100 active:bg-gray-200 transition-colors cursor-pointer"
           >
             <ChevronLeft className="h-5 w-5" />
             <span className="text-sm font-medium">
@@ -223,7 +222,7 @@ export function HelpMobileView({ initialCategory, initialArticle }: HelpMobileVi
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowContactSheet(false)}
-              className="fixed inset-0 bg-black/50 z-50"
+              className="fixed inset-0 bg-black/50 z-50 cursor-pointer"
             />
             {/* Sheet */}
             <motion.div

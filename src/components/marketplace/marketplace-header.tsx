@@ -824,6 +824,7 @@ export function MarketplaceHeader({
                       icon={HelpCircle}
                       label="Help & Support"
                       onClick={() => {
+                        router.push('/marketplace/help');
                         setMobileMenuOpen(false);
                       }}
                     />

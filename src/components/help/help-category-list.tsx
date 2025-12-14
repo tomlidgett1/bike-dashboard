@@ -61,7 +61,7 @@ export function HelpCategoryList({
               key={category.id}
               onClick={() => handleClick(category)}
               className={cn(
-                "p-5 bg-white rounded-md border text-left transition-all group",
+                "p-5 bg-white rounded-md border text-left transition-all group cursor-pointer",
                 isSelected
                   ? "border-gray-900 ring-1 ring-gray-900"
                   : "border-gray-200 hover:border-gray-300 hover:shadow-sm"
@@ -104,7 +104,7 @@ export function HelpCategoryList({
             key={category.id}
             onClick={() => handleClick(category)}
             className={cn(
-              "w-full flex items-center gap-4 p-4 text-left transition-colors",
+              "w-full flex items-center gap-4 p-4 text-left transition-colors cursor-pointer",
               isSelected
                 ? "bg-gray-50"
                 : "hover:bg-gray-50 active:bg-gray-100"

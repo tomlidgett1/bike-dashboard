@@ -102,7 +102,7 @@ export function HelpSearch({ onResultClick, className, autoFocus }: HelpSearchPr
         {query && (
           <button
             onClick={clearSearch}
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-md transition-colors"
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-md transition-colors cursor-pointer"
           >
             {isSearching ? (
               <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
@@ -128,7 +128,7 @@ export function HelpSearch({ onResultClick, className, autoFocus }: HelpSearchPr
                 <button
                   key={result.id}
                   onClick={() => handleResultClick(result)}
-                  className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-start gap-3"
+                  className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-start gap-3 cursor-pointer"
                 >
                   <div className="flex-shrink-0 mt-0.5">
                     <FileText className="h-4 w-4 text-gray-400" />

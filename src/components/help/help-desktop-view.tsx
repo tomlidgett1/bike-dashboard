@@ -1,10 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { HelpSearch } from "./help-search";
 import { HelpCategoryList } from "./help-category-list";
 import { HelpArticleList } from "./help-article-list";
@@ -12,10 +11,8 @@ import { HelpArticleView } from "./help-article-view";
 import { HelpContactCard } from "./help-contact-card";
 import { HelpTicketPreview } from "./help-ticket-preview";
 import { HelpQuickActions } from "./help-quick-actions";
-import type { HelpCategory, HelpArticle } from "@/lib/constants/help-content";
 import {
   HELP_CATEGORIES,
-  HELP_ARTICLES,
   getArticlesByCategory,
   getCategoryBySlug,
   getArticleBySlug,
@@ -102,7 +99,7 @@ export function HelpDesktopView({ categorySlug, articleSlug }: HelpDesktopViewPr
           <motion.div variants={itemVariants} className="mb-6">
             <button
               onClick={() => router.push("/marketplace/help")}
-              className="text-sm text-gray-600 hover:text-gray-900 mb-2"
+              className="text-sm text-gray-600 hover:text-gray-900 mb-2 cursor-pointer"
             >
               ← Back to Help Centre
             </button>
@@ -171,7 +168,7 @@ export function HelpDesktopView({ categorySlug, articleSlug }: HelpDesktopViewPr
                     <button
                       key={article.id}
                       onClick={() => router.push(`/marketplace/help/article/${article.slug}`)}
-                      className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 transition-colors"
+                      className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 transition-colors cursor-pointer"
                     >
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900">{article.title}</p>
