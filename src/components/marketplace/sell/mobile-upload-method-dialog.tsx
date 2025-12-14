@@ -35,16 +35,16 @@ export function MobileUploadMethodDialog({
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent 
         side="bottom" 
-        className="rounded-t-2xl p-0 overflow-hidden"
+        className="rounded-t-2xl p-0 overflow-hidden gap-0"
         showCloseButton={false}
       >
         {/* Handle Bar */}
-        <div className="flex justify-center pt-3 pb-2">
+        <div className="flex justify-center pt-3 pb-1">
           <div className="w-10 h-1 bg-gray-300 rounded-full" />
         </div>
         
         {/* Header */}
-        <div className="px-5 pb-4">
+        <div className="px-5 pb-3">
           <h2 className="text-xl font-semibold text-gray-900">
             List Your Item
           </h2>

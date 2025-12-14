@@ -508,9 +508,9 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ 
-                type: "spring",
-                damping: 30,
-                stiffness: 400,
+                type: "tween",
+                duration: 0.3,
+                ease: [0.32, 0.72, 0, 1],
               }}
               className="fixed bottom-0 left-0 right-0 z-[101] bg-white rounded-t-2xl max-h-[90vh] overflow-hidden flex flex-col"
             >
