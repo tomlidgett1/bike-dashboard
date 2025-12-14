@@ -336,7 +336,7 @@ export function MarketplaceHeader({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="absolute top-0 left-0 right-0 h-1 bg-[#FFC72C] overflow-hidden z-50"
+              className="absolute top-0 left-0 right-0 h-1 bg-[#FFC72C] overflow-hidden"
             >
               {/* Animated shimmer effect */}
               <motion.div
@@ -652,7 +652,7 @@ export function MarketplaceHeader({
       {/* Mobile Space Navigator removed - now integrated into UnifiedFilterBar */}
 
       {/* Mobile Floating List Item Button - Only shown on homepage and product pages */}
-      {showFloatingButton && mounted && (
+      {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && (
         <div className="sm:hidden fixed bottom-6 left-4 right-4 z-50">
           <Button
             onClick={() => {

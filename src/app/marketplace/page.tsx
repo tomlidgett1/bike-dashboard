@@ -743,19 +743,15 @@ function MarketplacePageContent() {
 
   return (
     <>
-      {/* Main header - hidden on mobile when sticky filters show */}
-      <div className={cn(
-        showStickyFilters ? "hidden sm:block" : "block"
-      )}>
-        <MarketplaceHeader 
-          compactSearchOnMobile 
-          showFloatingButton 
-          showSpaceNavigator
-          currentSpace={currentSpace}
-          onSpaceChange={setSpace}
-          isNavigating={isNavigating}
-        />
-      </div>
+      {/* Main header - always rendered so modals remain accessible */}
+      <MarketplaceHeader 
+        compactSearchOnMobile 
+        showFloatingButton 
+        showSpaceNavigator
+        currentSpace={currentSpace}
+        onSpaceChange={setSpace}
+        isNavigating={isNavigating}
+      />
 
       {/* Sticky Filter Header - Mobile Only, Marketplace space only (appears when category pills scroll out) */}
       <AnimatePresence>
@@ -765,7 +761,7 @@ function MarketplacePageContent() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -80, opacity: 0 }}
             transition={{ duration: 0.25, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className="sm:hidden fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-md"
+            className="sm:hidden fixed top-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-md"
           >
             {/* Navigation Loading Bar */}
             <AnimatePresence>
@@ -775,7 +771,7 @@ function MarketplacePageContent() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute top-0 left-0 right-0 h-1 bg-[#FFC72C] overflow-hidden z-50"
+                  className="absolute top-0 left-0 right-0 h-1 bg-[#FFC72C] overflow-hidden"
                 >
                   {/* Animated shimmer effect */}
                   <motion.div
