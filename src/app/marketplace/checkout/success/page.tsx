@@ -6,16 +6,14 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  Check, 
   Package, 
   Loader2, 
-  ShoppingBag, 
-  Mail, 
-  ChevronRight,
+  ArrowRight,
   Store,
   Copy,
-  CheckCircle2,
-  Calendar
+  Check,
+  Sparkles,
+  Receipt
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
@@ -29,16 +27,16 @@ import { cn } from "@/lib/utils";
 function Confetti() {
   const confettiPieces = React.useMemo(() => {
     const pieces = [];
-    const colors = ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899'];
+    const colors = ['#E5E7EB', '#D1D5DB', '#9CA3AF', '#6B7280', '#374151'];
     
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 40; i++) {
       pieces.push({
         id: i,
         x: Math.random() * 100,
-        delay: Math.random() * 0.5,
-        duration: 2.5 + Math.random() * 2,
+        delay: Math.random() * 0.3,
+        duration: 3 + Math.random() * 2,
         color: colors[Math.floor(Math.random() * colors.length)],
-        size: 6 + Math.random() * 8,
+        size: 4 + Math.random() * 6,
         rotation: Math.random() * 360,
       });
     }
@@ -54,12 +52,12 @@ function Confetti() {
             x: `${piece.x}vw`, 
             y: -20,
             rotate: 0,
-            opacity: 1 
+            opacity: 0.8 
           }}
           animate={{ 
             y: '110vh',
             rotate: piece.rotation + 720,
-            opacity: [1, 1, 0]
+            opacity: [0.8, 0.6, 0]
           }}
           transition={{
             duration: piece.duration,
@@ -80,95 +78,54 @@ function Confetti() {
 }
 
 // ============================================================
-// Success Checkmark Animation
-// ============================================================
-
-function SuccessCheckmark() {
-  return (
-    <motion.div
-      initial={{ scale: 0 }}
-      animate={{ scale: 1 }}
-      transition={{ 
-        type: "spring", 
-        stiffness: 200, 
-        damping: 15,
-        delay: 0.2 
-      }}
-      className="relative"
-    >
-      {/* Subtle glow */}
-      <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ delay: 0.3, duration: 0.4 }}
-        className="absolute inset-0 rounded-full bg-emerald-500/20 blur-xl"
-        style={{ width: 100, height: 100, margin: -10 }}
-      />
-      
-      {/* Main circle */}
-      <div className="relative h-20 w-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-        <motion.div
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ delay: 0.5, duration: 0.4 }}
-        >
-          <Check className="h-10 w-10 text-white" strokeWidth={3} />
-        </motion.div>
-      </div>
-    </motion.div>
-  );
-}
-
-// ============================================================
 // Timeline Step Component
 // ============================================================
 
 interface TimelineStepProps {
-  icon: React.ReactNode;
+  step: number;
   title: string;
   description: string;
   isComplete?: boolean;
   isActive?: boolean;
   delay: number;
+  isLast?: boolean;
 }
 
-function TimelineStep({ icon, title, description, isComplete, isActive, delay }: TimelineStepProps) {
+function TimelineStep({ step, title, description, isComplete, isActive, delay, isLast }: TimelineStepProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.4 }}
-      className="flex items-start gap-4"
+      className="flex items-start gap-3"
     >
-      <div className={cn(
-        "flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center",
-        isComplete 
-          ? "bg-emerald-100 text-emerald-600" 
-          : isActive 
-            ? "bg-blue-100 text-blue-600" 
-            : "bg-gray-100 text-gray-400"
-      )}>
-        {icon}
+      <div className="flex flex-col items-center">
+        <div className={cn(
+          "flex-shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-xs font-medium",
+          isComplete 
+            ? "bg-gray-900 text-white" 
+            : isActive 
+              ? "bg-gray-200 text-gray-700 ring-2 ring-gray-300 ring-offset-2" 
+              : "bg-gray-100 text-gray-400"
+        )}>
+          {isComplete ? <Check className="h-3.5 w-3.5" /> : step}
+        </div>
+        {!isLast && (
+          <div className={cn(
+            "w-px h-8 mt-1.5",
+            isComplete ? "bg-gray-300" : "bg-gray-200"
+          )} />
+        )}
       </div>
-      <div className="flex-1 pt-1">
+      <div className="flex-1 pb-6">
         <p className={cn(
-          "font-medium",
-          isComplete ? "text-emerald-700" : isActive ? "text-gray-900" : "text-gray-500"
+          "text-sm font-medium",
+          isComplete || isActive ? "text-gray-900" : "text-gray-500"
         )}>
           {title}
         </p>
-        <p className="text-sm text-gray-500 mt-0.5">{description}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{description}</p>
       </div>
-      {isComplete && (
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ delay: delay + 0.2, type: "spring", stiffness: 300 }}
-          className="flex-shrink-0"
-        >
-          <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-        </motion.div>
-      )}
     </motion.div>
   );
 }
@@ -177,22 +134,33 @@ function TimelineStep({ icon, title, description, isComplete, isActive, delay }:
 // Purchase Details Interface
 // ============================================================
 
+interface ProductDetails {
+  id: string;
+  description: string;
+  display_name: string | null;
+  primary_image_url: string | null;
+}
+
+interface SellerDetails {
+  name: string;
+  business_name: string | null;
+}
+
 interface PurchaseDetails {
   id: string;
   order_number: string;
   total_amount: number;
   item_price: number;
   shipping_cost: number;
-  product: {
-    id: string;
-    description: string;
-    display_name: string | null;
-    primary_image_url: string | null;
-  };
-  seller: {
-    name: string;
-    business_name: string | null;
-  };
+  product: ProductDetails | ProductDetails[] | null;
+  seller: SellerDetails | SellerDetails[] | null;
+}
+
+// Helper to extract first item from array or return object
+function extractFirst<T>(data: T | T[] | null | undefined): T | null {
+  if (!data) return null;
+  if (Array.isArray(data)) return data[0] || null;
+  return data;
 }
 
 // ============================================================
@@ -219,7 +187,7 @@ export default function CheckoutSuccessPage() {
 
     const fetchPurchase = async () => {
       try {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
         const response = await fetch(`/api/stripe/session/${sessionId}`);
         
@@ -246,8 +214,13 @@ export default function CheckoutSuccessPage() {
     }
   };
 
-  const productName = purchase?.product?.display_name || purchase?.product?.description || "Your item";
-  const sellerName = purchase?.seller?.business_name || purchase?.seller?.name || "Seller";
+  // Extract product and seller (handle both array and object from Supabase)
+  const product = extractFirst(purchase?.product);
+  const seller = extractFirst(purchase?.seller);
+  
+  const productName = product?.display_name || product?.description || "Your item";
+  const productImage = product?.primary_image_url;
+  const sellerName = seller?.business_name || seller?.name || "Seller";
 
   return (
     <>
@@ -258,37 +231,44 @@ export default function CheckoutSuccessPage() {
         {showConfetti && <Confetti />}
       </AnimatePresence>
 
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 via-white to-gray-50 pt-16 sm:pt-20 pb-24">
+      <div className="min-h-screen bg-white">
         
         {/* Loading State */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center min-h-[70vh]">
+          <div className="flex flex-col items-center justify-center min-h-[80vh] px-4">
             <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="mb-6"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="flex flex-col items-center"
             >
-              <Loader2 className="h-10 w-10 text-emerald-500" />
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+                className="mb-8"
+              >
+                <Loader2 className="h-8 w-8 text-gray-400" />
+              </motion.div>
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="text-base text-gray-900 font-medium"
+              >
+                Confirming your purchase
+              </motion.p>
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+                className="text-sm text-gray-500 mt-1.5"
+              >
+                This will only take a moment...
+              </motion.p>
             </motion.div>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-lg text-gray-600 font-medium"
-            >
-              Confirming your purchase...
-            </motion.p>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-              className="text-sm text-gray-400 mt-2"
-            >
-              This will only take a moment
-            </motion.p>
           </div>
         ) : error ? (
-          <div className="max-w-md mx-auto px-4 pt-20">
-            <div className="bg-white rounded-md border border-gray-200 p-8 text-center shadow-sm">
+          <div className="flex flex-col items-center justify-center min-h-[80vh] px-4">
+            <div className="bg-white rounded-md border border-gray-200 p-8 text-center max-w-sm">
               <p className="text-gray-600 mb-4">{error}</p>
               <Button onClick={() => router.push("/marketplace")} className="rounded-md">
                 Back to Marketplace
@@ -296,164 +276,178 @@ export default function CheckoutSuccessPage() {
             </div>
           </div>
         ) : (
-          <div className="max-w-2xl mx-auto px-4">
+          <div className="max-w-lg mx-auto px-4 pt-8 sm:pt-12 pb-24">
             
-            {/* Success Header */}
+            {/* Success Badge & Header */}
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
-              className="text-center mb-10 pt-6"
+              className="text-center mb-8"
             >
-              <SuccessCheckmark />
+              {/* Success Badge */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.1, duration: 0.4 }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-full mb-5"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-gray-600" />
+                <span className="text-xs font-medium text-gray-700">Purchase Complete</span>
+              </motion.div>
               
               <motion.h1
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4, duration: 0.4 }}
-                className="text-3xl sm:text-4xl font-bold text-gray-900 mt-8 mb-3"
+                transition={{ delay: 0.2, duration: 0.4 }}
+                className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2"
               >
-                You've got a new ride!
+                It's yours!
               </motion.h1>
               
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.5 }}
-                className="text-lg text-gray-500"
+                transition={{ delay: 0.3 }}
+                className="text-gray-500 text-sm sm:text-base"
               >
-                Your order has been confirmed and is on its way
+                We've notified the seller about your purchase
               </motion.p>
             </motion.div>
 
-            {/* Product Showcase Card */}
+            {/* Product Hero Card */}
             {purchase && (
               <motion.div
-                initial={{ opacity: 0, y: 30 }}
+                initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3, duration: 0.5 }}
-                className="bg-white rounded-md border border-gray-200 shadow-sm overflow-hidden mb-6"
+                transition={{ delay: 0.25, duration: 0.5 }}
+                className="bg-white rounded-md border border-gray-200 overflow-hidden mb-4"
               >
-                {/* Product Image - Large and Prominent */}
-                <div className="relative aspect-[16/10] bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
-                  {purchase.product?.primary_image_url ? (
+                {/* Product Image */}
+                <div className="relative aspect-[4/3] bg-gray-50 overflow-hidden">
+                  {productImage ? (
                     <Image
-                      src={purchase.product.primary_image_url}
+                      src={productImage}
                       alt={productName}
                       fill
-                      className="object-contain p-4"
+                      className="object-cover"
                       priority
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
-                      <Package className="h-20 w-20 text-gray-300" />
+                      <Package className="h-16 w-16 text-gray-300" />
                     </div>
                   )}
-                  
-                  {/* Subtle gradient overlay at bottom */}
-                  <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-white/60 to-transparent" />
                 </div>
 
-                {/* Product Details */}
-                <div className="p-6">
-                  {/* Product Name */}
-                  <h2 className="text-xl font-semibold text-gray-900 mb-2 line-clamp-2">
+                {/* Product Info */}
+                <div className="p-5">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-1.5 line-clamp-2">
                     {productName}
                   </h2>
                   
-                  {/* Seller Info */}
-                  <div className="flex items-center gap-2 text-gray-500 mb-6">
-                    <Store className="h-4 w-4" />
-                    <span className="text-sm">Sold by <span className="font-medium text-gray-700">{sellerName}</span></span>
-                  </div>
-
-                  {/* Order Number */}
-                  <div className="bg-gray-50 rounded-md p-4 mb-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-1">
-                          Order Number
-                        </p>
-                        <p className="text-lg font-mono font-bold text-gray-900">
-                          {purchase.order_number}
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={copyOrderNumber}
-                        className="rounded-md gap-2"
-                      >
-                        {copied ? (
-                          <>
-                            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-4 w-4" />
-                            Copy
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Price Summary */}
-                  <div className="border-t border-gray-100 pt-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Item Price</span>
-                        <span className="text-gray-700">${purchase.item_price.toFixed(2)}</span>
-                      </div>
-                      {purchase.shipping_cost > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Shipping</span>
-                          <span className="text-gray-700">${purchase.shipping_cost.toFixed(2)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-lg font-semibold pt-3 border-t border-gray-100">
-                        <span className="text-gray-900">Total Paid</span>
-                        <span className="text-emerald-600">${purchase.total_amount.toFixed(2)}</span>
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-1.5 text-gray-500 text-sm">
+                    <Store className="h-3.5 w-3.5" />
+                    <span>{sellerName}</span>
                   </div>
                 </div>
               </motion.div>
             )}
 
-            {/* What's Next Timeline */}
+            {/* Order Details Card */}
+            {purchase && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.35, duration: 0.5 }}
+                className="bg-white rounded-md border border-gray-200 p-5 mb-4"
+              >
+                {/* Order Number Row */}
+                <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-md bg-gray-100 flex items-center justify-center">
+                      <Receipt className="h-4 w-4 text-gray-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Order number</p>
+                      <p className="text-sm font-mono font-medium text-gray-900">
+                        {purchase.order_number}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={copyOrderNumber}
+                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Price Breakdown */}
+                <div className="pt-4 space-y-2.5">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Item price</span>
+                    <span className="text-gray-900">${purchase.item_price.toFixed(2)}</span>
+                  </div>
+                  {purchase.shipping_cost > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Shipping</span>
+                      <span className="text-gray-900">${purchase.shipping_cost.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-2.5 border-t border-gray-100">
+                    <span className="text-sm font-medium text-gray-900">Total paid</span>
+                    <span className="text-base font-semibold text-gray-900">
+                      ${purchase.total_amount.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* What's Next Card */}
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5, duration: 0.5 }}
-              className="bg-white rounded-md border border-gray-200 shadow-sm p-6 mb-6"
+              transition={{ delay: 0.45, duration: 0.5 }}
+              className="bg-white rounded-md border border-gray-200 p-5 mb-6"
             >
-              <h3 className="text-lg font-semibold text-gray-900 mb-6">What happens next?</h3>
+              <h3 className="text-sm font-medium text-gray-900 mb-4">What happens next</h3>
               
-              <div className="space-y-6">
+              <div>
                 <TimelineStep
-                  icon={<Check className="h-5 w-5" />}
-                  title="Order Confirmed"
-                  description="Your payment was successful"
+                  step={1}
+                  title="Payment confirmed"
+                  description="Your payment was processed successfully"
+                  isComplete
+                  delay={0.5}
+                />
+                
+                <TimelineStep
+                  step={2}
+                  title="Seller notified"
+                  description="They've received your order details"
                   isComplete
                   delay={0.6}
                 />
                 
                 <TimelineStep
-                  icon={<Mail className="h-5 w-5" />}
-                  title="Seller Notified"
-                  description="They've received your order details"
-                  isComplete
-                  delay={0.7}
-                />
-                
-                <TimelineStep
-                  icon={<Calendar className="h-5 w-5" />}
-                  title="Arrange Collection"
-                  description="The seller will be in touch to arrange shipping or pickup"
+                  step={3}
+                  title="Arrange collection or shipping"
+                  description="The seller will contact you to arrange delivery"
                   isActive
-                  delay={0.8}
+                  delay={0.7}
+                  isLast
                 />
               </div>
             </motion.div>
@@ -462,52 +456,47 @@ export default function CheckoutSuccessPage() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.7, duration: 0.4 }}
-              className="flex flex-col sm:flex-row gap-3"
+              transition={{ delay: 0.6, duration: 0.4 }}
+              className="space-y-3"
             >
               <Button
                 onClick={() => router.push("/settings/purchases")}
-                className="flex-1 h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white gap-2"
+                className="w-full h-11 rounded-md bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium"
               >
-                <ShoppingBag className="h-5 w-5" />
-                View My Purchases
-                <ChevronRight className="h-4 w-4 ml-auto" />
+                View my purchases
+                <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
               
               <Button
                 variant="outline"
                 onClick={() => router.push("/marketplace")}
-                className="flex-1 h-12 rounded-md gap-2"
+                className="w-full h-11 rounded-md text-sm font-medium"
               >
-                Continue Shopping
+                Continue browsing
               </Button>
             </motion.div>
 
-            {/* Footer Note */}
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.9 }}
-              className="text-center text-sm text-gray-400 mt-8"
-            >
-              A confirmation email has been sent to your registered email address
-            </motion.p>
-
-            {/* Stripe Branding */}
+            {/* Footer */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 1 }}
-              className="flex items-center justify-center gap-2 mt-6"
+              transition={{ delay: 0.8 }}
+              className="mt-10 text-center space-y-4"
             >
-              <span className="text-xs text-gray-400">Payment secured by</span>
-              <Image
-                src="/stripe.svg"
-                alt="Stripe"
-                width={40}
-                height={17}
-                className="opacity-40"
-              />
+              <p className="text-xs text-gray-400">
+                A confirmation email has been sent to your email address
+              </p>
+              
+              <div className="flex items-center justify-center gap-1.5">
+                <span className="text-xs text-gray-400">Secured by</span>
+                <Image
+                  src="/stripe.svg"
+                  alt="Stripe"
+                  width={36}
+                  height={15}
+                  className="opacity-50"
+                />
+              </div>
             </motion.div>
           </div>
         )}

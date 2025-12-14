@@ -29,6 +29,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+} from "@/components/ui/sheet";
 import { FacebookImportModal } from "./sell/facebook-import-modal";
 import { SmartUploadModal } from "./sell/smart-upload-modal";
 import { MobileUploadMethodDialog } from "./sell/mobile-upload-method-dialog";
@@ -654,27 +658,13 @@ export function MarketplaceHeader({
         </div>
       )}
 
-      {/* Mobile Slide-out Menu - Rendered outside header for proper positioning */}
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 bg-black/50 z-[100] lg:hidden"
-              onClick={() => setMobileMenuOpen(false)}
-            />
-            {/* Slide-out Panel */}
-            <motion.div
-              initial={{ x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
-              transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-              className="fixed top-0 left-0 bottom-0 w-[300px] bg-white z-[101] lg:hidden flex flex-col shadow-2xl"
-            >
+      {/* Mobile Slide-out Menu - Uses hardware-accelerated Sheet */}
+      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <SheetContent 
+          side="left" 
+          className="w-[300px] p-0 flex flex-col gap-0 lg:hidden"
+          showCloseButton={false}
+        >
               {/* Header */}
               <div className="flex items-center justify-between pl-0 pr-4 h-16 border-b border-gray-200 flex-shrink-0">
                 <Image 
@@ -867,10 +857,8 @@ export function MarketplaceHeader({
                   </Button>
                 )}
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+        </SheetContent>
+      </Sheet>
 
       {/* Sell Item Requirement Modal */}
       <Dialog open={sellRequirementModalOpen} onOpenChange={setSellRequirementModalOpen}>

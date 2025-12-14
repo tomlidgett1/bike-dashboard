@@ -401,9 +401,9 @@ function MobileBottomNav({
   draftCount: number;
   claimsCount: number;
 }) {
-  // Only show Orders and Claims on mobile
   const tabs = [
     { id: 'orders' as MainTab, label: 'Orders', icon: ShoppingBag, count: orderCount },
+    { id: 'listings' as MainTab, label: 'Listings', icon: Tag, count: listingCount },
     { id: 'claims' as MainTab, label: 'Claims', icon: LifeBuoy, count: claimsCount },
   ];
 
