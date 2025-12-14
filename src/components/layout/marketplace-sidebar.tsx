@@ -528,10 +528,7 @@ function MarketplaceSidebarContent() {
             <Tooltip delayDuration={100}>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => {
-                    // TODO: Add help and support functionality
-                    console.log('Help and Support clicked');
-                  }}
+                  onClick={() => router.push('/marketplace/help')}
                   className="w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground h-[38px] cursor-pointer"
                 >
                   <div className="w-[40px] h-full flex items-center justify-center shrink-0">
@@ -545,10 +542,7 @@ function MarketplaceSidebarContent() {
             </Tooltip>
           ) : (
             <button
-              onClick={() => {
-                // TODO: Add help and support functionality
-                console.log('Help and Support clicked');
-              }}
+              onClick={() => router.push('/marketplace/help')}
               className="w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground h-[38px] cursor-pointer"
             >
               <div className="w-[40px] h-full flex items-center justify-center shrink-0">
