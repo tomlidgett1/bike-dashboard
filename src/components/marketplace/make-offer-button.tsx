@@ -563,23 +563,12 @@ function DesktopOfferDialog({
           </>
         ) : (
           /* Success State */
-          <div className="py-8 text-center">
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", damping: 15, stiffness: 300 }}
-              className="mb-4"
-            >
-              <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center">
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ delay: 0.2, type: "spring", damping: 12 }}
-                >
-                  <Check className="h-8 w-8 text-green-600" strokeWidth={3} />
-                </motion.div>
+          <div className="py-8 text-center animate-in fade-in duration-300">
+            <div className="mb-4">
+              <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center animate-in zoom-in duration-300">
+                <Check className="h-8 w-8 text-green-600" strokeWidth={3} />
               </div>
-            </motion.div>
+            </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
               Offer Sent!
             </h3>
