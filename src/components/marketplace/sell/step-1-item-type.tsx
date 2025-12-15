@@ -327,6 +327,47 @@ export function Step1ItemType({
   const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
   const [showDetails, setShowDetails] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Handler to update both primaryImageIndex AND the isPrimary/order flags in images array
+  const handleSetPrimaryImage = (index: number) => {
+    console.log('🖼️ [COVER CHANGE] ====== USER CLICKED IMAGE ======');
+    console.log('🖼️ [COVER CHANGE] Clicked index:', index);
+    console.log('🖼️ [COVER CHANGE] Previous primaryImageIndex:', primaryImageIndex);
+    
+    // Update the primaryImageIndex state (for UI highlighting)
+    setPrimaryImageIndex(index);
+    
+    // ALSO update the isPrimary and order flags in quickData.images immediately
+    if (quickData.images && quickData.images.length > 0) {
+      // Set the selected image as primary (order=0), others get sequential orders
+      let nextOrder = 1;
+      const updatedImages = quickData.images.map((img, idx) => {
+        if (idx === index) {
+          return {
+            ...img,
+            order: 0,
+            isPrimary: true,
+          };
+        } else {
+          return {
+            ...img,
+            order: nextOrder++,
+            isPrimary: false,
+          };
+        }
+      });
+      
+      console.log('🖼️ [COVER CHANGE] UPDATED images array:');
+      updatedImages.forEach((img, idx) => {
+        console.log(`🖼️ [COVER CHANGE]   [${idx}] id=${img.id}, order=${img.order}, isPrimary=${img.isPrimary}`);
+      });
+      
+      setQuickData({
+        ...quickData,
+        images: updatedImages,
+      });
+    }
+  };
   
   // Track if we've already initialized from AI data to prevent overwriting user edits
   const hasInitializedFromAiRef = React.useRef(false);
@@ -486,75 +527,34 @@ export function Step1ItemType({
     try {
       console.log('🔍 [STEP1] ====== HANDLE QUICK LIST START ======');
       console.log('🔍 [STEP1] primaryImageIndex state:', primaryImageIndex);
-      console.log('🔍 [STEP1] quickData:', JSON.stringify({
-        title: quickData.title,
-        brand: quickData.brand,
-        imagesCount: quickData.images?.length,
-      }));
-      console.log('🔍 [STEP1] quickData.images count:', quickData.images?.length);
-      console.log('🔍 [STEP1] quickData.images full array:', JSON.stringify(quickData.images?.map((img, idx) => ({
-        idx,
-        id: img.id,
-        order: img.order,
-        isPrimary: img.isPrimary,
-        cardUrl: img.cardUrl?.substring(70, 130),
-      }))));
       
-      // Log original images before any processing
-      quickData.images?.forEach((img, idx) => {
-        console.log(`🔍 [STEP1] ORIGINAL images[${idx}]:`, {
-          id: img.id,
-          order: img.order,
-          isPrimary: img.isPrimary,
-          'typeof isPrimary': typeof img.isPrimary,
-          cardUrl: img.cardUrl?.substring(70, 130),
-        });
-      });
-      
-      // Reorder images: move primary to front and update order fields
+      // Images should already have correct order/isPrimary from handleSetPrimaryImage
       const images = quickData.images || [];
-      let reorderedImages = [...images]; // Create a copy
       
-      if (images.length > 0 && primaryImageIndex !== 0) {
-        // Move the selected primary image to the front
-        const primaryImage = images[primaryImageIndex];
-        const otherImages = images.filter((_, i) => i !== primaryImageIndex);
-        reorderedImages = [primaryImage, ...otherImages];
-        console.log('🔍 [STEP1] Reordered images - moved index', primaryImageIndex, 'to front');
-        console.log('🔍 [STEP1] Primary image cardUrl:', primaryImage?.cardUrl?.substring(0, 60));
-      } else {
-        console.log('🔍 [STEP1] No reordering needed - primaryImageIndex:', primaryImageIndex);
-      }
-      
-      // Update order and isPrimary for all images - ENSURE isPrimary is explicitly boolean
-      const updatedImages = reorderedImages.map((img, index) => ({
-        ...img,
-        order: index,
-        isPrimary: index === 0 ? true : false, // Explicit boolean assignment
-      }));
-      
-      console.log('🔍 [STEP1] ====== UPDATED IMAGES (to be sent) ======');
-      updatedImages.forEach((img, idx) => {
-        console.log(`🔍 [STEP1] UPDATED images[${idx}]:`, {
-          id: img.id,
-          order: img.order,
-          isPrimary: img.isPrimary,
-          'typeof isPrimary': typeof img.isPrimary,
-          cardUrl: img.cardUrl?.substring(0, 60),
-        });
+      console.log('🔍 [STEP1] Images to send (should already be updated):');
+      images.forEach((img, idx) => {
+        console.log(`🔍 [STEP1]   [${idx}] id=${img.id}, order=${img.order}, isPrimary=${img.isPrimary}`);
       });
       
-      // Get the primary image URL (now always at index 0)
-      const primaryImageUrl = updatedImages[0]?.cardUrl || updatedImages[0]?.url;
-      console.log('🔍 [STEP1] primaryImageUrl:', primaryImageUrl?.substring(0, 80));
+      // Find the primary image (the one with order=0 or isPrimary=true)
+      const primaryImage = images.find(img => img.isPrimary === true) || 
+                          images.find(img => img.order === 0) || 
+                          images[0];
+      const primaryImageUrl = primaryImage?.cardUrl || primaryImage?.url;
+      
+      console.log('🔍 [STEP1] Primary image URL:', primaryImageUrl?.substring(0, 80));
       
       // Verify only one image has isPrimary = true
-      const primaryCount = updatedImages.filter(img => img.isPrimary === true).length;
+      const primaryCount = images.filter(img => img.isPrimary === true).length;
       console.log('🔍 [STEP1] Count of images with isPrimary=true:', primaryCount);
+      
+      if (primaryCount !== 1 && images.length > 0) {
+        console.warn('🔍 [STEP1] WARNING: Expected exactly 1 primary image, found:', primaryCount);
+      }
       
       await onQuickList({
         ...quickData,
-        images: updatedImages,
+        images: images,
         primaryImageUrl: primaryImageUrl,
       });
       
@@ -754,7 +754,7 @@ export function Step1ItemType({
             {quickData.images.map((image, index) => (
               <button
                 key={image.id || index}
-                onClick={() => setPrimaryImageIndex(index)}
+                onClick={() => handleSetPrimaryImage(index)}
                 className={cn(
                   "relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors",
                   index === primaryImageIndex
@@ -798,6 +798,33 @@ export function Step1ItemType({
           <p className="text-[10px] text-gray-400 text-center -mt-1 pb-2 bg-white">
             Tap any photo to set as cover
           </p>
+        )}
+
+        {/* DEBUG PANEL - Real-time image state */}
+        {quickData.images && quickData.images.length > 0 && (
+          <div className="mx-3 mb-2 p-3 bg-red-50 border border-red-200 rounded-md text-xs font-mono">
+            <div className="font-bold text-red-700 mb-2">🔍 DEBUG: Image State</div>
+            <div className="space-y-1">
+              <div><span className="text-red-600">primaryImageIndex:</span> {primaryImageIndex}</div>
+              <div><span className="text-red-600">images.length:</span> {quickData.images.length}</div>
+              <div className="border-t border-red-200 pt-1 mt-1">
+                {quickData.images.map((img, idx) => (
+                  <div key={img.id || idx} className={cn(
+                    "py-0.5",
+                    idx === primaryImageIndex ? "bg-yellow-100 font-bold" : ""
+                  )}>
+                    [{idx}] order={img.order ?? 'undefined'}, isPrimary={String(img.isPrimary ?? 'undefined')}
+                    {idx === primaryImageIndex && " ← SELECTED"}
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-red-200 pt-1 mt-1 text-red-700">
+                <div>Expected after List click:</div>
+                <div>• Image at index {primaryImageIndex} should become order=0, isPrimary=true</div>
+                <div>• Current image[{primaryImageIndex}].isPrimary = {String(quickData.images[primaryImageIndex]?.isPrimary)}</div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Form Fields */}
@@ -1440,7 +1467,7 @@ export function Step1ItemType({
                                 ? "ring-2 ring-[#FFC72C] ring-offset-1"
                                 : "border border-gray-200 hover:border-gray-400"
                             )}
-                            onClick={() => setPrimaryImageIndex(index)}
+                            onClick={() => handleSetPrimaryImage(index)}
                           >
                             <Image
                               src={image.url}
