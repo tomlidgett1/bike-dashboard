@@ -217,6 +217,33 @@ interface CombinedOrder extends Purchase {
   orderType: 'buying' | 'selling';
 }
 
+// Pending payment offer (accepted offer awaiting buyer payment)
+interface PendingPaymentOffer {
+  id: string;
+  offer_amount: number;
+  original_price: number;
+  offer_percentage: number;
+  status: string;
+  payment_status: string;
+  payment_deadline: string | null;
+  created_at: string;
+  updated_at: string;
+  product_id: string;
+  product?: {
+    id: string;
+    display_name?: string;
+    description?: string;
+    primary_image_url?: string;
+    cached_image_url?: string;
+  };
+  seller?: {
+    user_id: string;
+    name?: string;
+    business_name?: string;
+    logo_url?: string;
+  };
+}
+
 // ============================================================
 // Helpers
 // ============================================================
@@ -518,6 +545,252 @@ function MobileCombinedOrderCard({
         </div>
 
         <ChevronRight className="h-5 w-5 text-muted-foreground self-center flex-shrink-0" />
+      </div>
+    </button>
+  );
+}
+
+// ============================================================
+// Pending Payment Offer Card (Mobile)
+// Matches MobileOrderCard design pattern
+// ============================================================
+function PendingPaymentOfferCard({
+  offer,
+  onClick,
+}: {
+  offer: PendingPaymentOffer;
+  onClick: () => void;
+}) {
+  const productImage = offer.product?.cached_image_url || offer.product?.primary_image_url;
+  const productName = offer.product?.display_name || offer.product?.description || 'Product';
+  const sellerName = offer.seller?.business_name || offer.seller?.name || 'Seller';
+  
+  // Format date like other order cards
+  const offerDate = new Date(offer.updated_at || offer.created_at).toLocaleDateString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+  });
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors cursor-pointer"
+    >
+      <div className="flex gap-3">
+        {/* Image - matches MobileOrderCard */}
+        <div className="relative h-16 w-16 rounded-md overflow-hidden bg-muted flex-shrink-0">
+          {productImage ? (
+            <Image src={productImage} alt={productName} fill className="object-cover" sizes="64px" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Package className="h-6 w-6 text-muted-foreground" />
+            </div>
+          )}
+        </div>
+
+        {/* Content - matches MobileOrderCard structure */}
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm line-clamp-1">{productName}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {sellerName} · {offerDate}
+          </p>
+          <div className="flex items-center justify-between mt-2">
+            <Badge variant="default" className="rounded-md bg-gray-900 hover:bg-gray-900 text-white gap-1">
+              <CreditCard className="h-3 w-3" />
+              Pay Now
+            </Badge>
+            <span className="font-semibold text-sm">${offer.offer_amount.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <ChevronRight className="h-5 w-5 text-muted-foreground self-center flex-shrink-0" />
+      </div>
+    </button>
+  );
+}
+
+// ============================================================
+// Pending Payment Offer Card (Desktop)
+// Matches desktop order row design pattern
+// ============================================================
+function DesktopPendingPaymentCard({
+  offer,
+  onClick,
+}: {
+  offer: PendingPaymentOffer;
+  onClick: () => void;
+}) {
+  const productImage = offer.product?.cached_image_url || offer.product?.primary_image_url;
+  const productName = offer.product?.display_name || offer.product?.description || 'Product';
+  const sellerName = offer.seller?.business_name || offer.seller?.name || 'Seller';
+  
+  // Format date
+  const offerDate = new Date(offer.updated_at || offer.created_at).toLocaleDateString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full p-4 bg-card border border-border rounded-md hover:bg-accent/50 transition-colors text-left group"
+    >
+      <div className="flex items-center gap-4">
+        {/* Product Image */}
+        <div className="relative h-12 w-12 rounded-md overflow-hidden bg-muted flex-shrink-0">
+          {productImage ? (
+            <Image src={productImage} alt={productName} fill className="object-cover" sizes="48px" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Package className="h-5 w-5 text-muted-foreground" />
+            </div>
+          )}
+        </div>
+
+        {/* Product Info */}
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm truncate">{productName}</p>
+          <p className="text-xs text-muted-foreground">{sellerName}</p>
+        </div>
+
+        {/* Date */}
+        <div className="text-sm text-muted-foreground w-24 text-center hidden lg:block">
+          {offerDate}
+        </div>
+
+        {/* Status Badge */}
+        <div className="w-32 flex justify-center">
+          <Badge variant="default" className="rounded-md bg-gray-900 hover:bg-gray-900 text-white gap-1">
+            <CreditCard className="h-3 w-3" />
+            Pay Now
+          </Badge>
+        </div>
+
+        {/* Price */}
+        <div className="text-right w-24">
+          <p className="font-semibold text-sm">${offer.offer_amount.toFixed(2)}</p>
+        </div>
+
+        <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
+      </div>
+    </button>
+  );
+}
+
+// ============================================================
+// Seller Pending Offer Card (Mobile)
+// Shows accepted offers awaiting buyer payment
+// ============================================================
+function SellerPendingOfferCard({
+  offer,
+  onClick,
+}: {
+  offer: PendingPaymentOffer;
+  onClick: () => void;
+}) {
+  const productImage = offer.product?.cached_image_url || offer.product?.primary_image_url;
+  const productName = offer.product?.display_name || offer.product?.description || 'Product';
+  const buyerName = (offer as any).buyer?.name || 'Buyer';
+  
+  const offerDate = new Date(offer.updated_at || offer.created_at).toLocaleDateString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+  });
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors cursor-pointer"
+    >
+      <div className="flex gap-3">
+        <div className="relative h-16 w-16 rounded-md overflow-hidden bg-muted flex-shrink-0">
+          {productImage ? (
+            <Image src={productImage} alt={productName} fill className="object-cover" sizes="64px" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Package className="h-6 w-6 text-muted-foreground" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm line-clamp-1">{productName}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {buyerName} · {offerDate}
+          </p>
+          <div className="flex items-center justify-between mt-2">
+            <Badge variant="secondary" className="rounded-md text-xs gap-1">
+              <Clock className="h-3 w-3" />
+              Awaiting Payment
+            </Badge>
+            <span className="font-semibold text-sm">${offer.offer_amount.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <ChevronRight className="h-5 w-5 text-muted-foreground self-center flex-shrink-0" />
+      </div>
+    </button>
+  );
+}
+
+// ============================================================
+// Seller Pending Offer Card (Desktop)
+// ============================================================
+function DesktopSellerPendingCard({
+  offer,
+  onClick,
+}: {
+  offer: PendingPaymentOffer;
+  onClick: () => void;
+}) {
+  const productImage = offer.product?.cached_image_url || offer.product?.primary_image_url;
+  const productName = offer.product?.display_name || offer.product?.description || 'Product';
+  const buyerName = (offer as any).buyer?.name || 'Buyer';
+  
+  const offerDate = new Date(offer.updated_at || offer.created_at).toLocaleDateString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full p-4 bg-card border border-border rounded-md hover:bg-accent/50 transition-colors text-left group"
+    >
+      <div className="flex items-center gap-4">
+        <div className="relative h-12 w-12 rounded-md overflow-hidden bg-muted flex-shrink-0">
+          {productImage ? (
+            <Image src={productImage} alt={productName} fill className="object-cover" sizes="48px" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Package className="h-5 w-5 text-muted-foreground" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm truncate">{productName}</p>
+          <p className="text-xs text-muted-foreground">{buyerName}</p>
+        </div>
+
+        <div className="text-sm text-muted-foreground w-24 text-center hidden lg:block">
+          {offerDate}
+        </div>
+
+        <div className="w-32 flex justify-center">
+          <Badge variant="secondary" className="rounded-md text-xs gap-1">
+            <Clock className="h-3 w-3" />
+            Awaiting Payment
+          </Badge>
+        </div>
+
+        <div className="text-right w-24">
+          <p className="font-semibold text-sm">${offer.offer_amount.toFixed(2)}</p>
+        </div>
+
+        <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
       </div>
     </button>
   );
@@ -1409,6 +1682,9 @@ function GroupedOrdersView({
   onViewProduct,
   onMessage,
   onGetHelp,
+  pendingPaymentOffers = [],
+  sellerPendingOffers = [],
+  onOfferClick,
 }: {
   groups: {
     key: string;
@@ -1422,6 +1698,9 @@ function GroupedOrdersView({
   onViewProduct: (productId: string) => void;
   onMessage: (order: Purchase) => void;
   onGetHelp: (order: Purchase) => void;
+  pendingPaymentOffers?: PendingPaymentOffer[];
+  sellerPendingOffers?: PendingPaymentOffer[];
+  onOfferClick?: (offerId: string) => void;
 }) {
   if (loading) {
     return (
@@ -1431,7 +1710,10 @@ function GroupedOrdersView({
     );
   }
 
-  if (groups.length === 0) {
+  const hasPendingPayments = pendingPaymentOffers.length > 0;
+  const hasSellerPending = sellerPendingOffers.length > 0;
+
+  if (groups.length === 0 && !hasPendingPayments && !hasSellerPending) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="rounded-full bg-muted p-4 mb-4">
@@ -1445,6 +1727,31 @@ function GroupedOrdersView({
 
   return (
     <div className="space-y-6 p-4">
+      {/* Pending Payment Offers - inline without heavy header */}
+      {hasPendingPayments && (
+        <div className="space-y-2">
+          {pendingPaymentOffers.map((offer) => (
+            <DesktopPendingPaymentCard
+              key={offer.id}
+              offer={offer}
+              onClick={() => onOfferClick?.(offer.id)}
+            />
+          ))}
+        </div>
+      )}
+      
+      {/* Seller Pending Offers - awaiting buyer payment */}
+      {hasSellerPending && (
+        <div className="space-y-2">
+          {sellerPendingOffers.map((offer) => (
+            <DesktopSellerPendingCard
+              key={offer.id}
+              offer={offer}
+              onClick={() => onOfferClick?.(offer.id)}
+            />
+          ))}
+        </div>
+      )}
       {groups.map((group) => {
         const IconComponent = group.icon;
         return (
@@ -1735,16 +2042,47 @@ export default function OrderManagementPage() {
   // Combined orders for 'all' view
   const [buyingOrders, setBuyingOrders] = React.useState<Purchase[]>([]);
   const [sellingOrders, setSellingOrders] = React.useState<Purchase[]>([]);
+  
+  // Pending payment offers (accepted offers awaiting buyer payment)
+  const [pendingPaymentOffers, setPendingPaymentOffers] = React.useState<PendingPaymentOffer[]>([]);
+  // Seller's accepted offers awaiting buyer payment
+  const [sellerPendingOffers, setSellerPendingOffers] = React.useState<PendingPaymentOffer[]>([]);
 
   // Draft selection state
   const [selectedDraftIds, setSelectedDraftIds] = React.useState<Set<string>>(new Set());
+
+  // Fetch pending payment offers for buyers
+  const fetchPendingPaymentOffers = React.useCallback(async () => {
+    try {
+      const res = await fetch('/api/offers?role=buyer&status=accepted&payment_status=pending');
+      if (res.ok) {
+        const data = await res.json();
+        setPendingPaymentOffers(data.offers || []);
+      }
+    } catch (e) {
+      console.error('Error fetching pending payment offers:', e);
+    }
+  }, []);
+
+  // Fetch pending offers for sellers (accepted, awaiting buyer payment)
+  const fetchSellerPendingOffers = React.useCallback(async () => {
+    try {
+      const res = await fetch('/api/offers?role=seller&status=accepted&payment_status=pending');
+      if (res.ok) {
+        const data = await res.json();
+        setSellerPendingOffers(data.offers || []);
+      }
+    } catch (e) {
+      console.error('Error fetching seller pending offers:', e);
+    }
+  }, []);
 
   // Fetch orders
   const fetchOrders = React.useCallback(async () => {
     setOrdersLoading(true);
     try {
       if (orderMode === 'all') {
-        // Fetch both buying and selling orders in parallel
+        // Fetch both buying and selling orders in parallel, plus pending payment offers
         const [buyingRes, sellingRes] = await Promise.all([
           fetch(`/api/marketplace/purchases?mode=buying&status=${statusFilter}&pageSize=50`),
           fetch(`/api/marketplace/purchases?mode=selling&status=${statusFilter}&pageSize=50`),
@@ -1753,7 +2091,11 @@ export default function OrderManagementPage() {
         setBuyingOrders(buyingData.purchases || []);
         setSellingOrders(sellingData.purchases || []);
         setOrders([]); // Clear single-mode orders
-      } else {
+        
+        // Also fetch pending payment offers for 'all' view
+        await Promise.all([fetchPendingPaymentOffers(), fetchSellerPendingOffers()]);
+      } else if (orderMode === 'buying') {
+        // Fetch buying orders and pending payment offers
         const params = new URLSearchParams({
           mode: orderMode,
           status: statusFilter,
@@ -1764,13 +2106,32 @@ export default function OrderManagementPage() {
         setOrders(data.purchases || []);
         setBuyingOrders([]);
         setSellingOrders([]);
+        
+        // Also fetch pending payment offers
+        await fetchPendingPaymentOffers();
+      } else {
+        // Selling mode - fetch seller's accepted offers awaiting payment
+        const params = new URLSearchParams({
+          mode: orderMode,
+          status: statusFilter,
+          pageSize: '50',
+        });
+        const res = await fetch(`/api/marketplace/purchases?${params}`);
+        const data = await res.json();
+        setOrders(data.purchases || []);
+        setBuyingOrders([]);
+        setSellingOrders([]);
+        setPendingPaymentOffers([]);
+        
+        // Fetch seller's pending offers (accepted, awaiting buyer payment)
+        await fetchSellerPendingOffers();
       }
     } catch (e) {
       console.error(e);
     } finally {
       setOrdersLoading(false);
     }
-  }, [orderMode, statusFilter]);
+  }, [orderMode, statusFilter, fetchPendingPaymentOffers, fetchSellerPendingOffers]);
 
   // Fetch listings
   const fetchListings = React.useCallback(async () => {
@@ -2338,6 +2699,36 @@ export default function OrderManagementPage() {
                       </Button>
                     </div>
 
+                    {/* Pending Payment Offers Section (Desktop - Buying mode only) */}
+                    {orderMode === 'buying' && pendingPaymentOffers.length > 0 && (
+                      <div className="mb-4">
+                        <div className="grid gap-2">
+                          {pendingPaymentOffers.map((offer) => (
+                            <DesktopPendingPaymentCard
+                              key={offer.id}
+                              offer={offer}
+                              onClick={() => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Seller Pending Offers Section (Desktop - Selling mode only) */}
+                    {orderMode === 'selling' && sellerPendingOffers.length > 0 && (
+                      <div className="mb-4">
+                        <div className="grid gap-2">
+                          {sellerPendingOffers.map((offer) => (
+                            <DesktopSellerPendingCard
+                              key={offer.id}
+                              offer={offer}
+                              onClick={() => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Show grouped view for 'all' mode, table for specific modes */}
                     {orderMode === 'all' ? (
                       <GroupedOrdersView
@@ -2347,6 +2738,9 @@ export default function OrderManagementPage() {
                         onViewProduct={(productId) => router.push(`/marketplace/product/${productId}?fromPurchase=true`)}
                         onMessage={handleMessage}
                         onGetHelp={handleGetHelp}
+                        pendingPaymentOffers={pendingPaymentOffers}
+                        sellerPendingOffers={sellerPendingOffers}
+                        onOfferClick={(offerId) => router.push(`/messages?tab=offers&offer_id=${offerId}`)}
                       />
                     ) : (
                       <DesktopOrdersTable 
@@ -2623,7 +3017,7 @@ export default function OrderManagementPage() {
                     </div>
                   ) : orderMode === 'all' ? (
                     // Grouped view for 'all' mode
-                    filteredGroupedOrders.length === 0 ? (
+                    filteredGroupedOrders.length === 0 && pendingPaymentOffers.length === 0 && sellerPendingOffers.length === 0 ? (
                       <div className="text-center py-12">
                         <Package className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                         <p className="font-medium">{search ? 'No orders found' : 'No orders yet'}</p>
@@ -2633,6 +3027,33 @@ export default function OrderManagementPage() {
                       </div>
                     ) : (
                       <div className="space-y-5">
+                        {/* Pending Payment Offers (All mode) - inline without title */}
+                        {pendingPaymentOffers.length > 0 && (
+                          <div className="space-y-2">
+                            {pendingPaymentOffers.map((offer) => (
+                              <PendingPaymentOfferCard 
+                                key={offer.id} 
+                                offer={offer}
+                                onClick={() => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Seller Pending Offers (All mode) */}
+                        {sellerPendingOffers.length > 0 && (
+                          <div className="space-y-2">
+                            {sellerPendingOffers.map((offer) => (
+                              <SellerPendingOfferCard 
+                                key={offer.id} 
+                                offer={offer}
+                                onClick={() => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Regular Grouped Orders */}
                         {filteredGroupedOrders.map((group) => {
                           const IconComponent = group.icon;
                           return (
@@ -2659,7 +3080,7 @@ export default function OrderManagementPage() {
                         })}
                       </div>
                     )
-                  ) : filteredOrders.length === 0 ? (
+                  ) : filteredOrders.length === 0 && pendingPaymentOffers.length === 0 && sellerPendingOffers.length === 0 ? (
                     <div className="text-center py-12">
                       <ShoppingBag className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                       <p className="font-medium">{search ? 'No orders found' : 'No orders yet'}</p>
@@ -2668,9 +3089,30 @@ export default function OrderManagementPage() {
                       </p>
                     </div>
                   ) : (
-                    filteredOrders.map((order) => (
-                      <MobileOrderCard key={order.id} purchase={order} onClick={() => handleOrderClick(order)} orderMode={orderMode} />
-                    ))
+                    <>
+                      {/* Pending Payment Offers - no title, just cards inline */}
+                      {orderMode === 'buying' && pendingPaymentOffers.map((offer) => (
+                        <PendingPaymentOfferCard 
+                          key={offer.id} 
+                          offer={offer}
+                          onClick={() => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
+                        />
+                      ))}
+                      
+                      {/* Seller Pending Offers - awaiting buyer payment */}
+                      {orderMode === 'selling' && sellerPendingOffers.map((offer) => (
+                        <SellerPendingOfferCard 
+                          key={offer.id} 
+                          offer={offer}
+                          onClick={() => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
+                        />
+                      ))}
+                      
+                      {/* Regular Orders */}
+                      {filteredOrders.map((order) => (
+                        <MobileOrderCard key={order.id} purchase={order} onClick={() => handleOrderClick(order)} orderMode={orderMode} />
+                      ))}
+                    </>
                   )}
                 </div>
               )}

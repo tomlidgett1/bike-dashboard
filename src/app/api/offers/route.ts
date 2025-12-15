@@ -187,6 +187,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const role = searchParams.get('role') as 'buyer' | 'seller' | null;
     const statusParam = searchParams.get('status');
+    const paymentStatusParam = searchParams.get('payment_status');
     const productId = searchParams.get('productId');
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
@@ -196,6 +197,9 @@ export async function GET(request: NextRequest) {
     if (statusParam) {
       statuses = statusParam.split(',') as OfferStatus[];
     }
+    
+    // Parse payment status
+    const paymentStatuses = paymentStatusParam ? paymentStatusParam.split(',') : null;
 
     // Build query
     let query = supabase
@@ -224,6 +228,11 @@ export async function GET(request: NextRequest) {
     // Filter by status
     if (statuses && statuses.length > 0) {
       query = query.in('status', statuses);
+    }
+
+    // Filter by payment status
+    if (paymentStatuses && paymentStatuses.length > 0) {
+      query = query.in('payment_status', paymentStatuses);
     }
 
     // Filter by product

@@ -399,7 +399,7 @@ export function MarketplaceHeader({
                   <InstantSearch listingType={searchListingType} />
                 </div>
                 {/* Mobile: Search icon and Messages button (if logged in) */}
-                <div className="sm:hidden flex items-center gap-2 ml-auto">
+                <div className="sm:hidden flex items-center gap-0.5 ml-auto">
                   <button
                     onClick={() => setMobileSearchOpen(true)}
                     className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
@@ -433,7 +433,7 @@ export function MarketplaceHeader({
                   <InstantSearch listingType={searchListingType} />
                 </div>
                 {/* Mobile: Search icon and Messages button (if logged in) */}
-                <div className="sm:hidden flex items-center gap-2 ml-auto">
+                <div className="sm:hidden flex items-center gap-0.5 ml-auto">
                   <button
                     onClick={() => setMobileSearchOpen(true)}
                     className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"

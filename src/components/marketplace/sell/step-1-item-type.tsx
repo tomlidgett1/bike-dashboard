@@ -326,6 +326,9 @@ export function Step1ItemType({
   const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
   const [showDetails, setShowDetails] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  
+  // Track if we've already initialized from AI data to prevent overwriting user edits
+  const hasInitializedFromAiRef = React.useRef(false);
 
   // Detect if on mobile
   React.useEffect(() => {
@@ -365,9 +368,33 @@ export function Step1ItemType({
     return cleaned || undefined;
   };
 
-  // Initialize quick data from props
+  // Initialize quick data from props - ONLY ONCE when AI data first arrives
+  // This prevents user edits from being overwritten by the original AI values
   React.useEffect(() => {
+    // Skip if we've already initialized from AI data
+    if (hasInitializedFromAiRef.current) {
+      console.log('🎯 [QUICK LIST INIT] Skipping - already initialized from AI data');
+      return;
+    }
+    
+    // Check if we have actual meaningful AI data (not just empty props)
+    // This is important because the component may render before the wizard loads sessionStorage data
+    const hasMeaningfulData = quickListingData && (
+      quickListingData.images?.length || 
+      quickListingData.brand || 
+      quickListingData.model ||
+      quickListingData.title
+    );
+    
+    if (!hasMeaningfulData) {
+      console.log('🎯 [QUICK LIST INIT] Skipping - no meaningful AI data yet');
+      return;
+    }
+    
     if (quickListingData) {
+      // Mark as initialized so we don't overwrite user edits later
+      hasInitializedFromAiRef.current = true;
+      
       // Generate title from brand/model if not provided
       const generatedTitle = quickListingData.title || 
         [quickListingData.brand, quickListingData.model].filter(Boolean).join(' ') ||

@@ -654,16 +654,7 @@ export default function MarketplaceSettingsPage() {
                   {/* Payments Tab */}
                   {activeTab === 'payments' && (
                     <Card className="bg-white rounded-md shadow-sm">
-                      <CardHeader className="px-6 py-5">
-                        <CardTitle className="flex items-center gap-2 text-lg">
-                          <DollarSign className="h-5 w-5" />
-                          Payments & Payouts
-                        </CardTitle>
-                        <CardDescription className="text-sm">
-                          Connect your bank account to receive payouts when you sell items
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="px-6 pb-6">
+                      <CardContent className="p-0">
                         <StripeConnectCard />
                       </CardContent>
                     </Card>

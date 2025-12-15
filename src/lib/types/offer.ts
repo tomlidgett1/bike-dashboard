@@ -25,6 +25,11 @@ export type OfferActionType =
 
 export type OfferRole = 'buyer' | 'seller';
 
+export type OfferPaymentStatus = 
+  | 'pending'    // Awaiting payment
+  | 'paid'       // Payment completed
+  | 'failed';    // Payment failed
+
 // ============================================================
 // DATABASE ENTITIES
 // ============================================================
@@ -42,6 +47,11 @@ export interface Offer {
   expires_at: string;
   created_at: string;
   updated_at: string;
+  // Payment fields (for accepted offers)
+  payment_status: OfferPaymentStatus;
+  payment_deadline: string | null;
+  stripe_session_id: string | null;
+  purchase_id: string | null;
 }
 
 export interface OfferHistory {
@@ -208,6 +218,21 @@ export interface MakeOfferButtonProps {
   className?: string;
 }
 
+export interface PayOfferButtonProps {
+  offerId: string;
+  offerAmount: number;
+  originalPrice: number;
+  productName: string;
+  productId: string;
+  shippingCost?: number;
+  variant?: 'default' | 'outline';
+  size?: 'default' | 'sm' | 'lg';
+  fullWidth?: boolean;
+  className?: string;
+  showStripeBranding?: boolean;
+  paymentDeadline?: string | null;
+}
+
 export interface OfferCardProps {
   offer: EnrichedOffer;
   role: OfferRole;
@@ -244,7 +269,9 @@ export interface CounterOfferModalProps {
 
 export interface OfferStatusBadgeProps {
   status: OfferStatus;
+  paymentStatus?: OfferPaymentStatus;
   expiresAt?: string;
+  paymentDeadline?: string | null;
   className?: string;
 }
 
@@ -410,20 +437,132 @@ export function canCancelOffer(offer: Offer, userId: string): boolean {
 }
 
 export function canAcceptOffer(offer: Offer, userId: string): boolean {
-  return offer.seller_id === userId && 
-         (offer.status === 'pending' || offer.status === 'countered') && 
+  // Seller can accept a pending offer from buyer
+  // Buyer can accept a counter-offer from seller
+  const isSellerAcceptingOffer = offer.seller_id === userId && offer.status === 'pending';
+  const isBuyerAcceptingCounterOffer = offer.buyer_id === userId && offer.status === 'countered';
+  
+  return (isSellerAcceptingOffer || isBuyerAcceptingCounterOffer) && 
          !isOfferExpired(offer.expires_at);
 }
 
 export function canRejectOffer(offer: Offer, userId: string): boolean {
-  return offer.seller_id === userId && 
-         (offer.status === 'pending' || offer.status === 'countered') && 
+  // Seller can reject a pending offer from buyer
+  // Buyer can reject a counter-offer from seller
+  const isSellerRejectingOffer = offer.seller_id === userId && offer.status === 'pending';
+  const isBuyerRejectingCounterOffer = offer.buyer_id === userId && offer.status === 'countered';
+  
+  return (isSellerRejectingOffer || isBuyerRejectingCounterOffer) && 
          !isOfferExpired(offer.expires_at);
 }
 
 export function canCounterOffer(offer: Offer, userId: string): boolean {
-  return offer.seller_id === userId && 
-         (offer.status === 'pending' || offer.status === 'countered') && 
+  // Seller can counter a pending offer from buyer
+  // Buyer can counter a counter-offer from seller
+  const isSellerCountering = offer.seller_id === userId && offer.status === 'pending';
+  const isBuyerCountering = offer.buyer_id === userId && offer.status === 'countered';
+  
+  return (isSellerCountering || isBuyerCountering) && 
          !isOfferExpired(offer.expires_at);
+}
+
+// ============================================================
+// PAYMENT HELPER FUNCTIONS
+// ============================================================
+
+/**
+ * Check if an offer can be paid (buyer view)
+ * Offer must be accepted, not yet paid, and within payment deadline
+ */
+export function canPayOffer(offer: Offer, userId: string): boolean {
+  return offer.buyer_id === userId &&
+         offer.status === 'accepted' &&
+         offer.payment_status === 'pending' &&
+         (!offer.payment_deadline || !isPaymentDeadlineExpired(offer.payment_deadline));
+}
+
+/**
+ * Check if the payment deadline has expired
+ */
+export function isPaymentDeadlineExpired(paymentDeadline: string | null): boolean {
+  if (!paymentDeadline) return false;
+  return new Date(paymentDeadline) < new Date();
+}
+
+/**
+ * Get time remaining until payment deadline
+ */
+export function getPaymentTimeRemaining(paymentDeadline: string | null): number {
+  if (!paymentDeadline) return 0;
+  return Math.max(0, new Date(paymentDeadline).getTime() - Date.now());
+}
+
+/**
+ * Format payment deadline time remaining
+ */
+export function formatPaymentTimeRemaining(paymentDeadline: string | null): string {
+  if (!paymentDeadline) return '';
+  
+  const remaining = getPaymentTimeRemaining(paymentDeadline);
+  if (remaining <= 0) return 'Expired';
+  
+  const hours = Math.floor(remaining / (1000 * 60 * 60));
+  const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+  
+  if (hours > 24) {
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return `${days}d ${remainingHours}h left to pay`;
+  } else if (hours > 0) {
+    return `${hours}h ${minutes}m left to pay`;
+  } else {
+    return `${minutes}m left to pay`;
+  }
+}
+
+/**
+ * Check if offer is awaiting payment
+ */
+export function isOfferAwaitingPayment(offer: Offer): boolean {
+  return offer.status === 'accepted' && offer.payment_status === 'pending';
+}
+
+/**
+ * Check if offer has been paid
+ */
+export function isOfferPaid(offer: Offer): boolean {
+  return offer.status === 'accepted' && offer.payment_status === 'paid';
+}
+
+/**
+ * Get the display label for payment status
+ */
+export function getPaymentStatusLabel(paymentStatus: OfferPaymentStatus): string {
+  switch (paymentStatus) {
+    case 'pending':
+      return 'Awaiting Payment';
+    case 'paid':
+      return 'Paid';
+    case 'failed':
+      return 'Payment Failed';
+    default:
+      return paymentStatus;
+  }
+}
+
+/**
+ * Get the colour classes for payment status badge
+ */
+export function getPaymentStatusColor(paymentStatus: OfferPaymentStatus): string {
+  switch (paymentStatus) {
+    case 'pending':
+      return 'bg-amber-100 text-amber-800 border-amber-200';
+    case 'paid':
+      return 'bg-green-100 text-green-800 border-green-200';
+    case 'failed':
+      return 'bg-red-100 text-red-800 border-red-200';
+    default:
+      return 'bg-gray-100 text-gray-800 border-gray-200';
+  }
 }
 

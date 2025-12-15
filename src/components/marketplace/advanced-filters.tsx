@@ -118,14 +118,14 @@ function FilterSection({
   const [isOpen, setIsOpen] = React.useState(defaultOpen);
   
   return (
-    <div className="bg-white rounded-xl border border-gray-100">
+    <div className="bg-white rounded-md border border-gray-100">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between p-4 text-left"
       >
         <div className="flex items-center gap-2.5">
           {Icon && (
-            <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-md bg-gray-50 flex items-center justify-center">
               <Icon className="h-4 w-4 text-gray-600" />
             </div>
           )}
@@ -328,11 +328,13 @@ function MobileFilterContent({
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
-      {/* Header with drag handle */}
-      <div className="bg-white border-b border-gray-100 px-4 pt-3 pb-4 sticky top-0 z-10">
-        {/* Drag Handle */}
-        <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mb-4" />
-        
+      {/* Handle Bar */}
+      <div className="flex-shrink-0 pt-3 pb-2 bg-white">
+        <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto" />
+      </div>
+      
+      {/* Header */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-100 px-4 pb-4">
         {/* Header Row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -345,7 +347,7 @@ function MobileFilterContent({
           </div>
           <button
             onClick={onClose}
-            className="p-2 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
@@ -381,7 +383,7 @@ function MobileFilterContent({
       </div>
 
       {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-3">
         {/* Listing Type Filter */}
         {listingTypeFilter && onListingTypeChange && (
           <FilterSection title="Seller Type" icon={Store} badge={listingTypeFilter !== 'all' ? '1' : undefined}>
@@ -395,7 +397,7 @@ function MobileFilterContent({
                   key={option.value}
                   onClick={() => onListingTypeChange(option.value)}
                   className={cn(
-                    "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+                    "flex flex-col items-center gap-1.5 p-3 rounded-md border-2 transition-all",
                     listingTypeFilter === option.value
                       ? "border-gray-900 bg-gray-900 text-white"
                       : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
@@ -421,7 +423,7 @@ function MobileFilterContent({
                 key={option.value}
                 onClick={() => updateFilter('sortBy', option.value)}
                 className={cn(
-                  "w-full flex items-center justify-between p-3 rounded-lg border transition-all text-left",
+                  "w-full flex items-center justify-between p-3 rounded-md border transition-all text-left",
                   localFilters.sortBy === option.value
                     ? "border-gray-900 bg-gray-50"
                     : "border-gray-200 bg-white hover:border-gray-300"
@@ -457,7 +459,7 @@ function MobileFilterContent({
                   updateFilter('maxPrice', preset.max);
                 }}
                 className={cn(
-                  "py-2.5 px-3 text-sm font-medium rounded-lg border transition-all",
+                  "py-2.5 px-3 text-sm font-medium rounded-md border transition-all",
                   matchingPreset?.label === preset.label
                     ? "border-gray-900 bg-gray-900 text-white"
                     : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
@@ -477,7 +479,7 @@ function MobileFilterContent({
                 placeholder="Min"
                 value={localFilters.minPrice}
                 onChange={(e) => updateFilter('minPrice', e.target.value)}
-                className="pl-7 rounded-lg h-11 text-sm border-gray-200 focus:border-gray-400 focus:ring-gray-400"
+                className="pl-7 rounded-md h-11 text-sm border-gray-200 focus:border-gray-400 focus:ring-gray-400"
                 min="0"
               />
             </div>
@@ -489,7 +491,7 @@ function MobileFilterContent({
                 placeholder="Max"
                 value={localFilters.maxPrice}
                 onChange={(e) => updateFilter('maxPrice', e.target.value)}
-                className="pl-7 rounded-lg h-11 text-sm border-gray-200 focus:border-gray-400 focus:ring-gray-400"
+                className="pl-7 rounded-md h-11 text-sm border-gray-200 focus:border-gray-400 focus:ring-gray-400"
                 min="0"
               />
             </div>
@@ -508,7 +510,7 @@ function MobileFilterContent({
                 key={option.value}
                 onClick={() => updateFilter('condition', option.value)}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-all",
+                  "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md border transition-all",
                   localFilters.condition === option.value
                     ? "border-gray-900 bg-gray-900 text-white"
                     : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
@@ -544,7 +546,7 @@ function MobileFilterContent({
                   setShowBrandDropdown(true);
                 }}
                 onFocus={() => setShowBrandDropdown(true)}
-                className="pl-10 pr-10 rounded-lg h-11 border-gray-200 focus:border-gray-400 focus:ring-gray-400"
+                className="pl-10 pr-10 rounded-md h-11 border-gray-200 focus:border-gray-400 focus:ring-gray-400"
               />
               {(localFilters.brand || brandSearch) && (
                 <button
@@ -567,7 +569,7 @@ function MobileFilterContent({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+                  className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto"
                 >
                   {filteredBrands.length > 0 ? (
                     filteredBrands.slice(0, 15).map((brand) => (
@@ -606,14 +608,14 @@ function MobileFilterContent({
         </FilterSection>
       </div>
 
-      {/* Sticky Footer */}
-      <div className="bg-white border-t border-gray-200 p-4 pb-8 sticky bottom-0 space-y-3">
+      {/* Footer */}
+      <div className="flex-shrink-0 bg-white border-t border-gray-200 p-4 space-y-3">
         <div className="flex gap-3">
           {hasActiveFilters && (
             <Button
               onClick={handleReset}
               variant="outline"
-              className="flex-1 h-12 rounded-xl border-gray-200 text-gray-700 font-medium"
+              className="flex-1 h-12 rounded-md border-gray-200 text-gray-700 font-medium"
             >
               <RotateCcw className="h-4 w-4 mr-2" />
               Reset
@@ -622,13 +624,15 @@ function MobileFilterContent({
           <Button
             onClick={handleApply}
             className={cn(
-              "h-12 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-semibold text-base",
+              "h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-semibold text-base",
               hasActiveFilters ? "flex-[2]" : "w-full"
             )}
           >
             Show Results
           </Button>
         </div>
+        {/* Safe area padding for iOS */}
+        <div className="h-safe-area-inset-bottom" />
       </div>
     </div>
   );
@@ -982,7 +986,7 @@ export function AdvancedFilters({
         </SheetTrigger>
         <SheetContent 
           side="bottom" 
-          className="h-[85vh] rounded-t-3xl p-0 overflow-hidden"
+          className="rounded-t-2xl p-0 overflow-hidden gap-0 max-h-[80vh] flex flex-col"
           showCloseButton={false}
         >
           <MobileFilterContent

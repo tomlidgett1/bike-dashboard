@@ -8,9 +8,6 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
-  CreditCard,
-  Shield,
-  Zap,
   ChevronRight,
   RefreshCw,
 } from "lucide-react";
@@ -46,7 +43,6 @@ export function StripeConnectCard({ className }: StripeConnectCardProps) {
   const [actionLoading, setActionLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Fetch status on mount
   React.useEffect(() => {
     fetchStatus();
   }, []);
@@ -60,15 +56,12 @@ export function StripeConnectCard({ className }: StripeConnectCardProps) {
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        console.error("[StripeConnectCard] API Error:", response.status, errorData);
         throw new Error(errorData.error || `Failed to fetch status (${response.status})`);
       }
 
       const data = await response.json();
-      console.log("[StripeConnectCard] Status loaded:", data);
       setStatus(data);
     } catch (err) {
-      console.error("[StripeConnectCard] Error:", err);
       setError(err instanceof Error ? err.message : "Failed to load payment status");
     } finally {
       setLoading(false);
@@ -90,13 +83,10 @@ export function StripeConnectCard({ className }: StripeConnectCardProps) {
       }
 
       const data = await response.json();
-      
-      // Redirect to Stripe onboarding
       if (data.url) {
         window.location.href = data.url;
       }
     } catch (err) {
-      console.error("[StripeConnectCard] Error:", err);
       setError(err instanceof Error ? err.message : "Something went wrong");
       setActionLoading(false);
     }
@@ -117,12 +107,10 @@ export function StripeConnectCard({ className }: StripeConnectCardProps) {
       }
 
       const data = await response.json();
-      
       if (data.url) {
         window.location.href = data.url;
       }
     } catch (err) {
-      console.error("[StripeConnectCard] Error:", err);
       setError(err instanceof Error ? err.message : "Something went wrong");
       setActionLoading(false);
     }
@@ -142,42 +130,32 @@ export function StripeConnectCard({ className }: StripeConnectCardProps) {
       }
 
       const data = await response.json();
-      
       if (data.url) {
         window.open(data.url, "_blank");
       }
     } catch (err) {
-      console.error("[StripeConnectCard] Error:", err);
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Loading state
   if (loading) {
     return (
-      <div className={cn("bg-white rounded-md border border-gray-200 p-6", className)}>
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      <div className={cn("p-6", className)}>
+        <div className="flex items-center justify-center py-6">
+          <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
         </div>
       </div>
     );
   }
 
-  // Error state
   if (error && !status) {
     return (
-      <div className={cn("bg-white rounded-md border border-gray-200 p-6", className)}>
+      <div className={cn("p-6", className)}>
         <div className="text-center py-4">
-          <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
-          <p className="text-sm text-gray-600">{error}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchStatus}
-            className="mt-3 rounded-md"
-          >
+          <p className="text-sm text-gray-500 mb-3">{error}</p>
+          <Button variant="outline" size="sm" onClick={fetchStatus} className="rounded-md">
             <RefreshCw className="h-4 w-4 mr-2" />
             Retry
           </Button>
@@ -186,50 +164,29 @@ export function StripeConnectCard({ className }: StripeConnectCardProps) {
     );
   }
 
-  // Render based on status
   return (
-    <div className={cn("bg-white rounded-md border border-gray-200 overflow-hidden", className)}>
-      {/* Not Connected */}
+    <div className={cn(className)}>
       {(!status || status.status === "not_connected") && (
-        <NotConnectedState
-          onConnect={handleConnect}
-          loading={actionLoading}
-          error={error}
-        />
+        <NotConnectedState onConnect={handleConnect} loading={actionLoading} error={error} />
       )}
 
-      {/* Pending Onboarding */}
       {status?.status === "pending" && !status.onboardingComplete && (
-        <PendingState
-          onContinue={handleContinueOnboarding}
-          loading={actionLoading}
-          error={error}
-        />
+        <PendingState onContinue={handleContinueOnboarding} loading={actionLoading} error={error} />
       )}
 
-      {/* Active */}
       {status?.status === "active" && status.payoutsEnabled && (
-        <ActiveState
-          onOpenDashboard={handleOpenDashboard}
-          loading={actionLoading}
-          connectedAt={status.connectedAt}
-        />
+        <ActiveState onOpenDashboard={handleOpenDashboard} loading={actionLoading} connectedAt={status.connectedAt} />
       )}
 
-      {/* Restricted */}
       {status?.status === "restricted" && (
-        <RestrictedState
-          onUpdate={handleContinueOnboarding}
-          loading={actionLoading}
-          requirements={status.requirements}
-        />
+        <RestrictedState onUpdate={handleContinueOnboarding} loading={actionLoading} requirements={status.requirements} />
       )}
     </div>
   );
 }
 
 // ============================================================
-// Not Connected State
+// Not Connected
 // ============================================================
 
 function NotConnectedState({
@@ -243,79 +200,43 @@ function NotConnectedState({
 }) {
   return (
     <div className="p-6">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="h-12 w-12 rounded-md bg-gray-100 flex items-center justify-center">
-          <CreditCard className="h-6 w-6 text-gray-600" />
-        </div>
-        <div>
-          <h3 className="font-semibold text-gray-900">Get Paid for Your Sales</h3>
-          <p className="text-sm text-gray-600">Connect your bank account to receive payouts</p>
-        </div>
+      <div className="flex items-center gap-4 mb-5">
+        <Image src="/stripe.svg" alt="Stripe" width={48} height={20} />
+        <p className="text-sm text-gray-600">
+          Connect your bank account to receive payouts when you sell items.
+        </p>
       </div>
 
-      {/* Trust Indicators */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="flex flex-col items-center text-center p-3 bg-gray-50 rounded-md">
-          <Shield className="h-5 w-5 text-gray-600 mb-1" />
-          <span className="text-xs text-gray-600">Secure</span>
-        </div>
-        <div className="flex flex-col items-center text-center p-3 bg-gray-50 rounded-md">
-          <CheckCircle2 className="h-5 w-5 text-gray-600 mb-1" />
-          <span className="text-xs text-gray-600">Verified</span>
-        </div>
-        <div className="flex flex-col items-center text-center p-3 bg-gray-50 rounded-md">
-          <Zap className="h-5 w-5 text-gray-600 mb-1" />
-          <span className="text-xs text-gray-600">Fast Payouts</span>
-        </div>
-      </div>
-
-      {/* Connect Button */}
       <Button
         onClick={onConnect}
         disabled={loading}
-        className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
+        className="w-full h-11 rounded-md bg-gray-900 hover:bg-gray-800 text-white"
       >
         {loading ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          <>
-            <Image
-              src="/stripe.svg"
-              alt="Stripe"
-              width={40}
-              height={17}
-              className="mr-2 brightness-0 invert"
-            />
-            Connect with Stripe
-          </>
+          "Connect with Stripe"
         )}
       </Button>
 
-      {/* Error */}
       <AnimatePresence>
         {error && (
           <motion.p
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             className="text-sm text-red-500 mt-3 text-center"
           >
             {error}
           </motion.p>
         )}
       </AnimatePresence>
-
-      {/* Footer */}
-      <p className="text-xs text-gray-400 text-center mt-4">
-        Your financial data is handled securely by Stripe
-      </p>
     </div>
   );
 }
 
 // ============================================================
-// Pending State
+// Pending
 // ============================================================
 
 function PendingState({
@@ -329,20 +250,14 @@ function PendingState({
 }) {
   return (
     <div className="p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="h-12 w-12 rounded-md bg-amber-100 flex items-center justify-center">
-          <AlertCircle className="h-6 w-6 text-amber-600" />
-        </div>
+      <div className="flex items-start gap-3 mb-5">
+        <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
         <div>
-          <h3 className="font-semibold text-gray-900">Complete Your Setup</h3>
-          <p className="text-sm text-gray-600">Finish connecting your bank account</p>
+          <p className="text-sm font-medium text-gray-900">Setup incomplete</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Complete the Stripe onboarding to start receiving payouts.
+          </p>
         </div>
-      </div>
-
-      <div className="bg-amber-50 border border-amber-200 rounded-md p-4 mb-4">
-        <p className="text-sm text-amber-800">
-          Your Stripe account setup is incomplete. Complete the onboarding to start receiving payouts.
-        </p>
       </div>
 
       <Button
@@ -351,24 +266,22 @@ function PendingState({
         className="w-full h-11 rounded-md bg-gray-900 hover:bg-gray-800 text-white"
       >
         {loading ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
           <>
             Continue Setup
-            <ChevronRight className="h-4 w-4 ml-2" />
+            <ChevronRight className="h-4 w-4 ml-1" />
           </>
         )}
       </Button>
 
-      {error && (
-        <p className="text-sm text-red-500 mt-3 text-center">{error}</p>
-      )}
+      {error && <p className="text-sm text-red-500 mt-3 text-center">{error}</p>}
     </div>
   );
 }
 
 // ============================================================
-// Active State
+// Active
 // ============================================================
 
 function ActiveState({
@@ -382,39 +295,32 @@ function ActiveState({
 }) {
   return (
     <div className="p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="h-12 w-12 rounded-md bg-green-100 flex items-center justify-center">
-          <CheckCircle2 className="h-6 w-6 text-green-600" />
-        </div>
+      <div className="flex items-start gap-3 mb-5">
+        <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
         <div>
-          <h3 className="font-semibold text-gray-900">Payouts Enabled</h3>
-          <p className="text-sm text-gray-600">Your bank account is connected</p>
+          <p className="text-sm font-medium text-gray-900">Payouts enabled</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Your bank account is connected. Payouts are sent automatically when items sell.
+          </p>
         </div>
       </div>
 
-      <div className="bg-green-50 border border-green-200 rounded-md p-4 mb-4">
-        <p className="text-sm text-green-800">
-          When your items sell, you&apos;ll receive payouts directly to your bank account (minus 3% platform fee).
-        </p>
-      </div>
-
-      <div className="flex gap-2">
-        <Button
-          onClick={onOpenDashboard}
-          disabled={loading}
-          variant="outline"
-          className="flex-1 h-11 rounded-md"
-        >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <>
-              <ExternalLink className="h-4 w-4 mr-2" />
-              View Stripe Dashboard
-            </>
-          )}
-        </Button>
-      </div>
+      <Button
+        onClick={onOpenDashboard}
+        disabled={loading}
+        variant="outline"
+        className="w-full h-11 rounded-md"
+      >
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <>
+            <Image src="/stripe.svg" alt="Stripe" width={40} height={17} className="mr-2" />
+            View Dashboard
+            <ExternalLink className="h-4 w-4 ml-2 text-gray-400" />
+          </>
+        )}
+      </Button>
 
       {connectedAt && (
         <p className="text-xs text-gray-400 text-center mt-4">
@@ -430,7 +336,7 @@ function ActiveState({
 }
 
 // ============================================================
-// Restricted State
+// Restricted
 // ============================================================
 
 function RestrictedState({
@@ -444,39 +350,29 @@ function RestrictedState({
 }) {
   return (
     <div className="p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="h-12 w-12 rounded-md bg-red-100 flex items-center justify-center">
-          <AlertCircle className="h-6 w-6 text-red-600" />
-        </div>
+      <div className="flex items-start gap-3 mb-5">
+        <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
         <div>
-          <h3 className="font-semibold text-gray-900">Action Required</h3>
-          <p className="text-sm text-gray-600">Your account needs attention</p>
+          <p className="text-sm font-medium text-gray-900">Action required</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Stripe requires additional information to enable payouts.
+          </p>
+          {requirements && requirements.length > 0 && (
+            <ul className="mt-2 text-sm text-gray-500 list-disc list-inside">
+              {requirements.slice(0, 3).map((req, i) => (
+                <li key={i}>{req.replace(/_/g, " ")}</li>
+              ))}
+            </ul>
+          )}
         </div>
-      </div>
-
-      <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-4">
-        <p className="text-sm text-red-800">
-          Stripe requires additional information to enable payouts. Please update your details.
-        </p>
-        {requirements && requirements.length > 0 && (
-          <ul className="mt-2 text-xs text-red-700 list-disc list-inside">
-            {requirements.slice(0, 3).map((req, i) => (
-              <li key={i}>{req.replace(/_/g, " ")}</li>
-            ))}
-          </ul>
-        )}
       </div>
 
       <Button
         onClick={onUpdate}
         disabled={loading}
-        className="w-full h-11 rounded-md bg-red-600 hover:bg-red-700 text-white"
+        className="w-full h-11 rounded-md bg-gray-900 hover:bg-gray-800 text-white"
       >
-        {loading ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
-        ) : (
-          "Update Details"
-        )}
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Update Details"}
       </Button>
     </div>
   );

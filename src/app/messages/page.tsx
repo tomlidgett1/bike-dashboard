@@ -753,6 +753,7 @@ function MessagesPageInner() {
           offer={offerToConfirm}
           action={confirmationAction}
           loading={loadingOfferId === offerToConfirm.id}
+          role={offerRole}
         />
       )}
       </div>

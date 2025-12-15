@@ -1,41 +1,51 @@
 // ============================================================
 // OFFER CARD COMPONENT
 // ============================================================
-// Individual offer card for list view
-// Mobile-optimised: cleaner layout, no inline actions (tap for details)
+// Clean, Apple-inspired design for offer cards
+// Mobile-first: minimal, elegant, tap for details
 
 'use client';
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { OfferStatusBadge } from './offer-status-badge';
-import { Button } from '@/components/ui/button';
-import { Check, X, Reply, Ban, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronRight, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { OfferCardProps } from '@/lib/types/offer';
-import { canAcceptOffer, canRejectOffer, canCounterOffer, canCancelOffer, calculateSavings } from '@/lib/types/offer';
-import { useAuth } from '@/components/providers/auth-provider';
+import { calculateSavings } from '@/lib/types/offer';
+
+// Simple status text without badges
+function getStatusDisplay(status: string, role: 'buyer' | 'seller'): { text: string; color: string } {
+  switch (status) {
+    case 'pending':
+      return { 
+        text: role === 'buyer' ? 'Awaiting response' : 'New offer', 
+        color: 'text-gray-500' 
+      };
+    case 'countered':
+      return { 
+        text: role === 'buyer' ? 'Counter-offer received' : 'You countered', 
+        color: 'text-blue-600' 
+      };
+    case 'accepted':
+      return { text: 'Accepted', color: 'text-green-600' };
+    case 'rejected':
+      return { text: 'Declined', color: 'text-gray-400' };
+    case 'expired':
+      return { text: 'Expired', color: 'text-gray-400' };
+    case 'cancelled':
+      return { text: 'Cancelled', color: 'text-gray-400' };
+    default:
+      return { text: status, color: 'text-gray-500' };
+  }
+}
 
 export function OfferCard({
   offer,
   role,
-  onAccept,
-  onReject,
-  onCounter,
-  onCancel,
   onViewDetails,
   compact = false,
-  loadingOfferId,
-  loadingAction,
 }: OfferCardProps) {
-  const { user } = useAuth();
   const [imageError, setImageError] = useState(false);
-  
-  const isLoading = loadingOfferId === offer.id;
-  const isAccepting = isLoading && loadingAction === 'accept';
-  const isRejecting = isLoading && loadingAction === 'reject';
-  const isCountering = isLoading && loadingAction === 'counter';
-  const isCancelling = isLoading && loadingAction === 'cancel';
 
   const savings = calculateSavings(offer.original_price, offer.offer_amount);
   const savingsPercentage = offer.offer_percentage || ((savings / offer.original_price) * 100);
@@ -46,27 +56,30 @@ export function OfferCard({
   const otherParty = role === 'buyer' ? offer.seller : offer.buyer;
   const otherPartyName = otherParty?.business_name || otherParty?.name || 'User';
 
-  const showAccept = user && canAcceptOffer(offer, user.id);
-  const showReject = user && canRejectOffer(offer, user.id);
-  const showCounter = user && canCounterOffer(offer, user.id);
-  const showCancel = user && canCancelOffer(offer, user.id);
-  const hasActions = showAccept || showReject || showCounter || showCancel;
+  const statusDisplay = getStatusDisplay(offer.status, role);
+  
+  // Check if action needed
+  const needsAction = (role === 'buyer' && offer.status === 'countered') || 
+                      (role === 'seller' && offer.status === 'pending') ||
+                      (role === 'buyer' && offer.status === 'accepted' && offer.payment_status === 'pending');
 
   return (
-    <div
+    <button
       className={cn(
-        'bg-white border border-gray-200 rounded-md hover:shadow-md active:bg-gray-50 transition-all cursor-pointer',
+        'w-full text-left bg-white rounded-xl transition-all',
+        'active:scale-[0.98] active:bg-gray-50',
+        'border border-gray-100',
         compact ? 'p-3' : 'p-4'
       )}
       onClick={() => onViewDetails?.(offer.id)}
     >
       <div className="flex gap-3">
         {/* Product Image */}
-        {productImage && !imageError ? (
-          <div className={cn(
-            'relative rounded-md overflow-hidden bg-gray-100 flex-shrink-0',
-            compact ? 'h-14 w-14' : 'h-16 w-16 md:h-20 md:w-20'
-          )}>
+        <div className={cn(
+          'relative rounded-lg overflow-hidden bg-gray-50 flex-shrink-0',
+          compact ? 'h-14 w-14' : 'h-16 w-16'
+        )}>
+          {productImage && !imageError ? (
             <Image
               src={productImage}
               alt={productName}
@@ -74,170 +87,59 @@ export function OfferCard({
               className="object-cover"
               onError={() => setImageError(true)}
             />
-          </div>
-        ) : (
-          <div className={cn(
-            'relative rounded-md overflow-hidden bg-gray-100 flex-shrink-0 flex items-center justify-center',
-            compact ? 'h-14 w-14' : 'h-16 w-16 md:h-20 md:w-20'
-          )}>
-            <span className="text-gray-400 text-xs">No Image</span>
-          </div>
-        )}
-
-        {/* Offer Details */}
-        <div className="flex-1 min-w-0">
-          {/* Header Row: Product Name + Chevron */}
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <h3 className={cn(
-              'font-semibold text-gray-900 truncate leading-tight',
-              compact ? 'text-sm' : 'text-[15px]'
-            )}>
-              {productName}
-            </h3>
-            <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0 mt-0.5" />
-          </div>
-
-          {/* Seller/Buyer Info */}
-          <p className="text-xs text-gray-500 mb-2">
-            {role === 'buyer' ? 'To' : 'From'} {otherPartyName}
-          </p>
-
-          {/* Status Badge + Price Row */}
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <OfferStatusBadge status={offer.status} expiresAt={offer.expires_at} />
-            
-            {/* Simplified Price Display - Mobile */}
-            <div className="flex items-baseline gap-2 md:hidden">
-              <span className="text-xs text-gray-400 line-through">
-                ${offer.original_price.toLocaleString('en-AU')}
-              </span>
-              <span className="text-base font-bold text-gray-900">
-                ${offer.offer_amount.toLocaleString('en-AU')}
-              </span>
-            </div>
-          </div>
-
-          {/* Detailed Price Display - Desktop only */}
-          <div className={cn('hidden md:block mt-3 space-y-1', compact ? 'text-xs' : 'text-sm')}>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Original:</span>
-              <span className="text-gray-900 line-through">
-                ${offer.original_price.toLocaleString('en-AU')}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Offer:</span>
-              <span className="font-bold text-gray-900">
-                ${offer.offer_amount.toLocaleString('en-AU')}
-              </span>
-            </div>
-            <div className="flex justify-between text-green-700">
-              <span className="font-medium">Savings:</span>
-              <span className="font-bold">
-                ${savings.toLocaleString('en-AU')} ({savingsPercentage.toFixed(0)}% off)
-              </span>
-            </div>
-          </div>
-
-          {/* Action Buttons - Desktop only (Mobile: tap card for detail view) */}
-          {!compact && hasActions && (
-            <div className="hidden md:flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
-              {showAccept && (
-                <Button
-                  size="sm"
-                  onClick={() => onAccept?.(offer.id)}
-                  disabled={isLoading}
-                  className="rounded-md text-xs flex-1 min-w-[90px]"
-                >
-                  {isAccepting ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      Accepting...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-3.5 w-3.5 mr-1" />
-                      Accept
-                    </>
-                  )}
-                </Button>
-              )}
-              {showReject && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onReject?.(offer.id)}
-                  disabled={isLoading}
-                  className="rounded-md text-xs flex-1 min-w-[90px]"
-                >
-                  {isRejecting ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      Rejecting...
-                    </>
-                  ) : (
-                    <>
-                      <X className="h-3.5 w-3.5 mr-1" />
-                      Reject
-                    </>
-                  )}
-                </Button>
-              )}
-              {showCounter && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onCounter?.(offer.id)}
-                  disabled={isLoading}
-                  className="rounded-md text-xs flex-1 min-w-[90px]"
-                >
-                  {isCountering ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      Countering...
-                    </>
-                  ) : (
-                    <>
-                      <Reply className="h-3.5 w-3.5 mr-1" />
-                      Counter
-                    </>
-                  )}
-                </Button>
-              )}
-              {showCancel && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onCancel?.(offer.id)}
-                  disabled={isLoading}
-                  className="rounded-md text-xs flex-1 min-w-[90px]"
-                >
-                  {isCancelling ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      Cancelling...
-                    </>
-                  ) : (
-                    <>
-                      <Ban className="h-3.5 w-3.5 mr-1" />
-                      Cancel
-                    </>
-                  )}
-                </Button>
-              )}
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Package className="h-6 w-6 text-gray-300" />
             </div>
           )}
         </div>
-      </div>
 
-      {/* Message Preview - Desktop only */}
-      {offer.message && !compact && (
-        <div className="hidden md:block mt-3 pt-3 border-t border-gray-100">
-          <p className="text-xs text-gray-600 italic line-clamp-2">
-            "{offer.message}"
+        {/* Content */}
+        <div className="flex-1 min-w-0 flex flex-col justify-center">
+          {/* Product Name */}
+          <h3 className={cn(
+            'font-semibold text-gray-900 truncate',
+            compact ? 'text-sm' : 'text-[15px]'
+          )}>
+            {productName}
+          </h3>
+
+          {/* Seller/Buyer */}
+          <p className="text-[13px] text-gray-500 mt-0.5">
+            {otherPartyName}
+          </p>
+
+          {/* Status */}
+          <p className={cn('text-[13px] font-medium mt-1', statusDisplay.color)}>
+            {statusDisplay.text}
+            {needsAction && offer.status !== 'accepted' && (
+              <span className="ml-1">·</span>
+            )}
+            {needsAction && offer.status !== 'accepted' && (
+              <span className="text-gray-900"> Respond</span>
+            )}
+            {offer.status === 'accepted' && offer.payment_status === 'pending' && role === 'buyer' && (
+              <>
+                <span className="ml-1">·</span>
+                <span className="text-gray-900"> Pay now</span>
+              </>
+            )}
           </p>
         </div>
-      )}
-    </div>
+
+        {/* Right side: Price + Chevron */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="text-right">
+            <p className="text-[15px] font-semibold text-gray-900">
+              ${offer.offer_amount.toLocaleString('en-AU', { minimumFractionDigits: 0 })}
+            </p>
+            <p className="text-[12px] text-gray-400">
+              {savingsPercentage.toFixed(0)}% off
+            </p>
+          </div>
+          <ChevronRight className="h-5 w-5 text-gray-300" />
+        </div>
+      </div>
+    </button>
   );
 }

@@ -25,6 +25,7 @@ interface OfferConfirmationDialogProps {
   offer: EnrichedOffer;
   action: 'accept' | 'reject' | 'cancel';
   loading?: boolean;
+  role?: 'buyer' | 'seller';
 }
 
 export function OfferConfirmationDialog({
@@ -34,14 +35,34 @@ export function OfferConfirmationDialog({
   offer,
   action,
   loading = false,
+  role = 'seller',
 }: OfferConfirmationDialogProps) {
   const savings = calculateSavings(offer.original_price, offer.offer_amount);
   const savingsPercentage = offer.offer_percentage || ((savings / offer.original_price) * 100);
   const productName = offer.product?.display_name || offer.product?.description || 'Product';
+  
+  // Check if buyer is accepting a counter-offer
+  const isBuyerAcceptingCounterOffer = role === 'buyer' && offer.status === 'countered';
+  const isBuyerDecliningCounterOffer = role === 'buyer' && offer.status === 'countered' && action === 'reject';
 
   const getActionConfig = () => {
     switch (action) {
       case 'accept':
+        // Different messaging for buyer accepting counter-offer vs seller accepting offer
+        if (isBuyerAcceptingCounterOffer) {
+          return {
+            title: 'Accept Counter-Offer',
+            icon: <CheckCircle className="h-12 w-12 text-green-600" />,
+            description: 'Are you sure you want to accept the seller\'s counter-offer?',
+            confirmText: 'Accept Counter-Offer',
+            confirmVariant: 'default' as const,
+            details: [
+              'You agree to purchase at this price',
+              'You will be redirected to complete payment',
+              'The item will be reserved for you',
+            ],
+          };
+        }
         return {
           title: 'Accept Offer',
           icon: <CheckCircle className="h-12 w-12 text-green-600" />,
@@ -51,11 +72,25 @@ export function OfferConfirmationDialog({
           details: [
             'This product will be marked as pending',
             'All other offers on this product will be rejected',
-            'The buyer will be notified of your acceptance',
-            'You will need to coordinate delivery with the buyer',
+            'The buyer will be notified to complete payment',
           ],
         };
       case 'reject':
+        // Different messaging for buyer declining counter-offer
+        if (isBuyerDecliningCounterOffer) {
+          return {
+            title: 'Decline Counter-Offer',
+            icon: <XCircle className="h-12 w-12 text-red-600" />,
+            description: 'Are you sure you want to decline the seller\'s counter-offer?',
+            confirmText: 'Decline Counter-Offer',
+            confirmVariant: 'destructive' as const,
+            details: [
+              'This negotiation will end',
+              'The seller will be notified',
+              'You can make a new offer if you change your mind',
+            ],
+          };
+        }
         return {
           title: 'Reject Offer',
           icon: <XCircle className="h-12 w-12 text-red-600" />,
@@ -123,7 +158,9 @@ export function OfferConfirmationDialog({
 
           <div className="bg-green-50 border border-green-200 rounded-md p-2.5">
             <p className="text-xs text-green-700 font-medium">
-              {action === 'accept' ? 'You will receive' : 'Discount'}
+              {action === 'accept' 
+                ? (role === 'seller' ? 'You will receive' : 'You will pay')
+                : 'Discount'}
             </p>
             <p className="text-lg font-bold text-green-700">
               {action === 'accept' ? (
@@ -132,6 +169,11 @@ export function OfferConfirmationDialog({
                 `$${savings.toLocaleString('en-AU')} (${savingsPercentage.toFixed(0)}% off)`
               )}
             </p>
+            {action === 'accept' && role === 'buyer' && (
+              <p className="text-xs text-green-600 mt-1">
+                You save ${savings.toLocaleString('en-AU')} ({savingsPercentage.toFixed(0)}% off)
+              </p>
+            )}
           </div>
 
           {offer.message && (

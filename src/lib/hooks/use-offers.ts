@@ -2,10 +2,13 @@
 // USE OFFERS HOOK
 // ============================================================
 // React hook for managing offers list and operations
+// Uses Supabase Realtime for instant updates instead of polling
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { 
   EnrichedOffer, 
   OfferRole, 
@@ -21,7 +24,7 @@ import type {
 } from '@/lib/types/offer';
 
 // ============================================================
-// USE OFFERS - List offers
+// USE OFFERS - List offers with Realtime
 // ============================================================
 
 interface UseOffersOptions {
@@ -30,7 +33,7 @@ interface UseOffersOptions {
   productId?: string;
   page?: number;
   limit?: number;
-  autoRefresh?: boolean;
+  autoRefresh?: boolean; // Now enables Realtime subscription instead of polling
 }
 
 export function useOffers(options: UseOffersOptions = {}) {
@@ -39,10 +42,18 @@ export function useOffers(options: UseOffersOptions = {}) {
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<GetOffersResponse['stats']>();
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const userIdRef = useRef<string | null>(null);
+  const initialLoadCompleteRef = useRef(false);
+  const fetchOffersRef = useRef<(silent?: boolean) => Promise<void>>(null!);
 
-  const fetchOffers = useCallback(async () => {
+  // Fetch offers - silent mode for background refreshes
+  const fetchOffers = useCallback(async (silent: boolean = false) => {
     try {
-      setLoading(true);
+      // Only show loading spinner on initial load, not background refreshes
+      if (!silent && !initialLoadCompleteRef.current) {
+        setLoading(true);
+      }
       setError(null);
 
       const params = new URLSearchParams();
@@ -67,6 +78,7 @@ export function useOffers(options: UseOffersOptions = {}) {
       setOffers(data.offers);
       setTotal(data.total);
       setStats(data.stats);
+      initialLoadCompleteRef.current = true;
     } catch (err) {
       console.error('Error fetching offers:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch offers');
@@ -75,20 +87,84 @@ export function useOffers(options: UseOffersOptions = {}) {
     }
   }, [options.role, options.status, options.productId, options.page, options.limit]);
 
-  useEffect(() => {
-    fetchOffers();
-  }, [fetchOffers]);
+  // Keep ref updated with latest fetchOffers
+  fetchOffersRef.current = fetchOffers;
 
-  // Auto-refresh every 30 seconds if enabled
+  // Initial fetch
+  useEffect(() => {
+    fetchOffers(false);
+  }, [options.role, options.status, options.productId, options.page, options.limit]);
+
+  // Set up Supabase Realtime subscription (replaces polling)
   useEffect(() => {
     if (!options.autoRefresh) return;
 
-    const interval = setInterval(() => {
-      fetchOffers();
-    }, 30000);
+    const supabase = createClient();
+    let isMounted = true;
 
-    return () => clearInterval(interval);
-  }, [options.autoRefresh, fetchOffers]);
+    const setupRealtime = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user || !isMounted) return;
+      
+      userIdRef.current = user.id;
+
+      // Subscribe to offers table for this user (as buyer or seller)
+      channelRef.current = supabase
+        .channel('offers-realtime')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'offers',
+          },
+          (payload) => {
+            console.log('[Realtime] New offer:', payload);
+            const newOffer = payload.new as any;
+            // Only refresh if this offer involves the current user
+            if (newOffer.buyer_id === userIdRef.current || newOffer.seller_id === userIdRef.current) {
+              fetchOffersRef.current?.(true); // Silent refresh
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'offers',
+          },
+          (payload) => {
+            console.log('[Realtime] Offer update:', payload);
+            const updatedOffer = payload.new as any;
+            // Only refresh if this offer involves the current user
+            if (updatedOffer.buyer_id === userIdRef.current || updatedOffer.seller_id === userIdRef.current) {
+              fetchOffersRef.current?.(true); // Silent refresh
+            }
+          }
+        )
+        .subscribe((status, err) => {
+          console.log('[Realtime] Offers subscription:', status, err || '');
+        });
+    };
+
+    setupRealtime();
+
+    // Cleanup subscription on unmount
+    return () => {
+      isMounted = false;
+      if (channelRef.current) {
+        channelRef.current.unsubscribe();
+        channelRef.current = null;
+      }
+    };
+  }, [options.autoRefresh]); // Only re-run if autoRefresh changes
+
+  // Manual refresh (silent to avoid UI disruption)
+  const refresh = useCallback(() => {
+    fetchOffers(true);
+  }, [fetchOffers]);
 
   return {
     offers,
@@ -96,20 +172,23 @@ export function useOffers(options: UseOffersOptions = {}) {
     error,
     total,
     stats,
-    refresh: fetchOffers,
+    refresh,
   };
 }
 
 // ============================================================
-// USE OFFER - Single offer
+// USE OFFER - Single offer with Realtime
 // ============================================================
 
 export function useOffer(offerId: string | null) {
   const [offer, setOffer] = useState<EnrichedOffer | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const initialLoadCompleteRef = useRef(false);
 
-  const fetchOffer = useCallback(async () => {
+  // Fetch offer - silent mode for background refreshes
+  const fetchOffer = useCallback(async (silent: boolean = false) => {
     if (!offerId) {
       setOffer(null);
       setLoading(false);
@@ -117,7 +196,10 @@ export function useOffer(offerId: string | null) {
     }
 
     try {
-      setLoading(true);
+      // Only show loading on initial load
+      if (!silent && !initialLoadCompleteRef.current) {
+        setLoading(true);
+      }
       setError(null);
 
       const response = await fetch(`/api/offers/${offerId}`);
@@ -128,6 +210,7 @@ export function useOffer(offerId: string | null) {
 
       const data = await response.json();
       setOffer(data.offer);
+      initialLoadCompleteRef.current = true;
     } catch (err) {
       console.error('Error fetching offer:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch offer');
@@ -136,15 +219,55 @@ export function useOffer(offerId: string | null) {
     }
   }, [offerId]);
 
+  // Initial fetch
   useEffect(() => {
-    fetchOffer();
+    initialLoadCompleteRef.current = false;
+    fetchOffer(false);
+  }, [offerId]);
+
+  // Set up Realtime subscription for this specific offer
+  useEffect(() => {
+    if (!offerId) return;
+
+    const supabase = createClient();
+
+    // Subscribe to updates for this specific offer
+    channelRef.current = supabase
+      .channel(`offer-${offerId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'offers',
+          filter: `id=eq.${offerId}`,
+        },
+        () => {
+          // Offer was updated - silently refresh
+          fetchOffer(true);
+        }
+      )
+      .subscribe();
+
+    // Cleanup subscription
+    return () => {
+      if (channelRef.current) {
+        channelRef.current.unsubscribe();
+        channelRef.current = null;
+      }
+    };
+  }, [offerId, fetchOffer]);
+
+  // Manual refresh (silent)
+  const refresh = useCallback(() => {
+    fetchOffer(true);
   }, [fetchOffer]);
 
   return {
     offer,
     loading,
     error,
-    refresh: fetchOffer,
+    refresh,
   };
 }
 
@@ -211,10 +334,10 @@ export function useAcceptOffer() {
         method: 'PATCH',
       });
 
-      const data: AcceptOfferResponse = await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to accept offer');
+        throw new Error(data.error || data.message || 'Failed to accept offer');
       }
 
       return data.offer;
@@ -252,10 +375,10 @@ export function useRejectOffer() {
         method: 'PATCH',
       });
 
-      const data: RejectOfferResponse = await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to reject offer');
+        throw new Error(data.error || data.message || 'Failed to reject offer');
       }
 
       return data.offer;
@@ -300,10 +423,10 @@ export function useCounterOffer() {
         body: JSON.stringify(request),
       });
 
-      const data: CounterOfferResponse = await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to counter offer');
+        throw new Error(data.error || data.message || 'Failed to counter offer');
       }
 
       return data.offer;
@@ -341,10 +464,10 @@ export function useCancelOffer() {
         method: 'PATCH',
       });
 
-      const data: CancelOfferResponse = await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to cancel offer');
+        throw new Error(data.error || data.message || 'Failed to cancel offer');
       }
 
       return data.offer;

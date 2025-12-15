@@ -1,7 +1,9 @@
 // ============================================================
 // OFFERS API - ACCEPT OFFER
 // ============================================================
-// PATCH: Accept an offer (seller only)
+// PATCH: Accept an offer
+// - Seller can accept a pending offer from buyer
+// - Buyer can accept a counter-offer from seller
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
@@ -44,10 +46,27 @@ export async function PATCH(
       );
     }
 
-    // Check authorization (must be seller)
-    if (offer.seller_id !== user.id) {
+    // Check authorization:
+    // - Seller can accept pending offers
+    // - Buyer can accept counter-offers
+    const isSellerAcceptingOffer = offer.seller_id === user.id && offer.status === 'pending';
+    const isBuyerAcceptingCounterOffer = offer.buyer_id === user.id && offer.status === 'countered';
+    
+    if (!isSellerAcceptingOffer && !isBuyerAcceptingCounterOffer) {
+      if (offer.status === 'countered' && offer.seller_id === user.id) {
+        return NextResponse.json(
+          { error: 'The buyer needs to accept or decline your counter-offer' },
+          { status: 403 }
+        );
+      }
+      if (offer.status === 'pending' && offer.buyer_id === user.id) {
+        return NextResponse.json(
+          { error: 'The seller needs to respond to your offer' },
+          { status: 403 }
+        );
+      }
       return NextResponse.json(
-        { error: 'Only the seller can accept this offer' },
+        { error: 'You cannot accept this offer' },
         { status: 403 }
       );
     }
@@ -68,16 +87,49 @@ export async function PATCH(
       );
     }
 
-    // Update offer status
-    const { data: updatedOffer, error: updateError } = await supabase
+    // Calculate payment deadline (48 hours from now)
+    const paymentDeadline = new Date();
+    paymentDeadline.setHours(paymentDeadline.getHours() + 48);
+
+    // Build update data - include new fields if they exist
+    const updateData: Record<string, any> = { 
+      status: 'accepted',
+      updated_at: new Date().toISOString(),
+    };
+
+    // Try with payment fields first, fallback to basic update if columns don't exist
+    let updatedOffer: any;
+    let updateError: any;
+
+    // First attempt with all payment fields
+    const result1 = await supabase
       .from('offers')
       .update({ 
-        status: 'accepted',
-        updated_at: new Date().toISOString(),
+        ...updateData,
+        payment_status: 'pending',
+        payment_deadline: paymentDeadline.toISOString(),
       })
       .eq('id', id)
       .select()
       .single();
+
+    if (result1.error && result1.error.message?.includes('column')) {
+      // Fallback: payment columns don't exist yet
+      console.log('[Accept Offer] Payment columns not found, using basic update');
+      const result2 = await supabase
+        .from('offers')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      updatedOffer = result2.data;
+      updateError = result2.error;
+    } else {
+      updatedOffer = result1.data;
+      updateError = result1.error;
+      console.log('[Accept Offer] Payment deadline set:', paymentDeadline.toISOString());
+    }
 
     if (updateError) {
       console.error('Error updating offer:', updateError);

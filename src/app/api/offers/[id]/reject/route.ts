@@ -1,7 +1,9 @@
 // ============================================================
 // OFFERS API - REJECT OFFER
 // ============================================================
-// PATCH: Reject an offer (seller only)
+// PATCH: Reject an offer
+// - Seller can reject a pending offer from buyer
+// - Buyer can reject (decline) a counter-offer from seller
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
@@ -44,10 +46,15 @@ export async function PATCH(
       );
     }
 
-    // Check authorization (must be seller)
-    if (offer.seller_id !== user.id) {
+    // Check authorization:
+    // - Seller can reject pending offers
+    // - Buyer can reject (decline) counter-offers
+    const isSellerRejectingOffer = offer.seller_id === user.id && offer.status === 'pending';
+    const isBuyerRejectingCounterOffer = offer.buyer_id === user.id && offer.status === 'countered';
+    
+    if (!isSellerRejectingOffer && !isBuyerRejectingCounterOffer) {
       return NextResponse.json(
-        { error: 'Only the seller can reject this offer' },
+        { error: 'You cannot reject this offer' },
         { status: 403 }
       );
     }

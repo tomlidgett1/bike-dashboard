@@ -1,7 +1,9 @@
 // ============================================================
 // OFFERS API - COUNTER OFFER
 // ============================================================
-// POST: Counter an offer with new amount (seller only)
+// POST: Counter an offer with new amount
+// - Seller can counter a pending offer from buyer
+// - Buyer can counter a counter-offer from seller
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
@@ -60,10 +62,15 @@ export async function POST(
       );
     }
 
-    // Check authorization (must be seller)
-    if (offer.seller_id !== user.id) {
+    // Check authorization:
+    // - Seller can counter pending offers
+    // - Buyer can counter counter-offers
+    const isSellerCountering = offer.seller_id === user.id && offer.status === 'pending';
+    const isBuyerCountering = offer.buyer_id === user.id && offer.status === 'countered';
+    
+    if (!isSellerCountering && !isBuyerCountering) {
       return NextResponse.json(
-        { error: 'Only the seller can counter this offer' },
+        { error: 'You cannot counter this offer' },
         { status: 403 }
       );
     }
@@ -92,9 +99,20 @@ export async function POST(
       );
     }
 
-    if (newAmount <= offer.offer_amount) {
+    // For seller: counter must be higher than buyer's offer
+    // For buyer: counter can be higher than seller's counter (meeting in middle)
+    if (isSellerCountering && newAmount <= offer.offer_amount) {
       return NextResponse.json(
         { error: 'Counter amount should be higher than the current offer' },
+        { status: 400 }
+      );
+    }
+    
+    // For buyer countering: new offer should be higher than their original but less than seller's counter
+    // Actually, buyer's counter should just be a new amount that makes sense
+    if (isBuyerCountering && newAmount >= offer.offer_amount) {
+      return NextResponse.json(
+        { error: 'Your counter should be less than the seller\'s counter-offer' },
         { status: 400 }
       );
     }

@@ -12,7 +12,6 @@ import {
   Settings,
   Package,
   Truck,
-  Clock,
   AlertCircle,
 } from "lucide-react";
 import {
@@ -45,7 +44,7 @@ import {
 // ============================================================
 // Edit Product Drawer
 // A beautiful slide-over panel for editing product listings
-// Features: Autosave with debounce, organised sections, mobile-optimised
+// Features: Manual save, organised sections, mobile-optimised
 // ============================================================
 
 interface EditProductDrawerProps {
@@ -84,8 +83,6 @@ export function EditProductDrawer({
     new Set(["pricing", "description"])
   );
   const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
-  const [lastSavedAt, setLastSavedAt] = React.useState<Date | null>(null);
-  const saveTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // Initialise form data when product changes
   React.useEffect(() => {
@@ -272,25 +269,18 @@ export function EditProductDrawer({
 
   const sections = React.useMemo(() => getSections(), [getSections]);
 
-  // Handle field change with autosave
+  // Handle field change (no autosave - manual save only)
   const handleFieldChange = (key: string, value: any) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
     setHasUnsavedChanges(true);
-    setSaveStatus("idle");
-
-    // Clear existing timeout
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+    // Reset save status when user makes changes
+    if (saveStatus === "saved") {
+      setSaveStatus("idle");
     }
-
-    // Debounced autosave (500ms)
-    saveTimeoutRef.current = setTimeout(() => {
-      saveChanges({ ...formData, [key]: value });
-    }, 500);
   };
 
   // Save changes to API
-  const saveChanges = async (data: Record<string, any>) => {
+  const saveChanges = async () => {
     setSaveStatus("saving");
 
     try {
@@ -298,7 +288,7 @@ export function EditProductDrawer({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...data,
+          ...formData,
           logChanges: true,
         }),
       });
@@ -310,11 +300,7 @@ export function EditProductDrawer({
       const { listing } = await response.json();
       setSaveStatus("saved");
       setHasUnsavedChanges(false);
-      setLastSavedAt(new Date());
       onUpdate(listing);
-
-      // Reset to idle after 2 seconds
-      setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (error) {
       console.error("Error saving:", error);
       setSaveStatus("error");
@@ -334,26 +320,18 @@ export function EditProductDrawer({
     });
   };
 
-  // Handle close with unsaved changes warning
+  // Handle close - warn if unsaved changes
   const handleClose = () => {
     if (hasUnsavedChanges) {
-      // Save immediately before closing
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+      const confirmed = window.confirm(
+        "You have unsaved changes. Are you sure you want to close without saving?"
+      );
+      if (!confirmed) {
+        return;
       }
-      saveChanges(formData);
     }
     onClose();
   };
-
-  // Cleanup on unmount
-  React.useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // Get the primary image
   const primaryImage = React.useMemo(() => {
@@ -458,31 +436,22 @@ export function EditProductDrawer({
                       Edit Listing
                     </h2>
                     <div className="flex items-center gap-2 mt-0.5">
-                      {/* Save status indicator */}
-                      {saveStatus === "saving" && (
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          <span>Saving...</span>
+                      {/* Status indicator */}
+                      {hasUnsavedChanges && saveStatus === "idle" && (
+                        <div className="flex items-center gap-1.5 text-xs text-amber-600">
+                          <span>Unsaved changes</span>
                         </div>
                       )}
                       {saveStatus === "saved" && (
                         <div className="flex items-center gap-1.5 text-xs text-green-600">
                           <Check className="h-3 w-3" />
-                          <span>Saved</span>
+                          <span>Changes saved</span>
                         </div>
                       )}
                       {saveStatus === "error" && (
                         <div className="flex items-center gap-1.5 text-xs text-red-600">
                           <AlertCircle className="h-3 w-3" />
                           <span>Failed to save</span>
-                        </div>
-                      )}
-                      {saveStatus === "idle" && lastSavedAt && (
-                        <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                          <Clock className="h-3 w-3" />
-                          <span>
-                            Last saved {lastSavedAt.toLocaleTimeString()}
-                          </span>
                         </div>
                       )}
                     </div>
@@ -546,12 +515,30 @@ export function EditProductDrawer({
             </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-4">
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-4 space-y-2">
           <Button
-            onClick={handleClose}
+            onClick={saveChanges}
+            disabled={!hasUnsavedChanges || saveStatus === "saving"}
             className="w-full h-12 rounded-md font-medium"
           >
-            Done Editing
+            {saveStatus === "saving" ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Check className="h-4 w-4 mr-2" />
+                Save Changes
+              </>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={handleClose}
+            className="w-full h-10 rounded-md font-medium text-gray-600"
+          >
+            {hasUnsavedChanges ? "Discard & Close" : "Close"}
           </Button>
         </div>
       </SheetContent>

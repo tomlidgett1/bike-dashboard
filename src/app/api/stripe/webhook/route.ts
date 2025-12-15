@@ -125,7 +125,20 @@ export async function POST(request: NextRequest) {
       case 'payment_intent.payment_failed': {
         const paymentIntent = event.data.object as Stripe.PaymentIntent;
         console.log('[Stripe Webhook] Payment failed:', paymentIntent.id);
-        // Could notify user or log for analytics
+        
+        // Handle offer payment failure
+        const failedMetadata = paymentIntent.metadata;
+        if (failedMetadata?.offer_id && failedMetadata?.payment_type === 'offer') {
+          const supabase = getServiceClient();
+          await supabase
+            .from('offers')
+            .update({ 
+              payment_status: 'failed',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', failedMetadata.offer_id);
+          console.log('[Stripe Webhook] Offer payment status set to failed:', failedMetadata.offer_id);
+        }
         break;
       }
 
@@ -184,6 +197,14 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     return;
   }
 
+  // Check if this is an offer payment
+  const isOfferPayment = metadata.payment_type === 'offer' && metadata.offer_id;
+  
+  if (isOfferPayment) {
+    console.log('[Stripe Webhook] >>> OFFER PAYMENT DETECTED <<<');
+    console.log('[Stripe Webhook] Offer ID:', metadata.offer_id);
+  }
+
   const {
     product_id,
     buyer_id,
@@ -194,6 +215,7 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     total_amount,
     platform_fee,
     seller_payout,
+    offer_id,
   } = metadata;
 
   console.log('[Stripe Webhook] Extracted IDs:', { product_id, buyer_id, seller_id });
@@ -299,6 +321,12 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   if (buyer_fee) {
     purchaseData.buyer_fee = parseFloat(buyer_fee);
   }
+  // Link to offer if this is an offer payment
+  if (offer_id) {
+    purchaseData.offer_id = offer_id;
+    purchaseData.original_price = parseFloat(metadata.original_price || item_price);
+    console.log('[Stripe Webhook] Purchase linked to offer:', offer_id);
+  }
 
   console.log('[Stripe Webhook] Inserting purchase with data:', JSON.stringify(purchaseData, null, 2));
 
@@ -380,6 +408,46 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     // Don't throw - purchase is already created
   } else {
     console.log('[Stripe Webhook] Product marked as sold:', product_id);
+  }
+
+  // ============================================================
+  // Handle Offer Payment - Update offer status
+  // ============================================================
+  if (offer_id) {
+    console.log('[Stripe Webhook] Updating offer payment status for:', offer_id);
+    
+    const { error: offerUpdateError } = await supabase
+      .from('offers')
+      .update({
+        payment_status: 'paid',
+        purchase_id: purchase.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', offer_id);
+
+    if (offerUpdateError) {
+      console.error('[Stripe Webhook] Failed to update offer payment status:', offerUpdateError);
+      // Don't throw - purchase is already created
+    } else {
+      console.log('[Stripe Webhook] ✓ Offer payment status updated to paid:', offer_id);
+    }
+
+    // Reject all other pending offers on this product (if not already done)
+    const { error: rejectError } = await supabase
+      .from('offers')
+      .update({ 
+        status: 'rejected',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('product_id', product_id)
+      .neq('id', offer_id)
+      .in('status', ['pending', 'countered']);
+
+    if (rejectError) {
+      console.error('[Stripe Webhook] Failed to reject other offers:', rejectError);
+    } else {
+      console.log('[Stripe Webhook] Other pending offers rejected for product:', product_id);
+    }
   }
 
   // TODO: Send confirmation emails to buyer and seller

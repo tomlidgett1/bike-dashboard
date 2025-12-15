@@ -2,10 +2,13 @@
 // USE COMBINED UNREAD COUNT HOOK
 // ============================================================
 // Hook for fetching total unread count (messages + offers)
+// Uses Supabase Realtime for instant badge updates
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 interface CombinedUnreadCount {
   messages: number;
@@ -21,6 +24,9 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const userIdRef = useRef<string | null>(null);
+  const fetchCountsRef = useRef<() => Promise<void>>(null!);
 
   const fetchCounts = useCallback(async () => {
     try {
@@ -57,20 +63,95 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
     }
   }, []);
 
+  // Keep ref updated with latest fetchCounts
+  fetchCountsRef.current = fetchCounts;
+
+  // Set up Supabase Realtime subscription (replaces polling)
   useEffect(() => {
-    // Don't fetch if polling is disabled (refreshInterval is 0)
+    // Don't set up if disabled (refreshInterval is 0)
     if (refreshInterval === 0) {
       setLoading(false);
       return;
     }
 
-    fetchCounts();
+    const supabase = createClient();
+    let isMounted = true;
 
-    // Set up polling interval
-    const interval = setInterval(fetchCounts, refreshInterval);
+    const setupRealtime = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user || !isMounted) {
+        setLoading(false);
+        return;
+      }
 
-    return () => clearInterval(interval);
-  }, [fetchCounts, refreshInterval]);
+      userIdRef.current = user.id;
+
+      // Initial fetch
+      fetchCountsRef.current?.();
+
+      // Subscribe to messages and offers tables for instant badge updates
+      channelRef.current = supabase
+        .channel('unread-counts-realtime')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+          },
+          (payload) => {
+            console.log('[Realtime] Unread counts - new message:', payload);
+            // New message - refresh counts
+            fetchCountsRef.current?.();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'conversation_participants',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            console.log('[Realtime] Unread counts - participant update:', payload);
+            // Unread count updated (e.g., messages marked as read)
+            fetchCountsRef.current?.();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'offers',
+          },
+          (payload) => {
+            console.log('[Realtime] Unread counts - offer change:', payload);
+            const offer = (payload.new || payload.old) as any;
+            // Only refresh if this offer involves the current user
+            if (offer?.buyer_id === userIdRef.current || offer?.seller_id === userIdRef.current) {
+              fetchCountsRef.current?.();
+            }
+          }
+        )
+        .subscribe((status, err) => {
+          console.log('[Realtime] Unread counts subscription:', status, err || '');
+        });
+    };
+
+    setupRealtime();
+
+    // Cleanup subscription on unmount
+    return () => {
+      isMounted = false;
+      if (channelRef.current) {
+        channelRef.current.unsubscribe();
+        channelRef.current = null;
+      }
+    };
+  }, [refreshInterval]); // Only re-run if refreshInterval changes
 
   const refresh = useCallback(() => {
     fetchCounts();

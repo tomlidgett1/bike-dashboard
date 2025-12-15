@@ -639,7 +639,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-0">
                 <StripeConnectCard />
               </CardContent>
             </Card>

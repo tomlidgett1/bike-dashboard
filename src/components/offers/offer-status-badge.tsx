@@ -1,43 +1,61 @@
 // ============================================================
 // OFFER STATUS BADGE COMPONENT
 // ============================================================
-// Color-coded badge showing offer status
+// Clean, minimal status indicator
 
 'use client';
 
 import { cn } from '@/lib/utils';
-import { getOfferStatusColor, getOfferStatusLabel, type OfferStatus, formatTimeRemaining, getTimeRemaining } from '@/lib/types/offer';
 import type { OfferStatusBadgeProps } from '@/lib/types/offer';
-import { Clock } from 'lucide-react';
 
-export function OfferStatusBadge({ status, expiresAt, className }: OfferStatusBadgeProps) {
-  const showTimer = status === 'pending' || status === 'countered';
-  const timeRemaining = expiresAt && showTimer ? getTimeRemaining(expiresAt) : null;
-  const isUrgent = timeRemaining !== null && timeRemaining < 24 * 60 * 60 * 1000; // Less than 24 hours
-
-  return (
-    <div className="flex items-center gap-2">
-      <span
-        className={cn(
-          'inline-flex items-center px-2.5 py-1 text-xs font-medium border rounded-md',
-          getOfferStatusColor(status),
-          className
-        )}
-      >
-        {getOfferStatusLabel(status)}
-      </span>
-      {timeRemaining !== null && timeRemaining > 0 && (
-        <span
-          className={cn(
-            'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md',
-            isUrgent ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-600'
-          )}
-        >
-          <Clock className="h-3 w-3" />
-          {formatTimeRemaining(timeRemaining)}
-        </span>
-      )}
-    </div>
-  );
+function getStatusConfig(status: string): { label: string; bg: string; text: string } {
+  switch (status) {
+    case 'pending':
+      return { label: 'Pending', bg: 'bg-gray-100', text: 'text-gray-600' };
+    case 'countered':
+      return { label: 'Counter Offer', bg: 'bg-blue-50', text: 'text-blue-600' };
+    case 'accepted':
+      return { label: 'Accepted', bg: 'bg-green-50', text: 'text-green-600' };
+    case 'rejected':
+      return { label: 'Declined', bg: 'bg-gray-100', text: 'text-gray-500' };
+    case 'expired':
+      return { label: 'Expired', bg: 'bg-gray-100', text: 'text-gray-400' };
+    case 'cancelled':
+      return { label: 'Cancelled', bg: 'bg-gray-100', text: 'text-gray-400' };
+    default:
+      return { label: status, bg: 'bg-gray-100', text: 'text-gray-600' };
+  }
 }
 
+export function OfferStatusBadge({ 
+  status, 
+  paymentStatus,
+  className 
+}: OfferStatusBadgeProps) {
+  const config = getStatusConfig(status);
+
+  // Override for payment states on accepted offers
+  let displayConfig = config;
+  if (status === 'accepted' && paymentStatus) {
+    if (paymentStatus === 'paid') {
+      displayConfig = { label: 'Paid', bg: 'bg-green-50', text: 'text-green-600' };
+    } else if (paymentStatus === 'pending') {
+      displayConfig = { label: 'Pay Now', bg: 'bg-gray-900', text: 'text-white' };
+    } else if (paymentStatus === 'failed') {
+      displayConfig = { label: 'Payment Failed', bg: 'bg-red-50', text: 'text-red-600' };
+    }
+  }
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-full',
+        displayConfig.bg,
+        displayConfig.text,
+        className
+      )}
+    >
+      {displayConfig.label}
+    </span>
+  );
+}

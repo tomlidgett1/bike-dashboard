@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { OfferStatusBadge } from './offer-status-badge';
+import { PayOfferButton } from './pay-offer-button';
 import { Button } from '@/components/ui/button';
 import { 
   Check, 
@@ -19,7 +20,9 @@ import {
   User,
   Package,
   Loader2,
-  Clock
+  Clock,
+  CheckCircle,
+  CreditCard
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { OfferDetailCardProps } from '@/lib/types/offer';
@@ -28,6 +31,9 @@ import {
   canRejectOffer, 
   canCounterOffer, 
   canCancelOffer,
+  canPayOffer,
+  isOfferPaid,
+  isOfferAwaitingPayment,
   calculateSavings 
 } from '@/lib/types/offer';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -62,7 +68,18 @@ export function OfferDetailCard({
   const showReject = user && canRejectOffer(offer, user.id);
   const showCounter = user && canCounterOffer(offer, user.id);
   const showCancel = user && canCancelOffer(offer, user.id);
-  const hasActions = showAccept || showReject || showCounter || showCancel;
+  
+  // Payment actions (for buyer when offer is accepted)
+  const showPayNow = user && canPayOffer(offer, user.id);
+  const isPaid = isOfferPaid(offer);
+  const isAwaitingPayment = isOfferAwaitingPayment(offer);
+  
+  const hasActions = showAccept || showReject || showCounter || showCancel || showPayNow;
+
+  // Determine if this is a counter-offer the buyer needs to respond to
+  const isCounterOfferForBuyer = offer.status === 'countered' && role === 'buyer';
+  // Determine if buyer is waiting for seller response
+  const isWaitingForSeller = offer.status === 'pending' && role === 'buyer';
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-AU', {
@@ -108,9 +125,43 @@ export function OfferDetailCard({
                 <h3 className="text-base font-semibold text-gray-900 mb-2 leading-tight">
                   {productName}
                 </h3>
-                <OfferStatusBadge status={offer.status} expiresAt={offer.expires_at} />
+                <OfferStatusBadge 
+                  status={offer.status} 
+                  paymentStatus={offer.payment_status}
+                  expiresAt={offer.expires_at} 
+                  paymentDeadline={offer.payment_deadline}
+                />
               </div>
             </div>
+
+            {/* Counter-Offer Alert Banner (for buyers) */}
+            {isCounterOfferForBuyer && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="flex items-start gap-3">
+                  <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <Reply className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-blue-800">Seller Counter-Offer</p>
+                    <p className="text-xs text-blue-700 mt-0.5">
+                      The seller has proposed a new price. You can accept, decline, or counter.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Waiting for Seller Banner (for buyers) */}
+            {isWaitingForSeller && (
+              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
+                <div className="flex items-center gap-3">
+                  <Clock className="h-5 w-5 text-gray-400" />
+                  <p className="text-sm text-gray-600">
+                    Waiting for seller to respond to your offer
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Prominent Price Display */}
             <div className="mt-4 p-4 bg-gray-50 rounded-md">
@@ -233,8 +284,53 @@ export function OfferDetailCard({
                 <span className="text-gray-600">Expires</span>
                 <span className="text-gray-900">{formatDate(offer.expires_at)}</span>
               </div>
+              {offer.payment_deadline && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Payment Deadline</span>
+                  <span className={cn(
+                    "text-gray-900",
+                    new Date(offer.payment_deadline) < new Date() && "text-red-600"
+                  )}>
+                    {formatDate(offer.payment_deadline)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Payment Complete Message (for buyers) */}
+          {isPaid && role === 'buyer' && (
+            <div className="bg-green-50 border border-green-200 rounded-md p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-green-800">Payment Complete</p>
+                  <p className="text-xs text-green-700 mt-0.5">
+                    The seller has been notified. Check your purchases for delivery updates.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Payment Awaiting Message (for sellers) */}
+          {isAwaitingPayment && role === 'seller' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                  <CreditCard className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Awaiting Payment</p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    The buyer has been notified to complete payment.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -242,7 +338,23 @@ export function OfferDetailCard({
       {hasActions && (
         <div className="flex-shrink-0 bg-white border-t border-gray-200 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <div className="space-y-3">
-            {/* Primary Action: Accept */}
+            {/* Primary Action: Pay Now (for buyers with accepted offers) */}
+            {showPayNow && (
+              <PayOfferButton
+                offerId={offer.id}
+                offerAmount={offer.offer_amount}
+                originalPrice={offer.original_price}
+                productName={productName}
+                productId={offer.product_id}
+                paymentDeadline={offer.payment_deadline}
+                fullWidth
+                size="lg"
+                className="h-12 text-base"
+                showStripeBranding={true}
+              />
+            )}
+
+            {/* Primary Action: Accept (for sellers OR buyers accepting counter-offer) */}
             {showAccept && (
               <Button
                 onClick={onAccept}
@@ -257,7 +369,7 @@ export function OfferDetailCard({
                 ) : (
                   <>
                     <Check className="h-5 w-5 mr-2" />
-                    Accept Offer
+                    {isCounterOfferForBuyer ? 'Accept Counter-Offer' : 'Accept Offer'}
                   </>
                 )}
               </Button>
@@ -276,12 +388,14 @@ export function OfferDetailCard({
                     {rejecting ? (
                       <>
                         <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                        <span className="hidden xs:inline">Rejecting...</span>
+                        <span className="hidden xs:inline">
+                          {isCounterOfferForBuyer ? 'Declining...' : 'Rejecting...'}
+                        </span>
                       </>
                     ) : (
                       <>
                         <X className="h-5 w-5 mr-2" />
-                        Reject
+                        {isCounterOfferForBuyer ? 'Decline' : 'Reject'}
                       </>
                     )}
                   </Button>

@@ -2,10 +2,13 @@
 // USE CONVERSATION HOOK
 // ============================================================
 // Hook for fetching a single conversation with messages
+// Uses Supabase Realtime for instant message updates
 
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import type {
   ConversationWithMessages,
   GetConversationResponse,
@@ -22,6 +25,8 @@ export function useConversation(conversationId: string | null) {
   const [error, setError] = useState<string | null>(null);
   const [sendingMessage, setSendingMessage] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const currentUserIdRef = useRef<string | null>(null);
 
   const fetchConversation = useCallback(async (showCachedFirst = true) => {
     if (!conversationId) {
@@ -76,6 +81,74 @@ export function useConversation(conversationId: string | null) {
     }
   }, [conversationId]);
 
+  // Set up Supabase Realtime subscription for this conversation
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const supabase = createClient();
+
+    const setupRealtime = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) return;
+      
+      currentUserIdRef.current = user.id;
+
+      // Subscribe to new messages in this conversation
+      channelRef.current = supabase
+        .channel(`conversation-${conversationId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => {
+            console.log('[Realtime] New message received:', payload);
+            const newMessage = payload.new as any;
+            
+            // Only add if it's from another user (we already add our own messages optimistically)
+            if (newMessage.sender_id !== currentUserIdRef.current) {
+              setConversation(prev => {
+                if (!prev) return prev;
+                
+                // Check if message already exists (avoid duplicates)
+                if (prev.messages.some(m => m.id === newMessage.id)) {
+                  return prev;
+                }
+                
+                const updatedConversation = {
+                  ...prev,
+                  messages: [...prev.messages, newMessage as MessageWithAttachments],
+                  message_count: prev.message_count + 1,
+                };
+                
+                // Update cache
+                conversationCache.set(conversationId, updatedConversation);
+                return updatedConversation;
+              });
+            }
+          }
+        )
+        .subscribe((status, err) => {
+          console.log(`[Realtime] Conversation ${conversationId} subscription:`, status, err || '');
+        });
+    };
+
+    setupRealtime();
+
+    // Cleanup subscription when conversation changes or component unmounts
+    return () => {
+      if (channelRef.current) {
+        channelRef.current.unsubscribe();
+        channelRef.current = null;
+      }
+    };
+  }, [conversationId]);
+
+  // Initial fetch
   useEffect(() => {
     fetchConversation(true);
     
