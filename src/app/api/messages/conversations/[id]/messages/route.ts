@@ -80,6 +80,17 @@ export async function POST(
       );
     }
 
+    // Increment unread_count for all OTHER participants (not the sender)
+    const { error: unreadError } = await supabase.rpc('increment_unread_count', {
+      p_conversation_id: conversationId,
+      p_sender_id: user.id,
+    });
+
+    if (unreadError) {
+      // Log error but don't fail the request - message was sent successfully
+      console.error('Error incrementing unread count:', unreadError);
+    }
+
     // Upload attachments if any
     const attachments = [];
     if (attachmentFiles.length > 0) {
