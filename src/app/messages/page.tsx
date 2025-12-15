@@ -517,14 +517,25 @@ function MessagesPageInner() {
                 </p>
               </div>
             ) : (
-              conversations.map((conv) => (
-                <ConversationListItem
-                  key={conv.id}
-                  conversation={conv}
-                  active={conv.id === activeConversationId}
-                  onClick={() => handleConversationSelect(conv.id)}
-                />
-              ))
+              <>
+                {/* Unread Summary Banner */}
+                {!showArchived && unreadCounts.messages > 0 && (
+                  <div className="sticky top-0 z-10 bg-blue-50 border-b border-blue-100 px-4 py-2.5 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    <span className="text-sm font-medium text-blue-700">
+                      {unreadCounts.messages} unread message{unreadCounts.messages !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                )}
+                {conversations.map((conv) => (
+                  <ConversationListItem
+                    key={conv.id}
+                    conversation={conv}
+                    active={conv.id === activeConversationId}
+                    onClick={() => handleConversationSelect(conv.id)}
+                  />
+                ))}
+              </>
             )
           ) : (
             // Offers View
