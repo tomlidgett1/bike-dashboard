@@ -33,7 +33,9 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetTitle,
 } from "@/components/ui/sheet";
+import { formatDistanceToNow } from 'date-fns';
 import { FacebookImportModal } from "./sell/facebook-import-modal";
 import { SmartUploadModal } from "./sell/smart-upload-modal";
 import { MobileUploadMethodDialog } from "./sell/mobile-upload-method-dialog";
@@ -139,6 +141,7 @@ export function MarketplaceHeader({
 }: MarketplaceHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
+  const [messagesSheetOpen, setMessagesSheetOpen] = React.useState(false);
   const [sellRequirementModalOpen, setSellRequirementModalOpen] = React.useState(false);
   const [facebookModalOpen, setFacebookModalOpen] = React.useState(false);
   const [smartUploadModalOpen, setSmartUploadModalOpen] = React.useState(false);
@@ -179,6 +182,82 @@ export function MarketplaceHeader({
   // Only fetch unread count if user is authenticated AND deferral period has passed
   const { counts } = useCombinedUnreadCount(user && shouldFetchUnread ? 30000 : 0); // 0 = disabled polling
   const unreadCount = counts.total;
+  
+  // Lazy-loaded conversations for the mobile messages sheet
+  const [messageConversations, setMessageConversations] = React.useState<Array<{
+    id: string;
+    conversation_id: string;
+    is_read: boolean;
+    created_at: string;
+    sender?: { name?: string; business_name?: string };
+    message?: { content?: string };
+  }>>([]);
+  const [messagesLoading, setMessagesLoading] = React.useState(false);
+  
+  // Active conversation within the sheet (for inline viewing)
+  const [activeSheetConversation, setActiveSheetConversation] = React.useState<{
+    id: string;
+    senderName: string;
+  } | null>(null);
+  const [conversationMessages, setConversationMessages] = React.useState<Array<{
+    id: string;
+    content: string;
+    sender_id: string;
+    created_at: string;
+    is_own: boolean;
+  }>>([]);
+  const [conversationLoading, setConversationLoading] = React.useState(false);
+  
+  // Fetch messages only when sheet opens - uses optimized quick-list endpoint
+  React.useEffect(() => {
+    if (messagesSheetOpen && user && !activeSheetConversation) {
+      const fetchMessages = async () => {
+        setMessagesLoading(true);
+        try {
+          const response = await fetch('/api/messages/quick-list?limit=10');
+          if (response.ok) {
+            const data = await response.json();
+            setMessageConversations(data.conversations || []);
+          }
+        } catch (error) {
+          console.error('Error fetching messages:', error);
+        } finally {
+          setMessagesLoading(false);
+        }
+      };
+      fetchMessages();
+    }
+  }, [messagesSheetOpen, user, activeSheetConversation]);
+  
+  // Fetch conversation messages when viewing a conversation in sheet
+  React.useEffect(() => {
+    if (activeSheetConversation && user) {
+      const fetchConversation = async () => {
+        setConversationLoading(true);
+        try {
+          // Use quick endpoint - only fetches messages, no extras
+          const response = await fetch(`/api/messages/conversations/${activeSheetConversation.id}/quick`);
+          if (response.ok) {
+            const data = await response.json();
+            setConversationMessages(data.messages || []);
+          }
+        } catch (error) {
+          console.error('Error fetching conversation:', error);
+        } finally {
+          setConversationLoading(false);
+        }
+      };
+      fetchConversation();
+    }
+  }, [activeSheetConversation, user]);
+  
+  // Reset conversation view when sheet closes
+  React.useEffect(() => {
+    if (!messagesSheetOpen) {
+      setActiveSheetConversation(null);
+      setConversationMessages([]);
+    }
+  }, [messagesSheetOpen]);
 
   // Ensure component only renders auth UI on client-side
   React.useEffect(() => {
@@ -387,6 +466,8 @@ export function MarketplaceHeader({
                   width={220} 
                   height={36}
                   className="h-28 w-auto sm:h-32"
+                  priority
+                  unoptimized
                 />
               </button>
             </div>
@@ -445,7 +526,7 @@ export function MarketplaceHeader({
                     <>
                       <NotificationsDropdown />
                       <button
-                        onClick={() => router.push('/messages')}
+                        onClick={() => setMessagesSheetOpen(true)}
                         className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center overflow-visible"
                         aria-label="Messages"
                       >
@@ -686,6 +767,8 @@ export function MarketplaceHeader({
                   width={280} 
                   height={56}
                   className="h-20 w-auto ml-4"
+                  priority
+                  unoptimized
                 />
                 <button
                   onClick={() => setMobileMenuOpen(false)}
@@ -961,6 +1044,27 @@ export function MarketplaceHeader({
         isOpen={smartUploadModalOpen}
         onClose={() => setSmartUploadModalOpen(false)}
         onComplete={(formData, imageUrls) => {
+          // Detailed logging for debugging
+          console.log('🔍 [HEADER] ====== STORING TO SESSION STORAGE ======');
+          console.log('🔍 [HEADER] formData keys:', Object.keys(formData || {}));
+          console.log('🔍 [HEADER] formData.brand:', formData.brand);
+          console.log('🔍 [HEADER] formData.model:', formData.model);
+          console.log('🔍 [HEADER] formData.itemType:', formData.itemType);
+          console.log('🔍 [HEADER] formData.conditionRating:', formData.conditionRating);
+          console.log('🔍 [HEADER] formData.bikeType:', formData.bikeType);
+          console.log('🔍 [HEADER] formData.frameSize:', formData.frameSize);
+          console.log('🔍 [HEADER] formData.description:', formData.description?.substring(0, 50));
+          console.log('🔍 [HEADER] formData.images count:', formData.images?.length);
+          formData.images?.forEach((img: any, idx: number) => {
+            console.log(`🔍 [HEADER] images[${idx}]:`, {
+              order: img.order,
+              isPrimary: img.isPrimary,
+              cardUrl: img.cardUrl,
+            });
+          });
+          console.log('🔍 [HEADER] formData.primaryImageUrl:', formData.primaryImageUrl);
+          console.log('🔍 [HEADER] imageUrls:', imageUrls);
+          
           // Store imported data in sessionStorage for the sell wizard
           sessionStorage.setItem('smartUploadData', JSON.stringify({ formData, imageUrls }));
           setSmartUploadModalOpen(false);
@@ -1018,6 +1122,186 @@ export function MarketplaceHeader({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Mobile Messages Sheet - Slides in from right */}
+      <Sheet open={messagesSheetOpen} onOpenChange={setMessagesSheetOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md p-0 gap-0 flex flex-col h-full" showCloseButton={false}>
+          {activeSheetConversation ? (
+            <>
+              {/* Conversation Header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 z-10">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setActiveSheetConversation(null)}
+                    className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
+                  >
+                    <ChevronDown className="h-5 w-5 text-gray-500 rotate-90" />
+                  </button>
+                  <SheetTitle className="text-lg font-semibold truncate flex-1">
+                    {activeSheetConversation.senderName}
+                  </SheetTitle>
+                  <button
+                    onClick={() => setMessagesSheetOpen(false)}
+                    className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
+                  >
+                    <X className="h-5 w-5 text-gray-500" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Conversation Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {conversationLoading ? (
+                  <div className="flex items-center justify-center h-32">
+                    <Loader2 className="h-6 w-6 text-gray-400 animate-spin" />
+                  </div>
+                ) : conversationMessages.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">
+                    <p>No messages yet</p>
+                  </div>
+                ) : (
+                  conversationMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={cn(
+                        'max-w-[80%] rounded-lg px-3 py-2',
+                        msg.is_own
+                          ? 'ml-auto bg-blue-500 text-white'
+                          : 'mr-auto bg-gray-100 text-gray-900'
+                      )}
+                    >
+                      <p className="text-sm">{msg.content}</p>
+                      <p className={cn(
+                        'text-xs mt-1',
+                        msg.is_own ? 'text-blue-100' : 'text-gray-500'
+                      )}>
+                        {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Open Full View Button */}
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4">
+                <Button
+                  variant="outline"
+                  className="w-full rounded-md"
+                  onClick={() => {
+                    setMessagesSheetOpen(false);
+                    router.push(`/messages?conversation=${activeSheetConversation.id}`);
+                  }}
+                >
+                  Open Full Conversation
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* List Header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 z-10">
+                <div className="flex items-center justify-between">
+                  <SheetTitle className="text-lg font-semibold">Messages</SheetTitle>
+                  <div className="flex items-center gap-3">
+                    {unreadCount > 0 && (
+                      <span className="text-sm text-gray-500">
+                        {unreadCount} unread
+                      </span>
+                    )}
+                    <button
+                      onClick={() => setMessagesSheetOpen(false)}
+                      className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
+                    >
+                      <X className="h-5 w-5 text-gray-500" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Messages List */}
+              <div className="flex-1 overflow-y-auto">
+                {messagesLoading ? (
+                  <div className="p-8 text-center">
+                    <Loader2 className="h-8 w-8 mx-auto mb-3 text-gray-400 animate-spin" />
+                    <p className="text-sm text-gray-500">Loading messages...</p>
+                  </div>
+                ) : messageConversations.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    <Mail className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                    <p className="font-medium text-gray-900">No messages yet</p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Your conversations will appear here
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    {messageConversations.map((conversation) => (
+                      <button
+                        key={conversation.id}
+                        onClick={() => {
+                          setActiveSheetConversation({
+                            id: conversation.conversation_id,
+                            senderName: conversation.sender?.business_name || conversation.sender?.name || 'Someone',
+                          });
+                        }}
+                        className={cn(
+                          'w-full text-left p-4 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0',
+                          !conversation.is_read && 'bg-blue-50/50'
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          {/* Avatar */}
+                          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center text-sm font-medium">
+                            {conversation.sender?.name?.[0]?.toUpperCase() ||
+                              conversation.sender?.business_name?.[0]?.toUpperCase() ||
+                              '?'}
+                          </div>
+
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {conversation.sender?.business_name ||
+                                conversation.sender?.name ||
+                                'Someone'}
+                            </p>
+                            <p className="text-sm text-gray-600 line-clamp-2 mt-0.5">
+                              {conversation.message?.content || 'Sent you a message'}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {formatDistanceToNow(new Date(conversation.created_at), {
+                                addSuffix: true,
+                              })}
+                            </p>
+                          </div>
+
+                          {/* Unread Indicator */}
+                          {!conversation.is_read && (
+                            <div className="flex-shrink-0 w-2 h-2 rounded-full bg-blue-500 mt-2" />
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* View All Button */}
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4">
+                <Button
+                  variant="outline"
+                  className="w-full rounded-md"
+                  onClick={() => {
+                    setMessagesSheetOpen(false);
+                    router.push('/messages');
+                  }}
+                >
+                  View All Messages
+                </Button>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

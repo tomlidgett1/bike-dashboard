@@ -50,6 +50,12 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   const [isMobile, setIsMobile] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
+  
+  // Use a ref to track the latest photos state to avoid stale closures
+  const photosRef = React.useRef(photos);
+  React.useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
 
   // Detect if on mobile
   React.useEffect(() => {
@@ -77,6 +83,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       setStage("upload");
       setActiveTab("computer");
       setPhotos([]);
+      photosRef.current = []; // Also reset the ref
       setUploadedUrls([]);
       setError(null);
       setUploadProgress({ current: 0, total: 0 });
@@ -115,7 +122,11 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         preview,
       };
     });
-    setPhotos(prev => [...prev, ...newPhotos]);
+    setPhotos(prev => {
+      const updated = [...prev, ...newPhotos];
+      photosRef.current = updated;
+      return updated;
+    });
   };
 
   const removePhoto = (index: number) => {
@@ -123,7 +134,9 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       const url = prev[index].preview;
       URL.revokeObjectURL(url);
       blobUrlsRef.current.delete(url); // Remove from tracking
-      return prev.filter((_, i) => i !== index);
+      const updated = prev.filter((_, i) => i !== index);
+      photosRef.current = updated;
+      return updated;
     });
   };
 
@@ -133,8 +146,11 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
     setPhotos(prev => {
       const newPhotos = [...prev];
       const [primaryPhoto] = newPhotos.splice(index, 1);
+      const reordered = [primaryPhoto, ...newPhotos];
       console.log('🖼️ [SMART UPLOAD MODAL] Reordered photos - new first photo:', primaryPhoto.file.name);
-      return [primaryPhoto, ...newPhotos];
+      // IMPORTANT: Update ref synchronously to avoid race condition with handleAnalyze
+      photosRef.current = reordered;
+      return reordered;
     });
   };
 
@@ -151,10 +167,13 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   };
 
   const handleAnalyze = async () => {
-    if (photos.length === 0) return;
+    // Use ref to get the LATEST photos state (avoids stale closure after setPrimaryPhoto)
+    const currentPhotos = photosRef.current;
+    
+    if (currentPhotos.length === 0) return;
 
     console.log('🚀 [SMART UPLOAD] handleAnalyze called');
-    console.log('🖼️ [SMART UPLOAD] Photos at start of handleAnalyze:', photos.map((p, i) => `${i}: ${p.file.name} (id: ${p.id})`));
+    console.log('🖼️ [SMART UPLOAD] Photos at start of handleAnalyze:', currentPhotos.map((p, i) => `${i}: ${p.file.name} (id: ${p.id})`));
     
     setError(null);
 
@@ -170,14 +189,14 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
 
       // Phase 1: Compress images
       setStage("compressing");
-      setUploadProgress({ current: 0, total: photos.length });
+      setUploadProgress({ current: 0, total: currentPhotos.length });
       
-      console.log('🗜️ [SMART UPLOAD] Compressing', photos.length, 'photos...');
-      console.log('🖼️ [SMART UPLOAD] Photos order for compression:', photos.map((p, i) => `${i}: ${p.file.name}`));
+      console.log('🗜️ [SMART UPLOAD] Compressing', currentPhotos.length, 'photos...');
+      console.log('🖼️ [SMART UPLOAD] Photos order for compression:', currentPhotos.map((p, i) => `${i}: ${p.file.name}`));
       
       const compressedFiles: File[] = [];
-      for (let i = 0; i < photos.length; i++) {
-        const photo = photos[i];
+      for (let i = 0; i < currentPhotos.length; i++) {
+        const photo = currentPhotos[i];
         let fileToUpload: File;
         
         if (shouldCompress(photo.file)) {
@@ -192,7 +211,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         }
         
         compressedFiles.push(fileToUpload);
-        setUploadProgress({ current: i + 1, total: photos.length });
+        setUploadProgress({ current: i + 1, total: currentPhotos.length });
       }
 
       // Phase 2: Upload to Cloudinary via Edge Function (ultra-fast CDN)
@@ -307,12 +326,23 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
 
       const result = await response.json();
       console.log('✅ [SMART UPLOAD MODAL] Analysis received:', result);
+      console.log('🔍 [SMART UPLOAD MODAL] result keys:', Object.keys(result || {}));
+      console.log('🔍 [SMART UPLOAD MODAL] result.analysis exists:', !!result.analysis);
       console.log('🔍 [SMART UPLOAD MODAL] Item type:', result.analysis?.item_type);
+      console.log('🔍 [SMART UPLOAD MODAL] Brand:', result.analysis?.brand);
+      console.log('🔍 [SMART UPLOAD MODAL] Model:', result.analysis?.model);
+      console.log('🔍 [SMART UPLOAD MODAL] Condition rating:', result.analysis?.condition_rating);
       console.log('🚴 [SMART UPLOAD MODAL] Bike details from AI:', result.analysis?.bike_details);
       console.log('🔍 [SMART UPLOAD MODAL] Web enrichment data:', result.analysis?.web_enrichment);
       console.log('🔍 [SMART UPLOAD MODAL] Search URLs:', result.analysis?.search_urls);
       console.log('🔍 [SMART UPLOAD MODAL] Data sources:', result.analysis?.data_sources);
       console.log('🔍 [SMART UPLOAD MODAL] Meta info:', result.meta);
+
+      // Check if analysis is valid
+      if (!result.analysis) {
+        console.error('❌ [SMART UPLOAD MODAL] No analysis in response!');
+        throw new Error('AI analysis returned no data');
+      }
 
       const analysis = result.analysis as ListingAnalysisResult;
 
@@ -435,8 +465,18 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       }
 
       // Add images to form data with variants (for instant loading)
-      console.log('🖼️ [SMART UPLOAD MODAL] uploadedImages:', uploadedImages);
-      console.log('🖼️ [SMART UPLOAD MODAL] urls:', urls);
+      console.log('🔍 [SMART UPLOAD] ====== BUILDING IMAGES ARRAY ======');
+      console.log('🔍 [SMART UPLOAD] uploadedImages count:', uploadedImages?.length);
+      console.log('🔍 [SMART UPLOAD] urls count:', urls?.length);
+      
+      // Log each uploaded image with full details
+      uploadedImages?.forEach((img, idx) => {
+        console.log(`🔍 [SMART UPLOAD] uploadedImages[${idx}]:`, {
+          url: img.url?.substring(0, 100),
+          cardUrl: img.cardUrl,
+          thumbnailUrl: img.thumbnailUrl?.substring(0, 80),
+        });
+      });
       
       formData.images = urls.map((url, index) => ({
         id: `ai-${index}`,
@@ -447,27 +487,28 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         isPrimary: index === 0,
       }));
       
-      console.log('🖼️ [SMART UPLOAD MODAL] formData.images with cardUrls:', formData.images?.map((img: any, i: number) => ({
-        index: i,
-        isPrimary: img.isPrimary,
-        cardUrl: img.cardUrl?.substring(70, 110),
-      })));
+      // Log each image in formData.images with FULL details
+      console.log('🔍 [SMART UPLOAD] ====== FINAL IMAGES ARRAY ======');
+      formData.images?.forEach((img: any, idx: number) => {
+        console.log(`🔍 [SMART UPLOAD] formData.images[${idx}]:`, {
+          id: img.id,
+          order: img.order,
+          isPrimary: img.isPrimary,
+          url: img.url?.substring(0, 80),
+          cardUrl: img.cardUrl, // FULL cardUrl
+          thumbnailUrl: img.thumbnailUrl?.substring(0, 80),
+        });
+      });
       
       // Set the primary image URL explicitly (use cardUrl for faster loading)
       formData.primaryImageUrl = uploadedImages?.[0]?.cardUrl || urls[0];
-      console.log('🖼️ [SMART UPLOAD MODAL] primaryImageUrl set to:', formData.primaryImageUrl);
-
-      console.log('🎯 [SMART UPLOAD MODAL] Final formData being sent:', formData);
-      console.log('🎯 [SMART UPLOAD MODAL] Final formData bike fields:', {
-        bikeType: formData.bikeType,
-        frameSize: formData.frameSize,
-        frameMaterial: formData.frameMaterial,
-        groupset: formData.groupset,
-        wheelSize: formData.wheelSize,
-      });
-      console.log('🖼️ [SMART UPLOAD MODAL] primaryImageUrl:', formData.primaryImageUrl);
-      console.log('🖼️ [SMART UPLOAD MODAL] images array:', formData.images);
-      console.log('🖼️ [SMART UPLOAD MODAL] First image URL:', formData.images?.[0]?.url);
+      console.log('🔍 [SMART UPLOAD] primaryImageUrl (FULL):', formData.primaryImageUrl);
+      
+      // Summary
+      console.log('🔍 [SMART UPLOAD] ====== SUMMARY ======');
+      console.log('🔍 [SMART UPLOAD] Total images:', formData.images?.length);
+      console.log('🔍 [SMART UPLOAD] Primary image (isPrimary=true):', formData.images?.find((img: any) => img.isPrimary)?.cardUrl);
+      console.log('🔍 [SMART UPLOAD] Image with order=0:', formData.images?.find((img: any) => img.order === 0)?.cardUrl);
 
       setStage("success");
 

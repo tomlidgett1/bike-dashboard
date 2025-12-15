@@ -206,7 +206,7 @@ export async function POST(request: NextRequest) {
 }
 
 // ============================================================
-// GET: List user's conversations
+// GET: List user's conversations (OPTIMIZED with RPC)
 // ============================================================
 export async function GET(request: NextRequest) {
   try {
@@ -226,168 +226,56 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
-    const status = searchParams.get('status') as
-      | 'active'
-      | 'archived'
-      | 'closed'
-      | null;
     const archived = searchParams.get('archived') === 'true';
+    const offset = (page - 1) * limit;
 
-    // Get user's participant records to find conversations
-    let participantQuery = supabase
-      .from('conversation_participants')
-      .select(
-        `
-        conversation_id,
-        unread_count,
-        is_archived,
-        last_read_at,
-        conversations(
-          id,
-          subject,
-          status,
-          last_message_at,
-          message_count,
-          product_id,
-          products(id, description, display_name, primary_image_url)
-        )
-      `
-      )
-      .eq('user_id', user.id)
-      .order('last_read_at', { ascending: false });
+    // Single RPC call - all logic happens in the database
+    const { data: rawConversations, error } = await supabase
+      .rpc('get_conversations_list', {
+        p_user_id: user.id,
+        p_archived: archived,
+        p_limit: limit,
+        p_offset: offset,
+      });
 
-    if (archived !== null) {
-      participantQuery = participantQuery.eq('is_archived', archived);
-    }
-
-    const { data: participantRecords, error: participantError } =
-      await participantQuery;
-
-    if (participantError) {
-      console.error('Error fetching conversations:', participantError);
+    if (error) {
+      console.error('Error fetching conversations:', error);
       return NextResponse.json(
         { error: 'Failed to fetch conversations' },
         { status: 500 }
       );
     }
 
-    // Extract conversations and enrich with data
-    const conversationIds =
-      participantRecords
-        ?.map((p: any) => p.conversations?.id)
-        .filter(Boolean) || [];
-
-    if (conversationIds.length === 0) {
-      const response: GetConversationsResponse = {
-        conversations: [],
-        total: 0,
-        page,
-        limit,
-      };
-      return NextResponse.json(response);
-    }
-
-    // Get other participants for each conversation
-    const { data: allParticipants } = await supabase
-      .from('conversation_participants')
-      .select('conversation_id, user_id')
-      .in('conversation_id', conversationIds)
-      .neq('user_id', user.id);
-
-    // Get user IDs from participants
-    const participantUserIds = [...new Set(allParticipants?.map((p: any) => p.user_id) || [])];
-    
-    // Fetch user details separately
-    const { data: participantUsers } = await supabase
-      .from('users')
-      .select('user_id, name, business_name, logo_url')
-      .in('user_id', participantUserIds);
-    
-    // Create a map of user_id to user details
-    const usersMap = new Map(participantUsers?.map(u => [u.user_id, u]) || []);
-
-    // Get last message for each conversation
-    const { data: lastMessages } = await supabase
-      .from('messages')
-      .select('conversation_id, content, sender_id, created_at')
-      .in('conversation_id', conversationIds)
-      .order('created_at', { ascending: false });
-
-    // Build conversation list items
-    const conversationMap = new Map<string, any>();
-    participantRecords?.forEach((pr: any) => {
-      if (pr.conversations) {
-        conversationMap.set(pr.conversations.id, {
-          ...pr.conversations,
-          unread_count: pr.unread_count,
-          is_archived: pr.is_archived,
-        });
-      }
-    });
-
-    const conversations: ConversationListItem[] = Array.from(
-      conversationMap.values()
-    ).map((conv) => {
-      // Get other participants
-      const otherParticipants =
-        allParticipants
-          ?.filter((p: any) => p.conversation_id === conv.id)
-          .map((p: any) => {
-            const userDetails = usersMap.get(p.user_id);
-            return {
-              user_id: p.user_id,
-              name: userDetails?.name || '',
-              business_name: userDetails?.business_name || '',
-              logo_url: userDetails?.logo_url || null,
-            };
-          }) || [];
-
-      // Get last message
-      const lastMessage = lastMessages?.find(
-        (m: any) => m.conversation_id === conv.id
-      );
-
-      return {
-        id: conv.id,
-        subject: conv.subject,
-        status: conv.status,
-        last_message_at: conv.last_message_at,
-        message_count: conv.message_count,
-        unread_count: conv.unread_count,
-        is_archived: conv.is_archived,
-        other_participants: otherParticipants,
-        product: conv.products
-          ? {
-              id: conv.products.id,
-              description: conv.products.description,
-              display_name: conv.products.display_name,
-              primary_image_url: conv.products.primary_image_url,
-            }
-          : undefined,
-        last_message: lastMessage
-          ? {
-              content: lastMessage.content,
-              sender_id: lastMessage.sender_id,
-              created_at: lastMessage.created_at,
-            }
-          : undefined,
-      };
-    });
-
-    // Sort by last_message_at
-    conversations.sort(
-      (a, b) =>
-        new Date(b.last_message_at).getTime() -
-        new Date(a.last_message_at).getTime()
-    );
-
-    // Apply pagination
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
-    const paginatedConversations = conversations.slice(startIndex, endIndex);
+    // Transform to expected format
+    const conversations: ConversationListItem[] = (rawConversations || []).map((c: any) => ({
+      id: c.conversation_id,
+      subject: c.subject,
+      status: c.status,
+      last_message_at: c.last_message_at,
+      message_count: c.message_count,
+      unread_count: c.unread_count,
+      is_archived: c.is_archived,
+      other_participants: c.other_user_id ? [{
+        user_id: c.other_user_id,
+        name: c.other_user_name || '',
+        business_name: c.other_user_business_name || '',
+        logo_url: c.other_user_logo_url || null,
+      }] : [],
+      product: c.product_id ? {
+        id: c.product_id,
+        description: c.product_description,
+        display_name: c.product_display_name,
+        primary_image_url: c.product_image_url,
+      } : undefined,
+      last_message: c.last_message_content ? {
+        content: c.last_message_content,
+        sender_id: c.last_message_sender_id,
+        created_at: c.last_message_created_at,
+      } : undefined,
+    }));
 
     const response: GetConversationsResponse = {
-      conversations: paginatedConversations,
+      conversations,
       total: conversations.length,
       page,
       limit,
@@ -395,7 +283,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response, {
       headers: {
-        'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+        'Cache-Control': 'private, max-age=5',
       },
     });
   } catch (error) {

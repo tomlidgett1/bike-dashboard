@@ -153,14 +153,26 @@ Deno.serve(async (req) => {
     // Download images and convert to base64 for reliable OpenAI access
     console.log('✓ [AI EDGE FUNCTION] Downloading images as base64...');
     
+    // Helper function to convert array buffer to base64 (more reliable than btoa for large files)
+    const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunkSize = 8192; // Process in chunks to avoid stack overflow
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.slice(i, i + chunkSize);
+        binary += String.fromCharCode.apply(null, [...chunk]);
+      }
+      return btoa(binary);
+    };
+    
     const imageData = await Promise.all(
       imageUrls.map(async (url: string, index: number) => {
         try {
-          // Extract storage path
-          const match = url.match(/\/storage\/v1\/object\/public\/product-images\/(.+)$/);
-          if (match) {
-            const path = match[1];
-            console.log(`✓ [AI EDGE FUNCTION] Downloading image ${index + 1}:`, path);
+          // Check if it's a Supabase storage URL
+          const supabaseMatch = url.match(/\/storage\/v1\/object\/public\/product-images\/(.+)$/);
+          if (supabaseMatch) {
+            const path = supabaseMatch[1];
+            console.log(`✓ [AI EDGE FUNCTION] Downloading image ${index + 1} from Supabase:`, path);
             
             // Download from Supabase storage
             const { data, error } = await supabase.storage
@@ -172,21 +184,35 @@ Deno.serve(async (req) => {
               throw error;
             }
             
-            // Convert to base64 (proper method for large files)
             const arrayBuffer = await data.arrayBuffer();
-            const bytes = new Uint8Array(arrayBuffer);
-            
-            // Use Deno's built-in base64 encoding
-            const base64 = btoa(
-              Array.from(bytes, (byte) => String.fromCharCode(byte)).join('')
-            );
-            
+            const base64 = arrayBufferToBase64(arrayBuffer);
             const mimeType = data.type || 'image/jpeg';
             
             console.log(`✓ [AI EDGE FUNCTION] Image ${index + 1} converted to base64, size:`, base64.length);
             
             return `data:${mimeType};base64,${base64}`;
           }
+          
+          // Check if it's a Cloudinary URL - download and convert to base64
+          if (url.includes('cloudinary.com') || url.includes('res.cloudinary.com')) {
+            console.log(`✓ [AI EDGE FUNCTION] Downloading image ${index + 1} from Cloudinary:`, url.substring(0, 80));
+            
+            const response = await fetch(url);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch Cloudinary image: ${response.status}`);
+            }
+            
+            const arrayBuffer = await response.arrayBuffer();
+            const base64 = arrayBufferToBase64(arrayBuffer);
+            const contentType = response.headers.get('content-type') || 'image/webp';
+            
+            console.log(`✓ [AI EDGE FUNCTION] Cloudinary image ${index + 1} converted to base64, size:`, base64.length);
+            
+            return `data:${contentType};base64,${base64}`;
+          }
+          
+          // For other URLs (e.g., data URLs), return as-is
+          console.log(`✓ [AI EDGE FUNCTION] Image ${index + 1} using URL directly`);
           return url;
         } catch (err) {
           console.error(`❌ [AI EDGE FUNCTION] Error processing image ${index + 1}:`, err);

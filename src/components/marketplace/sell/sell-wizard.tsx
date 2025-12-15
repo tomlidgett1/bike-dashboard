@@ -75,28 +75,64 @@ export function SellWizard() {
   // Quick listing handler - publish with minimal details
   const handleQuickList = async (quickData: any) => {
     try {
-      // Get images and ensure one is marked as primary
-      const images = quickData.images || formData.images || [];
+      // Get images - already reordered and with correct order/isPrimary from step-1
+      const rawImages = quickData.images || formData.images || [];
       
-      // Find primary image URL - look for isPrimary flag or use first image
-      // Use cardUrl for faster product card loading!
-      let primaryImageUrl: string | undefined;
-      if (images.length > 0) {
-        const primaryImage = images.find((img: any) => img.isPrimary);
-        // Prefer cardUrl (optimized for cards) over url
-        primaryImageUrl = primaryImage?.cardUrl || primaryImage?.url || images[0]?.cardUrl || images[0]?.url;
-        
-        console.log('🖼️ [QUICK LIST] Found primary image:', {
-          isPrimary: primaryImage?.isPrimary,
-          cardUrl: primaryImage?.cardUrl?.substring(70, 110),
-          url: primaryImage?.url?.substring(70, 110),
-        });
-        
-        // Ensure at least one image is marked as primary
-        if (!primaryImage && images.length > 0) {
-          images[0].isPrimary = true;
-        }
+      // SAFEGUARD: Ensure isPrimary is correctly set based on order field
+      // The image with order=0 should be isPrimary=true, all others isPrimary=false
+      const images = rawImages.map((img: any) => ({
+        ...img,
+        isPrimary: img.order === 0,  // Explicitly set based on order
+      }));
+      
+      console.log('🔍 [QUICK LIST] ====== QUICK LIST HANDLER (WIZARD) ======');
+      console.log('🔍 [QUICK LIST] RAW images before safeguard:', rawImages.map((img: any, idx: number) => ({
+        idx,
+        id: img.id,
+        order: img.order,
+        isPrimary: img.isPrimary,
+      })));
+      console.log('🔍 [QUICK LIST] FIXED images after safeguard:', images.map((img: any, idx: number) => ({
+        idx,
+        id: img.id,
+        order: img.order,
+        isPrimary: img.isPrimary,
+      })));
+      
+      // Use primaryImageUrl from quickData (set by step-1) or calculate from images
+      let primaryImageUrl: string | undefined = quickData.primaryImageUrl;
+      
+      if (!primaryImageUrl && images.length > 0) {
+        // Fallback: Find primary image URL from images array (order=0)
+        const primaryImage = images.find((img: any) => img.order === 0) || images[0];
+        primaryImageUrl = primaryImage?.cardUrl || primaryImage?.url;
       }
+      
+      console.log('🔍 [QUICK LIST] quickData.primaryImageUrl:', quickData.primaryImageUrl);
+      console.log('🔍 [QUICK LIST] Final primaryImageUrl:', primaryImageUrl);
+      console.log('🔍 [QUICK LIST] Images count:', images.length);
+      console.log('🔍 [QUICK LIST] Images source:', quickData.images ? 'quickData.images' : 'formData.images');
+      images.forEach((img: any, idx: number) => {
+        console.log(`🔍 [QUICK LIST] images[${idx}]:`, {
+          id: img.id,
+          order: img.order,
+          isPrimary: img.isPrimary,
+          'typeof isPrimary': typeof img.isPrimary,
+          cardUrl: img.cardUrl?.substring(70, 130),
+        });
+      });
+      
+      // Count primary images
+      const primaryCount = images.filter((img: any) => img.isPrimary === true).length;
+      console.log('🔍 [QUICK LIST] Count of images with isPrimary===true:', primaryCount);
+      
+      // Find the primary image
+      const primaryImage = images.find((img: any) => img.isPrimary === true);
+      console.log('🔍 [QUICK LIST] Primary image found:', primaryImage ? {
+        id: primaryImage.id,
+        order: primaryImage.order,
+        cardUrl: primaryImage.cardUrl?.substring(70, 130),
+      } : 'NONE!');
       
       // Build the listing data for quick publish
       // Map itemType to marketplace_category
@@ -238,19 +274,43 @@ export function SellWizard() {
 
   // Check for Smart Upload data from sessionStorage (from header modal)
   React.useEffect(() => {
+    console.log('🔍 [WIZARD] ====== CHECKING SESSION STORAGE ======');
     const storedData = sessionStorage.getItem('smartUploadData');
+    console.log('🔍 [WIZARD] sessionStorage.smartUploadData exists:', !!storedData);
+    
     if (storedData) {
       try {
-        const { formData: importedFormData, imageUrls } = JSON.parse(storedData);
-        console.log('🎯 [WIZARD] Found Smart Upload data in sessionStorage:', importedFormData);
-        console.log('🖼️ [WIZARD] primaryImageUrl from sessionStorage:', importedFormData.primaryImageUrl);
-        console.log('🖼️ [WIZARD] images from sessionStorage:', importedFormData.images);
-        console.log('🖼️ [WIZARD] First image isPrimary:', importedFormData.images?.[0]?.isPrimary);
+        const parsed = JSON.parse(storedData);
+        const { formData: importedFormData, imageUrls } = parsed;
+        
+        // Detailed logging for debugging
+        console.log('🔍 [WIZARD] ====== READING FROM SESSION STORAGE ======');
+        console.log('🔍 [WIZARD] RAW parsed data keys:', Object.keys(parsed));
+        console.log('🔍 [WIZARD] importedFormData keys:', Object.keys(importedFormData || {}));
+        console.log('🔍 [WIZARD] importedFormData.brand:', importedFormData?.brand);
+        console.log('🔍 [WIZARD] importedFormData.model:', importedFormData?.model);
+        console.log('🔍 [WIZARD] importedFormData.itemType:', importedFormData?.itemType);
+        console.log('🔍 [WIZARD] importedFormData.conditionRating:', importedFormData?.conditionRating);
+        console.log('🔍 [WIZARD] importedFormData.bikeType:', importedFormData?.bikeType);
+        console.log('🔍 [WIZARD] importedFormData.frameSize:', importedFormData?.frameSize);
+        console.log('🔍 [WIZARD] importedFormData.images count:', importedFormData?.images?.length);
+        importedFormData?.images?.forEach((img: any, idx: number) => {
+          console.log(`🔍 [WIZARD] images[${idx}]:`, {
+            id: img.id,
+            order: img.order,
+            isPrimary: img.isPrimary,
+            cardUrl: img.cardUrl,
+            url: img.url?.substring(0, 80),
+          });
+        });
+        console.log('🔍 [WIZARD] importedFormData.primaryImageUrl:', importedFormData?.primaryImageUrl);
+        console.log('🔍 [WIZARD] imageUrls:', imageUrls);
         
         // Clear the sessionStorage data so it doesn't get re-applied
         sessionStorage.removeItem('smartUploadData');
         
         // Update form data with imported data (images are already included in formData)
+        console.log('🔍 [WIZARD] Calling updateFormData with:', importedFormData);
         updateFormData({
           ...importedFormData,
         });
@@ -264,6 +324,8 @@ export function SellWizard() {
         console.error('🎯 [WIZARD] Error parsing Smart Upload data:', error);
         sessionStorage.removeItem('smartUploadData');
       }
+    } else {
+      console.log('🔍 [WIZARD] No smartUploadData in sessionStorage');
     }
   }, []); // Only run once on mount
 
@@ -1195,16 +1257,23 @@ export function SellWizard() {
             });
             
             // Update form data directly (no redirect needed)
+            // Preserve images from aiFormData if they have cardUrl (from SmartUploadFlow)
+            // Otherwise create new images array from URLs
+            const images = aiFormData.images && aiFormData.images.length > 0 && aiFormData.images[0]?.cardUrl
+              ? aiFormData.images
+              : imageUrls.map((url, index) => ({
+                  id: `ai-${index}`,
+                  url,
+                  order: index,
+                  isPrimary: index === 0,
+                }));
+            
+            const primaryImage = images.find((img: any) => img.isPrimary) || images[0];
             const updatedFormData = {
               ...aiFormData,
-              images: imageUrls.map((url, index) => ({
-                id: `ai-${index}`,
-                url,
-                order: index,
-                isPrimary: index === 0,
-              })),
-              // Set primary image URL explicitly
-              primaryImageUrl: imageUrls[0],
+              images,
+              // Set primary image URL explicitly (use cardUrl for faster loading)
+              primaryImageUrl: primaryImage?.cardUrl || primaryImage?.url || imageUrls[0],
             };
             
             console.log('🚴 [WIZARD] Updated form data to pass:', {

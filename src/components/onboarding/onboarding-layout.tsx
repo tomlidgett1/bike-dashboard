@@ -40,6 +40,8 @@ export function OnboardingLayout({
               width={120} 
               height={24}
               className="h-20 w-auto sm:hidden"
+              priority
+              unoptimized
             />
             {/* Desktop Logo */}
             <Image 
@@ -48,6 +50,8 @@ export function OnboardingLayout({
               width={300} 
               height={60}
               className="hidden sm:block h-10 sm:h-12 md:h-16 w-auto"
+              priority
+              unoptimized
             />
           </div>
         </div>

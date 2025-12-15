@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt } from "lucide-react";
+import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt, Star } from "lucide-react";
 import { ItemType, ListingImage, ConditionRating } from "@/lib/types/listing";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ interface QuickListingData {
   price?: number;
   conditionRating?: ConditionRating;
   images?: ListingImage[];
+  primaryImageUrl?: string; // URL of the primary/cover image
   itemType?: ItemType;
   brand?: string;
   model?: string;
@@ -483,16 +484,81 @@ export function Step1ItemType({
     if (!onQuickList) return;
     setIsPublishing(true);
     try {
-      // Update images with correct isPrimary based on user's cover photo selection
-      const updatedImages = quickData.images?.map((img, index) => ({
-        ...img,
-        isPrimary: index === primaryImageIndex,
+      console.log('🔍 [STEP1] ====== HANDLE QUICK LIST START ======');
+      console.log('🔍 [STEP1] primaryImageIndex state:', primaryImageIndex);
+      console.log('🔍 [STEP1] quickData:', JSON.stringify({
+        title: quickData.title,
+        brand: quickData.brand,
+        imagesCount: quickData.images?.length,
       }));
+      console.log('🔍 [STEP1] quickData.images count:', quickData.images?.length);
+      console.log('🔍 [STEP1] quickData.images full array:', JSON.stringify(quickData.images?.map((img, idx) => ({
+        idx,
+        id: img.id,
+        order: img.order,
+        isPrimary: img.isPrimary,
+        cardUrl: img.cardUrl?.substring(70, 130),
+      }))));
+      
+      // Log original images before any processing
+      quickData.images?.forEach((img, idx) => {
+        console.log(`🔍 [STEP1] ORIGINAL images[${idx}]:`, {
+          id: img.id,
+          order: img.order,
+          isPrimary: img.isPrimary,
+          'typeof isPrimary': typeof img.isPrimary,
+          cardUrl: img.cardUrl?.substring(70, 130),
+        });
+      });
+      
+      // Reorder images: move primary to front and update order fields
+      const images = quickData.images || [];
+      let reorderedImages = [...images]; // Create a copy
+      
+      if (images.length > 0 && primaryImageIndex !== 0) {
+        // Move the selected primary image to the front
+        const primaryImage = images[primaryImageIndex];
+        const otherImages = images.filter((_, i) => i !== primaryImageIndex);
+        reorderedImages = [primaryImage, ...otherImages];
+        console.log('🔍 [STEP1] Reordered images - moved index', primaryImageIndex, 'to front');
+        console.log('🔍 [STEP1] Primary image cardUrl:', primaryImage?.cardUrl?.substring(0, 60));
+      } else {
+        console.log('🔍 [STEP1] No reordering needed - primaryImageIndex:', primaryImageIndex);
+      }
+      
+      // Update order and isPrimary for all images - ENSURE isPrimary is explicitly boolean
+      const updatedImages = reorderedImages.map((img, index) => ({
+        ...img,
+        order: index,
+        isPrimary: index === 0 ? true : false, // Explicit boolean assignment
+      }));
+      
+      console.log('🔍 [STEP1] ====== UPDATED IMAGES (to be sent) ======');
+      updatedImages.forEach((img, idx) => {
+        console.log(`🔍 [STEP1] UPDATED images[${idx}]:`, {
+          id: img.id,
+          order: img.order,
+          isPrimary: img.isPrimary,
+          'typeof isPrimary': typeof img.isPrimary,
+          cardUrl: img.cardUrl?.substring(0, 60),
+        });
+      });
+      
+      // Get the primary image URL (now always at index 0)
+      const primaryImageUrl = updatedImages[0]?.cardUrl || updatedImages[0]?.url;
+      console.log('🔍 [STEP1] primaryImageUrl:', primaryImageUrl?.substring(0, 80));
+      
+      // Verify only one image has isPrimary = true
+      const primaryCount = updatedImages.filter(img => img.isPrimary === true).length;
+      console.log('🔍 [STEP1] Count of images with isPrimary=true:', primaryCount);
       
       await onQuickList({
         ...quickData,
         images: updatedImages,
+        primaryImageUrl: primaryImageUrl,
       });
+      
+      console.log('🔍 [STEP1] ====== HANDLE QUICK LIST END ======');
     } finally {
       setIsPublishing(false);
     }
@@ -672,6 +738,14 @@ export function Step1ItemType({
               <span className="text-xs font-medium text-white">{quickData.images.length} photos</span>
             </div>
           )}
+          
+          {/* Cover photo indicator */}
+          {quickData.images && quickData.images.length > 0 && (
+            <div className="absolute top-3 left-3 flex items-center gap-1 px-2 py-1 bg-[#FFC72C] rounded-md">
+              <Star className="h-3 w-3 text-gray-900 fill-gray-900" />
+              <span className="text-xs font-semibold text-gray-900">Cover</span>
+            </div>
+          )}
         </div>
 
         {/* Thumbnail Strip */}
@@ -684,7 +758,7 @@ export function Step1ItemType({
                 className={cn(
                   "relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors",
                   index === primaryImageIndex
-                    ? "border-[#FFC72C]"
+                    ? "border-[#FFC72C] ring-2 ring-[#FFC72C]/30"
                     : "border-gray-200"
                 )}
               >
@@ -694,6 +768,12 @@ export function Step1ItemType({
                   fill
                   className="object-cover"
                 />
+                {/* Cover photo indicator */}
+                {index === primaryImageIndex && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-[#FFC72C] py-0.5">
+                    <span className="text-[8px] font-semibold text-gray-900 block text-center">COVER</span>
+                  </div>
+                )}
               </button>
             ))}
             {/* Add more button */}
@@ -711,6 +791,13 @@ export function Step1ItemType({
               </button>
             )}
           </div>
+        )}
+        
+        {/* Hint text for cover photo selection */}
+        {quickData.images && quickData.images.length > 1 && (
+          <p className="text-[10px] text-gray-400 text-center -mt-1 pb-2 bg-white">
+            Tap any photo to set as cover
+          </p>
         )}
 
         {/* Form Fields */}
@@ -1319,56 +1406,89 @@ export function Step1ItemType({
                 {quickData.images && quickData.images.length > 0 ? (
                   <div className="space-y-3">
                     {/* Primary Image */}
-                    <div className="relative aspect-[4/3] rounded-xl overflow-hidden border-2 border-gray-300 bg-gray-50 shadow-sm group">
+                    <div className="relative aspect-[4/3] rounded-xl overflow-hidden border-2 border-[#FFC72C] bg-gray-50 shadow-sm group">
                       <Image
-                        src={quickData.images[0].url}
-                        alt="Primary photo"
+                        src={quickData.images[primaryImageIndex]?.url || quickData.images[0].url}
+                        alt="Cover photo"
                         width={400}
                         height={300}
                         className="w-full h-full object-cover"
                       />
+                      {/* Cover badge */}
+                      <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 bg-[#FFC72C] rounded-md">
+                        <Star className="h-3 w-3 text-gray-900 fill-gray-900" />
+                        <span className="text-xs font-semibold text-gray-900">Cover Photo</span>
+                      </div>
                       <button
-                        onClick={() => handleRemovePhoto(0)}
+                        onClick={() => handleRemovePhoto(primaryImageIndex)}
                         className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <X className="h-3.5 w-3.5 text-white" />
                       </button>
                     </div>
                     
-                    {/* Thumbnail Grid */}
-                    <div className="grid grid-cols-4 gap-2">
-                      {quickData.images.slice(1, 9).map((image, index) => (
-                        <div key={image.id || index} className="relative aspect-square rounded-md overflow-hidden border border-gray-200 bg-gray-50 group">
-                          <Image
-                            src={image.url}
-                            alt={`Photo ${index + 2}`}
-                            width={100}
-                            height={100}
-                            className="w-full h-full object-cover"
-                          />
-                          <button
-                            onClick={() => handleRemovePhoto(index + 1)}
-                            className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-black/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    {/* Thumbnail Grid - All images for selection */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-gray-500">Click any image to set as cover photo</p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {quickData.images.map((image, index) => (
+                          <div 
+                            key={image.id || index} 
+                            className={cn(
+                              "relative aspect-square rounded-md overflow-hidden bg-gray-50 group cursor-pointer transition-all",
+                              index === primaryImageIndex
+                                ? "ring-2 ring-[#FFC72C] ring-offset-1"
+                                : "border border-gray-200 hover:border-gray-400"
+                            )}
+                            onClick={() => setPrimaryImageIndex(index)}
                           >
-                            <X className="h-2.5 w-2.5 text-white" />
+                            <Image
+                              src={image.url}
+                              alt={`Photo ${index + 1}`}
+                              width={100}
+                              height={100}
+                              className="w-full h-full object-cover"
+                            />
+                            {/* Cover indicator on thumbnail */}
+                            {index === primaryImageIndex && (
+                              <div className="absolute bottom-0 left-0 right-0 bg-[#FFC72C] py-0.5">
+                                <span className="text-[8px] font-semibold text-gray-900 block text-center">COVER</span>
+                              </div>
+                            )}
+                            {/* Set as cover button on hover for non-primary */}
+                            {index !== primaryImageIndex && (
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span className="text-[9px] font-medium text-white bg-white/20 px-1.5 py-0.5 rounded">Set Cover</span>
+                              </div>
+                            )}
+                            {/* Delete button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemovePhoto(index);
+                              }}
+                              className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-black/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="h-2.5 w-2.5 text-white" />
+                            </button>
+                          </div>
+                        ))}
+                        
+                        {/* Add More Button */}
+                        {quickData.images.length < 10 && (
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploadingPhotos}
+                            className="aspect-square rounded-md bg-gray-50 border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-100 transition-colors flex items-center justify-center"
+                          >
+                            {isUploadingPhotos ? (
+                              <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
+                            ) : (
+                              <Upload className="h-5 w-5 text-gray-400" />
+                            )}
                           </button>
-                        </div>
-                      ))}
-                      
-                      {/* Add More Button */}
-                      {quickData.images.length < 10 && (
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={isUploadingPhotos}
-                          className="aspect-square rounded-md bg-gray-50 border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-100 transition-colors flex items-center justify-center"
-                        >
-                          {isUploadingPhotos ? (
-                            <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
-                          ) : (
-                            <Upload className="h-5 w-5 text-gray-400" />
-                          )}
-                        </button>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </div>
                 ) : (

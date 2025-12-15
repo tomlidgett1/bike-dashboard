@@ -108,7 +108,12 @@ serve(async (req) => {
         );
       }
 
-      console.log(`📸 [CLOUDINARY] Uploading file for user ${user.id}, listing ${listingId}`);
+      console.log(`🔍 [CLOUDINARY] ====== UPLOAD REQUEST ======`);
+      console.log(`🔍 [CLOUDINARY] user: ${user.id}`);
+      console.log(`🔍 [CLOUDINARY] listingId: ${listingId}`);
+      console.log(`🔍 [CLOUDINARY] index received: ${index}`);
+      console.log(`🔍 [CLOUDINARY] file name: ${file.name}`);
+      console.log(`🔍 [CLOUDINARY] file size: ${file.size} bytes`);
 
       // Convert file to base64 (chunked to avoid stack overflow)
       const arrayBuffer = await file.arrayBuffer();
@@ -165,8 +170,7 @@ serve(async (req) => {
     }
 
     const result = await cloudinaryResponse.json();
-    console.log(`✅ [CLOUDINARY] Uploaded: ${result.public_id}`);
-
+    
     // Build optimized URLs
     const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`;
     
@@ -176,9 +180,15 @@ serve(async (req) => {
     const galleryUrl = `${baseUrl}/w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp/${result.public_id}`;
     const detailUrl = `${baseUrl}/w_2000,c_limit,q_auto:best,f_webp/${result.public_id}`;
 
+    console.log(`🔍 [CLOUDINARY] ====== UPLOAD COMPLETE ======`);
+    console.log(`🔍 [CLOUDINARY] index: ${index}`);
+    console.log(`🔍 [CLOUDINARY] public_id: ${result.public_id}`);
+    console.log(`🔍 [CLOUDINARY] cardUrl: ${cardUrl}`);
+    console.log(`🔍 [CLOUDINARY] url: ${result.secure_url}`);
+
     // Pre-warm CDN cache by requesting the most commonly used variants
     // This runs in background, doesn't block response
-    console.log(`🔥 [CLOUDINARY] Pre-warming cache for: ${cardUrl}, ${galleryUrl}`);
+    console.log(`🔥 [CLOUDINARY] Pre-warming cache for cardUrl and galleryUrl`);
     fetch(cardUrl).catch(() => {}); // Desktop card
     fetch(mobileCardUrl).catch(() => {}); // Mobile card
     fetch(galleryUrl).catch(() => {}); // Gallery (product pages)

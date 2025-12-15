@@ -155,27 +155,39 @@ export function Step4Photos({ data, onChange, errors = [], itemType = "bike" }: 
     const removedWasPrimary = data.images.find((img) => img.id === id)?.isPrimary;
     if (removedWasPrimary && reordered.length > 0) {
       reordered[0].isPrimary = true;
+      const primary = reordered[0];
       onChange({
         images: reordered,
-        primaryImageUrl: reordered[0].url,
+        primaryImageUrl: primary.cardUrl || primary.url,
       });
     } else {
+      const primary = reordered.find((img) => img.isPrimary);
       onChange({
         images: reordered,
-        primaryImageUrl: reordered.find((img) => img.isPrimary)?.url,
+        primaryImageUrl: primary?.cardUrl || primary?.url,
       });
     }
   };
 
   const setPrimaryImage = (id: string) => {
-    const updated = data.images.map((img) => ({
+    // Find the image to make primary
+    const primaryIndex = data.images.findIndex((img) => img.id === id);
+    if (primaryIndex === -1) return;
+    
+    // Reorder array: move primary to front, update order fields
+    const primaryImage = data.images[primaryIndex];
+    const otherImages = data.images.filter((_, i) => i !== primaryIndex);
+    const reordered = [primaryImage, ...otherImages].map((img, index) => ({
       ...img,
-      isPrimary: img.id === id,
+      order: index,
+      isPrimary: index === 0,
     }));
-    const primary = updated.find((img) => img.isPrimary);
+    
+    const primary = reordered[0];
     onChange({
-      images: updated,
-      primaryImageUrl: primary?.url,
+      images: reordered,
+      // Use cardUrl for faster loading, fallback to url
+      primaryImageUrl: primary?.cardUrl || primary?.url,
     });
   };
 

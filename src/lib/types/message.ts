@@ -39,16 +39,23 @@ export interface Conversation {
 }
 
 export interface ConversationParticipant {
-  id: string;
-  conversation_id: string;
+  id?: string;
+  conversation_id?: string;
   user_id: string;
-  role: ParticipantRole;
-  last_read_at: string | null;
-  unread_count: number;
-  is_archived: boolean;
-  notification_preference: NotificationPreference;
-  joined_at: string;
-  updated_at: string;
+  role?: ParticipantRole;
+  last_read_at?: string | null;
+  unread_count?: number;
+  is_archived?: boolean;
+  notification_preference?: NotificationPreference;
+  joined_at?: string;
+  updated_at?: string;
+  // Extended user info (populated by API for display)
+  user?: {
+    user_id: string;
+    name: string | null;
+    business_name: string | null;
+    logo_url: string | null;
+  };
 }
 
 export interface Message {

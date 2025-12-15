@@ -242,6 +242,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
               width={120}
               height={24}
               className="h-16 sm:hidden"
+              priority
+              unoptimized
             />
             {/* Desktop Logo */}
             <Image
@@ -250,6 +252,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
               width={200}
               height={40}
               className="hidden sm:block h-8 sm:h-10"
+              priority
+              unoptimized
             />
           </div>
           <DialogTitle className="text-center text-xl sm:text-2xl font-semibold text-gray-900">
