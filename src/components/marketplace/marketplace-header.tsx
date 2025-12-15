@@ -399,7 +399,7 @@ export function MarketplaceHeader({
                   <InstantSearch listingType={searchListingType} />
                 </div>
                 {/* Mobile: Search icon and Messages button (if logged in) */}
-                <div className="sm:hidden flex items-center gap-0.5 ml-auto">
+                <div className="sm:hidden flex items-center gap-1 ml-auto">
                   <button
                     onClick={() => setMobileSearchOpen(true)}
                     className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
@@ -412,12 +412,12 @@ export function MarketplaceHeader({
                       <NotificationsDropdown />
                       <button
                         onClick={() => router.push('/messages')}
-                        className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
+                        className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center overflow-visible"
                         aria-label="Messages"
                       >
                         <Mail className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
                         {unreadCount > 0 && (
-                          <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+                          <span className="absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[11px] flex items-center justify-center font-bold shadow-sm z-10">
                             {unreadCount > 99 ? '99+' : unreadCount}
                           </span>
                         )}
@@ -433,7 +433,7 @@ export function MarketplaceHeader({
                   <InstantSearch listingType={searchListingType} />
                 </div>
                 {/* Mobile: Search icon and Messages button (if logged in) */}
-                <div className="sm:hidden flex items-center gap-0.5 ml-auto">
+                <div className="sm:hidden flex items-center gap-1 ml-auto">
                   <button
                     onClick={() => setMobileSearchOpen(true)}
                     className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
@@ -446,12 +446,12 @@ export function MarketplaceHeader({
                       <NotificationsDropdown />
                       <button
                         onClick={() => router.push('/messages')}
-                        className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center"
+                        className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center overflow-visible"
                         aria-label="Messages"
                       >
                         <Mail className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
                         {unreadCount > 0 && (
-                          <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+                          <span className="absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[11px] flex items-center justify-center font-bold shadow-sm z-10">
                             {unreadCount > 99 ? '99+' : unreadCount}
                           </span>
                         )}
