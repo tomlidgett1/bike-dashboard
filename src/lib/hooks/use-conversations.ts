@@ -30,6 +30,8 @@ export function useConversations(
   const userIdRef = useRef<string | null>(null);
   const initialLoadCompleteRef = useRef(false);
   const fetchConversationsRef = useRef<(silent?: boolean) => Promise<void>>(null!);
+  const realtimeConnectedRef = useRef(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch conversations - silent mode for background refreshes
   const fetchConversations = useCallback(async (silent: boolean = false) => {
@@ -130,6 +132,24 @@ export function useConversations(
         )
         .subscribe((status, err) => {
           console.log('[Realtime] Conversations list subscription:', status, err || '');
+          
+          if (status === 'SUBSCRIBED') {
+            realtimeConnectedRef.current = true;
+            // Clear polling if realtime connected
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+            realtimeConnectedRef.current = false;
+            // Start fallback polling if realtime fails
+            if (!pollingIntervalRef.current && isMounted) {
+              console.log('[Realtime] Conversations: Falling back to polling');
+              pollingIntervalRef.current = setInterval(() => {
+                fetchConversationsRef.current?.(true);
+              }, 10000); // Poll every 10 seconds as fallback
+            }
+          }
         });
     };
 
@@ -141,6 +161,10 @@ export function useConversations(
       if (channelRef.current) {
         channelRef.current.unsubscribe();
         channelRef.current = null;
+      }
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       }
     };
   }, []); // Empty deps - only run once

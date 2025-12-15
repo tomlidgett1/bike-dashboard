@@ -81,11 +81,16 @@ export function useConversation(conversationId: string | null) {
     }
   }, [conversationId]);
 
+  // Track if realtime is connected
+  const realtimeConnectedRef = useRef(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   // Set up Supabase Realtime subscription for this conversation
   useEffect(() => {
     if (!conversationId) return;
 
     const supabase = createClient();
+    realtimeConnectedRef.current = false;
 
     const setupRealtime = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -134,6 +139,24 @@ export function useConversation(conversationId: string | null) {
         )
         .subscribe((status, err) => {
           console.log(`[Realtime] Conversation ${conversationId} subscription:`, status, err || '');
+          
+          if (status === 'SUBSCRIBED') {
+            realtimeConnectedRef.current = true;
+            // Clear polling if realtime connected
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+            realtimeConnectedRef.current = false;
+            // Start fallback polling if realtime fails
+            if (!pollingIntervalRef.current) {
+              console.log('[Realtime] Falling back to polling');
+              pollingIntervalRef.current = setInterval(() => {
+                fetchConversation(true);
+              }, 5000); // Poll every 5 seconds as fallback
+            }
+          }
         });
     };
 
@@ -145,8 +168,12 @@ export function useConversation(conversationId: string | null) {
         channelRef.current.unsubscribe();
         channelRef.current = null;
       }
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
     };
-  }, [conversationId]);
+  }, [conversationId, fetchConversation]);
 
   // Initial fetch
   useEffect(() => {
