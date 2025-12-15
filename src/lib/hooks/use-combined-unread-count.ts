@@ -27,6 +27,8 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const userIdRef = useRef<string | null>(null);
   const fetchCountsRef = useRef<() => Promise<void>>(null!);
+  const realtimeConnectedRef = useRef(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchCounts = useCallback(async () => {
     try {
@@ -90,6 +92,14 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
       // Initial fetch
       fetchCountsRef.current?.();
 
+      // Start fallback polling immediately - realtime will disable it if connected
+      // This ensures updates even if realtime takes time to connect or fails silently
+      if (!pollingIntervalRef.current) {
+        pollingIntervalRef.current = setInterval(() => {
+          fetchCountsRef.current?.();
+        }, Math.max(refreshInterval, 5000));
+      }
+
       // Subscribe to messages and offers tables for instant badge updates
       channelRef.current = supabase
         .channel('unread-counts-realtime')
@@ -138,6 +148,24 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
         )
         .subscribe((status, err) => {
           console.log('[Realtime] Unread counts subscription:', status, err || '');
+          
+          if (status === 'SUBSCRIBED') {
+            realtimeConnectedRef.current = true;
+            // Clear polling if realtime connected
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+            realtimeConnectedRef.current = false;
+            // Start fallback polling if realtime fails
+            if (!pollingIntervalRef.current && isMounted && refreshInterval > 0) {
+              console.log('[Realtime] Unread counts: Falling back to polling');
+              pollingIntervalRef.current = setInterval(() => {
+                fetchCountsRef.current?.();
+              }, Math.max(refreshInterval, 5000)); // Use refreshInterval or minimum 5s
+            }
+          }
         });
     };
 
@@ -149,6 +177,10 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
       if (channelRef.current) {
         channelRef.current.unsubscribe();
         channelRef.current = null;
+      }
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       }
     };
   }, [refreshInterval]); // Only re-run if refreshInterval changes
