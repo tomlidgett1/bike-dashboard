@@ -210,3 +210,4 @@ export function HelpDesktopView({ categorySlug, articleSlug }: HelpDesktopViewPr
     </div>
   );
 }
+

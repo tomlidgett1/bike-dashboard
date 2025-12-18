@@ -57,3 +57,4 @@ CREATE TRIGGER trigger_update_conversation_on_new_message
   AFTER INSERT ON messages
   FOR EACH ROW
   EXECUTE FUNCTION update_conversation_on_new_message();
+

@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Package, Heart, Sparkles, Store } from "lucide-react";
+import { Package, Heart, Sparkles, Store, BadgeCheck } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
@@ -281,26 +281,41 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
                 Store
               </span>
             )}
-            <p className="text-xs text-gray-500">
-              {(() => {
-                const productAny = product as any;
-                // For bike stores, show business name or "Bike Store"
-                if (productAny.store_account_type === 'bicycle_store' || productAny.listing_type === 'store_inventory') {
-                  return product.store_name || 'Bike Store';
-                }
-                // For individual users, show "FirstName L."
-                if (productAny.first_name && productAny.last_name) {
-                  return `${productAny.first_name} ${productAny.last_name.charAt(0)}.`;
-                }
-                // Fallback to store_name
-                return product.store_name || 'Seller';
-              })()}
+            <p className="text-xs text-gray-500 inline-flex items-center gap-1">
+              <span>
+                {(() => {
+                  const productAny = product as any;
+                  // For bike stores, show business name or "Bike Store"
+                  if (productAny.store_account_type === 'bicycle_store' || productAny.listing_type === 'store_inventory') {
+                    return product.store_name || 'Bike Store';
+                  }
+                  // For individual users, show "FirstName L."
+                  if (productAny.first_name && productAny.last_name) {
+                    return `${productAny.first_name} ${productAny.last_name.charAt(0)}.`;
+                  }
+                  // Fallback to store_name
+                  return product.store_name || 'Seller';
+                })()}
+              </span>
+              {/* Verified badge for Ashburton Cycles (testing) */}
+              {product.store_name === 'Ashburton Cycles' && (
+                <BadgeCheck className="h-3 w-3 text-blue-500 flex-shrink-0" />
+              )}
             </p>
             {relativeTime && (
               <>
                 <span className="text-gray-300">•</span>
                 <span className="text-xs font-medium text-emerald-600">
                   {relativeTime}
+                </span>
+              </>
+            )}
+            {/* Mobile: Condition Badge */}
+            {product.condition_rating && (
+              <>
+                <span className="text-gray-300 sm:hidden">•</span>
+                <span className="text-[10px] text-gray-500 sm:hidden">
+                  {product.condition_rating}
                 </span>
               </>
             )}

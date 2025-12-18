@@ -116,3 +116,4 @@ $$;
 -- Grant execute permission to authenticated users
 GRANT EXECUTE ON FUNCTION get_conversations_list(UUID, BOOLEAN, INT, INT) TO authenticated;
 
+

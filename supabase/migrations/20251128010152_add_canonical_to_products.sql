@@ -171,3 +171,4 @@ COMMENT ON FUNCTION get_product_image_url IS 'Returns the appropriate image URL 
 
 
 
+

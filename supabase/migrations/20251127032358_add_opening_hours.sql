@@ -29,3 +29,4 @@ CREATE INDEX IF NOT EXISTS users_opening_hours_idx ON users USING GIN (opening_h
 
 
 
+

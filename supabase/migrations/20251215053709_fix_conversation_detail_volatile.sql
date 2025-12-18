@@ -90,3 +90,4 @@ $$;
 
 GRANT EXECUTE ON FUNCTION get_conversation_detail(UUID, UUID, INT) TO authenticated;
 
+

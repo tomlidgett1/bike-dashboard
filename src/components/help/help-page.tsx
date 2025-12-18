@@ -30,3 +30,4 @@ export function HelpPage({ categorySlug, articleSlug }: HelpPageProps) {
     </>
   );
 }
+

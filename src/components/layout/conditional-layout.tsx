@@ -30,10 +30,12 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
   const isOnboarding = pathname?.startsWith('/onboarding') || false;
   // Purchases page uses MarketplaceLayout, so don't wrap with dashboard layout
   const isPurchases = pathname === '/settings/purchases';
+  // E-commerce hero page is full-width, no sidebar needed
+  const isEcommerceHero = pathname === '/admin/ecommerce-hero';
 
-  // Don't wrap marketplace, messages, login, auth, onboarding, or purchases pages with dashboard layout
+  // Don't wrap marketplace, messages, login, auth, onboarding, purchases, or ecommerce-hero pages with dashboard layout
   // These pages manage their own layout
-  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isPurchases) {
+  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isPurchases || isEcommerceHero) {
     return <>{children}</>;
   }
 

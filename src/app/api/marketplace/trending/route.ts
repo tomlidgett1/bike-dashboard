@@ -104,6 +104,8 @@ async function getFallbackProducts(
       )
     `)
     .eq('is_active', true)
+    // For non-private listings (Lightspeed/store products), require admin approval
+    .or('listing_type.eq.private_listing,images_approved_by_admin.eq.true')
     .order('created_at', { ascending: false })
     .limit(limit * 3); // Fetch more to account for Cloudinary filtering
   

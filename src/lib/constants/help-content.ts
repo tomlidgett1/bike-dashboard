@@ -2108,3 +2108,4 @@ export function getPopularArticles(): HelpArticle[] {
     .map((id) => getArticleById(id))
     .filter((article): article is HelpArticle => article !== undefined);
 }
+

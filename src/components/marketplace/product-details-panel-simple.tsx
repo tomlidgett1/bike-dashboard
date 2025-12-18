@@ -109,7 +109,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
       </div>
 
       {/* Action Buttons */}
-      <div className="px-4 pb-4 space-y-2">
+      <div className="px-4 pb-3 space-y-2">
         {isSold ? (
           /* Sold View: Show sold banner */
           <div className="p-4 bg-gray-100 rounded-md text-center">
@@ -177,60 +177,59 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
         )}
       </div>
 
-      {/* Feature Badges */}
-      <div className="px-4 pb-4 flex gap-2">
-        <Badge className="rounded-md bg-amber-50 text-amber-700 border-0 text-xs px-2.5 py-1 font-medium">
-          <Zap className="h-3 w-3 mr-1" />
+      {/* Feature Badges - Compact inline */}
+      <div className="px-4 pb-3 flex items-center gap-3 text-xs text-gray-500">
+        <span className="flex items-center gap-1">
+          <Zap className="h-3 w-3 text-amber-500" />
           1-Hour Express
-        </Badge>
-        <Badge className="rounded-md bg-emerald-50 text-emerald-700 border-0 text-xs px-2.5 py-1 font-medium">
-          <Shield className="h-3 w-3 mr-1" />
+        </span>
+        <span className="flex items-center gap-1">
+          <Shield className="h-3 w-3 text-emerald-500" />
           Buyer Protection
-        </Badge>
+        </span>
       </div>
 
-      {/* Seller Row */}
-      <div className="px-4 py-3 border-t border-b border-gray-100">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative h-10 w-10 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
-              {product.store_logo_url && !logoError ? (
-                <Image
-                  src={product.store_logo_url}
-                  alt={product.store_name}
-                  fill
-                  className="object-cover"
-                  onError={() => setLogoError(true)}
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center">
-                  <User className="h-5 w-5 text-gray-400" />
-                </div>
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-900">{product.store_name}</p>
-              <p className="text-xs text-gray-500">
-                {product.store_account_type === 'bicycle_store' ? 'Bicycle Store' : 'Individual Seller'}
-              </p>
-            </div>
+      {/* Seller Row - Compact */}
+      <div className="px-4 py-2.5 border-t border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="relative h-8 w-8 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
+            {product.store_logo_url && !logoError ? (
+              <Image
+                src={product.store_logo_url}
+                alt={product.store_name}
+                fill
+                className="object-cover"
+                onError={() => setLogoError(true)}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <User className="h-4 w-4 text-gray-400" />
+              </div>
+            )}
           </div>
-          <Button variant="ghost" size="sm" className="text-xs" asChild>
-            <Link href={`/marketplace/store/${product.user_id}`}>
-              View Store
-              <ChevronRight className="h-3 w-3 ml-1" />
-            </Link>
-          </Button>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-gray-900 truncate">{product.store_name}</p>
+            <p className="text-xs text-gray-500">
+              {product.store_account_type === 'bicycle_store' ? 'Bicycle Store' : 'Individual Seller'}
+            </p>
+          </div>
         </div>
+        <Link 
+          href={`/marketplace/store/${product.user_id}`}
+          className="text-xs text-gray-500 hover:text-gray-700 flex items-center flex-shrink-0"
+        >
+          View Store
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
 
       {/* Underline Tabs */}
-      <div className="px-4 pt-3 border-b border-gray-200">
+      <div className="px-4 pt-2 border-b border-gray-200">
         <div className="flex">
           <button
             onClick={() => setActiveTab('overview')}
             className={cn(
-              "flex-1 pb-3 text-sm font-medium border-b-2 transition-colors",
+              "flex-1 pb-2.5 text-sm font-medium border-b-2 transition-colors",
               activeTab === 'overview'
                 ? "border-gray-900 text-gray-900"
                 : "border-transparent text-gray-500 hover:text-gray-700"
@@ -241,7 +240,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
           <button
             onClick={() => setActiveTab('specs')}
             className={cn(
-              "flex-1 pb-3 text-sm font-medium border-b-2 transition-colors",
+              "flex-1 pb-2.5 text-sm font-medium border-b-2 transition-colors",
               activeTab === 'specs'
                 ? "border-gray-900 text-gray-900"
                 : "border-transparent text-gray-500 hover:text-gray-700"

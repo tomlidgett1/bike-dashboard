@@ -65,3 +65,4 @@ export function HelpArticleList({
     </div>
   );
 }
+

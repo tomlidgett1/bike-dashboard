@@ -97,8 +97,15 @@ export async function GET(request: NextRequest) {
         let thumbnailUrl = null;
         let hasCloudinaryImage = false;
         
+        // Priority 0: Cached image URLs (fastest path for private listings)
+        // These are pre-computed and stored on the product for fast access
+        if (product.cached_image_url && product.cached_image_url.includes('cloudinary')) {
+          hasCloudinaryImage = true;
+          imageUrl = product.cached_image_url;
+          thumbnailUrl = product.cached_thumbnail_url || null;
+        }
         // Priority 1: Custom store image - check for cloudinary URL
-        if (product.use_custom_image && product.custom_image_url) {
+        else if (product.use_custom_image && product.custom_image_url) {
           if (product.custom_image_url.includes('cloudinary')) {
             hasCloudinaryImage = true;
             imageUrl = product.custom_image_url;
@@ -126,7 +133,7 @@ export async function GET(request: NextRequest) {
           if (cloudinaryImage) {
             hasCloudinaryImage = true;
             const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
-            imageUrl = primaryImage?.url || product.primary_image_url;
+            imageUrl = primaryImage?.cardUrl || primaryImage?.url || product.primary_image_url;
             thumbnailUrl = primaryImage?.thumbnailUrl;
           }
         }
@@ -146,7 +153,9 @@ export async function GET(request: NextRequest) {
           category: product.marketplace_category,
           imageUrl: thumbnailUrl || imageUrl, // Use thumbnail for search dropdown (smaller, faster)
           thumbnailUrl, // Pre-generated thumbnail for instant loading
-          storeName: product.business_name || 'Unknown Store',
+          storeName: product.listing_type === 'private_listing' 
+            ? 'Private Listing' 
+            : (product.business_name || 'Unknown Store'),
           inStock: (product.qoh || 0) > 0,
           listingType: product.listing_type, // For UI to show source labels
         };

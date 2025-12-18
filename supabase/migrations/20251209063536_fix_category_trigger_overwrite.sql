@@ -35,3 +35,4 @@ COMMENT ON FUNCTION sync_categories_from_canonical() IS 'Syncs categories from c
 
 
 
+

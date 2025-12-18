@@ -89,3 +89,4 @@ export function HelpContactCard({ className, compact }: HelpContactCardProps) {
     </div>
   );
 }
+

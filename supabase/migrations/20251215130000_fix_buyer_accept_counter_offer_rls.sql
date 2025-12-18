@@ -38,3 +38,4 @@ DO $$
 BEGIN
   RAISE NOTICE '✅ Fixed buyer RLS policy for accepting counter-offers';
 END $$;
+

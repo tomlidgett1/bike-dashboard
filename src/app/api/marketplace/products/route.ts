@@ -90,7 +90,10 @@ export async function GET(request: NextRequest) {
       .select(fastFields, { count: countType, head: false })
       .eq('is_active', true)
       .eq('has_displayable_image', true)  // Only products with images (uses index)
-      .or('listing_status.is.null,listing_status.eq.active');
+      .or('listing_status.is.null,listing_status.eq.active')
+      // For non-private listings (Lightspeed/store products), require admin approval
+      // Private listings can show without approval
+      .or('listing_type.eq.private_listing,images_approved_by_admin.eq.true');
 
     // Apply new 3-level taxonomy filters (takes precedence)
     if (level1) {

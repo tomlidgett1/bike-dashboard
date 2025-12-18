@@ -150,3 +150,4 @@ WHERE p.listing_type = 'private_listing'
   AND jsonb_array_length(p.images::jsonb) > 0;
 
 
+

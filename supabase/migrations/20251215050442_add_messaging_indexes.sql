@@ -32,3 +32,4 @@ ON conversations(last_message_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_status 
 ON conversations(status);
 
+

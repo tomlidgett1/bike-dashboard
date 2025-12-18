@@ -22,3 +22,4 @@ COMMENT ON COLUMN listing_drafts.completed_at IS 'Timestamp when the draft was c
 
 
 
+

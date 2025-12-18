@@ -7,3 +7,4 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_notes TEXT;
 -- Add comment for documentation
 COMMENT ON COLUMN products.seller_notes IS 'Seller personal notes about the item - condition, wear, why selling, etc.';
 
+

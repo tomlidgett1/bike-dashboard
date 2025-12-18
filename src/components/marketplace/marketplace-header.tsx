@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { Menu, X, Settings, LogOut, Sparkles, FileText, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Upload, Bell } from "lucide-react";
+import { Menu, X, Settings, LogOut, Sparkles, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Upload, Bell } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
@@ -647,16 +647,6 @@ export function MarketplaceHeader({
                           <span className="text-xs text-gray-500">Upload multiple products</span>
                         </div>
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => router.push('/marketplace/sell?mode=manual')}
-                        className="cursor-pointer rounded-md"
-                      >
-                        <FileText className="mr-2 h-4 w-4" />
-                        <div className="flex flex-col">
-                          <span className="font-medium">Standard Upload</span>
-                          <span className="text-xs text-gray-500">Manual form entry</span>
-                        </div>
-                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </>
@@ -708,16 +698,6 @@ export function MarketplaceHeader({
                         <div className="flex flex-col">
                           <span className="font-medium">Bulk Upload</span>
                           <span className="text-xs text-gray-500">Upload multiple products</span>
-                        </div>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setSellRequirementModalOpen(true)}
-                        className="cursor-pointer rounded-md"
-                      >
-                        <FileText className="mr-2 h-4 w-4" />
-                        <div className="flex flex-col">
-                          <span className="font-medium">Standard Upload</span>
-                          <span className="text-xs text-gray-500">Manual form entry</span>
                         </div>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -1085,9 +1065,6 @@ export function MarketplaceHeader({
         }}
         onSelectBulk={() => {
           router.push('/marketplace/sell?mode=bulk');
-        }}
-        onSelectComprehensive={() => {
-          router.push('/marketplace/sell');
         }}
       />
 

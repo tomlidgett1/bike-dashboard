@@ -243,3 +243,4 @@ export function HelpMobileView({ initialCategory, initialArticle }: HelpMobileVi
     </div>
   );
 }
+

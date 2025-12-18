@@ -139,3 +139,4 @@ export function HelpTicketPreview({ className, maxTickets = 3 }: HelpTicketPrevi
     </div>
   );
 }
+

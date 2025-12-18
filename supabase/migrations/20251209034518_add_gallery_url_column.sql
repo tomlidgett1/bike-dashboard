@@ -19,3 +19,4 @@ COMMENT ON COLUMN product_images.gallery_url IS 'Cloudinary 1200px landscape ima
 
 
 
+

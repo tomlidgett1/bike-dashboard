@@ -33,3 +33,4 @@ echo "✅ Done! You can now push migrations with: supabase db push"
 
 
 
+

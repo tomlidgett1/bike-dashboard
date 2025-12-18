@@ -1349,9 +1349,6 @@ export function SellWizard() {
             onSelectSmart={() => {
               // No longer navigating - modal handles it
             }}
-            onSelectManual={() => {
-              setShowMethodChoice(false);
-            }}
             onSelectFacebook={() => {
               // No longer navigating - modal handles it
             }}

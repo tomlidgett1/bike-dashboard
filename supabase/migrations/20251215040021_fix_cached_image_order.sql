@@ -237,3 +237,4 @@ $$ LANGUAGE plpgsql;
 
 SELECT refresh_all_cached_images();
 
+

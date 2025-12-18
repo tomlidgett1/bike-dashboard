@@ -170,3 +170,4 @@ export function HelpSearch({ onResultClick, className, autoFocus }: HelpSearchPr
     </div>
   );
 }
+

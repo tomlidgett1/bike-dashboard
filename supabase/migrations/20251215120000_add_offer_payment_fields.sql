@@ -86,3 +86,4 @@ BEGIN
   RAISE NOTICE '📊 Purchases columns: offer_id, original_price';
   RAISE NOTICE '🔒 RLS policies updated';
 END $$;
+

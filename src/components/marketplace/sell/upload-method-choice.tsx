@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { FileText, Link2 } from "lucide-react";
+import { Link2, Upload } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { FacebookImportModal } from "./facebook-import-modal";
@@ -15,7 +16,6 @@ import type { ListingImage } from "@/lib/types/listing";
 
 interface UploadMethodChoiceProps {
   onSelectSmart: () => void;
-  onSelectManual: () => void;
   onSelectFacebook: () => void;
   onFacebookImportComplete?: (formData: any, images: ListingImage[]) => void;
   onSmartUploadComplete?: (formData: any, imageUrls: string[]) => void;
@@ -23,11 +23,11 @@ interface UploadMethodChoiceProps {
 
 export function UploadMethodChoice({ 
   onSelectSmart, 
-  onSelectManual, 
   onSelectFacebook,
   onFacebookImportComplete,
   onSmartUploadComplete
 }: UploadMethodChoiceProps) {
+  const router = useRouter();
   const [showFacebookModal, setShowFacebookModal] = React.useState(false);
   const [showSmartUploadModal, setShowSmartUploadModal] = React.useState(false);
 
@@ -109,26 +109,29 @@ export function UploadMethodChoice({
           </Card>
         </motion.button>
 
-        {/* Manual Entry */}
+        {/* Bulk Upload */}
         <motion.button
           type="button"
-          onClick={onSelectManual}
+          onClick={() => router.push('/marketplace/sell?mode=bulk')}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           className="text-left"
         >
           <Card className="h-full p-6 rounded-md border-2 border-gray-200 bg-white hover:border-gray-300 hover:shadow-lg transition-all">
             <div className="space-y-2">
-              <div>
-                <h3 className="text-base font-bold text-gray-900 mb-1">
-                  Manual Entry
-                </h3>
-                <p className="text-sm text-gray-600 mb-2">
-                  Traditional Method
-                </p>
-                <p className="text-sm text-gray-700 leading-relaxed">
-                  Fill out the form yourself with full control over every detail.
-                </p>
+              <div className="flex items-start gap-2">
+                <Upload className="h-5 w-5 text-gray-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 mb-1">
+                    Bulk Upload
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-2">
+                    Multiple Items
+                  </p>
+                  <p className="text-sm text-gray-700 leading-relaxed">
+                    List multiple products at once with AI-powered detection.
+                  </p>
+                </div>
               </div>
             </div>
           </Card>

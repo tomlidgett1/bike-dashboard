@@ -118,3 +118,4 @@ COMMENT ON COLUMN products.apparel_material IS 'Material composition for apparel
 
 
 
+

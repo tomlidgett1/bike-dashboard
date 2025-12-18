@@ -25,6 +25,13 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // ============================================================
 // Advanced Filters Component
@@ -327,42 +334,42 @@ function MobileFilterContent({
   const activeLabels = getActiveFilterLabels();
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="flex flex-col h-full bg-white">
       {/* Handle Bar */}
-      <div className="flex-shrink-0 pt-3 pb-2 bg-white">
-        <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto" />
+      <div className="flex-shrink-0 pt-2 pb-1">
+        <div className="w-8 h-1 bg-gray-300 rounded-full mx-auto" />
       </div>
       
-      {/* Header */}
-      <div className="flex-shrink-0 bg-white border-b border-gray-100 px-4 pb-4">
-        {/* Header Row */}
+      {/* Compact Header */}
+      <div className="flex-shrink-0 px-4 pb-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold text-gray-900">Filters</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-gray-900">Filters</h2>
             {activeFilterCount > 0 && (
-              <span className="px-2 py-0.5 text-xs font-semibold bg-gray-900 text-white rounded-md">
-                {activeFilterCount} active
+              <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-gray-900 text-white rounded-md">
+                {activeFilterCount}
               </span>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-2 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+            className="p-1.5 -mr-1.5 text-gray-400 hover:text-gray-600 rounded-md transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Active Filters Summary */}
+        {/* Active Filters - Horizontal scroll */}
         <AnimatePresence>
           {activeLabels.length > 0 && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <div className="flex items-center gap-2 flex-wrap mt-3 pt-3 border-t border-gray-100">
+              <div className="flex items-center gap-1.5 mt-2 overflow-x-auto scrollbar-hide">
                 {activeLabels.map((filter) => (
                   <ActiveFilterChip
                     key={filter.key}
@@ -372,9 +379,9 @@ function MobileFilterContent({
                 ))}
                 <button
                   onClick={handleReset}
-                  className="text-xs font-medium text-gray-500 hover:text-gray-700 underline underline-offset-2"
+                  className="text-xs font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap pl-1"
                 >
-                  Clear all
+                  Clear
                 </button>
               </div>
             </motion.div>
@@ -382,257 +389,227 @@ function MobileFilterContent({
         </AnimatePresence>
       </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-3">
-        {/* Listing Type Filter */}
-        {listingTypeFilter && onListingTypeChange && (
-          <FilterSection title="Seller Type" icon={Store} badge={listingTypeFilter !== 'all' ? '1' : undefined}>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { value: 'all' as const, label: 'All', icon: Package },
-                { value: 'stores' as const, label: 'Stores', icon: Store },
-                { value: 'individuals' as const, label: 'Private', icon: User },
-              ].map((option) => (
+      {/* Scrollable Content - Fixed for proper scrolling */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        <div className="px-4 pb-4 space-y-4">
+          {/* Sort By - Inline with Select dropdown */}
+          <div className="flex items-center justify-between py-2 border-b border-gray-100">
+            <span className="text-sm font-medium text-gray-700">Sort by</span>
+            <Select
+              value={localFilters.sortBy}
+              onValueChange={(value) => updateFilter('sortBy', value as SortOption)}
+            >
+              <SelectTrigger className="w-[160px] h-9 rounded-md border-gray-200 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Seller Type - Inline horizontal chips */}
+          {listingTypeFilter && onListingTypeChange && (
+            <div className="py-2 border-b border-gray-100">
+              <span className="text-sm font-medium text-gray-700 block mb-2">Seller Type</span>
+              <div className="flex gap-2">
+                {[
+                  { value: 'all' as const, label: 'All' },
+                  { value: 'stores' as const, label: 'Stores' },
+                  { value: 'individuals' as const, label: 'Private' },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => onListingTypeChange(option.value)}
+                    className={cn(
+                      "flex-1 py-2 px-3 text-sm font-medium rounded-md transition-all",
+                      listingTypeFilter === option.value
+                        ? "bg-gray-900 text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Price Range - Horizontal scrolling presets + compact inputs */}
+          <div className="py-2 border-b border-gray-100">
+            <span className="text-sm font-medium text-gray-700 block mb-2">Price</span>
+            
+            {/* Horizontal scrolling presets */}
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-4 px-4">
+              {PRICE_PRESETS.map((preset) => (
                 <button
-                  key={option.value}
-                  onClick={() => onListingTypeChange(option.value)}
+                  key={preset.label}
+                  onClick={() => {
+                    updateFilter('minPrice', preset.min);
+                    updateFilter('maxPrice', preset.max);
+                  }}
                   className={cn(
-                    "flex flex-col items-center gap-1.5 p-3 rounded-md border-2 transition-all",
-                    listingTypeFilter === option.value
-                      ? "border-gray-900 bg-gray-900 text-white"
-                      : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                    "flex-shrink-0 py-1.5 px-3 text-sm font-medium rounded-md transition-all whitespace-nowrap",
+                    matchingPreset?.label === preset.label
+                      ? "bg-gray-900 text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                   )}
                 >
-                  <option.icon className="h-5 w-5" />
-                  <span className="text-xs font-medium">{option.label}</span>
+                  {preset.label}
                 </button>
               ))}
             </div>
-          </FilterSection>
-        )}
 
-        {/* Sort By */}
-        <FilterSection 
-          title="Sort By" 
-          icon={ArrowUpDown} 
-          badge={localFilters.sortBy !== 'newest' ? '1' : undefined}
-        >
-          <div className="space-y-2">
-            {SORT_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => updateFilter('sortBy', option.value)}
-                className={cn(
-                  "w-full flex items-center justify-between p-3 rounded-md border transition-all text-left",
-                  localFilters.sortBy === option.value
-                    ? "border-gray-900 bg-gray-50"
-                    : "border-gray-200 bg-white hover:border-gray-300"
-                )}
-              >
-                <div>
-                  <div className="text-sm font-medium text-gray-900">{option.label}</div>
-                  <div className="text-xs text-gray-500">{option.description}</div>
-                </div>
-                {localFilters.sortBy === option.value && (
-                  <div className="w-5 h-5 rounded-full bg-gray-900 flex items-center justify-center">
-                    <Check className="h-3 w-3 text-white" />
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
-        </FilterSection>
-
-        {/* Price Range */}
-        <FilterSection 
-          title="Price Range" 
-          icon={DollarSign}
-          badge={(localFilters.minPrice || localFilters.maxPrice) ? '1' : undefined}
-        >
-          {/* Quick Price Presets */}
-          <div className="grid grid-cols-3 gap-2 mb-4">
-            {PRICE_PRESETS.map((preset) => (
-              <button
-                key={preset.label}
-                onClick={() => {
-                  updateFilter('minPrice', preset.min);
-                  updateFilter('maxPrice', preset.max);
-                }}
-                className={cn(
-                  "py-2.5 px-3 text-sm font-medium rounded-md border transition-all",
-                  matchingPreset?.label === preset.label
-                    ? "border-gray-900 bg-gray-900 text-white"
-                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                )}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Custom Price Inputs */}
-          <div className="flex items-center gap-2">
-            <div className="flex-1 relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">$</span>
-              <Input
-                type="number"
-                placeholder="Min"
-                value={localFilters.minPrice}
-                onChange={(e) => updateFilter('minPrice', e.target.value)}
-                className="pl-7 rounded-md h-11 text-sm border-gray-200 focus:border-gray-400 focus:ring-gray-400"
-                min="0"
-              />
-            </div>
-            <div className="text-gray-300 font-medium">—</div>
-            <div className="flex-1 relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">$</span>
-              <Input
-                type="number"
-                placeholder="Max"
-                value={localFilters.maxPrice}
-                onChange={(e) => updateFilter('maxPrice', e.target.value)}
-                className="pl-7 rounded-md h-11 text-sm border-gray-200 focus:border-gray-400 focus:ring-gray-400"
-                min="0"
-              />
+            {/* Compact price inputs */}
+            <div className="flex items-center gap-2 mt-2">
+              <div className="flex-1 relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <Input
+                  type="number"
+                  placeholder="Min"
+                  value={localFilters.minPrice}
+                  onChange={(e) => updateFilter('minPrice', e.target.value)}
+                  className="pl-6 rounded-md h-9 text-sm border-gray-200"
+                  min="0"
+                />
+              </div>
+              <span className="text-gray-400 text-xs">to</span>
+              <div className="flex-1 relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <Input
+                  type="number"
+                  placeholder="Max"
+                  value={localFilters.maxPrice}
+                  onChange={(e) => updateFilter('maxPrice', e.target.value)}
+                  className="pl-6 rounded-md h-9 text-sm border-gray-200"
+                  min="0"
+                />
+              </div>
             </div>
           </div>
-        </FilterSection>
 
-        {/* Condition */}
-        <FilterSection 
-          title="Condition" 
-          icon={Sparkles}
-          badge={localFilters.condition !== 'all' ? '1' : undefined}
-        >
-          <div className="flex flex-wrap gap-2">
-            {CONDITION_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => updateFilter('condition', option.value)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md border transition-all",
-                  localFilters.condition === option.value
-                    ? "border-gray-900 bg-gray-900 text-white"
-                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                )}
-              >
-                <span>{option.emoji}</span>
-                <span>{option.label}</span>
-              </button>
-            ))}
-          </div>
-        </FilterSection>
-
-        {/* Brand Filter */}
-        <FilterSection 
-          title="Brand" 
-          icon={Tag}
-          badge={localFilters.brand ? '1' : undefined}
-          defaultOpen={!!localFilters.brand}
-        >
-          <div className="relative" ref={brandDropdownRef}>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                ref={brandInputRef}
-                type="text"
-                placeholder="Search brands..."
-                value={localFilters.brand || brandSearch}
-                onChange={(e) => {
-                  setBrandSearch(e.target.value);
-                  if (localFilters.brand) {
-                    updateFilter('brand', '');
-                  }
-                  setShowBrandDropdown(true);
-                }}
-                onFocus={() => setShowBrandDropdown(true)}
-                className="pl-10 pr-10 rounded-md h-11 border-gray-200 focus:border-gray-400 focus:ring-gray-400"
-              />
-              {(localFilters.brand || brandSearch) && (
+          {/* Condition - Horizontal scrolling chips */}
+          <div className="py-2 border-b border-gray-100">
+            <span className="text-sm font-medium text-gray-700 block mb-2">Condition</span>
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-4 px-4">
+              {CONDITION_OPTIONS.map((option) => (
                 <button
-                  onClick={() => {
-                    updateFilter('brand', '');
-                    setBrandSearch('');
-                    brandInputRef.current?.focus();
-                  }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-md"
+                  key={option.value}
+                  onClick={() => updateFilter('condition', option.value)}
+                  className={cn(
+                    "flex-shrink-0 py-1.5 px-3 text-sm font-medium rounded-md transition-all whitespace-nowrap",
+                    localFilters.condition === option.value
+                      ? "bg-gray-900 text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  )}
                 >
-                  <X className="h-4 w-4 text-gray-400" />
+                  {option.label}
                 </button>
-              )}
+              ))}
             </div>
-            
-            <AnimatePresence>
-              {showBrandDropdown && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto"
-                >
-                  {filteredBrands.length > 0 ? (
-                    filteredBrands.slice(0, 15).map((brand) => (
-                      <button
-                        key={brand}
-                        onClick={() => {
-                          updateFilter('brand', brand);
-                          setBrandSearch('');
-                          setShowBrandDropdown(false);
-                        }}
-                        className={cn(
-                          "w-full text-left px-4 py-3 text-sm hover:bg-gray-50 transition-colors flex items-center justify-between",
-                          localFilters.brand === brand && "bg-gray-50 font-medium"
-                        )}
-                      >
-                        {brand}
-                        {localFilters.brand === brand && (
-                          <Check className="h-4 w-4 text-gray-700" />
-                        )}
-                      </button>
-                    ))
-                  ) : (
-                    <div className="px-4 py-3 text-sm text-gray-500">
-                      No brands found
-                    </div>
-                  )}
-                  {filteredBrands.length > 15 && (
-                    <div className="px-4 py-2 text-xs text-gray-400 border-t bg-gray-50">
-                      Type to search more brands...
-                    </div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
-        </FilterSection>
+
+          {/* Brand - Compact search */}
+          <div className="py-2">
+            <span className="text-sm font-medium text-gray-700 block mb-2">Brand</span>
+            <div className="relative" ref={brandDropdownRef}>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  ref={brandInputRef}
+                  type="text"
+                  placeholder="Search brands..."
+                  value={localFilters.brand || brandSearch}
+                  onChange={(e) => {
+                    setBrandSearch(e.target.value);
+                    if (localFilters.brand) {
+                      updateFilter('brand', '');
+                    }
+                    setShowBrandDropdown(true);
+                  }}
+                  onFocus={() => setShowBrandDropdown(true)}
+                  className="pl-8 pr-8 rounded-md h-9 text-sm border-gray-200"
+                />
+                {(localFilters.brand || brandSearch) && (
+                  <button
+                    onClick={() => {
+                      updateFilter('brand', '');
+                      setBrandSearch('');
+                      brandInputRef.current?.focus();
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 hover:bg-gray-100 rounded"
+                  >
+                    <X className="h-3.5 w-3.5 text-gray-400" />
+                  </button>
+                )}
+              </div>
+              
+              <AnimatePresence>
+                {showBrandDropdown && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto"
+                  >
+                    {filteredBrands.length > 0 ? (
+                      filteredBrands.slice(0, 12).map((brand) => (
+                        <button
+                          key={brand}
+                          onClick={() => {
+                            updateFilter('brand', brand);
+                            setBrandSearch('');
+                            setShowBrandDropdown(false);
+                          }}
+                          className={cn(
+                            "w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors flex items-center justify-between",
+                            localFilters.brand === brand && "bg-gray-50 font-medium"
+                          )}
+                        >
+                          {brand}
+                          {localFilters.brand === brand && (
+                            <Check className="h-4 w-4 text-gray-700" />
+                          )}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2.5 text-sm text-gray-500">
+                        No brands found
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Footer */}
-      <div className="flex-shrink-0 bg-white border-t border-gray-200 p-4 space-y-3">
-        <div className="flex gap-3">
+      {/* Compact Footer */}
+      <div className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-3" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+        <div className="flex gap-2">
           {hasActiveFilters && (
             <Button
               onClick={handleReset}
               variant="outline"
-              className="flex-1 h-12 rounded-md border-gray-200 text-gray-700 font-medium"
+              size="sm"
+              className="h-10 rounded-md border-gray-200 text-gray-600 font-medium"
             >
-              <RotateCcw className="h-4 w-4 mr-2" />
-              Reset
+              <RotateCcw className="h-4 w-4" />
             </Button>
           )}
           <Button
             onClick={handleApply}
-            className={cn(
-              "h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-semibold text-base",
-              hasActiveFilters ? "flex-[2]" : "w-full"
-            )}
+            className="flex-1 h-10 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
           >
             Show Results
           </Button>
         </div>
-        {/* Safe area padding for iOS */}
-        <div className="h-safe-area-inset-bottom" />
       </div>
     </div>
   );
@@ -986,7 +963,7 @@ export function AdvancedFilters({
         </SheetTrigger>
         <SheetContent 
           side="bottom" 
-          className="rounded-t-2xl p-0 overflow-hidden gap-0 max-h-[80vh] flex flex-col"
+          className="rounded-t-2xl p-0 gap-0 h-[70vh] flex flex-col"
           showCloseButton={false}
         >
           <MobileFilterContent
@@ -1014,7 +991,7 @@ export function AdvancedFilters({
           </SheetTrigger>
           <SheetContent 
             side="bottom" 
-            className="h-[85vh] rounded-t-3xl p-0 overflow-hidden"
+            className="h-[70vh] rounded-t-2xl p-0 flex flex-col"
             showCloseButton={false}
           >
             <MobileFilterContent

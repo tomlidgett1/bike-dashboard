@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/release-funds",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/ecommerce-hero",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

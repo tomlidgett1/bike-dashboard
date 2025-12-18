@@ -174,3 +174,4 @@ BEGIN
   RAISE NOTICE '✅ Refreshed % private listings with correct cached images', updated_count;
 END $$;
 
+

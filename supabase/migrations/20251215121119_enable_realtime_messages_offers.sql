@@ -82,3 +82,4 @@ END $$;
 -- The existing RLS policies should already handle this for
 -- messages, conversations, and offers.
 -- ============================================================
+
