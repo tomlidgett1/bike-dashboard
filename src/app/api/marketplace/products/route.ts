@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
         listing_status,
         model_year,
         condition_rating,
+        pickup_location,
         cached_image_url,
         cached_thumbnail_url,
         has_displayable_image,
@@ -320,6 +321,7 @@ export async function GET(request: NextRequest) {
         listing_type: product.listing_type,
         listing_status: product.listing_status,
         condition_rating: product.condition_rating || null,
+        pickup_location: product.pickup_location || null,
       } as MarketplaceProduct;
     });
     

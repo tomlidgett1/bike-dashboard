@@ -296,16 +296,20 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
               </span>
             )}
             
-            {/* Seller name with verified badge */}
+            {/* Seller name/location with verified badge */}
             <div className="flex items-center gap-1 flex-1 min-w-0">
               <p className="text-xs text-gray-600 font-medium truncate">
                 {(() => {
                   const productAny = product as any;
+                  // For private listings, show pickup location instead of seller name
+                  if (productAny.listing_type === 'private_listing') {
+                    return productAny.pickup_location || 'Melbourne';
+                  }
                   // For bike stores, show business name or "Bike Store"
                   if (productAny.store_account_type === 'bicycle_store' || productAny.listing_type === 'store_inventory') {
                     return product.store_name || 'Bike Store';
                   }
-                  // For individual users, show "FirstName L."
+                  // For individual users (fallback), show "FirstName L."
                   if (productAny.first_name && productAny.last_name) {
                     return `${productAny.first_name} ${productAny.last_name.charAt(0)}.`;
                   }
