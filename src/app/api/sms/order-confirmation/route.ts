@@ -3,6 +3,7 @@
 // ============================================================
 // Sends order confirmation SMS for Uber Express deliveries
 // Called from the checkout success page
+// Supports both PaymentIntent (embedded) and Checkout Session (redirect)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
@@ -25,29 +26,53 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    const { paymentIntentId, phone: phoneFromUrl } = await request.json();
+    const { paymentIntentId, sessionId, phone: phoneFromUrl } = await request.json();
 
-    if (!paymentIntentId) {
-      return NextResponse.json({ error: 'Missing paymentIntentId' }, { status: 400 });
+    if (!paymentIntentId && !sessionId) {
+      return NextResponse.json({ error: 'Missing paymentIntentId or sessionId' }, { status: 400 });
     }
 
-    // Get PaymentIntent from Stripe to get shipping phone and metadata
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    
-    const deliveryMethod = paymentIntent.metadata?.delivery_method;
-    const productId = paymentIntent.metadata?.product_id;
-    
-    // Try to get phone from: 1) Stripe shipping, 2) URL param
-    const shippingPhone = paymentIntent.shipping?.phone || phoneFromUrl;
+    let deliveryMethod: string | undefined;
+    let productId: string | undefined;
+    let shippingPhone: string | undefined;
 
-    console.log('[SMS Order] PaymentIntent:', {
-      id: paymentIntentId,
-      deliveryMethod,
-      stripePhone: paymentIntent.shipping?.phone,
-      urlPhone: phoneFromUrl,
-      finalPhone: shippingPhone,
-      productId,
-    });
+    // Handle Stripe Checkout Session (mobile redirect flow)
+    if (sessionId) {
+      console.log('[SMS Order] Retrieving Checkout Session:', sessionId);
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      
+      deliveryMethod = session.metadata?.delivery_method;
+      productId = session.metadata?.product_id;
+      // Phone from checkout session customer_details
+      shippingPhone = session.customer_details?.phone || phoneFromUrl;
+
+      console.log('[SMS Order] Checkout Session:', {
+        id: sessionId,
+        deliveryMethod,
+        sessionPhone: session.customer_details?.phone,
+        urlPhone: phoneFromUrl,
+        finalPhone: shippingPhone,
+        productId,
+      });
+    } 
+    // Handle PaymentIntent (embedded checkout flow)
+    else if (paymentIntentId) {
+      console.log('[SMS Order] Retrieving PaymentIntent:', paymentIntentId);
+      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      
+      deliveryMethod = paymentIntent.metadata?.delivery_method;
+      productId = paymentIntent.metadata?.product_id;
+      shippingPhone = paymentIntent.shipping?.phone || phoneFromUrl;
+
+      console.log('[SMS Order] PaymentIntent:', {
+        id: paymentIntentId,
+        deliveryMethod,
+        stripePhone: paymentIntent.shipping?.phone,
+        urlPhone: phoneFromUrl,
+        finalPhone: shippingPhone,
+        productId,
+      });
+    }
 
     // Only send for Uber Express
     if (deliveryMethod !== 'uber_express') {

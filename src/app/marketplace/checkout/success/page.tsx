@@ -195,18 +195,22 @@ export default function CheckoutSuccessPage() {
     reason?: string;
   } | null>(null);
 
-  // Send SMS for Uber Express orders
+  // Send SMS for Uber Express orders (works with both paymentIntent and sessionId)
   React.useEffect(() => {
-    if (paymentIntentId && !smsSent) {
+    if ((paymentIntentId || sessionId) && !smsSent) {
       const sendOrderSms = async () => {
         try {
           console.log('[Success] Sending order confirmation SMS...');
+          console.log('[Success] PaymentIntent:', paymentIntentId);
+          console.log('[Success] SessionId:', sessionId);
           console.log('[Success] Phone from URL:', phoneFromUrl);
+          
           const response = await fetch('/api/sms/order-confirmation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               paymentIntentId,
+              sessionId,
               phone: phoneFromUrl, // Pass phone from URL as backup
             }),
           });
@@ -221,7 +225,7 @@ export default function CheckoutSuccessPage() {
       };
       sendOrderSms();
     }
-  }, [paymentIntentId, phoneFromUrl, smsSent]);
+  }, [paymentIntentId, sessionId, phoneFromUrl, smsSent]);
 
   React.useEffect(() => {
     // If we have a payment_intent, fetch purchase by payment intent

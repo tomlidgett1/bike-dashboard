@@ -456,7 +456,7 @@ export function MarketplaceHeader({
                 alt="Yellow Jersey" 
                 width={220} 
                 height={36}
-                className="h-28 w-auto sm:h-32"
+                className="h-26 w-auto sm:h-32"
                 priority
                 unoptimized
               />
