@@ -1,17 +1,18 @@
 // ============================================================
 // BUY NOW BUTTON COMPONENT
 // ============================================================
-// Opens embedded Stripe checkout sheet for product purchase
+// Opens embedded Stripe checkout sheet for product purchase (desktop)
+// Redirects to Stripe checkout page on mobile for better UX
 // Displays loading state and handles authentication
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
 import { Button } from '@/components/ui/button';
-import { ShoppingBag } from 'lucide-react';
+import { ShoppingBag, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { CheckoutSheet } from './checkout-sheet';
@@ -54,9 +55,22 @@ export function BuyNowButton({
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
 
-  const handleClick = () => {
+  // Detect mobile screen size
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640); // sm breakpoint
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const handleClick = async () => {
     setError(null);
 
     // Check authentication
@@ -71,7 +85,41 @@ export function BuyNowButton({
       return;
     }
 
-    // Open checkout sheet
+    // On mobile, redirect to Stripe checkout page
+    if (isMobile) {
+      setIsLoading(true);
+      try {
+        const response = await fetch('/api/stripe/create-checkout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            productId,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to create checkout session');
+        }
+
+        // Redirect to Stripe Checkout
+        if (data.url) {
+          window.location.href = data.url;
+        } else {
+          throw new Error('No checkout URL returned');
+        }
+      } catch (err) {
+        console.error('[BuyNow] Error:', err);
+        setError(err instanceof Error ? err.message : 'Something went wrong');
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // On desktop, open checkout sheet
     setIsCheckoutOpen(true);
   };
 
@@ -87,6 +135,7 @@ export function BuyNowButton({
           variant={variant}
           size={size}
           onClick={handleClick}
+          disabled={isLoading}
           className={cn(
             'rounded-md font-medium transition-all',
             variant === 'default' && 'bg-gray-900 hover:bg-gray-800 text-white',
@@ -94,8 +143,12 @@ export function BuyNowButton({
             className
           )}
         >
-          <ShoppingBag className="h-4 w-4 mr-2" />
-          Buy Now · ${productPrice.toLocaleString('en-AU')}
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <ShoppingBag className="h-4 w-4 mr-2" />
+          )}
+          {isLoading ? 'Redirecting...' : `Buy Now · $${productPrice.toLocaleString('en-AU')}`}
         </Button>
 
         {/* Stripe Branding */}

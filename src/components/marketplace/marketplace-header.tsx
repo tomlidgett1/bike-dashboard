@@ -498,10 +498,10 @@ export function MarketplaceHeader({
                   {/* Mobile Menu Button - Far right */}
                   <button
                     onClick={() => setMobileMenuOpen(true)}
-                    className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer"
+                    className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
                     aria-label="Open menu"
                   >
-                    <Menu className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                    <Menu className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
                   </button>
                 </div>
               </>
@@ -540,10 +540,10 @@ export function MarketplaceHeader({
                   {/* Mobile Menu Button - Far right */}
                   <button
                     onClick={() => setMobileMenuOpen(true)}
-                    className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer"
+                    className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
                     aria-label="Open menu"
                   >
-                    <Menu className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                    <Menu className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
                   </button>
                 </div>
               </>
