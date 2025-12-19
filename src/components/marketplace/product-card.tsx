@@ -279,24 +279,26 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
           )}
         </div>
 
-        {/* Product Info - Simple text below */}
-        <div className="px-0.5">
-          {/* Product Title */}
-          <h3 className="text-[13px] text-gray-800 font-medium leading-snug line-clamp-2 mb-0">
+        {/* Product Info - Improved text layout */}
+        <div className="px-0.5 mb-2">
+          {/* Product Title - Enhanced typography */}
+          <h3 className="text-sm text-gray-900 font-medium leading-tight line-clamp-1 mb-1">
             {(product as any).display_name || product.description}
           </h3>
 
-          {/* Seller info with type badge and optional time */}
-          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+          {/* Seller info - Better organized layout */}
+          <div className="flex items-center gap-1.5 flex-wrap">
             {/* Store badge for store inventory items */}
             {(product as any).listing_type === 'store_inventory' && (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded">
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">
                 <Store className="h-2.5 w-2.5" />
                 Store
               </span>
             )}
-            <p className="text-xs text-gray-500 inline-flex items-center gap-1">
-              <span>
+            
+            {/* Seller name with verified badge */}
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              <p className="text-xs text-gray-600 font-medium truncate">
                 {(() => {
                   const productAny = product as any;
                   // For bike stores, show business name or "Bike Store"
@@ -310,28 +312,20 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
                   // Fallback to store_name
                   return product.store_name || 'Seller';
                 })()}
-              </span>
-              {/* Verified badge for Ashburton Cycles (testing) */}
+              </p>
+              {/* Verified badge for Ashburton Cycles */}
               {product.store_name === 'Ashburton Cycles' && (
                 <BadgeCheck className="h-3 w-3 text-blue-500 flex-shrink-0" />
               )}
-            </p>
+            </div>
+
+            {/* Secondary info - Time */}
             {relativeTime && (
-              <>
-                <span className="text-gray-300">•</span>
-                <span className="text-xs font-medium text-emerald-600">
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-emerald-600 font-medium whitespace-nowrap">
                   {relativeTime}
                 </span>
-              </>
-            )}
-            {/* Mobile: Condition Badge */}
-            {product.condition_rating && (
-              <>
-                <span className="text-gray-300 sm:hidden">•</span>
-                <span className="text-[10px] text-gray-500 sm:hidden">
-                  {product.condition_rating}
-                </span>
-              </>
+              </div>
             )}
           </div>
         </div>

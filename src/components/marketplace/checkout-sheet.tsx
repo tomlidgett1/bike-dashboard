@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { X, MapPin, Truck, Loader2, Check, Shield, ChevronLeft, ChevronRight, Package } from "lucide-react";
+import { X, MapPin, Truck, Loader2, Check, Shield, ChevronLeft, ChevronRight, Package, AlertCircle } from "lucide-react";
 import { PaymentElement, AddressElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import type { StripeAddressElementChangeEvent } from "@stripe/stripe-js";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { StripeElementsProvider } from "@/components/providers/stripe-elements-provider";
@@ -42,7 +43,15 @@ interface CheckoutSheetProps {
   onSuccess?: () => void;
 }
 
-type CheckoutStep = "delivery" | "address" | "payment";
+interface UberEligibility {
+  eligible: boolean;
+  distance: number | null;
+  message?: string;
+  checking: boolean;
+}
+
+// New step order: Address -> Delivery -> Payment
+type CheckoutStep = "address" | "delivery" | "payment";
 
 // ============================================================
 // Main Checkout Sheet Component
@@ -61,11 +70,33 @@ export function CheckoutSheet({
   const [clientSecret, setClientSecret] = React.useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = React.useState<string | null>(null);
   const [deliveryOptions, setDeliveryOptions] = React.useState<DeliveryOption[]>([]);
-  const [selectedDelivery, setSelectedDelivery] = React.useState<DeliveryMethod>("uber_express");
+  const [selectedDelivery, setSelectedDelivery] = React.useState<DeliveryMethod>("auspost"); // Default to AusPost until eligibility checked
   const [breakdown, setBreakdown] = React.useState<PriceBreakdown | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [currentStep, setCurrentStep] = React.useState<CheckoutStep>("delivery");
+  const [currentStep, setCurrentStep] = React.useState<CheckoutStep>("address"); // Start with address
+  
+  // Uber eligibility state
+  const [uberEligibility, setUberEligibility] = React.useState<UberEligibility>({
+    eligible: false,
+    distance: null,
+    message: undefined,
+    checking: false,
+  });
+  
+  // Shipping details captured from address step
+  const [shippingDetails, setShippingDetails] = React.useState<{
+    name: string;
+    phone: string;
+    address: {
+      line1: string;
+      line2?: string;
+      city: string;
+      state: string;
+      postal_code: string;
+      country: string;
+    };
+  } | null>(null);
 
   // Create PaymentIntent when sheet opens
   React.useEffect(() => {
@@ -80,11 +111,19 @@ export function CheckoutSheet({
       setClientSecret(null);
       setPaymentIntentId(null);
       setError(null);
-      setCurrentStep("delivery");
+      setCurrentStep("address");
+      setShippingDetails(null);
+      setUberEligibility({
+        eligible: false,
+        distance: null,
+        message: undefined,
+        checking: false,
+      });
+      setSelectedDelivery("auspost");
     }
   }, [isOpen]);
 
-  const createPaymentIntent = async () => {
+  const createPaymentIntent = async (deliveryMethod: DeliveryMethod = "auspost") => {
     setIsLoading(true);
     setError(null);
 
@@ -94,7 +133,7 @@ export function CheckoutSheet({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productId,
-          deliveryMethod: selectedDelivery,
+          deliveryMethod,
         }),
       });
 
@@ -118,6 +157,11 @@ export function CheckoutSheet({
 
   const handleDeliveryChange = async (method: DeliveryMethod) => {
     if (method === selectedDelivery || !paymentIntentId) return;
+
+    // Don't allow selecting Uber if not eligible
+    if (method === "uber_express" && !uberEligibility.eligible) {
+      return;
+    }
 
     setSelectedDelivery(method);
     setIsLoading(true);
@@ -148,39 +192,96 @@ export function CheckoutSheet({
     }
   };
 
+  // Check Uber eligibility based on address
+  const checkUberEligibility = async (address: {
+    line1: string;
+    line2?: string;
+    city: string;
+    state: string;
+    postal_code: string;
+    country: string;
+  }) => {
+    setUberEligibility(prev => ({ ...prev, checking: true }));
+
+    try {
+      const response = await fetch("/api/delivery/check-eligibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error("[CheckoutSheet] Eligibility check failed:", data.error);
+        // Default to eligible if check fails (fail open)
+        setUberEligibility({
+          eligible: true,
+          distance: null,
+          message: "Could not verify distance",
+          checking: false,
+        });
+        return;
+      }
+
+      setUberEligibility({
+        eligible: data.eligible,
+        distance: data.distance,
+        message: data.message,
+        checking: false,
+      });
+
+      // If eligible, auto-select Uber Express
+      if (data.eligible) {
+        setSelectedDelivery("uber_express");
+        // Update payment intent with new delivery method
+        if (paymentIntentId) {
+          handleDeliveryChange("uber_express");
+        }
+      }
+    } catch (err) {
+      console.error("[CheckoutSheet] Eligibility check error:", err);
+      // Default to eligible if check fails (fail open)
+      setUberEligibility({
+        eligible: true,
+        distance: null,
+        message: "Could not verify distance",
+        checking: false,
+      });
+    }
+  };
+
   const requiresAddress = selectedDelivery !== "pickup";
 
   const handleContinue = () => {
-    if (currentStep === "delivery") {
-      if (requiresAddress) {
-        setCurrentStep("address");
-      } else {
-        setCurrentStep("payment");
-      }
-    } else if (currentStep === "address") {
+    if (currentStep === "address") {
+      setCurrentStep("delivery");
+    } else if (currentStep === "delivery") {
       setCurrentStep("payment");
     }
   };
 
   const handleBack = () => {
     if (currentStep === "payment") {
-      if (requiresAddress) {
-        setCurrentStep("address");
-      } else {
-        setCurrentStep("delivery");
-      }
-    } else if (currentStep === "address") {
       setCurrentStep("delivery");
+    } else if (currentStep === "delivery") {
+      setCurrentStep("address");
     }
   };
 
   const getStepNumber = () => {
-    if (currentStep === "delivery") return 1;
-    if (currentStep === "address") return 2;
-    return requiresAddress ? 3 : 2;
+    if (currentStep === "address") return 1;
+    if (currentStep === "delivery") return 2;
+    return 3;
   };
 
-  const getTotalSteps = () => requiresAddress ? 3 : 2;
+  const getTotalSteps = () => 3;
+
+  const getStepTitle = () => {
+    if (currentStep === "address") return "Delivery Address";
+    if (currentStep === "delivery") return "Delivery Method";
+    return "Payment";
+  };
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -196,7 +297,7 @@ export function CheckoutSheet({
           </div>
           <div className="flex items-center justify-between px-4 pb-3">
             <div className="flex items-center gap-3">
-              {currentStep !== "delivery" && (
+              {currentStep !== "address" && (
                 <button
                   type="button"
                   onClick={handleBack}
@@ -207,9 +308,7 @@ export function CheckoutSheet({
               )}
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">
-                  {currentStep === "delivery" && "Delivery"}
-                  {currentStep === "address" && "Address"}
-                  {currentStep === "payment" && "Payment"}
+                  {getStepTitle()}
                 </h2>
                 <p className="text-xs text-gray-500">
                   Step {getStepNumber()} of {getTotalSteps()}
@@ -233,7 +332,7 @@ export function CheckoutSheet({
               <div className="p-4 bg-red-50 border border-red-200 rounded-md text-center">
                 <p className="text-sm text-red-600">{error}</p>
                 <Button
-                  onClick={createPaymentIntent}
+                  onClick={() => createPaymentIntent()}
                   variant="outline"
                   size="sm"
                   className="mt-3"
@@ -262,6 +361,10 @@ export function CheckoutSheet({
                 onContinue={handleContinue}
                 onSuccess={onSuccess}
                 onClose={onClose}
+                uberEligibility={uberEligibility}
+                onCheckEligibility={checkUberEligibility}
+                shippingDetails={shippingDetails}
+                onShippingDetailsChange={setShippingDetails}
               />
             </StripeElementsProvider>
           )}
@@ -289,6 +392,39 @@ interface CheckoutStepsProps {
   onContinue: () => void;
   onSuccess?: () => void;
   onClose: () => void;
+  uberEligibility: UberEligibility;
+  onCheckEligibility: (address: {
+    line1: string;
+    line2?: string;
+    city: string;
+    state: string;
+    postal_code: string;
+    country: string;
+  }) => Promise<void>;
+  shippingDetails: {
+    name: string;
+    phone: string;
+    address: {
+      line1: string;
+      line2?: string;
+      city: string;
+      state: string;
+      postal_code: string;
+      country: string;
+    };
+  } | null;
+  onShippingDetailsChange: (details: {
+    name: string;
+    phone: string;
+    address: {
+      line1: string;
+      line2?: string;
+      city: string;
+      state: string;
+      postal_code: string;
+      country: string;
+    };
+  } | null) => void;
 }
 
 function CheckoutSteps({
@@ -305,6 +441,10 @@ function CheckoutSteps({
   onContinue,
   onSuccess,
   onClose,
+  uberEligibility,
+  onCheckEligibility,
+  shippingDetails,
+  onShippingDetailsChange,
 }: CheckoutStepsProps) {
   const stripe = useStripe();
   const elements = useElements();
@@ -312,18 +452,7 @@ function CheckoutSteps({
   const [paymentError, setPaymentError] = React.useState<string | null>(null);
   const [isComplete, setIsComplete] = React.useState(false);
   const [addressComplete, setAddressComplete] = React.useState(false);
-  const [shippingDetails, setShippingDetails] = React.useState<{
-    name: string;
-    phone: string;
-    address: {
-      line1: string;
-      line2?: string;
-      city: string;
-      state: string;
-      postal_code: string;
-      country: string;
-    };
-  } | null>(null);
+  const [hasCheckedEligibility, setHasCheckedEligibility] = React.useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -387,6 +516,36 @@ function CheckoutSteps({
     }
   };
 
+  // Handle address completion and trigger eligibility check
+  const handleAddressChange = async (event: StripeAddressElementChangeEvent) => {
+    console.log('[AddressElement] onChange:', { complete: event.complete, value: event.value });
+    setAddressComplete(event.complete);
+    
+    if (event.complete && event.value) {
+      // Save the shipping details
+      const details = {
+        name: event.value.name || "",
+        phone: event.value.phone || "",
+        address: {
+          line1: event.value.address.line1 || "",
+          line2: event.value.address.line2 || undefined,
+          city: event.value.address.city || "",
+          state: event.value.address.state || "",
+          postal_code: event.value.address.postal_code || "",
+          country: event.value.address.country || "AU",
+        },
+      };
+      console.log('[AddressElement] Saving shipping details:', details);
+      onShippingDetailsChange(details);
+
+      // Check Uber eligibility if we haven't already
+      if (!hasCheckedEligibility) {
+        setHasCheckedEligibility(true);
+        await onCheckEligibility(details.address);
+      }
+    }
+  };
+
   if (isComplete) {
     return (
       <div className="py-16 text-center px-4">
@@ -400,14 +559,14 @@ function CheckoutSteps({
   }
 
   // ============================================================
-  // Step 1: Delivery Selection
+  // Step 1: Address Entry (NEW FIRST STEP)
   // ============================================================
-  if (currentStep === "delivery") {
+  if (currentStep === "address") {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex-1 px-4 py-4 space-y-3">
+        <div className="flex-1 px-4 py-4">
           {/* Product Summary - Compact */}
-          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md mb-4">
             {productImage && (
               <div className="relative h-12 w-12 rounded-md overflow-hidden bg-gray-200 flex-shrink-0">
                 <Image src={productImage} alt={productName} fill className="object-cover" />
@@ -419,27 +578,146 @@ function CheckoutSteps({
             </div>
           </div>
 
+          <p className="text-sm text-gray-600 mb-4">
+            Enter your delivery address to see available delivery options.
+          </p>
+          <AddressElement
+            options={{
+              mode: "shipping",
+              autocomplete: {
+                mode: "google_maps_api",
+                apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
+              },
+              defaultValues: {
+                address: { country: "AU" },
+              },
+              fields: { phone: "always" },
+              validation: { phone: { required: "always" } },
+            }}
+            onChange={handleAddressChange}
+          />
+
+          {/* Eligibility checking indicator */}
+          {uberEligibility.checking && (
+            <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Checking delivery options...</span>
+            </div>
+          )}
+
+          {/* Eligibility result */}
+          {addressComplete && !uberEligibility.checking && uberEligibility.distance !== null && (
+            <div className={cn(
+              "mt-4 p-3 rounded-md flex items-start gap-2",
+              uberEligibility.eligible 
+                ? "bg-green-50 border border-green-200" 
+                : "bg-amber-50 border border-amber-200"
+            )}>
+              {uberEligibility.eligible ? (
+                <Check className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              )}
+              <div>
+                <p className={cn(
+                  "text-sm font-medium",
+                  uberEligibility.eligible ? "text-green-800" : "text-amber-800"
+                )}>
+                  {uberEligibility.eligible 
+                    ? "Uber Express Available!" 
+                    : "Uber Express Unavailable"}
+                </p>
+                <p className={cn(
+                  "text-xs mt-0.5",
+                  uberEligibility.eligible ? "text-green-600" : "text-amber-600"
+                )}>
+                  {uberEligibility.message}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex-shrink-0 border-t border-gray-100 p-4 bg-white">
+          <Button
+            onClick={onContinue}
+            disabled={!addressComplete || uberEligibility.checking}
+            className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
+          >
+            {uberEligibility.checking ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Checking...
+              </>
+            ) : (
+              <>
+                Continue to Delivery Options
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // Step 2: Delivery Selection (NOW SECOND STEP)
+  // ============================================================
+  if (currentStep === "delivery") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex-1 px-4 py-4 space-y-3">
+          {/* Delivery address summary */}
+          {shippingDetails && (
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
+              <MapPin className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-900 truncate">
+                  {shippingDetails.address.line1}
+                  {shippingDetails.address.line2 && `, ${shippingDetails.address.line2}`}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {shippingDetails.address.city}, {shippingDetails.address.state} {shippingDetails.address.postal_code}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Delivery Options */}
           <div className="space-y-2">
-            {deliveryOptions
-              .filter((opt) => opt.available)
-              .map((option) => (
+            {deliveryOptions.map((option) => {
+              // Check if this is Uber and if it's available based on eligibility
+              const isUber = option.id === "uber_express";
+              const isDisabled = isUber && !uberEligibility.eligible;
+              const isAvailable = option.available && !isDisabled;
+
+              if (!option.available && !isUber) return null;
+
+              return (
                 <button
                   key={option.id}
                   type="button"
-                  onClick={() => onDeliveryChange(option.id)}
-                  disabled={isUpdating}
+                  onClick={() => isAvailable && onDeliveryChange(option.id)}
+                  disabled={isUpdating || isDisabled}
                   className={cn(
                     "w-full flex items-center gap-3 p-4 rounded-md border-2 transition-all text-left",
-                    selectedDelivery === option.id
-                      ? "border-gray-900 bg-gray-50"
-                      : "border-gray-200 hover:border-gray-300 bg-white"
+                    isDisabled
+                      ? "border-gray-100 bg-gray-50 cursor-not-allowed opacity-60"
+                      : selectedDelivery === option.id
+                        ? "border-gray-900 bg-gray-50"
+                        : "border-gray-200 hover:border-gray-300 bg-white"
                   )}
                 >
                   {/* Icon */}
                   <div className={cn(
                     "flex h-10 w-10 items-center justify-center rounded-md flex-shrink-0",
-                    selectedDelivery === option.id ? "bg-gray-900" : "bg-gray-100"
+                    isDisabled 
+                      ? "bg-gray-100"
+                      : selectedDelivery === option.id 
+                        ? "bg-gray-900" 
+                        : "bg-gray-100"
                   )}>
                     {option.id === "uber_express" && (
                       <Image
@@ -447,8 +725,14 @@ function CheckoutSteps({
                         alt="Delivery"
                         width={20}
                         height={20}
-                        className={selectedDelivery === option.id ? "brightness-0 saturate-100" : "opacity-60"}
-                        style={selectedDelivery === option.id ? { filter: "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)" } : {}}
+                        className={cn(
+                          isDisabled 
+                            ? "opacity-30" 
+                            : selectedDelivery === option.id 
+                              ? "brightness-0 saturate-100" 
+                              : "opacity-60"
+                        )}
+                        style={!isDisabled && selectedDelivery === option.id ? { filter: "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)" } : {}}
                       />
                     )}
                     {option.id === "auspost" && (
@@ -465,23 +749,44 @@ function CheckoutSteps({
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-gray-900">{option.label}</span>
+                      <span className={cn(
+                        "text-sm font-semibold",
+                        isDisabled ? "text-gray-400" : "text-gray-900"
+                      )}>
+                        {option.label}
+                      </span>
                       {option.id === "uber_express" && (
-                        <Image src="/uber.svg" alt="Uber" width={28} height={10} className="opacity-60" />
+                        <Image 
+                          src="/uber.svg" 
+                          alt="Uber" 
+                          width={28} 
+                          height={10} 
+                          className={isDisabled ? "opacity-30" : "opacity-60"} 
+                        />
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5">{option.description}</p>
+                    <p className={cn(
+                      "text-xs mt-0.5",
+                      isDisabled ? "text-gray-400" : "text-gray-500"
+                    )}>
+                      {isDisabled 
+                        ? `Only available within 10km of Ashburton Cycles` 
+                        : option.description}
+                    </p>
                   </div>
 
                   {/* Price */}
                   <div className="text-right flex-shrink-0">
-                    <span className="text-sm font-bold text-gray-900">
+                    <span className={cn(
+                      "text-sm font-bold",
+                      isDisabled ? "text-gray-400" : "text-gray-900"
+                    )}>
                       {option.cost === 0 ? "Free" : `$${option.cost}`}
                     </span>
                   </div>
 
                   {/* Selected indicator */}
-                  {selectedDelivery === option.id && (
+                  {selectedDelivery === option.id && !isDisabled && (
                     <div className="flex-shrink-0">
                       <div className="w-5 h-5 rounded-full bg-gray-900 flex items-center justify-center">
                         <Check className="h-3 w-3 text-white" />
@@ -489,8 +794,27 @@ function CheckoutSteps({
                     </div>
                   )}
                 </button>
-              ))}
+              );
+            })}
           </div>
+
+          {/* Ineligibility notice */}
+          {!uberEligibility.eligible && uberEligibility.distance !== null && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800">
+                    You&apos;re {uberEligibility.distance}km from Ashburton Cycles
+                  </p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Uber Express is only available for addresses within 10km. 
+                    Australia Post shipping is available Australia-wide.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -506,81 +830,6 @@ function CheckoutSteps({
           <Button
             onClick={onContinue}
             disabled={isUpdating}
-            className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
-          >
-            Continue
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // ============================================================
-  // Step 2: Address Entry
-  // ============================================================
-  if (currentStep === "address") {
-    return (
-      <div className="flex flex-col h-full">
-        <div className="flex-1 px-4 py-4">
-          <p className="text-sm text-gray-600 mb-4">
-            {selectedDelivery === "uber_express" 
-              ? "Enter your delivery address. Your mobile will be used for driver updates."
-              : "Enter your shipping address for Australia Post delivery."}
-          </p>
-          <AddressElement
-            options={{
-              mode: "shipping",
-              autocomplete: {
-                mode: "google_maps_api",
-                apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-              },
-              defaultValues: {
-                address: { country: "AU" },
-              },
-              fields: { phone: "always" },
-              validation: { phone: { required: "always" } },
-            }}
-            onChange={(event) => {
-              console.log('[AddressElement] onChange:', { complete: event.complete, value: event.value });
-              setAddressComplete(event.complete);
-              if (event.complete && event.value) {
-                // Save the shipping details for use when confirming payment
-                const details = {
-                  name: event.value.name || "",
-                  phone: event.value.phone || "",
-                  address: {
-                    line1: event.value.address.line1 || "",
-                    line2: event.value.address.line2 || undefined,
-                    city: event.value.address.city || "",
-                    state: event.value.address.state || "",
-                    postal_code: event.value.address.postal_code || "",
-                    country: event.value.address.country || "AU",
-                  },
-                };
-                console.log('[AddressElement] Saving shipping details:', details);
-                setShippingDetails({
-                  name: event.value.name || "",
-                  phone: event.value.phone || "",
-                  address: {
-                    line1: event.value.address.line1 || "",
-                    line2: event.value.address.line2 || undefined,
-                    city: event.value.address.city || "",
-                    state: event.value.address.state || "",
-                    postal_code: event.value.address.postal_code || "",
-                    country: event.value.address.country || "AU",
-                  },
-                });
-              }
-            }}
-          />
-        </div>
-
-        {/* Footer */}
-        <div className="flex-shrink-0 border-t border-gray-100 p-4 bg-white">
-          <Button
-            onClick={onContinue}
-            disabled={!addressComplete}
             className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
           >
             Continue to Payment
@@ -625,12 +874,6 @@ function CheckoutSteps({
 
         {/* Payment Element */}
         <PaymentElement options={{ layout: "tabs" }} />
-        
-        {/* Debug: Show captured phone */}
-        <div className="mt-2 p-2 bg-gray-100 rounded text-xs font-mono text-gray-600">
-          <div>Debug - Captured phone: {shippingDetails?.phone || "(none)"}</div>
-          <div>Debug - Has shipping: {shippingDetails ? "Yes" : "No"}</div>
-        </div>
 
         {/* Error */}
         {paymentError && (

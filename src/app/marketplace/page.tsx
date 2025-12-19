@@ -1395,7 +1395,7 @@ function MarketplacePageContent() {
 export default function MarketplacePage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-white sm:bg-gray-50 flex items-center justify-center">
         <div className="animate-pulse text-gray-400">Loading...</div>
       </div>
     }>

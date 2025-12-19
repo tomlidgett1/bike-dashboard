@@ -28,7 +28,7 @@ function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = 
   }, [mounted]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white sm:bg-gray-50">
       {/* Sidebar - starts below header */}
       <MarketplaceSidebar />
       
