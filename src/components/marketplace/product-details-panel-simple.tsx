@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil, Shield, ChevronRight } from "lucide-react";
+import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil, Shield, ChevronRight, MessageSquare, Loader2 } from "lucide-react";
 import { UberDeliveryBanner, UberDeliveryBadge } from "./uber-delivery-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,13 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
   const [isLearnOpen, setIsLearnOpen] = React.useState(false);
   const [isEditOpen, setIsEditOpen] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'overview' | 'specs'>('overview');
+  
+  // SMS Test State
+  const [smsPhone, setSmsPhone] = React.useState('');
+  const [smsMessage, setSmsMessage] = React.useState("Your order is confirmed! You'll receive an Uber tracking link shortly with live driver updates. Thanks for shopping with us!");
+  const [smsSending, setSmsSending] = React.useState(false);
+  const [smsResult, setSmsResult] = React.useState<string | null>(null);
+  const [showSmsTest, setShowSmsTest] = React.useState(false);
 
   // Check if current user owns this product
   const isOwner = user?.id === product.user_id;
@@ -192,6 +199,77 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
           <Shield className="h-3 w-3 text-emerald-500" />
           Buyer Protection Included
         </span>
+      </div>
+
+      {/* SMS Test Section - Dev Only */}
+      <div className="px-4 pb-3">
+        <button
+          onClick={() => setShowSmsTest(!showSmsTest)}
+          className="text-xs text-gray-400 hover:text-gray-600 underline"
+        >
+          {showSmsTest ? 'Hide SMS Test' : 'Test SMS'}
+        </button>
+        
+        {showSmsTest && (
+          <div className="mt-2 p-3 bg-gray-50 rounded-md space-y-2">
+            <input
+              type="tel"
+              placeholder="Phone (e.g. 0412345678)"
+              value={smsPhone}
+              onChange={(e) => setSmsPhone(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md"
+            />
+            <textarea
+              placeholder="Message (max 160 chars)"
+              value={smsMessage}
+              onChange={(e) => setSmsMessage(e.target.value.substring(0, 160))}
+              rows={2}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md resize-none"
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-400">{smsMessage.length}/160</span>
+              <Button
+                size="sm"
+                disabled={!smsPhone || !smsMessage || smsSending}
+                onClick={async () => {
+                  setSmsSending(true);
+                  setSmsResult(null);
+                  try {
+                    const res = await fetch('/api/sms/send', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ to: smsPhone, message: smsMessage }),
+                    });
+                    const data = await res.json();
+                    setSmsResult(data.success ? '✓ Sent!' : `✗ ${data.error}`);
+                  } catch (err) {
+                    setSmsResult('✗ Failed to send');
+                  } finally {
+                    setSmsSending(false);
+                  }
+                }}
+                className="rounded-md"
+              >
+                {smsSending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <>
+                    <MessageSquare className="h-3 w-3 mr-1" />
+                    Send SMS
+                  </>
+                )}
+              </Button>
+            </div>
+            {smsResult && (
+              <p className={cn(
+                "text-xs",
+                smsResult.startsWith('✓') ? "text-green-600" : "text-red-600"
+              )}>
+                {smsResult}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Seller Row - Compact */}

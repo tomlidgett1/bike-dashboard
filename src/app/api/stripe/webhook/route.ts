@@ -9,6 +9,40 @@ import { createClient } from '@supabase/supabase-js';
 import { getStripe } from '@/lib/stripe';
 import Stripe from 'stripe';
 
+// SMS Broadcast Configuration
+const SMS_API_URL = 'https://api.smsbroadcast.com.au/api.php';
+const SMS_USERNAME = 'accounts@ashburtoncycles.com.au';
+const SMS_PASSWORD = 'Ashburton1';
+const SMS_FROM = 'AshyCycles';
+
+// Send SMS via SMS Broadcast API
+async function sendOrderSms(phone: string, productName: string): Promise<boolean> {
+  try {
+    const cleanPhone = phone.replace(/\s+/g, '').replace(/^\+61/, '0');
+    const message = `Your order for "${productName}" is confirmed! You'll receive an Uber tracking link shortly with live driver updates. Thanks for shopping with us!`;
+    
+    const params = new URLSearchParams({
+      username: SMS_USERNAME,
+      password: SMS_PASSWORD,
+      from: SMS_FROM,
+      to: cleanPhone,
+      message: message.substring(0, 160),
+    });
+
+    const apiUrl = `${SMS_API_URL}?${params.toString()}`;
+    console.log('[SMS] Sending order confirmation to:', cleanPhone);
+
+    const response = await fetch(apiUrl);
+    const result = await response.text();
+    console.log('[SMS] Result:', result);
+
+    return result.includes('Your message was sent');
+  } catch (error) {
+    console.error('[SMS] Failed to send:', error);
+    return false;
+  }
+}
+
 // Use service role client for webhook operations (bypasses RLS)
 function getServiceClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -622,6 +656,32 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
     console.error('[Stripe Webhook] Failed to mark product as sold:', updateError);
   } else {
     console.log('[Stripe Webhook] Product marked as sold:', product_id);
+  }
+
+  // Send SMS for Uber Express orders
+  if (delivery_method === 'uber_express') {
+    console.log('[Stripe Webhook] Uber Express order - sending SMS notification');
+    
+    // Get phone from shipping details
+    const shippingPhone = paymentIntent.shipping?.phone;
+    console.log('[Stripe Webhook] Shipping phone:', shippingPhone);
+    
+    if (shippingPhone) {
+      // Get product name
+      const { data: productDetails } = await supabase
+        .from('products')
+        .select('display_name, description')
+        .eq('id', product_id)
+        .single();
+      
+      const productName = productDetails?.display_name || productDetails?.description || 'your item';
+      console.log('[Stripe Webhook] Product name for SMS:', productName);
+      
+      const smsSent = await sendOrderSms(shippingPhone, productName);
+      console.log('[Stripe Webhook] SMS sent:', smsSent);
+    } else {
+      console.log('[Stripe Webhook] No shipping phone found - skipping SMS');
+    }
   }
 
   console.log(`[Stripe Webhook] Delivery method: ${delivery_method}`);

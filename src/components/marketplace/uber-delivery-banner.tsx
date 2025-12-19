@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -24,7 +23,13 @@ export function UberDeliveryBanner({ className }: UberDeliveryBannerProps) {
     >
       <div className="flex items-center gap-2.5">
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-white/10">
-          <Zap className="h-3.5 w-3.5 text-green-400" />
+          <Image
+            src="/delivery.png"
+            alt="Delivery"
+            width={20}
+            height={20}
+            style={{ filter: "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)" }}
+          />
         </div>
         <div>
           <p className="text-sm font-medium text-white">
@@ -63,7 +68,13 @@ export function UberDeliveryBadge({ className }: UberDeliveryBadgeProps) {
         className
       )}
     >
-      <Zap className="h-2.5 w-2.5 text-green-400" />
+      <Image
+        src="/delivery.png"
+        alt="Delivery"
+        width={10}
+        height={10}
+        style={{ filter: "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)" }}
+      />
       <span className="text-[9px] font-medium text-white">1hr</span>
     </div>
   );

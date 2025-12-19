@@ -226,18 +226,20 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
                 ${product.price.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </span>
             </div>
-            {/* Uber Express Badge */}
-            <div className="bg-black/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
-              <Image 
-                src="/uber.jpg" 
-                alt="Uber" 
-                width={26} 
-                height={10}
-                quality={100}
-                className="object-contain"
-              />
-              <span className="text-[10px] font-semibold text-white">1hr</span>
-            </div>
+            {/* Uber Express Badge - Only for Ashburton Cycles */}
+            {(product as any).store_name === 'Ashburton Cycles' && (
+              <div className="bg-black/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
+                <Image 
+                  src="/uber.jpg" 
+                  alt="Uber" 
+                  width={26} 
+                  height={10}
+                  quality={100}
+                  className="object-contain"
+                />
+                <span className="text-[10px] font-semibold text-white">1hr</span>
+              </div>
+            )}
           </div>
 
           {/* Wishlist Button */}

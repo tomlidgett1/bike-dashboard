@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { X, Zap, MapPin, Truck, Loader2, Check, Shield, ChevronLeft, ChevronRight, Package } from "lucide-react";
+import { X, MapPin, Truck, Loader2, Check, Shield, ChevronLeft, ChevronRight, Package } from "lucide-react";
 import { PaymentElement, AddressElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -402,7 +402,14 @@ function CheckoutSteps({
                     selectedDelivery === option.id ? "bg-gray-900" : "bg-gray-100"
                   )}>
                     {option.id === "uber_express" && (
-                      <Zap className={cn("h-5 w-5", selectedDelivery === option.id ? "text-green-400" : "text-gray-600")} />
+                      <Image
+                        src="/delivery.png"
+                        alt="Delivery"
+                        width={20}
+                        height={20}
+                        className={selectedDelivery === option.id ? "brightness-0 saturate-100" : "opacity-60"}
+                        style={selectedDelivery === option.id ? { filter: "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)" } : {}}
+                      />
                     )}
                     {option.id === "auspost" && (
                       <Package className={cn("h-5 w-5", selectedDelivery === option.id ? "text-white" : "text-gray-600")} />
