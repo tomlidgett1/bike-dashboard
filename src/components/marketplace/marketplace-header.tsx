@@ -720,8 +720,13 @@ export function MarketplaceHeader({
 
       {/* Mobile Floating List Item Button - Only shown on homepage and product pages */}
       {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && (
-        <div className="sm:hidden fixed bottom-6 left-4 right-4 z-50">
-          <Button
+        <motion.div 
+          initial={{ y: 100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.3, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="sm:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+        >
+          <motion.button
             onClick={() => {
               if (user) {
                 setMobileUploadMethodOpen(true);
@@ -729,13 +734,23 @@ export function MarketplaceHeader({
                 setSellRequirementModalOpen(true);
               }
             }}
-            className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-lg h-12 flex items-center justify-center gap-2"
+            whileTap={{ scale: 0.95 }}
+            className="relative group"
           >
-            <Plus className="h-5 w-5" />
-            <span>List Item</span>
-            {!user && <span className="text-xs opacity-80">(Sign in required)</span>}
-          </Button>
-        </div>
+            {/* Glow effect */}
+            <div className="absolute inset-0 bg-[#FFC72C] rounded-full blur-xl opacity-40 group-active:opacity-60 transition-opacity" />
+            
+            {/* Main button */}
+            <div className="relative flex items-center gap-2.5 px-6 py-3.5 bg-gradient-to-r from-[#FFC72C] to-[#FFD54F] rounded-full shadow-[0_8px_32px_rgba(255,199,44,0.35)] border border-white/20">
+              <div className="flex items-center justify-center w-6 h-6 bg-gray-900 rounded-full">
+                <Plus className="h-4 w-4 text-white" strokeWidth={2.5} />
+              </div>
+              <span className="text-gray-900 font-semibold text-[15px] tracking-tight pr-1">
+                {user ? 'List Item' : 'Sell Now'}
+              </span>
+            </div>
+          </motion.button>
+        </motion.div>
       )}
 
       {/* Mobile Slide-out Menu - Uses hardware-accelerated Sheet */}
