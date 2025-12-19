@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
 
     // Send SMS
     const cleanPhone = shippingPhone.replace(/\s+/g, '').replace(/^\+61/, '0');
-    const message = `Your order for "${productName}" is confirmed! You'll receive an Uber tracking link shortly with live driver updates. Thanks for shopping with us!`;
+    const message = `Order confirmed! Your item from Ashburton Cycles is on its way. Uber tracking link coming soon. Thanks for your order!`;
 
     const params = new URLSearchParams({
       username: SMS_USERNAME,
