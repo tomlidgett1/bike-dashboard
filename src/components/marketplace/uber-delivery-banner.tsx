@@ -43,9 +43,10 @@ export function UberDeliveryBanner({ className }: UberDeliveryBannerProps) {
         <Image
           src="/uber.svg"
           alt="Uber"
-          width={32}
-          height={12}
-          className="brightness-0 invert opacity-70"
+          width={36}
+          height={14}
+          style={{ filter: 'brightness(0) invert(1)' }}
+          className="object-contain"
         />
       </div>
     </div>

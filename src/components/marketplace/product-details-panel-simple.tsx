@@ -116,8 +116,8 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
         )}
       </div>
 
-      {/* Uber On-Demand Delivery Banner - Key Differentiator */}
-      {!isSold && !isOwner && (
+      {/* Uber On-Demand Delivery Banner - Key Differentiator - Only for Ashburton Cycles */}
+      {!isSold && !isOwner && product.store_name === 'Ashburton Cycles' && (
         <div className="px-4 pb-3">
           <UberDeliveryBanner />
         </div>
