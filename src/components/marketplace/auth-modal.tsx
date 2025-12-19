@@ -67,6 +67,8 @@ interface AuthModalProps {
 export function AuthModal({ open, onOpenChange }: AuthModalProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
@@ -182,13 +184,16 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
         });
         if (authError) throw authError;
 
-        // Update user profile with account type (trigger already created the base profile)
+        // Update user profile with account type, first name, and last name (trigger already created the base profile)
         // bicycle_store is always false until admin approves
         if (authData.user) {
           const { error: profileError } = await supabase
             .from("users")
             .update({
               account_type: accountType,
+              first_name: firstName,
+              last_name: lastName,
+              name: `${firstName} ${lastName}`.trim(),
             })
             .eq("user_id", authData.user.id);
 
@@ -217,6 +222,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
       setTimeout(() => {
         setEmail("");
         setPassword("");
+        setFirstName("");
+        setLastName("");
         setError(null);
         setMode("login");
         setAccountType("individual");
@@ -232,39 +239,17 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
         fullScreenMobile 
         className="sm:max-w-[440px] bg-white sm:rounded-md flex flex-col"
       >
-        {/* Header with Logo */}
-        <DialogHeader className="px-6 sm:px-8 pt-12 sm:pt-8 pb-4 space-y-3 sm:space-y-4 flex-shrink-0">
-          <div className="flex items-center justify-center">
-            {/* Mobile Logo */}
-            <Image
-              src="/yjsmall.svg"
-              alt="Yellow Jersey"
-              width={120}
-              height={24}
-              className="h-16 sm:hidden"
-              priority
-              unoptimized
-            />
-            {/* Desktop Logo */}
-            <Image
-              src="/yj.svg"
-              alt="Yellow Jersey"
-              width={200}
-              height={40}
-              className="hidden sm:block h-8 sm:h-10"
-              priority
-              unoptimized
-            />
-          </div>
-          <DialogTitle className="text-center text-xl sm:text-2xl font-semibold text-gray-900">
+        {/* Header */}
+        <DialogHeader className="px-6 sm:px-8 pt-6 sm:pt-8 pb-4 flex-shrink-0">
+          <DialogTitle className="text-center text-2xl sm:text-3xl font-bold text-gray-900">
             {mode === "login" ? "Welcome back" : "Create your account"}
           </DialogTitle>
         </DialogHeader>
 
         {/* Form Content */}
-        <div className="flex-1 overflow-y-auto px-6 sm:px-8 pb-8 sm:pb-8">
+        <div className="flex-1 overflow-y-auto px-6 sm:px-8 pb-6 sm:pb-8">
           {/* OAuth Buttons */}
-          <div className="space-y-3 mb-4 sm:mb-5">
+          <div className="space-y-2.5 mb-4 sm:mb-5">
             {/* Google Sign-In Button */}
             <Button
               type="button"
@@ -307,7 +292,45 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
             </div>
           </div>
 
-          <form onSubmit={handleAuth} className="space-y-4 sm:space-y-5">
+          <form onSubmit={handleAuth} className="space-y-3 sm:space-y-5">
+            {/* First Name and Last Name Fields (Signup Only) */}
+            {mode === "signup" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName" className="text-sm font-medium text-gray-700">
+                    First Name
+                  </Label>
+                  <Input
+                    id="firstName"
+                    type="text"
+                    placeholder="John"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    className="h-12 sm:h-11 rounded-md text-base sm:text-sm"
+                    required
+                    disabled={loading}
+                    autoComplete="given-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName" className="text-sm font-medium text-gray-700">
+                    Last Name
+                  </Label>
+                  <Input
+                    id="lastName"
+                    type="text"
+                    placeholder="Smith"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    className="h-12 sm:h-11 rounded-md text-base sm:text-sm"
+                    required
+                    disabled={loading}
+                    autoComplete="family-name"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Email Field */}
             <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-medium text-gray-700">
