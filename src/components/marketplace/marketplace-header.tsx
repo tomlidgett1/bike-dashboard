@@ -446,33 +446,21 @@ export function MarketplaceHeader({
         </AnimatePresence>
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6">
           <div className="flex h-14 sm:h-16 items-center justify-start gap-2 sm:gap-4">
-            {/* Mobile Menu Button and Logo Container */}
-            <div className="flex items-center gap-2 lg:gap-2">
-              {/* Mobile Menu Button - Left of logo */}
-              <button
-                onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden p-2 -ml-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer z-10"
-                aria-label="Open menu"
-              >
-                <Menu className="h-5 w-5 text-gray-700 stroke-[1.5]" />
-              </button>
-
-              {/* Logo */}
-              <button
-                onClick={() => router.push('/marketplace')}
-                className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 cursor-pointer translate-y-[1px]"
-              >
-                <Image 
-                  src="/yj.svg" 
-                  alt="Yellow Jersey" 
-                  width={220} 
-                  height={36}
-                  className="h-28 w-auto sm:h-32"
-                  priority
-                  unoptimized
-                />
-              </button>
-            </div>
+            {/* Logo - Left side on mobile */}
+            <button
+              onClick={() => router.push('/marketplace')}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 cursor-pointer translate-y-[1px]"
+            >
+              <Image 
+                src="/yj.svg" 
+                alt="Yellow Jersey" 
+                width={220} 
+                height={36}
+                className="h-28 w-auto sm:h-32"
+                priority
+                unoptimized
+              />
+            </button>
 
             {/* Desktop Search Bar (always visible) + Mobile Search (conditional) */}
             {compactSearchOnMobile ? (
@@ -481,7 +469,7 @@ export function MarketplaceHeader({
                 <div className="hidden sm:block flex-[2] ml-[14px]">
                   <InstantSearch listingType={searchListingType} />
                 </div>
-                {/* Mobile: Search icon and Messages button (if logged in) */}
+                {/* Mobile: Search icon, Messages button, and Hamburger (far right) */}
                 <div className="sm:hidden flex items-center gap-1 ml-auto">
                   <button
                     onClick={() => setMobileSearchOpen(true)}
@@ -507,6 +495,14 @@ export function MarketplaceHeader({
                       </button>
                     </>
                   )}
+                  {/* Mobile Menu Button - Far right */}
+                  <button
+                    onClick={() => setMobileMenuOpen(true)}
+                    className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer"
+                    aria-label="Open menu"
+                  >
+                    <Menu className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                  </button>
                 </div>
               </>
             ) : (
@@ -515,7 +511,7 @@ export function MarketplaceHeader({
                 <div className="hidden sm:block flex-[2] ml-[14px]">
                   <InstantSearch listingType={searchListingType} />
                 </div>
-                {/* Mobile: Search icon and Messages button (if logged in) */}
+                {/* Mobile: Search icon, Messages button, and Hamburger (far right) */}
                 <div className="sm:hidden flex items-center gap-1 ml-auto">
                   <button
                     onClick={() => setMobileSearchOpen(true)}
@@ -541,6 +537,14 @@ export function MarketplaceHeader({
                       </button>
                     </>
                   )}
+                  {/* Mobile Menu Button - Far right */}
+                  <button
+                    onClick={() => setMobileMenuOpen(true)}
+                    className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0 cursor-pointer"
+                    aria-label="Open menu"
+                  >
+                    <Menu className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                  </button>
                 </div>
               </>
             )}
