@@ -371,9 +371,13 @@ function CheckoutSteps({
         setIsComplete(true);
         onSuccess?.();
         // Pass phone in URL as backup for SMS
+        console.log('[Checkout] Payment succeeded, shippingDetails:', shippingDetails);
         const phone = shippingDetails?.phone ? encodeURIComponent(shippingDetails.phone) : "";
+        console.log('[Checkout] Phone for redirect:', phone);
+        const redirectUrl = `/marketplace/checkout/success?payment_intent=${paymentIntent.id}&phone=${phone}`;
+        console.log('[Checkout] Redirect URL:', redirectUrl);
         setTimeout(() => {
-          window.location.href = `/marketplace/checkout/success?payment_intent=${paymentIntent.id}&phone=${phone}`;
+          window.location.href = redirectUrl;
         }, 1500);
       }
     } catch (err) {
@@ -538,9 +542,23 @@ function CheckoutSteps({
               validation: { phone: { required: "always" } },
             }}
             onChange={(event) => {
+              console.log('[AddressElement] onChange:', { complete: event.complete, value: event.value });
               setAddressComplete(event.complete);
               if (event.complete && event.value) {
                 // Save the shipping details for use when confirming payment
+                const details = {
+                  name: event.value.name || "",
+                  phone: event.value.phone || "",
+                  address: {
+                    line1: event.value.address.line1 || "",
+                    line2: event.value.address.line2 || undefined,
+                    city: event.value.address.city || "",
+                    state: event.value.address.state || "",
+                    postal_code: event.value.address.postal_code || "",
+                    country: event.value.address.country || "AU",
+                  },
+                };
+                console.log('[AddressElement] Saving shipping details:', details);
                 setShippingDetails({
                   name: event.value.name || "",
                   phone: event.value.phone || "",
@@ -607,6 +625,12 @@ function CheckoutSteps({
 
         {/* Payment Element */}
         <PaymentElement options={{ layout: "tabs" }} />
+        
+        {/* Debug: Show captured phone */}
+        <div className="mt-2 p-2 bg-gray-100 rounded text-xs font-mono text-gray-600">
+          <div>Debug - Captured phone: {shippingDetails?.phone || "(none)"}</div>
+          <div>Debug - Has shipping: {shippingDetails ? "Yes" : "No"}</div>
+        </div>
 
         {/* Error */}
         {paymentError && (
