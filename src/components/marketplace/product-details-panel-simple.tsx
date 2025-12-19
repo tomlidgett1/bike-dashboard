@@ -4,8 +4,8 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil, Shield, ChevronRight } from "lucide-react";
-import { UberDeliveryBanner, UberDeliveryBadge } from "./uber-delivery-banner";
+import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight } from "lucide-react";
+import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
@@ -32,7 +32,6 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
   const [product, setProduct] = React.useState(initialProduct);
-  const [isLiked, setIsLiked] = React.useState(false);
   const [logoError, setLogoError] = React.useState(false);
   const [isLearnOpen, setIsLearnOpen] = React.useState(false);
   const [isEditOpen, setIsEditOpen] = React.useState(false);
@@ -55,23 +54,6 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
     onProductUpdate?.(updatedProduct);
   };
 
-  const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: (product as any).display_name || product.description,
-          text: `Check out this ${product.marketplace_category} - $${product.price}`,
-          url: window.location.href,
-        });
-      } catch (err) {
-        console.log("Share cancelled");
-      }
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      alert("Link copied to clipboard!");
-    }
-  };
-
   return (
     <div className="bg-white">
       {/* Header: Title, Price, Save/Share */}
@@ -83,20 +65,10 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
           <p className="text-2xl font-bold text-gray-900">
             ${product.price.toLocaleString("en-AU")}
           </p>
-          <div className="flex gap-1.5">
-            <button 
-              onClick={() => setIsLiked(!isLiked)}
-              className="h-9 w-9 rounded-md bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-            >
-              <Heart className={cn("h-4 w-4", isLiked ? "fill-red-500 text-red-500" : "text-gray-600")} />
-            </button>
-            <button 
-              onClick={handleShare}
-              className="h-9 w-9 rounded-md bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-            >
-              <Share2 className="h-4 w-4 text-gray-600" />
-            </button>
-          </div>
+          {/* Uber Delivery - Discreet inline badge (only for Ashburton Cycles) */}
+          {!isSold && !isOwner && product.store_name === 'Ashburton Cycles' && (
+            <UberDeliveryInlineBadge />
+          )}
         </div>
         {(product as any).pickup_location && (
           <div className="flex items-center gap-1.5 mt-1.5">
@@ -108,13 +80,6 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
           </div>
         )}
       </div>
-
-      {/* Uber On-Demand Delivery Banner - Key Differentiator - Only for Ashburton Cycles */}
-      {!isSold && !isOwner && product.store_name === 'Ashburton Cycles' && (
-        <div className="px-4 pb-3">
-          <UberDeliveryBanner />
-        </div>
-      )}
 
       {/* Action Buttons */}
       <div className="px-4 pb-3 space-y-2">

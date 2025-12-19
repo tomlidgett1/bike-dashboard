@@ -84,7 +84,7 @@ export function UberDeliveryBadge({ className }: UberDeliveryBadgeProps) {
 // ============================================================
 // Uber Delivery Inline Badge (for product detail header)
 // ============================================================
-// Sleek, discreet badge with Uber branding
+// Discreet, subtle badge - "1hr delivery" + Uber logo
 
 interface UberDeliveryInlineBadgeProps {
   className?: string;
@@ -94,40 +94,29 @@ export function UberDeliveryInlineBadge({ className }: UberDeliveryInlineBadgePr
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-2 pl-2.5 pr-2 py-1.5 bg-gray-900 rounded-md group cursor-default transition-all hover:bg-gray-800",
+        "inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-900 rounded-md text-[10px]",
         className
       )}
     >
-      {/* Delivery icon with green glow effect */}
-      <div className="relative flex items-center justify-center">
-        <div className="absolute inset-0 bg-green-500/20 rounded-full blur-sm" />
-        <Image
-          src="/delivery.png"
-          alt="Delivery"
-          width={14}
-          height={14}
-          style={{ filter: "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)" }}
-          className="relative"
-        />
-      </div>
-      
-      {/* Text */}
-      <span className="text-xs font-medium text-white whitespace-nowrap">
+      <Image
+        src="/delivery.png"
+        alt="Delivery"
+        width={10}
+        height={10}
+        style={{ filter: "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)" }}
+      />
+      <span className="font-medium">
         <span className="text-green-400">1hr</span>
-        <span className="text-white/70 ml-0.5">delivery</span>
+        <span className="text-white"> delivery</span>
       </span>
-      
-      {/* Divider */}
-      <div className="w-px h-3 bg-white/20" />
-      
-      {/* Uber logo */}
+      <span className="text-white/30">|</span>
       <Image
         src="/uber.svg"
         alt="Uber"
         width={32}
-        height={12}
+        height={13}
         style={{ filter: 'brightness(0) invert(1)' }}
-        className="object-contain opacity-80 group-hover:opacity-100 transition-opacity"
+        className="object-contain opacity-70"
       />
     </div>
   );
