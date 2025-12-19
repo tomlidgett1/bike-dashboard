@@ -47,10 +47,10 @@ export async function POST(request: NextRequest) {
       productId = session.metadata?.product_id;
       // Phone from checkout session customer_details
       shippingPhone = session.customer_details?.phone || phoneFromUrl;
-      customerName = session.customer_details?.name || session.shipping_details?.name || 'Unknown';
+      customerName = session.customer_details?.name || 'Unknown';
       
-      // Build shipping address from session
-      const addr = session.shipping_details?.address || session.customer_details?.address;
+      // Build shipping address from session customer_details
+      const addr = session.customer_details?.address;
       if (addr) {
         const parts = [
           addr.line1,
