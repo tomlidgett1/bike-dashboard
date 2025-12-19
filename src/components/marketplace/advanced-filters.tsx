@@ -335,16 +335,12 @@ function MobileFilterContent({
 
   return (
     <div className="flex flex-col h-full bg-white">
-      {/* Handle Bar */}
-      <div className="flex-shrink-0 pt-2 pb-1">
-        <div className="w-8 h-1 bg-gray-300 rounded-full mx-auto" />
-      </div>
-      
-      {/* Compact Header */}
-      <div className="flex-shrink-0 px-4 pb-3">
+      {/* Header */}
+      <div className="flex-shrink-0 px-4 py-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-semibold text-gray-900">Filters</h2>
+            <SlidersHorizontal className="h-5 w-5 text-gray-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
             {activeFilterCount > 0 && (
               <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-gray-900 text-white rounded-md">
                 {activeFilterCount}
@@ -353,13 +349,13 @@ function MobileFilterContent({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 -mr-1.5 text-gray-400 hover:text-gray-600 rounded-md transition-colors"
+            className="p-2 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Active Filters - Horizontal scroll */}
+        {/* Active Filters - Wrap on multiple lines */}
         <AnimatePresence>
           {activeLabels.length > 0 && (
             <motion.div
@@ -369,7 +365,7 @@ function MobileFilterContent({
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <div className="flex items-center gap-1.5 mt-2 overflow-x-auto scrollbar-hide">
+              <div className="flex flex-wrap items-center gap-1.5 mt-3">
                 {activeLabels.map((filter) => (
                   <ActiveFilterChip
                     key={filter.key}
@@ -381,7 +377,7 @@ function MobileFilterContent({
                   onClick={handleReset}
                   className="text-xs font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap pl-1"
                 >
-                  Clear
+                  Clear all
                 </button>
               </div>
             </motion.div>
@@ -962,8 +958,8 @@ export function AdvancedFilters({
           {triggerButton}
         </SheetTrigger>
         <SheetContent 
-          side="bottom" 
-          className="rounded-t-2xl p-0 gap-0 h-[70vh] flex flex-col"
+          side="right" 
+          className="w-[50vw] min-w-[280px] max-w-[400px] p-0 gap-0 h-full flex flex-col"
           showCloseButton={false}
         >
           <MobileFilterContent
@@ -983,15 +979,15 @@ export function AdvancedFilters({
 
   return (
     <>
-      {/* Mobile: Sheet with beautiful mobile-optimised UI */}
+      {/* Mobile: Sheet slides from right with 50% width */}
       <div className="sm:hidden">
         <Sheet open={isOpen} onOpenChange={setIsOpen}>
           <SheetTrigger asChild>
             {triggerButton}
           </SheetTrigger>
           <SheetContent 
-            side="bottom" 
-            className="h-[70vh] rounded-t-2xl p-0 flex flex-col"
+            side="right" 
+            className="w-[50vw] min-w-[280px] max-w-[400px] p-0 gap-0 h-full flex flex-col"
             showCloseButton={false}
           >
             <MobileFilterContent

@@ -741,7 +741,7 @@ export function MarketplaceHeader({
             <div className="absolute inset-0 bg-[#FFC72C] rounded-full blur-xl opacity-40 group-active:opacity-60 transition-opacity" />
             
             {/* Main button */}
-            <div className="relative flex items-center gap-2.5 px-6 py-3.5 bg-gradient-to-r from-[#FFC72C] to-[#FFD54F] rounded-full shadow-[0_8px_32px_rgba(255,199,44,0.35)] border border-white/20">
+            <div className="relative flex items-center gap-2.5 px-6 py-3.5 bg-gradient-to-r from-[#FFC72C] to-[#FFD54F] rounded-full border border-white/20">
               <div className="flex items-center justify-center w-6 h-6 bg-gray-900 rounded-full">
                 <Plus className="h-4 w-4 text-white" strokeWidth={2.5} />
               </div>
