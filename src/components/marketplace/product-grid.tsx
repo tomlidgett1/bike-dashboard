@@ -78,7 +78,7 @@ export function ProductGrid({
   // Loading skeleton for initial load
   if (loading && uniqueProducts.length === 0) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-1.5 sm:gap-4">
         {Array.from({ length: 24 }).map((_, i) => (
           <div key={i} className="bg-white rounded-md border border-gray-200 overflow-hidden animate-pulse">
             <div className="bg-gray-200" style={{ aspectRatio: '1 / 1' }} />
@@ -116,7 +116,7 @@ export function ProductGrid({
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4"
+        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-1.5 sm:gap-4"
       >
         {uniqueProducts.map((product, index) => (
           <ProductCard

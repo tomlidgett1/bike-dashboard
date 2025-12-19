@@ -193,7 +193,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         {/* Image Container - Main focus */}
         <div 
           ref={imageRef}
-          className="relative w-full overflow-hidden rounded-xl bg-gray-100 mb-2.5 border border-gray-200"
+          className="relative w-full overflow-hidden rounded-md bg-gray-100 mb-2.5 border border-gray-200/80"
           style={{ aspectRatio: '1 / 1' }}
         >
           {isVisible && imageUrl && !imageError ? (

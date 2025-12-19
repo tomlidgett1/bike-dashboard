@@ -153,6 +153,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               sellerId={product.user_id}
               productImage={product.all_images?.[0] || null}
               shippingCost={(product as any).shipping_available ? ((product as any).shipping_cost || 0) : 0}
+              pickupLocation={(product as any).pickup_location || null}
               variant="default"
               size="lg"
               fullWidth

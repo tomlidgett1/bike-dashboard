@@ -2,10 +2,17 @@
 // Stripe Checkout Session Creation API
 // ============================================================
 // POST: Creates a Stripe Checkout Session for product purchase
+// Supports delivery method selection (Uber Express, AusPost, Pickup)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getStripe, calculatePlatformFee, calculateSellerPayout, calculateBuyerFee } from '@/lib/stripe';
+
+// Delivery fees (same as payment-intent)
+const UBER_EXPRESS_FEE = 15;
+const AUSPOST_FEE = 12;
+
+export type DeliveryMethod = 'uber_express' | 'auspost' | 'pickup' | 'shipping';
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { productId } = body;
+    const { productId, deliveryMethod = 'uber_express' } = body as { productId: string; deliveryMethod?: DeliveryMethod };
 
     if (!productId) {
       return NextResponse.json(
@@ -103,11 +110,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Calculate delivery cost based on method
+    let deliveryCost = 0;
+    let deliveryDescription = '';
+
+    switch (deliveryMethod) {
+      case 'uber_express':
+        deliveryCost = UBER_EXPRESS_FEE;
+        deliveryDescription = 'Uber Express (1-hour delivery)';
+        break;
+      case 'auspost':
+        deliveryCost = AUSPOST_FEE;
+        deliveryDescription = 'Australia Post (2-5 business days)';
+        break;
+      case 'pickup':
+        deliveryCost = 0;
+        deliveryDescription = 'Local Pickup';
+        break;
+      case 'shipping':
+        deliveryCost = product.shipping_available ? (product.shipping_cost || 0) : 0;
+        deliveryDescription = 'Standard Shipping';
+        break;
+    }
+
     // Calculate totals
     const itemPrice = product.price;
-    const shippingCost = product.shipping_available ? (product.shipping_cost || 0) : 0;
     const buyerFee = calculateBuyerFee(itemPrice); // 0.5% buyer service fee
-    const totalAmount = itemPrice + shippingCost + buyerFee;
+    const totalAmount = itemPrice + deliveryCost + buyerFee;
 
     // Get product image for Stripe checkout display
     let productImage: string | undefined;
@@ -130,6 +159,9 @@ export async function POST(request: NextRequest) {
     // Get app URL for success/cancel redirects
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
+    // Determine if we need to collect shipping address (not for pickup)
+    const requiresShipping = deliveryMethod !== 'pickup';
+
     // Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -147,15 +179,15 @@ export async function POST(request: NextRequest) {
           },
           quantity: 1,
         },
-        // Add shipping as a separate line item if applicable
-        ...(shippingCost > 0 ? [{
+        // Add delivery as a separate line item if applicable
+        ...(deliveryCost > 0 ? [{
           price_data: {
             currency: 'aud',
             product_data: {
-              name: 'Shipping',
+              name: deliveryDescription,
               description: 'Delivery cost',
             },
-            unit_amount: Math.round(shippingCost * 100),
+            unit_amount: Math.round(deliveryCost * 100),
           },
           quantity: 1,
         }] : []),
@@ -172,10 +204,12 @@ export async function POST(request: NextRequest) {
           quantity: 1,
         }] : []),
       ],
-      // Collect shipping address from buyer
-      shipping_address_collection: {
-        allowed_countries: ['AU', 'NZ'], // Australia and New Zealand
-      },
+      // Only collect shipping address if not pickup
+      ...(requiresShipping && {
+        shipping_address_collection: {
+          allowed_countries: ['AU', 'NZ'], // Australia and New Zealand
+        },
+      }),
       // Collect phone number for delivery
       phone_number_collection: {
         enabled: true,
@@ -185,7 +219,9 @@ export async function POST(request: NextRequest) {
         buyer_id: user.id,
         seller_id: product.user_id,
         item_price: itemPrice.toString(),
-        shipping_cost: shippingCost.toString(),
+        delivery_method: deliveryMethod,
+        delivery_cost: deliveryCost.toString(),
+        delivery_description: deliveryDescription,
         buyer_fee: buyerFee.toString(),
         total_amount: totalAmount.toString(),
         platform_fee: calculatePlatformFee(itemPrice).toString(), // 3% of item price (seller pays)

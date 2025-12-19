@@ -2,7 +2,7 @@
 // BUY NOW BUTTON COMPONENT
 // ============================================================
 // Opens embedded Stripe checkout sheet for product purchase (desktop)
-// Redirects to Stripe checkout page on mobile for better UX
+// Shows delivery selection then redirects to Stripe checkout page on mobile
 // Displays loading state and handles authentication
 
 'use client';
@@ -16,6 +16,7 @@ import { ShoppingBag, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { CheckoutSheet } from './checkout-sheet';
+import { MobileDeliverySheet, type DeliveryMethod } from './mobile-delivery-sheet';
 
 // ============================================================
 // Types
@@ -28,6 +29,7 @@ interface BuyNowButtonProps {
   sellerId: string;
   productImage?: string | null;
   shippingCost?: number;
+  pickupLocation?: string | null;
   variant?: 'default' | 'outline';
   size?: 'default' | 'sm' | 'lg';
   fullWidth?: boolean;
@@ -46,6 +48,7 @@ export function BuyNowButton({
   sellerId,
   productImage,
   shippingCost = 0,
+  pickupLocation,
   variant = 'default',
   size = 'default',
   fullWidth = false,
@@ -55,6 +58,7 @@ export function BuyNowButton({
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [isMobileDeliveryOpen, setIsMobileDeliveryOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -85,42 +89,51 @@ export function BuyNowButton({
       return;
     }
 
-    // On mobile, redirect to Stripe checkout page
+    // On mobile, open delivery selection sheet first
     if (isMobile) {
-      setIsLoading(true);
-      try {
-        const response = await fetch('/api/stripe/create-checkout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            productId,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to create checkout session');
-        }
-
-        // Redirect to Stripe Checkout
-        if (data.url) {
-          window.location.href = data.url;
-        } else {
-          throw new Error('No checkout URL returned');
-        }
-      } catch (err) {
-        console.error('[BuyNow] Error:', err);
-        setError(err instanceof Error ? err.message : 'Something went wrong');
-        setIsLoading(false);
-      }
+      setIsMobileDeliveryOpen(true);
       return;
     }
 
     // On desktop, open checkout sheet
     setIsCheckoutOpen(true);
+  };
+
+  // Handle mobile checkout after delivery selection
+  const handleMobileCheckout = async (deliveryMethod: DeliveryMethod) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          productId,
+          deliveryMethod,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create checkout session');
+      }
+
+      // Redirect to Stripe Checkout
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error('No checkout URL returned');
+      }
+    } catch (err) {
+      console.error('[BuyNow] Error:', err);
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setIsLoading(false);
+      setIsMobileDeliveryOpen(false);
+    }
   };
 
   const handleSuccess = () => {
@@ -177,7 +190,7 @@ export function BuyNowButton({
         )}
       </div>
 
-      {/* Checkout Sheet */}
+      {/* Desktop: Checkout Sheet */}
       <CheckoutSheet
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
@@ -187,6 +200,22 @@ export function BuyNowButton({
         productImage={productImage}
         sellerId={sellerId}
         onSuccess={handleSuccess}
+      />
+
+      {/* Mobile: Delivery Selection Sheet */}
+      <MobileDeliverySheet
+        isOpen={isMobileDeliveryOpen}
+        onClose={() => {
+          setIsMobileDeliveryOpen(false);
+          setIsLoading(false);
+        }}
+        productId={productId}
+        productName={productName}
+        productPrice={productPrice}
+        productImage={productImage}
+        pickupLocation={pickupLocation}
+        onCheckout={handleMobileCheckout}
+        isLoading={isLoading}
       />
     </>
   );
