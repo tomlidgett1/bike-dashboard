@@ -122,6 +122,14 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      case 'payment_intent.succeeded': {
+        console.log('[Stripe Webhook] >>> HANDLING payment_intent.succeeded <<<');
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        await handlePaymentIntentSucceeded(paymentIntent);
+        console.log('[Stripe Webhook] >>> COMPLETED payment_intent.succeeded <<<');
+        break;
+      }
+
       case 'payment_intent.payment_failed': {
         const paymentIntent = event.data.object as Stripe.PaymentIntent;
         console.log('[Stripe Webhook] Payment failed:', paymentIntent.id);
@@ -455,6 +463,170 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
 
   console.log(`[Stripe Webhook] Funds held until: ${fundsReleaseAt.toISOString()}`);
   console.log('[Stripe Webhook] ====== CHECKOUT COMPLETE SUCCESS ======');
+}
+
+// ============================================================
+// Handle PaymentIntent Succeeded (Embedded Checkout)
+// ============================================================
+
+async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
+  console.log('[Stripe Webhook] ====== PAYMENT INTENT SUCCEEDED START ======');
+  console.log('[Stripe Webhook] PaymentIntent ID:', paymentIntent.id);
+  console.log('[Stripe Webhook] Amount:', paymentIntent.amount);
+  console.log('[Stripe Webhook] Status:', paymentIntent.status);
+  
+  const supabase = getServiceClient();
+  
+  // Extract metadata
+  const metadata = paymentIntent.metadata;
+  console.log('[Stripe Webhook] Metadata:', JSON.stringify(metadata, null, 2));
+  
+  if (!metadata) {
+    console.error('[Stripe Webhook] No metadata in payment intent - ABORTING');
+    return;
+  }
+
+  const {
+    product_id,
+    buyer_id,
+    seller_id,
+    item_price,
+    delivery_method,
+    delivery_cost,
+    delivery_description,
+    buyer_fee,
+    total_amount,
+    platform_fee,
+    seller_payout,
+  } = metadata;
+
+  console.log('[Stripe Webhook] Extracted IDs:', { product_id, buyer_id, seller_id });
+  console.log('[Stripe Webhook] Delivery:', { delivery_method, delivery_cost, delivery_description });
+
+  if (!product_id || !buyer_id || !seller_id) {
+    console.error('[Stripe Webhook] Missing required metadata - ABORTING:', metadata);
+    return;
+  }
+
+  // Check for idempotency - don't create duplicate purchases
+  const { data: existingPurchase } = await supabase
+    .from('purchases')
+    .select('id')
+    .eq('stripe_payment_intent_id', paymentIntent.id)
+    .single();
+
+  if (existingPurchase) {
+    console.log('[Stripe Webhook] Purchase already exists for payment intent:', paymentIntent.id);
+    return;
+  }
+
+  // Verify product is still available (race condition protection)
+  const { data: product, error: productError } = await supabase
+    .from('products')
+    .select('id, is_active, sold_at')
+    .eq('id', product_id)
+    .single();
+
+  if (productError || !product) {
+    console.error('[Stripe Webhook] Product not found:', product_id);
+  }
+
+  if (product?.sold_at) {
+    console.error('[Stripe Webhook] Product already sold:', product_id);
+    // TODO: Trigger automatic refund
+    return;
+  }
+
+  // Generate order number
+  const orderNumber = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+
+  // Calculate funds release date (7 days from now)
+  const fundsReleaseAt = new Date();
+  fundsReleaseAt.setDate(fundsReleaseAt.getDate() + 7);
+
+  // Create purchase record with delivery information
+  const purchaseData: Record<string, any> = {
+    buyer_id,
+    seller_id,
+    product_id,
+    order_number: orderNumber,
+    item_price: parseFloat(item_price),
+    shipping_cost: parseFloat(delivery_cost || '0'),
+    total_amount: parseFloat(total_amount),
+    platform_fee: parseFloat(platform_fee),
+    seller_payout_amount: parseFloat(seller_payout),
+    stripe_payment_intent_id: paymentIntent.id,
+    status: 'paid',
+    payment_status: 'paid',
+    payment_method: 'stripe',
+    payment_date: new Date().toISOString(),
+    payout_status: 'pending',
+    // Escrow fields
+    funds_status: 'held',
+    funds_release_at: fundsReleaseAt.toISOString(),
+  };
+
+  // Add delivery information
+  if (delivery_method) {
+    purchaseData.delivery_method = delivery_method;
+    purchaseData.delivery_description = delivery_description;
+  }
+  if (buyer_fee) {
+    purchaseData.buyer_fee = parseFloat(buyer_fee);
+  }
+
+  console.log('[Stripe Webhook] Inserting purchase with data:', JSON.stringify(purchaseData, null, 2));
+
+  // Insert purchase
+  const { data: purchase, error: purchaseError } = await supabase
+    .from('purchases')
+    .insert(purchaseData)
+    .select()
+    .single();
+
+  if (purchaseError) {
+    console.error('[Stripe Webhook] ✗ Failed to create purchase:', JSON.stringify(purchaseError, null, 2));
+    
+    // Try without delivery columns if they don't exist yet
+    delete purchaseData.delivery_method;
+    delete purchaseData.delivery_description;
+    
+    const { data: purchaseRetry, error: retryError } = await supabase
+      .from('purchases')
+      .insert(purchaseData)
+      .select()
+      .single();
+    
+    if (retryError) {
+      console.error('[Stripe Webhook] ✗ Retry also failed:', retryError.message);
+      throw retryError;
+    }
+    
+    console.log('[Stripe Webhook] ✓ Purchase created (retry):', purchaseRetry.id, orderNumber);
+  } else {
+    console.log('[Stripe Webhook] ✓ Purchase created:', purchase.id, orderNumber);
+  }
+
+  // Mark product as sold
+  const { error: updateError } = await supabase
+    .from('products')
+    .update({
+      sold_at: new Date().toISOString(),
+      is_active: false,
+      listing_status: 'sold',
+    })
+    .eq('id', product_id)
+    .is('sold_at', null);
+
+  if (updateError) {
+    console.error('[Stripe Webhook] Failed to mark product as sold:', updateError);
+  } else {
+    console.log('[Stripe Webhook] Product marked as sold:', product_id);
+  }
+
+  console.log(`[Stripe Webhook] Delivery method: ${delivery_method}`);
+  console.log(`[Stripe Webhook] Funds held until: ${fundsReleaseAt.toISOString()}`);
+  console.log('[Stripe Webhook] ====== PAYMENT INTENT SUCCEEDED END ======');
 }
 
 // ============================================================

@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Package, Heart, Sparkles, Store, BadgeCheck } from "lucide-react";
+import { Package, Heart, Sparkles, Store, BadgeCheck, Zap } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
@@ -219,12 +219,17 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </div>
           )}
 
-          {/* Floating Price Badge */}
-          <div className="absolute bottom-2.5 left-2.5">
+          {/* Floating Price Badge with Uber Express */}
+          <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-1.5">
             <div className="bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-lg shadow-sm">
               <span className="text-sm font-bold text-gray-900">
                 ${product.price.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </span>
+            </div>
+            {/* Uber Express Badge */}
+            <div className="bg-black/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
+              <Zap className="h-3 w-3 text-green-400" />
+              <span className="text-[10px] font-semibold text-white">1hr</span>
             </div>
           </div>
 

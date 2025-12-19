@@ -4,7 +4,8 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil, Zap, Shield, ChevronRight } from "lucide-react";
+import { MapPin, Heart, Share2, User, Store, Sparkles, Pencil, Shield, ChevronRight } from "lucide-react";
+import { UberDeliveryBanner, UberDeliveryBadge } from "./uber-delivery-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
@@ -108,6 +109,13 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
         )}
       </div>
 
+      {/* Uber On-Demand Delivery Banner - Key Differentiator */}
+      {!isSold && !isOwner && (
+        <div className="px-4 pb-3">
+          <UberDeliveryBanner />
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="px-4 pb-3 space-y-2">
         {isSold ? (
@@ -136,6 +144,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               productName={(product as any).display_name || product.description}
               productPrice={product.price}
               sellerId={product.user_id}
+              productImage={product.all_images?.[0] || null}
               shippingCost={(product as any).shipping_available ? ((product as any).shipping_cost || 0) : 0}
               variant="default"
               size="lg"
@@ -177,15 +186,11 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
         )}
       </div>
 
-      {/* Feature Badges - Compact inline */}
+      {/* Feature Badge - Buyer Protection */}
       <div className="px-4 pb-3 flex items-center gap-3 text-xs text-gray-500">
         <span className="flex items-center gap-1">
-          <Zap className="h-3 w-3 text-amber-500" />
-          1-Hour Express
-        </span>
-        <span className="flex items-center gap-1">
           <Shield className="h-3 w-3 text-emerald-500" />
-          Buyer Protection
+          Buyer Protection Included
         </span>
       </div>
 

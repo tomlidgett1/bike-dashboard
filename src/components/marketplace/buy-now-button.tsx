@@ -1,20 +1,20 @@
 // ============================================================
 // BUY NOW BUTTON COMPONENT
 // ============================================================
-// Initiates Stripe Checkout for product purchase
+// Opens embedded Stripe checkout sheet for product purchase
 // Displays loading state and handles authentication
 
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
 import { Button } from '@/components/ui/button';
-import { ShoppingBag, Loader2 } from 'lucide-react';
+import { ShoppingBag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
+import { CheckoutSheet } from './checkout-sheet';
 
 // ============================================================
 // Types
@@ -25,6 +25,7 @@ interface BuyNowButtonProps {
   productName: string;
   productPrice: number;
   sellerId: string;
+  productImage?: string | null;
   shippingCost?: number;
   variant?: 'default' | 'outline';
   size?: 'default' | 'sm' | 'lg';
@@ -42,6 +43,7 @@ export function BuyNowButton({
   productName,
   productPrice,
   sellerId,
+  productImage,
   shippingCost = 0,
   variant = 'default',
   size = 'default',
@@ -49,15 +51,14 @@ export function BuyNowButton({
   className,
   showStripeBranding = true,
 }: BuyNowButtonProps) {
-  const router = useRouter();
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
-  const [isLoading, setIsLoading] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const totalPrice = productPrice + shippingCost;
+  const handleClick = () => {
+    setError(null);
 
-  const handleClick = async () => {
     // Check authentication
     if (!user) {
       openAuthModal();
@@ -70,91 +71,70 @@ export function BuyNowButton({
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
+    // Open checkout sheet
+    setIsCheckoutOpen(true);
+  };
 
-    try {
-      const response = await fetch('/api/stripe/create-checkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          productId,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create checkout session');
-      }
-
-      // Redirect to Stripe Checkout
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error('No checkout URL returned');
-      }
-    } catch (err) {
-      console.error('[BuyNow] Error:', err);
-      setError(err instanceof Error ? err.message : 'Something went wrong');
-      setIsLoading(false);
-    }
+  const handleSuccess = () => {
+    // The checkout sheet handles navigation to success page
+    console.log('[BuyNow] Payment successful');
   };
 
   return (
-    <div className={cn('flex flex-col', fullWidth && 'w-full')}>
-      <Button
-        variant={variant}
-        size={size}
-        onClick={handleClick}
-        disabled={isLoading}
-        className={cn(
-          'rounded-md font-medium transition-all',
-          variant === 'default' && 'bg-gray-900 hover:bg-gray-800 text-white',
-          fullWidth && 'w-full',
-          className
-        )}
-      >
-        {isLoading ? (
-          <>
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Processing...
-          </>
-        ) : (
-          <>
-            <ShoppingBag className="h-4 w-4 mr-2" />
-            Buy Now · ${totalPrice.toLocaleString('en-AU')}
-          </>
-        )}
-      </Button>
-
-      {/* Stripe Branding */}
-      {showStripeBranding && (
-        <div className="flex items-center justify-center gap-1.5 mt-2">
-          <span className="text-[10px] text-gray-400">Secured by</span>
-          <Image
-            src="/stripe.svg"
-            alt="Stripe"
-            width={36}
-            height={15}
-            className="opacity-50"
-          />
-        </div>
-      )}
-
-      {/* Error Message */}
-      {error && (
-        <motion.p
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-xs text-red-500 mt-2 text-center"
+    <>
+      <div className={cn('flex flex-col', fullWidth && 'w-full')}>
+        <Button
+          variant={variant}
+          size={size}
+          onClick={handleClick}
+          className={cn(
+            'rounded-md font-medium transition-all',
+            variant === 'default' && 'bg-gray-900 hover:bg-gray-800 text-white',
+            fullWidth && 'w-full',
+            className
+          )}
         >
-          {error}
-        </motion.p>
-      )}
-    </div>
+          <ShoppingBag className="h-4 w-4 mr-2" />
+          Buy Now · ${productPrice.toLocaleString('en-AU')}
+        </Button>
+
+        {/* Stripe Branding */}
+        {showStripeBranding && (
+          <div className="flex items-center justify-center gap-1.5 mt-2">
+            <span className="text-[10px] text-gray-400">Secured by</span>
+            <Image
+              src="/stripe.svg"
+              alt="Stripe"
+              width={36}
+              height={15}
+              className="opacity-50"
+            />
+          </div>
+        )}
+
+        {/* Error Message */}
+        {error && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-xs text-red-500 mt-2 text-center"
+          >
+            {error}
+          </motion.p>
+        )}
+      </div>
+
+      {/* Checkout Sheet */}
+      <CheckoutSheet
+        isOpen={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+        productId={productId}
+        productName={productName}
+        productPrice={productPrice}
+        productImage={productImage}
+        sellerId={sellerId}
+        onSuccess={handleSuccess}
+      />
+    </>
   );
 }
-

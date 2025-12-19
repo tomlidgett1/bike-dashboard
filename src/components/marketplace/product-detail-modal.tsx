@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Store, Heart, Share2, BadgeCheck } from "lucide-react";
+import { X, Store, Heart, Share2, BadgeCheck, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
@@ -263,6 +263,31 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                               Negotiable
                             </span>
                           )}
+                        </div>
+
+                        {/* Uber On-Demand Delivery Highlight */}
+                        <div className="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-900 rounded-md">
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-white/10">
+                              <Zap className="h-3.5 w-3.5 text-green-400" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-white leading-tight">
+                                Get it in <span className="text-green-400">1 hour</span>
+                              </p>
+                              <p className="text-[10px] text-white/60">On-demand delivery to your door</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className="text-[10px] text-white/50">via</span>
+                            <Image
+                              src="/uber.svg"
+                              alt="Uber"
+                              width={36}
+                              height={14}
+                              className="brightness-0 invert opacity-80"
+                            />
+                          </div>
                         </div>
                       </div>
 
