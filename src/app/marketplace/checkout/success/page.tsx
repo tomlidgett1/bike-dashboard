@@ -181,6 +181,31 @@ export default function CheckoutSuccessPage() {
   const [showConfetti, setShowConfetti] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
+  // Track if SMS has been sent to avoid duplicates
+  const [smsSent, setSmsSent] = React.useState(false);
+
+  // Send SMS for Uber Express orders
+  React.useEffect(() => {
+    if (paymentIntentId && !smsSent) {
+      const sendOrderSms = async () => {
+        try {
+          console.log('[Success] Sending order confirmation SMS...');
+          const response = await fetch('/api/sms/order-confirmation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paymentIntentId }),
+          });
+          const result = await response.json();
+          console.log('[Success] SMS result:', result);
+          setSmsSent(true);
+        } catch (err) {
+          console.error('[Success] Failed to send SMS:', err);
+        }
+      };
+      sendOrderSms();
+    }
+  }, [paymentIntentId, smsSent]);
+
   React.useEffect(() => {
     // If we have a payment_intent, fetch purchase by payment intent
     if (paymentIntentId) {
