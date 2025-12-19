@@ -174,6 +174,7 @@ export default function CheckoutSuccessPage() {
   // Support both session_id (Stripe Checkout) and payment_intent (Embedded Checkout)
   const sessionId = searchParams.get("session_id");
   const paymentIntentId = searchParams.get("payment_intent");
+  const phoneFromUrl = searchParams.get("phone"); // Phone passed from checkout
 
   const [loading, setLoading] = React.useState(true);
   const [purchase, setPurchase] = React.useState<PurchaseDetails | null>(null);
@@ -190,10 +191,14 @@ export default function CheckoutSuccessPage() {
       const sendOrderSms = async () => {
         try {
           console.log('[Success] Sending order confirmation SMS...');
+          console.log('[Success] Phone from URL:', phoneFromUrl);
           const response = await fetch('/api/sms/order-confirmation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ paymentIntentId }),
+            body: JSON.stringify({ 
+              paymentIntentId,
+              phone: phoneFromUrl, // Pass phone from URL as backup
+            }),
           });
           const result = await response.json();
           console.log('[Success] SMS result:', result);
@@ -204,7 +209,7 @@ export default function CheckoutSuccessPage() {
       };
       sendOrderSms();
     }
-  }, [paymentIntentId, smsSent]);
+  }, [paymentIntentId, phoneFromUrl, smsSent]);
 
   React.useEffect(() => {
     // If we have a payment_intent, fetch purchase by payment intent

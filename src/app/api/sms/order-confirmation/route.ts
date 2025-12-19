@@ -25,23 +25,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    const { paymentIntentId } = await request.json();
+    const { paymentIntentId, phone: phoneFromUrl } = await request.json();
 
     if (!paymentIntentId) {
       return NextResponse.json({ error: 'Missing paymentIntentId' }, { status: 400 });
     }
 
-    // Get PaymentIntent from Stripe to get shipping phone
+    // Get PaymentIntent from Stripe to get shipping phone and metadata
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
     
     const deliveryMethod = paymentIntent.metadata?.delivery_method;
-    const shippingPhone = paymentIntent.shipping?.phone;
     const productId = paymentIntent.metadata?.product_id;
+    
+    // Try to get phone from: 1) Stripe shipping, 2) URL param
+    const shippingPhone = paymentIntent.shipping?.phone || phoneFromUrl;
 
     console.log('[SMS Order] PaymentIntent:', {
       id: paymentIntentId,
       deliveryMethod,
-      hasPhone: !!shippingPhone,
+      stripePhone: paymentIntent.shipping?.phone,
+      urlPhone: phoneFromUrl,
+      finalPhone: shippingPhone,
       productId,
     });
 

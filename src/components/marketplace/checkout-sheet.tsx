@@ -312,6 +312,18 @@ function CheckoutSteps({
   const [paymentError, setPaymentError] = React.useState<string | null>(null);
   const [isComplete, setIsComplete] = React.useState(false);
   const [addressComplete, setAddressComplete] = React.useState(false);
+  const [shippingDetails, setShippingDetails] = React.useState<{
+    name: string;
+    phone: string;
+    address: {
+      line1: string;
+      line2?: string;
+      city: string;
+      state: string;
+      postal_code: string;
+      country: string;
+    };
+  } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -322,11 +334,33 @@ function CheckoutSteps({
     setPaymentError(null);
 
     try {
+      // Build confirm params with shipping if we have it
+      const confirmParams: {
+        return_url: string;
+        shipping?: {
+          name: string;
+          phone: string;
+          address: {
+            line1: string;
+            line2?: string;
+            city: string;
+            state: string;
+            postal_code: string;
+            country: string;
+          };
+        };
+      } = {
+        return_url: `${window.location.origin}/marketplace/checkout/success`,
+      };
+
+      // Add shipping details if we have them
+      if (shippingDetails) {
+        confirmParams.shipping = shippingDetails;
+      }
+
       const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/marketplace/checkout/success`,
-        },
+        confirmParams,
         redirect: "if_required",
       });
 
@@ -336,8 +370,10 @@ function CheckoutSteps({
       } else if (paymentIntent?.status === "succeeded") {
         setIsComplete(true);
         onSuccess?.();
+        // Pass phone in URL as backup for SMS
+        const phone = shippingDetails?.phone ? encodeURIComponent(shippingDetails.phone) : "";
         setTimeout(() => {
-          window.location.href = `/marketplace/checkout/success?payment_intent=${paymentIntent.id}`;
+          window.location.href = `/marketplace/checkout/success?payment_intent=${paymentIntent.id}&phone=${phone}`;
         }, 1500);
       }
     } catch (err) {
@@ -501,7 +537,24 @@ function CheckoutSteps({
               fields: { phone: "always" },
               validation: { phone: { required: "always" } },
             }}
-            onChange={(event) => setAddressComplete(event.complete)}
+            onChange={(event) => {
+              setAddressComplete(event.complete);
+              if (event.complete && event.value) {
+                // Save the shipping details for use when confirming payment
+                setShippingDetails({
+                  name: event.value.name || "",
+                  phone: event.value.phone || "",
+                  address: {
+                    line1: event.value.address.line1 || "",
+                    line2: event.value.address.line2 || undefined,
+                    city: event.value.address.city || "",
+                    state: event.value.address.state || "",
+                    postal_code: event.value.address.postal_code || "",
+                    country: event.value.address.country || "AU",
+                  },
+                });
+              }
+            }}
           />
         </div>
 
