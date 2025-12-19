@@ -184,6 +184,16 @@ export default function CheckoutSuccessPage() {
 
   // Track if SMS has been sent to avoid duplicates
   const [smsSent, setSmsSent] = React.useState(false);
+  const [smsDebug, setSmsDebug] = React.useState<{
+    apiUrl?: string;
+    phone?: string;
+    productName?: string;
+    deliveryMethod?: string;
+    result?: string;
+    success?: boolean;
+    message?: string;
+    reason?: string;
+  } | null>(null);
 
   // Send SMS for Uber Express orders
   React.useEffect(() => {
@@ -202,9 +212,11 @@ export default function CheckoutSuccessPage() {
           });
           const result = await response.json();
           console.log('[Success] SMS result:', result);
+          setSmsDebug({ ...result.debug, success: result.success, message: result.message, reason: result.reason });
           setSmsSent(true);
         } catch (err) {
           console.error('[Success] Failed to send SMS:', err);
+          setSmsDebug({ result: `Error: ${err}` });
         }
       };
       sendOrderSms();
@@ -534,6 +546,64 @@ export default function CheckoutSuccessPage() {
                 Continue browsing
               </Button>
             </motion.div>
+
+            {/* SMS Debug Info (for testing) */}
+            {smsDebug && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.7, duration: 0.4 }}
+                className="mt-6 bg-gray-100 rounded-md p-4 text-left"
+              >
+                <h4 className="text-xs font-semibold text-gray-600 mb-2">SMS Debug Info</h4>
+                <div className="space-y-2 text-xs font-mono">
+                  <div>
+                    <span className="text-gray-500">Success:</span>{" "}
+                    <span className={smsDebug.success ? "text-green-600" : "text-red-600"}>
+                      {smsDebug.success ? "Yes" : "No"}
+                    </span>
+                  </div>
+                  {smsDebug.reason && (
+                    <div>
+                      <span className="text-gray-500">Reason:</span>{" "}
+                      <span className="text-orange-600">{smsDebug.reason}</span>
+                    </div>
+                  )}
+                  {smsDebug.deliveryMethod && (
+                    <div>
+                      <span className="text-gray-500">Delivery:</span>{" "}
+                      <span className="text-gray-700">{smsDebug.deliveryMethod}</span>
+                    </div>
+                  )}
+                  {smsDebug.phone && (
+                    <div>
+                      <span className="text-gray-500">Phone:</span>{" "}
+                      <span className="text-gray-700">{smsDebug.phone}</span>
+                    </div>
+                  )}
+                  {smsDebug.productName && (
+                    <div>
+                      <span className="text-gray-500">Product:</span>{" "}
+                      <span className="text-gray-700">{smsDebug.productName}</span>
+                    </div>
+                  )}
+                  {smsDebug.result && (
+                    <div>
+                      <span className="text-gray-500">API Result:</span>{" "}
+                      <span className="text-gray-700">{smsDebug.result}</span>
+                    </div>
+                  )}
+                  {smsDebug.apiUrl && (
+                    <div className="pt-2 border-t border-gray-200">
+                      <span className="text-gray-500 block mb-1">API URL:</span>
+                      <div className="bg-white p-2 rounded border border-gray-200 break-all text-[10px] text-gray-600">
+                        {smsDebug.apiUrl}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
 
             {/* Footer */}
             <motion.div

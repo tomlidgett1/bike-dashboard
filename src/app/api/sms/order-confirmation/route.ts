@@ -85,9 +85,11 @@ export async function POST(request: NextRequest) {
       message: message.substring(0, 160),
     });
 
+    const fullUrl = `${SMS_API_URL}?${params.toString()}`;
+    console.log('[SMS Order] Full API URL:', fullUrl);
     console.log('[SMS Order] Sending to:', cleanPhone);
 
-    const smsResponse = await fetch(`${SMS_API_URL}?${params.toString()}`);
+    const smsResponse = await fetch(fullUrl);
     const smsResult = await smsResponse.text();
 
     console.log('[SMS Order] Result:', smsResult);
@@ -97,6 +99,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success,
       message: success ? 'SMS sent successfully' : smsResult,
+      debug: {
+        apiUrl: fullUrl,
+        phone: cleanPhone,
+        productName,
+        deliveryMethod,
+        result: smsResult,
+      },
     });
 
   } catch (error) {
