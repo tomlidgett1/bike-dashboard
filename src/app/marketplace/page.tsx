@@ -872,7 +872,7 @@ function MarketplacePageContent() {
         )}
       </AnimatePresence>
 
-      <MarketplaceLayout showFooter={false} showStoreCTA={isStoresView}>
+      <MarketplaceLayout showFooter={false} showStoreCTA={false}>
         {/* Sticky Explore Bar on Mobile - Always visible for unified navigation */}
         <div className="sticky top-14 sm:top-16 z-30 bg-white sm:hidden">
           <UnifiedFilterBar
