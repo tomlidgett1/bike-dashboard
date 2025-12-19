@@ -39,6 +39,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { FacebookImportModal } from "./sell/facebook-import-modal";
 import { SmartUploadModal } from "./sell/smart-upload-modal";
 import { MobileUploadMethodDialog } from "./sell/mobile-upload-method-dialog";
+import { BulkUploadSheet } from "./sell/bulk-upload-sheet";
 // Space navigator import removed - now integrated into UnifiedFilterBar
 import type { ListingImage } from "@/lib/types/listing";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
@@ -146,6 +147,7 @@ export function MarketplaceHeader({
   const [facebookModalOpen, setFacebookModalOpen] = React.useState(false);
   const [smartUploadModalOpen, setSmartUploadModalOpen] = React.useState(false);
   const [mobileUploadMethodOpen, setMobileUploadMethodOpen] = React.useState(false);
+  const [bulkUploadSheetOpen, setBulkUploadSheetOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
@@ -1064,7 +1066,17 @@ export function MarketplaceHeader({
           setFacebookModalOpen(true);
         }}
         onSelectBulk={() => {
-          router.push('/marketplace/sell?mode=bulk');
+          setBulkUploadSheetOpen(true);
+        }}
+      />
+
+      {/* Bulk Upload Sheet (Mobile) */}
+      <BulkUploadSheet
+        isOpen={bulkUploadSheetOpen}
+        onClose={() => setBulkUploadSheetOpen(false)}
+        onComplete={(listingIds) => {
+          console.log('✅ [HEADER] Bulk upload complete:', listingIds.length, 'listings created');
+          setBulkUploadSheetOpen(false);
         }}
       />
 

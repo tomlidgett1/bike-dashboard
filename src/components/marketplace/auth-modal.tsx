@@ -196,9 +196,9 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
             console.error("Error updating profile:", profileError);
           }
 
-          // Close modal and redirect to onboarding
+          // Close modal and redirect to marketplace (no onboarding needed)
           onOpenChange(false);
-          router.push(`/onboarding?type=${accountType}`);
+          router.push('/marketplace');
           router.refresh();
           return;
         }

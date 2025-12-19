@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, X, Loader2, CheckCircle2, Monitor, Smartphone, Camera, ImageIcon, Plus } from "lucide-react";
+import { Upload, X, Loader2, CheckCircle2, Monitor, Smartphone, Camera, ImageIcon, Plus, Sparkles } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import {
@@ -703,11 +703,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
               {/* Animated progress indicator */}
               <div className="relative mb-6">
                 <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
-                  <img 
-                    src="/icons/noun-fast-4767027.svg" 
-                    alt="Processing" 
-                    className="w-7 h-7"
-                  />
+                  <Sparkles className="h-7 w-7 text-gray-600" />
                 </div>
                 <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-gray-900 animate-spin" />
               </div>

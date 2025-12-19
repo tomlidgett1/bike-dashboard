@@ -54,48 +54,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Check if user is accessing the onboarding page
-  const isOnboardingPage = request.nextUrl.pathname.startsWith('/onboarding')
-  
-  // If user is authenticated, check if they've completed onboarding
-  if (user && !isOnboardingPage) {
-    try {
-      const { data: profile, error: profileError } = await supabase
-        .from('users')
-        .select('onboarding_completed')
-        .eq('user_id', user.id)
-        .single()
-
-      // Log for debugging
-      console.log('[MIDDLEWARE] Onboarding check:', {
-        user_id: user.id,
-        profile: profile,
-        onboarding_completed: profile?.onboarding_completed,
-        error: profileError
-      })
-
-      // Redirect to onboarding if:
-      // 1. Profile doesn't exist (error occurred) OR
-      // 2. Profile exists but onboarding_completed is false or null
-      const shouldRedirect = profileError || !profile || profile.onboarding_completed === false || profile.onboarding_completed === null
-      
-      if (shouldRedirect) {
-        console.log('[MIDDLEWARE] Redirecting to onboarding')
-        const url = request.nextUrl.clone()
-        url.pathname = '/onboarding'
-        return NextResponse.redirect(url)
-      }
-
-      console.log('[MIDDLEWARE] Onboarding completed, allowing access')
-    } catch (error) {
-      console.error('[MIDDLEWARE] Error checking onboarding status:', error)
-      // Redirect to onboarding if there's an error - safer approach
-      const url = request.nextUrl.clone()
-      url.pathname = '/onboarding'
-      return NextResponse.redirect(url)
-    }
-  }
-
+  // No onboarding check - users go directly to their destination
   return supabaseResponse
 }
 
