@@ -73,38 +73,61 @@ export async function POST(request: NextRequest) {
 
     const productName = product?.display_name || product?.description || 'your item';
 
-    // Send SMS
+    // Send SMS to customer
     const cleanPhone = shippingPhone.replace(/\s+/g, '').replace(/^\+61/, '0');
-    const message = `Order confirmed! Your item from Ashburton Cycles is on its way. Uber tracking link coming soon. Thanks for your order!`;
+    const customerMessage = `Order confirmed! Your item from Ashburton Cycles is on its way. Uber tracking link coming soon. Thanks for your order!`;
 
-    const params = new URLSearchParams({
+    const customerParams = new URLSearchParams({
       username: SMS_USERNAME,
       password: SMS_PASSWORD,
       from: SMS_FROM,
       to: cleanPhone,
-      message: message.substring(0, 160),
+      message: customerMessage.substring(0, 160),
     });
 
-    const fullUrl = `${SMS_API_URL}?${params.toString()}`;
-    console.log('[SMS Order] Full API URL:', fullUrl);
-    console.log('[SMS Order] Sending to:', cleanPhone);
+    const customerUrl = `${SMS_API_URL}?${customerParams.toString()}`;
+    console.log('[SMS Order] Sending customer SMS to:', cleanPhone);
 
-    const smsResponse = await fetch(fullUrl);
-    const smsResult = await smsResponse.text();
+    const customerResponse = await fetch(customerUrl);
+    const customerResult = await customerResponse.text();
 
-    console.log('[SMS Order] Result:', smsResult);
+    console.log('[SMS Order] Customer SMS result:', customerResult);
 
-    const success = smsResult.includes('Your message was sent');
+    const customerSuccess = customerResult.includes('Your message was sent');
+
+    // Send notification SMS to store (0414187820)
+    const storePhone = '0414187820';
+    const storeMessage = `A customer has ordered online using Uber`;
+
+    const storeParams = new URLSearchParams({
+      username: SMS_USERNAME,
+      password: SMS_PASSWORD,
+      from: SMS_FROM,
+      to: storePhone,
+      message: storeMessage,
+    });
+
+    const storeUrl = `${SMS_API_URL}?${storeParams.toString()}`;
+    console.log('[SMS Order] Sending store notification SMS to:', storePhone);
+
+    const storeResponse = await fetch(storeUrl);
+    const storeResult = await storeResponse.text();
+
+    console.log('[SMS Order] Store SMS result:', storeResult);
+
+    const storeSuccess = storeResult.includes('Your message was sent');
 
     return NextResponse.json({
-      success,
-      message: success ? 'SMS sent successfully' : smsResult,
+      success: customerSuccess,
+      storeNotified: storeSuccess,
+      message: customerSuccess ? 'SMS sent successfully' : customerResult,
       debug: {
-        apiUrl: fullUrl,
+        apiUrl: customerUrl,
         phone: cleanPhone,
         productName,
         deliveryMethod,
-        result: smsResult,
+        customerResult,
+        storeResult,
       },
     });
 
