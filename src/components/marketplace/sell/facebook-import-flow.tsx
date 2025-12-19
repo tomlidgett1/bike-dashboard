@@ -178,7 +178,7 @@ export function FacebookImportFlow({ onComplete, onSwitchToManual }: FacebookImp
 
         if (response.ok) {
           const { listing } = await response.json();
-          window.location.href = `/marketplace?success=listing_published&id=${listing.id}`;
+          window.location.href = `/marketplace/product/${listing.id}?fromUpload=true`;
         } else {
           throw new Error("Failed to create listing");
         }

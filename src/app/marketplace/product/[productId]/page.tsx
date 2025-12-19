@@ -349,10 +349,10 @@ export default async function ProductPage({
   searchParams 
 }: { 
   params: Promise<{ productId: string }>;
-  searchParams: Promise<{ fromPurchase?: string }>;
+  searchParams: Promise<{ fromPurchase?: string; fromUpload?: string }>;
 }) {
   const { productId } = await params;
-  const { fromPurchase } = await searchParams;
+  const { fromPurchase, fromUpload } = await searchParams;
   
   // Allow viewing sold products if coming from purchase history
   const allowSoldProducts = fromPurchase === 'true';
@@ -376,6 +376,7 @@ export default async function ProductPage({
       similarProducts={similarProducts}
       sellerProducts={sellerData.products}
       sellerInfo={sellerData.seller}
+      showUploadBanner={fromUpload === 'true'}
     />
   );
 }

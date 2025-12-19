@@ -9,6 +9,7 @@ import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs
 import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
 import { EnhancedImageGallery } from "@/components/marketplace/product-detail/enhanced-image-gallery";
 import { RecommendationCarousel } from "@/components/marketplace/product-detail/recommendation-carousel";
+import { ProductUploadSuccessBanner } from "@/components/marketplace/product-upload-success-banner";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -31,18 +32,21 @@ interface ProductPageClientProps {
   similarProducts: MarketplaceProduct[];
   sellerProducts: MarketplaceProduct[];
   sellerInfo: SellerInfo | null;
+  showUploadBanner?: boolean;
 }
 
 export function ProductPageClient({ 
   product, 
   similarProducts, 
   sellerProducts, 
-  sellerInfo 
+  sellerInfo,
+  showUploadBanner = false
 }: ProductPageClientProps) {
   const router = useRouter();
   const { user } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
   const [isLiked, setIsLiked] = React.useState(false);
+  const [showBanner, setShowBanner] = React.useState(showUploadBanner);
 
   // Track product view with dwell time
   useProductView(product.id, user?.id);
@@ -118,6 +122,12 @@ export function ProductPageClient({
       
       {/* Main Content */}
       <div className="min-h-screen bg-white sm:bg-gray-50 pt-14 sm:pt-16 pb-24 sm:pb-8">
+        {/* Upload Success Banner */}
+        <ProductUploadSuccessBanner 
+          show={showBanner} 
+          onClose={() => setShowBanner(false)} 
+        />
+        
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
