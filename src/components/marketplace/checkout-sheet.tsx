@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
 import { X, Zap, MapPin, Truck, Loader2, Check, Shield } from "lucide-react";
 import { PaymentElement, AddressElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { StripeElementsProvider } from "@/components/providers/stripe-elements-provider";
 import { cn } from "@/lib/utils";
 import type { DeliveryMethod } from "@/app/api/stripe/create-payment-intent/route";
@@ -78,18 +78,6 @@ export function CheckoutSheet({
     }
   }, [isOpen]);
 
-  // Prevent body scroll when sheet is open
-  React.useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [isOpen]);
-
   const createPaymentIntent = async () => {
     setIsLoading(true);
     setError(null);
@@ -155,91 +143,68 @@ export function CheckoutSheet({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/60 z-[100]"
-            onClick={onClose}
-          />
+    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent 
+        side="bottom" 
+        showCloseButton={false}
+        className="rounded-t-2xl max-h-[92vh] flex flex-col p-0"
+      >
+        {/* Header with Handle */}
+        <div className="flex-shrink-0 border-b border-gray-100">
+          {/* Handle */}
+          <div className="flex justify-center pt-2 pb-1">
+            <div className="w-10 h-1 bg-gray-300 rounded-full" />
+          </div>
+          {/* Title Row */}
+          <div className="flex items-center justify-between px-4 pb-3">
+            <h2 className="text-lg font-semibold text-gray-900">Checkout</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 -mr-2 rounded-full hover:bg-gray-100 transition-colors"
+            >
+              <X className="h-5 w-5 text-gray-500" />
+            </button>
+          </div>
+        </div>
 
-          {/* Sheet - Bottom on mobile, centered modal on desktop */}
-          <motion.div
-            initial={{ y: "100%", opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: "100%", opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className={cn(
-              "fixed z-[101] bg-white shadow-2xl flex flex-col overflow-hidden",
-              // Mobile: bottom sheet
-              "bottom-0 left-0 right-0 rounded-t-2xl max-h-[92vh]",
-              // Desktop: centered modal
-              "sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2",
-              "sm:rounded-xl sm:w-full sm:max-w-md sm:max-h-[85vh]"
-            )}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Handle (mobile only) */}
-            <div className="flex justify-center pt-3 pb-2 sm:hidden flex-shrink-0">
-              <div className="w-10 h-1 bg-gray-300 rounded-full" />
-            </div>
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 sm:px-5 pb-3 sm:pt-4 border-b border-gray-100 flex-shrink-0">
-              <h2 className="text-lg font-semibold text-gray-900">Checkout</h2>
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-2 -mr-2 rounded-full hover:bg-gray-100 transition-colors"
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          {error ? (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-md text-center">
+              <p className="text-sm text-red-600">{error}</p>
+              <Button
+                onClick={createPaymentIntent}
+                variant="outline"
+                size="sm"
+                className="mt-3"
               >
-                <X className="h-5 w-5 text-gray-500" />
-              </button>
+                Try Again
+              </Button>
             </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4">
-              {error ? (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-md text-center">
-                  <p className="text-sm text-red-600">{error}</p>
-                  <Button
-                    onClick={createPaymentIntent}
-                    variant="outline"
-                    size="sm"
-                    className="mt-3"
-                  >
-                    Try Again
-                  </Button>
-                </div>
-              ) : !clientSecret ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                </div>
-              ) : (
-                <StripeElementsProvider clientSecret={clientSecret}>
-                  <CheckoutForm
-                    productName={productName}
-                    productPrice={productPrice}
-                    productImage={productImage}
-                    deliveryOptions={deliveryOptions}
-                    selectedDelivery={selectedDelivery}
-                    onDeliveryChange={handleDeliveryChange}
-                    breakdown={breakdown}
-                    isUpdating={isLoading}
-                    onSuccess={onSuccess}
-                    onClose={onClose}
-                  />
-                </StripeElementsProvider>
-              )}
+          ) : !clientSecret ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+          ) : (
+            <StripeElementsProvider clientSecret={clientSecret}>
+              <CheckoutForm
+                productName={productName}
+                productPrice={productPrice}
+                productImage={productImage}
+                deliveryOptions={deliveryOptions}
+                selectedDelivery={selectedDelivery}
+                onDeliveryChange={handleDeliveryChange}
+                breakdown={breakdown}
+                isUpdating={isLoading}
+                onSuccess={onSuccess}
+                onClose={onClose}
+              />
+            </StripeElementsProvider>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -320,13 +285,9 @@ function CheckoutForm({
   if (isComplete) {
     return (
       <div className="py-12 text-center">
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4"
-        >
+        <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4 animate-in zoom-in-50 duration-300">
           <Check className="h-8 w-8 text-green-600" />
-        </motion.div>
+        </div>
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Payment Successful!</h3>
         <p className="text-sm text-gray-500">Redirecting...</p>
       </div>
@@ -558,4 +519,3 @@ function CheckoutForm({
     </form>
   );
 }
-
