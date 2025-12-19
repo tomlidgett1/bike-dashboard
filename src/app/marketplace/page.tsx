@@ -4,6 +4,7 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon, User, Clock, DollarSign, SlidersHorizontal } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
@@ -240,8 +241,8 @@ function MarketplacePageContent() {
 
   // Detect when filters scroll out of view (mobile only, Browse mode only)
   React.useEffect(() => {
-    // Only run on mobile, in Browse mode, and when not on stores view
-    if (!isMobile || viewMode !== 'all' || isStoresView) {
+    // Only run on mobile, in Browse mode (or stores view)
+    if (!isMobile || (viewMode !== 'all' && !isStoresView)) {
       setShowStickyFilters(false);
       return;
     }
@@ -753,9 +754,9 @@ function MarketplacePageContent() {
         isNavigating={isNavigating}
       />
 
-      {/* Sticky Filter Header - Mobile Only, Marketplace space only (appears when category pills scroll out) */}
+      {/* Sticky Filter Header - Mobile Only (appears when category pills scroll out) */}
       <AnimatePresence>
-        {showStickyFilters && isMarketplaceView && viewMode === 'all' && (
+        {showStickyFilters && ((isMarketplaceView && viewMode === 'all') || isStoresView) && (
           <motion.div
             initial={{ y: -80, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -800,8 +801,28 @@ function MarketplacePageContent() {
             </AnimatePresence>
             {/* Top Row - Filters Button */}
             <div className="flex items-center justify-between px-3 pt-2.5 pb-2">
-              {/* Marketplace label */}
-              <span className="text-sm font-medium text-gray-900">Marketplace</span>
+              {/* Space label - Marketplace or Bike Stores */}
+              {isStoresView ? (
+                <Image 
+                  src="/bikestores.svg" 
+                  alt="Bike Stores" 
+                  width={120} 
+                  height={28}
+                  className="h-7 w-auto"
+                  priority
+                  unoptimized
+                />
+              ) : (
+                <Image 
+                  src="/marketplace.svg" 
+                  alt="Marketplace" 
+                  width={120} 
+                  height={28}
+                  className="h-7 w-auto"
+                  priority
+                  unoptimized
+                />
+              )}
 
               {/* All Filters Button */}
               <AdvancedFilters
