@@ -709,7 +709,7 @@ export function BulkUploadSheet({
     >
       <SheetContent
         side="bottom"
-        className="rounded-t-2xl p-0 overflow-hidden gap-0 max-h-[95vh] flex flex-col"
+        className="rounded-t-2xl p-0 overflow-hidden gap-0 max-h-[80vh] flex flex-col"
         showCloseButton={false}
       >
         {/* Handle Bar */}
