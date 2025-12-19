@@ -1,7 +1,7 @@
 // ============================================================
 // Stripe Session Details API
 // ============================================================
-// GET: Fetch purchase details by Stripe session ID
+// GET: Fetch purchase details by Stripe session ID or payment intent ID
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
@@ -13,6 +13,8 @@ export async function GET(
   try {
     const supabase = await createClient();
     const { sessionId } = await params;
+    const searchParams = request.nextUrl.searchParams;
+    const type = searchParams.get('type');
 
     // Check authentication
     const {
@@ -27,8 +29,8 @@ export async function GET(
       );
     }
 
-    // Fetch purchase by session ID
-    const { data: purchase, error: purchaseError } = await supabase
+    // Build query based on type
+    let query = supabase
       .from('purchases')
       .select(`
         id,
@@ -39,23 +41,28 @@ export async function GET(
         status,
         payment_status,
         purchase_date,
+        delivery_method,
         product:products(
           id,
           description,
           display_name,
           primary_image_url
         ),
-        seller:users!purchases_seller_id_fkey(
-          user_id,
-          name,
-          business_name
-        )
+        seller_id
       `)
-      .eq('stripe_session_id', sessionId)
-      .eq('buyer_id', user.id) // Security: only allow viewing own purchases
-      .single();
+      .eq('buyer_id', user.id); // Security: only allow viewing own purchases
+
+    // Lookup by payment_intent or session_id
+    if (type === 'payment_intent') {
+      query = query.eq('stripe_payment_intent_id', sessionId);
+    } else {
+      query = query.eq('stripe_session_id', sessionId);
+    }
+
+    const { data: purchase, error: purchaseError } = await query.single();
 
     if (purchaseError || !purchase) {
+      console.log('[Session API] Purchase not found:', { sessionId, type, error: purchaseError?.message });
       return NextResponse.json(
         { error: 'Purchase not found' },
         { status: 404 }

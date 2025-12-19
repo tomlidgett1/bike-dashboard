@@ -170,7 +170,10 @@ function extractFirst<T>(data: T | T[] | null | undefined): T | null {
 export default function CheckoutSuccessPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  
+  // Support both session_id (Stripe Checkout) and payment_intent (Embedded Checkout)
   const sessionId = searchParams.get("session_id");
+  const paymentIntentId = searchParams.get("payment_intent");
 
   const [loading, setLoading] = React.useState(true);
   const [purchase, setPurchase] = React.useState<PurchaseDetails | null>(null);
@@ -179,6 +182,32 @@ export default function CheckoutSuccessPage() {
   const [copied, setCopied] = React.useState(false);
 
   React.useEffect(() => {
+    // If we have a payment_intent, fetch purchase by payment intent
+    if (paymentIntentId) {
+      const fetchPurchaseByPaymentIntent = async () => {
+        try {
+          // Give webhook time to process
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+          const response = await fetch(`/api/stripe/session/${paymentIntentId}?type=payment_intent`);
+          
+          if (response.ok) {
+            const data = await response.json();
+            setPurchase(data.purchase);
+          }
+        } catch (err) {
+          console.error("Error fetching purchase:", err);
+        } finally {
+          setLoading(false);
+          setShowConfetti(true);
+        }
+      };
+
+      fetchPurchaseByPaymentIntent();
+      return;
+    }
+
+    // Legacy: session_id from Stripe Checkout
     if (!sessionId) {
       setError("No session ID provided");
       setLoading(false);
@@ -204,7 +233,7 @@ export default function CheckoutSuccessPage() {
     };
 
     fetchPurchase();
-  }, [sessionId]);
+  }, [sessionId, paymentIntentId]);
 
   const copyOrderNumber = () => {
     if (purchase?.order_number) {
