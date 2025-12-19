@@ -18,6 +18,7 @@ import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type Adv
 import { StoresGrid } from "@/components/marketplace/stores-grid";
 import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-modal";
 import { SplitSearchResults } from "@/components/marketplace/split-search-results";
+import { UberDeliveryPromoBanner } from "@/components/marketplace/uber-delivery-promo-banner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -934,6 +935,11 @@ function MarketplacePageContent() {
             transition={{ duration: 0.5 }}
             className="space-y-6"
           >
+            {/* Uber Delivery Promo Banner - Marketplace view only */}
+            {isMarketplaceView && !searchQuery && (
+              <UberDeliveryPromoBanner />
+            )}
+
             {/* Stores View - Products from Stores with Store Filter */}
             {isStoresView && (
               <div className="space-y-4 sm:space-y-6">

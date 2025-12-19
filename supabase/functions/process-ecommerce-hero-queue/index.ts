@@ -16,13 +16,13 @@ const corsHeaders = {
 };
 
 // The prompt that instructs GPT Image 1.5 to preserve the product exactly
-const ECOMMERCE_HERO_PROMPT = `Place this exact product photograph on a pure white e-commerce background. Create a perfect 1024x1024 square hero product shot. Add subtle professional product photography shadows beneath the product to give it depth and grounding.
+const ECOMMERCE_HERO_PROMPT = `Place this exact product photograph on a soft light gray e-commerce background (not pure white - use a subtle off-white/very light gray tone like #F5F5F5 or #F8F8F8). Create a perfect 1024x1024 square hero product shot. Add subtle professional product photography shadows beneath the product to give it depth and grounding.
 
 CRITICAL REQUIREMENTS:
 1. Do NOT alter, enhance, clean, repair, or modify the product itself in ANY way
 2. Preserve every scratch, dirt mark, scuff, wear sign, and imperfection exactly as shown
 3. The product must remain photographically identical to the input - same colours, same condition, same details
-4. Only change the BACKGROUND to pure white and add realistic soft shadows beneath the product
+4. Only change the BACKGROUND to a soft light gray/off-white tone and add realistic soft shadows beneath the product
 5. Centre the product in the frame with appropriate padding for a professional e-commerce look
 6. Ensure the entire product is visible within the square frame
 7. Maintain the original image quality and sharpness of the product

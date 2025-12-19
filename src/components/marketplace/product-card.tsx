@@ -237,7 +237,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
                   quality={100}
                   className="object-contain"
                 />
-                <span className="text-[10px] font-semibold text-white">1hr</span>
+                <span className="text-[10px] font-semibold text-green-500">1hr</span>
               </div>
             )}
           </div>

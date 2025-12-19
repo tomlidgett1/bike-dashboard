@@ -35,6 +35,8 @@ export async function POST(request: NextRequest) {
     let deliveryMethod: string | undefined;
     let productId: string | undefined;
     let shippingPhone: string | undefined;
+    let customerName: string | undefined;
+    let shippingAddress: string | undefined;
 
     // Handle Stripe Checkout Session (mobile redirect flow)
     if (sessionId) {
@@ -45,6 +47,20 @@ export async function POST(request: NextRequest) {
       productId = session.metadata?.product_id;
       // Phone from checkout session customer_details
       shippingPhone = session.customer_details?.phone || phoneFromUrl;
+      customerName = session.customer_details?.name || session.shipping_details?.name || 'Unknown';
+      
+      // Build shipping address from session
+      const addr = session.shipping_details?.address || session.customer_details?.address;
+      if (addr) {
+        const parts = [
+          addr.line1,
+          addr.line2,
+          addr.city,
+          addr.state,
+          addr.postal_code,
+        ].filter(Boolean);
+        shippingAddress = parts.join(', ');
+      }
 
       console.log('[SMS Order] Checkout Session:', {
         id: sessionId,
@@ -52,6 +68,8 @@ export async function POST(request: NextRequest) {
         sessionPhone: session.customer_details?.phone,
         urlPhone: phoneFromUrl,
         finalPhone: shippingPhone,
+        customerName,
+        shippingAddress,
         productId,
       });
     } 
@@ -63,6 +81,20 @@ export async function POST(request: NextRequest) {
       deliveryMethod = paymentIntent.metadata?.delivery_method;
       productId = paymentIntent.metadata?.product_id;
       shippingPhone = paymentIntent.shipping?.phone || phoneFromUrl;
+      customerName = paymentIntent.shipping?.name || 'Unknown';
+      
+      // Build shipping address from payment intent
+      const addr = paymentIntent.shipping?.address;
+      if (addr) {
+        const parts = [
+          addr.line1,
+          addr.line2,
+          addr.city,
+          addr.state,
+          addr.postal_code,
+        ].filter(Boolean);
+        shippingAddress = parts.join(', ');
+      }
 
       console.log('[SMS Order] PaymentIntent:', {
         id: paymentIntentId,
@@ -70,6 +102,8 @@ export async function POST(request: NextRequest) {
         stripePhone: paymentIntent.shipping?.phone,
         urlPhone: phoneFromUrl,
         finalPhone: shippingPhone,
+        customerName,
+        shippingAddress,
         productId,
       });
     }
@@ -122,14 +156,23 @@ export async function POST(request: NextRequest) {
 
     // Send notification SMS to store (0414187820)
     const storePhone = '0414187820';
-    const storeMessage = `A customer has ordered online using Uber`;
+    
+    // Build detailed store message with customer info
+    const storeMessageParts = [
+      `UBER ORDER`,
+      `Customer: ${customerName || 'Unknown'}`,
+      `Product: ${productName}`,
+      `Address: ${shippingAddress || 'Not provided'}`,
+      `Phone: ${cleanPhone}`,
+    ];
+    const storeMessage = storeMessageParts.join('\n');
 
     const storeParams = new URLSearchParams({
       username: SMS_USERNAME,
       password: SMS_PASSWORD,
       from: SMS_FROM,
       to: storePhone,
-      message: storeMessage,
+      message: storeMessage.substring(0, 320), // Allow longer SMS (2 segments)
     });
 
     const storeUrl = `${SMS_API_URL}?${storeParams.toString()}`;
