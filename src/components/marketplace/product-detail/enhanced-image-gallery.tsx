@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, X, Heart } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Heart, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -23,6 +23,7 @@ interface EnhancedImageGalleryProps {
   onIndexChange: (index: number) => void;
   onLikeToggle?: () => void;
   isLiked?: boolean;
+  onShare?: () => void;
 }
 
 export function EnhancedImageGallery({
@@ -32,6 +33,7 @@ export function EnhancedImageGallery({
   onIndexChange,
   onLikeToggle,
   isLiked = false,
+  onShare,
 }: EnhancedImageGalleryProps) {
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [fullscreenIndex, setFullscreenIndex] = React.useState(0);
@@ -268,23 +270,36 @@ export function EnhancedImageGallery({
             </motion.div>
           </AnimatePresence>
 
-          {/* Like Button - Top Right */}
-          {onLikeToggle && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onLikeToggle();
-              }}
-              className="absolute top-3 right-3 p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all z-10"
-            >
-              <Heart
-                className={cn(
-                  "h-5 w-5 transition-colors",
-                  isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
-                )}
-              />
-            </button>
-          )}
+          {/* Like and Share Buttons - Top Right */}
+          <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+            {onLikeToggle && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onLikeToggle();
+                }}
+                className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
+              >
+                <Heart
+                  className={cn(
+                    "h-5 w-5 transition-colors",
+                    isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
+                  )}
+                />
+              </button>
+            )}
+            {onShare && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onShare();
+                }}
+                className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
+              >
+                <Share2 className="h-5 w-5 stroke-gray-700" />
+              </button>
+            )}
+          </div>
 
           {/* Pagination Dots */}
           {images.length > 1 && (
@@ -314,23 +329,36 @@ export function EnhancedImageGallery({
       <div className="hidden sm:block relative">
         {renderImageGrid()}
 
-        {/* Like Button - Top Left of first image */}
-        {onLikeToggle && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onLikeToggle();
-            }}
-            className="absolute top-3 left-3 p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all z-10"
-          >
-            <Heart
-              className={cn(
-                "h-5 w-5 transition-colors",
-                isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
-              )}
-            />
-          </button>
-        )}
+        {/* Like and Share Buttons - Top Left of first image */}
+        <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
+          {onLikeToggle && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onLikeToggle();
+              }}
+              className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
+            >
+              <Heart
+                className={cn(
+                  "h-5 w-5 transition-colors",
+                  isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
+                )}
+              />
+            </button>
+          )}
+          {onShare && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onShare();
+              }}
+              className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
+            >
+              <Share2 className="h-5 w-5 stroke-gray-700" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Fullscreen Modal */}

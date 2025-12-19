@@ -47,6 +47,24 @@ export function ProductPageClient({
   // Track product view with dwell time
   useProductView(product.id, user?.id);
 
+  // Handle share functionality
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: (product as any).display_name || product.description,
+          text: `Check out this ${product.marketplace_category} - $${product.price}`,
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.log("Share cancelled");
+      }
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      alert("Link copied to clipboard!");
+    }
+  };
+
   // Get all available images
   const images = React.useMemo(() => {
     if (!product) return [];
@@ -127,6 +145,7 @@ export function ProductPageClient({
                   onIndexChange={setCurrentImageIndex}
                   onLikeToggle={() => setIsLiked(!isLiked)}
                   isLiked={isLiked}
+                  onShare={handleShare}
                 />
               </div>
 

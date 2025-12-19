@@ -156,27 +156,34 @@ export function BuyNowButton({
             className
           )}
         >
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <ShoppingBag className="h-4 w-4 mr-2" />
-          )}
-          {isLoading ? 'Redirecting...' : `Buy Now · $${productPrice.toLocaleString('en-AU')}`}
-        </Button>
-
-        {/* Stripe Branding */}
-        {showStripeBranding && (
-          <div className="flex items-center justify-center gap-1.5 mt-2">
-            <span className="text-[10px] text-gray-400">Secured by</span>
-            <Image
-              src="/stripe.svg"
-              alt="Stripe"
-              width={36}
-              height={15}
-              className="opacity-50"
-            />
+          <div className="flex items-center justify-center w-full">
+            {isLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <span>Redirecting...</span>
+              </>
+            ) : (
+              <>
+                <ShoppingBag className="h-4 w-4 mr-2" />
+                <span>{`Buy Now · $${productPrice.toLocaleString('en-AU')}`}</span>
+                {showStripeBranding && (
+                  <>
+                    <div className="w-px h-4 bg-white/20 mx-2.5" />
+                    <span className="text-[10px] text-white/50 mr-1">Powered by</span>
+                    <Image
+                      src="/stripe.svg"
+                      alt="Stripe"
+                      width={32}
+                      height={13}
+                      style={{ filter: 'brightness(0) invert(1)' }}
+                      className="opacity-70"
+                    />
+                  </>
+                )}
+              </>
+            )}
           </div>
-        )}
+        </Button>
 
         {/* Error Message */}
         {error && (
