@@ -8,10 +8,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getStripe, calculatePlatformFee, calculateSellerPayout, calculateBuyerFee } from '@/lib/stripe';
 
-// Uber Express delivery flat fee
+// Delivery fees
 const UBER_EXPRESS_FEE = 15;
+const AUSPOST_FEE = 12;
 
-export type DeliveryMethod = 'uber_express' | 'pickup' | 'shipping';
+export type DeliveryMethod = 'uber_express' | 'auspost' | 'pickup' | 'shipping';
 
 interface CreatePaymentIntentRequest {
   productId: string;
@@ -113,6 +114,10 @@ export async function POST(request: NextRequest) {
         deliveryCost = UBER_EXPRESS_FEE;
         deliveryDescription = 'Uber Express (1-hour delivery)';
         break;
+      case 'auspost':
+        deliveryCost = AUSPOST_FEE;
+        deliveryDescription = 'Australia Post (2-5 business days)';
+        break;
       case 'pickup':
         deliveryCost = 0;
         deliveryDescription = 'Local Pickup';
@@ -139,18 +144,18 @@ export async function POST(request: NextRequest) {
         available: true, // Always available
       },
       {
+        id: 'auspost' as DeliveryMethod,
+        label: 'Australia Post',
+        description: '2-5 business days',
+        cost: AUSPOST_FEE,
+        available: true, // Always available
+      },
+      {
         id: 'pickup' as DeliveryMethod,
         label: 'Local Pickup',
         description: product.pickup_location || 'Pickup from seller',
         cost: 0,
         available: !!product.pickup_location,
-      },
-      {
-        id: 'shipping' as DeliveryMethod,
-        label: 'Standard Shipping',
-        description: 'Delivered to your address',
-        cost: product.shipping_cost || 0,
-        available: !!product.shipping_available,
       },
     ];
 
@@ -264,6 +269,10 @@ export async function PATCH(request: NextRequest) {
       case 'uber_express':
         deliveryCost = UBER_EXPRESS_FEE;
         deliveryDescription = 'Uber Express (1-hour delivery)';
+        break;
+      case 'auspost':
+        deliveryCost = AUSPOST_FEE;
+        deliveryDescription = 'Australia Post (2-5 business days)';
         break;
       case 'pickup':
         deliveryCost = 0;

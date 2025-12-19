@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { X, Zap, MapPin, Truck, Loader2, Check, Shield } from "lucide-react";
+import { X, Zap, MapPin, Truck, Loader2, Check, Shield, ChevronLeft, ChevronRight, Package } from "lucide-react";
 import { PaymentElement, AddressElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -20,6 +20,8 @@ interface DeliveryOption {
   description: string;
   cost: number;
   available: boolean;
+  eta?: string;
+  icon: "uber" | "auspost" | "pickup";
 }
 
 interface PriceBreakdown {
@@ -39,6 +41,8 @@ interface CheckoutSheetProps {
   sellerId: string;
   onSuccess?: () => void;
 }
+
+type CheckoutStep = "delivery" | "address" | "payment";
 
 // ============================================================
 // Main Checkout Sheet Component
@@ -61,6 +65,7 @@ export function CheckoutSheet({
   const [breakdown, setBreakdown] = React.useState<PriceBreakdown | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [currentStep, setCurrentStep] = React.useState<CheckoutStep>("delivery");
 
   // Create PaymentIntent when sheet opens
   React.useEffect(() => {
@@ -75,6 +80,7 @@ export function CheckoutSheet({
       setClientSecret(null);
       setPaymentIntentId(null);
       setError(null);
+      setCurrentStep("delivery");
     }
   }, [isOpen]);
 
@@ -142,6 +148,40 @@ export function CheckoutSheet({
     }
   };
 
+  const requiresAddress = selectedDelivery !== "pickup";
+
+  const handleContinue = () => {
+    if (currentStep === "delivery") {
+      if (requiresAddress) {
+        setCurrentStep("address");
+      } else {
+        setCurrentStep("payment");
+      }
+    } else if (currentStep === "address") {
+      setCurrentStep("payment");
+    }
+  };
+
+  const handleBack = () => {
+    if (currentStep === "payment") {
+      if (requiresAddress) {
+        setCurrentStep("address");
+      } else {
+        setCurrentStep("delivery");
+      }
+    } else if (currentStep === "address") {
+      setCurrentStep("delivery");
+    }
+  };
+
+  const getStepNumber = () => {
+    if (currentStep === "delivery") return 1;
+    if (currentStep === "address") return 2;
+    return requiresAddress ? 3 : 2;
+  };
+
+  const getTotalSteps = () => requiresAddress ? 3 : 2;
+
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent 
@@ -149,15 +189,33 @@ export function CheckoutSheet({
         showCloseButton={false}
         className="rounded-t-2xl max-h-[92vh] flex flex-col p-0"
       >
-        {/* Header with Handle */}
+        {/* Header */}
         <div className="flex-shrink-0 border-b border-gray-100">
-          {/* Handle */}
           <div className="flex justify-center pt-2 pb-1">
             <div className="w-10 h-1 bg-gray-300 rounded-full" />
           </div>
-          {/* Title Row */}
           <div className="flex items-center justify-between px-4 pb-3">
-            <h2 className="text-lg font-semibold text-gray-900">Checkout</h2>
+            <div className="flex items-center gap-3">
+              {currentStep !== "delivery" && (
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="p-1.5 -ml-1.5 rounded-full hover:bg-gray-100 transition-colors"
+                >
+                  <ChevronLeft className="h-5 w-5 text-gray-600" />
+                </button>
+              )}
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {currentStep === "delivery" && "Delivery"}
+                  {currentStep === "address" && "Address"}
+                  {currentStep === "payment" && "Payment"}
+                </h2>
+                <p className="text-xs text-gray-500">
+                  Step {getStepNumber()} of {getTotalSteps()}
+                </p>
+              </div>
+            </div>
             <button
               type="button"
               onClick={onClose}
@@ -169,18 +227,20 @@ export function CheckoutSheet({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="flex-1 overflow-y-auto">
           {error ? (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-md text-center">
-              <p className="text-sm text-red-600">{error}</p>
-              <Button
-                onClick={createPaymentIntent}
-                variant="outline"
-                size="sm"
-                className="mt-3"
-              >
-                Try Again
-              </Button>
+            <div className="p-4">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-md text-center">
+                <p className="text-sm text-red-600">{error}</p>
+                <Button
+                  onClick={createPaymentIntent}
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                >
+                  Try Again
+                </Button>
+              </div>
             </div>
           ) : !clientSecret ? (
             <div className="flex items-center justify-center py-12">
@@ -188,7 +248,8 @@ export function CheckoutSheet({
             </div>
           ) : (
             <StripeElementsProvider clientSecret={clientSecret}>
-              <CheckoutForm
+              <CheckoutSteps
+                currentStep={currentStep}
                 productName={productName}
                 productPrice={productPrice}
                 productImage={productImage}
@@ -197,6 +258,8 @@ export function CheckoutSheet({
                 onDeliveryChange={handleDeliveryChange}
                 breakdown={breakdown}
                 isUpdating={isLoading}
+                requiresAddress={requiresAddress}
+                onContinue={handleContinue}
                 onSuccess={onSuccess}
                 onClose={onClose}
               />
@@ -209,10 +272,11 @@ export function CheckoutSheet({
 }
 
 // ============================================================
-// Checkout Form (inside Elements context)
+// Checkout Steps Component
 // ============================================================
 
-interface CheckoutFormProps {
+interface CheckoutStepsProps {
+  currentStep: CheckoutStep;
   productName: string;
   productPrice: number;
   productImage?: string | null;
@@ -221,11 +285,14 @@ interface CheckoutFormProps {
   onDeliveryChange: (method: DeliveryMethod) => void;
   breakdown: PriceBreakdown | null;
   isUpdating: boolean;
+  requiresAddress: boolean;
+  onContinue: () => void;
   onSuccess?: () => void;
   onClose: () => void;
 }
 
-function CheckoutForm({
+function CheckoutSteps({
+  currentStep,
   productName,
   productPrice,
   productImage,
@@ -234,18 +301,17 @@ function CheckoutForm({
   onDeliveryChange,
   breakdown,
   isUpdating,
+  requiresAddress,
+  onContinue,
   onSuccess,
   onClose,
-}: CheckoutFormProps) {
+}: CheckoutStepsProps) {
   const stripe = useStripe();
   const elements = useElements();
   const [isProcessing, setIsProcessing] = React.useState(false);
   const [paymentError, setPaymentError] = React.useState<string | null>(null);
   const [isComplete, setIsComplete] = React.useState(false);
   const [addressComplete, setAddressComplete] = React.useState(false);
-
-  // Check if address is required (delivery methods other than pickup)
-  const requiresAddress = selectedDelivery !== "pickup";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -270,13 +336,12 @@ function CheckoutForm({
       } else if (paymentIntent?.status === "succeeded") {
         setIsComplete(true);
         onSuccess?.();
-        // Small delay before closing to show success state
         setTimeout(() => {
           window.location.href = `/marketplace/checkout/success?payment_intent=${paymentIntent.id}`;
         }, 1500);
       }
     } catch (err) {
-      console.error("[CheckoutForm] Error:", err);
+      console.error("[CheckoutSteps] Error:", err);
       setPaymentError("An unexpected error occurred");
       setIsProcessing(false);
     }
@@ -284,7 +349,7 @@ function CheckoutForm({
 
   if (isComplete) {
     return (
-      <div className="py-12 text-center">
+      <div className="py-16 text-center px-4">
         <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4 animate-in zoom-in-50 duration-300">
           <Check className="h-8 w-8 text-green-600" />
         </div>
@@ -294,131 +359,128 @@ function CheckoutForm({
     );
   }
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Product Summary */}
-      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
-        {productImage && (
-          <div className="relative h-14 w-14 rounded-md overflow-hidden bg-gray-200 flex-shrink-0">
-            <Image
-              src={productImage}
-              alt={productName}
-              fill
-              className="object-cover"
-            />
+  // ============================================================
+  // Step 1: Delivery Selection
+  // ============================================================
+  if (currentStep === "delivery") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex-1 px-4 py-4 space-y-3">
+          {/* Product Summary - Compact */}
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
+            {productImage && (
+              <div className="relative h-12 w-12 rounded-md overflow-hidden bg-gray-200 flex-shrink-0">
+                <Image src={productImage} alt={productName} fill className="object-cover" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">{productName}</p>
+              <p className="text-base font-bold text-gray-900">${productPrice.toLocaleString("en-AU")}</p>
+            </div>
           </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">{productName}</p>
-          <p className="text-lg font-bold text-gray-900">
-            ${productPrice.toLocaleString("en-AU")}
-          </p>
-        </div>
-      </div>
 
-      {/* Delivery Options */}
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Delivery</h3>
-        <div className="space-y-2">
-          {deliveryOptions
-            .filter((opt) => opt.available)
-            .map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => onDeliveryChange(option.id)}
-                disabled={isUpdating}
-                className={cn(
-                  "w-full flex items-center gap-3 p-3 rounded-md border-2 transition-all text-left",
-                  selectedDelivery === option.id
-                    ? option.id === "uber_express"
-                      ? "border-gray-900 bg-gray-900 text-white"
-                      : "border-gray-900 bg-gray-50"
-                    : "border-gray-200 hover:border-gray-300 bg-white"
-                )}
-              >
-                <div
+          {/* Delivery Options */}
+          <div className="space-y-2">
+            {deliveryOptions
+              .filter((opt) => opt.available)
+              .map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onDeliveryChange(option.id)}
+                  disabled={isUpdating}
                   className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-md flex-shrink-0",
-                    selectedDelivery === option.id && option.id === "uber_express"
-                      ? "bg-white/20"
-                      : "bg-gray-100"
+                    "w-full flex items-center gap-3 p-4 rounded-md border-2 transition-all text-left",
+                    selectedDelivery === option.id
+                      ? "border-gray-900 bg-gray-50"
+                      : "border-gray-200 hover:border-gray-300 bg-white"
                   )}
                 >
-                  {option.id === "uber_express" && (
-                    <Zap
-                      className={cn(
-                        "h-4 w-4",
-                        selectedDelivery === option.id ? "text-green-400" : "text-gray-600"
-                      )}
-                    />
-                  )}
-                  {option.id === "pickup" && <MapPin className="h-4 w-4 text-gray-600" />}
-                  {option.id === "shipping" && <Truck className="h-4 w-4 text-gray-600" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "text-sm font-medium",
-                        selectedDelivery === option.id && option.id === "uber_express"
-                          ? "text-white"
-                          : "text-gray-900"
-                      )}
-                    >
-                      {option.label}
-                    </span>
+                  {/* Icon */}
+                  <div className={cn(
+                    "flex h-10 w-10 items-center justify-center rounded-md flex-shrink-0",
+                    selectedDelivery === option.id ? "bg-gray-900" : "bg-gray-100"
+                  )}>
                     {option.id === "uber_express" && (
-                      <Image
-                        src="/uber.svg"
-                        alt="Uber"
-                        width={28}
-                        height={10}
-                        className={cn(
-                          selectedDelivery === option.id
-                            ? "brightness-0 invert opacity-80"
-                            : "opacity-60"
-                        )}
-                      />
+                      <Zap className={cn("h-5 w-5", selectedDelivery === option.id ? "text-green-400" : "text-gray-600")} />
+                    )}
+                    {option.id === "auspost" && (
+                      <Package className={cn("h-5 w-5", selectedDelivery === option.id ? "text-white" : "text-gray-600")} />
+                    )}
+                    {option.id === "shipping" && (
+                      <Truck className={cn("h-5 w-5", selectedDelivery === option.id ? "text-white" : "text-gray-600")} />
+                    )}
+                    {option.id === "pickup" && (
+                      <MapPin className={cn("h-5 w-5", selectedDelivery === option.id ? "text-white" : "text-gray-600")} />
                     )}
                   </div>
-                  <p
-                    className={cn(
-                      "text-xs",
-                      selectedDelivery === option.id && option.id === "uber_express"
-                        ? "text-white/70"
-                        : "text-gray-500"
-                    )}
-                  >
-                    {option.description}
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    "text-sm font-semibold flex-shrink-0",
-                    selectedDelivery === option.id && option.id === "uber_express"
-                      ? "text-white"
-                      : "text-gray-900"
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900">{option.label}</span>
+                      {option.id === "uber_express" && (
+                        <Image src="/uber.svg" alt="Uber" width={28} height={10} className="opacity-60" />
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">{option.description}</p>
+                  </div>
+
+                  {/* Price */}
+                  <div className="text-right flex-shrink-0">
+                    <span className="text-sm font-bold text-gray-900">
+                      {option.cost === 0 ? "Free" : `$${option.cost}`}
+                    </span>
+                  </div>
+
+                  {/* Selected indicator */}
+                  {selectedDelivery === option.id && (
+                    <div className="flex-shrink-0">
+                      <div className="w-5 h-5 rounded-full bg-gray-900 flex items-center justify-center">
+                        <Check className="h-3 w-3 text-white" />
+                      </div>
+                    </div>
                   )}
-                >
-                  {option.cost === 0 ? "Free" : `+$${option.cost}`}
-                </span>
-              </button>
-            ))}
+                </button>
+              ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex-shrink-0 border-t border-gray-100 p-4 bg-white">
+          {breakdown && (
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-sm text-gray-600">Total</span>
+              <span className="text-lg font-bold text-gray-900">
+                ${breakdown.totalAmount.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+          <Button
+            onClick={onContinue}
+            disabled={isUpdating}
+            className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
+          >
+            Continue
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
         </div>
       </div>
+    );
+  }
 
-      {/* Delivery Address (only for Uber Express and Shipping) */}
-      {requiresAddress && (
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-2">
-            {selectedDelivery === "uber_express" ? "Delivery Address" : "Shipping Address"}
-          </h3>
-          {selectedDelivery === "uber_express" && (
-            <p className="text-xs text-gray-500 mb-3">
-              Your mobile number will be used for Uber delivery updates and driver contact.
-            </p>
-          )}
+  // ============================================================
+  // Step 2: Address Entry
+  // ============================================================
+  if (currentStep === "address") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex-1 px-4 py-4">
+          <p className="text-sm text-gray-600 mb-4">
+            {selectedDelivery === "uber_express" 
+              ? "Enter your delivery address. Your mobile will be used for driver updates."
+              : "Enter your shipping address for Australia Post delivery."}
+          </p>
           <AddressElement
             options={{
               mode: "shipping",
@@ -427,40 +489,49 @@ function CheckoutForm({
                 apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
               },
               defaultValues: {
-                address: {
-                  country: "AU",
-                },
+                address: { country: "AU" },
               },
-              fields: {
-                phone: "always",
-              },
-              validation: {
-                phone: {
-                  required: "always",
-                },
-              },
+              fields: { phone: "always" },
+              validation: { phone: { required: "always" } },
             }}
-            onChange={(event) => {
-              setAddressComplete(event.complete);
-            }}
+            onChange={(event) => setAddressComplete(event.complete)}
           />
         </div>
-      )}
 
-      {/* Price Breakdown */}
-      {breakdown && (
+        {/* Footer */}
+        <div className="flex-shrink-0 border-t border-gray-100 p-4 bg-white">
+          <Button
+            onClick={onContinue}
+            disabled={!addressComplete}
+            className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
+          >
+            Continue to Payment
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // Step 3: Payment
+  // ============================================================
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col h-full">
+      <div className="flex-1 px-4 py-4 space-y-4">
+        {/* Order Summary */}
         <div className="p-3 bg-gray-50 rounded-md space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">Item</span>
-            <span className="text-gray-900">${breakdown.itemPrice.toLocaleString("en-AU")}</span>
+            <span className="text-gray-900">${breakdown?.itemPrice.toLocaleString("en-AU")}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">Delivery</span>
             <span className="text-gray-900">
-              {breakdown.deliveryCost === 0 ? "Free" : `$${breakdown.deliveryCost.toLocaleString("en-AU")}`}
+              {breakdown?.deliveryCost === 0 ? "Free" : `$${breakdown?.deliveryCost.toLocaleString("en-AU")}`}
             </span>
           </div>
-          {breakdown.buyerFee > 0 && (
+          {breakdown && breakdown.buyerFee > 0 && (
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Service fee</span>
               <span className="text-gray-900">${breakdown.buyerFee.toFixed(2)}</span>
@@ -469,52 +540,43 @@ function CheckoutForm({
           <div className="pt-2 border-t border-gray-200 flex justify-between">
             <span className="text-sm font-semibold text-gray-900">Total</span>
             <span className="text-lg font-bold text-gray-900">
-              ${breakdown.totalAmount.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
+              ${breakdown?.totalAmount.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
             </span>
           </div>
         </div>
-      )}
 
-      {/* Payment Element */}
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Payment</h3>
-        <PaymentElement
-          options={{
-            layout: "tabs",
-          }}
-        />
+        {/* Payment Element */}
+        <PaymentElement options={{ layout: "tabs" }} />
+
+        {/* Error */}
+        {paymentError && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-sm text-red-600">{paymentError}</p>
+          </div>
+        )}
       </div>
 
-      {/* Error Message */}
-      {paymentError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-          <p className="text-sm text-red-600">{paymentError}</p>
+      {/* Footer */}
+      <div className="flex-shrink-0 border-t border-gray-100 p-4 bg-white space-y-3">
+        <Button
+          type="submit"
+          disabled={!stripe || isProcessing}
+          className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium text-base"
+        >
+          {isProcessing ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Processing...
+            </>
+          ) : (
+            `Pay $${breakdown?.totalAmount.toLocaleString("en-AU", { minimumFractionDigits: 2 })}`
+          )}
+        </Button>
+        <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
+          <Shield className="h-3 w-3" />
+          <span>Secured by Stripe</span>
+          <Image src="/stripe.svg" alt="Stripe" width={32} height={13} className="opacity-40" />
         </div>
-      )}
-
-      {/* Submit Button */}
-      <Button
-        type="submit"
-        disabled={!stripe || isProcessing || isUpdating || (requiresAddress && !addressComplete)}
-        className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium text-base"
-      >
-        {isProcessing ? (
-          <>
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Processing...
-          </>
-        ) : breakdown ? (
-          `Pay $${breakdown.totalAmount.toLocaleString("en-AU", { minimumFractionDigits: 2 })}`
-        ) : (
-          "Pay"
-        )}
-      </Button>
-
-      {/* Security Note */}
-      <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
-        <Shield className="h-3 w-3" />
-        <span>Secured by Stripe</span>
-        <Image src="/stripe.svg" alt="Stripe" width={32} height={13} className="opacity-40" />
       </div>
     </form>
   );
