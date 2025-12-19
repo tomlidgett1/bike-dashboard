@@ -193,7 +193,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         {/* Image Container - Main focus */}
         <div 
           ref={imageRef}
-          className="relative w-full overflow-hidden rounded-md bg-gray-100 mb-2.5 border border-gray-200/80"
+          className="relative w-full overflow-hidden rounded-md bg-gray-100 mb-1.5 border border-gray-200/80"
           style={{ aspectRatio: '1 / 1' }}
         >
           {isVisible && imageUrl && !imageError ? (
@@ -282,12 +282,12 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         {/* Product Info - Simple text below */}
         <div className="px-0.5">
           {/* Product Title */}
-          <h3 className="text-[13px] text-gray-800 font-medium leading-snug line-clamp-2 mb-1">
+          <h3 className="text-[13px] text-gray-800 font-medium leading-snug line-clamp-2 mb-0">
             {(product as any).display_name || product.description}
           </h3>
 
           {/* Seller info with type badge and optional time */}
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
             {/* Store badge for store inventory items */}
             {(product as any).listing_type === 'store_inventory' && (
               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded">

@@ -746,13 +746,13 @@ export function MarketplaceHeader({
           showCloseButton={false}
         >
               {/* Header */}
-              <div className="flex items-center justify-between pl-0 pr-4 h-16 border-b border-gray-200 flex-shrink-0">
+              <div className="flex items-center justify-between pl-0 pr-4 h-14 border-b border-gray-200 flex-shrink-0">
                 <Image 
                   src="/yj.svg" 
                   alt="Yellow Jersey" 
                   width={280} 
                   height={56}
-                  className="h-20 w-auto ml-4"
+                  className="h-24 w-auto ml-4"
                   priority
                   unoptimized
                 />
