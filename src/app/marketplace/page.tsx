@@ -753,6 +753,7 @@ function MarketplacePageContent() {
         currentSpace={currentSpace}
         onSpaceChange={setSpace}
         isNavigating={isNavigating}
+        showStickyFilters={showStickyFilters}
       />
 
       {/* Sticky Filter Header - Mobile Only (appears when category pills scroll out) */}

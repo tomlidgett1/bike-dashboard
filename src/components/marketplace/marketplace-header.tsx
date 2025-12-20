@@ -131,6 +131,8 @@ interface MarketplaceHeaderProps {
   onSpaceChange?: (space: MarketplaceSpace) => void;
   /** When true, shows a loading progress bar at the top of the header */
   isNavigating?: boolean;
+  /** When true, indicates sticky filters are visible (triggers button animation on mobile) */
+  showStickyFilters?: boolean;
 }
 
 export function MarketplaceHeader({ 
@@ -140,6 +142,7 @@ export function MarketplaceHeader({
   currentSpace = 'marketplace',
   onSpaceChange,
   isNavigating = false,
+  showStickyFilters = false,
 }: MarketplaceHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
@@ -724,31 +727,64 @@ export function MarketplaceHeader({
       {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && !isUploading && (
         <motion.div 
           initial={{ y: 100, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.3, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          animate={{ 
+            y: 0, 
+            opacity: 1,
+          }}
+          transition={{ 
+            y: { delay: 0.3, duration: 0.5, ease: [0.22, 1, 0.36, 1] },
+            opacity: { delay: 0.3, duration: 0.5, ease: [0.22, 1, 0.36, 1] },
+          }}
           className="sm:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
         >
-          <motion.button
-            onClick={() => {
-              if (user) {
-                setMobileUploadMethodOpen(true);
-              } else {
-                setSellRequirementModalOpen(true);
-              }
-            }}
-            whileTap={{ scale: 0.95 }}
-            className="relative"
-          >
-            {/* Main button */}
-            <div className="relative flex items-center gap-2.5 px-6 py-3.5 bg-gradient-to-r from-[#FFC72C] to-[#FFD54F] rounded-full border border-white/20 shadow-lg">
-              <div className="flex items-center justify-center w-6 h-6 bg-gray-900 rounded-full">
-                <Plus className="h-4 w-4 text-white" strokeWidth={2.5} />
+          <div className="flex items-center gap-3 justify-center">
+            <motion.button
+              onClick={() => {
+                if (user) {
+                  setMobileUploadMethodOpen(true);
+                } else {
+                  setSellRequirementModalOpen(true);
+                }
+              }}
+              whileTap={{ scale: 0.95 }}
+              className="relative"
+              layout
+              transition={{ 
+                layout: { duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }
+              }}
+            >
+              {/* Main button */}
+              <div className="relative flex items-center gap-2.5 px-6 py-3.5 bg-gradient-to-r from-[#FFC72C] to-[#FFD54F] rounded-full border border-white/20 shadow-lg">
+                <div className="flex items-center justify-center w-6 h-6 bg-gray-900 rounded-full">
+                  <Plus className="h-4 w-4 text-white" strokeWidth={2.5} />
+                </div>
+                <span className="text-gray-900 font-semibold text-[15px] tracking-tight pr-1 whitespace-nowrap">
+                  {user ? 'List Item' : 'Sell Now'}
+                </span>
               </div>
-              <span className="text-gray-900 font-semibold text-[15px] tracking-tight pr-1">
-                {user ? 'List Item' : 'Sell Now'}
-              </span>
-            </div>
-          </motion.button>
+            </motion.button>
+
+            {/* Circular Search Button - Appears when sticky filters are visible */}
+            <AnimatePresence mode="popLayout">
+              {showStickyFilters && (
+                <motion.button
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0, opacity: 0 }}
+                  transition={{ 
+                    duration: 0.4,
+                    ease: [0.04, 0.62, 0.23, 0.98]
+                  }}
+                  onClick={() => setMobileSearchOpen(true)}
+                  whileTap={{ scale: 0.9 }}
+                  className="flex items-center justify-center w-[54px] h-[54px] bg-gradient-to-r from-[#FFC72C] to-[#FFD54F] rounded-full border border-white/20 shadow-lg"
+                  aria-label="Search"
+                >
+                  <Search className="h-5 w-5 text-gray-900 stroke-[2]" />
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
         </motion.div>
       )}
 
