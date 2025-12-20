@@ -800,33 +800,6 @@ export function Step1ItemType({
           </p>
         )}
 
-        {/* DEBUG PANEL - Real-time image state */}
-        {quickData.images && quickData.images.length > 0 && (
-          <div className="mx-3 mb-2 p-3 bg-red-50 border border-red-200 rounded-md text-xs font-mono">
-            <div className="font-bold text-red-700 mb-2">🔍 DEBUG: Image State</div>
-            <div className="space-y-1">
-              <div><span className="text-red-600">primaryImageIndex:</span> {primaryImageIndex}</div>
-              <div><span className="text-red-600">images.length:</span> {quickData.images.length}</div>
-              <div className="border-t border-red-200 pt-1 mt-1">
-                {quickData.images.map((img, idx) => (
-                  <div key={img.id || idx} className={cn(
-                    "py-0.5",
-                    idx === primaryImageIndex ? "bg-yellow-100 font-bold" : ""
-                  )}>
-                    [{idx}] order={img.order ?? 'undefined'}, isPrimary={String(img.isPrimary ?? 'undefined')}
-                    {idx === primaryImageIndex && " ← SELECTED"}
-                  </div>
-                ))}
-              </div>
-              <div className="border-t border-red-200 pt-1 mt-1 text-red-700">
-                <div>Expected after List click:</div>
-                <div>• Image at index {primaryImageIndex} should become order=0, isPrimary=true</div>
-                <div>• Current image[{primaryImageIndex}].isPrimary = {String(quickData.images[primaryImageIndex]?.isPrimary)}</div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Form Fields */}
         <div className="p-4 space-y-4 bg-white">
           {/* Title */}

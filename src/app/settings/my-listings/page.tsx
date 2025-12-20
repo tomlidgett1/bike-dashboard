@@ -358,19 +358,19 @@ export default function MyListingsPage() {
 
   // Action handlers
   const handleBoost = (id: string) => {
-    console.log("Boost listing:", id);
+    // TODO: Implement boost functionality
   };
 
   const handleDeactivate = (id: string) => {
-    console.log("Deactivate listing:", id);
+    // TODO: Implement deactivate functionality
   };
 
   const handleDelete = (id: string) => {
-    console.log("Delete listing:", id);
+    // TODO: Implement delete functionality
   };
 
   const handleMarkAsSold = (id: string) => {
-    console.log("Mark as sold:", id);
+    // TODO: Implement mark as sold functionality
   };
 
   const handleView = (id: string) => {

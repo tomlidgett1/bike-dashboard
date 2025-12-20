@@ -40,6 +40,7 @@ import { FacebookImportModal } from "./sell/facebook-import-modal";
 import { SmartUploadModal } from "./sell/smart-upload-modal";
 import { MobileUploadMethodDialog } from "./sell/mobile-upload-method-dialog";
 import { BulkUploadSheet } from "./sell/bulk-upload-sheet";
+import { useUpload } from "@/components/providers/upload-provider";
 // Space navigator import removed - now integrated into UnifiedFilterBar
 import type { ListingImage } from "@/lib/types/listing";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
@@ -155,6 +156,7 @@ export function MarketplaceHeader({
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const { scrollY } = useScroll();
   const router = useRouter();
+  const { isUploading } = useUpload();
   
   // Derive listing type for search from current space
   const searchListingType = currentSpace === 'stores' 
@@ -719,7 +721,7 @@ export function MarketplaceHeader({
       {/* Mobile Space Navigator removed - now integrated into UnifiedFilterBar */}
 
       {/* Mobile Floating List Item Button - Only shown on homepage and product pages */}
-      {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && (
+      {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && !isUploading && (
         <motion.div 
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}

@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, X, Loader2, CheckCircle2, Monitor, Smartphone, Camera, ImageIcon, Plus, Sparkles } from "lucide-react";
-import Image from "next/image";
+import { Upload, X, CheckCircle2, Monitor, Smartphone, Camera, ImageIcon, Plus, Wand2, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,22 +15,20 @@ import {
   SheetContent,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import type { ListingAnalysisResult } from "@/lib/ai/schemas";
 import { QrUploadSection } from "./qr-upload-section";
-import { compressImage, compressedToFile, shouldCompress } from "@/lib/utils/image-compression";
+import { useUpload } from "@/components/providers/upload-provider";
 
 // ============================================================
-// Smart Upload Modal - Enterprise Optimized
+// Smart Upload Modal - Background Processing Version
+// ============================================================
 // Features:
-// - Client-side image compression (5MB → 200KB)
-// - Parallel uploads (3 concurrent)
-// - Supports both computer upload and mobile QR code upload
-// - Native mobile bottom sheet design
+// - Photo selection with drag & drop
+// - AI background removal option for hero images
+// - Delegates processing to UploadProvider for background execution
+// - Closes immediately after starting upload
 // ============================================================
 
-const UPLOAD_CONCURRENCY = 3;
-
-type FlowStage = "upload" | "compressing" | "uploading" | "analyzing" | "searching" | "success" | "error";
+type FlowStage = "upload" | "enhance-options";
 type UploadTab = "computer" | "phone";
 
 interface SmartUploadModalProps {
@@ -44,10 +41,8 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   const [stage, setStage] = React.useState<FlowStage>("upload");
   const [activeTab, setActiveTab] = React.useState<UploadTab>("computer");
   const [photos, setPhotos] = React.useState<{ id: string; file: File; preview: string }[]>([]);
-  const [uploadedUrls, setUploadedUrls] = React.useState<string[]>([]);
-  const [error, setError] = React.useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = React.useState({ current: 0, total: 0 });
   const [isMobile, setIsMobile] = React.useState(false);
+  const [removeBackground, setRemoveBackground] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
   
@@ -56,6 +51,9 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   React.useEffect(() => {
     photosRef.current = photos;
   }, [photos]);
+
+  // Get upload context
+  const { startUpload, isUploading } = useUpload();
 
   // Detect if on mobile
   React.useEffect(() => {
@@ -83,10 +81,8 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       setStage("upload");
       setActiveTab("computer");
       setPhotos([]);
-      photosRef.current = []; // Also reset the ref
-      setUploadedUrls([]);
-      setError(null);
-      setUploadProgress({ current: 0, total: 0 });
+      photosRef.current = [];
+      setRemoveBackground(false);
     }
   }, [isOpen]);
 
@@ -99,7 +95,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       blobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
       blobUrlsRef.current.clear();
     };
-  }, []); // Empty deps - only run cleanup on unmount
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -115,9 +111,9 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   const addPhotos = (files: File[]) => {
     const newPhotos = files.slice(0, 10 - photos.length).map(file => {
       const preview = URL.createObjectURL(file);
-      blobUrlsRef.current.add(preview); // Track for cleanup
+      blobUrlsRef.current.add(preview);
       return {
-        id: crypto.randomUUID(), // Unique ID for stable React keys
+        id: crypto.randomUUID(),
         file,
         preview,
       };
@@ -133,7 +129,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
     setPhotos(prev => {
       const url = prev[index].preview;
       URL.revokeObjectURL(url);
-      blobUrlsRef.current.delete(url); // Remove from tracking
+      blobUrlsRef.current.delete(url);
       const updated = prev.filter((_, i) => i !== index);
       photosRef.current = updated;
       return updated;
@@ -141,399 +137,56 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   };
 
   const setPrimaryPhoto = (index: number) => {
-    if (index === 0) return; // Already primary
-    console.log('🖼️ [SMART UPLOAD MODAL] Setting primary photo to index:', index);
+    if (index === 0) return;
     setPhotos(prev => {
       const newPhotos = [...prev];
       const [primaryPhoto] = newPhotos.splice(index, 1);
       const reordered = [primaryPhoto, ...newPhotos];
-      console.log('🖼️ [SMART UPLOAD MODAL] Reordered photos - new first photo:', primaryPhoto.file.name);
-      // IMPORTANT: Update ref synchronously to avoid race condition with handleAnalyze
       photosRef.current = reordered;
       return reordered;
     });
   };
 
+  // Move to enhance options stage
+  const handleProceedToOptions = () => {
+    if (photos.length === 0) return;
+    setStage("enhance-options");
+  };
+
+  // Handle going back from enhance options
+  const handleBackToUpload = () => {
+    setStage("upload");
+    setRemoveBackground(false);
+  };
+
+  // Start the upload process and close modal immediately
+  const handleStartUpload = () => {
+    const currentPhotos = photosRef.current;
+    if (currentPhotos.length === 0) return;
+
+    console.log('🚀 [SMART UPLOAD] Starting background upload');
+    console.log('🖼️ [SMART UPLOAD] Photos:', currentPhotos.length);
+    console.log('✨ [SMART UPLOAD] Remove background:', removeBackground);
+
+    // Start upload in background via context
+    startUpload(currentPhotos, removeBackground, onComplete);
+
+    // Close modal immediately
+    onClose();
+  };
+
   // Handle photos received from QR mobile upload
   const handleQrPhotosReady = async (images: { id: string; url: string; uploadedAt: string }[]) => {
     if (images.length === 0) return;
-
-    // Set the uploaded URLs from mobile
-    const urls = images.map(img => img.url);
-    setUploadedUrls(urls);
-    
-    // Proceed directly to AI analysis
-    await runAiAnalysis(urls);
-  };
-
-  const handleAnalyze = async () => {
-    // Use ref to get the LATEST photos state (avoids stale closure after setPrimaryPhoto)
-    const currentPhotos = photosRef.current;
-    
-    if (currentPhotos.length === 0) return;
-
-    console.log('🚀 [SMART UPLOAD] handleAnalyze called');
-    console.log('🖼️ [SMART UPLOAD] Photos at start of handleAnalyze:', currentPhotos.map((p, i) => `${i}: ${p.file.name} (id: ${p.id})`));
-    
-    setError(null);
-
-    try {
-      // Get Supabase session
-      const { createClient } = await import('@/lib/supabase/client');
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        throw new Error('You must be logged in to use AI analysis');
-      }
-
-      // Phase 1: Compress images
-      setStage("compressing");
-      setUploadProgress({ current: 0, total: currentPhotos.length });
-      
-      console.log('🗜️ [SMART UPLOAD] Compressing', currentPhotos.length, 'photos...');
-      console.log('🖼️ [SMART UPLOAD] Photos order for compression:', currentPhotos.map((p, i) => `${i}: ${p.file.name}`));
-      
-      const compressedFiles: File[] = [];
-      for (let i = 0; i < currentPhotos.length; i++) {
-        const photo = currentPhotos[i];
-        let fileToUpload: File;
-        
-        if (shouldCompress(photo.file)) {
-          const compressed = await compressImage(photo.file, {
-            maxDimension: 1920,
-            quality: 0.8,
-          });
-          fileToUpload = compressedToFile(compressed, photo.file.name);
-          console.log(`[SMART UPLOAD] Compressed: ${(photo.file.size / 1024).toFixed(0)}KB → ${(fileToUpload.size / 1024).toFixed(0)}KB`);
-        } else {
-          fileToUpload = photo.file;
-        }
-        
-        compressedFiles.push(fileToUpload);
-        setUploadProgress({ current: i + 1, total: currentPhotos.length });
-      }
-
-      // Phase 2: Upload to Cloudinary via Edge Function (ultra-fast CDN)
-      setStage("uploading");
-      setUploadProgress({ current: 0, total: compressedFiles.length });
-      
-      console.log('📤 [SMART UPLOAD] Uploading to Cloudinary...');
-      
-      const uploadedImages: Array<{ url: string; cardUrl: string; thumbnailUrl: string }> = [];
-      const listingId = `smart-${Date.now()}`;
-      
-      for (let i = 0; i < compressedFiles.length; i += UPLOAD_CONCURRENCY) {
-        const batch = compressedFiles.slice(i, i + UPLOAD_CONCURRENCY);
-        
-        const batchResults = await Promise.all(
-          batch.map(async (file, batchIndex) => {
-            const globalIndex = i + batchIndex;
-            
-            // Upload to Cloudinary via Edge Function
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('listingId', listingId);
-            formData.append('index', globalIndex.toString());
-            
-            const response = await fetch(
-              `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/upload-to-cloudinary`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${session.access_token}`,
-                },
-                body: formData,
-              }
-            );
-            
-            if (!response.ok) {
-              const error = await response.json();
-              throw new Error(error.error || 'Upload failed');
-            }
-            
-            const result = await response.json();
-            console.log(`✅ [SMART UPLOAD] Image ${globalIndex + 1} uploaded to Cloudinary`);
-            console.log(`🖼️ [SMART UPLOAD] Image ${globalIndex}: url=${result.data.url?.substring(0, 80)}...`);
-            console.log(`🖼️ [SMART UPLOAD] Image ${globalIndex}: cardUrl=${result.data.cardUrl?.substring(0, 80)}...`);
-            return {
-              url: result.data.url,
-              cardUrl: result.data.cardUrl,
-              thumbnailUrl: result.data.thumbnailUrl,
-              galleryUrl: result.data.galleryUrl,
-              detailUrl: result.data.detailUrl,
-            };
-          })
-        );
-        
-        uploadedImages.push(...batchResults);
-        console.log(`🖼️ [SMART UPLOAD] Batch complete. uploadedImages order:`, uploadedImages.map((img, idx) => `${idx}: ${img.cardUrl?.substring(70, 100)}`));
-        setUploadProgress({ current: Math.min(i + UPLOAD_CONCURRENCY, compressedFiles.length), total: compressedFiles.length });
-      }
-
-      console.log('✅ [SMART UPLOAD] All photos uploaded to Cloudinary');
-      console.log('🖼️ [SMART UPLOAD] Final uploadedImages[0] cardUrl:', uploadedImages[0]?.cardUrl);
-      console.log('🖼️ [SMART UPLOAD] Final uploadedImages[1] cardUrl:', uploadedImages[1]?.cardUrl);
-      const urls = uploadedImages.map(img => img.url);
-      setUploadedUrls(urls);
-      await runAiAnalysis(urls, uploadedImages);
-
-    } catch (err: any) {
-      console.error('❌ [SMART UPLOAD MODAL] Error:', err);
-      setError(err.message || "Failed to upload photos");
-      setStage("error");
-    }
-  };
-
-  const runAiAnalysis = async (
-    urls: string[], 
-    uploadedImages?: Array<{ url: string; cardUrl: string; thumbnailUrl: string }>
-  ) => {
-    setStage("analyzing");
-
-    try {
-      // Get Supabase session
-      const { createClient } = await import('@/lib/supabase/client');
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        throw new Error('You must be logged in to use AI analysis');
-      }
-
-      console.log('🤖 [SMART UPLOAD MODAL] Starting AI analysis...');
-
-      // Call AI analysis
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/analyze-listing-ai`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            imageUrls: urls,
-            userHints: {},
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "AI analysis failed");
-      }
-
-      const result = await response.json();
-      console.log('✅ [SMART UPLOAD MODAL] Analysis received:', result);
-      console.log('🔍 [SMART UPLOAD MODAL] result keys:', Object.keys(result || {}));
-      console.log('🔍 [SMART UPLOAD MODAL] result.analysis exists:', !!result.analysis);
-      console.log('🔍 [SMART UPLOAD MODAL] Item type:', result.analysis?.item_type);
-      console.log('🔍 [SMART UPLOAD MODAL] Brand:', result.analysis?.brand);
-      console.log('🔍 [SMART UPLOAD MODAL] Model:', result.analysis?.model);
-      console.log('🔍 [SMART UPLOAD MODAL] Condition rating:', result.analysis?.condition_rating);
-      console.log('🚴 [SMART UPLOAD MODAL] Bike details from AI:', result.analysis?.bike_details);
-      console.log('🔍 [SMART UPLOAD MODAL] Web enrichment data:', result.analysis?.web_enrichment);
-      console.log('🔍 [SMART UPLOAD MODAL] Search URLs:', result.analysis?.search_urls);
-      console.log('🔍 [SMART UPLOAD MODAL] Data sources:', result.analysis?.data_sources);
-      console.log('🔍 [SMART UPLOAD MODAL] Meta info:', result.meta);
-
-      // Check if analysis is valid
-      if (!result.analysis) {
-        console.error('❌ [SMART UPLOAD MODAL] No analysis in response!');
-        throw new Error('AI analysis returned no data');
-      }
-
-      const analysis = result.analysis as ListingAnalysisResult;
-
-      // Map analysis to form data
-      // Generate title from brand + model
-      const generatedTitle = [analysis.brand, analysis.model].filter(Boolean).join(' ');
-      
-      console.log('📝 [SMART UPLOAD MODAL] analysis.description:', analysis.description);
-      console.log('📝 [SMART UPLOAD MODAL] analysis.description LENGTH:', analysis.description?.length);
-      console.log('📝 [SMART UPLOAD MODAL] analysis.seller_notes:', analysis.seller_notes);
-      console.log('📝 [SMART UPLOAD MODAL] analysis.condition_details:', analysis.condition_details);
-      
-      const formData: any = {
-        itemType: analysis.item_type,
-        title: generatedTitle || undefined,
-        brand: analysis.brand,
-        model: analysis.model,
-        modelYear: analysis.model_year,
-        conditionRating: analysis.condition_rating,
-        // description is the product description (from web search or fallback)
-        description: analysis.description,
-        // sellerNotes is the seller's personal notes about condition
-        sellerNotes: analysis.seller_notes,
-        // Keep conditionDetails for backwards compat (use description)
-        conditionDetails: analysis.description,
-        wearNotes: analysis.wear_notes,
-        usageEstimate: analysis.usage_estimate,
-        price: analysis.price_estimate 
-          ? Math.round((analysis.price_estimate.min_aud + analysis.price_estimate.max_aud) / 2)
-          : undefined,
-      };
-
-      // Helper function to clean AI-generated text
-      const cleanAiText = (text: string | undefined | null): string | undefined => {
-        if (!text) return undefined;
-        
-        // Remove uncertainty phrases and clean up
-        let cleaned = text
-          .replace(/^(maybe|possibly|likely|probably|perhaps|approximately|about|around)\s+/gi, '')
-          .replace(/\s+(or so|ish|roughly)\s*$/gi, '')
-          .replace(/\s+or\s+/gi, '/') // Convert "Small or Medium" to "Small/Medium"
-          .trim();
-        
-        // Capitalize first letter of each word (for materials, colors, etc.)
-        cleaned = cleaned
-          .split(' ')
-          .map(word => {
-            // Handle hyphenated words and slashes
-            if (word.includes('-') || word.includes('/')) {
-              return word.split(/[-/]/).map(part => 
-                part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
-              ).join(word.includes('-') ? '-' : '/');
-            }
-            return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-          })
-          .join(' ');
-        
-        return cleaned || undefined;
-      };
-
-      // Add bike-specific fields
-      if (analysis.item_type === 'bike') {
-        console.log('🚴 [SMART UPLOAD MODAL] Processing bike details...');
-        console.log('🚴 [SMART UPLOAD MODAL] analysis.bike_details exists:', !!analysis.bike_details);
-        
-        if (analysis.bike_details) {
-          formData.bikeType = cleanAiText(analysis.bike_details.bike_type);
-          formData.frameSize = cleanAiText(analysis.bike_details.frame_size);
-          formData.frameMaterial = cleanAiText(analysis.bike_details.frame_material);
-          formData.groupset = cleanAiText(analysis.bike_details.groupset);
-          formData.wheelSize = cleanAiText(analysis.bike_details.wheel_size);
-          formData.suspensionType = cleanAiText(analysis.bike_details.suspension_type);
-          formData.colorPrimary = cleanAiText(analysis.bike_details.color_primary);
-          formData.colorSecondary = cleanAiText(analysis.bike_details.color_secondary);
-          formData.bikeWeight = cleanAiText(analysis.bike_details.approximate_weight);
-          
-          console.log('🚴 [SMART UPLOAD MODAL] Mapped bike fields:', {
-            bikeType: formData.bikeType,
-            frameSize: formData.frameSize,
-            frameMaterial: formData.frameMaterial,
-            groupset: formData.groupset,
-            wheelSize: formData.wheelSize,
-            colorPrimary: formData.colorPrimary,
-          });
-        } else {
-          console.warn('⚠️ [SMART UPLOAD MODAL] No bike_details in analysis response!');
-        }
-      }
-
-      // Add part-specific fields
-      if (analysis.item_type === 'part' && analysis.part_details) {
-        formData.marketplace_subcategory = analysis.part_details.category;
-        formData.partTypeDetail = cleanAiText(analysis.part_details.part_type);
-        formData.compatibilityNotes = analysis.part_details.compatibility;
-        formData.material = cleanAiText(analysis.part_details.material);
-        formData.weight = cleanAiText(analysis.part_details.weight);
-      }
-
-      // Add apparel-specific fields
-      if (analysis.item_type === 'apparel' && analysis.apparel_details) {
-        formData.marketplace_subcategory = analysis.apparel_details.category;
-        formData.size = cleanAiText(analysis.apparel_details.size);
-        formData.genderFit = cleanAiText(analysis.apparel_details.gender_fit);
-        formData.apparelMaterial = cleanAiText(analysis.apparel_details.material);
-      }
-
-      // Add smart upload metadata (for database JSONB storage)
-      if (analysis.structured_metadata) {
-        formData.structuredMetadata = analysis.structured_metadata;
-      }
-
-      // Add web search sources
-      if (analysis.search_urls) {
-        formData.searchUrls = analysis.search_urls;
-      }
-
-      // Add AI confidence scores
-      if (analysis.field_confidence) {
-        formData.fieldConfidence = analysis.field_confidence;
-      }
-
-      // Add images to form data with variants (for instant loading)
-      console.log('🔍 [SMART UPLOAD] ====== BUILDING IMAGES ARRAY ======');
-      console.log('🔍 [SMART UPLOAD] uploadedImages count:', uploadedImages?.length);
-      console.log('🔍 [SMART UPLOAD] urls count:', urls?.length);
-      
-      // Log each uploaded image with full details
-      uploadedImages?.forEach((img, idx) => {
-        console.log(`🔍 [SMART UPLOAD] uploadedImages[${idx}]:`, {
-          url: img.url?.substring(0, 100),
-          cardUrl: img.cardUrl,
-          thumbnailUrl: img.thumbnailUrl?.substring(0, 80),
-        });
-      });
-      
-      formData.images = urls.map((url, index) => ({
-        id: `ai-${index}`,
-        url,
-        cardUrl: uploadedImages?.[index]?.cardUrl,
-        thumbnailUrl: uploadedImages?.[index]?.thumbnailUrl,
-        order: index,
-        isPrimary: index === 0,
-      }));
-      
-      // Log each image in formData.images with FULL details
-      console.log('🔍 [SMART UPLOAD] ====== FINAL IMAGES ARRAY ======');
-      formData.images?.forEach((img: any, idx: number) => {
-        console.log(`🔍 [SMART UPLOAD] formData.images[${idx}]:`, {
-          id: img.id,
-          order: img.order,
-          isPrimary: img.isPrimary,
-          url: img.url?.substring(0, 80),
-          cardUrl: img.cardUrl, // FULL cardUrl
-          thumbnailUrl: img.thumbnailUrl?.substring(0, 80),
-        });
-      });
-      
-      // Set the primary image URL explicitly (use cardUrl for faster loading)
-      formData.primaryImageUrl = uploadedImages?.[0]?.cardUrl || urls[0];
-      console.log('🔍 [SMART UPLOAD] primaryImageUrl (FULL):', formData.primaryImageUrl);
-      
-      // Summary
-      console.log('🔍 [SMART UPLOAD] ====== SUMMARY ======');
-      console.log('🔍 [SMART UPLOAD] Total images:', formData.images?.length);
-      console.log('🔍 [SMART UPLOAD] Primary image (isPrimary=true):', formData.images?.find((img: any) => img.isPrimary)?.cardUrl);
-      console.log('🔍 [SMART UPLOAD] Image with order=0:', formData.images?.find((img: any) => img.order === 0)?.cardUrl);
-
-      setStage("success");
-
-      // Brief success state then complete
-      setTimeout(() => {
-        onComplete(formData, urls);
-        onClose();
-      }, 800);
-
-    } catch (err: any) {
-      console.error('❌ [SMART UPLOAD MODAL] Error:', err);
-      setError(err.message || "Failed to analyze photos");
-      setStage("error");
-    }
-  };
-
-  const handleRetry = () => {
-    setStage("upload");
-    setError(null);
+    // For QR uploads, we need to handle differently since photos are already uploaded
+    // TODO: Handle QR upload flow with background processing
+    console.log('📱 [SMART UPLOAD] QR photos received:', images.length);
   };
 
   // Mobile Bottom Sheet Render
   if (isMobile) {
     return (
-      <Sheet open={isOpen} onOpenChange={(open) => !open && (stage === "upload" || stage === "error") && onClose()}>
+      <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <SheetContent 
           side="bottom" 
           className="rounded-t-2xl p-0 overflow-hidden gap-0 max-h-[90vh] flex flex-col"
@@ -686,7 +339,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                     Cancel
                   </Button>
                   <Button
-                    onClick={handleAnalyze}
+                    onClick={handleProceedToOptions}
                     disabled={photos.length === 0}
                     className="flex-1 h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
                   >
@@ -697,78 +350,110 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
             </div>
           )}
 
-          {/* Processing States */}
-          {(stage === "compressing" || stage === "uploading" || stage === "analyzing" || stage === "searching") && (
-            <div className="px-5 py-12 flex flex-col items-center">
-              {/* Animated progress indicator */}
-              <div className="relative mb-6">
-                <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Sparkles className="h-7 w-7 text-gray-600" />
+          {/* Enhance Options Stage - Mobile */}
+          {stage === "enhance-options" && (
+            <div className="flex flex-col flex-1 overflow-hidden">
+              {/* Header with back button */}
+              <div className="px-5 pb-4 flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={handleBackToUpload}
+                    className="p-1.5 -ml-1.5 rounded-md hover:bg-gray-100 active:bg-gray-200 transition-colors"
+                  >
+                    <ChevronLeft className="h-5 w-5 text-gray-600" />
+                  </button>
+                  <h2 className="text-lg font-semibold text-gray-900">Enhance Cover</h2>
                 </div>
-                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-gray-900 animate-spin" />
               </div>
               
-              <p className="text-base font-medium text-gray-900 mb-1">
-                {stage === "compressing" && "Optimising photos..."}
-                {stage === "uploading" && "Uploading photos..."}
-                {stage === "analyzing" && "Yellow Jersey is analysing..."}
-                {stage === "searching" && "Finding details..."}
-              </p>
-              <p className="text-sm text-gray-500">
-                {(stage === "compressing" || stage === "uploading") && (
-                  `${uploadProgress.current} of ${uploadProgress.total}`
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto px-4 pb-4">
+                {/* Cover Preview with toggle overlay */}
+                <div className="relative max-w-[300px] mx-auto">
+                  <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-100">
+                    <img
+                      src={photos[0]?.preview}
+                      alt="Cover photo"
+                      className="w-full h-full object-cover"
+                    />
+                    {/* Subtle gradient overlay when enhancement is on */}
+                    <div 
+                      className={cn(
+                        "absolute inset-0 transition-opacity duration-300",
+                        removeBackground 
+                          ? "bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-100" 
+                          : "opacity-0"
+                      )} 
+                    />
+                    <div className="absolute bottom-3 left-3 bg-[#FFC72C] px-2.5 py-1 rounded-md text-xs text-gray-900 font-bold">
+                      COVER
+                    </div>
+                  </div>
+                  
+                  {/* Enhancement toggle - positioned below image */}
+                  <button
+                    onClick={() => setRemoveBackground(!removeBackground)}
+                    className={cn(
+                      "mt-4 w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all duration-200",
+                      removeBackground 
+                        ? "border-gray-900 bg-gray-900" 
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "h-10 w-10 rounded-lg flex items-center justify-center transition-colors duration-200",
+                        removeBackground ? "bg-white/10" : "bg-gray-100"
+                      )}>
+                        <Wand2 className={cn(
+                          "h-5 w-5 transition-colors duration-200",
+                          removeBackground ? "text-white" : "text-gray-600"
+                        )} />
+                      </div>
+                      <div className="text-left">
+                        <p className={cn(
+                          "text-sm font-semibold transition-colors duration-200",
+                          removeBackground ? "text-white" : "text-gray-900"
+                        )}>
+                          Remove Background
+                        </p>
+                        <p className={cn(
+                          "text-xs transition-colors duration-200",
+                          removeBackground ? "text-gray-300" : "text-gray-500"
+                        )}>
+                          Studio-quality white backdrop
+                        </p>
+                      </div>
+                    </div>
+                    <div className={cn(
+                      "h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all duration-200",
+                      removeBackground 
+                        ? "border-white bg-white" 
+                        : "border-gray-300 bg-white"
+                    )}>
+                      {removeBackground && (
+                        <CheckCircle2 className="h-5 w-5 text-gray-900" />
+                      )}
+                    </div>
+                  </button>
+                </div>
+
+                {/* Additional photos count */}
+                {photos.length > 1 && (
+                  <p className="text-center text-xs text-gray-400 mt-5">
+                    +{photos.length - 1} more photo{photos.length > 2 ? 's' : ''} will be uploaded
+                  </p>
                 )}
-                {stage === "analyzing" && "This won't take long"}
-                {stage === "searching" && "Almost done"}
-              </p>
-              
-              {/* Progress bar for upload stages */}
-              {(stage === "compressing" || stage === "uploading") && uploadProgress.total > 0 && (
-                <div className="w-48 h-1.5 bg-gray-200 rounded-full mt-4 overflow-hidden">
-                  <div
-                    className="h-full bg-[#FFC72C] rounded-full transition-all duration-300"
-                    style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Success Stage */}
-          {stage === "success" && (
-            <div className="px-5 py-12 flex flex-col items-center">
-              <div className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-                <CheckCircle2 className="h-8 w-8 text-green-600" />
               </div>
-              <p className="text-base font-medium text-gray-900">All done!</p>
-              <p className="text-sm text-gray-500 mt-1">Preparing your listing...</p>
-            </div>
-          )}
 
-          {/* Error Stage */}
-          {stage === "error" && (
-            <div className="px-5 py-8 flex flex-col items-center">
-              <div className="h-16 w-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
-                <X className="h-8 w-8 text-red-600" />
-              </div>
-              <p className="text-base font-medium text-gray-900 mb-1">Something went wrong</p>
-              <p className="text-sm text-gray-500 text-center mb-6 max-w-[240px]">{error}</p>
-              
-              <div className="flex gap-3 w-full max-w-xs">
+              {/* Bottom Actions */}
+              <div className="px-4 pb-8 pt-3 border-t border-gray-100 flex-shrink-0 bg-white">
                 <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onClose}
-                  className="flex-1 h-12 rounded-xl"
+                  onClick={handleStartUpload}
+                  disabled={isUploading}
+                  className="w-full h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
                 >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleRetry}
-                  className="flex-1 h-12 rounded-xl bg-gray-900 hover:bg-gray-800"
-                >
-                  Try Again
+                  {removeBackground ? 'Enhance & Continue' : 'Continue'}
                 </Button>
               </div>
             </div>
@@ -904,12 +589,12 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
                       Cancel
                     </Button>
                     <Button
-                      onClick={handleAnalyze}
+                      onClick={handleProceedToOptions}
                       disabled={photos.length === 0}
                       size="sm"
                       className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
                     >
-                      Upload
+                      Continue
                     </Button>
                   </div>
                 </div>
@@ -925,73 +610,108 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
             </div>
           )}
 
-          {/* Compressing Stage */}
-          {stage === "compressing" && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
-              <p className="text-sm text-gray-600">
-                Optimising {uploadProgress.current}/{uploadProgress.total}...
-              </p>
-            </div>
-          )}
+          {/* Enhance Options Stage - Desktop */}
+          {stage === "enhance-options" && (
+            <div className="space-y-4">
+              {/* Back button and header */}
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={handleBackToUpload}
+                  className="p-1 rounded-md hover:bg-gray-100 transition-colors"
+                >
+                  <ChevronLeft className="h-4 w-4 text-gray-600" />
+                </button>
+                <span className="text-sm font-medium text-gray-700">Enhance Cover</span>
+              </div>
 
-          {/* Uploading Stage */}
-          {stage === "uploading" && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
-              <p className="text-sm text-gray-600">
-                Uploading {uploadProgress.current}/{uploadProgress.total}...
-              </p>
-            </div>
-          )}
+              {/* Cover Preview with Enhancement Toggle */}
+              <div className="flex gap-4">
+                {/* Cover Preview */}
+                <div className="relative w-28 h-28 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                  <img
+                    src={photos[0]?.preview}
+                    alt="Cover photo"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-1 left-1 bg-[#FFC72C] px-1.5 py-0.5 rounded text-[9px] text-gray-900 font-bold">
+                    COVER
+                  </div>
+                </div>
 
-          {/* Analyzing Stage */}
-          {stage === "analyzing" && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
-              <p className="text-sm text-gray-600">Analysing photos...</p>
-            </div>
-          )}
+                {/* Enhancement Toggle */}
+                <div className="flex-1 flex flex-col justify-center">
+                  <button
+                    onClick={() => setRemoveBackground(!removeBackground)}
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-lg border-2 transition-all duration-200",
+                      removeBackground 
+                        ? "border-gray-900 bg-gray-900" 
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    )}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className={cn(
+                        "h-8 w-8 rounded-md flex items-center justify-center transition-colors duration-200",
+                        removeBackground ? "bg-white/10" : "bg-gray-100"
+                      )}>
+                        <Wand2 className={cn(
+                          "h-4 w-4 transition-colors duration-200",
+                          removeBackground ? "text-white" : "text-gray-600"
+                        )} />
+                      </div>
+                      <div className="text-left">
+                        <p className={cn(
+                          "text-sm font-medium transition-colors duration-200",
+                          removeBackground ? "text-white" : "text-gray-900"
+                        )}>
+                          Remove Background
+                        </p>
+                        <p className={cn(
+                          "text-xs transition-colors duration-200",
+                          removeBackground ? "text-gray-400" : "text-gray-500"
+                        )}>
+                          Studio-quality white backdrop
+                        </p>
+                      </div>
+                    </div>
+                    <div className={cn(
+                      "h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all duration-200",
+                      removeBackground 
+                        ? "border-white bg-white" 
+                        : "border-gray-300 bg-white"
+                    )}>
+                      {removeBackground && (
+                        <CheckCircle2 className="h-4 w-4 text-gray-900" />
+                      )}
+                    </div>
+                  </button>
+                  
+                  {photos.length > 1 && (
+                    <p className="text-xs text-gray-400 mt-2">
+                      +{photos.length - 1} more photo{photos.length > 2 ? 's' : ''} will be uploaded
+                    </p>
+                  )}
+                </div>
+              </div>
 
-          {/* Searching Web Stage */}
-          {stage === "searching" && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
-              <p className="text-sm text-gray-600">Searching web for details...</p>
-            </div>
-          )}
-
-          {/* Success Stage */}
-          {stage === "success" && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <CheckCircle2 className="h-6 w-6 text-green-500 mb-3" />
-              <p className="text-sm text-gray-600">Done!</p>
-            </div>
-          )}
-
-          {/* Error Stage */}
-          {stage === "error" && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <X className="h-6 w-6 text-red-500 mb-3" />
-              <p className="text-sm text-gray-600 mb-1">Something went wrong</p>
-              <p className="text-xs text-gray-400 mb-4">{error}</p>
-              <div className="flex gap-2">
+              {/* Actions */}
+              <div className="flex gap-2 pt-1 justify-end">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={onClose}
+                  onClick={handleBackToUpload}
                   className="text-gray-500"
                 >
-                  Cancel
+                  Back
                 </Button>
                 <Button
-                  type="button"
+                  onClick={handleStartUpload}
+                  disabled={isUploading}
                   size="sm"
-                  onClick={handleRetry}
-                  className="rounded-md"
+                  className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
                 >
-                  Retry
+                  {removeBackground ? 'Enhance & Upload' : 'Upload'}
                 </Button>
               </div>
             </div>

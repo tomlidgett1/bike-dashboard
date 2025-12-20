@@ -937,7 +937,7 @@ function MarketplacePageContent() {
           >
             {/* Uber Delivery Promo Banner - Marketplace view only */}
             {isMarketplaceView && !searchQuery && (
-              <UberDeliveryPromoBanner />
+              <UberDeliveryPromoBanner onNavigateToStores={() => setSpace('stores')} />
             )}
 
             {/* Stores View - Products from Stores with Store Filter */}

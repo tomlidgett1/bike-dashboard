@@ -6,6 +6,8 @@ import { ProfileProvider } from "@/components/providers/profile-provider";
 import { MobileNavProvider } from "@/components/providers/mobile-nav-provider";
 import { AuthModalProvider } from "@/components/providers/auth-modal-provider";
 import { SellModalProvider } from "@/components/providers/sell-modal-provider";
+import { UploadProvider } from "@/components/providers/upload-provider";
+import { FloatingUploadBar } from "@/components/marketplace/floating-upload-bar";
 import { ConditionalLayout } from "@/components/layout";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
@@ -75,10 +77,13 @@ export default async function RootLayout({
             <ProfileProvider serverProfile={serverProfile}>
               <AuthModalProvider>
                 <SellModalProvider>
-                  <MobileNavProvider>
-                    <ConditionalLayout>{children}</ConditionalLayout>
-                    <WebVitalsReporter />
-                  </MobileNavProvider>
+                  <UploadProvider>
+                    <MobileNavProvider>
+                      <ConditionalLayout>{children}</ConditionalLayout>
+                      <FloatingUploadBar />
+                      <WebVitalsReporter />
+                    </MobileNavProvider>
+                  </UploadProvider>
                 </SellModalProvider>
               </AuthModalProvider>
             </ProfileProvider>
