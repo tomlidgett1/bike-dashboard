@@ -54,6 +54,7 @@ export interface ListingFormData {
   model?: string;
   modelYear?: string;
   description?: string;
+  productDescription?: string; // AI-generated product description from web search enrichment
   
   // Categories
   marketplace_category?: string;

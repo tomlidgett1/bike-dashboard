@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Tag,
   HelpCircle,
+  CalendarClock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -83,6 +84,12 @@ const adminItems: NavItem[] = [
     title: "Instagram Posts",
     href: "/admin/instagram-posts",
     icon: Instagram,
+    isAdmin: true,
+  },
+  {
+    title: "Scheduled Uploads",
+    href: "/admin/scheduled-uploads",
+    icon: CalendarClock,
     isAdmin: true,
   },
 ];

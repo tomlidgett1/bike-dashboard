@@ -13,34 +13,37 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // System Prompt - Human-like output style
 // ============================================================
 
-const SYSTEM_PROMPT = `You are an experienced cyclist selling your own gear on a marketplace. Write descriptions that sound natural and personal - like you're chatting with another cyclist about your bike.
+const SYSTEM_PROMPT = `You are an experienced cyclist selling your own gear on a marketplace. Write condition descriptions in FIRST PERSON as if you personally own and are selling this item.
 
-WRITING STYLE FOR DESCRIPTIONS:
-- Sound like a real person, not AI or a product catalog
-- Be casual and conversational
-- Use natural phrasing: "It's in great condition", "Shifts perfectly", "A few light scratches but nothing major"
-- Be honest without being negative: "Some normal wear on the crank arms from use" not "Significant deterioration"
-- Skip flowery language - just be real
+CRITICAL - CONDITION DESCRIPTION STYLE:
+- Write in FIRST PERSON - you own this item and are describing it
+- Say "I've" not "it looks like" - you know this item personally
+- Sound like a real person chatting with a potential buyer
+- Be casual, honest, and conversational
 - Use Australian English (colour, tyre, aluminium)
-- Avoid phrases like "I'm pleased to", "I'm happy to", "delighted to offer"
-- Don't apologise for wear - it's expected on used gear
 
-GOOD DESCRIPTION EXAMPLES:
+GOOD CONDITION EXAMPLES (FIRST PERSON):
 
-Bike: "This bike is in excellent condition. I've looked after it really well and it's been regularly serviced. The paint has a few minor scratches from general use but nothing that affects performance. Everything works perfectly - shifts smoothly, brakes are strong, and the drivetrain is clean. It's been a great bike but I'm upgrading to something else."
+Bike: "I've had this bike for about 2 years and looked after it really well. It's been regularly serviced and runs perfectly. There are a few minor scratches on the frame from normal use but nothing major. The drivetrain is clean, shifts are smooth, and the brakes are strong. I'm only selling because I'm upgrading."
 
-Part: "Used but in good working order. There's some light wear on the finish but it's purely cosmetic. All the threads are clean and it mounts up perfectly. Been reliable for me."
+Part: "This has been reliable for me - used but in good working order. There's some light wear on the finish but it's purely cosmetic and all the threads are clean."
 
-Apparel: "Worn a handful of times but still in excellent condition. No stains, tears, or issues. The fabric is still crisp and the zippers work smoothly. Just doesn't fit my new riding style."
+Apparel: "I've only worn this a handful of times so it's still in excellent condition. No stains, tears, or issues. The fabric is still crisp and the zippers work perfectly."
 
-WHAT TO AVOID:
-- "I'm excited to present..."
-- "This exceptional piece..."
-- "Professional-grade performance characteristics..."
-- Over-explaining every detail
-- Marketing speak
+BAD - DO NOT WRITE LIKE THIS:
+- "This product appears to be in good condition" (sounds like you don't own it)
+- "The bike looks well-maintained" (too detached)  
+- "It seems to have been looked after" (sounds uncertain)
+- "I'm pleased to present..." (too formal)
+- "This exceptional piece..." (marketing speak)
 
-Just be real, honest, and helpful.`;
+CORRECT - WRITE LIKE THIS:
+- "I've taken good care of this" (first person, owner)
+- "It's in great condition" (confident, you know it)
+- "Shifts perfectly and I've had no issues" (personal experience)
+- "A few scratches from use but nothing major" (honest, casual)
+
+Just be real, honest, and write like you actually own and are selling this item.`;
 
 // ============================================================
 // Analysis Schema
@@ -235,11 +238,12 @@ Examine the photos carefully and provide:
 
 ${userHints?.itemType ? `The user thinks this is a ${userHints.itemType}.` : ''}
 
-For the condition description, write like a real person selling their own gear:
-- Be conversational and honest
-- Mention what you see in a natural way
-- Don't over-sell or use marketing language
-- Be specific about any wear or issues
+For the condition_details field, write in FIRST PERSON as if YOU own and are selling this item:
+- Use "I've" and "I" - you personally own this
+- Say things like "I've looked after this really well" or "I've had no issues with it"
+- Never say "it looks like" or "appears to be" - you know this item
+- Be conversational, honest, and specific about condition
+- Don't use "Condition:" as a prefix - just write naturally
 
 Return your analysis as a JSON object with this structure:
 ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
@@ -357,6 +361,40 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
 
     console.log('✅ [AI EDGE FUNCTION] Analysis complete');
     console.log('✅ [AI EDGE FUNCTION] Detected:', analysis.item_type, '-', analysis.brand, analysis.model);
+
+    // ============================================================
+    // Restructure flat fields into nested objects
+    // ============================================================
+    if (analysis.item_type === 'bike') {
+      analysis.bike_details = {
+        bike_type: analysis.bike_type || null,
+        frame_size: analysis.frame_size || null,
+        frame_material: analysis.frame_material || null,
+        groupset: analysis.groupset || null,
+        wheel_size: analysis.wheel_size || null,
+        suspension_type: analysis.suspension_type || null,
+        color_primary: analysis.color_primary || null,
+        color_secondary: analysis.color_secondary || null,
+      };
+      console.log('✅ [AI EDGE FUNCTION] Bike details:', analysis.bike_details);
+    } else if (analysis.item_type === 'part') {
+      analysis.part_details = {
+        category: analysis.part_category || null,
+        part_type: analysis.part_type || null,
+        compatibility: analysis.compatibility || null,
+        material: analysis.material || null,
+        weight: analysis.weight || null,
+      };
+      console.log('✅ [AI EDGE FUNCTION] Part details:', analysis.part_details);
+    } else if (analysis.item_type === 'apparel') {
+      analysis.apparel_details = {
+        category: analysis.apparel_category || null,
+        size: analysis.size || null,
+        gender_fit: analysis.gender_fit || null,
+        material: analysis.apparel_material || null,
+      };
+      console.log('✅ [AI EDGE FUNCTION] Apparel details:', analysis.apparel_details);
+    }
 
     // ============================================================
     // Phase 2: Web Search Enrichment (NEW)
@@ -485,10 +523,20 @@ Return ONLY valid JSON (no markdown):
     
     if (webEnrichment) {
       // Merge product description (prefer web for comprehensive description)
+      // Keep description and condition separate:
+      // - description: product info from web search
+      // - seller_notes: condition assessment from image analysis (written in first person)
       if (webEnrichment.product_description) {
-        mergedAnalysis.condition_details = `${webEnrichment.product_description}\n\nCondition: ${analysis.condition_details}`;
+        mergedAnalysis.description = webEnrichment.product_description;
+        mergedAnalysis.seller_notes = analysis.condition_details;
         dataSources.description = 'both';
       }
+    } else {
+      // No web enrichment - use condition_details as seller_notes
+      mergedAnalysis.seller_notes = analysis.condition_details;
+    }
+    
+    if (webEnrichment) {
       
       // Merge technical specs
       if (webEnrichment.technical_specs) {

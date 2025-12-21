@@ -36,6 +36,7 @@ export async function GET(
       .select(`
         id,
         description,
+        product_description,
         display_name,
         price,
         marketplace_category,

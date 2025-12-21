@@ -32,6 +32,7 @@ export interface MarketplaceProduct {
   id: string;
   canonical_product_id?: string | null; // Link to canonical product for image discovery
   description: string;
+  product_description?: string | null; // AI-generated product description from web search enrichment
   display_name?: string; // AI-cleaned product name for display
   price: number;
   marketplace_category: string;

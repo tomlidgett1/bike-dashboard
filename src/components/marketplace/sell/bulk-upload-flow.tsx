@@ -17,6 +17,62 @@ import { cn } from "@/lib/utils";
 // Main orchestrator for bulk product upload
 // ============================================================
 
+// Helper: Clean material to single word with capital (e.g., "carbon fiber" -> "Carbon")
+const cleanMaterial = (text: string | undefined | null): string => {
+  if (!text || typeof text !== 'string') return '';
+  const cleaned = text.trim();
+  if (!cleaned) return '';
+  const firstWord = cleaned.split(/[\s/]+/)[0];
+  return firstWord.charAt(0).toUpperCase() + firstWord.slice(1).toLowerCase();
+};
+
+// Helper: Clean wheel size to single value (e.g., "29\" / 27.5\"" -> "29\"")
+const cleanWheelSize = (text: string | undefined | null): string => {
+  if (!text || typeof text !== 'string') return '';
+  let cleaned = text
+    .replace(/^(maybe|possibly|likely|probably|perhaps|approximately|about|around)\s+/gi, '')
+    .trim();
+  if (cleaned.includes('/')) {
+    cleaned = cleaned.split('/')[0].trim();
+  }
+  return cleaned;
+};
+
+// Helper: Clean frame size - leave blank if generic/unknown
+const cleanFrameSize = (text: string | undefined | null): string => {
+  if (!text || typeof text !== 'string') return '';
+  const lower = text.toLowerCase().trim();
+  if (
+    lower.includes('all size') ||
+    lower.includes('various') ||
+    lower.includes('unknown') ||
+    lower.includes('not specified') ||
+    lower.includes('n/a') ||
+    lower === 'any'
+  ) {
+    return '';
+  }
+  return text.trim();
+};
+
+// Helper: General text cleaner - return empty string if unknown/uncertain
+const cleanAiText = (text: string | undefined | null): string => {
+  if (!text || typeof text !== 'string') return '';
+  const lower = text.toLowerCase().trim();
+  if (
+    lower.includes('unknown') ||
+    lower.includes('not specified') ||
+    lower.includes('n/a') ||
+    lower.includes('cannot determine') ||
+    lower.includes('unclear') ||
+    lower === 'any' ||
+    lower === 'various'
+  ) {
+    return '';
+  }
+  return text.trim();
+};
+
 type FlowStage = "upload" | "grouping" | "analysing" | "reviewing" | "final-review" | "publishing" | "success";
 
 interface UploadedPhoto {
@@ -69,6 +125,46 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Handle background removal for a product's images
+  const handleRemoveBackground = async (imageUrls: string[]): Promise<string[]> => {
+    const { createClient } = await import('@/lib/supabase/client');
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      throw new Error('You must be logged in');
+    }
+
+    // Only enhance the first (cover) image
+    const coverImageUrl = imageUrls[0];
+    
+    const enhanceResponse = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/enhance-product-image`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          imageUrl: coverImageUrl,
+          listingId: `bulk-${Date.now()}`,
+        }),
+      }
+    );
+
+    if (!enhanceResponse.ok) {
+      const errorData = await enhanceResponse.json();
+      throw new Error(errorData.error || 'Background removal failed');
+    }
+
+    const enhanceResult = await enhanceResponse.json();
+    const enhancedUrl = enhanceResult.data?.url || enhanceResult.data?.cardUrl;
+    
+    // Return new array with enhanced cover image
+    return [enhancedUrl, ...imageUrls.slice(1)];
+  };
 
   // Upload photos complete
   const handlePhotosUploaded = (uploadedPhotos: UploadedPhoto[]) => {
@@ -157,31 +253,31 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
           formData: {
             title: generatedTitle,
             // description is the product description (from web search)
-            description: analysis?.description || '',
+            description: cleanAiText(analysis?.description),
             // sellerNotes is seller's notes about condition
-            sellerNotes: analysis?.seller_notes || '',
-            brand: analysis?.brand || '',
-            model: analysis?.model || '',
-            modelYear: analysis?.model_year || '',
+            sellerNotes: cleanAiText(analysis?.seller_notes),
+            brand: cleanAiText(analysis?.brand),
+            model: cleanAiText(analysis?.model),
+            modelYear: cleanAiText(analysis?.model_year),
             itemType: analysis?.item_type || 'bike',
-            bikeType: bikeDetails.bike_type || '',
-            frameSize: bikeDetails.frame_size || '',
-            frameMaterial: bikeDetails.frame_material || '',
-            groupset: bikeDetails.groupset || '',
-            wheelSize: bikeDetails.wheel_size || '',
-            suspensionType: bikeDetails.suspension_type || '',
-            colorPrimary: bikeDetails.color_primary || '',
-            colorSecondary: bikeDetails.color_secondary || '',
-            partTypeDetail: partDetails.part_category || '',
-            compatibilityNotes: partDetails.compatibility || '',
-            material: partDetails.material || '',
-            size: apparelDetails.size || '',
-            genderFit: apparelDetails.gender_fit || '',
-            apparelMaterial: apparelDetails.apparel_material || '',
+            bikeType: cleanAiText(bikeDetails.bike_type),
+            frameSize: cleanFrameSize(bikeDetails.frame_size),
+            frameMaterial: cleanMaterial(bikeDetails.frame_material),
+            groupset: cleanAiText(bikeDetails.groupset),
+            wheelSize: cleanWheelSize(bikeDetails.wheel_size),
+            suspensionType: cleanAiText(bikeDetails.suspension_type),
+            colorPrimary: cleanAiText(bikeDetails.color_primary),
+            colorSecondary: cleanAiText(bikeDetails.color_secondary),
+            partTypeDetail: cleanAiText(partDetails.part_category),
+            compatibilityNotes: cleanAiText(partDetails.compatibility),
+            material: cleanMaterial(partDetails.material),
+            size: cleanAiText(apparelDetails.size),
+            genderFit: cleanAiText(apparelDetails.gender_fit),
+            apparelMaterial: cleanMaterial(apparelDetails.apparel_material),
             conditionRating: analysis?.condition_rating || 'Good',
-            conditionDetails: analysis?.description || '',
-            wearNotes: analysis?.wear_notes || '',
-            usageEstimate: analysis?.usage_estimate || '',
+            conditionDetails: cleanAiText(analysis?.condition_notes),
+            wearNotes: cleanAiText(analysis?.wear_notes),
+            usageEstimate: cleanAiText(analysis?.usage_estimate),
             price: priceEstimate.min_aud ? Math.round((priceEstimate.min_aud + priceEstimate.max_aud) / 2) : 0,
             originalRrp: priceEstimate.max_aud || 0,
           },
@@ -274,7 +370,8 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
 
         return {
           title: product.formData.title || product.suggestedName,
-          description: product.formData.description,
+          productDescription: product.formData.description, // AI-generated product description
+          sellerNotes: product.formData.sellerNotes, // Seller's personal notes
           brand: product.formData.brand,
           model: product.formData.model,
           modelYear: product.formData.modelYear,
@@ -393,6 +490,7 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
             suggestedName={product.suggestedName}
             aiData={product.aiData}
             onChange={onChange}
+            onRemoveBackground={handleRemoveBackground}
           />
         )}
       />

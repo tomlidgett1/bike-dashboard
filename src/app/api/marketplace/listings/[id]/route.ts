@@ -43,6 +43,7 @@ export async function GET(
 const FIELD_MAPPING: Record<string, string> = {
   listingStatus: "listing_status",
   title: "description",
+  productDescription: "product_description",
   conditionDetails: "condition_details",
   price: "price",
   marketplace_subcategory: "marketplace_subcategory",
@@ -63,6 +64,7 @@ const FIELD_MAPPING: Record<string, string> = {
   genderFit: "gender_fit",
   apparelMaterial: "apparel_material",
   conditionRating: "condition_rating",
+  sellerNotes: "seller_notes",
   wearNotes: "wear_notes",
   usageEstimate: "usage_estimate",
   purchaseLocation: "purchase_location",
@@ -134,10 +136,11 @@ export async function PUT(
     }
 
     // Only include other fields if they're explicitly provided (full form update)
-    if (body.title !== undefined || body.conditionDetails !== undefined) {
-      updateData.description = body.conditionDetails || body.title;
+    if (body.title !== undefined) {
+      updateData.description = body.title;
     }
     if (body.displayName !== undefined) updateData.display_name = body.displayName;
+    if (body.productDescription !== undefined) updateData.product_description = body.productDescription;
     if (body.price !== undefined) updateData.price = body.price;
     if (body.brand !== undefined) updateData.brand = body.brand;
     if (body.model !== undefined) updateData.model = body.model;

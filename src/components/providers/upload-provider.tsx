@@ -16,13 +16,15 @@ const UPLOAD_CONCURRENCY = 3;
 
 // Loading messages that rotate during upload
 const UPLOAD_MESSAGES = [
+  "Creating your listing...",
+  "This may take a minute...",
   "Feel free to continue browsing...",
   "Optimising photos...",
   "Uploading to cloud...",
-  "Yellow Jersey is analysing your product...",
+  "Analysing your product...",
   "Detecting brand and model...",
   "Identifying condition details...",
-  "Checking product specifications...",
+  "Checking product specs...",
   "Generating product description...",
   "Estimating fair market value...",
   "Processing final details...",
@@ -454,8 +456,26 @@ function buildFormData(
 ): any {
   const generatedTitle = [analysis.brand, analysis.model].filter(Boolean).join(" ");
 
+  // Helper: Check if AI value is unknown/uncertain - if so, return undefined
+  const isUnknownValue = (text: string): boolean => {
+    const lower = text.toLowerCase().trim();
+    return (
+      lower.includes('unknown') ||
+      lower.includes('not specified') ||
+      lower.includes('n/a') ||
+      lower.includes('cannot determine') ||
+      lower.includes('unclear') ||
+      lower === 'any' ||
+      lower === 'various'
+    );
+  };
+
   const cleanAiText = (text: string | undefined | null): string | undefined => {
-    if (!text) return undefined;
+    if (!text || typeof text !== 'string') return undefined;
+    
+    // If AI is uncertain, leave blank
+    if (isUnknownValue(text)) return undefined;
+    
     let cleaned = text
       .replace(/^(maybe|possibly|likely|probably|perhaps|approximately|about|around)\s+/gi, "")
       .replace(/\s+(or so|ish|roughly)\s*$/gi, "")
@@ -475,6 +495,58 @@ function buildFormData(
     return cleaned || undefined;
   };
 
+  // Clean material to single word with capital (e.g., "carbon fiber" -> "Carbon")
+  const cleanMaterial = (text: string | undefined | null): string | undefined => {
+    if (!text || typeof text !== 'string') return undefined;
+    if (isUnknownValue(text)) return undefined;
+    
+    const cleaned = text.trim();
+    if (!cleaned) return undefined;
+    
+    // Material should be single word - take first word only
+    const firstWord = cleaned.split(/[\s/]+/)[0];
+    return firstWord.charAt(0).toUpperCase() + firstWord.slice(1).toLowerCase();
+  };
+
+  // Clean wheel size to single value (e.g., "29\" / 27.5\"" -> "29\"")
+  const cleanWheelSize = (text: string | undefined | null): string | undefined => {
+    if (!text || typeof text !== 'string') return undefined;
+    if (isUnknownValue(text)) return undefined;
+    
+    let cleaned = text
+      .replace(/^(maybe|possibly|likely|probably|perhaps|approximately|about|around)\s+/gi, "")
+      .trim();
+    
+    // If multiple sizes with slash, take first one
+    if (cleaned.includes('/')) {
+      cleaned = cleaned.split('/')[0].trim();
+    }
+    
+    return cleaned || undefined;
+  };
+
+  // Clean frame size - leave blank if generic/unknown
+  const cleanFrameSize = (text: string | undefined | null): string | undefined => {
+    if (!text || typeof text !== 'string') return undefined;
+    const lower = text.toLowerCase().trim();
+    // If AI says "all sizes", "various", "unknown", etc. - leave blank
+    if (
+      lower.includes('all size') ||
+      lower.includes('various') ||
+      lower.includes('unknown') ||
+      lower.includes('not specified') ||
+      lower.includes('n/a') ||
+      lower === 'any'
+    ) {
+      return undefined;
+    }
+    return text.trim() || undefined;
+  };
+
+  // Map AI analysis to form data
+  // - productDescription: product info from web search enrichment -> saves to product_description column
+  // - seller_notes: condition assessment in first person (from image analysis)
+  // - condition_details is the legacy field, used as fallback for seller_notes
   const formData: any = {
     itemType: analysis.item_type,
     title: generatedTitle || undefined,
@@ -482,9 +554,9 @@ function buildFormData(
     model: analysis.model,
     modelYear: analysis.model_year,
     conditionRating: analysis.condition_rating,
-    description: analysis.description,
-    sellerNotes: analysis.seller_notes,
-    conditionDetails: analysis.description,
+    productDescription: analysis.description || "",
+    sellerNotes: analysis.seller_notes || analysis.condition_details || "",
+    conditionDetails: analysis.seller_notes || analysis.condition_details || "",
     wearNotes: analysis.wear_notes,
     usageEstimate: analysis.usage_estimate,
     price: analysis.price_estimate
@@ -495,10 +567,10 @@ function buildFormData(
   // Bike-specific fields
   if (analysis.item_type === "bike" && analysis.bike_details) {
     formData.bikeType = cleanAiText(analysis.bike_details.bike_type);
-    formData.frameSize = cleanAiText(analysis.bike_details.frame_size);
-    formData.frameMaterial = cleanAiText(analysis.bike_details.frame_material);
+    formData.frameSize = cleanFrameSize(analysis.bike_details.frame_size);
+    formData.frameMaterial = cleanMaterial(analysis.bike_details.frame_material);
     formData.groupset = cleanAiText(analysis.bike_details.groupset);
-    formData.wheelSize = cleanAiText(analysis.bike_details.wheel_size);
+    formData.wheelSize = cleanWheelSize(analysis.bike_details.wheel_size);
     formData.suspensionType = cleanAiText(analysis.bike_details.suspension_type);
     formData.colorPrimary = cleanAiText(analysis.bike_details.color_primary);
     formData.colorSecondary = cleanAiText(analysis.bike_details.color_secondary);
@@ -510,7 +582,7 @@ function buildFormData(
     formData.marketplace_subcategory = analysis.part_details.category;
     formData.partTypeDetail = cleanAiText(analysis.part_details.part_type);
     formData.compatibilityNotes = analysis.part_details.compatibility;
-    formData.material = cleanAiText(analysis.part_details.material);
+    formData.material = cleanMaterial(analysis.part_details.material);
     formData.weight = cleanAiText(analysis.part_details.weight);
   }
 

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertCircle, Trash2, DollarSign, Package, ChevronDown, Shirt } from "lucide-react";
+import { AlertCircle, Trash2, DollarSign, Package, ChevronDown, Shirt, Eraser, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { CONDITION_RATINGS, type ConditionRating, type ItemType } from "@/lib/types/listing";
+import { Switch } from "@/components/ui/switch";
 
 // ============================================================
 // Bulk Product Card
@@ -23,47 +24,118 @@ interface BulkProductCardProps {
   aiData: any;
   onChange: (data: any) => void;
   onDelete?: () => void;
+  onRemoveBackground?: (imageUrls: string[]) => Promise<string[]>;
 }
+
+// Helper: Clean material to single word with capital (e.g., "carbon fiber" -> "Carbon")
+const cleanMaterial = (text: string | undefined | null): string => {
+  if (!text || typeof text !== 'string') return '';
+  const cleaned = text.trim();
+  if (!cleaned) return '';
+  const firstWord = cleaned.split(/[\s/]+/)[0];
+  return firstWord.charAt(0).toUpperCase() + firstWord.slice(1).toLowerCase();
+};
+
+// Helper: Clean wheel size to single value (e.g., "29\" / 27.5\"" -> "29\"")
+const cleanWheelSize = (text: string | undefined | null): string => {
+  if (!text || typeof text !== 'string') return '';
+  let cleaned = text
+    .replace(/^(maybe|possibly|likely|probably|perhaps|approximately|about|around)\s+/gi, '')
+    .trim();
+  if (cleaned.includes('/')) {
+    cleaned = cleaned.split('/')[0].trim();
+  }
+  return cleaned;
+};
+
+// Helper: Clean frame size - leave blank if generic/unknown
+const cleanFrameSize = (text: string | undefined | null): string => {
+  if (!text || typeof text !== 'string') return '';
+  const lower = text.toLowerCase().trim();
+  // If AI says "all sizes", "various", "unknown", etc. - leave blank
+  if (
+    lower.includes('all size') ||
+    lower.includes('various') ||
+    lower.includes('unknown') ||
+    lower.includes('not specified') ||
+    lower.includes('n/a') ||
+    lower === 'any'
+  ) {
+    return '';
+  }
+  return text.trim();
+};
+
+// Helper: General text cleaner - return empty string if unknown/uncertain
+const cleanAiText = (text: string | undefined | null): string => {
+  if (!text || typeof text !== 'string') return '';
+  const lower = text.toLowerCase().trim();
+  // If AI is uncertain, leave blank
+  if (
+    lower.includes('unknown') ||
+    lower.includes('not specified') ||
+    lower.includes('n/a') ||
+    lower.includes('cannot determine') ||
+    lower.includes('unclear') ||
+    lower === 'any' ||
+    lower === 'various'
+  ) {
+    return '';
+  }
+  return text.trim();
+};
 
 export function BulkProductCard({
   groupId,
-  imageUrls,
+  imageUrls: initialImageUrls,
   suggestedName,
   aiData,
   onChange,
   onDelete,
+  onRemoveBackground,
 }: BulkProductCardProps) {
+  // Extract nested details from AI response
+  const bikeDetails = aiData?.bike_details || {};
+  const partDetails = aiData?.part_details || {};
+  const apparelDetails = aiData?.apparel_details || {};
+  const priceEstimate = aiData?.price_estimate || {};
+
   const [formData, setFormData] = React.useState({
     itemType: aiData?.item_type || 'bike',
     title: suggestedName || '',
     // description is the product description (from web search)
-    description: aiData?.description || '',
+    description: cleanAiText(aiData?.description),
     // sellerNotes is seller's notes about condition
-    sellerNotes: aiData?.seller_notes || '',
-    brand: aiData?.brand || '',
-    model: aiData?.model || '',
-    modelYear: aiData?.model_year || '',
-    bikeType: aiData?.bike_type || '',
-    frameSize: aiData?.frame_size || '',
-    frameMaterial: aiData?.frame_material || '',
-    groupset: aiData?.groupset || '',
-    wheelSize: aiData?.wheel_size || '',
-    suspensionType: aiData?.suspension_type || '',
-    colorPrimary: aiData?.color_primary || '',
-    partTypeDetail: aiData?.part_type || '',
-    compatibilityNotes: aiData?.compatibility || '',
-    size: aiData?.size || '',
-    genderFit: aiData?.gender_fit || '',
+    sellerNotes: cleanAiText(aiData?.seller_notes),
+    brand: cleanAiText(aiData?.brand),
+    model: cleanAiText(aiData?.model),
+    modelYear: cleanAiText(aiData?.model_year),
+    bikeType: cleanAiText(bikeDetails.bike_type),
+    frameSize: cleanFrameSize(bikeDetails.frame_size),
+    frameMaterial: cleanMaterial(bikeDetails.frame_material),
+    groupset: cleanAiText(bikeDetails.groupset),
+    wheelSize: cleanWheelSize(bikeDetails.wheel_size),
+    suspensionType: cleanAiText(bikeDetails.suspension_type),
+    colorPrimary: cleanAiText(bikeDetails.color_primary),
+    partTypeDetail: cleanAiText(partDetails.part_category || partDetails.part_type),
+    compatibilityNotes: cleanAiText(partDetails.compatibility),
+    material: cleanMaterial(partDetails.material),
+    size: cleanAiText(apparelDetails.size),
+    genderFit: cleanAiText(apparelDetails.gender_fit),
     conditionRating: (aiData?.condition_rating || 'Good') as ConditionRating,
-    conditionDetails: aiData?.description || '',
-    wearNotes: aiData?.wear_notes || '',
-    usageEstimate: aiData?.usage_estimate || '',
-    price: aiData?.price_min_aud || 0,
-    originalRrp: aiData?.price_max_aud || 0,
+    conditionDetails: cleanAiText(aiData?.condition_notes),
+    wearNotes: cleanAiText(aiData?.wear_notes),
+    usageEstimate: cleanAiText(aiData?.usage_estimate),
+    price: priceEstimate.min_aud ? Math.round((priceEstimate.min_aud + priceEstimate.max_aud) / 2) : 0,
+    originalRrp: priceEstimate.max_aud || 0,
   });
+  
+  const [imageUrls, setImageUrls] = React.useState<string[]>(initialImageUrls);
+  const [isRemovingBackground, setIsRemovingBackground] = React.useState(false);
+  const [backgroundRemoved, setBackgroundRemoved] = React.useState(false);
 
   const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
-  const [showDetails, setShowDetails] = React.useState(false);
+  const [showDetails, setShowDetails] = React.useState(true); // Open by default
   const [isMobile, setIsMobile] = React.useState(false);
 
   // Detect if on mobile
@@ -85,15 +157,41 @@ export function BulkProductCard({
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  // Handle background removal
+  const handleRemoveBackground = async () => {
+    if (!onRemoveBackground || isRemovingBackground) return;
+    
+    setIsRemovingBackground(true);
+    try {
+      const newUrls = await onRemoveBackground(imageUrls);
+      setImageUrls(newUrls);
+      setBackgroundRemoved(true);
+    } catch (error) {
+      console.error('Failed to remove background:', error);
+    } finally {
+      setIsRemovingBackground(false);
+    }
+  };
+
   const isLowConfidence = aiData?.overall_confidence < 70;
   const isBike = formData.itemType === 'bike';
   const isPart = formData.itemType === 'part';
   const isApparel = formData.itemType === 'apparel';
 
+  // Debug log to verify component is loading correctly
+  React.useEffect(() => {
+    console.log('📦 [BULK CARD] Rendered with:', {
+      groupId,
+      hasOnRemoveBackground: !!onRemoveBackground,
+      sellerNotes: formData.sellerNotes,
+      isMobile,
+    });
+  }, [groupId, onRemoveBackground, formData.sellerNotes, isMobile]);
+
   return (
     <div className={cn(
-      "bg-white overflow-hidden",
-      isMobile ? "rounded-none" : "rounded-md border border-gray-200"
+      "bg-white",
+      isMobile ? "rounded-none pb-20" : "rounded-md border border-gray-200 overflow-hidden"
     )}>
       {/* Photo Gallery */}
       <div className={cn("relative bg-gray-100", isMobile ? "aspect-square" : "aspect-[4/3]")}>
@@ -278,6 +376,47 @@ export function BulkProductCard({
               className={cn("rounded-xl resize-none", isMobile ? "text-base" : "rounded-md")}
               rows={isMobile ? 3 : 4}
             />
+          </div>
+
+          {/* Seller Notes */}
+          <div className="pt-2 border-t border-gray-100">
+            <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
+              Seller Notes
+            </label>
+            <Textarea
+              value={formData.sellerNotes}
+              onChange={(e) => updateField('sellerNotes', e.target.value)}
+              placeholder="Your notes about condition, wear, why selling..."
+              className={cn("rounded-md resize-none border-gray-200", isMobile ? "text-base" : "")}
+              rows={isMobile ? 2 : 3}
+            />
+          </div>
+
+          {/* Background Remover - always show */}
+          <div className="flex items-center justify-between py-3 px-3 bg-gray-50 rounded-md border border-gray-200">
+            <div className="flex items-center gap-2">
+              <Eraser className="h-4 w-4 text-gray-500" />
+              <span className={cn("font-medium text-gray-700", isMobile ? "text-xs" : "text-sm")}>
+                Remove Background
+              </span>
+            </div>
+            {isRemovingBackground ? (
+              <Loader2 className="h-4 w-4 text-gray-500 animate-spin" />
+            ) : backgroundRemoved ? (
+              <span className="text-xs text-green-600 font-medium">Done ✓</span>
+            ) : onRemoveBackground ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleRemoveBackground}
+                className="h-7 text-xs rounded-md"
+              >
+                Apply
+              </Button>
+            ) : (
+              <span className="text-xs text-gray-400">Not available</span>
+            )}
           </div>
         </div>
 

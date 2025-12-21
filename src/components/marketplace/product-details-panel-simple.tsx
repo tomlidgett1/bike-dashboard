@@ -239,22 +239,8 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 mb-2">Description</h3>
                 <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
-                  {(product as any).condition_details || (product as any).display_name || product.description}
+                  {(product as any).product_description || product.description}
                 </p>
-                {/* Research with AI */}
-                <button 
-                  onClick={() => {
-                    if (!user) {
-                      openAuthModal();
-                      return;
-                    }
-                    setIsLearnOpen(true);
-                  }}
-                  className="flex items-center gap-1.5 mt-4 text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Research with AI
-                </button>
               </div>
 
               {/* Seller Notes */}
@@ -266,6 +252,23 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                   </p>
                 </div>
               )}
+
+              {/* Research with AI */}
+              <div className="pt-3">
+                <button 
+                  onClick={() => {
+                    if (!user) {
+                      openAuthModal();
+                      return;
+                    }
+                    setIsLearnOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Research with AI
+                </button>
+              </div>
 
               {/* Location */}
               {(product as any).pickup_location && (

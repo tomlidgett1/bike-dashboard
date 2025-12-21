@@ -159,7 +159,8 @@ export async function POST(request: NextRequest) {
       gender_fit: body.genderFit,
       apparel_material: body.apparelMaterial,
 
-      // Condition
+      // Condition and descriptions
+      product_description: body.productDescription || null,
       condition_rating: body.conditionRating,
       condition_details: body.conditionDetails,
       seller_notes: body.sellerNotes,

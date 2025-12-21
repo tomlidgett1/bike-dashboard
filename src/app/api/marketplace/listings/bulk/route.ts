@@ -72,7 +72,8 @@ async function createSingleListing(
       gender_fit: listing.genderFit,
       apparel_material: listing.apparelMaterial,
       
-      // Condition
+      // Condition and descriptions
+      product_description: listing.productDescription || null,
       condition_rating: listing.conditionRating,
       condition_details: listing.conditionDetails,
       seller_notes: listing.sellerNotes,

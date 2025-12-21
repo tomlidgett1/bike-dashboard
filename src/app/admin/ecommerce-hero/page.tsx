@@ -31,6 +31,7 @@ import {
   Info,
   GripVertical,
   Lock,
+  Flag,
 } from 'lucide-react';
 import {
   DndContext,
@@ -103,6 +104,8 @@ interface Product {
   heroBackgroundOptimized: boolean;
   imagesApprovedByAdmin: boolean;
   imagesApprovedAt: string | null;
+  needsSecondaryReview: boolean;
+  secondaryReviewFlaggedAt: string | null;
   price: number | null;
   qoh: number | null;
   createdAt: string;
@@ -413,6 +416,7 @@ export default function EcommerceHeroPage() {
   const [inStockOnly, setInStockOnly] = useState(false);
   const [heroOptimized, setHeroOptimized] = useState<'all' | 'optimized' | 'not_optimized'>('all');
   const [adminApproved, setAdminApproved] = useState<'all' | 'approved' | 'not_approved'>('all');
+  const [secondaryReview, setSecondaryReview] = useState<'all' | 'flagged' | 'not_flagged'>('all');
   const [activeStatus, setActiveStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ brands: [], stores: [] });
 
@@ -484,6 +488,9 @@ export default function EcommerceHeroPage() {
       if (adminApproved !== 'all') {
         params.set('admin_approved', adminApproved);
       }
+      if (secondaryReview !== 'all') {
+        params.set('secondary_review', secondaryReview);
+      }
       if (activeStatus !== 'all') {
         params.set('active_status', activeStatus);
       }
@@ -503,7 +510,7 @@ export default function EcommerceHeroPage() {
     } finally {
       setProductsLoading(false);
     }
-  }, [page, search, listingType, selectedBrand, selectedStoreId, inStockOnly, heroOptimized, adminApproved, activeStatus]);
+  }, [page, search, listingType, selectedBrand, selectedStoreId, inStockOnly, heroOptimized, adminApproved, secondaryReview, activeStatus]);
 
   const fetchQueueCounts = useCallback(async () => {
     setQueueLoading(true);
@@ -620,7 +627,7 @@ export default function EcommerceHeroPage() {
   useEffect(() => {
     fetchProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, search, listingType, selectedBrand, selectedStoreId, inStockOnly, heroOptimized, adminApproved, activeStatus]);
+  }, [page, search, listingType, selectedBrand, selectedStoreId, inStockOnly, heroOptimized, adminApproved, secondaryReview, activeStatus]);
 
   // ============================================================
   // Search Debounce
@@ -957,7 +964,7 @@ export default function EcommerceHeroPage() {
     }
   };
 
-  const manageProduct = async (productId: string, action: 'deactivate' | 'activate' | 'delete' | 'approve_images' | 'unapprove_images') => {
+  const manageProduct = async (productId: string, action: 'deactivate' | 'activate' | 'delete' | 'approve_images' | 'unapprove_images' | 'flag_secondary_review' | 'unflag_secondary_review') => {
     if (action === 'delete') {
       if (!confirm('Are you sure you want to permanently delete this product? This cannot be undone.')) {
         return;
@@ -1015,6 +1022,22 @@ export default function EcommerceHeroPage() {
           if (selectedProduct?.id === productId) {
             setSelectedProduct(prev => prev ? { ...prev, imagesApprovedByAdmin: false, imagesApprovedAt: null } : null);
           }
+        } else if (action === 'flag_secondary_review') {
+          // Flag for secondary review locally
+          setProducts(prev => prev.map(p => 
+            p.id === productId ? { ...p, needsSecondaryReview: true, secondaryReviewFlaggedAt: new Date().toISOString() } : p
+          ));
+          if (selectedProduct?.id === productId) {
+            setSelectedProduct(prev => prev ? { ...prev, needsSecondaryReview: true, secondaryReviewFlaggedAt: new Date().toISOString() } : null);
+          }
+        } else if (action === 'unflag_secondary_review') {
+          // Remove secondary review flag locally
+          setProducts(prev => prev.map(p => 
+            p.id === productId ? { ...p, needsSecondaryReview: false, secondaryReviewFlaggedAt: null } : p
+          ));
+          if (selectedProduct?.id === productId) {
+            setSelectedProduct(prev => prev ? { ...prev, needsSecondaryReview: false, secondaryReviewFlaggedAt: null } : null);
+          }
         }
       } else {
         console.error(`Failed to ${action} product:`, data.error);
@@ -1056,12 +1079,13 @@ export default function EcommerceHeroPage() {
     setInStockOnly(false);
     setHeroOptimized('all');
     setAdminApproved('all');
+    setSecondaryReview('all');
     setActiveStatus('all');
     setListingType('all');
     setPage(1);
   };
 
-  const hasActiveFilters = search || selectedBrand || selectedStoreId || inStockOnly || heroOptimized !== 'all' || adminApproved !== 'all' || activeStatus !== 'all' || listingType !== 'all';
+  const hasActiveFilters = search || selectedBrand || selectedStoreId || inStockOnly || heroOptimized !== 'all' || adminApproved !== 'all' || secondaryReview !== 'all' || activeStatus !== 'all' || listingType !== 'all';
 
   // ============================================================
   // Render
@@ -1239,6 +1263,27 @@ export default function EcommerceHeroPage() {
                 </div>
               </div>
 
+              {/* Secondary Review Filter */}
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-500">Review:</span>
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+                  {(['all', 'flagged', 'not_flagged'] as const).map((status) => (
+                    <button
+                      key={status}
+                      onClick={() => { setSecondaryReview(status); setPage(1); }}
+                      className={cn(
+                        "px-2 py-1 text-xs font-medium rounded-md transition-colors",
+                        secondaryReview === status
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70"
+                      )}
+                    >
+                      {status === 'all' ? 'All' : status === 'flagged' ? 'Flagged' : 'Clear'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Active Status Filter */}
               <div className="flex items-center gap-1">
                 <span className="text-xs text-gray-500">Status:</span>
@@ -1359,6 +1404,12 @@ export default function EcommerceHeroPage() {
                               OK
                             </div>
                           )}
+                          {product.needsSecondaryReview && (
+                            <div className="bg-orange-500 text-white text-xs px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                              <Flag className="h-3 w-3" />
+                              Review
+                            </div>
+                          )}
                         </div>
 
                         {/* Active/Inactive Switch */}
@@ -1438,6 +1489,25 @@ export default function EcommerceHeroPage() {
                           {product.imagesApprovedByAdmin && (
                             <div className="flex-1" />
                           )}
+                          {/* Flag for secondary review button */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={cn(
+                              "h-6 w-6 p-0",
+                              product.needsSecondaryReview 
+                                ? "text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-300 bg-orange-50"
+                                : "text-gray-400 hover:text-orange-600 hover:bg-orange-50 border-gray-200"
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              manageProduct(product.id, product.needsSecondaryReview ? 'unflag_secondary_review' : 'flag_secondary_review');
+                            }}
+                            disabled={managingProduct === product.id}
+                            title={product.needsSecondaryReview ? 'Remove flag' : 'Flag for secondary review'}
+                          >
+                            <Flag className="h-3 w-3" />
+                          </Button>
                           {/* Delete button */}
                           <Button
                             variant="outline"
@@ -1642,6 +1712,62 @@ export default function EcommerceHeroPage() {
                     </Button>
                   </div>
                 )}
+              </div>
+
+              {/* Secondary Review Section */}
+              <div className="px-4 py-3 bg-white border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={cn(
+                      "h-8 w-8 rounded-full flex items-center justify-center",
+                      selectedProduct.needsSecondaryReview ? "bg-orange-100" : "bg-gray-100"
+                    )}>
+                      <Flag className={cn(
+                        "h-4 w-4",
+                        selectedProduct.needsSecondaryReview ? "text-orange-600" : "text-gray-400"
+                      )} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {selectedProduct.needsSecondaryReview ? 'Flagged for Review' : 'Secondary Review'}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {selectedProduct.needsSecondaryReview && selectedProduct.secondaryReviewFlaggedAt
+                          ? `Flagged ${new Date(selectedProduct.secondaryReviewFlaggedAt).toLocaleDateString()}`
+                          : 'Flag for another admin to check'
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      selectedProduct.needsSecondaryReview
+                        ? "text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-300"
+                        : "text-gray-600 hover:text-orange-600 hover:bg-orange-50"
+                    )}
+                    onClick={() => manageProduct(
+                      selectedProduct.id, 
+                      selectedProduct.needsSecondaryReview ? 'unflag_secondary_review' : 'flag_secondary_review'
+                    )}
+                    disabled={managingProduct === selectedProduct.id}
+                  >
+                    {managingProduct === selectedProduct.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : selectedProduct.needsSecondaryReview ? (
+                      <>
+                        <X className="h-4 w-4 mr-1" />
+                        Remove Flag
+                      </>
+                    ) : (
+                      <>
+                        <Flag className="h-4 w-4 mr-1" />
+                        Flag for Review
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
 
               {/* Image Management Sections */}

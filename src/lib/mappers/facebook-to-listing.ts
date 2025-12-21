@@ -218,8 +218,8 @@ export function mapFacebookToListing(
     title: fbData.title, // This becomes the 'description' field in DB (display name)
     brand,
     modelYear,
-    // Store the full Facebook description in conditionDetails
-    conditionDetails: fbData.description,
+    // Store the full Facebook description in productDescription
+    productDescription: fbData.description,
     price: priceAUD > 0 ? priceAUD : undefined, // Only set price if it's valid
     conditionRating: mapCondition(fbData.condition),
     pickupLocation: fbData.location,

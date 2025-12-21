@@ -31,6 +31,7 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       .select(`
         id,
         description,
+        product_description,
         display_name,
         price,
         marketplace_category,

@@ -24,7 +24,7 @@ import {
 
 interface QuickListingData {
   title?: string;
-  description?: string; // Product description (features, specs, what it is)
+  productDescription?: string; // AI-generated product description from web search enrichment
   price?: number;
   conditionRating?: ConditionRating;
   images?: ListingImage[];
@@ -34,7 +34,6 @@ interface QuickListingData {
   model?: string;
   modelYear?: string;
   pickupLocation?: string;
-  conditionDetails?: string; // Product description (legacy - same as description)
   sellerNotes?: string; // Seller's personal notes about condition, wear, why selling
   wearNotes?: string;
   usageEstimate?: string;
@@ -382,9 +381,26 @@ export function Step1ItemType({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Helper: Check if AI value is unknown/uncertain
+  const isUnknownValue = (text: string): boolean => {
+    const lower = text.toLowerCase().trim();
+    return (
+      lower.includes('unknown') ||
+      lower.includes('not specified') ||
+      lower.includes('n/a') ||
+      lower.includes('cannot determine') ||
+      lower.includes('unclear') ||
+      lower === 'any' ||
+      lower === 'various'
+    );
+  };
+
   // Helper function to clean AI-generated text to be more professional
   const cleanAiText = (text: string | undefined | null): string | undefined => {
-    if (!text) return undefined;
+    if (!text || typeof text !== 'string') return undefined;
+    
+    // If AI is uncertain, leave blank
+    if (isUnknownValue(text)) return undefined;
     
     // Remove uncertainty phrases
     let cleaned = text
@@ -408,6 +424,53 @@ export function Step1ItemType({
       .join(' ');
     
     return cleaned || undefined;
+  };
+
+  // Clean material to single word with capital (e.g., "carbon fiber" -> "Carbon")
+  const cleanMaterial = (text: string | undefined | null): string | undefined => {
+    if (!text || typeof text !== 'string') return undefined;
+    if (isUnknownValue(text)) return undefined;
+    
+    const cleaned = text.trim();
+    if (!cleaned) return undefined;
+    
+    // Material should be single word - take first word only
+    const firstWord = cleaned.split(/[\s/]+/)[0];
+    return firstWord.charAt(0).toUpperCase() + firstWord.slice(1).toLowerCase();
+  };
+
+  // Clean wheel size to single value (e.g., "29\" / 27.5\"" -> "29\"")
+  const cleanWheelSize = (text: string | undefined | null): string | undefined => {
+    if (!text || typeof text !== 'string') return undefined;
+    if (isUnknownValue(text)) return undefined;
+    
+    let cleaned = text
+      .replace(/^(maybe|possibly|likely|probably|perhaps|approximately|about|around)\s+/gi, '')
+      .trim();
+    
+    // If multiple sizes with slash, take first one
+    if (cleaned.includes('/')) {
+      cleaned = cleaned.split('/')[0].trim();
+    }
+    
+    return cleaned || undefined;
+  };
+
+  // Clean frame size - leave blank if generic/unknown
+  const cleanFrameSize = (text: string | undefined | null): string | undefined => {
+    if (!text || typeof text !== 'string') return undefined;
+    const lower = text.toLowerCase().trim();
+    if (
+      lower.includes('all size') ||
+      lower.includes('various') ||
+      lower.includes('unknown') ||
+      lower.includes('not specified') ||
+      lower.includes('n/a') ||
+      lower === 'any'
+    ) {
+      return undefined;
+    }
+    return text.trim() || undefined;
   };
 
   // Initialize quick data from props - ONLY ONCE when AI data first arrives
@@ -471,11 +534,11 @@ export function Step1ItemType({
         model: quickListingData.model,
         
         // Extract bike fields - try direct fields first (from smart upload), then from metadata
-        frameSize: cleanAiText(quickListingData.frameSize || metadata?.bike?.frame_size),
-        frameMaterial: cleanAiText(quickListingData.frameMaterial || metadata?.bike?.frame_material),
+        frameSize: cleanFrameSize(quickListingData.frameSize || metadata?.bike?.frame_size),
+        frameMaterial: cleanMaterial(quickListingData.frameMaterial || metadata?.bike?.frame_material),
         bikeType: cleanAiText(quickListingData.bikeType || metadata?.bike?.bike_type),
         groupset: cleanAiText(quickListingData.groupset || metadata?.bike?.groupset),
-        wheelSize: cleanAiText(quickListingData.wheelSize || metadata?.bike?.wheel_size),
+        wheelSize: cleanWheelSize(quickListingData.wheelSize || metadata?.bike?.wheel_size),
         suspensionType: cleanAiText(quickListingData.suspensionType || metadata?.bike?.suspension_type),
         colorPrimary: cleanAiText(quickListingData.colorPrimary || metadata?.bike?.color_primary),
         colorSecondary: cleanAiText(quickListingData.colorSecondary || metadata?.bike?.color_secondary),
@@ -483,7 +546,7 @@ export function Step1ItemType({
         
         // Extract part fields - try direct fields first (from smart upload), then from metadata
         partTypeDetail: cleanAiText(quickListingData.partTypeDetail || metadata?.part?.part_type_detail),
-        material: cleanAiText(quickListingData.material || metadata?.part?.material),
+        material: cleanMaterial(quickListingData.material || metadata?.part?.material),
         weight: cleanAiText(quickListingData.weight || metadata?.part?.weight),
         compatibilityNotes: quickListingData.compatibilityNotes || metadata?.part?.compatibility_notes,
         
@@ -919,11 +982,11 @@ export function Step1ItemType({
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Description *</label>
             <Textarea
-              value={quickData.description || ''}
-              onChange={(e) => setQuickData({ ...quickData, description: e.target.value, conditionDetails: e.target.value })}
+              value={quickData.productDescription || ''}
+              onChange={(e) => setQuickData({ ...quickData, productDescription: e.target.value })}
               className={cn(
                 "rounded-xl resize-none text-base",
-                !quickData.description && "border-red-500 focus:border-red-500 focus:ring-red-500"
+                !quickData.productDescription && "border-red-500 focus:border-red-500 focus:ring-red-500"
               )}
               rows={3}
               placeholder="Product description - features, specs, what it is..."
@@ -1104,7 +1167,7 @@ export function Step1ItemType({
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-40">
           <Button
             onClick={handleQuickList}
-            disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || !quickData.conditionRating || !quickData.description || isPublishing}
+            disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || !quickData.conditionRating || !quickData.productDescription || isPublishing}
             className="w-full rounded-xl h-12 bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
           >
             {isPublishing ? (
@@ -1308,13 +1371,13 @@ export function Step1ItemType({
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-gray-900">Description *</label>
                   <textarea
-                    value={quickData.description || ''}
-                    onChange={(e) => setQuickData({ ...quickData, description: e.target.value, conditionDetails: e.target.value })}
+                    value={quickData.productDescription || ''}
+                    onChange={(e) => setQuickData({ ...quickData, productDescription: e.target.value })}
                     placeholder="Product description - features, specs, what it is..."
                     rows={4}
                     className={cn(
                       "w-full px-3 py-2.5 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none",
-                      !quickData.description
+                      !quickData.productDescription
                         ? "border-red-500 focus:ring-red-500 focus:border-red-500"
                         : "border-gray-300 focus:ring-gray-900 focus:border-transparent"
                     )}
@@ -1539,7 +1602,7 @@ export function Step1ItemType({
               <div className="flex gap-2 w-full sm:w-auto">
                 <Button
                   onClick={handleQuickList}
-                  disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || !quickData.conditionRating || !quickData.description || isPublishing}
+                  disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || !quickData.conditionRating || !quickData.productDescription || isPublishing}
                   size="lg"
                   className="rounded-md bg-gray-900 hover:bg-gray-800 text-white px-6 h-11 flex-1 sm:flex-none"
                 >

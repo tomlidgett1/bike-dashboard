@@ -47,6 +47,8 @@ export async function GET(request: NextRequest) {
     const adminApproved = searchParams.get('admin_approved') || 'all';
     // Active status filter: 'all', 'active', 'inactive'
     const activeStatus = searchParams.get('active_status') || 'all';
+    // Secondary review filter: 'all', 'flagged', 'not_flagged'
+    const secondaryReview = searchParams.get('secondary_review') || 'all';
 
     console.log(`[ECOMMERCE-HERO PRODUCTS] Fetching products:`, {
       search,
@@ -61,6 +63,7 @@ export async function GET(request: NextRequest) {
       heroOptimized,
       adminApproved,
       activeStatus,
+      secondaryReview,
     });
 
     // Build query for products
@@ -82,6 +85,8 @@ export async function GET(request: NextRequest) {
         hero_background_optimized,
         images_approved_by_admin,
         images_approved_at,
+        needs_secondary_review,
+        secondary_review_flagged_at,
         price,
         qoh,
         images,
@@ -160,6 +165,14 @@ export async function GET(request: NextRequest) {
       query = query.eq('is_active', true);
     } else if (activeStatus === 'inactive') {
       query = query.eq('is_active', false);
+    }
+    // 'all' = no filter
+
+    // Apply secondary review filter
+    if (secondaryReview === 'flagged') {
+      query = query.eq('needs_secondary_review', true);
+    } else if (secondaryReview === 'not_flagged') {
+      query = query.or('needs_secondary_review.is.null,needs_secondary_review.eq.false');
     }
     // 'all' = no filter
 
@@ -402,6 +415,8 @@ export async function GET(request: NextRequest) {
         heroBackgroundOptimized: product.hero_background_optimized || false,
         imagesApprovedByAdmin: product.images_approved_by_admin || false,
         imagesApprovedAt: product.images_approved_at,
+        needsSecondaryReview: product.needs_secondary_review || false,
+        secondaryReviewFlaggedAt: product.secondary_review_flagged_at,
         price: product.price,
         qoh: product.qoh,
         createdAt: product.created_at,

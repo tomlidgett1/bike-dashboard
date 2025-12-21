@@ -163,8 +163,8 @@ export function SellWizard() {
         // Basic required fields
         title: quickData.title || [quickData.brand, quickData.model].filter(Boolean).join(' '),
         description: quickData.title || [quickData.brand, quickData.model].filter(Boolean).join(' '), // Legacy field - stores title
-        conditionDetails: quickData.description || quickData.conditionDetails || '', // Product description
-        sellerNotes: quickData.sellerNotes || '', // Seller's personal notes
+        productDescription: quickData.productDescription || '', // AI-generated product description (features, specs)
+        sellerNotes: quickData.sellerNotes || '', // Seller's personal notes about condition, wear, why selling
         price: quickData.price,
         conditionRating: quickData.conditionRating || 'Good',
         
@@ -734,7 +734,10 @@ export function SellWizard() {
     // Build quick listing data from AI-detected form data
     const quickListingData = {
       title: formData.title || [formData.brand, formData.model].filter(Boolean).join(' ') || undefined,
-      description: formData.conditionDetails || formData.wearNotes || undefined,
+      productDescription: formData.productDescription || undefined,
+      sellerNotes: formData.sellerNotes || undefined,
+      wearNotes: formData.wearNotes || undefined,
+      usageEstimate: formData.usageEstimate || undefined,
       price: formData.price,
       conditionRating: formData.conditionRating,
       images: formData.images,

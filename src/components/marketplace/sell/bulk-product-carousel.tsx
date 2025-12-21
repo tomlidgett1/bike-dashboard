@@ -199,8 +199,8 @@ export function BulkProductCarousel({
       </div>
 
       {/* Carousel Container */}
-      <div className={cn("mx-auto", isMobile ? "px-0" : "max-w-4xl px-4 py-6")}>
-        <div className="relative overflow-hidden">
+      <div className={cn("mx-auto", isMobile ? "px-0 pb-4" : "max-w-4xl px-4 py-6")}>
+        <div className={cn("relative", !isMobile && "overflow-hidden")}>
           <AnimatePresence initial={false} custom={direction} mode="wait">
             <motion.div
               key={currentIndex}

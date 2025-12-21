@@ -9,6 +9,8 @@
  * - remove_image: Remove a specific image from the product
  * - approve_images: Mark images as approved by admin
  * - unapprove_images: Remove admin approval
+ * - flag_secondary_review: Flag product for secondary review
+ * - unflag_secondary_review: Remove secondary review flag
  * - reorder_image: Move an image up or down in sort order
  * - add_to_product_page: Add an image to the JSONB array so it appears on product page
  * - remove_from_product_page: Remove an image from the JSONB array (hide from product page)
@@ -221,6 +223,45 @@ export async function POST(request: NextRequest) {
         }
 
         return NextResponse.json({ success: true, message: 'Images approval removed' });
+      }
+
+      case 'flag_secondary_review': {
+        console.log(`[MANAGE] Flagging product for secondary review: ${productId}`);
+        
+        const { data, error } = await supabase
+          .from('products')
+          .update({ 
+            needs_secondary_review: true,
+            secondary_review_flagged_at: new Date().toISOString(),
+          })
+          .eq('id', productId)
+          .select('id, needs_secondary_review, secondary_review_flagged_at')
+          .single();
+
+        if (error) {
+          console.error('[MANAGE] Flag secondary review error:', error);
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        console.log(`[MANAGE] Product flagged for secondary review:`, data);
+        return NextResponse.json({ success: true, message: 'Product flagged for secondary review', data });
+      }
+
+      case 'unflag_secondary_review': {
+        const { error } = await supabase
+          .from('products')
+          .update({ 
+            needs_secondary_review: false,
+            secondary_review_flagged_at: null,
+          })
+          .eq('id', productId);
+
+        if (error) {
+          console.error('[MANAGE] Unflag secondary review error:', error);
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json({ success: true, message: 'Secondary review flag removed' });
       }
 
       case 'reorder_image': {

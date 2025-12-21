@@ -114,9 +114,26 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       reorderedPhotos.unshift(primaryPhoto);
     }
     
+    // Helper: Check if AI value is unknown/uncertain
+    const isUnknownValue = (text: string): boolean => {
+      const lower = text.toLowerCase().trim();
+      return (
+        lower.includes('unknown') ||
+        lower.includes('not specified') ||
+        lower.includes('n/a') ||
+        lower.includes('cannot determine') ||
+        lower.includes('unclear') ||
+        lower === 'any' ||
+        lower === 'various'
+      );
+    };
+
     // Helper function to clean AI-generated text
     const cleanAiText = (text: string | undefined | null): string | undefined => {
-      if (!text) return undefined;
+      if (!text || typeof text !== 'string') return undefined;
+      
+      // If AI is uncertain, leave blank
+      if (isUnknownValue(text)) return undefined;
       
       // Remove uncertainty phrases and clean up
       let cleaned = text
@@ -141,6 +158,53 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       
       return cleaned || undefined;
     };
+
+    // Clean material to single word with capital (e.g., "carbon fiber" -> "Carbon")
+    const cleanMaterial = (text: string | undefined | null): string | undefined => {
+      if (!text || typeof text !== 'string') return undefined;
+      if (isUnknownValue(text)) return undefined;
+      
+      const cleaned = text.trim();
+      if (!cleaned) return undefined;
+      
+      // Material should be single word - take first word only
+      const firstWord = cleaned.split(/[\s/]+/)[0];
+      return firstWord.charAt(0).toUpperCase() + firstWord.slice(1).toLowerCase();
+    };
+
+    // Clean wheel size to single value (e.g., "29\" / 27.5\"" -> "29\"")
+    const cleanWheelSize = (text: string | undefined | null): string | undefined => {
+      if (!text || typeof text !== 'string') return undefined;
+      if (isUnknownValue(text)) return undefined;
+      
+      let cleaned = text
+        .replace(/^(maybe|possibly|likely|probably|perhaps|approximately|about|around)\s+/gi, '')
+        .trim();
+      
+      // If multiple sizes with slash, take first one
+      if (cleaned.includes('/')) {
+        cleaned = cleaned.split('/')[0].trim();
+      }
+      
+      return cleaned || undefined;
+    };
+
+    // Clean frame size - leave blank if generic/unknown
+    const cleanFrameSize = (text: string | undefined | null): string | undefined => {
+      if (!text || typeof text !== 'string') return undefined;
+      const lower = text.toLowerCase().trim();
+      if (
+        lower.includes('all size') ||
+        lower.includes('various') ||
+        lower.includes('unknown') ||
+        lower.includes('not specified') ||
+        lower.includes('n/a') ||
+        lower === 'any'
+      ) {
+        return undefined;
+      }
+      return text.trim() || undefined;
+    };
     
     // Map analysis to form data structure matching ListingFormData interface
     const formData: any = {
@@ -148,11 +212,10 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       brand: editedAnalysis.brand,
       model: editedAnalysis.model,
       modelYear: editedAnalysis.model_year,
+      title: [editedAnalysis.brand, editedAnalysis.model].filter(Boolean).join(' '),
       conditionRating: editedAnalysis.condition_rating as any,
-      // description is the product description (from web search or fallback)
-      description: editedAnalysis.description,
-      // conditionDetails also gets the description (for database storage)
-      conditionDetails: editedAnalysis.description,
+      // productDescription is the AI-generated product description (from web search enrichment)
+      productDescription: editedAnalysis.description,
       // sellerNotes is the seller's personal notes about condition, wear, etc.
       sellerNotes: editedAnalysis.seller_notes,
       wearNotes: editedAnalysis.wear_notes,
@@ -166,10 +229,10 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
     if (editedAnalysis.item_type === 'bike' && editedAnalysis.bike_details) {
       console.log('🚴 [SMART UPLOAD] Adding bike details:', editedAnalysis.bike_details);
       formData.bikeType = cleanAiText(editedAnalysis.bike_details.bike_type);
-      formData.frameSize = cleanAiText(editedAnalysis.bike_details.frame_size);
-      formData.frameMaterial = cleanAiText(editedAnalysis.bike_details.frame_material);
+      formData.frameSize = cleanFrameSize(editedAnalysis.bike_details.frame_size);
+      formData.frameMaterial = cleanMaterial(editedAnalysis.bike_details.frame_material);
       formData.groupset = cleanAiText(editedAnalysis.bike_details.groupset);
-      formData.wheelSize = cleanAiText(editedAnalysis.bike_details.wheel_size);
+      formData.wheelSize = cleanWheelSize(editedAnalysis.bike_details.wheel_size);
       formData.suspensionType = cleanAiText(editedAnalysis.bike_details.suspension_type);
       formData.colorPrimary = cleanAiText(editedAnalysis.bike_details.color_primary);
       formData.colorSecondary = cleanAiText(editedAnalysis.bike_details.color_secondary);
@@ -187,7 +250,7 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       formData.marketplace_subcategory = editedAnalysis.part_details.category;
       formData.partTypeDetail = cleanAiText(editedAnalysis.part_details.part_type);
       formData.compatibilityNotes = editedAnalysis.part_details.compatibility;
-      formData.material = cleanAiText(editedAnalysis.part_details.material);
+      formData.material = cleanMaterial(editedAnalysis.part_details.material);
       formData.weight = cleanAiText(editedAnalysis.part_details.weight);
     }
 
