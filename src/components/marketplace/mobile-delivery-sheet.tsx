@@ -61,6 +61,13 @@ const BUYER_FEE_RATE = 0.005; // 0.5%
 
 type MobileStep = "address" | "delivery";
 
+interface VoucherInfo {
+  id: string;
+  amount_cents: number;
+  min_purchase_cents: number;
+  description: string;
+}
+
 // ============================================================
 // Component
 // ============================================================
@@ -100,6 +107,10 @@ export function MobileDeliverySheet({
     checking: false,
   });
 
+  // Voucher state
+  const [applicableVoucher, setApplicableVoucher] = React.useState<VoucherInfo | null>(null);
+  const [voucherLoading, setVoucherLoading] = React.useState(false);
+
   // Reset state when sheet closes
   React.useEffect(() => {
     if (!isOpen) {
@@ -119,8 +130,50 @@ export function MobileDeliverySheet({
         message: undefined,
         checking: false,
       });
+      setApplicableVoucher(null);
     }
   }, [isOpen]);
+
+  // Fetch voucher when sheet opens
+  React.useEffect(() => {
+    const fetchVoucher = async () => {
+      if (!isOpen) return;
+      
+      setVoucherLoading(true);
+      try {
+        const response = await fetch('/api/vouchers/check');
+        if (!response.ok) {
+          console.log('[MobileDeliverySheet] No voucher or error fetching');
+          setApplicableVoucher(null);
+          return;
+        }
+        
+        const data = await response.json();
+        console.log('[MobileDeliverySheet] Voucher check response:', data);
+        
+        // Find an applicable voucher for this product price
+        const productPriceCents = productPrice * 100;
+        const applicable = data.activeVouchers?.find(
+          (v: VoucherInfo) => v.min_purchase_cents <= productPriceCents
+        );
+        
+        if (applicable) {
+          console.log('[MobileDeliverySheet] Found applicable voucher:', applicable);
+          setApplicableVoucher(applicable);
+        } else {
+          console.log('[MobileDeliverySheet] No applicable voucher for price:', productPrice);
+          setApplicableVoucher(null);
+        }
+      } catch (err) {
+        console.error('[MobileDeliverySheet] Error fetching voucher:', err);
+        setApplicableVoucher(null);
+      } finally {
+        setVoucherLoading(false);
+      }
+    };
+
+    fetchVoucher();
+  }, [isOpen, productPrice]);
 
   // Build delivery options
   const deliveryOptions: DeliveryOption[] = React.useMemo(() => {
@@ -186,7 +239,13 @@ export function MobileDeliverySheet({
   const selectedOption = deliveryOptions.find(o => o.id === selectedDelivery);
   const deliveryCost = selectedOption?.cost || 0;
   const buyerFee = productPrice * BUYER_FEE_RATE;
-  const totalAmount = productPrice + deliveryCost + buyerFee;
+  
+  // Calculate voucher discount
+  const voucherDiscount = applicableVoucher 
+    ? Math.min(applicableVoucher.amount_cents / 100, productPrice) 
+    : 0;
+  
+  const totalAmount = productPrice + deliveryCost + buyerFee - voucherDiscount;
 
   // Check if address is complete enough for validation
   const isAddressComplete = address.line1.trim() !== "" && 
@@ -590,6 +649,16 @@ export function MobileDeliverySheet({
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Service fee</span>
                     <span className="text-gray-900">${buyerFee.toFixed(2)}</span>
+                  </div>
+                )}
+                {/* Voucher Discount */}
+                {voucherDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-green-600 flex items-center gap-1 font-medium">
+                      <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+                      Yellow Jersey discount
+                    </span>
+                    <span className="text-green-600 font-semibold">-${voucherDiscount.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="pt-2 border-t border-gray-200 flex justify-between">
