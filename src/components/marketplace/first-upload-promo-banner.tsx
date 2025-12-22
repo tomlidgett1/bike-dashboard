@@ -40,6 +40,16 @@ export function FirstUploadPromoBanner({
     sessionStorage.setItem('first-upload-promo-dismissed', 'true');
   };
 
+  // Debug logging
+  React.useEffect(() => {
+    console.log('[FirstUploadPromoBanner] State:', {
+      hasListings,
+      isDismissed,
+      isLoggedIn,
+      shouldShow: !hasListings && !isDismissed && isLoggedIn,
+    });
+  }, [hasListings, isDismissed, isLoggedIn]);
+
   // Don't show if:
   // - User has already uploaded products
   // - User dismissed the banner
