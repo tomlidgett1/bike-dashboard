@@ -208,6 +208,11 @@ export function SellWizard() {
         size: quickData.size,
         genderFit: quickData.genderFit,
         apparelMaterial: quickData.apparelMaterial,
+        
+        // Shipping options
+        shippingAvailable: quickData.shippingAvailable || false,
+        shippingCost: quickData.shippingAvailable ? (quickData.shippingCost || 0) : null,
+        pickupOnly: !quickData.shippingAvailable && quickData.pickupAvailable !== false,
       };
 
       console.log('🚀 [QUICK LIST] Publishing with data:', listingData);

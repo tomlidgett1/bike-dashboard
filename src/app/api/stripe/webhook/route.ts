@@ -224,7 +224,17 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     platform_fee,
     seller_payout,
     offer_id,
+    voucher_id,
+    voucher_discount,
+    voucher_discount_cents,
   } = metadata;
+
+  // Log voucher info if present
+  if (voucher_id) {
+    console.log('[Stripe Webhook] >>> VOUCHER APPLIED <<<');
+    console.log('[Stripe Webhook] Voucher ID:', voucher_id);
+    console.log('[Stripe Webhook] Voucher Discount:', voucher_discount);
+  }
 
   console.log('[Stripe Webhook] Extracted IDs:', { product_id, buyer_id, seller_id });
 
@@ -334,6 +344,13 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     purchaseData.offer_id = offer_id;
     purchaseData.original_price = parseFloat(metadata.original_price || item_price);
     console.log('[Stripe Webhook] Purchase linked to offer:', offer_id);
+  }
+  
+  // Add voucher info if this purchase used a voucher
+  if (voucher_id) {
+    purchaseData.voucher_id = voucher_id;
+    purchaseData.voucher_discount = parseFloat(voucher_discount || '0');
+    console.log('[Stripe Webhook] Purchase linked to voucher:', voucher_id);
   }
 
   console.log('[Stripe Webhook] Inserting purchase with data:', JSON.stringify(purchaseData, null, 2));
@@ -458,6 +475,31 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     }
   }
 
+  // ============================================================
+  // Handle Voucher Usage - Mark voucher as used
+  // ============================================================
+  if (voucher_id) {
+    console.log('[Stripe Webhook] Marking voucher as used:', voucher_id);
+    
+    const { error: voucherUpdateError } = await supabase
+      .from('vouchers')
+      .update({
+        status: 'used',
+        used_at: new Date().toISOString(),
+        used_on_purchase_id: purchase.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', voucher_id)
+      .eq('status', 'active'); // Only update if still active (idempotency)
+
+    if (voucherUpdateError) {
+      console.error('[Stripe Webhook] Failed to mark voucher as used:', voucherUpdateError);
+      // Don't throw - purchase is already created, voucher will be handled manually
+    } else {
+      console.log('[Stripe Webhook] ✓ Voucher marked as used:', voucher_id);
+    }
+  }
+
   // TODO: Send confirmation emails to buyer and seller
   // TODO: Create notification for seller
 
@@ -498,10 +540,19 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
     total_amount,
     platform_fee,
     seller_payout,
+    voucher_id,
+    voucher_discount,
   } = metadata;
 
   console.log('[Stripe Webhook] Extracted IDs:', { product_id, buyer_id, seller_id });
   console.log('[Stripe Webhook] Delivery:', { delivery_method, delivery_cost, delivery_description });
+  
+  // Log voucher info if present
+  if (voucher_id) {
+    console.log('[Stripe Webhook] >>> VOUCHER APPLIED <<<');
+    console.log('[Stripe Webhook] Voucher ID:', voucher_id);
+    console.log('[Stripe Webhook] Voucher Discount:', voucher_discount);
+  }
 
   if (!product_id || !buyer_id || !seller_id) {
     console.error('[Stripe Webhook] Missing required metadata - ABORTING:', metadata);
@@ -574,6 +625,13 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
   if (buyer_fee) {
     purchaseData.buyer_fee = parseFloat(buyer_fee);
   }
+  
+  // Add voucher info if this purchase used a voucher
+  if (voucher_id) {
+    purchaseData.voucher_id = voucher_id;
+    purchaseData.voucher_discount = parseFloat(voucher_discount || '0');
+    console.log('[Stripe Webhook] Purchase linked to voucher:', voucher_id);
+  }
 
   console.log('[Stripe Webhook] Inserting purchase with data:', JSON.stringify(purchaseData, null, 2));
 
@@ -607,6 +665,9 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
     console.log('[Stripe Webhook] ✓ Purchase created:', purchase.id, orderNumber);
   }
 
+  // Get the purchase ID (from either attempt)
+  const purchaseId = purchase?.id;
+
   // Mark product as sold
   const { error: updateError } = await supabase
     .from('products')
@@ -622,6 +683,30 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
     console.error('[Stripe Webhook] Failed to mark product as sold:', updateError);
   } else {
     console.log('[Stripe Webhook] Product marked as sold:', product_id);
+  }
+
+  // ============================================================
+  // Handle Voucher Usage - Mark voucher as used
+  // ============================================================
+  if (voucher_id && purchaseId) {
+    console.log('[Stripe Webhook] Marking voucher as used:', voucher_id);
+    
+    const { error: voucherUpdateError } = await supabase
+      .from('vouchers')
+      .update({
+        status: 'used',
+        used_at: new Date().toISOString(),
+        used_on_purchase_id: purchaseId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', voucher_id)
+      .eq('status', 'active'); // Only update if still active (idempotency)
+
+    if (voucherUpdateError) {
+      console.error('[Stripe Webhook] Failed to mark voucher as used:', voucherUpdateError);
+    } else {
+      console.log('[Stripe Webhook] ✓ Voucher marked as used:', voucher_id);
+    }
   }
 
   // SMS notification is now handled on the success page

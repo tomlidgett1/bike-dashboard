@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight } from "lucide-react";
+import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck, Package } from "lucide-react";
 import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -110,8 +110,10 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               productPrice={product.price}
               sellerId={product.user_id}
               productImage={product.all_images?.[0] || null}
-              shippingCost={(product as any).shipping_available ? ((product as any).shipping_cost || 0) : 0}
+              shippingAvailable={(product as any).shipping_available || false}
+              shippingCost={(product as any).shipping_cost || 0}
               pickupLocation={(product as any).pickup_location || null}
+              pickupOnly={(product as any).pickup_only || false}
               variant="default"
               size="lg"
               fullWidth
@@ -270,15 +272,46 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                 </button>
               </div>
 
-              {/* Location */}
-              {(product as any).pickup_location && (
+              {/* Delivery Options */}
+              {((product as any).shipping_available || (product as any).pickup_location) && (
                 <div className="pt-3 border-t border-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Location</h3>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-600">{(product as any).pickup_location}</span>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Delivery Options</h3>
+                  <div className="space-y-2">
+                    {/* Shipping Option */}
+                    {(product as any).shipping_available && (
+                      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200">
+                          <Truck className="h-4 w-4 text-gray-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">Shipping</p>
+                          <p className="text-xs text-gray-500">
+                            {(product as any).shipping_cost === 0 || !(product as any).shipping_cost
+                              ? "Free shipping"
+                              : `$${(product as any).shipping_cost.toLocaleString("en-AU")} shipping`}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Pickup Option */}
+                    {(product as any).pickup_location && (
+                      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200">
+                          <MapPin className="h-4 w-4 text-gray-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">Pickup Available</p>
+                          <p className="text-xs text-gray-500">{(product as any).pickup_location}</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Pickup Only Badge */}
+                    {(product as any).pickup_only && !(product as any).shipping_available && (
+                      <p className="text-xs text-gray-500 mt-1">This item is available for local pickup only</p>
+                    )}
                   </div>
-                  <p className="text-xs text-gray-400 mt-1 ml-6">Location is approximate</p>
                 </div>
               )}
             </motion.div>

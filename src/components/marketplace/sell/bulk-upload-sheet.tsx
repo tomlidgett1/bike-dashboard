@@ -16,6 +16,9 @@ import {
   Edit,
   Sparkles,
   Eraser,
+  Truck,
+  MapPin,
+  DollarSign,
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -30,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   compressImage,
@@ -104,6 +108,11 @@ interface ProductFormData {
   conditionDetails: string;
   price: number;
   originalRrp: number;
+  // Shipping options
+  shippingAvailable: boolean;
+  shippingCost: number;
+  pickupLocation: string;
+  pickupAvailable: boolean;
 }
 
 interface BulkUploadSheetProps {
@@ -510,6 +519,10 @@ export function BulkUploadSheet({
                 )
               : 0,
             originalRrp: priceEstimate.max_aud || 0,
+            shippingAvailable: false,
+            shippingCost: 0,
+            pickupLocation: "",
+            pickupAvailable: true,
           },
           isValid: true,
         };
@@ -672,6 +685,10 @@ export function BulkUploadSheet({
           conditionDetails: "",
           price: 0,
           originalRrp: 0,
+          shippingAvailable: false,
+          shippingCost: 0,
+          pickupLocation: "",
+          pickupAvailable: true,
         },
         isValid: false,
       };
@@ -908,8 +925,10 @@ export function BulkUploadSheet({
           marketplace_category:
             categoryMap[product.formData.itemType] || "Bicycles",
           isNegotiable: true,
-          shippingAvailable: true,
-          pickupLocation: null,
+          shippingAvailable: product.formData.shippingAvailable,
+          shippingCost: product.formData.shippingAvailable ? product.formData.shippingCost : null,
+          pickupLocation: product.formData.pickupAvailable ? product.formData.pickupLocation : null,
+          pickupOnly: !product.formData.shippingAvailable && product.formData.pickupAvailable,
         };
       });
 
@@ -1649,6 +1668,80 @@ export function BulkUploadSheet({
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+
+                {/* Delivery Options */}
+                <div className="space-y-3 pt-3 border-t border-gray-200">
+                  <label className="block text-xs font-medium text-gray-700">
+                    Delivery Options
+                  </label>
+                  
+                  {/* Shipping Toggle */}
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <Truck className="h-4 w-4 text-gray-500" />
+                      <span className="text-sm text-gray-700">Shipping</span>
+                    </div>
+                    <Switch
+                      checked={currentProduct.formData.shippingAvailable}
+                      onCheckedChange={(checked) =>
+                        updateProductField("shippingAvailable", checked)
+                      }
+                    />
+                  </div>
+                  
+                  {/* Shipping Cost */}
+                  {currentProduct.formData.shippingAvailable && (
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        type="number"
+                        value={currentProduct.formData.shippingCost || ""}
+                        onChange={(e) =>
+                          updateProductField(
+                            "shippingCost",
+                            parseFloat(e.target.value) || 0
+                          )
+                        }
+                        placeholder="Shipping cost (0 for free)"
+                        className="pl-9 h-10 text-sm rounded-xl"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Pickup Toggle */}
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-gray-500" />
+                      <span className="text-sm text-gray-700">Pickup</span>
+                    </div>
+                    <Switch
+                      checked={currentProduct.formData.pickupAvailable}
+                      onCheckedChange={(checked) =>
+                        updateProductField("pickupAvailable", checked)
+                      }
+                    />
+                  </div>
+                  
+                  {/* Pickup Location */}
+                  {currentProduct.formData.pickupAvailable && (
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        value={currentProduct.formData.pickupLocation || ""}
+                        onChange={(e) =>
+                          updateProductField("pickupLocation", e.target.value)
+                        }
+                        placeholder="Suburb or area"
+                        className="pl-10 h-10 text-sm rounded-xl"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Validation */}
+                  {!currentProduct.formData.shippingAvailable && !currentProduct.formData.pickupAvailable && (
+                    <p className="text-xs text-red-500">Select at least one delivery option</p>
+                  )}
                 </div>
 
                 {/* Brand & Model */}

@@ -177,6 +177,7 @@ export async function POST(request: NextRequest) {
       shipping_available: body.shippingAvailable || false,
       shipping_cost: body.shippingCost,
       pickup_location: body.pickupLocation,
+      pickup_only: body.pickupOnly || false,
       included_accessories: body.includedAccessories,
 
       // Contact
@@ -378,7 +379,48 @@ export async function POST(request: NextRequest) {
       console.log('⚠️ [LISTINGS API] Skipping image insertion - no images or no listing ID');
     }
 
-    return NextResponse.json({ listing }, { status: 201 });
+    // ============================================================
+    // Check if a voucher was awarded (first upload bonus)
+    // The database trigger creates the voucher automatically
+    // ============================================================
+    let awardedVoucher = null;
+    try {
+      const { data: voucher, error: voucherError } = await supabase
+        .from('vouchers')
+        .select('id, voucher_type, amount_cents, min_purchase_cents, description, created_at')
+        .eq('user_id', user.id)
+        .eq('voucher_type', 'first_upload')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!voucherError && voucher) {
+        // Check if this voucher was just created (within last 5 seconds)
+        const voucherCreatedAt = new Date(voucher.created_at);
+        const now = new Date();
+        const timeDiff = now.getTime() - voucherCreatedAt.getTime();
+        
+        if (timeDiff < 5000) { // Created within last 5 seconds
+          awardedVoucher = {
+            id: voucher.id,
+            type: voucher.voucher_type,
+            amount: voucher.amount_cents / 100, // Convert to dollars
+            minPurchase: voucher.min_purchase_cents / 100,
+            description: voucher.description,
+          };
+          console.log('🎉 [LISTINGS API] First upload voucher awarded:', awardedVoucher);
+        }
+      }
+    } catch (voucherCheckError) {
+      console.error('[LISTINGS API] Error checking for awarded voucher:', voucherCheckError);
+      // Don't fail the request if voucher check fails
+    }
+
+    return NextResponse.json({ 
+      listing,
+      awardedVoucher, // Include voucher info if one was just awarded
+    }, { status: 201 });
   } catch (error) {
     console.error("Error in POST /api/marketplace/listings:", error);
     return NextResponse.json(

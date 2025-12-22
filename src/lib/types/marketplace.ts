@@ -104,6 +104,7 @@ export interface MarketplaceProduct {
   shipping_available?: boolean;
   shipping_cost?: number;
   pickup_location?: string;
+  pickup_only?: boolean;
   included_accessories?: string;
   
   // Contact

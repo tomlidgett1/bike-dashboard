@@ -24,6 +24,9 @@ import {
   Layers,
   Zap,
   ChevronLeft,
+  Truck,
+  MapPin,
+  DollarSign,
 } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -37,6 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -123,6 +127,11 @@ interface FormData {
   conditionDetails: string;
   price: number;
   originalRrp: number;
+  // Shipping options
+  shippingAvailable: boolean;
+  shippingCost: number;
+  pickupLocation: string;
+  pickupAvailable: boolean;
 }
 
 const defaultFormData: FormData = {
@@ -153,6 +162,10 @@ const defaultFormData: FormData = {
   conditionDetails: "",
   price: 0,
   originalRrp: 0,
+  shippingAvailable: false,
+  shippingCost: 0,
+  pickupLocation: "",
+  pickupAvailable: true,
 };
 
 export default function ScheduledUploadsPage() {
@@ -594,6 +607,11 @@ export default function ScheduledUploadsPage() {
             ? Math.round((priceEstimate.min_aud + priceEstimate.max_aud) / 2)
             : 0,
           originalRrp: priceEstimate.max_aud || 0,
+          // Shipping defaults
+          shippingAvailable: true,
+          shippingCost: 15,
+          pickupLocation: "",
+          pickupAvailable: false,
         });
 
         console.log("📝 [SCHEDULED] Mapped form data with description:", analysis.description?.substring(0, 50));
@@ -868,6 +886,11 @@ export default function ScheduledUploadsPage() {
                   ? Math.round((priceEstimate.min_aud + priceEstimate.max_aud) / 2)
                   : 0,
                 originalRrp: priceEstimate.max_aud || 0,
+                // Shipping defaults
+                shippingAvailable: true,
+                shippingCost: 15,
+                pickupLocation: "",
+                pickupAvailable: false,
               };
             }
           }
@@ -2138,6 +2161,98 @@ export default function ScheduledUploadsPage() {
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+
+                      {/* Delivery Options */}
+                      <div className="space-y-4 pt-4 border-t border-gray-200">
+                        <h4 className="text-sm font-semibold text-gray-900">Delivery Options</h4>
+                        
+                        {/* Shipping Toggle */}
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                          <div className="flex items-center gap-2">
+                            <Truck className="h-4 w-4 text-gray-500" />
+                            <span className="text-sm text-gray-700">Shipping Available</span>
+                          </div>
+                          <Switch
+                            checked={formData.shippingAvailable}
+                            onCheckedChange={(checked) =>
+                              setFormData({ ...formData, shippingAvailable: checked })
+                            }
+                          />
+                        </div>
+                        
+                        {/* Shipping Cost */}
+                        <AnimatePresence>
+                          {formData.shippingAvailable && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                              className="overflow-hidden"
+                            >
+                              <div className="relative">
+                                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <Input
+                                  type="number"
+                                  value={formData.shippingCost || ""}
+                                  onChange={(e) =>
+                                    setFormData({
+                                      ...formData,
+                                      shippingCost: parseFloat(e.target.value) || 0,
+                                    })
+                                  }
+                                  placeholder="Shipping cost (0 for free)"
+                                  className="pl-9 rounded-md"
+                                />
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                        
+                        {/* Pickup Toggle */}
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-4 w-4 text-gray-500" />
+                            <span className="text-sm text-gray-700">Pickup Available</span>
+                          </div>
+                          <Switch
+                            checked={formData.pickupAvailable}
+                            onCheckedChange={(checked) =>
+                              setFormData({ ...formData, pickupAvailable: checked })
+                            }
+                          />
+                        </div>
+                        
+                        {/* Pickup Location */}
+                        <AnimatePresence>
+                          {formData.pickupAvailable && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                              className="overflow-hidden"
+                            >
+                              <div className="relative">
+                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <Input
+                                  value={formData.pickupLocation}
+                                  onChange={(e) =>
+                                    setFormData({ ...formData, pickupLocation: e.target.value })
+                                  }
+                                  placeholder="Suburb or area"
+                                  className="pl-10 rounded-md"
+                                />
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                        
+                        {/* Validation */}
+                        {!formData.shippingAvailable && !formData.pickupAvailable && (
+                          <p className="text-xs text-red-500">Select at least one delivery option</p>
+                        )}
                       </div>
 
                       <div>

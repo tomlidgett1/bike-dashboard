@@ -90,6 +90,7 @@ async function createSingleListing(
       shipping_available: listing.shippingAvailable || false,
       shipping_cost: listing.shippingCost,
       pickup_location: listing.pickupLocation,
+      pickup_only: false, // Default to false - field doesn't exist in form data
       included_accessories: listing.includedAccessories,
       
       // Contact

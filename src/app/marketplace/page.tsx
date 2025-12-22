@@ -19,6 +19,8 @@ import { StoresGrid } from "@/components/marketplace/stores-grid";
 import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-modal";
 import { SplitSearchResults } from "@/components/marketplace/split-search-results";
 import { UberDeliveryPromoBanner } from "@/components/marketplace/uber-delivery-promo-banner";
+import { FirstUploadPromoBanner } from "@/components/marketplace/first-upload-promo-banner";
+import { useUserVouchers } from "@/lib/hooks/use-user-vouchers";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -53,6 +55,9 @@ function MarketplacePageContent() {
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
   const tracker = useInteractionTracker(user?.id);
+  
+  // User vouchers and first upload eligibility
+  const { eligibleForFirstUploadPromo, listingCount } = useUserVouchers();
 
   // Navigation loading state
   const [isNavigating, setIsNavigating] = React.useState(false);
@@ -936,9 +941,15 @@ function MarketplacePageContent() {
             transition={{ duration: 0.5 }}
             className="space-y-6"
           >
-            {/* Uber Delivery Promo Banner - Marketplace view only */}
+            {/* Promo Banners - Marketplace view only */}
             {isMarketplaceView && !searchQuery && (
-              <UberDeliveryPromoBanner onNavigateToStores={() => setSpace('stores')} />
+              <>
+                <UberDeliveryPromoBanner onNavigateToStores={() => setSpace('stores')} />
+                <FirstUploadPromoBanner 
+                  hasListings={listingCount > 0} 
+                  isLoggedIn={!!user} 
+                />
+              </>
             )}
 
             {/* Stores View - Products from Stores with Store Filter */}

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt, Star } from "lucide-react";
+import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt, Star, Truck } from "lucide-react";
 import { ItemType, ListingImage, ConditionRating } from "@/lib/types/listing";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 
 // ============================================================
 // Step 1: Item Type Selection with Quick Listing
@@ -62,6 +63,12 @@ interface QuickListingData {
   size?: string;
   genderFit?: string;
   apparelMaterial?: string;
+  
+  // Shipping options
+  shippingAvailable?: boolean;
+  shippingCost?: number;
+  pickupAvailable?: boolean;
+  pickupOnly?: boolean;
 }
 
 interface Step1ItemTypeProps {
@@ -961,21 +968,96 @@ export function Step1ItemType({
             </Select>
           </div>
 
-          {/* Location */}
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Location *</label>
-            <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                value={quickData.pickupLocation || ''}
-                onChange={(e) => setQuickData({ ...quickData, pickupLocation: e.target.value })}
-                className={cn(
-                  "pl-10 rounded-xl h-11 text-base",
-                  !quickData.pickupLocation && "border-red-500 focus:border-red-500 focus:ring-red-500"
-                )}
-                placeholder="Suburb or area"
+          {/* Delivery Options - Mobile Compact */}
+          <div className="space-y-3">
+            <label className="block text-xs font-medium text-gray-700">Delivery Options</label>
+            
+            {/* Shipping Toggle */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+              <div className="flex items-center gap-2">
+                <Truck className="h-4 w-4 text-gray-500" />
+                <span className="text-sm text-gray-700">Shipping</span>
+              </div>
+              <Switch
+                checked={quickData.shippingAvailable || false}
+                onCheckedChange={(checked) => setQuickData({ 
+                  ...quickData, 
+                  shippingAvailable: checked,
+                  pickupOnly: checked ? false : quickData.pickupOnly
+                })}
               />
             </div>
+            
+            {/* Shipping Cost */}
+            <AnimatePresence>
+              {quickData.shippingAvailable && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                  className="overflow-hidden"
+                >
+                  <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      type="number"
+                      value={quickData.shippingCost || ''}
+                      onChange={(e) => setQuickData({ ...quickData, shippingCost: parseFloat(e.target.value) || 0 })}
+                      placeholder="Shipping cost (0 for free)"
+                      className="pl-9 rounded-xl h-10 text-sm"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            
+            {/* Pickup Toggle */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-gray-500" />
+                <span className="text-sm text-gray-700">Pickup</span>
+              </div>
+              <Switch
+                checked={quickData.pickupAvailable}
+                onCheckedChange={(checked) => setQuickData({ 
+                  ...quickData, 
+                  pickupAvailable: checked,
+                  pickupOnly: !checked ? false : quickData.pickupOnly
+                })}
+              />
+            </div>
+            
+            {/* Pickup Location */}
+            <AnimatePresence>
+              {quickData.pickupAvailable && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                  className="overflow-hidden"
+                >
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      value={quickData.pickupLocation || ''}
+                      onChange={(e) => setQuickData({ ...quickData, pickupLocation: e.target.value })}
+                      className={cn(
+                        "pl-10 rounded-xl h-11 text-base",
+                        quickData.pickupAvailable && !quickData.pickupLocation && "border-red-500"
+                      )}
+                      placeholder="Suburb or area"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            
+            {/* Validation */}
+            {!quickData.shippingAvailable && !quickData.pickupAvailable && (
+              <p className="text-xs text-red-500">Select at least one option</p>
+            )}
           </div>
 
           {/* Description - Product description */}
@@ -1167,7 +1249,15 @@ export function Step1ItemType({
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-40">
           <Button
             onClick={handleQuickList}
-            disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || !quickData.conditionRating || !quickData.productDescription || isPublishing}
+            disabled={
+              !quickData.title || 
+              !quickData.price || 
+              !quickData.conditionRating || 
+              !quickData.productDescription || 
+              (!quickData.shippingAvailable && !quickData.pickupAvailable) ||
+              (quickData.pickupAvailable && !quickData.pickupLocation) ||
+              isPublishing
+            }
             className="w-full rounded-xl h-12 bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
           >
             {isPublishing ? (
@@ -1440,22 +1530,119 @@ export function Step1ItemType({
                   </div>
                 </div>
 
-                {/* Pickup Location */}
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-900">Pickup Location *</label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      value={quickData.pickupLocation || ''}
-                      onChange={(e) => setQuickData({ ...quickData, pickupLocation: e.target.value })}
-                      placeholder="e.g., Sydney CBD, Melbourne East"
-                      className={cn(
-                        "pl-10 rounded-md h-11 text-base",
-                        !quickData.pickupLocation && "border-red-500 focus:border-red-500 focus:ring-red-500"
+                {/* Delivery Options Section */}
+                <div className="space-y-4 pt-4 border-t border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-900">Delivery Options</h3>
+                  <p className="text-xs text-gray-500">Choose how buyers can receive this item (select at least one)</p>
+                  
+                  {/* Shipping Option */}
+                  <div className="p-4 bg-gray-50 rounded-md space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white border border-gray-200">
+                          <Truck className="h-4 w-4 text-gray-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Shipping Available</p>
+                          <p className="text-xs text-gray-500">I can ship this item to buyers</p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={quickData.shippingAvailable || false}
+                        onCheckedChange={(checked) => setQuickData({ 
+                          ...quickData, 
+                          shippingAvailable: checked,
+                          pickupOnly: checked ? false : quickData.pickupOnly
+                        })}
+                      />
+                    </div>
+                    
+                    {/* Shipping Cost - Only show when shipping is enabled */}
+                    <AnimatePresence>
+                      {quickData.shippingAvailable && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                          className="overflow-hidden"
+                        >
+                          <div className="pt-3 border-t border-gray-200">
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Shipping Cost (AUD)</label>
+                            <div className="relative">
+                              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                              <Input
+                                type="number"
+                                value={quickData.shippingCost || ''}
+                                onChange={(e) => setQuickData({ ...quickData, shippingCost: parseFloat(e.target.value) || 0 })}
+                                placeholder="0 for free shipping"
+                                className="pl-9 rounded-md h-10 text-sm"
+                              />
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">Enter 0 for free shipping</p>
+                          </div>
+                        </motion.div>
                       )}
-                    />
+                    </AnimatePresence>
                   </div>
-                  <p className="text-xs text-gray-500">Enter suburb or area (don't include your full address)</p>
+                  
+                  {/* Pickup Option */}
+                  <div className="p-4 bg-gray-50 rounded-md space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white border border-gray-200">
+                          <MapPin className="h-4 w-4 text-gray-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Pickup Available</p>
+                          <p className="text-xs text-gray-500">Buyers can collect in person</p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={quickData.pickupAvailable}
+                        onCheckedChange={(checked) => setQuickData({ 
+                          ...quickData, 
+                          pickupAvailable: checked,
+                          pickupOnly: !checked ? false : quickData.pickupOnly
+                        })}
+                      />
+                    </div>
+                    
+                    {/* Pickup Location - Only show when pickup is enabled */}
+                    <AnimatePresence>
+                      {quickData.pickupAvailable && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                          className="overflow-hidden"
+                        >
+                          <div className="pt-3 border-t border-gray-200">
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Pickup Location *</label>
+                            <div className="relative">
+                              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                              <Input
+                                value={quickData.pickupLocation || ''}
+                                onChange={(e) => setQuickData({ ...quickData, pickupLocation: e.target.value })}
+                                placeholder="e.g., Sydney CBD, Melbourne East"
+                                className={cn(
+                                  "pl-10 rounded-md h-10 text-sm",
+                                  quickData.pickupAvailable && !quickData.pickupLocation && "border-red-500"
+                                )}
+                              />
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">Enter suburb or area (don&apos;t include your full address)</p>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  
+                  {/* Validation message */}
+                  {!quickData.shippingAvailable && !quickData.pickupAvailable && (
+                    <p className="text-xs text-red-500">Please enable at least one delivery option</p>
+                  )}
                 </div>
               </div>
 
@@ -1602,7 +1789,15 @@ export function Step1ItemType({
               <div className="flex gap-2 w-full sm:w-auto">
                 <Button
                   onClick={handleQuickList}
-                  disabled={!quickData.title || !quickData.price || !quickData.pickupLocation || !quickData.conditionRating || !quickData.productDescription || isPublishing}
+                  disabled={
+                    !quickData.title || 
+                    !quickData.price || 
+                    !quickData.conditionRating || 
+                    !quickData.productDescription || 
+                    (!quickData.shippingAvailable && !quickData.pickupAvailable) ||
+                    (quickData.pickupAvailable && !quickData.pickupLocation) ||
+                    isPublishing
+                  }
                   size="lg"
                   className="rounded-md bg-gray-900 hover:bg-gray-800 text-white px-6 h-11 flex-1 sm:flex-none"
                 >

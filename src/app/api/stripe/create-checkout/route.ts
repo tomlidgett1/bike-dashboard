@@ -133,10 +133,55 @@ export async function POST(request: NextRequest) {
         break;
     }
 
-    // Calculate totals
+    // Calculate base totals
     const itemPrice = product.price;
+    const itemPriceCents = Math.round(itemPrice * 100);
     const buyerFee = calculateBuyerFee(itemPrice); // 0.5% buyer service fee
-    const totalAmount = itemPrice + deliveryCost + buyerFee;
+
+    // ============================================================
+    // Check for applicable voucher (First Upload Promo)
+    // ============================================================
+    let voucherDiscount = 0;
+    let voucherDiscountCents = 0;
+    let applicableVoucher: { id: string; amount_cents: number; description: string } | null = null;
+
+    const MIN_PURCHASE_FOR_VOUCHER_CENTS = 3000;
+    
+    if (itemPriceCents >= MIN_PURCHASE_FOR_VOUCHER_CENTS) {
+      const { data: voucher, error: voucherError } = await supabase
+        .from('vouchers')
+        .select('id, amount_cents, min_purchase_cents, description, voucher_type')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .lte('min_purchase_cents', itemPriceCents)
+        .or('expires_at.is.null,expires_at.gt.now()')
+        .order('amount_cents', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!voucherError && voucher) {
+        applicableVoucher = {
+          id: voucher.id,
+          amount_cents: voucher.amount_cents,
+          description: voucher.description || 'Yellow Jersey discount',
+        };
+        voucherDiscountCents = voucher.amount_cents;
+        voucherDiscount = voucherDiscountCents / 100;
+        console.log('[Stripe Checkout] Applying voucher:', {
+          voucherId: voucher.id,
+          type: voucher.voucher_type,
+          discount: voucherDiscount,
+        });
+      }
+    }
+
+    // Calculate final totals (with voucher discount)
+    const totalBeforeDiscount = itemPrice + deliveryCost + buyerFee;
+    const totalAmount = Math.max(0, totalBeforeDiscount - voucherDiscount);
+
+    // Adjusted item price (apply voucher discount to the item, not delivery/fees)
+    const adjustedItemPrice = Math.max(0, itemPrice - voucherDiscount);
+    const adjustedItemPriceCents = Math.round(adjustedItemPrice * 100);
 
     // Get product image for Stripe checkout display
     let productImage: string | undefined;
@@ -162,48 +207,81 @@ export async function POST(request: NextRequest) {
     // Determine if we need to collect shipping address (not for pickup)
     const requiresShipping = deliveryMethod !== 'pickup';
 
+    // Build line items
+    const lineItems: any[] = [
+      {
+        price_data: {
+          currency: 'aud',
+          product_data: {
+            name: product.display_name || product.description,
+            description: applicableVoucher 
+              ? `Purchase from Yellow Jersey Marketplace (includes $${voucherDiscount.toFixed(2)} discount)`
+              : 'Purchase from Yellow Jersey Marketplace',
+            ...(productImage && { images: [productImage] }),
+          },
+          unit_amount: adjustedItemPriceCents, // Use adjusted price with voucher applied
+        },
+        quantity: 1,
+      },
+    ];
+
+    // Add delivery as a separate line item if applicable
+    if (deliveryCost > 0) {
+      lineItems.push({
+        price_data: {
+          currency: 'aud',
+          product_data: {
+            name: deliveryDescription,
+            description: 'Delivery cost',
+          },
+          unit_amount: Math.round(deliveryCost * 100),
+        },
+        quantity: 1,
+      });
+    }
+
+    // Buyer service fee (0.5%)
+    if (buyerFee > 0) {
+      lineItems.push({
+        price_data: {
+          currency: 'aud',
+          product_data: {
+            name: 'Service Fee',
+            description: 'Yellow Jersey marketplace fee',
+          },
+          unit_amount: Math.round(buyerFee * 100),
+        },
+        quantity: 1,
+      });
+    }
+
+    // Build metadata with voucher info
+    const metadata: Record<string, string> = {
+      product_id: product.id,
+      buyer_id: user.id,
+      seller_id: product.user_id,
+      item_price: itemPrice.toString(), // Original item price
+      delivery_method: deliveryMethod,
+      delivery_cost: deliveryCost.toString(),
+      delivery_description: deliveryDescription,
+      buyer_fee: buyerFee.toString(),
+      total_amount: totalAmount.toString(),
+      platform_fee: calculatePlatformFee(itemPrice).toString(),
+      seller_payout: calculateSellerPayout(itemPrice).toString(),
+    };
+
+    // Add voucher info to metadata if applicable
+    if (applicableVoucher) {
+      metadata.voucher_id = applicableVoucher.id;
+      metadata.voucher_discount = voucherDiscount.toString();
+      metadata.voucher_discount_cents = voucherDiscountCents.toString();
+    }
+
     // Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'aud',
-            product_data: {
-              name: product.display_name || product.description,
-              description: `Purchase from Yellow Jersey Marketplace`,
-              ...(productImage && { images: [productImage] }),
-            },
-            unit_amount: Math.round(itemPrice * 100), // Stripe uses cents
-          },
-          quantity: 1,
-        },
-        // Add delivery as a separate line item if applicable
-        ...(deliveryCost > 0 ? [{
-          price_data: {
-            currency: 'aud',
-            product_data: {
-              name: deliveryDescription,
-              description: 'Delivery cost',
-            },
-            unit_amount: Math.round(deliveryCost * 100),
-          },
-          quantity: 1,
-        }] : []),
-        // Buyer service fee (0.5%)
-        ...(buyerFee > 0 ? [{
-          price_data: {
-            currency: 'aud',
-            product_data: {
-              name: 'Service Fee',
-              description: 'Yellow Jersey marketplace fee',
-            },
-            unit_amount: Math.round(buyerFee * 100),
-          },
-          quantity: 1,
-        }] : []),
-      ],
+      line_items: lineItems,
       // Only collect shipping address if not pickup
       ...(requiresShipping && {
         shipping_address_collection: {
@@ -214,19 +292,7 @@ export async function POST(request: NextRequest) {
       phone_number_collection: {
         enabled: true,
       },
-      metadata: {
-        product_id: product.id,
-        buyer_id: user.id,
-        seller_id: product.user_id,
-        item_price: itemPrice.toString(),
-        delivery_method: deliveryMethod,
-        delivery_cost: deliveryCost.toString(),
-        delivery_description: deliveryDescription,
-        buyer_fee: buyerFee.toString(),
-        total_amount: totalAmount.toString(),
-        platform_fee: calculatePlatformFee(itemPrice).toString(), // 3% of item price (seller pays)
-        seller_payout: calculateSellerPayout(itemPrice).toString(), // Item price minus platform fee
-      },
+      metadata,
       success_url: `${appUrl}/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/marketplace/checkout/cancel?product_id=${productId}`,
       customer_email: user.email,
@@ -246,11 +312,18 @@ export async function POST(request: NextRequest) {
       productId: product.id,
       buyerId: user.id,
       total: totalAmount,
+      voucherApplied: !!applicableVoucher,
+      voucherDiscount: voucherDiscount,
     });
 
     return NextResponse.json({
       sessionId: session.id,
       url: session.url,
+      voucher: applicableVoucher ? {
+        id: applicableVoucher.id,
+        discount: voucherDiscount,
+        description: applicableVoucher.description,
+      } : null,
     });
 
   } catch (error) {

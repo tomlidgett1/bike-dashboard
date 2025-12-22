@@ -31,6 +31,9 @@ interface MobileDeliverySheetProps {
   productPrice: number;
   productImage?: string | null;
   pickupLocation?: string | null;
+  shippingAvailable?: boolean;
+  shippingCost?: number;
+  pickupOnly?: boolean;
   onCheckout: (deliveryMethod: DeliveryMethod, address?: AddressData) => void;
   isLoading?: boolean;
 }
@@ -70,6 +73,9 @@ export function MobileDeliverySheet({
   productPrice,
   productImage,
   pickupLocation,
+  shippingAvailable = false,
+  shippingCost = 0,
+  pickupOnly = false,
   onCheckout,
   isLoading = false,
 }: MobileDeliverySheetProps) {
@@ -117,29 +123,64 @@ export function MobileDeliverySheet({
   }, [isOpen]);
 
   // Build delivery options
-  const deliveryOptions: DeliveryOption[] = React.useMemo(() => [
-    {
+  const deliveryOptions: DeliveryOption[] = React.useMemo(() => {
+    // If pickup only, only show pickup option
+    if (pickupOnly) {
+      return [
+        {
+          id: 'pickup' as DeliveryMethod,
+          label: 'Local Pickup',
+          description: pickupLocation || 'Pickup from seller',
+          cost: 0,
+          available: !!pickupLocation,
+        },
+      ];
+    }
+    
+    const options: DeliveryOption[] = [];
+    
+    // Seller-defined shipping (if available)
+    if (shippingAvailable) {
+      options.push({
+        id: 'shipping' as DeliveryMethod,
+        label: 'Seller Shipping',
+        description: shippingCost === 0 ? 'Free shipping' : 'Shipped by seller',
+        cost: shippingCost,
+        available: true,
+      });
+    }
+    
+    // Uber Express
+    options.push({
       id: 'uber_express' as DeliveryMethod,
       label: 'Uber Express',
       description: 'Get it in 1 hour',
       cost: UBER_EXPRESS_FEE,
       available: true,
-    },
-    {
+    });
+    
+    // Australia Post
+    options.push({
       id: 'auspost' as DeliveryMethod,
       label: 'Australia Post',
       description: '2-5 business days',
       cost: AUSPOST_FEE,
       available: true,
-    },
-    {
-      id: 'pickup' as DeliveryMethod,
-      label: 'Local Pickup',
-      description: pickupLocation || 'Pickup from seller',
-      cost: 0,
-      available: !!pickupLocation,
-    },
-  ], [pickupLocation]);
+    });
+    
+    // Pickup option
+    if (pickupLocation) {
+      options.push({
+        id: 'pickup' as DeliveryMethod,
+        label: 'Local Pickup',
+        description: pickupLocation,
+        cost: 0,
+        available: true,
+      });
+    }
+    
+    return options;
+  }, [pickupLocation, shippingAvailable, shippingCost, pickupOnly]);
 
   // Calculate totals
   const selectedOption = deliveryOptions.find(o => o.id === selectedDelivery);

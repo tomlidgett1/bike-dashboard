@@ -28,8 +28,10 @@ interface BuyNowButtonProps {
   productPrice: number;
   sellerId: string;
   productImage?: string | null;
+  shippingAvailable?: boolean;
   shippingCost?: number;
   pickupLocation?: string | null;
+  pickupOnly?: boolean;
   variant?: 'default' | 'outline';
   size?: 'default' | 'sm' | 'lg';
   fullWidth?: boolean;
@@ -47,8 +49,10 @@ export function BuyNowButton({
   productPrice,
   sellerId,
   productImage,
+  shippingAvailable = false,
   shippingCost = 0,
   pickupLocation,
+  pickupOnly = false,
   variant = 'default',
   size = 'default',
   fullWidth = false,
@@ -221,6 +225,9 @@ export function BuyNowButton({
         productPrice={productPrice}
         productImage={productImage}
         pickupLocation={pickupLocation}
+        shippingAvailable={shippingAvailable}
+        shippingCost={shippingCost}
+        pickupOnly={pickupOnly}
         onCheckout={handleMobileCheckout}
         isLoading={isLoading}
       />

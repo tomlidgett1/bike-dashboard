@@ -29,7 +29,15 @@ interface PriceBreakdown {
   itemPrice: number;
   deliveryCost: number;
   buyerFee: number;
+  voucherDiscount?: number;
+  totalBeforeDiscount?: number;
   totalAmount: number;
+}
+
+interface VoucherInfo {
+  id: string;
+  discount: number;
+  description: string;
 }
 
 interface CheckoutSheetProps {
@@ -97,6 +105,9 @@ export function CheckoutSheet({
       country: string;
     };
   } | null>(null);
+  
+  // Voucher state - captures any applicable voucher from the API
+  const [appliedVoucher, setAppliedVoucher] = React.useState<VoucherInfo | null>(null);
 
   // Create PaymentIntent when sheet opens
   React.useEffect(() => {
@@ -147,6 +158,12 @@ export function CheckoutSheet({
       setPaymentIntentId(data.paymentIntentId);
       setDeliveryOptions(data.deliveryOptions);
       setBreakdown(data.breakdown);
+      
+      // Capture voucher info if present
+      if (data.voucher) {
+        setAppliedVoucher(data.voucher);
+        console.log("[CheckoutSheet] Voucher applied:", data.voucher);
+      }
     } catch (err) {
       console.error("[CheckoutSheet] Error:", err);
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -184,6 +201,11 @@ export function CheckoutSheet({
       }
 
       setBreakdown(data.breakdown);
+      
+      // Update voucher info if present
+      if (data.voucher) {
+        setAppliedVoucher(data.voucher);
+      }
     } catch (err) {
       console.error("[CheckoutSheet] Delivery update error:", err);
       setError(err instanceof Error ? err.message : "Failed to update delivery");
@@ -356,6 +378,7 @@ export function CheckoutSheet({
                 selectedDelivery={selectedDelivery}
                 onDeliveryChange={handleDeliveryChange}
                 breakdown={breakdown}
+                voucher={appliedVoucher}
                 isUpdating={isLoading}
                 requiresAddress={requiresAddress}
                 onContinue={handleContinue}
@@ -387,6 +410,7 @@ interface CheckoutStepsProps {
   selectedDelivery: DeliveryMethod;
   onDeliveryChange: (method: DeliveryMethod) => void;
   breakdown: PriceBreakdown | null;
+  voucher: VoucherInfo | null;
   isUpdating: boolean;
   requiresAddress: boolean;
   onContinue: () => void;
@@ -436,6 +460,7 @@ function CheckoutSteps({
   selectedDelivery,
   onDeliveryChange,
   breakdown,
+  voucher,
   isUpdating,
   requiresAddress,
   onContinue,
@@ -862,6 +887,16 @@ function CheckoutSteps({
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Service fee</span>
               <span className="text-gray-900">${breakdown.buyerFee.toFixed(2)}</span>
+            </div>
+          )}
+          {/* Voucher Discount */}
+          {voucher && (
+            <div className="flex justify-between text-sm">
+              <span className="text-green-600 flex items-center gap-1">
+                <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+                Yellow Jersey discount
+              </span>
+              <span className="text-green-600 font-medium">-${voucher.discount.toFixed(2)}</span>
             </div>
           )}
           <div className="pt-2 border-t border-gray-200 flex justify-between">

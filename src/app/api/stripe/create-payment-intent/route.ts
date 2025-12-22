@@ -279,10 +279,52 @@ export async function POST(request: NextRequest) {
         break;
     }
 
-    // Calculate totals
+    // Calculate base totals
     const itemPrice = product.price;
+    const itemPriceCents = Math.round(itemPrice * 100);
     const buyerFee = calculateBuyerFee(itemPrice); // 0.5% buyer service fee
-    const totalAmount = itemPrice + deliveryCost + buyerFee;
+
+    // ============================================================
+    // Check for applicable voucher (First Upload Promo)
+    // ============================================================
+    let voucherDiscount = 0;
+    let voucherDiscountCents = 0;
+    let applicableVoucher: { id: string; amount_cents: number; description: string } | null = null;
+
+    // Only apply voucher if item price is >= $30 (minimum purchase requirement)
+    const MIN_PURCHASE_FOR_VOUCHER_CENTS = 3000;
+    
+    if (itemPriceCents >= MIN_PURCHASE_FOR_VOUCHER_CENTS) {
+      const { data: voucher, error: voucherError } = await supabase
+        .from('vouchers')
+        .select('id, amount_cents, min_purchase_cents, description, voucher_type')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .lte('min_purchase_cents', itemPriceCents)
+        .or('expires_at.is.null,expires_at.gt.now()')
+        .order('amount_cents', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!voucherError && voucher) {
+        applicableVoucher = {
+          id: voucher.id,
+          amount_cents: voucher.amount_cents,
+          description: voucher.description || 'Yellow Jersey discount',
+        };
+        voucherDiscountCents = voucher.amount_cents;
+        voucherDiscount = voucherDiscountCents / 100;
+        console.log('[PaymentIntent] Applying voucher:', {
+          voucherId: voucher.id,
+          type: voucher.voucher_type,
+          discount: voucherDiscount,
+        });
+      }
+    }
+
+    // Calculate final totals (with voucher discount applied)
+    const totalBeforeDiscount = itemPrice + deliveryCost + buyerFee;
+    const totalAmount = Math.max(0, totalBeforeDiscount - voucherDiscount);
     const totalAmountCents = Math.round(totalAmount * 100);
 
     // Determine available delivery options
@@ -310,26 +352,36 @@ export async function POST(request: NextRequest) {
       },
     ];
 
+    // Build metadata with optional voucher fields
+    const metadata: Record<string, string> = {
+      product_id: product.id,
+      buyer_id: user.id,
+      seller_id: product.user_id,
+      item_price: itemPrice.toString(),
+      delivery_method: deliveryMethod,
+      delivery_cost: deliveryCost.toString(),
+      delivery_description: deliveryDescription,
+      buyer_fee: buyerFee.toString(),
+      total_amount: totalAmount.toString(),
+      platform_fee: calculatePlatformFee(itemPrice).toString(),
+      seller_payout: calculateSellerPayout(itemPrice).toString(),
+    };
+
+    // Add voucher info to metadata if applicable
+    if (applicableVoucher) {
+      metadata.voucher_id = applicableVoucher.id;
+      metadata.voucher_discount = voucherDiscount.toString();
+      metadata.voucher_discount_cents = voucherDiscountCents.toString();
+    }
+
     // Create Stripe PaymentIntent
     // Explicitly set payment methods: card (includes Apple Pay/Google Pay wallets)
     const paymentIntent = await stripe.paymentIntents.create({
       amount: totalAmountCents,
       currency: 'aud',
       payment_method_types: ['card', 'link'],
-      metadata: {
-        product_id: product.id,
-        buyer_id: user.id,
-        seller_id: product.user_id,
-        item_price: itemPrice.toString(),
-        delivery_method: deliveryMethod,
-        delivery_cost: deliveryCost.toString(),
-        delivery_description: deliveryDescription,
-        buyer_fee: buyerFee.toString(),
-        total_amount: totalAmount.toString(),
-        platform_fee: calculatePlatformFee(itemPrice).toString(),
-        seller_payout: calculateSellerPayout(itemPrice).toString(),
-      },
-      description: `${product.display_name || product.description} - ${deliveryDescription}`,
+      metadata,
+      description: `${product.display_name || product.description} - ${deliveryDescription}${applicableVoucher ? ' (includes $' + voucherDiscount + ' discount)' : ''}`,
     });
 
     console.log('[PaymentIntent] Created:', {
@@ -338,6 +390,8 @@ export async function POST(request: NextRequest) {
       buyerId: user.id,
       deliveryMethod,
       total: totalAmount,
+      voucherApplied: !!applicableVoucher,
+      voucherDiscount: voucherDiscount,
     });
 
     return NextResponse.json({
@@ -347,6 +401,8 @@ export async function POST(request: NextRequest) {
         itemPrice,
         deliveryCost,
         buyerFee,
+        voucherDiscount,
+        totalBeforeDiscount,
         totalAmount,
       },
       deliveryOptions,
@@ -355,6 +411,11 @@ export async function POST(request: NextRequest) {
         name: product.display_name || product.description,
         price: product.price,
       },
+      voucher: applicableVoucher ? {
+        id: applicableVoucher.id,
+        discount: voucherDiscount,
+        description: applicableVoucher.description,
+      } : null,
     });
 
   } catch (error) {
@@ -454,35 +515,79 @@ export async function PATCH(request: NextRequest) {
         break;
     }
 
-    // Recalculate totals
+    // Recalculate base totals
     const itemPrice = product.price;
+    const itemPriceCents = Math.round(itemPrice * 100);
     const buyerFee = calculateBuyerFee(itemPrice);
-    const totalAmount = itemPrice + deliveryCost + buyerFee;
+
+    // Check for applicable voucher
+    let voucherDiscount = 0;
+    let voucherDiscountCents = 0;
+    let applicableVoucher: { id: string; amount_cents: number; description: string } | null = null;
+
+    const MIN_PURCHASE_FOR_VOUCHER_CENTS = 3000;
+    
+    if (itemPriceCents >= MIN_PURCHASE_FOR_VOUCHER_CENTS) {
+      const { data: voucher, error: voucherError } = await supabase
+        .from('vouchers')
+        .select('id, amount_cents, min_purchase_cents, description, voucher_type')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .lte('min_purchase_cents', itemPriceCents)
+        .or('expires_at.is.null,expires_at.gt.now()')
+        .order('amount_cents', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!voucherError && voucher) {
+        applicableVoucher = {
+          id: voucher.id,
+          amount_cents: voucher.amount_cents,
+          description: voucher.description || 'Yellow Jersey discount',
+        };
+        voucherDiscountCents = voucher.amount_cents;
+        voucherDiscount = voucherDiscountCents / 100;
+      }
+    }
+
+    // Calculate final totals
+    const totalBeforeDiscount = itemPrice + deliveryCost + buyerFee;
+    const totalAmount = Math.max(0, totalBeforeDiscount - voucherDiscount);
     const totalAmountCents = Math.round(totalAmount * 100);
+
+    // Build metadata
+    const metadata: Record<string, string> = {
+      product_id: product.id,
+      buyer_id: user.id,
+      seller_id: product.user_id,
+      item_price: itemPrice.toString(),
+      delivery_method: deliveryMethod,
+      delivery_cost: deliveryCost.toString(),
+      delivery_description: deliveryDescription,
+      buyer_fee: buyerFee.toString(),
+      total_amount: totalAmount.toString(),
+      platform_fee: calculatePlatformFee(itemPrice).toString(),
+      seller_payout: calculateSellerPayout(itemPrice).toString(),
+    };
+
+    if (applicableVoucher) {
+      metadata.voucher_id = applicableVoucher.id;
+      metadata.voucher_discount = voucherDiscount.toString();
+      metadata.voucher_discount_cents = voucherDiscountCents.toString();
+    }
 
     // Update PaymentIntent
     const updatedIntent = await stripe.paymentIntents.update(paymentIntentId, {
       amount: totalAmountCents,
-      metadata: {
-        product_id: product.id,
-        buyer_id: user.id,
-        seller_id: product.user_id,
-        item_price: itemPrice.toString(),
-        delivery_method: deliveryMethod,
-        delivery_cost: deliveryCost.toString(),
-        delivery_description: deliveryDescription,
-        buyer_fee: buyerFee.toString(),
-        total_amount: totalAmount.toString(),
-        platform_fee: calculatePlatformFee(itemPrice).toString(),
-        seller_payout: calculateSellerPayout(itemPrice).toString(),
-      },
-      description: `${product.display_name || product.description} - ${deliveryDescription}`,
+      metadata,
+      description: `${product.display_name || product.description} - ${deliveryDescription}${applicableVoucher ? ' (includes $' + voucherDiscount + ' discount)' : ''}`,
     });
 
     console.log('[PaymentIntent] Updated:', {
       intentId: updatedIntent.id,
       deliveryMethod,
       newTotal: totalAmount,
+      voucherApplied: !!applicableVoucher,
     });
 
     return NextResponse.json({
@@ -491,8 +596,15 @@ export async function PATCH(request: NextRequest) {
         itemPrice,
         deliveryCost,
         buyerFee,
+        voucherDiscount,
+        totalBeforeDiscount,
         totalAmount,
       },
+      voucher: applicableVoucher ? {
+        id: applicableVoucher.id,
+        discount: voucherDiscount,
+        description: applicableVoucher.description,
+      } : null,
     });
 
   } catch (error) {
