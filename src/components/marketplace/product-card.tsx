@@ -193,7 +193,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         {/* Image Container - Main focus */}
         <div 
           ref={imageRef}
-          className="relative w-full overflow-hidden rounded-md bg-gray-100 mb-1.5 border border-gray-200/80"
+          className="relative w-full overflow-hidden rounded-md bg-gray-100 mb-0.5 border border-gray-200/80"
           style={{ aspectRatio: '1 / 1' }}
         >
           {isVisible && imageUrl && !imageError ? (
@@ -219,15 +219,9 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </div>
           )}
 
-          {/* Floating Price Badge with Uber Express */}
-          <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-1.5">
-            <div className="bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-lg shadow-sm">
-              <span className="text-sm font-bold text-gray-900">
-                ${product.price.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </span>
-            </div>
-            {/* Uber Express Badge - Only for Ashburton Cycles */}
-            {(product as any).store_name === 'Ashburton Cycles' && (
+          {/* Uber Express Badge - Only for Ashburton Cycles */}
+          {(product as any).store_name === 'Ashburton Cycles' && (
+            <div className="absolute bottom-2.5 right-2.5">
               <div className="bg-black/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
                 <Image 
                   src="/uber.jpg" 
@@ -239,8 +233,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
                 />
                 <span className="text-[10px] font-semibold text-green-500">1hr</span>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Wishlist Button */}
           <button
@@ -282,12 +276,17 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         {/* Product Info - Improved text layout */}
         <div className="px-0.5 mb-2">
           {/* Product Title - Enhanced typography */}
-          <h3 className="text-sm text-gray-900 font-medium leading-tight line-clamp-1 mb-1">
+          <h3 className="text-sm text-gray-900 font-medium leading-tight line-clamp-1 mb-0">
             {(product as any).display_name || product.description}
           </h3>
 
+          {/* Price - Below title, size between title and location */}
+          <p className="text-xs font-semibold text-gray-900 mb-0 leading-tight">
+            ${product.price.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </p>
+
           {/* Seller info - Better organized layout */}
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-0.5 flex-wrap mt-0.5">
             {/* Store badge for store inventory items */}
             {(product as any).listing_type === 'store_inventory' && (
               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">
@@ -297,7 +296,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             )}
             
             {/* Seller name/location with verified badge */}
-            <div className="flex items-center gap-1 flex-1 min-w-0">
+            <div className="flex items-center gap-0.5 flex-1 min-w-0">
               <p className="text-xs text-gray-600 font-medium truncate">
                 {(() => {
                   const productAny = product as any;
@@ -325,7 +324,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 
             {/* Secondary info - Time */}
             {relativeTime && (
-              <div className="flex items-center gap-1.5 text-xs">
+              <div className="flex items-center gap-0.5 text-xs">
                 <span className="text-emerald-600 font-medium whitespace-nowrap">
                   {relativeTime}
                 </span>
@@ -352,20 +351,18 @@ export function ProductCardSkeleton() {
     <div>
       {/* Image Skeleton */}
       <div 
-        className="relative w-full rounded-xl bg-gray-100 animate-pulse mb-2.5 border border-gray-200" 
+        className="relative w-full rounded-xl bg-gray-100 animate-pulse mb-0.5 border border-gray-200" 
         style={{ aspectRatio: '1 / 1' }}
       >
-        {/* Price badge skeleton */}
-        <div className="absolute bottom-2.5 left-2.5">
-          <div className="h-7 w-14 bg-gray-200 rounded-lg" />
-        </div>
       </div>
 
       {/* Content Skeleton */}
-      <div className="px-0.5 space-y-1.5">
+      <div className="px-0.5 space-y-0">
         {/* Title Skeleton */}
-        <div className="h-4 w-full bg-gray-100 rounded animate-pulse" />
-        <div className="h-4 w-2/3 bg-gray-100 rounded animate-pulse" />
+        <div className="h-4 w-full bg-gray-100 rounded animate-pulse mb-0" />
+        
+        {/* Price Skeleton */}
+        <div className="h-3 w-20 bg-gray-100 rounded animate-pulse mb-0.5" />
         
         {/* Store Skeleton */}
         <div className="h-3 w-16 bg-gray-100 rounded animate-pulse" />
