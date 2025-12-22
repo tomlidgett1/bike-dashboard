@@ -696,12 +696,27 @@ function CheckoutSteps({
   // ============================================================
   if (currentStep === "delivery") {
     // Debug voucher state on delivery step
-    console.log('[CheckoutSteps] Delivery step - voucher:', voucher);
-    console.log('[CheckoutSteps] Delivery step - breakdown:', breakdown);
+    console.log('🚨🚨🚨 [CheckoutSteps STEP 2] Delivery step - voucher:', voucher);
+    console.log('🚨🚨🚨 [CheckoutSteps STEP 2] Delivery step - breakdown:', breakdown);
+    console.log('🚨🚨🚨 [CheckoutSteps STEP 2] Is voucher null?', voucher === null);
+    console.log('🚨🚨🚨 [CheckoutSteps STEP 2] Voucher discount amount:', voucher?.discount);
     
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 px-4 py-4 space-y-3">
+          {/* DEBUG: Temporary visible voucher info */}
+          {voucher && (
+            <div className="bg-red-100 border-2 border-red-500 p-3 rounded-md">
+              <p className="text-sm font-bold text-red-900">DEBUG: Voucher exists!</p>
+              <p className="text-xs text-red-700">Discount: ${voucher.discount}</p>
+            </div>
+          )}
+          {!voucher && (
+            <div className="bg-yellow-100 border-2 border-yellow-500 p-3 rounded-md">
+              <p className="text-sm font-bold text-yellow-900">DEBUG: No voucher prop!</p>
+            </div>
+          )}
+          
           {/* Delivery address summary */}
           {shippingDetails && (
             <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
