@@ -20,6 +20,7 @@ import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-mo
 import { SplitSearchResults } from "@/components/marketplace/split-search-results";
 import { UberDeliveryPromoBanner } from "@/components/marketplace/uber-delivery-promo-banner";
 import { FirstUploadPromoBanner } from "@/components/marketplace/first-upload-promo-banner";
+import { VoucherSuccessBanner } from "@/components/marketplace/voucher-success-banner";
 import { useUserVouchers } from "@/lib/hooks/use-user-vouchers";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -57,7 +58,7 @@ function MarketplacePageContent() {
   const tracker = useInteractionTracker(user?.id);
   
   // User vouchers and first upload eligibility
-  const { eligibleForFirstUploadPromo, listingCount, isLoading: vouchersLoading, error: vouchersError } = useUserVouchers();
+  const { eligibleForFirstUploadPromo, listingCount, activeVouchers, isLoading: vouchersLoading, error: vouchersError } = useUserVouchers();
   
   // Debug voucher state
   React.useEffect(() => {
@@ -956,6 +957,13 @@ function MarketplacePageContent() {
             {isMarketplaceView && !searchQuery && (
               <>
                 <UberDeliveryPromoBanner onNavigateToStores={() => setSpace('stores')} />
+                
+                {/* Show success banner if user has vouchers */}
+                {user && activeVouchers.length > 0 && (
+                  <VoucherSuccessBanner vouchers={activeVouchers} />
+                )}
+                
+                {/* Show promo banner if user has NO listings yet */}
                 <FirstUploadPromoBanner 
                   hasListings={listingCount > 0} 
                   isLoggedIn={!!user} 

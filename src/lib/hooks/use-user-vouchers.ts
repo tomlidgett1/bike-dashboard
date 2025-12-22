@@ -71,6 +71,14 @@ export function useUserVouchers(): UseUserVouchersResult {
       const data = await response.json();
       console.log('[useUserVouchers] Received data:', data);
       
+      // Log active vouchers details
+      if (data.activeVouchers && data.activeVouchers.length > 0) {
+        console.log('🎉 [useUserVouchers] YOU HAVE ACTIVE VOUCHERS!', data.activeVouchers);
+        data.activeVouchers.forEach((v: any) => {
+          console.log(`  → $${(v.amount_cents / 100).toFixed(2)} ${v.voucher_type} voucher (min purchase: $${(v.min_purchase_cents / 100).toFixed(2)})`);
+        });
+      }
+      
       setEligibleForFirstUploadPromo(data.eligibleForFirstUploadPromo);
       setListingCount(data.listingCount);
       setActiveVouchers(data.activeVouchers || []);
