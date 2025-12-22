@@ -160,9 +160,13 @@ export function CheckoutSheet({
       setBreakdown(data.breakdown);
       
       // Capture voucher info if present
+      console.log("[CheckoutSheet] API response - voucher:", data.voucher);
+      console.log("[CheckoutSheet] API response - breakdown:", data.breakdown);
       if (data.voucher) {
         setAppliedVoucher(data.voucher);
-        console.log("[CheckoutSheet] Voucher applied:", data.voucher);
+        console.log("[CheckoutSheet] Voucher set in state:", data.voucher);
+      } else {
+        console.log("[CheckoutSheet] No voucher in response");
       }
     } catch (err) {
       console.error("[CheckoutSheet] Error:", err);
@@ -691,6 +695,10 @@ function CheckoutSteps({
   // Step 2: Delivery Selection (NOW SECOND STEP)
   // ============================================================
   if (currentStep === "delivery") {
+    // Debug voucher state on delivery step
+    console.log('[CheckoutSteps] Delivery step - voucher:', voucher);
+    console.log('[CheckoutSteps] Delivery step - breakdown:', breakdown);
+    
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 px-4 py-4 space-y-3">
