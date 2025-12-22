@@ -59,17 +59,6 @@ function MarketplacePageContent() {
   
   // User vouchers and first upload eligibility
   const { eligibleForFirstUploadPromo, listingCount, activeVouchers, isLoading: vouchersLoading, error: vouchersError } = useUserVouchers();
-  
-  // Debug voucher state
-  React.useEffect(() => {
-    console.log('[Marketplace] Voucher state:', {
-      user: !!user,
-      listingCount,
-      eligibleForFirstUploadPromo,
-      vouchersLoading,
-      vouchersError,
-    });
-  }, [user, listingCount, eligibleForFirstUploadPromo, vouchersLoading, vouchersError]);
 
   // Navigation loading state
   const [isNavigating, setIsNavigating] = React.useState(false);

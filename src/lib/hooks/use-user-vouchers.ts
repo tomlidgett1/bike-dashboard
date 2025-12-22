@@ -57,27 +57,13 @@ export function useUserVouchers(): UseUserVouchersResult {
     setError(null);
 
     try {
-      console.log('[useUserVouchers] Fetching voucher data for user:', user?.id);
       const response = await fetch('/api/vouchers/check');
       
-      console.log('[useUserVouchers] Response status:', response.status);
-      
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[useUserVouchers] API error:', errorText);
         throw new Error('Failed to fetch voucher data');
       }
 
       const data = await response.json();
-      console.log('[useUserVouchers] Received data:', data);
-      
-      // Log active vouchers details
-      if (data.activeVouchers && data.activeVouchers.length > 0) {
-        console.log('🎉 [useUserVouchers] YOU HAVE ACTIVE VOUCHERS!', data.activeVouchers);
-        data.activeVouchers.forEach((v: any) => {
-          console.log(`  → $${(v.amount_cents / 100).toFixed(2)} ${v.voucher_type} voucher (min purchase: $${(v.min_purchase_cents / 100).toFixed(2)})`);
-        });
-      }
       
       setEligibleForFirstUploadPromo(data.eligibleForFirstUploadPromo);
       setListingCount(data.listingCount);

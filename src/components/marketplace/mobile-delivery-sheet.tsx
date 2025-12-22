@@ -143,13 +143,11 @@ export function MobileDeliverySheet({
       try {
         const response = await fetch('/api/vouchers/check');
         if (!response.ok) {
-          console.log('[MobileDeliverySheet] No voucher or error fetching');
           setApplicableVoucher(null);
           return;
         }
         
         const data = await response.json();
-        console.log('[MobileDeliverySheet] Voucher check response:', data);
         
         // Find an applicable voucher for this product price
         const productPriceCents = productPrice * 100;
@@ -158,10 +156,8 @@ export function MobileDeliverySheet({
         );
         
         if (applicable) {
-          console.log('[MobileDeliverySheet] Found applicable voucher:', applicable);
           setApplicableVoucher(applicable);
         } else {
-          console.log('[MobileDeliverySheet] No applicable voucher for price:', productPrice);
           setApplicableVoucher(null);
         }
       } catch (err) {
