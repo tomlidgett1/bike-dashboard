@@ -842,14 +842,42 @@ function CheckoutSteps({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex-shrink-0 border-t border-gray-100 p-4 bg-white">
+        {/* Footer with Price Breakdown */}
+        <div className="flex-shrink-0 border-t border-gray-100 p-4 bg-white space-y-3">
           {breakdown && (
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-sm text-gray-600">Total</span>
-              <span className="text-lg font-bold text-gray-900">
-                ${breakdown.totalAmount.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
-              </span>
+            <div className="space-y-2 pb-3 border-b border-gray-100">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Item</span>
+                <span className="text-gray-900">${breakdown.itemPrice.toLocaleString("en-AU")}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Delivery</span>
+                <span className="text-gray-900">
+                  {breakdown.deliveryCost === 0 ? "Free" : `$${breakdown.deliveryCost.toLocaleString("en-AU")}`}
+                </span>
+              </div>
+              {breakdown.buyerFee > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Service fee</span>
+                  <span className="text-gray-900">${breakdown.buyerFee.toFixed(2)}</span>
+                </div>
+              )}
+              {/* Voucher Discount */}
+              {voucher && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-green-600 flex items-center gap-1 font-medium">
+                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+                    Yellow Jersey discount
+                  </span>
+                  <span className="text-green-600 font-semibold">-${voucher.discount.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center pt-2">
+                <span className="text-sm font-semibold text-gray-900">Total</span>
+                <span className="text-lg font-bold text-gray-900">
+                  ${breakdown.totalAmount.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
             </div>
           )}
           <Button
@@ -871,6 +899,23 @@ function CheckoutSteps({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col h-full">
       <div className="flex-1 px-4 py-4 space-y-4">
+        {/* Voucher Applied Banner */}
+        {voucher && (
+          <div className="bg-green-50 border border-green-200 rounded-md p-3 flex items-start gap-2">
+            <div className="flex items-center justify-center w-5 h-5 bg-green-500 rounded-full flex-shrink-0 mt-0.5">
+              <Check className="h-3 w-3 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-green-800">
+                ${voucher.discount.toFixed(2)} discount applied
+              </p>
+              <p className="text-xs text-green-700 mt-0.5">
+                {voucher.description}
+              </p>
+            </div>
+          </div>
+        )}
+        
         {/* Order Summary */}
         <div className="p-3 bg-gray-50 rounded-md space-y-2">
           <div className="flex justify-between text-sm">
