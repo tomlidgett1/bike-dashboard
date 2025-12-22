@@ -149,6 +149,8 @@ export function CheckoutSheet({
       });
 
       const data = await response.json();
+      
+      console.log("🔴🔴🔴 FULL API RESPONSE:", JSON.stringify(data, null, 2));
 
       if (!response.ok) {
         throw new Error(data.error || "Failed to initialise checkout");
@@ -160,13 +162,14 @@ export function CheckoutSheet({
       setBreakdown(data.breakdown);
       
       // Capture voucher info if present
-      console.log("[CheckoutSheet] API response - voucher:", data.voucher);
-      console.log("[CheckoutSheet] API response - breakdown:", data.breakdown);
+      console.log("🔴🔴🔴 [CheckoutSheet] API response - voucher:", data.voucher);
+      console.log("🔴🔴🔴 [CheckoutSheet] API response - breakdown:", data.breakdown);
       if (data.voucher) {
         setAppliedVoucher(data.voucher);
-        console.log("[CheckoutSheet] Voucher set in state:", data.voucher);
+        console.log("✅✅✅ [CheckoutSheet] Voucher set in state:", data.voucher);
       } else {
-        console.log("[CheckoutSheet] No voucher in response");
+        console.log("❌❌❌ [CheckoutSheet] No voucher in API response - this is the problem!");
+        console.log("❌❌❌ [CheckoutSheet] Keys in response:", Object.keys(data));
       }
     } catch (err) {
       console.error("[CheckoutSheet] Error:", err);
