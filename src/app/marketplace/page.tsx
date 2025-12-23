@@ -19,7 +19,6 @@ import { StoresGrid } from "@/components/marketplace/stores-grid";
 import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-modal";
 import { SplitSearchResults } from "@/components/marketplace/split-search-results";
 import { PromoBannerCarousel } from "@/components/marketplace/promo-banner-carousel";
-import { VoucherSuccessBanner } from "@/components/marketplace/voucher-success-banner";
 import { useUserVouchers } from "@/lib/hooks/use-user-vouchers";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -57,7 +56,7 @@ function MarketplacePageContent() {
   const tracker = useInteractionTracker(user?.id);
   
   // User vouchers and first upload eligibility
-  const { eligibleForFirstUploadPromo, listingCount, activeVouchers, isLoading: vouchersLoading, error: vouchersError } = useUserVouchers();
+  const { eligibleForFirstUploadPromo, listingCount, isLoading: vouchersLoading, error: vouchersError } = useUserVouchers();
 
   // Navigation loading state
   const [isNavigating, setIsNavigating] = React.useState(false);
@@ -943,19 +942,11 @@ function MarketplacePageContent() {
           >
             {/* Promo Banners - Marketplace view only */}
             {isMarketplaceView && !searchQuery && (
-              <>
-                {/* Carousel with Uber and First Upload promo banners */}
-                <PromoBannerCarousel 
-                  hasListings={listingCount > 0} 
-                  isLoggedIn={!!user}
-                  onNavigateToStores={() => setSpace('stores')}
-                />
-                
-                {/* Show success banner if user has vouchers */}
-                {user && activeVouchers.length > 0 && (
-                  <VoucherSuccessBanner vouchers={activeVouchers} />
-                )}
-              </>
+              <PromoBannerCarousel 
+                hasListings={listingCount > 0} 
+                isLoggedIn={!!user}
+                onNavigateToStores={() => setSpace('stores')}
+              />
             )}
 
             {/* Stores View - Products from Stores with Store Filter */}
