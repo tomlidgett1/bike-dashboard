@@ -18,8 +18,7 @@ import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type Adv
 import { StoresGrid } from "@/components/marketplace/stores-grid";
 import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-modal";
 import { SplitSearchResults } from "@/components/marketplace/split-search-results";
-import { UberDeliveryPromoBanner } from "@/components/marketplace/uber-delivery-promo-banner";
-import { FirstUploadPromoBanner } from "@/components/marketplace/first-upload-promo-banner";
+import { PromoBannerCarousel } from "@/components/marketplace/promo-banner-carousel";
 import { VoucherSuccessBanner } from "@/components/marketplace/voucher-success-banner";
 import { useUserVouchers } from "@/lib/hooks/use-user-vouchers";
 import { Button } from "@/components/ui/button";
@@ -945,18 +944,17 @@ function MarketplacePageContent() {
             {/* Promo Banners - Marketplace view only */}
             {isMarketplaceView && !searchQuery && (
               <>
-                <UberDeliveryPromoBanner onNavigateToStores={() => setSpace('stores')} />
+                {/* Carousel with Uber and First Upload promo banners */}
+                <PromoBannerCarousel 
+                  hasListings={listingCount > 0} 
+                  isLoggedIn={!!user}
+                  onNavigateToStores={() => setSpace('stores')}
+                />
                 
                 {/* Show success banner if user has vouchers */}
                 {user && activeVouchers.length > 0 && (
                   <VoucherSuccessBanner vouchers={activeVouchers} />
                 )}
-                
-                {/* Show promo banner if user has NO listings yet */}
-                <FirstUploadPromoBanner 
-                  hasListings={listingCount > 0} 
-                  isLoggedIn={!!user} 
-                />
               </>
             )}
 
