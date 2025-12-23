@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { X, Gift, DollarSign, Check } from "lucide-react";
+import { X, Check, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 // ============================================================
-// Voucher Success Banner
+// Voucher Success Banner - Minimalist Design
+// Simple banner matching the carousel style
 // ============================================================
-// Shows when user HAS an active voucher, telling them they can use it
 
 interface VoucherSuccessBannerProps {
   vouchers: Array<{
@@ -57,26 +57,23 @@ export function VoucherSuccessBanner({ vouchers }: VoucherSuccessBannerProps) {
         transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
         className="mb-4"
       >
-        <div className="bg-white rounded-md px-4 py-3 flex items-center justify-between gap-3 border-2 border-green-500 shadow-sm">
-          <div className="flex items-center gap-3 flex-1">
-            {/* Success Icon */}
-            <div className="flex items-center justify-center w-10 h-10 bg-green-100 rounded-full flex-shrink-0">
-              <Check className="h-5 w-5 text-green-600" />
+        <div className="bg-green-600 rounded-md px-4 py-2.5 min-h-[52px] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {/* Check Icon */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-8 h-8 bg-green-700 rounded-full">
+                <Check className="h-4 w-4 text-white" />
+              </div>
             </div>
             
+            {/* Divider */}
+            <div className="w-px h-4 bg-green-500" />
+            
             {/* Message */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-sm font-semibold text-gray-900">
-                  You've earned a ${discount} voucher!
-                </p>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-                  <Gift className="h-3 w-3" />
-                  Active
-                </span>
-              </div>
-              <p className="text-xs text-gray-600 mt-0.5">
-                Automatically applies on purchases over ${minPurchase}
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-white">
+                <span className="font-medium">You have a ${discount} voucher</span>
+                <span className="text-green-100 ml-1.5 hidden sm:inline">· Auto-applies on orders ${minPurchase}+</span>
               </p>
             </div>
           </div>
@@ -84,14 +81,13 @@ export function VoucherSuccessBanner({ vouchers }: VoucherSuccessBannerProps) {
           {/* Dismiss Button */}
           <button
             onClick={handleDismiss}
-            className="p-1 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
+            className="p-1 hover:bg-green-700 rounded transition-colors flex-shrink-0"
             aria-label="Dismiss"
           >
-            <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+            <X className="h-4 w-4 text-green-200 hover:text-white" />
           </button>
         </div>
       </motion.div>
     </AnimatePresence>
   );
 }
-
