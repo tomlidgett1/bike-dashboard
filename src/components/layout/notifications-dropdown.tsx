@@ -33,6 +33,7 @@ import {
   ShoppingBag,
   CreditCard,
   X,
+  Gift,
 } from 'lucide-react';
 import { useOrderNotifications, type OrderNotification } from '@/lib/hooks/use-order-notifications';
 import { formatDistanceToNow } from 'date-fns';
@@ -85,6 +86,11 @@ function getNotificationDisplay(type: string): {
       icon: AlertTriangle, 
       title: 'Issue Reported', 
       color: 'bg-red-500' 
+    },
+    voucher_received: {
+      icon: Gift,
+      title: 'You earned a $10 voucher!',
+      color: 'bg-green-500'
     },
   };
 
@@ -172,7 +178,10 @@ function NotificationItem({
             {display.title}
           </p>
           <p className="text-sm text-gray-600 truncate mt-0.5">
-            {productName}
+            {notification.type === 'voucher_received' && notification.voucher
+              ? notification.voucher.description
+              : productName
+            }
           </p>
           {notification.purchase?.order_number && (
             <p className="text-xs text-gray-500 mt-0.5">

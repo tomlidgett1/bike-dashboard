@@ -12,7 +12,8 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 export interface OrderNotification {
   id: string;
   user_id: string;
-  purchase_id: string;
+  purchase_id: string | null;
+  voucher_id: string | null;
   type: string;
   notification_category: string;
   priority: string;
@@ -33,6 +34,13 @@ export interface OrderNotification {
       display_name: string | null;
       images: any[] | null;
     };
+  };
+  voucher?: {
+    id: string;
+    amount_cents: number;
+    min_purchase_cents: number;
+    description: string;
+    status: string;
   };
 }
 

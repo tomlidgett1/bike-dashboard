@@ -20,12 +20,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    // Count unread order notifications
+    // Count unread order and voucher notifications
     const { count, error } = await supabase
       .from('notifications')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id)
-      .eq('notification_category', 'order')
+      .in('notification_category', ['order', 'voucher'])
       .eq('is_read', false);
 
     if (error) {

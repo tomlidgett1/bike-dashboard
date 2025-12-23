@@ -9,7 +9,8 @@ import { createClient } from '@/lib/supabase/server';
 export interface OrderNotification {
   id: string;
   user_id: string;
-  purchase_id: string;
+  purchase_id: string | null;
+  voucher_id: string | null;
   type: string;
   notification_category: string;
   priority: string;
@@ -30,6 +31,13 @@ export interface OrderNotification {
       display_name: string | null;
       images: any[] | null;
     };
+  };
+  voucher?: {
+    id: string;
+    amount_cents: number;
+    min_purchase_cents: number;
+    description: string;
+    status: string;
   };
 }
 
@@ -52,13 +60,14 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     const unreadOnly = searchParams.get('unreadOnly') === 'true';
 
-    // Build query for order notifications
+    // Build query for order and voucher notifications
     let query = supabase
       .from('notifications')
       .select(`
         id,
         user_id,
         purchase_id,
+        voucher_id,
         type,
         notification_category,
         priority,
@@ -79,10 +88,17 @@ export async function GET(request: NextRequest) {
             display_name,
             images
           )
+        ),
+        vouchers!voucher_id (
+          id,
+          amount_cents,
+          min_purchase_cents,
+          description,
+          status
         )
       `)
       .eq('user_id', user.id)
-      .eq('notification_category', 'order')
+      .in('notification_category', ['order', 'voucher'])
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -100,11 +116,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Transform notifications to include purchase data
+    // Transform notifications to include purchase and voucher data
     const enrichedNotifications: OrderNotification[] = (notifications || []).map((notification: any) => ({
       id: notification.id,
       user_id: notification.user_id,
       purchase_id: notification.purchase_id,
+      voucher_id: notification.voucher_id,
       type: notification.type,
       notification_category: notification.notification_category,
       priority: notification.priority,
@@ -126,14 +143,21 @@ export async function GET(request: NextRequest) {
           images: notification.purchases.products.images,
         } : undefined,
       } : undefined,
+      voucher: notification.vouchers ? {
+        id: notification.vouchers.id,
+        amount_cents: notification.vouchers.amount_cents,
+        min_purchase_cents: notification.vouchers.min_purchase_cents,
+        description: notification.vouchers.description,
+        status: notification.vouchers.status,
+      } : undefined,
     }));
 
-    // Count unread notifications
+    // Count unread notifications (both order and voucher)
     const { count: unreadCount } = await supabase
       .from('notifications')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id)
-      .eq('notification_category', 'order')
+      .in('notification_category', ['order', 'voucher'])
       .eq('is_read', false);
 
     return NextResponse.json({
