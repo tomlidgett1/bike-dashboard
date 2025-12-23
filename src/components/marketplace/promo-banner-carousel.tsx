@@ -29,6 +29,7 @@ export function PromoBannerCarousel({
 }: PromoBannerCarouselProps) {
   const [isDismissed, setIsDismissed] = React.useState(false);
   const [currentBanner, setCurrentBanner] = React.useState<BannerType>("uber");
+  const [direction, setDirection] = React.useState(0);
 
   // Determine which banners to show
   const showFirstUploadBanner = !isLoggedIn || !hasListings;
@@ -42,20 +43,51 @@ export function PromoBannerCarousel({
     }
   }, []);
 
+  // Navigate to next/previous banner
+  const navigate = React.useCallback((newDirection: number) => {
+    if (banners.length <= 1) return;
+    
+    setDirection(newDirection);
+    setCurrentBanner(prev => {
+      const currentIndex = banners.indexOf(prev);
+      let nextIndex: number;
+      
+      if (newDirection > 0) {
+        // Next
+        nextIndex = (currentIndex + 1) % banners.length;
+      } else {
+        // Previous
+        nextIndex = currentIndex - 1;
+        if (nextIndex < 0) nextIndex = banners.length - 1;
+      }
+      
+      return banners[nextIndex];
+    });
+  }, [banners]);
+
+  // Handle swipe
+  const handleDragEnd = (_: any, info: { offset: { x: number } }) => {
+    const swipeThreshold = 50;
+    
+    if (info.offset.x > swipeThreshold) {
+      // Swiped right - go to previous
+      navigate(-1);
+    } else if (info.offset.x < -swipeThreshold) {
+      // Swiped left - go to next
+      navigate(1);
+    }
+  };
+
   // Auto-rotate every 8 seconds
   React.useEffect(() => {
     if (banners.length <= 1 || isDismissed) return;
 
     const interval = setInterval(() => {
-      setCurrentBanner(prev => {
-        const currentIndex = banners.indexOf(prev);
-        const nextIndex = (currentIndex + 1) % banners.length;
-        return banners[nextIndex];
-      });
+      navigate(1);
     }, 8000);
 
     return () => clearInterval(interval);
-  }, [banners, isDismissed]);
+  }, [banners, isDismissed, navigate]);
 
   const handleDismiss = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -78,17 +110,39 @@ export function PromoBannerCarousel({
     return null;
   }
 
+  // Animation variants
+  const variants = {
+    enter: (direction: number) => ({
+      x: direction > 0 ? 300 : -300,
+      opacity: 0,
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+    },
+    exit: (direction: number) => ({
+      x: direction > 0 ? -300 : 300,
+      opacity: 0,
+    }),
+  };
+
   return (
-    <div className="mb-4 relative">
-      <AnimatePresence mode="wait">
+    <div className="mb-4 relative overflow-hidden">
+      <AnimatePresence mode="wait" custom={direction}>
         {/* Uber Banner */}
         {currentBanner === "uber" && (
           <motion.div
             key="uber"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
+            custom={direction}
+            variants={variants}
+            initial="enter"
+            animate="center"
+            exit="exit"
             transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+            drag={banners.length > 1 ? "x" : false}
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.2}
+            onDragEnd={handleDragEnd}
           >
             <div 
               onClick={handleUberClick}
@@ -124,18 +178,25 @@ export function PromoBannerCarousel({
                 {/* Dots indicator */}
                 {banners.length > 1 && (
                   <div className="flex items-center gap-1 mr-2">
-                    {banners.map((banner, index) => (
-                      <button
-                        key={banner}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCurrentBanner(banner);
-                        }}
-                        className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                          currentBanner === banner ? "bg-white" : "bg-gray-600"
-                        }`}
-                      />
-                    ))}
+                    {banners.map((banner) => {
+                      const currentIndex = banners.indexOf(currentBanner);
+                      const targetIndex = banners.indexOf(banner);
+                      const dir = targetIndex > currentIndex ? 1 : -1;
+                      
+                      return (
+                        <button
+                          key={banner}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDirection(dir);
+                            setCurrentBanner(banner);
+                          }}
+                          className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                            currentBanner === banner ? "bg-white" : "bg-gray-600"
+                          }`}
+                        />
+                      );
+                    })}
                   </div>
                 )}
                 
@@ -160,10 +221,16 @@ export function PromoBannerCarousel({
         {currentBanner === "first-upload" && showFirstUploadBanner && (
           <motion.div
             key="first-upload"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
+            custom={direction}
+            variants={variants}
+            initial="enter"
+            animate="center"
+            exit="exit"
             transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+            drag={banners.length > 1 ? "x" : false}
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.2}
+            onDragEnd={handleDragEnd}
           >
             <Link href={firstUploadHref}>
               <div className="bg-yellow-500 rounded-md px-4 py-2.5 min-h-[52px] flex items-center justify-between gap-3 cursor-pointer hover:bg-yellow-600 transition-colors group">
@@ -191,19 +258,26 @@ export function PromoBannerCarousel({
                   {/* Dots indicator */}
                   {banners.length > 1 && (
                     <div className="flex items-center gap-1 mr-2">
-                      {banners.map((banner, index) => (
-                        <button
-                          key={banner}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setCurrentBanner(banner);
-                          }}
-                          className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                            currentBanner === banner ? "bg-yellow-900" : "bg-yellow-600"
-                          }`}
-                        />
-                      ))}
+                      {banners.map((banner) => {
+                        const currentIndex = banners.indexOf(currentBanner);
+                        const targetIndex = banners.indexOf(banner);
+                        const dir = targetIndex > currentIndex ? 1 : -1;
+                        
+                        return (
+                          <button
+                            key={banner}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDirection(dir);
+                              setCurrentBanner(banner);
+                            }}
+                            className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                              currentBanner === banner ? "bg-yellow-900" : "bg-yellow-600"
+                            }`}
+                          />
+                        );
+                      })}
                     </div>
                   )}
                   
