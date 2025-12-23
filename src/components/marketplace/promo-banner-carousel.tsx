@@ -42,7 +42,7 @@ export function PromoBannerCarousel({
     }
   }, []);
 
-  // Auto-rotate every 5 seconds
+  // Auto-rotate every 8 seconds
   React.useEffect(() => {
     if (banners.length <= 1 || isDismissed) return;
 
@@ -52,7 +52,7 @@ export function PromoBannerCarousel({
         const nextIndex = (currentIndex + 1) % banners.length;
         return banners[nextIndex];
       });
-    }, 5000);
+    }, 8000);
 
     return () => clearInterval(interval);
   }, [banners, isDismissed]);
@@ -92,7 +92,7 @@ export function PromoBannerCarousel({
           >
             <div 
               onClick={handleUberClick}
-              className="bg-black rounded-md px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-gray-900 transition-colors group"
+              className="bg-black rounded-md px-4 py-2.5 min-h-[52px] flex items-center justify-between gap-3 cursor-pointer hover:bg-gray-900 transition-colors group"
             >
               <div className="flex items-center gap-3">
                 {/* Uber Logo */}
@@ -166,7 +166,7 @@ export function PromoBannerCarousel({
             transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
           >
             <Link href={firstUploadHref}>
-              <div className="bg-yellow-500 rounded-md px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-yellow-600 transition-colors group">
+              <div className="bg-yellow-500 rounded-md px-4 py-2.5 min-h-[52px] flex items-center justify-between gap-3 cursor-pointer hover:bg-yellow-600 transition-colors group">
                 <div className="flex items-center gap-3">
                   {/* Gift Icon */}
                   <div className="flex items-center gap-2">
