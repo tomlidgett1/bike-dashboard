@@ -73,12 +73,28 @@ serve(async (req) => {
       }
 
       console.log(`📸 [CLOUDINARY] Downloading from URL for user ${user.id}, listing ${listingId}`);
+      console.log(`📸 [CLOUDINARY] URL: ${imageUrl.substring(0, 100)}...`);
 
-      // Download the image
-      const imageResponse = await fetch(imageUrl);
+      // Download the image with browser-like headers to avoid 403 Forbidden
+      const imageResponse = await fetch(imageUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Referer': 'https://www.google.com/',
+          'Sec-Fetch-Dest': 'image',
+          'Sec-Fetch-Mode': 'no-cors',
+          'Sec-Fetch-Site': 'cross-site',
+        },
+      });
+      
       if (!imageResponse.ok) {
+        console.error(`📸 [CLOUDINARY] Download failed: ${imageResponse.status} ${imageResponse.statusText}`);
         throw new Error(`Failed to download image: ${imageResponse.statusText}`);
       }
+      
+      console.log(`📸 [CLOUDINARY] Download successful, content-type: ${imageResponse.headers.get('content-type')}`);
+      console.log(`📸 [CLOUDINARY] Content-length: ${imageResponse.headers.get('content-length')} bytes`);
 
       const arrayBuffer = await imageResponse.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);

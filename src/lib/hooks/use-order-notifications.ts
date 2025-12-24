@@ -56,7 +56,8 @@ interface UseOrderNotificationsReturn {
 
 export function useOrderNotifications(
   limit: number = 10,
-  unreadOnly: boolean = false
+  unreadOnly: boolean = false,
+  enabled: boolean = true // Allow disabling the hook to defer fetching
 ): UseOrderNotificationsReturn {
   const [notifications, setNotifications] = useState<OrderNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -64,9 +65,13 @@ export function useOrderNotifications(
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const userIdRef = useRef<string | null>(null);
+  const hasFetchedRef = useRef(false);
 
   // Fetch notifications from API
   const fetchNotifications = useCallback(async () => {
+    // Don't fetch if disabled
+    if (!enabled) return;
+    
     try {
       setError(null);
       
@@ -91,13 +96,14 @@ export function useOrderNotifications(
       const data = await response.json();
       setNotifications(data.notifications || []);
       setUnreadCount(data.unread || 0);
+      hasFetchedRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
       console.error('Error fetching order notifications:', err);
     } finally {
       setLoading(false);
     }
-  }, [limit, unreadOnly]);
+  }, [limit, unreadOnly, enabled]);
 
   // Fetch unread count only
   const fetchUnreadCount = useCallback(async () => {
@@ -160,8 +166,14 @@ export function useOrderNotifications(
     }
   }, []);
 
-  // Set up real-time subscription
+  // Set up real-time subscription - only when enabled
   useEffect(() => {
+    // Don't set up subscriptions if not enabled
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+    
     const supabase = createClient();
 
     // Get current user for realtime filter
@@ -229,21 +241,25 @@ export function useOrderNotifications(
         channelRef.current.unsubscribe();
       }
     };
-  }, [fetchNotifications, fetchUnreadCount]);
+  }, [fetchNotifications, fetchUnreadCount, enabled]);
 
-  // Initial fetch
+  // Initial fetch - only when enabled and not already fetched
   useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+    if (enabled && !hasFetchedRef.current) {
+      fetchNotifications();
+    }
+  }, [fetchNotifications, enabled]);
 
-  // Polling fallback for reliability (every 30 seconds)
+  // Polling fallback for reliability (every 30 seconds) - only when enabled
   useEffect(() => {
+    if (!enabled) return;
+    
     const interval = setInterval(() => {
       fetchUnreadCount();
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [fetchUnreadCount]);
+  }, [fetchUnreadCount, enabled]);
 
   return {
     notifications,

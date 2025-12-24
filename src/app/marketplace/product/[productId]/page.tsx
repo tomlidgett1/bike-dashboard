@@ -10,7 +10,9 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 // Uses ISR (Incremental Static Regeneration) for cached, fast loads
 // ============================================================
 
-export const revalidate = 0; // Disable caching for testing - change back to 60 for production
+// Use ISR - cache product pages for 60 seconds, then revalidate in background
+// This dramatically improves load times for repeat visitors
+export const revalidate = 60;
 
 interface SellerInfo {
   id: string;

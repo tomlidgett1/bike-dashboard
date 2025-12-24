@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Search, 
   Loader2, 
@@ -17,22 +17,17 @@ import {
   ChevronRight,
   Store,
   Package,
-  Filter,
-  ImagePlus,
   Trash2,
-  Power,
-  PowerOff,
-  MoreVertical,
-  Database,
-  FileJson,
-  Star,
   Eye,
   EyeOff,
-  Info,
   GripVertical,
-  Lock,
   Flag,
+  Plus,
+  ExternalLink,
+  Download,
+  Globe,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   DndContext,
   closestCenter,
@@ -149,6 +144,36 @@ interface FilterOptions {
   stores: Array<{ id: string; name: string; productCount: number }>;
 }
 
+interface SearchImageResult {
+  id: string;
+  url: string;
+  thumbnailUrl: string;
+  title: string;
+  source: string;
+  domain: string;
+  width: number;
+  height: number;
+}
+
+// Bulk Review Types
+interface BulkReviewProduct {
+  id: string;
+  name: string;
+  brand: string | null;
+  storeName: string;
+  currentImageUrl: string | null;
+  searchResults: SearchImageResult[];
+  excludedImageIds: Set<string>; // Images the user doesn't want
+  selectedImage: SearchImageResult | null;
+  status: 'pending' | 'searching' | 'ready' | 'approved' | 'skipped' | 'error';
+  errorMessage?: string;
+  aiStatus?: 'idle' | 'processing' | 'ready' | 'error'; // Track AI generation
+  aiGeneratedImage?: SearchImageResult; // The AI-optimized image once complete
+  aiError?: string;
+}
+
+type MainTab = 'products' | 'bulk-review';
+
 // ============================================================
 // Sortable Image Card Component
 // ============================================================
@@ -197,17 +222,14 @@ function SortableImageCard({
     isDragging,
   } = useSortable({ 
     id: image.id,
-    disabled: isLocked, // Disable dragging for primary/locked images
+    disabled: isLocked,
   });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 1000 : 1,
   };
-
-  const hasCloudinaryUrl = (image.cardUrl || image.url).includes('cloudinary');
 
   return (
     <div
@@ -216,10 +238,9 @@ function SortableImageCard({
       className={cn(
         "relative bg-white rounded-md border-2 overflow-hidden transition-all",
         isCurrentHero && "border-purple-500 ring-2 ring-purple-200",
-        !isCurrentHero && image.isPrimary && "border-blue-400 ring-2 ring-blue-100",
-        !isCurrentHero && !image.isPrimary && "border-gray-200 hover:border-gray-300",
-        !isVisible && "opacity-60",
-        isDragging && "shadow-lg"
+        !isCurrentHero && isVisible && "border-green-400",
+        !isCurrentHero && !isVisible && "border-gray-200",
+        isDragging && "shadow-lg opacity-50"
       )}
     >
       {/* Image with drag handle */}
@@ -227,11 +248,23 @@ function SortableImageCard({
         <img
           src={image.cardUrl || image.url}
           alt="Product image"
-          className="w-full h-full object-cover"
+          className={cn(
+            "w-full h-full object-cover transition-all",
+            !isVisible && "grayscale"
+          )}
         />
         
-        {/* Drag handle overlay */}
-        {!isLocked ? (
+        {/* Gray overlay for hidden images */}
+        {!isVisible && (
+          <div className="absolute inset-0 bg-gray-500/40 flex items-center justify-center">
+            <div className="bg-white/90 rounded-md px-3 py-1.5 shadow">
+              <span className="text-sm font-medium text-gray-600">Hidden</span>
+            </div>
+          </div>
+        )}
+        
+        {/* Drag handle overlay - only show on visible images or when not hidden overlay */}
+        {!isLocked && isVisible && (
           <div
             {...attributes}
             {...listeners}
@@ -241,29 +274,19 @@ function SortableImageCard({
               <GripVertical className="h-5 w-5 text-gray-600" />
             </div>
           </div>
-        ) : (
-          <div className="absolute bottom-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-md flex items-center gap-1">
-            <Lock className="h-3 w-3" />
-            Locked #1
-          </div>
         )}
       </div>
 
-      {/* Badges */}
+      {/* Badges - simplified */}
       <div className="absolute top-2 left-2 flex flex-col gap-1">
-        {/* HERO badge - most prominent */}
+        {/* HERO badge */}
         {isCurrentHero && (
           <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-md flex items-center gap-1 font-bold shadow-md">
             <ImageIcon className="h-3 w-3" />
             HERO
           </div>
         )}
-        {image.isPrimary && !isCurrentHero && (
-          <div className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-md flex items-center gap-1">
-            <Star className="h-3 w-3" />
-            Primary
-          </div>
-        )}
+        {/* AI badge */}
         {image.isAiGenerated && (
           <div className="bg-emerald-500 text-white text-xs px-2 py-0.5 rounded-md flex items-center gap-1">
             <Sparkles className="h-3 w-3" />
@@ -272,42 +295,28 @@ function SortableImageCard({
         )}
       </div>
 
-      {/* Sort order and visibility badges */}
-      <div className="absolute top-2 right-2 flex flex-col gap-1">
-        <div className={cn(
-          "text-white text-xs px-1.5 py-0.5 rounded-md",
-          image.source === 'product_images' ? "bg-gray-700" : 
-          image.source === 'canonical' ? "bg-blue-600" : "bg-orange-600"
-        )}>
+      {/* Position number */}
+      <div className="absolute top-2 right-2">
+        <div className="bg-gray-800 text-white text-xs px-1.5 py-0.5 rounded-md">
           #{index + 1}
         </div>
-        {/* Visibility on product page */}
-        {isVisible ? (
-          <div className="bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-md flex items-center gap-0.5" title="Shown on product page">
-            <Eye className="h-2.5 w-2.5" />
-            <span className="text-[10px]">Page</span>
-          </div>
-        ) : (
-          <div className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-md flex items-center gap-0.5" title="NOT shown on product page">
-            <EyeOff className="h-2.5 w-2.5" />
-            <span className="text-[10px]">Hidden</span>
-          </div>
-        )}
       </div>
 
       {/* Action buttons */}
       <div className="p-2 space-y-1.5">
-        {/* Set as Hero button - show for any Cloudinary image that's NOT the current hero */}
-        {hasCloudinaryUrl && !isCurrentHero && (
+        {/* Set as Hero button - show for any image that's NOT the current hero */}
+        {!isCurrentHero && (
           <Button
             size="sm"
-            variant="outline"
-            className="w-full h-7 text-xs border-purple-300 text-purple-700 hover:bg-purple-50"
+            className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-700 text-white"
             onClick={onSetAsHero}
             disabled={isSetting}
           >
             {isSetting ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <>
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                Setting...
+              </>
             ) : (
               <>
                 <ImageIcon className="h-3 w-3 mr-1" />
@@ -318,42 +327,51 @@ function SortableImageCard({
         )}
         {/* Already hero indicator */}
         {isCurrentHero && (
-          <div className="w-full h-7 text-xs bg-purple-100 text-purple-700 rounded-md flex items-center justify-center font-medium">
-            ✓ Current Hero Image
+          <div className="w-full h-8 text-xs bg-purple-100 text-purple-700 rounded-md flex items-center justify-center font-medium">
+            ✓ Current Hero
           </div>
         )}
 
-        {/* Visibility toggle button */}
+        {/* Show/Hide toggle - simplified */}
+        {isVisible ? (
         <Button
           size="sm"
           variant="outline"
-          className={cn(
-            "w-full h-7 text-xs",
-            isVisible 
-              ? "border-green-300 text-green-700 hover:bg-green-50" 
-              : "border-amber-300 text-amber-700 hover:bg-amber-50"
-          )}
+            className="w-full h-7 text-xs border-gray-200 text-gray-500 hover:bg-gray-50"
           onClick={onToggleVisibility}
           disabled={isTogglingVisibility}
         >
           {isTogglingVisibility ? (
             <Loader2 className="h-3 w-3 animate-spin" />
-          ) : isVisible ? (
-            <>
-              <Eye className="h-3 w-3 mr-1" />
-              On Page
-            </>
+            ) : (
+              <>
+                <EyeOff className="h-3 w-3 mr-1" />
+                Hide
+              </>
+            )}
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            className="w-full h-7 text-xs bg-green-600 hover:bg-green-700"
+            onClick={onToggleVisibility}
+            disabled={isTogglingVisibility}
+          >
+            {isTogglingVisibility ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
             <>
-              <EyeOff className="h-3 w-3 mr-1" />
-              Add to Page
+                <Eye className="h-3 w-3 mr-1" />
+                Show on Page
             </>
           )}
         </Button>
+        )}
 
-        {/* Transform button */}
+        {/* AI Transform button */}
         <Button
           size="sm"
+          variant="outline"
           className="w-full h-7 text-xs"
           onClick={onAddToQueue}
           disabled={isAdding || isQueued}
@@ -437,10 +455,44 @@ export default function EcommerceHeroPage() {
   const [removingImage, setRemovingImage] = useState<Set<string>>(new Set());
   // Track visibility toggling operations
   const [togglingVisibility, setTogglingVisibility] = useState<Set<string>>(new Set());
+  // Track bulk deselect operation
+  const [isDeselectingAll, setIsDeselectingAll] = useState(false);
   // Track product management operations
   const [managingProduct, setManagingProduct] = useState<string | null>(null);
   // Track product selection loading
   const [selectingProductId, setSelectingProductId] = useState<string | null>(null);
+
+  // Image search modal state
+  const [showImageSearch, setShowImageSearch] = useState(false);
+  const [imageSearchQuery, setImageSearchQuery] = useState('');
+  
+  // Hover preview state
+  const [hoverPreview, setHoverPreview] = useState<{ img: SearchImageResult; x: number; y: number } | null>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [imageSearchResults, setImageSearchResults] = useState<SearchImageResult[]>([]);
+  const [isSearchingImages, setIsSearchingImages] = useState(false);
+  const [addingSearchImage, setAddingSearchImage] = useState<string | null>(null);
+
+  // Main tab state
+  const [mainTab, setMainTab] = useState<MainTab>('products');
+
+  // Bulk Review state
+  const [bulkBatchSize, setBulkBatchSize] = useState<number>(10);
+  const [bulkProducts, setBulkProducts] = useState<BulkReviewProduct[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkSearching, setBulkSearching] = useState(false);
+  const [bulkCurrentIndex, setBulkCurrentIndex] = useState(0);
+  const [bulkApprovedCount, setBulkApprovedCount] = useState(0);
+  const [bulkSkippedCount, setBulkSkippedCount] = useState(0);
+  const [bulkNoProductsFound, setBulkNoProductsFound] = useState(false);
+  
+  // Bulk Review filters
+  const [bulkListingType, setBulkListingType] = useState<'all' | 'private_listing' | 'lightspeed'>('all');
+  const [bulkSelectedBrand, setBulkSelectedBrand] = useState<string>('');
+  const [bulkSelectedStoreId, setBulkSelectedStoreId] = useState<string>('');
+  
+  // Track which products are being optimized (background removal)
+  const [optimizingProducts, setOptimizingProducts] = useState<Set<number>>(new Set());
 
   const supabase = createClient();
 
@@ -641,6 +693,28 @@ export default function EcommerceHeroPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  // Keyboard shortcuts for bulk review
+  useEffect(() => {
+    if (mainTab !== 'bulk-review') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Find current ready product
+      const currentProduct = bulkProducts[bulkCurrentIndex];
+      if (!currentProduct || currentProduct.status !== 'ready') return;
+
+      if (e.key === 'Enter' && currentProduct.selectedImage) {
+        e.preventDefault();
+        approveBulkProduct(bulkCurrentIndex);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        skipBulkProduct(bulkCurrentIndex);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mainTab, bulkCurrentIndex, bulkProducts]);
+
   // ============================================================
   // Queue Actions
   // ============================================================
@@ -681,13 +755,8 @@ export default function EcommerceHeroPage() {
 
   const setAsHero = async (product: Product, image: ProductImage) => {
     const imageKey = `${product.id}-${image.id}`;
-    
-    // Check if image has a Cloudinary URL
-    const newHeroUrl = image.cardUrl || image.url;
-    if (!newHeroUrl.includes('cloudinary')) {
-      console.error('Image must be a Cloudinary URL');
-      return;
-    }
+    const imageUrl = image.cardUrl || image.url;
+    const isCloudinary = imageUrl.includes('cloudinary');
 
     setSettingAsHero(prev => new Set([...prev, imageKey]));
 
@@ -698,7 +767,9 @@ export default function EcommerceHeroPage() {
         body: JSON.stringify({
           productId: product.id,
           imageId: image.id,
-          cardUrl: newHeroUrl,
+          // If already on Cloudinary, pass cardUrl; otherwise pass originalUrl to trigger upload
+          cardUrl: isCloudinary ? imageUrl : undefined,
+          originalUrl: !isCloudinary ? imageUrl : undefined,
           thumbnailUrl: image.thumbnailUrl,
           galleryUrl: image.galleryUrl,
           detailUrl: image.detailUrl,
@@ -709,14 +780,17 @@ export default function EcommerceHeroPage() {
       const data = await response.json();
 
       if (data.success) {
-        // Update local state instead of refetching
+        // Update local state with the Cloudinary URLs from the response
+        const newHeroUrl = data.cachedImageUrl || imageUrl;
+        const newThumbnailUrl = data.cachedThumbnailUrl || image.thumbnailUrl || newHeroUrl;
+        
         const updateProduct = (p: Product): Product => {
           if (p.id !== product.id) return p;
           
           return {
             ...p,
             cachedImageUrl: newHeroUrl,
-            cachedThumbnailUrl: image.thumbnailUrl || newHeroUrl,
+            cachedThumbnailUrl: newThumbnailUrl,
           };
         };
 
@@ -728,9 +802,11 @@ export default function EcommerceHeroPage() {
         }
       } else {
         console.error('Failed to set hero:', data.error);
+        alert(`Failed to set hero: ${data.error}`);
       }
     } catch (error) {
       console.error('Failed to set hero:', error);
+      alert('Failed to set hero image. Please try again.');
     } finally {
       setSettingAsHero(prev => {
         const next = new Set(prev);
@@ -866,6 +942,69 @@ export default function EcommerceHeroPage() {
         next.delete(imageKey);
         return next;
       });
+    }
+  };
+
+  // Deselect all images (remove all from product page visibility)
+  const deselectAllImages = async (product: Product) => {
+    if (!product) return;
+    
+    // Get all visible images
+    const visibleImages = product.images.filter(img => img.isOnProductPage);
+    if (visibleImages.length === 0) {
+      console.log('No visible images to deselect');
+      return;
+    }
+
+    setIsDeselectingAll(true);
+
+    try {
+      const response = await fetch('/api/admin/ecommerce-hero/manage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'deselect_all_images',
+          productId: product.id,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Update local state - set all images as not visible on product page
+        const updateImageVisibility = (p: Product): Product => {
+          if (p.id !== product.id) return p;
+
+          const updateImg = (img: ProductImage) => ({
+            ...img,
+            isOnProductPage: false,
+            isInJsonb: false,
+          });
+
+          return {
+            ...p,
+            dbImages: p.dbImages.map(updateImg),
+            jsonbImages: [], // Clear JSONB images as they're all removed
+            images: p.images.map(updateImg),
+            hasJsonbImages: false,
+            jsonbImageCount: 0,
+          };
+        };
+
+        setProducts(prev => prev.map(updateImageVisibility));
+        
+        if (selectedProduct?.id === product.id) {
+          setSelectedProduct(updateImageVisibility(selectedProduct));
+        }
+        
+        console.log('All images deselected from product page');
+      } else {
+        console.error('Failed to deselect all images:', data.error);
+      }
+    } catch (error) {
+      console.error('Failed to deselect all images:', error);
+    } finally {
+      setIsDeselectingAll(false);
     }
   };
 
@@ -1088,6 +1227,487 @@ export default function EcommerceHeroPage() {
   const hasActiveFilters = search || selectedBrand || selectedStoreId || inStockOnly || heroOptimized !== 'all' || adminApproved !== 'all' || secondaryReview !== 'all' || activeStatus !== 'all' || listingType !== 'all';
 
   // ============================================================
+  // Image Search Functions
+  // ============================================================
+
+  const startImageSearch = () => {
+    if (!selectedProduct) return;
+    // Pre-fill search with product name and brand
+    const searchTerms = [selectedProduct.brand, selectedProduct.name].filter(Boolean).join(' ');
+    setImageSearchQuery(searchTerms);
+    setImageSearchResults([]);
+    setShowImageSearch(true);
+    // Auto-search immediately
+    searchForImagesWithQuery(searchTerms);
+  };
+
+  const searchForImagesWithQuery = async (query: string) => {
+    if (!query.trim() || !selectedProduct) return;
+    
+    setIsSearchingImages(true);
+    setImageSearchResults([]);
+    
+    try {
+      const response = await fetch('/api/admin/ecommerce-hero/search-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchQuery: query,
+          productName: selectedProduct.name,
+          brand: selectedProduct.brand,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setImageSearchResults(data.results);
+      } else {
+        console.error('Image search failed:', data.error);
+      }
+    } catch (error) {
+      console.error('Image search error:', error);
+    } finally {
+      setIsSearchingImages(false);
+    }
+  };
+
+  const searchForImages = () => {
+    searchForImagesWithQuery(imageSearchQuery);
+  };
+
+  const addSearchedImage = async (image: SearchImageResult, setAsHero: boolean = false) => {
+    if (!selectedProduct) return;
+    
+    setAddingSearchImage(image.id);
+    
+    try {
+      const response = await fetch('/api/admin/ecommerce-hero/add-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: selectedProduct.id,
+          imageUrl: image.url,
+          setAsHero,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Refresh product to show new image
+        await refreshSelectedProduct();
+        
+        // Remove from search results
+        setImageSearchResults(prev => prev.filter(r => r.id !== image.id));
+      } else {
+        console.error('Failed to add image:', data.error);
+        alert(`Failed to add image: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Add image error:', error);
+      alert('Failed to add image');
+    } finally {
+      setAddingSearchImage(null);
+    }
+  };
+
+  // ============================================================
+  // Bulk Review Functions
+  // ============================================================
+
+  const loadBulkProducts = async () => {
+    setBulkLoading(true);
+    setBulkProducts([]);
+    setBulkCurrentIndex(0);
+    setBulkApprovedCount(0);
+    setBulkSkippedCount(0);
+    setBulkNoProductsFound(false);
+
+    try {
+      // Fetch unapproved products with filters
+      const params = new URLSearchParams({
+        page: '1',
+        limit: bulkBatchSize.toString(),
+        listing_type: bulkListingType,
+        admin_approved: 'not_approved',
+        active_status: 'active',
+      });
+      
+      if (bulkSelectedBrand) {
+        params.set('brand', bulkSelectedBrand);
+      }
+      if (bulkSelectedStoreId) {
+        params.set('store_id', bulkSelectedStoreId);
+      }
+
+      console.log('[BULK REVIEW] Fetching products with params:', params.toString());
+      const response = await fetch(`/api/admin/ecommerce-hero/products?${params}`);
+      const data = await response.json();
+      console.log('[BULK REVIEW] Response:', { success: data.success, count: data.data?.length, pagination: data.pagination });
+
+      if (data.success && data.data && data.data.length > 0) {
+        const bulkItems: BulkReviewProduct[] = data.data.map((p: Product) => ({
+          id: p.id,
+          name: p.name,
+          brand: p.brand,
+          storeName: p.storeName,
+          currentImageUrl: p.cachedImageUrl || p.primaryImageUrl,
+          searchResults: [],
+          excludedImageIds: new Set<string>(),
+          selectedImage: null,
+          status: 'pending' as const,
+        }));
+        setBulkProducts(bulkItems);
+        console.log('[BULK REVIEW] Loaded', bulkItems.length, 'products');
+      } else if (data.success && (!data.data || data.data.length === 0)) {
+        console.log('[BULK REVIEW] No unapproved products found');
+        setBulkProducts([]);
+        setBulkNoProductsFound(true);
+      } else {
+        console.error('[BULK REVIEW] API error:', data.error);
+      }
+    } catch (error) {
+      console.error('[BULK REVIEW] Failed to load products:', error);
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const fetchBulkImages = async () => {
+    console.log('[BULK REVIEW] fetchBulkImages called. bulkProducts.length:', bulkProducts.length);
+    if (bulkProducts.length === 0) {
+      console.log('[BULK REVIEW] No products to search - returning early');
+      return;
+    }
+
+    setBulkSearching(true);
+    console.log('[BULK REVIEW] Starting image search for', bulkProducts.length, 'products');
+
+    // Get a snapshot of current products to iterate over
+    const productsToProcess = [...bulkProducts];
+
+    // Process products sequentially (to avoid rate limiting)
+    for (let i = 0; i < productsToProcess.length; i++) {
+      const product = productsToProcess[i];
+      if (product.status !== 'pending') {
+        console.log('[BULK REVIEW] Skipping product', i, '- status:', product.status);
+        continue;
+      }
+
+      console.log('[BULK REVIEW] Searching for product', i, ':', product.name);
+
+      // Update status to searching
+      setBulkProducts(prev => prev.map((p, idx) => 
+        idx === i ? { ...p, status: 'searching' as const } : p
+      ));
+
+      try {
+        const searchQuery = [product.brand, product.name].filter(Boolean).join(' ');
+        console.log('[BULK REVIEW] Search query:', searchQuery);
+        
+        const response = await fetch('/api/admin/ecommerce-hero/search-images', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ searchQuery }),
+        });
+
+        const data = await response.json();
+        console.log('[BULK REVIEW] Search response for product', i, ':', { success: data.success, resultsCount: data.results?.length, error: data.error });
+
+        if (data.success && data.results?.length > 0) {
+          // Don't auto-select - user must choose the hero image
+          // All images start as excluded - user must click to include, double-click for hero
+          const results = data.results.slice(0, 8);
+          const allExcluded = new Set<string>(results.map((r: SearchImageResult) => r.id));
+          setBulkProducts(prev => prev.map((p, idx) => 
+            idx === i ? { 
+              ...p, 
+              status: 'ready' as const,
+              searchResults: results,
+              excludedImageIds: allExcluded, // All excluded by default
+              selectedImage: null, // No auto-selection - user must choose
+            } : p
+          ));
+          console.log('[BULK REVIEW] Product', i, 'ready with', results.length, 'images (all excluded)');
+        } else {
+          setBulkProducts(prev => prev.map((p, idx) => 
+            idx === i ? { 
+              ...p, 
+              status: 'error' as const,
+              errorMessage: data.error || 'No images found',
+            } : p
+          ));
+          console.log('[BULK REVIEW] Product', i, 'error:', data.error || 'No images found');
+        }
+      } catch (error) {
+        console.error('[BULK REVIEW] Search error for product', i, ':', error);
+        setBulkProducts(prev => prev.map((p, idx) => 
+          idx === i ? { 
+            ...p, 
+            status: 'error' as const,
+            errorMessage: 'Search failed',
+          } : p
+        ));
+      }
+
+      // Small delay between requests to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    setBulkSearching(false);
+    console.log('[BULK REVIEW] Finished searching all products');
+  };
+
+  // Generate AI preview - uploads to Cloudinary, runs AI, shows result (does NOT approve)
+  const generateAiPreview = async (index: number) => {
+    const product = bulkProducts[index];
+    console.log('[BULK REVIEW] AI clicked for product', index, product.name, 'selectedImage:', product.selectedImage?.url);
+    
+    if (!product.selectedImage) {
+      console.log('[BULK REVIEW] No image selected - cannot generate AI');
+      return;
+    }
+
+    setOptimizingProducts(prev => new Set([...prev, index]));
+    setBulkProducts(prev => prev.map((p, idx) => 
+      idx === index ? { ...p, aiStatus: 'processing' as const } : p
+    ));
+
+    try {
+      // Step 1: Upload to Cloudinary first
+      console.log('[BULK REVIEW] Uploading to Cloudinary...');
+      const uploadResponse = await fetch('/api/admin/ecommerce-hero/add-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: product.id,
+          imageUrl: product.selectedImage.url,
+          setAsHero: false, // Don't set as hero yet - just upload
+        }),
+      });
+
+      const uploadData = await uploadResponse.json();
+      console.log('[BULK REVIEW] Upload response:', uploadData);
+
+      if (!uploadData.success) {
+        throw new Error(uploadData.error || 'Failed to upload image');
+      }
+
+      // Step 2: Add to AI queue
+      console.log('[BULK REVIEW] Adding to AI queue...');
+      const queueResponse = await fetch('/api/admin/ecommerce-hero/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: product.id,
+          sourceImageUrl: uploadData.cloudinaryUrl,
+        }),
+      });
+      
+      const queueData = await queueResponse.json();
+      if (!queueData.success && queueData.error !== 'This image is already in the queue') {
+        throw new Error(queueData.error || 'Failed to queue for AI');
+      }
+
+      // Step 3: Trigger immediate processing
+      console.log('[BULK REVIEW] Processing AI...');
+      fetch('/api/admin/ecommerce-hero/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchSize: 1 }),
+      }).catch(err => console.warn('[BULK REVIEW] Process trigger error:', err));
+
+      // Step 4: Poll for the result (up to 60 seconds)
+      console.log('[BULK REVIEW] Polling for AI result...');
+      let attempts = 0;
+      const maxAttempts = 30; // 30 attempts * 2 seconds = 60 seconds
+      
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+        attempts++;
+        
+        console.log(`[BULK REVIEW] Polling attempt ${attempts}/${maxAttempts}...`);
+        
+        const resultResponse = await fetch(`/api/admin/ecommerce-hero/queue?productId=${product.id}&limit=1`);
+        const resultData = await resultResponse.json();
+        
+        const latestItem = resultData.data?.[0];
+        
+        if (latestItem?.status === 'completed' && latestItem?.resultCardUrl) {
+          // Create AI image as a search result
+          const aiImage: SearchImageResult = {
+            id: `ai-${Date.now()}`,
+            url: latestItem.resultCardUrl,
+            thumbnailUrl: latestItem.resultThumbnailUrl || latestItem.resultCardUrl,
+            title: 'AI Optimised',
+            source: 'AI Generated',
+            domain: 'ai',
+            width: 1024,
+            height: 1024,
+          };
+
+          // Add AI image to the front of search results and select it
+          setBulkProducts(prev => prev.map((p, idx) => {
+            if (idx === index) {
+              // Remove any previous AI images and add new one at front
+              const filteredResults = p.searchResults.filter(img => !img.id.startsWith('ai-'));
+              return {
+                ...p,
+                aiStatus: 'ready' as const,
+                aiGeneratedImage: aiImage,
+                searchResults: [aiImage, ...filteredResults],
+                selectedImage: aiImage, // Auto-select the AI image
+                excludedImageIds: new Set([...p.excludedImageIds].filter(id => id !== aiImage.id)), // Include AI image
+              };
+            }
+            return p;
+          }));
+          console.log('[BULK REVIEW] AI image ready:', aiImage.url);
+          
+          setOptimizingProducts(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(index);
+            return newSet;
+          });
+          
+          fetchQueueCounts();
+          return; // Success!
+        } else if (latestItem?.status === 'failed') {
+          throw new Error(latestItem.errorMessage || 'AI processing failed');
+        }
+        // Still pending/processing - continue polling
+      }
+      
+      throw new Error('AI processing timed out');
+
+    } catch (error) {
+      console.error('[BULK REVIEW] AI generation failed:', error);
+      setBulkProducts(prev => prev.map((p, idx) => 
+        idx === index ? { ...p, aiStatus: 'error' as const, aiError: error instanceof Error ? error.message : 'AI failed' } : p
+      ));
+      setOptimizingProducts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(index);
+        return newSet;
+      });
+    }
+  };
+
+  // Approve bulk product - saves the selected image as hero
+  const approveBulkProduct = async (index: number) => {
+    const product = bulkProducts[index];
+    console.log('[BULK REVIEW] Approve clicked for product', index, product.name, 'selectedImage:', product.selectedImage?.url);
+    
+    if (!product.selectedImage) {
+      console.log('[BULK REVIEW] No image selected - cannot approve');
+      return;
+    }
+
+    setBulkProducts(prev => prev.map((p, idx) => 
+      idx === index ? { ...p, status: 'searching' as const } : p
+    ));
+
+    try {
+      console.log('[BULK REVIEW] Calling add-image API...');
+      const addResponse = await fetch('/api/admin/ecommerce-hero/add-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: product.id,
+          imageUrl: product.selectedImage.url,
+          setAsHero: true,
+        }),
+      });
+
+      const addData = await addResponse.json();
+      console.log('[BULK REVIEW] Add image API response:', addData);
+
+      if (!addData.success) {
+        throw new Error(addData.error || 'Failed to add image');
+      }
+
+      // Success - mark as approved
+      setBulkProducts(prev => {
+        const updated = prev.map((p, idx) => {
+          if (idx === index) {
+            return { ...p, status: 'approved' as const };
+          }
+          return p;
+        });
+        // Move to next ready product
+        const nextIndex = updated.findIndex((p, i) => i > index && p.status === 'ready');
+        if (nextIndex !== -1) {
+          setBulkCurrentIndex(nextIndex);
+        }
+        return updated;
+      });
+      setBulkApprovedCount(prev => prev + 1);
+      console.log('[BULK REVIEW] Product approved successfully');
+      
+    } catch (error) {
+      console.error('[BULK REVIEW] Failed to approve:', error);
+      setBulkProducts(prev => prev.map((p, idx) => 
+        idx === index ? { ...p, status: 'ready' as const, errorMessage: error instanceof Error ? error.message : 'Error' } : p
+      ));
+    }
+  };
+
+  const skipBulkProduct = (index: number) => {
+    setBulkProducts(prev => {
+      const updated = prev.map((p, idx) => 
+        idx === index ? { ...p, status: 'skipped' as const } : p
+      );
+      // Move to next ready product
+      const nextIndex = updated.findIndex((p, i) => i > index && p.status === 'ready');
+      if (nextIndex !== -1) {
+        setBulkCurrentIndex(nextIndex);
+      }
+      return updated;
+    });
+    setBulkSkippedCount(prev => prev + 1);
+  };
+
+  // Auto-update current index when products change status
+  useEffect(() => {
+    if (bulkProducts.length === 0) return;
+    
+    // If current index product is not ready, find the first ready one
+    const currentProduct = bulkProducts[bulkCurrentIndex];
+    if (!currentProduct || currentProduct.status !== 'ready') {
+      const firstReadyIndex = bulkProducts.findIndex(p => p.status === 'ready');
+      if (firstReadyIndex !== -1 && firstReadyIndex !== bulkCurrentIndex) {
+        setBulkCurrentIndex(firstReadyIndex);
+      }
+    }
+  }, [bulkProducts, bulkCurrentIndex]);
+
+  const selectBulkImage = (productIndex: number, image: SearchImageResult) => {
+    setBulkProducts(prev => prev.map((p, idx) => 
+      idx === productIndex ? { ...p, selectedImage: image } : p
+    ));
+  };
+
+  const toggleExcludeImage = (productIndex: number, imageId: string) => {
+    setBulkProducts(prev => prev.map((p, idx) => {
+      if (idx !== productIndex) return p;
+      
+      const newExcluded = new Set(p.excludedImageIds);
+      if (newExcluded.has(imageId)) {
+        newExcluded.delete(imageId);
+      } else {
+        newExcluded.add(imageId);
+        // If the excluded image was selected, pick the next non-excluded one
+        if (p.selectedImage?.id === imageId) {
+          const nextImage = p.searchResults.find(img => !newExcluded.has(img.id));
+          return { ...p, excludedImageIds: newExcluded, selectedImage: nextImage || null };
+        }
+      }
+      return { ...p, excludedImageIds: newExcluded };
+    }));
+  };
+
+  // ============================================================
   // Render
   // ============================================================
 
@@ -1096,11 +1716,41 @@ export default function EcommerceHeroPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
+          <div className="flex items-center gap-6">
           <div>
             <h1 className="text-xl font-semibold text-gray-900">E-Commerce Hero Images</h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              Select products and choose which image to transform into a professional hero shot
-            </p>
+                Manage product hero images and bulk approve
+              </p>
+            </div>
+            
+            {/* Main Tab Switcher */}
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+              <button
+                onClick={() => setMainTab('products')}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                  mainTab === 'products'
+                    ? "text-gray-800 bg-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70"
+                )}
+              >
+                <Package className="h-4 w-4" />
+                Products
+              </button>
+              <button
+                onClick={() => setMainTab('bulk-review')}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                  mainTab === 'bulk-review'
+                    ? "text-gray-800 bg-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70"
+                )}
+              >
+                <Sparkles className="h-4 w-4" />
+                Bulk Review
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             {/* Queue status */}
@@ -1139,6 +1789,8 @@ export default function EcommerceHeroPage() {
         </div>
       </div>
 
+      {/* Main Content - Products Tab */}
+      {mainTab === 'products' && (
       <div className="flex h-[calc(100vh-73px)]">
         {/* Left Panel: Product List (60%) */}
         <div className="w-[60%] border-r border-gray-200 bg-white flex flex-col">
@@ -1772,55 +2424,186 @@ export default function EcommerceHeroPage() {
 
               {/* Image Management Sections */}
               <div className="flex-1 overflow-y-auto">
-                {/* Stats Bar */}
+                {/* Simple Stats Bar */}
                 <div className="p-3 bg-white border-b border-gray-200">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1.5 text-sm">
-                      <Database className="h-4 w-4 text-gray-500" />
-                      <span className="font-medium">{selectedProduct.dbImageCount}</span>
-                      <span className="text-gray-500">DB</span>
+                        <ImageIcon className="h-4 w-4 text-gray-500" />
+                        <span className="font-medium">{selectedProduct.imageCount}</span>
+                        <span className="text-gray-500">images</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-sm">
-                      <FileJson className="h-4 w-4 text-orange-500" />
-                      <span className="font-medium">{selectedProduct.jsonbImageCount}</span>
-                      <span className="text-gray-500">JSONB</span>
+                      <div className="flex items-center gap-1.5 text-sm text-green-600">
+                        <Eye className="h-4 w-4" />
+                        <span className="font-medium">{selectedProduct.images.filter(i => i.isOnProductPage).length}</span>
+                        <span>visible</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-sm ml-auto">
-                      <Star className="h-4 w-4 text-blue-500" />
-                      <span className="text-gray-500">
-                        {selectedProduct.images.filter(i => i.isPrimary).length} Primary
-                      </span>
                     </div>
+                    <div className="flex items-center gap-2">
+                      {/* Find Images Button */}
+                      <Button
+                        size="sm"
+                        className="h-8 text-sm bg-blue-600 hover:bg-blue-700"
+                        onClick={startImageSearch}
+                        disabled={isSearchingImages}
+                      >
+                        {isSearchingImages ? (
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        ) : (
+                          <Search className="h-4 w-4 mr-1.5" />
+                        )}
+                        Find Images
+                      </Button>
+                      {/* Hide All Button */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-sm text-gray-600 hover:text-gray-800"
+                        onClick={() => deselectAllImages(selectedProduct)}
+                        disabled={isDeselectingAll || selectedProduct.images.filter(i => i.isOnProductPage).length === 0}
+                      >
+                        {isDeselectingAll ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                        ) : (
+                          <EyeOff className="h-4 w-4 mr-1.5" />
+                        )}
+                        Hide All
+                      </Button>
                   </div>
-                  {/* Visibility explanation */}
-                  <div className="mt-2 p-2 bg-blue-50 rounded-md flex items-start gap-2">
-                    <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-blue-700">
-                      <span className="font-medium">Product Page shows:</span> JSONB images first (if any), 
-                      otherwise all DB images. Images with <Eye className="h-3 w-3 inline mx-0.5" /> are visible.
-                      <span className="font-medium text-red-600 ml-1">Delete is permanent.</span>
-                    </p>
                   </div>
                 </div>
 
-                {/* Database Images Section - Drag & Drop */}
+                {/* Inline Image Search Results */}
+                <AnimatePresence>
+                  {showImageSearch && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                      className="overflow-hidden border-b border-gray-200"
+                    >
+                      <div className="p-3 bg-blue-50 border-b border-blue-100">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                            <Globe className="h-4 w-4 text-blue-600" />
+                            Search Results
+                          </h3>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-gray-500 hover:text-gray-700"
+                            onClick={() => {
+                              setShowImageSearch(false);
+                              setImageSearchResults([]);
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                    </div>
+                        <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <Input
+                              placeholder="Search for images..."
+                              value={imageSearchQuery}
+                              onChange={(e) => setImageSearchQuery(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && searchForImages()}
+                              className="pl-8 h-8 text-sm rounded-md bg-white"
+                            />
+                          </div>
+                          <Button
+                            onClick={searchForImages}
+                            disabled={isSearchingImages || !imageSearchQuery.trim()}
+                            size="sm"
+                            className="h-8 px-3"
+                          >
+                            {isSearchingImages ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              'Search'
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <div className="p-3 bg-gray-50">
+                        {isSearchingImages ? (
+                          <div className="flex flex-col items-center justify-center py-8">
+                            <Loader2 className="h-6 w-6 animate-spin text-blue-500 mb-2" />
+                            <p className="text-sm text-gray-600">Searching...</p>
+                          </div>
+                        ) : imageSearchResults.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-6 text-gray-400">
+                            <Search className="h-8 w-8 mb-2" />
+                            <p className="text-sm">No results yet</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-3 gap-2">
+                            {imageSearchResults.slice(0, 12).map((image) => (
+                              <div
+                                key={image.id}
+                                className="group relative aspect-square bg-gray-200 rounded-md overflow-hidden border border-gray-200 hover:border-blue-400 transition-all"
+                              >
+                                <img
+                                  src={image.thumbnailUrl || image.url}
+                                  alt={image.title}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                                {/* Hover Overlay */}
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition-colors flex flex-col items-center justify-center opacity-0 group-hover:opacity-100">
+                                  <div className="flex flex-col gap-1.5 p-2 w-full">
+                                    <Button
+                                      size="sm"
+                                      className="w-full h-7 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                                      onClick={() => addSearchedImage(image, true)}
+                                      disabled={addingSearchImage === image.id}
+                                    >
+                                      {addingSearchImage === image.id ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <>
+                                          <Sparkles className="h-3 w-3 mr-1" />
+                                          Hero
+                                        </>
+                                      )}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      className="w-full h-7 text-xs bg-white/90 hover:bg-white text-gray-700"
+                                      onClick={() => addSearchedImage(image, false)}
+                                      disabled={addingSearchImage === image.id}
+                                    >
+                                      {addingSearchImage === image.id ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <>
+                                          <Plus className="h-3 w-3 mr-1" />
+                                          Add
+                                        </>
+                                      )}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {imageSearchResults.length > 12 && (
+                          <p className="text-xs text-gray-500 text-center mt-2">
+                            Showing 12 of {imageSearchResults.length} results
+                          </p>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* All Images Section */}
                 {selectedProduct.dbImages.length > 0 && (
                   <div className="p-4 border-b border-gray-200">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Database className="h-4 w-4 text-gray-600" />
-                      <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                        Database Images ({selectedProduct.dbImageCount})
-                      </h4>
-                      {/* Legend for visibility badges */}
-                      <span className="ml-auto text-xs text-gray-500">
-                        <span className="text-green-600">Page</span> = shown on product page, <span className="text-red-500">Hidden</span> = not shown
-                      </span>
-                    </div>
-                    {/* Drag instruction */}
-                    <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
-                      <GripVertical className="h-3 w-3" />
-                      Drag to reorder. Primary image is locked at #1.
-                    </p>
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
@@ -1877,25 +2660,9 @@ export default function EcommerceHeroPage() {
                   </div>
                 )}
 
-                {/* JSONB Images Section - Drag & Drop */}
+                {/* Additional Images */}
                 {selectedProduct.jsonbImages.length > 0 && (
                   <div className="p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <FileJson className="h-4 w-4 text-orange-500" />
-                      <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                        JSONB Images ({selectedProduct.jsonbImageCount})
-                      </h4>
-                      {/* JSONB images are always visible */}
-                      <span className="ml-auto text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-md flex items-center gap-1">
-                        <Eye className="h-3 w-3" />
-                        Visible on product page
-                      </span>
-                    </div>
-                    {/* Drag instruction */}
-                    <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
-                      <GripVertical className="h-3 w-3" />
-                      Drag to reorder. Primary image is locked at #1.
-                    </p>
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
@@ -2007,6 +2774,557 @@ export default function EcommerceHeroPage() {
           )}
         </div>
       </div>
+      )}
+
+      {/* Main Content - Bulk Review Tab */}
+      {mainTab === 'bulk-review' && (
+        <div className="h-[calc(100vh-73px)] flex flex-col bg-gray-50">
+          {/* Bulk Review Header */}
+          <div className="bg-white border-b border-gray-200 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Bulk Image Review</h2>
+                  <p className="text-sm text-gray-500">Quickly find and approve hero images for products</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {/* Listing Type Filter */}
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+                  {(['all', 'private_listing', 'lightspeed'] as const).map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setBulkListingType(type)}
+                      className={cn(
+                        "px-2 py-1 text-xs font-medium rounded-md transition-colors",
+                        bulkListingType === type
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70"
+                      )}
+                    >
+                      {type === 'all' ? 'All' : type === 'private_listing' ? 'Private' : 'Lightspeed'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Brand Filter */}
+                <Select 
+                  value={bulkSelectedBrand || '__all__'} 
+                  onValueChange={(v) => setBulkSelectedBrand(v === '__all__' ? '' : v)}
+                >
+                  <SelectTrigger className="h-8 w-32 text-xs rounded-md">
+                    <SelectValue placeholder="Brand" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Brands</SelectItem>
+                    {filterOptions.brands.map((brand) => (
+                      <SelectItem key={brand} value={brand}>
+                        {brand}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Store Filter */}
+                <Select 
+                  value={bulkSelectedStoreId || '__all__'} 
+                  onValueChange={(v) => setBulkSelectedStoreId(v === '__all__' ? '' : v)}
+                >
+                  <SelectTrigger className="h-8 w-36 text-xs rounded-md">
+                    <SelectValue placeholder="Store" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Stores</SelectItem>
+                    {filterOptions.stores.map((store) => (
+                      <SelectItem key={store.id} value={store.id}>
+                        {store.name} ({store.productCount})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="h-6 w-px bg-gray-300" />
+
+                {/* Batch Size Selector */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Load:</span>
+                  <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+                    {[5, 10, 20, 30, 50].map((size) => (
+                      <button
+                        key={size}
+                        onClick={() => setBulkBatchSize(size)}
+                        className={cn(
+                          "px-2.5 py-1 text-sm font-medium rounded-md transition-colors",
+                          bulkBatchSize === size
+                            ? "text-gray-800 bg-white shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70"
+                        )}
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Load Products Button */}
+                <Button
+                  onClick={loadBulkProducts}
+                  disabled={bulkLoading}
+                  variant="outline"
+                >
+                  {bulkLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Load Products
+                    </>
+                  )}
+                </Button>
+
+                {/* Get Images Button */}
+                {bulkProducts.length > 0 && (
+                  <Button
+                    onClick={() => {
+                      console.log('[BULK REVIEW] Get Images clicked. Products:', bulkProducts.length, 'Pending:', bulkProducts.filter(p => p.status === 'pending').length);
+                      fetchBulkImages();
+                    }}
+                    disabled={bulkSearching || bulkProducts.every(p => p.status !== 'pending')}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {bulkSearching ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Searching...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-4 w-4 mr-2" />
+                        Get Images
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Progress Stats */}
+            {bulkProducts.length > 0 && (
+              <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-100">
+                <div className="flex items-center gap-2 text-sm">
+                  <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                  <span className="text-gray-600">
+                    {bulkProducts.filter(p => p.status === 'pending').length} pending
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                  <span className="text-blue-600">
+                    {bulkProducts.filter(p => p.status === 'searching').length} searching
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                  <span className="text-amber-600">
+                    {bulkProducts.filter(p => p.status === 'ready').length} ready
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                  <span className="text-emerald-600">
+                    {bulkApprovedCount} approved
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <div className="w-2 h-2 rounded-full bg-gray-300"></div>
+                  <span className="text-gray-500">
+                    {bulkSkippedCount} skipped
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Bulk Review Content */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {bulkProducts.length === 0 && !bulkNoProductsFound ? (
+              /* Empty State - Not loaded yet */
+              <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <Sparkles className="h-10 w-10 text-gray-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Bulk Image Review</h3>
+                <p className="text-center max-w-md mb-6">
+                  Select how many products you want to review, then click "Load Products" to get started.
+                  We'll fetch images for each product and suggest the best hero image.
+                </p>
+                <Button
+                  onClick={loadBulkProducts}
+                  disabled={bulkLoading}
+                  size="lg"
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {bulkLoading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Package className="h-5 w-5 mr-2" />
+                      Load {bulkBatchSize} Products
+                    </>
+                  )}
+                </Button>
+              </div>
+            ) : bulkProducts.length === 0 && bulkNoProductsFound ? (
+              /* Empty State - No unapproved products */
+              <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mb-4">
+                  <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">All Caught Up!</h3>
+                <p className="text-center max-w-md mb-6">
+                  There are no unapproved products at the moment. All active products have been reviewed.
+                </p>
+                <Button
+                  onClick={() => setMainTab('products')}
+                  variant="outline"
+                >
+                  <Package className="h-5 w-5 mr-2" />
+                  Go to Products
+                </Button>
+              </div>
+            ) : (
+              <>
+                {/* Completion Banner */}
+                {bulkProducts.length > 0 && bulkProducts.every(p => p.status === 'approved' || p.status === 'skipped' || p.status === 'error') && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-emerald-50 border border-emerald-200 rounded-md p-6 mb-6 text-center"
+                  >
+                    <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto mb-3" />
+                    <h3 className="text-lg font-semibold text-emerald-800 mb-1">Batch Complete!</h3>
+                    <p className="text-emerald-600 mb-4">
+                      You approved {bulkApprovedCount} products and skipped {bulkSkippedCount}
+                    </p>
+                    <Button
+                      onClick={loadBulkProducts}
+                      disabled={bulkLoading}
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Load Next {bulkBatchSize} Products
+                    </Button>
+                  </motion.div>
+                )}
+
+                {/* Product Review Rows - Compact Row Layout */}
+                <div className="space-y-2">
+                  {bulkProducts.map((product, index) => (
+                  <motion.div
+                    key={product.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.02 }}
+                    className={cn(
+                      "bg-white rounded-lg border px-3 py-2 transition-all",
+                      product.status === 'approved' && "border-emerald-300 bg-emerald-50/30",
+                      product.status === 'skipped' && "border-gray-200 opacity-40",
+                      product.status === 'ready' && bulkCurrentIndex === index && "ring-2 ring-blue-400 border-blue-300",
+                      product.status === 'searching' && "border-blue-200 bg-blue-50/30",
+                      product.status === 'error' && "border-red-200 bg-red-50/30",
+                      product.status === 'pending' && "border-gray-200"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Product Info - Left Side */}
+                      <div className="w-64 flex-shrink-0">
+                        <p className="text-sm font-medium text-gray-900 leading-tight line-clamp-2" title={product.name}>
+                          {product.name}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {product.brand && (
+                            <span className="text-xs text-gray-500">{product.brand}</span>
+                          )}
+                          <span className="text-xs text-gray-400">•</span>
+                          <span className="text-xs text-gray-400 truncate">{product.storeName}</span>
+                        </div>
+                      </div>
+
+                      {/* Status indicator */}
+                      <div className="w-20 flex-shrink-0">
+                        {product.status === 'pending' && (
+                          <div className="flex items-center gap-1.5 text-gray-400">
+                            <Clock className="h-3.5 w-3.5" />
+                            <span className="text-xs">Waiting</span>
+                          </div>
+                        )}
+                        {product.status === 'searching' && (
+                          <div className="flex items-center gap-1.5 text-blue-500">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span className="text-xs">Searching</span>
+                          </div>
+                        )}
+                        {product.status === 'error' && (
+                          <div className="flex items-center gap-1.5 text-red-500">
+                            <XCircle className="h-3.5 w-3.5" />
+                            <span className="text-xs">Error</span>
+                          </div>
+                        )}
+                        {product.status === 'approved' && (
+                          <div className="flex items-center gap-1.5 text-emerald-600">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span className="text-xs font-medium">Done</span>
+                          </div>
+                        )}
+                        {product.status === 'skipped' && (
+                          <div className="flex items-center gap-1.5 text-gray-400">
+                            <span className="text-xs">Skipped</span>
+                          </div>
+                        )}
+                        {product.status === 'ready' && !product.selectedImage && (
+                          <div className="flex items-center gap-1.5 text-amber-500">
+                            <span className="text-xs">Double-click to select hero</span>
+                          </div>
+                        )}
+                        {product.status === 'ready' && product.selectedImage && (
+                          <div className="flex items-center gap-1.5 text-purple-600">
+                            <Sparkles className="h-3.5 w-3.5" />
+                            <span className="text-xs font-medium">Ready</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Images Row - Scrollable */}
+                      <div className="flex-1 min-w-0">
+                        {(product.status === 'ready' || product.status === 'approved') && product.searchResults.length > 0 && (
+                          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                            {product.searchResults.slice(0, 10).map((img) => {
+                              const isExcluded = product.excludedImageIds.has(img.id);
+                              const isSelected = product.selectedImage?.id === img.id;
+                              const isAiImage = img.id.startsWith('ai-');
+                              
+                              return (
+                                <button
+                                  key={img.id}
+                                  onClick={() => {
+                                    // Single click: toggle exclude/include
+                                    if (product.status === 'approved') return;
+                                    toggleExcludeImage(index, img.id);
+                                  }}
+                                  onDoubleClick={() => {
+                                    // Double click: select as hero
+                                    if (product.status === 'approved') return;
+                                    if (isExcluded) {
+                                      toggleExcludeImage(index, img.id);
+                                    }
+                                    selectBulkImage(index, img);
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                    hoverTimeoutRef.current = setTimeout(() => {
+                                      setHoverPreview({ img, x: rect.left + rect.width / 2, y: rect.top });
+                                    }, 800);
+                                  }}
+                                  onMouseLeave={() => {
+                                    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                    setHoverPreview(null);
+                                  }}
+                                  disabled={product.status === 'approved'}
+                                  className={cn(
+                                    "relative flex-shrink-0 w-28 h-28 rounded-lg overflow-hidden border-3 transition-all",
+                                    isSelected
+                                      ? "border-purple-500 ring-2 ring-purple-300 scale-105 shadow-lg"
+                                      : isAiImage && !isExcluded
+                                        ? "border-purple-400 ring-2 ring-purple-200"
+                                        : isExcluded
+                                          ? "border-red-400 border-dashed"
+                                          : "border-emerald-400 hover:border-blue-400 hover:scale-105",
+                                    product.status === 'approved' && "cursor-default"
+                                  )}
+                                >
+                                  <img
+                                    src={img.thumbnailUrl || img.url}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                  />
+                                  {/* AI Badge */}
+                                  {isAiImage && (
+                                    <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-purple-600 text-white text-[10px] font-medium rounded-md flex items-center gap-0.5">
+                                      <Sparkles className="h-2.5 w-2.5" />
+                                      AI
+                                    </div>
+                                  )}
+                                  {isSelected && (
+                                    <div className="absolute inset-0 bg-purple-500/20 flex items-center justify-center">
+                                      <Sparkles className="h-6 w-6 text-purple-600" />
+                                    </div>
+                                  )}
+                                  {!isExcluded && !isSelected && !isAiImage && (
+                                    <div className="absolute top-1 right-1 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
+                                      <CheckCircle2 className="h-3 w-3 text-white" />
+                                    </div>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {product.status === 'pending' && (
+                          <div className="h-28 flex items-center text-gray-300 text-xs">
+                            Click "Get Images" to search...
+                          </div>
+                        )}
+                        {product.status === 'searching' && (
+                          <div className="h-28 flex items-center gap-2">
+                            {[1,2,3,4,5].map(i => (
+                              <div key={i} className="w-28 h-28 bg-gray-100 rounded-lg animate-pulse" />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Buttons - Right Side */}
+                      <div className="flex-shrink-0 flex items-center gap-2">
+                        {product.status === 'ready' && (
+                          <>
+                            {/* AI Status Indicator */}
+                            {product.aiStatus === 'processing' && (
+                              <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-100 text-purple-700 rounded-md text-xs animate-pulse">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                AI Processing...
+                              </div>
+                            )}
+                            {product.aiStatus === 'ready' && (
+                              <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-xs">
+                                <Sparkles className="h-3 w-3" />
+                                AI Ready
+                              </div>
+                            )}
+                            {product.aiStatus === 'error' && (
+                              <div className="flex items-center gap-1.5 px-2 py-1 bg-red-100 text-red-700 rounded-md text-xs" title={product.aiError}>
+                                AI Failed
+                              </div>
+                            )}
+                            
+                            {/* Approve Button */}
+                            <Button
+                              onClick={() => approveBulkProduct(index)}
+                              disabled={!product.selectedImage}
+                              size="sm"
+                              className={cn(
+                                "h-8 text-xs",
+                                product.selectedImage 
+                                  ? "bg-emerald-600 hover:bg-emerald-700" 
+                                  : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                              )}
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                              Approve
+                            </Button>
+                            
+                            {/* AI Preview Button - only shows if no AI image yet */}
+                            {!product.aiGeneratedImage && (
+                              <Button
+                                onClick={() => generateAiPreview(index)}
+                                disabled={!product.selectedImage || optimizingProducts.has(index)}
+                                size="sm"
+                                variant="outline"
+                                className={cn(
+                                  "h-8 text-xs",
+                                  product.selectedImage 
+                                    ? "border-purple-300 text-purple-700 hover:bg-purple-50" 
+                                    : "text-gray-300 cursor-not-allowed"
+                                )}
+                              >
+                                {optimizingProducts.has(index) ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Sparkles className="h-3.5 w-3.5 mr-1" />
+                                    + AI
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                            
+                            <Button
+                              onClick={() => skipBulkProduct(index)}
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 text-xs text-gray-400 hover:text-gray-600"
+                            >
+                              Skip
+                            </Button>
+                          </>
+                        )}
+                        {product.status === 'approved' && product.selectedImage && (
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-xs">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Approved
+                            </div>
+                            {product.aiGeneratedImage && (
+                              <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-100 text-purple-700 rounded-md text-xs">
+                                <Sparkles className="h-3 w-3" />
+                                AI
+                              </div>
+                            )}
+                            <div className="w-20 h-20 rounded-lg overflow-hidden border-2 border-emerald-400">
+                              <img
+                                src={product.selectedImage.thumbnailUrl || product.selectedImage.url}
+                                alt="Approved"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Hover Preview Popup */}
+      {hoverPreview && (
+        <div 
+          className="fixed z-[100] pointer-events-none"
+          style={{
+            left: hoverPreview.x,
+            top: hoverPreview.y - 10,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-white rounded-xl shadow-2xl border border-gray-200 p-2"
+          >
+            <img
+              src={hoverPreview.img.url}
+              alt=""
+              className="w-80 h-80 object-contain rounded-lg bg-gray-50"
+            />
+            <div className="mt-1.5 px-1">
+              <p className="text-sm text-gray-700 truncate max-w-80">{hoverPreview.img.source}</p>
+              <p className="text-xs text-gray-400">{hoverPreview.img.width} × {hoverPreview.img.height}px</p>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
     </div>
   );
 }

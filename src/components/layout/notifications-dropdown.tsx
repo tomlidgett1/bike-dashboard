@@ -35,7 +35,8 @@ import {
   X,
   Gift,
 } from 'lucide-react';
-import { useOrderNotifications, type OrderNotification } from '@/lib/hooks/use-order-notifications';
+import { useOrderNotificationsContext } from '@/components/providers/order-notifications-provider';
+import type { OrderNotification } from '@/lib/hooks/use-order-notifications';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
@@ -209,13 +210,15 @@ export function NotificationsDropdown() {
   const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
   
+  // Use context instead of hook directly - this prevents duplicate fetches
+  // when multiple NotificationsDropdown instances are rendered (mobile + desktop)
   const { 
     notifications, 
     unreadCount, 
     markAsRead, 
     markAllAsRead, 
     refresh 
-  } = useOrderNotifications(10, false);
+  } = useOrderNotificationsContext();
 
   // Detect mobile
   React.useEffect(() => {

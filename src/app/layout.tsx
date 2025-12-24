@@ -7,13 +7,16 @@ import { MobileNavProvider } from "@/components/providers/mobile-nav-provider";
 import { AuthModalProvider } from "@/components/providers/auth-modal-provider";
 import { SellModalProvider } from "@/components/providers/sell-modal-provider";
 import { UploadProvider } from "@/components/providers/upload-provider";
+import { OrderNotificationsProvider } from "@/components/providers/order-notifications-provider";
 import { FloatingUploadBar } from "@/components/marketplace/floating-upload-bar";
 import { ConditionalLayout } from "@/components/layout";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
 import "./globals.css";
 
-export const dynamic = 'force-dynamic';
+// Note: Layout is already dynamic due to getUserProfile() reading auth cookies
+// Removed 'force-dynamic' to allow page-level ISR caching to work properly
+// Individual pages can set their own caching with `revalidate` export
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -75,17 +78,19 @@ export default async function RootLayout({
         >
           <AuthProvider>
             <ProfileProvider serverProfile={serverProfile}>
-              <AuthModalProvider>
-                <SellModalProvider>
-                  <UploadProvider>
-                    <MobileNavProvider>
-                      <ConditionalLayout>{children}</ConditionalLayout>
-                      <FloatingUploadBar />
-                      <WebVitalsReporter />
-                    </MobileNavProvider>
-                  </UploadProvider>
-                </SellModalProvider>
-              </AuthModalProvider>
+              <OrderNotificationsProvider>
+                <AuthModalProvider>
+                  <SellModalProvider>
+                    <UploadProvider>
+                      <MobileNavProvider>
+                        <ConditionalLayout>{children}</ConditionalLayout>
+                        <FloatingUploadBar />
+                        <WebVitalsReporter />
+                      </MobileNavProvider>
+                    </UploadProvider>
+                  </SellModalProvider>
+                </AuthModalProvider>
+              </OrderNotificationsProvider>
             </ProfileProvider>
           </AuthProvider>
         </ThemeProvider>

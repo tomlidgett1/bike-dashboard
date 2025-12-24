@@ -14,6 +14,7 @@
  * - reorder_image: Move an image up or down in sort order
  * - add_to_product_page: Add an image to the JSONB array so it appears on product page
  * - remove_from_product_page: Remove an image from the JSONB array (hide from product page)
+ * - deselect_all_images: Remove all images from product page (set all to hidden)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -615,6 +616,40 @@ export async function POST(request: NextRequest) {
 
         console.log(`[MANAGE] Removed image from product page: ${imageUrl}`);
         return NextResponse.json({ success: true, message: 'Image removed from product page' });
+      }
+
+      case 'deselect_all_images': {
+        // Deselect all images from the product page (makes them all hidden)
+        // This sets all product_images approval_status to 'pending' and clears JSONB
+        console.log(`[MANAGE] Deselecting all images for product: ${productId}`);
+
+        // Update all product_images to pending status
+        const { error: approvalError } = await supabase
+          .from('product_images')
+          .update({ approval_status: 'pending' })
+          .eq('product_id', productId);
+
+        if (approvalError) {
+          console.error('[MANAGE] Deselect all - update approval status error:', approvalError);
+          return NextResponse.json({ error: approvalError.message }, { status: 500 });
+        }
+
+        // Clear the JSONB images array and update has_displayable_image
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({ 
+            images: [],
+            has_displayable_image: false,
+          })
+          .eq('id', productId);
+
+        if (updateError) {
+          console.error('[MANAGE] Deselect all - clear JSONB error:', updateError);
+          return NextResponse.json({ error: updateError.message }, { status: 500 });
+        }
+
+        console.log(`[MANAGE] All images deselected for product: ${productId}`);
+        return NextResponse.json({ success: true, message: 'All images deselected from product page' });
       }
 
       default:

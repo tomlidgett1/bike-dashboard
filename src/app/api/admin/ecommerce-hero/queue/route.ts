@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status'); // 'pending', 'processing', 'completed', 'failed', or null for all
+    const productId = searchParams.get('productId'); // Filter by specific product
     const limit = parseInt(searchParams.get('limit') || '50');
 
     let query = supabase
@@ -60,6 +61,10 @@ export async function GET(request: NextRequest) {
 
     if (status) {
       query = query.eq('status', status);
+    }
+    
+    if (productId) {
+      query = query.eq('product_id', productId);
     }
 
     const { data: queueItems, error } = await query;

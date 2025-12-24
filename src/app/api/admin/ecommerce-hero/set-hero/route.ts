@@ -2,8 +2,9 @@
  * Set Hero Image API
  * POST /api/admin/ecommerce-hero/set-hero
  * 
- * Directly sets an existing image as the product's hero image
- * without AI reprocessing. Updates:
+ * Sets an image as the product's hero image.
+ * If the image is not on Cloudinary, it will automatically upload it first.
+ * Updates:
  * - cached_image_url and cached_thumbnail_url
  * - is_primary in product_images table (if from DB)
  * - isPrimary in images JSONB (if from private listing)
@@ -26,6 +27,57 @@ interface ImageJsonb {
   source?: string;
 }
 
+interface CloudinaryUploadResult {
+  url: string;
+  cardUrl: string;
+  mobileCardUrl?: string;
+  thumbnailUrl: string;
+  galleryUrl?: string;
+  detailUrl?: string;
+}
+
+// Helper to check if URL is from Cloudinary
+const isCloudinaryUrl = (url: string) => 
+  url.includes('cloudinary') || url.includes('res.cloudinary.com');
+
+// Upload image to Cloudinary via edge function
+async function uploadToCloudinary(
+  imageUrl: string,
+  productId: string,
+  accessToken: string
+): Promise<CloudinaryUploadResult> {
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/upload-to-cloudinary`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        imageUrl,
+        listingId: `hero-${productId}`,
+        index: 0,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to upload to Cloudinary');
+  }
+
+  const result = await response.json();
+  return {
+    url: result.data.url,
+    cardUrl: result.data.cardUrl,
+    mobileCardUrl: result.data.mobileCardUrl,
+    thumbnailUrl: result.data.thumbnailUrl,
+    galleryUrl: result.data.galleryUrl,
+    detailUrl: result.data.detailUrl,
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Use regular client for auth check
@@ -39,35 +91,59 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
+    // Get access token for Cloudinary upload
+    const { data: sessionData } = await authClient.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+
+    if (!accessToken) {
+      return NextResponse.json({ error: 'No access token' }, { status: 401 });
+    }
+
     // Use service role client to bypass RLS for admin operations
     const supabase = createServiceRoleClient();
 
     // Parse request body
     const body = await request.json();
-    const { productId, imageId, cardUrl, thumbnailUrl, galleryUrl, detailUrl, source } = body;
+    let { productId, imageId, cardUrl, thumbnailUrl, galleryUrl, detailUrl, source, originalUrl } = body;
 
     // Validate required fields
     if (!productId) {
       return NextResponse.json({ error: 'Product ID is required' }, { status: 400 });
     }
 
-    if (!cardUrl) {
-      return NextResponse.json({ error: 'Card URL is required' }, { status: 400 });
-    }
-
-    // Validate URLs are from Cloudinary (for safety)
-    const isCloudinaryUrl = (url: string) => 
-      url.includes('cloudinary') || url.includes('res.cloudinary.com');
-
-    if (!isCloudinaryUrl(cardUrl)) {
-      return NextResponse.json({ 
-        error: 'Card URL must be a Cloudinary URL' 
-      }, { status: 400 });
+    // We need either cardUrl (Cloudinary) or originalUrl (to upload)
+    const imageToProcess = cardUrl || originalUrl;
+    if (!imageToProcess) {
+      return NextResponse.json({ error: 'Image URL is required' }, { status: 400 });
     }
 
     console.log(`[SET-HERO] Setting hero image for product ${productId}`);
     console.log(`[SET-HERO] Image ID: ${imageId}, Source: ${source}`);
-    console.log(`[SET-HERO] Card URL: ${cardUrl}`);
+    console.log(`[SET-HERO] Image URL: ${imageToProcess}`);
+
+    // If not a Cloudinary URL, upload it first
+    if (!isCloudinaryUrl(imageToProcess)) {
+      console.log(`[SET-HERO] Image not on Cloudinary, uploading first...`);
+      
+      try {
+        const cloudinaryResult = await uploadToCloudinary(imageToProcess, productId, accessToken);
+        
+        // Update our variables with the Cloudinary URLs
+        cardUrl = cloudinaryResult.cardUrl;
+        thumbnailUrl = cloudinaryResult.thumbnailUrl;
+        galleryUrl = cloudinaryResult.galleryUrl;
+        detailUrl = cloudinaryResult.detailUrl;
+        
+        console.log(`[SET-HERO] Uploaded to Cloudinary: ${cardUrl}`);
+      } catch (uploadError) {
+        console.error('[SET-HERO] Cloudinary upload failed:', uploadError);
+        return NextResponse.json({ 
+          error: `Failed to upload image to Cloudinary: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}` 
+        }, { status: 500 });
+      }
+    }
+
+    console.log(`[SET-HERO] Final Card URL: ${cardUrl}`);
 
     // Check product exists and is active
     const { data: product, error: productError } = await supabase

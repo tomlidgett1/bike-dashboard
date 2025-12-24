@@ -73,22 +73,30 @@ export function ProductPageClient({
   const images = React.useMemo(() => {
     if (!product) return [];
     
-    // Priority 1: Manually uploaded images (in images JSONB field)
+    // Priority 1: Pre-computed all_images from server (already uses correct URL variants)
+    if (product.all_images && product.all_images.length > 0) {
+      return product.all_images;
+    }
+    
+    // Priority 2: Images JSONB field - use galleryUrl for best quality on product pages
     if (Array.isArray((product as any).images) && (product as any).images.length > 0) {
-      const manualImages = (product as any).images as Array<{ url: string; order?: number; isPrimary?: boolean }>;
+      const manualImages = (product as any).images as Array<{ 
+        url?: string; 
+        galleryUrl?: string;
+        detailUrl?: string;
+        cardUrl?: string;
+        order?: number; 
+        isPrimary?: boolean;
+      }>;
       const filtered = manualImages
         .sort((a, b) => (a.order || 0) - (b.order || 0))
-        .map((img) => img.url)
-        .filter((url) => url && !url.startsWith("blob:"));
+        // Use galleryUrl (1200px 4:3 padded) for product pages, with fallbacks
+        .map((img) => img.galleryUrl || img.detailUrl || img.url || img.cardUrl)
+        .filter((url): url is string => !!url && !url.startsWith("blob:"));
       
       if (filtered.length > 0) {
         return filtered;
       }
-    }
-    
-    // Priority 2: For store inventory with all_images array
-    if (product.all_images && product.all_images.length > 0) {
-      return product.all_images;
     }
     
     // Priority 3: Fallback to image variants
