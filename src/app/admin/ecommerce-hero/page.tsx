@@ -490,6 +490,8 @@ export default function EcommerceHeroPage() {
   const [bulkListingType, setBulkListingType] = useState<'all' | 'private_listing' | 'lightspeed'>('all');
   const [bulkSelectedBrand, setBulkSelectedBrand] = useState<string>('');
   const [bulkSelectedStoreId, setBulkSelectedStoreId] = useState<string>('');
+  const [bulkSearchQuery, setBulkSearchQuery] = useState<string>('');
+  const [bulkResultsPerImage, setBulkResultsPerImage] = useState<number>(8);
   
   // Track which products are being optimized (background removal)
   const [optimizingProducts, setOptimizingProducts] = useState<Set<number>>(new Set());
@@ -1340,6 +1342,9 @@ export default function EcommerceHeroPage() {
       if (bulkSelectedStoreId) {
         params.set('store_id', bulkSelectedStoreId);
       }
+      if (bulkSearchQuery) {
+        params.set('search', bulkSearchQuery);
+      }
 
       console.log('[BULK REVIEW] Fetching products with params:', params.toString());
       const response = await fetch(`/api/admin/ecommerce-hero/products?${params}`);
@@ -1418,7 +1423,7 @@ export default function EcommerceHeroPage() {
         if (data.success && data.results?.length > 0) {
           // Don't auto-select - user must choose the hero image
           // All images start as excluded - user must click to include, double-click for hero
-          const results = data.results.slice(0, 8);
+          const results = data.results.slice(0, bulkResultsPerImage);
           const allExcluded = new Set<string>(results.map((r: SearchImageResult) => r.id));
           setBulkProducts(prev => prev.map((p, idx) => 
             idx === i ? { 
@@ -2781,7 +2786,7 @@ export default function EcommerceHeroPage() {
         <div className="h-[calc(100vh-73px)] flex flex-col bg-gray-50">
           {/* Bulk Review Header */}
           <div className="bg-white border-b border-gray-200 p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-4">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Bulk Image Review</h2>
@@ -2843,6 +2848,59 @@ export default function EcommerceHeroPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            {/* Second Row: Search and Image Results Control */}
+            <div className="flex items-center justify-between">
+              {/* Search Input */}
+              <div className="flex items-center gap-2 flex-1 max-w-md">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={bulkSearchQuery}
+                    onChange={(e) => setBulkSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !bulkLoading) {
+                        loadBulkProducts();
+                      }
+                    }}
+                    placeholder="Search products by name, brand, or model..."
+                    className="w-full h-8 pl-9 pr-3 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  {bulkSearchQuery && (
+                    <button
+                      onClick={() => setBulkSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {/* Images Per Product Selector */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Images per product:</span>
+                  <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+                    {[5, 8, 10, 15, 20].map((num) => (
+                      <button
+                        key={num}
+                        onClick={() => setBulkResultsPerImage(num)}
+                        className={cn(
+                          "px-2.5 py-1 text-sm font-medium rounded-md transition-colors",
+                          bulkResultsPerImage === num
+                            ? "text-gray-800 bg-white shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70"
+                        )}
+                      >
+                        {num}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="h-6 w-px bg-gray-300" />
 
