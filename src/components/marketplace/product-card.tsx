@@ -85,35 +85,17 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     };
   }, [priority, isVisible]);
 
-  // Memoize image URL - uses Cloudinary cardUrl when available for instant loading
+  // Image URL - uses card_url from product_images table (source of truth)
+  // The API fetches the primary image and passes it as card_url
   const imageUrl = React.useMemo(() => {
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const productAny = product as any;
     
-    // DEBUG: Log product data for troubleshooting
-    if (productAny.listing_type === 'private_listing') {
-      console.log(`🖼️ [ProductCard ${product.id?.substring(0, 8)}] listing_type:`, productAny.listing_type);
-      console.log(`🖼️ [ProductCard ${product.id?.substring(0, 8)}] images array length:`, productAny.images?.length);
-      if (productAny.images?.[0]) {
-        console.log(`🖼️ [ProductCard ${product.id?.substring(0, 8)}] First image:`, {
-          isPrimary: productAny.images[0].isPrimary,
-          cardUrl: productAny.images[0].cardUrl?.substring(0, 60) + '...',
-        });
-        const primaryImg = productAny.images.find((img: any) => img.isPrimary);
-        if (primaryImg) {
-          console.log(`🖼️ [ProductCard ${product.id?.substring(0, 8)}] Primary image found:`, {
-            cardUrl: primaryImg.cardUrl?.substring(0, 60) + '...',
-          });
-        }
-      }
-    }
-    
-    // Priority 1: Cloudinary card_url directly on product (canonical products)
+    // Priority 1: card_url from API (fetched from product_images table)
     if (productAny.card_url) {
       return productAny.card_url;
     }
     
-    // Priority 2: For private listings with images array
+    // Priority 2: For private listings with images array (legacy fallback)
     if (productAny.listing_type === 'private_listing' && Array.isArray(productAny.images)) {
       const listingImages = productAny.images as Array<{ 
         url: string; 
@@ -123,23 +105,17 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
       const primaryImage = listingImages.find(img => img.isPrimary) || listingImages[0];
       
       if (primaryImage) {
-        // Use Cloudinary cardUrl if available (instant loading)
         return getCardImageUrl(primaryImage);
       }
     }
     
-    // Priority 3: Legacy Supabase Storage image_variants
-    if (product.image_variants && product.image_variants.medium) {
-      return `${baseUrl}/storage/v1/object/public/product-images/${product.image_variants.medium}`;
-    }
-    
-    // Priority 4: Direct primary image URL (legacy)
+    // Priority 3: Legacy primary_image_url fallback
     if (product.primary_image_url && !product.primary_image_url.startsWith('blob:')) {
       return product.primary_image_url;
     }
     
     return null;
-  }, [product.id, product.image_variants, product.primary_image_url, (product as any).card_url]);
+  }, [product.id, product.primary_image_url, (product as any).card_url, (product as any).images]);
 
   // Memoize click handler to prevent recreating on every render
   const handleClick = React.useCallback((e: React.MouseEvent) => {

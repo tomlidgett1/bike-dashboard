@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from '@/lib/supabase/server';
 import { ProductPageClient } from "./product-page-client";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import { getProductImages, toJsonbFormat } from "@/lib/services/product-images";
 
 // ============================================================
 // Product Page - Server Component with Parallel Data Fetching
@@ -117,15 +118,44 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
     }
 
     // ============================================================
-    // PERFORMANCE OPTIMIZED: Images now cached in products.images
-    // No extra queries needed - reduces load time by ~100ms!
+    // REFACTORED: Fetch images from product_images table (source of truth)
+    // This replaces the JSONB approach for cleaner data model
     // ============================================================
     const user = (product.users as any);
     let primaryImageUrl: string | null = null;
     let allImages: string[] = [];
+    let imagesForClient: Array<{
+      id: string;
+      url: string;
+      cardUrl: string | null;
+      galleryUrl: string | null;
+      detailUrl: string | null;
+      isPrimary: boolean;
+      order: number;
+    }> = [];
     
-    // Priority 1: Use cached images from products.images JSONB (fastest!)
-    if (product.images && Array.isArray(product.images) && product.images.length > 0) {
+    // Fetch images from product_images table (NEW source of truth)
+    const productImages = await getProductImages(supabase, productId, product.canonical_product_id);
+    
+    if (productImages.length > 0) {
+      // Convert to JSONB format for backwards compatibility with client
+      imagesForClient = toJsonbFormat(productImages) as any;
+      
+      const primaryImage = productImages.find(img => img.is_primary) || productImages[0];
+      // Use galleryUrl for product pages (1200px landscape, padded - shows full product)
+      primaryImageUrl = primaryImage?.gallery_url 
+        || primaryImage?.detail_url 
+        || primaryImage?.cloudinary_url 
+        || primaryImage?.card_url 
+        || null;
+      
+      allImages = productImages
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map(img => img.gallery_url || img.detail_url || img.cloudinary_url || img.card_url)
+        .filter((url): url is string => !!url && !url.startsWith('blob:'));
+    }
+    // Fallback to JSONB during transition
+    else if (product.images && Array.isArray(product.images) && product.images.length > 0) {
       const cachedImages = product.images as Array<{ 
         url?: string; 
         cardUrl?: string; 
@@ -136,8 +166,9 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         source?: string;
       }>;
       
+      imagesForClient = cachedImages as any;
+      
       const primaryImage = cachedImages.find(img => img.isPrimary) || cachedImages[0];
-      // Use galleryUrl for product pages (1200px landscape, padded - shows full product)
       primaryImageUrl = primaryImage?.galleryUrl || primaryImage?.detailUrl || primaryImage?.url || primaryImage?.cardUrl || null;
       
       allImages = cachedImages
@@ -145,12 +176,12 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         .map(img => img.galleryUrl || img.detailUrl || img.url || img.cardUrl)
         .filter((url): url is string => !!url && !url.startsWith('blob:'));
     } 
-    // Priority 2: Custom image
+    // Fallback: Custom image
     else if (product.use_custom_image && product.custom_image_url) {
       primaryImageUrl = product.custom_image_url;
       allImages = [product.custom_image_url];
     } 
-    // Priority 3: Fallback to placeholder
+    // Final fallback: Placeholder
     else {
       primaryImageUrl = '/placeholder-product.svg';
       allImages = ['/placeholder-product.svg'];
@@ -175,6 +206,7 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       ...product,
       primary_image_url: primaryImageUrl,
       all_images: allImages,
+      images: imagesForClient.length > 0 ? imagesForClient : product.images,
       image_variants: null,
       store_name: displayName,
       store_logo_url: user?.logo_url || null,

@@ -3,6 +3,17 @@ import { createClient } from '@/lib/supabase/server';
 import type { MarketplaceProduct, MarketplaceProductsResponse } from '@/lib/types/marketplace';
 
 // ============================================================
+// Image fetching helper - queries product_images as source of truth
+// ============================================================
+interface ProductImageRow {
+  product_id: string | null;
+  canonical_product_id: string | null;
+  card_url: string | null;
+  thumbnail_url: string | null;
+  cloudinary_url: string | null;
+}
+
+// ============================================================
 // Marketplace Products API - Public Endpoint
 // Enterprise-grade with caching, pagination, and optimization
 // ============================================================
@@ -53,9 +64,9 @@ export async function GET(request: NextRequest) {
     // Optimize: Use count planning hint for better performance
     const countType = useEstimatedCount ? 'planned' : 'exact';
     
-    // OPTIMIZATION: Use cached image columns - eliminates expensive JOINs
-    // Target: <50ms response time for category filtering
-    // Only join users table for store name (small table, fast lookup)
+    // REFACTORED: Query product_images as source of truth for images
+    // Join with product_images to get the primary image
+    // This replaces the cached_image_url approach for cleaner data model
     const fastFields = `
         id,
         canonical_product_id,
@@ -273,12 +284,82 @@ export async function GET(request: NextRequest) {
     const totalPages = Math.ceil(total / pageSize);
     const hasMore = page < totalPages;
 
+    // ============================================================
+    // REFACTORED: Fetch images from product_images table (source of truth)
+    // Batch-fetch primary images for all products in one query
+    // ============================================================
+    
+    // Collect product IDs and canonical IDs for image lookup
+    const productIds = uniqueData.map((p: any) => p.id).filter(Boolean);
+    const canonicalIds = uniqueData
+      .map((p: any) => p.canonical_product_id)
+      .filter(Boolean);
+    
+    // Batch-fetch primary images from product_images table
+    // This is the NEW source of truth, replacing cached_image_url
+    let productImagesMap = new Map<string, ProductImageRow>();
+    let canonicalImagesMap = new Map<string, ProductImageRow>();
+    
+    if (productIds.length > 0 || canonicalIds.length > 0) {
+      // Query by product_id
+      if (productIds.length > 0) {
+        const { data: productImagesData } = await supabase
+          .from('product_images')
+          .select('product_id, canonical_product_id, card_url, thumbnail_url, cloudinary_url, is_primary')
+          .in('product_id', productIds)
+          .eq('approval_status', 'approved')
+          .order('is_primary', { ascending: false })
+          .order('sort_order', { ascending: true });
+        
+        if (productImagesData) {
+          // Group by product_id, keep first (primary) image only
+          for (const img of productImagesData) {
+            if (img.product_id && !productImagesMap.has(img.product_id)) {
+              productImagesMap.set(img.product_id, img);
+            }
+          }
+        }
+      }
+      
+      // Query by canonical_product_id (for products without direct product_id images)
+      if (canonicalIds.length > 0) {
+        const { data: canonicalImagesData } = await supabase
+          .from('product_images')
+          .select('product_id, canonical_product_id, card_url, thumbnail_url, cloudinary_url, is_primary')
+          .in('canonical_product_id', canonicalIds)
+          .eq('approval_status', 'approved')
+          .order('is_primary', { ascending: false })
+          .order('sort_order', { ascending: true });
+        
+        if (canonicalImagesData) {
+          // Group by canonical_product_id, keep first (primary) image only
+          for (const img of canonicalImagesData) {
+            if (img.canonical_product_id && !canonicalImagesMap.has(img.canonical_product_id)) {
+              canonicalImagesMap.set(img.canonical_product_id, img);
+            }
+          }
+        }
+      }
+    }
+    
+    console.log(`🖼️ [IMAGES] Fetched ${productImagesMap.size} product images, ${canonicalImagesMap.size} canonical images`);
+    
     // Transform data to marketplace product format
-    // FAST PATH: Use cached image URLs - no complex processing needed
+    // Use product_images as primary source, fall back to cached columns during transition
     const products: MarketplaceProduct[] = uniqueData.map((product: any) => {
-      // Use cached image URL (pre-computed by database trigger)
-      const primaryImageUrl = product.cached_image_url;
-      const thumbnailUrl = product.cached_thumbnail_url;
+      // Look up image from product_images table (NEW source of truth)
+      const productImage = productImagesMap.get(product.id);
+      const canonicalImage = product.canonical_product_id 
+        ? canonicalImagesMap.get(product.canonical_product_id) 
+        : null;
+      
+      // Priority: product_images data > cached columns (fallback during transition)
+      const imageFromTable = productImage || canonicalImage;
+      const primaryImageUrl = imageFromTable?.card_url 
+        || imageFromTable?.cloudinary_url 
+        || product.cached_image_url; // Fallback to cached column
+      const thumbnailUrl = imageFromTable?.thumbnail_url 
+        || product.cached_thumbnail_url; // Fallback to cached column
       
       // For private listings, pass through the images array for gallery
       const listingImages = product.listing_type === 'private_listing' ? product.images : null;
@@ -305,7 +386,7 @@ export async function GET(request: NextRequest) {
         image_variants: null, // Only needed on detail page
         all_images: allImages,
         images: listingImages,
-        // Use cached thumbnail for optimised loading
+        // Use image from product_images table
         card_url: primaryImageUrl,
         thumbnail_url: thumbnailUrl,
         detail_url: primaryImageUrl, // Detail page will fetch full resolution
@@ -325,7 +406,7 @@ export async function GET(request: NextRequest) {
       } as MarketplaceProduct;
     });
     
-    console.log(`⚡ [FAST QUERY] Returned ${products.length} products with cached images`);
+    console.log(`⚡ [REFACTORED] Returned ${products.length} products with images from product_images table`);
 
     const response: MarketplaceProductsResponse = {
       products,

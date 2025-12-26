@@ -20,6 +20,8 @@ async function uploadToCloudinary(
   cardUrl: string;
   mobileCardUrl: string;
   thumbnailUrl: string;
+  galleryUrl?: string;
+  detailUrl?: string;
 }> {
   const response = await fetch(
     `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/upload-to-cloudinary`,
@@ -48,6 +50,8 @@ async function uploadToCloudinary(
     cardUrl: result.data.cardUrl,
     mobileCardUrl: result.data.mobileCardUrl,
     thumbnailUrl: result.data.thumbnailUrl,
+    galleryUrl: result.data.galleryUrl,
+    detailUrl: result.data.detailUrl,
   };
 }
 
@@ -84,7 +88,7 @@ export async function processFacebookImages(
       console.log(`📸 [FB IMAGE HANDLER] Processing image ${i + 1}/${facebookImageUrls.length}`);
       
       // Upload to Cloudinary via Edge Function
-      const { url, cardUrl, mobileCardUrl, thumbnailUrl } = await uploadToCloudinary(
+      const { url, cardUrl, mobileCardUrl, thumbnailUrl, galleryUrl, detailUrl } = await uploadToCloudinary(
         imageUrl,
         listingId,
         i,
@@ -98,6 +102,8 @@ export async function processFacebookImages(
         cardUrl,
         mobileCardUrl,
         thumbnailUrl,
+        galleryUrl,
+        detailUrl,
         order: i,
         isPrimary: i === 0,
       });

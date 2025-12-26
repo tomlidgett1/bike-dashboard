@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import type { ListingFormData } from '@/lib/types/listing';
+import { addProductImages } from '@/lib/services/product-images';
 
 // ============================================================
 // Bulk Listing Creation API
@@ -121,6 +122,35 @@ async function createSingleListing(
     }
 
     console.log('[BULK API] Created listing:', data.id);
+    
+    // ============================================================
+    // REFACTORED: Insert images into product_images table (source of truth)
+    // ============================================================
+    const images = listing.images || [];
+    if (images.length > 0 && data?.id) {
+      console.log(`📸 [BULK API] Inserting ${images.length} images via shared helper`);
+      
+      // Convert to format expected by addProductImages
+      const imageData = images.map((img: any, index: number) => {
+        const sortOrder = img.order ?? index;
+        return {
+          cloudinaryResult: {
+            url: img.url,
+            cardUrl: img.cardUrl,
+            mobileCardUrl: img.mobileCardUrl,
+            thumbnailUrl: img.thumbnailUrl,
+            galleryUrl: img.galleryUrl,
+            detailUrl: img.detailUrl || img.url,
+          },
+          isPrimary: sortOrder === 0,
+          sortOrder: sortOrder,
+          source: 'bulk_upload',
+        };
+      });
+      
+      await addProductImages(supabase, data.id, imageData);
+    }
+    
     return { success: true, listingId: data.id };
 
   } catch (error) {

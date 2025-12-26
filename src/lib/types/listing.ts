@@ -36,6 +36,8 @@ export interface ListingImage {
   thumbnailUrl?: string; // 100px thumbnail for search dropdowns
   mobileCardUrl?: string; // 200px image for mobile product cards
   cardUrl?: string;      // 400px image for desktop product cards
+  galleryUrl?: string;   // 1200px 4:3 padded for product pages
+  detailUrl?: string;    // 2000px full-size for zoom/fullscreen
   order: number;
   isPrimary: boolean;
 }

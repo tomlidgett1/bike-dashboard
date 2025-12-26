@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { addProductImages } from "@/lib/services/product-images";
 
 // Helper function to find or create canonical product with AI categorisation
 async function ensureCanonicalProduct(
@@ -297,84 +298,39 @@ export async function POST(request: NextRequest) {
       });
     });
     
+    // ============================================================
+    // REFACTORED: Use shared helper to insert images into product_images
+    // This is now the ONLY place images are stored (single source of truth)
+    // ============================================================
     if (images.length > 0 && listing?.id) {
-      console.log(`📸 [LISTINGS API] Inserting ${images.length} images into product_images table`);
+      console.log(`📸 [LISTINGS API] Inserting ${images.length} images via shared helper`);
       
-      // Use order field as the source of truth for is_primary
-      // The image with order=0 is ALWAYS the primary image
-      const imageRecords = images.map((img: any, index: number) => {
-        // Use order field to determine primary - order=0 is primary
+      // Convert to format expected by addProductImages
+      const imageData = images.map((img: any, index: number) => {
         const sortOrder = img.order ?? index;
-        const finalIsPrimary = sortOrder === 0;
-        
-        console.log(`📸 [LISTINGS API] Building record[${index}]:`, {
-          'img.order': img.order,
-          'sortOrder': sortOrder,
-          'finalIsPrimary (order===0)': finalIsPrimary,
-          'img.isPrimary (original)': img.isPrimary,
-        });
-        
         return {
-          product_id: listing.id,
-          cloudinary_url: img.url,
-          card_url: img.cardUrl,
-          thumbnail_url: img.thumbnailUrl,
-          detail_url: img.detailUrl || img.url,
-          external_url: img.url,
-          is_primary: finalIsPrimary,
-          // IMPORTANT: Use ?? so order=0 doesn't get treated as falsy and replaced.
-          sort_order: img.order ?? index,
-          is_downloaded: true,
-          approval_status: 'approved',
-          uploaded_by: user.id,
-          width: img.width || 800,
-          height: img.height || 800,
-          mime_type: 'image/webp',
+          cloudinaryResult: {
+            url: img.url,
+            cardUrl: img.cardUrl,
+            mobileCardUrl: img.mobileCardUrl,
+            thumbnailUrl: img.thumbnailUrl,
+            galleryUrl: img.galleryUrl,
+            detailUrl: img.detailUrl || img.url,
+          },
+          isPrimary: sortOrder === 0, // order=0 is always primary
+          sortOrder: sortOrder,
+          source: 'listing_upload',
         };
       });
       
-      console.log('🖼️ [LISTINGS API] ====== FINAL IMAGE RECORDS ======');
-      imageRecords.forEach((r: any, idx: number) => {
-        console.log(`🖼️ [LISTINGS API] record[${idx}]:`, {
-          is_primary: r.is_primary,
-          sort_order: r.sort_order,
-          card_url: r.card_url?.substring(60, 120),
-        });
-      });
-
-      const { data: insertedImages, error: imageError } = await supabase
-        .from("product_images")
-        .insert(imageRecords)
-        .select('id, is_primary, sort_order, card_url');
-
-      if (imageError) {
-        console.error("❌ [LISTINGS API] Error inserting images:", imageError);
-        // Don't fail the whole request, images are stored in JSONB as backup
-      } else {
-        console.log(`✅ [LISTINGS API] ${images.length} images inserted into product_images table`);
-        console.log('✅ [LISTINGS API] Inserted records:', JSON.stringify(insertedImages, null, 2));
-        
-        // VERIFICATION: Query the database to confirm is_primary values
-        const { data: verifyImages, error: verifyError } = await supabase
-          .from("product_images")
-          .select('id, is_primary, sort_order, card_url')
-          .eq('product_id', listing.id)
-          .order('sort_order', { ascending: true });
-        
-        if (!verifyError && verifyImages) {
-          console.log('🔍 [LISTINGS API] ====== VERIFICATION QUERY ======');
-          verifyImages.forEach((img: any, idx: number) => {
-            console.log(`🔍 [LISTINGS API] DB product_images[${idx}]:`, {
-              id: img.id,
-              is_primary: img.is_primary,
-              sort_order: img.sort_order,
-              card_url: img.card_url?.substring(70, 130),
-            });
-          });
-          const primaryCount = verifyImages.filter((img: any) => img.is_primary === true).length;
-          console.log(`🔍 [LISTINGS API] PRIMARY COUNT IN DB: ${primaryCount}`);
-        }
-      }
+      const insertedImages = await addProductImages(
+        supabase, 
+        listing.id, 
+        imageData,
+        listing.canonical_product_id
+      );
+      
+      console.log(`✅ [LISTINGS API] ${insertedImages.length} images inserted via shared helper`);
     } else {
       console.log('⚠️ [LISTINGS API] Skipping image insertion - no images or no listing ID');
     }

@@ -64,83 +64,93 @@ export async function GET(request: NextRequest) {
       console.error('Stores search error:', storesResult.error);
     }
 
-    // OPTIMIZED: Products already come with complete data from single query
-    // No need for separate image fetching or joins
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    
-    // We need to fetch canonical images separately for now (only for products that need them)
-    const productsWithCanonicalIds = (productsResult.data || [])
-      .filter((p: any) => !p.use_custom_image && !p.primary_image_url && p.canonical_product_id)
-      .map((p: any) => p.canonical_product_id);
-
-    let canonicalImagesMap = new Map();
-    if (productsWithCanonicalIds.length > 0) {
-      const { data: canonicalImages } = await supabase
-        .from('product_images')
-        .select('canonical_product_id, storage_path, is_primary, variants, cloudinary_url, thumbnail_url, card_url')
-        .in('canonical_product_id', productsWithCanonicalIds)
-        .eq('is_primary', true)
-        .eq('approval_status', 'approved');
-      
-      canonicalImages?.forEach((img: any) => {
-        canonicalImagesMap.set(img.canonical_product_id, img);
-      });
-    }
-
-    // Show all products regardless of listing type - UI will display source labels
+    // ============================================================
+    // REFACTORED: Fetch images from product_images table (source of truth)
+    // Batch-fetch primary images for all search results
+    // ============================================================
     const rawProducts = productsResult.data || [];
+    
+    // Collect all product IDs and canonical IDs for image lookup
+    const allProductIds = rawProducts.map((p: any) => p.product_id).filter(Boolean);
+    const allCanonicalIds = rawProducts
+      .filter((p: any) => p.canonical_product_id)
+      .map((p: any) => p.canonical_product_id);
+    
+    // Batch-fetch primary images from product_images table (NEW source of truth)
+    let productImagesMap = new Map<string, any>();
+    let canonicalImagesMap = new Map<string, any>();
+    
+    // Query by product_id
+    if (allProductIds.length > 0) {
+      const { data: productImagesData } = await supabase
+        .from('product_images')
+        .select('product_id, canonical_product_id, thumbnail_url, card_url, cloudinary_url, is_primary')
+        .in('product_id', allProductIds)
+        .eq('approval_status', 'approved')
+        .order('is_primary', { ascending: false })
+        .order('sort_order', { ascending: true });
+      
+      if (productImagesData) {
+        for (const img of productImagesData) {
+          if (img.product_id && !productImagesMap.has(img.product_id)) {
+            productImagesMap.set(img.product_id, img);
+          }
+        }
+      }
+    }
+    
+    // Query by canonical_product_id (for products without direct product_id images)
+    if (allCanonicalIds.length > 0) {
+      const { data: canonicalImagesData } = await supabase
+        .from('product_images')
+        .select('product_id, canonical_product_id, thumbnail_url, card_url, cloudinary_url, is_primary')
+        .in('canonical_product_id', allCanonicalIds)
+        .eq('approval_status', 'approved')
+        .order('is_primary', { ascending: false })
+        .order('sort_order', { ascending: true });
+      
+      if (canonicalImagesData) {
+        for (const img of canonicalImagesData) {
+          if (img.canonical_product_id && !canonicalImagesMap.has(img.canonical_product_id)) {
+            canonicalImagesMap.set(img.canonical_product_id, img);
+          }
+        }
+      }
+    }
+    
+    console.log(`🖼️ [SEARCH] Fetched ${productImagesMap.size} product images, ${canonicalImagesMap.size} canonical images`);
 
-    // IMPORTANT: Only show products with Cloudinary images
+    // Transform products with images from product_images table
     const products = rawProducts
       .map((product: any) => {
+        // Look up image from product_images table (NEW source of truth)
+        const productImage = productImagesMap.get(product.product_id);
+        const canonicalImage = product.canonical_product_id 
+          ? canonicalImagesMap.get(product.canonical_product_id) 
+          : null;
+        
+        const imageFromTable = productImage || canonicalImage;
+        
         let imageUrl = null;
         let thumbnailUrl = null;
         let hasCloudinaryImage = false;
         
-        // Priority 0: Cached image URLs (fastest path for private listings)
-        // These are pre-computed and stored on the product for fast access
-        if (product.cached_image_url && product.cached_image_url.includes('cloudinary')) {
+        // Priority 1: Images from product_images table (NEW source of truth)
+        if (imageFromTable?.cloudinary_url || imageFromTable?.card_url) {
+          hasCloudinaryImage = true;
+          thumbnailUrl = imageFromTable.thumbnail_url || null;
+          imageUrl = imageFromTable.card_url || imageFromTable.cloudinary_url;
+        }
+        // Priority 2: Fallback to cached columns during transition
+        else if (product.cached_image_url && product.cached_image_url.includes('cloudinary')) {
           hasCloudinaryImage = true;
           imageUrl = product.cached_image_url;
           thumbnailUrl = product.cached_thumbnail_url || null;
         }
-        // Priority 1: Custom store image - check for cloudinary URL
-        else if (product.use_custom_image && product.custom_image_url) {
-          if (product.custom_image_url.includes('cloudinary')) {
-            hasCloudinaryImage = true;
-            imageUrl = product.custom_image_url;
-          }
-        } 
-        // Priority 2: Canonical product images - ONLY Cloudinary
-        else if (product.canonical_product_id) {
-          const primaryImage = canonicalImagesMap.get(product.canonical_product_id);
-          if (primaryImage && primaryImage.cloudinary_url) {
-            hasCloudinaryImage = true;
-            // Prioritise Cloudinary thumbnail_url (100px, instant loading)
-            if (primaryImage.thumbnail_url) {
-              thumbnailUrl = primaryImage.thumbnail_url;
-              imageUrl = primaryImage.card_url || primaryImage.cloudinary_url || thumbnailUrl;
-            } else {
-              imageUrl = primaryImage.cloudinary_url;
-            }
-          }
-        }
-        // Priority 3: Private listings with images array - check for cloudinary URLs
-        else if (product.images && Array.isArray(product.images) && product.images.length > 0) {
-          const cloudinaryImage = product.images.find((img: any) => 
-            img.url?.includes('cloudinary') || img.cloudinaryUrl
-          );
-          if (cloudinaryImage) {
-            hasCloudinaryImage = true;
-            const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
-            imageUrl = primaryImage?.cardUrl || primaryImage?.url || product.primary_image_url;
-            thumbnailUrl = primaryImage?.thumbnailUrl;
-          }
-        }
-        // Priority 4: Direct image URLs - check for cloudinary
-        else if (product.primary_image_url && product.primary_image_url.includes('cloudinary')) {
+        // Priority 3: Custom store image fallback
+        else if (product.use_custom_image && product.custom_image_url?.includes('cloudinary')) {
           hasCloudinaryImage = true;
-          imageUrl = product.primary_image_url;
+          imageUrl = product.custom_image_url;
         }
 
         // Skip products without cloudinary images
@@ -162,7 +172,7 @@ export async function GET(request: NextRequest) {
       })
       .filter(Boolean); // Remove nulls (no cloudinary image)
     
-    console.log(`🖼️ [SEARCH] Filtered to ${products.length} products with Cloudinary images`);
+    console.log(`⚡ [SEARCH] Returned ${products.length} products with images from product_images table`);
     
     // Products are already sorted by relevance from the function
 

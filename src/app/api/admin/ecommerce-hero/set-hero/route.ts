@@ -4,14 +4,14 @@
  * 
  * Sets an image as the product's hero image.
  * If the image is not on Cloudinary, it will automatically upload it first.
- * Updates:
- * - cached_image_url and cached_thumbnail_url
- * - is_primary in product_images table (if from DB)
- * - isPrimary in images JSONB (if from private listing)
+ * 
+ * REFACTORED: Now uses product_images table as single source of truth.
+ * Updates is_primary flag in product_images table directly.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { setHeroImage } from '@/lib/services/product-images';
 
 export const dynamic = 'force-dynamic';
 
@@ -160,74 +160,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Product is not active' }, { status: 400 });
     }
 
-    // Handle based on image source
-    if (source === 'product_images' && imageId) {
-      // Image is from product_images table
-      // Update is_primary in the table (trigger will set others to false)
-      console.log(`[SET-HERO] Updating product_images table for image ${imageId}`);
+    // ============================================================
+    // REFACTORED: Use shared helper to set hero image
+    // Updates product_images table as single source of truth
+    // ============================================================
+    
+    // Get product's canonical_product_id for the shared helper
+    const { data: productInfo } = await supabase
+      .from('products')
+      .select('canonical_product_id')
+      .eq('id', productId)
+      .single();
+    
+    if (imageId) {
+      // Use the shared helper to set the hero image
+      console.log(`[SET-HERO] Using shared helper to set image ${imageId} as hero`);
       
-      const { error: imageUpdateError } = await supabase
-        .from('product_images')
-        .update({ is_primary: true, sort_order: 0 })
-        .eq('id', imageId);
-
-      if (imageUpdateError) {
-        console.error('[SET-HERO] Failed to update product_images:', imageUpdateError);
-      }
-
-      // Call the sync function to update JSONB
-      const { error: syncError } = await supabase.rpc('sync_product_images_to_jsonb', {
-        target_product_id: productId,
-      });
-
-      if (syncError) {
-        console.error('[SET-HERO] Failed to sync images:', syncError);
-      }
-    } else {
-      // Image is from JSONB (private listing) - update JSONB directly
-      console.log(`[SET-HERO] Updating images JSONB for private listing`);
+      const success = await setHeroImage(
+        supabase, 
+        productId, 
+        imageId,
+        productInfo?.canonical_product_id
+      );
       
-      const currentImages = (product.images as ImageJsonb[]) || [];
-      
-      // Update isPrimary and order for all images
-      const updatedImages = currentImages.map((img, index) => {
-        const isMatch = (img.cardUrl === cardUrl) || (img.url === cardUrl) || (img.id === imageId);
-        return {
-          ...img,
-          isPrimary: isMatch,
-          order: isMatch ? 0 : (img.order || index + 1),
-        };
-      });
-
-      // Sort so primary is first
-      updatedImages.sort((a, b) => (a.order || 0) - (b.order || 0));
-
-      const { error: jsonbUpdateError } = await supabase
-        .from('products')
-        .update({ images: updatedImages })
-        .eq('id', productId);
-
-      if (jsonbUpdateError) {
-        console.error('[SET-HERO] Failed to update images JSONB:', jsonbUpdateError);
+      if (!success) {
+        console.error('[SET-HERO] Failed to set hero image via shared helper');
       }
     }
-
-    // Update the product's cached image URLs and primary_image_url
+    
+    // Update product flags (minimal - for backwards compatibility during transition)
     const { error: updateError } = await supabase
       .from('products')
       .update({
-        cached_image_url: cardUrl,
-        cached_thumbnail_url: thumbnailUrl || cardUrl,
-        primary_image_url: galleryUrl || detailUrl || cardUrl,
         has_displayable_image: true,
+        images_approved_by_admin: true,
       })
       .eq('id', productId);
 
     if (updateError) {
       console.error('[SET-HERO] Update error:', updateError);
-      return NextResponse.json({ 
-        error: `Failed to update product: ${updateError.message}` 
-      }, { status: 500 });
+      // Don't fail - product_images was already updated
     }
 
     console.log(`[SET-HERO] Successfully updated product ${productId}`);
