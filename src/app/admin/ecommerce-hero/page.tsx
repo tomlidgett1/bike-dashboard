@@ -1339,20 +1339,20 @@ export default function EcommerceHeroPage() {
 
     try {
       // Fetch products with filters
+      // When searching, use a higher limit to show more results
+      const searchLimit = bulkSearchQuery ? Math.max(bulkBatchSize, 50) : bulkBatchSize;
       const params = new URLSearchParams({
         page: '1',
-        limit: bulkBatchSize.toString(),
+        limit: searchLimit.toString(),
         listing_type: bulkListingType,
         active_status: 'active',
       });
       
-      // Apply approval filter (default to not_approved for bulk review workflow)
+      // Apply approval filter - only add if user explicitly selected a filter
       if (bulkApprovalFilter !== 'all') {
         params.set('admin_approved', bulkApprovalFilter);
-      } else {
-        // Default behavior: show not approved for bulk review
-        params.set('admin_approved', 'not_approved');
       }
+      // Note: 'all' means no approval filter - show all products regardless of approval status
       
       // Apply has images filter
       if (bulkHasImagesFilter !== 'all') {
