@@ -46,6 +46,8 @@ Deno.serve(async (req) => {
     console.log(`🔍 [SEARCH] Searching for: "${searchQuery}"`)
 
     // Call Serper API
+    // Note: tbs filters - isz:l = large, isz:m = medium
+    // Adding 'product' to help find product images vs lifestyle photos
     const response = await fetch('https://google.serper.dev/images', {
       method: 'POST',
       headers: {
@@ -54,8 +56,8 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         q: searchQuery,
-        num: 30,
-        tbs: 'isz:l',  // Large images only
+        num: 50, // Request more to have better selection after filtering
+        gl: 'au', // Australia for local relevance
       }),
     })
 
@@ -73,14 +75,9 @@ Deno.serve(async (req) => {
 
     console.log(`✅ [SEARCH] Found ${images.length} images`)
 
-    // Filter and format results - prioritize higher quality images
+    // Filter and format results - no size filter, just remove bad domains
     const results = images
       .filter((img) => {
-        // Require minimum 800px for high quality (increased from 400px)
-        if (img.imageWidth < 800 || img.imageHeight < 800) {
-          console.log(`[SEARCH] Filtered out small image: ${img.imageWidth}x${img.imageHeight} from ${img.domain}`)
-          return false
-        }
         // Filter out social media and user-generated content sites
         const badDomains = ['facebook.com', 'twitter.com', 'instagram.com', 'pinterest.com', 'tiktok.com', 'reddit.com', 'imgur.com']
         if (badDomains.some((d) => img.domain.includes(d))) return false
