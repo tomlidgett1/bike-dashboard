@@ -54,9 +54,8 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         q: searchQuery,
-        num: 24,
-        gl: 'au',
-        hl: 'en',
+        num: 30,
+        tbs: 'isz:l',  // Large images only
       }),
     })
 
