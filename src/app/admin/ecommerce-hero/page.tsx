@@ -162,6 +162,8 @@ interface BulkReviewProduct {
   brand: string | null;
   storeName: string;
   currentImageUrl: string | null;
+  existingImages: SearchImageResult[]; // Images already on the product
+  heroImageId: string | null; // ID of the current hero image
   searchResults: SearchImageResult[];
   excludedImageIds: Set<string>; // Images the user doesn't want
   selectedImage: SearchImageResult | null;
@@ -1352,17 +1354,46 @@ export default function EcommerceHeroPage() {
       console.log('[BULK REVIEW] Response:', { success: data.success, count: data.data?.length, pagination: data.pagination });
 
       if (data.success && data.data && data.data.length > 0) {
-        const bulkItems: BulkReviewProduct[] = data.data.map((p: Product) => ({
-          id: p.id,
-          name: p.name,
-          brand: p.brand,
-          storeName: p.storeName,
-          currentImageUrl: p.cachedImageUrl || p.primaryImageUrl,
-          searchResults: [],
-          excludedImageIds: new Set<string>(),
-          selectedImage: null,
-          status: 'pending' as const,
-        }));
+        const bulkItems: BulkReviewProduct[] = data.data.map((p: Product) => {
+          // Convert existing product images to SearchImageResult format
+          const existingImages: SearchImageResult[] = [];
+          let heroImageId: string | null = null;
+          
+          if (p.images && Array.isArray(p.images) && p.images.length > 0) {
+            p.images.forEach((img: any, idx: number) => {
+              const imageResult: SearchImageResult = {
+                id: img.id || `existing-${idx}`,
+                url: img.url || img.cardUrl,
+                thumbnailUrl: img.thumbnailUrl || img.cardUrl || img.url,
+                title: 'Existing Image',
+                source: 'Current Product',
+                domain: 'existing',
+                width: 1024,
+                height: 1024,
+              };
+              existingImages.push(imageResult);
+              
+              // Track hero image
+              if (img.isPrimary || img.order === 0) {
+                heroImageId = imageResult.id;
+              }
+            });
+          }
+          
+          return {
+            id: p.id,
+            name: p.name,
+            brand: p.brand,
+            storeName: p.storeName,
+            currentImageUrl: p.cachedImageUrl || p.primaryImageUrl,
+            existingImages,
+            heroImageId,
+            searchResults: [],
+            excludedImageIds: new Set<string>(),
+            selectedImage: null,
+            status: 'pending' as const,
+          };
+        });
         setBulkProducts(bulkItems);
         console.log('[BULK REVIEW] Loaded', bulkItems.length, 'products');
       } else if (data.success && (!data.data || data.data.length === 0)) {
@@ -3103,14 +3134,23 @@ export default function EcommerceHeroPage() {
                     <div className="flex items-center gap-3">
                       {/* Product Info - Left Side */}
                       <div className="w-64 flex-shrink-0">
-                        <p className="text-sm font-medium text-gray-900 leading-tight line-clamp-2" title={product.name}>
-                          {product.name}
-                        </p>
+                        <div className="flex items-start gap-2">
+                          <p className="text-sm font-medium text-gray-900 leading-tight line-clamp-2 flex-1" title={product.name}>
+                            {product.name}
+                          </p>
+                          {product.existingImages.length > 0 && (
+                            <div className="flex-shrink-0 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-medium rounded">
+                              {product.existingImages.length} img{product.existingImages.length !== 1 ? 's' : ''}
+                            </div>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           {product.brand && (
                             <span className="text-xs text-gray-500">{product.brand}</span>
                           )}
-                          <span className="text-xs text-gray-400">•</span>
+                          {product.brand && product.storeName && (
+                            <span className="text-xs text-gray-400">•</span>
+                          )}
                           <span className="text-xs text-gray-400 truncate">{product.storeName}</span>
                         </div>
                       </div>
@@ -3161,8 +3201,51 @@ export default function EcommerceHeroPage() {
 
                       {/* Images Row - Scrollable */}
                       <div className="flex-1 min-w-0">
+                        {/* Show existing images if available */}
+                        {product.existingImages.length > 0 && (
+                          <div className="flex items-center gap-2 overflow-x-auto pb-1 mb-2 border-b border-gray-100 pb-2">
+                            <span className="text-xs font-medium text-gray-500 flex-shrink-0">Current:</span>
+                            {product.existingImages.map((img) => {
+                              const isHero = product.heroImageId === img.id;
+                              
+                              return (
+                                <div
+                                  key={img.id}
+                                  className={cn(
+                                    "relative flex-shrink-0 w-28 h-28 rounded-lg overflow-hidden border-3 transition-all",
+                                    isHero
+                                      ? "border-yellow-500 ring-2 ring-yellow-300 shadow-lg"
+                                      : "border-gray-200"
+                                  )}
+                                >
+                                  <img
+                                    src={img.thumbnailUrl || img.url}
+                                    alt="Current"
+                                    className="w-full h-full object-cover"
+                                  />
+                                  {isHero && (
+                                    <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-yellow-500 text-white text-[10px] font-bold rounded-md flex items-center gap-0.5">
+                                      <Flag className="h-2.5 w-2.5 fill-white" />
+                                      HERO
+                                    </div>
+                                  )}
+                                  <div className="absolute bottom-1 left-1 right-1">
+                                    <div className="bg-gray-900/70 backdrop-blur-sm px-1.5 py-0.5 rounded text-[9px] text-white text-center">
+                                      Existing
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        
+                        {/* Show search results */}
                         {(product.status === 'ready' || product.status === 'approved') && product.searchResults.length > 0 && (
                           <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                            {product.existingImages.length > 0 && (
+                              <span className="text-xs font-medium text-gray-500 flex-shrink-0">New:</span>
+                            )}
                             {product.searchResults.slice(0, 10).map((img) => {
                               const isExcluded = product.excludedImageIds.has(img.id);
                               const isSelected = product.selectedImage?.id === img.id;
