@@ -680,7 +680,10 @@ export function Step1ItemType({
           id: `photo-${Date.now()}-${i}`,
           url: result.data.url,
           cardUrl: result.data.cardUrl,
+          mobileCardUrl: result.data.mobileCardUrl,
           thumbnailUrl: result.data.thumbnailUrl,
+          galleryUrl: result.data.galleryUrl,
+          detailUrl: result.data.detailUrl,
           order: (quickData.images?.length || 0) + i,
           isPrimary: (quickData.images?.length || 0) === 0 && i === 0,
         });

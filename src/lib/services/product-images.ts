@@ -396,6 +396,8 @@ export async function addProductImages(
     source: img.source || "bulk_upload",
   }));
 
+  console.log("[ProductImages] Attempting to insert:", JSON.stringify(insertData, null, 2));
+  
   const { data, error } = await supabase
     .from("product_images")
     .insert(insertData)
@@ -403,9 +405,13 @@ export async function addProductImages(
 
   if (error) {
     console.error("[ProductImages] Failed to add images:", error);
+    console.error("[ProductImages] Error code:", error.code);
+    console.error("[ProductImages] Error details:", error.details);
+    console.error("[ProductImages] Error hint:", error.hint);
     return [];
   }
 
+  console.log("[ProductImages] Successfully inserted:", data?.length, "images");
   return data || [];
 }
 
