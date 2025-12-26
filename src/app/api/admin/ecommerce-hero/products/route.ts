@@ -182,10 +182,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply has_images filter
+    // We check both cached_image_url (the actual image) and has_displayable_image flag
+    console.log(`[ECOMMERCE-HERO PRODUCTS] Applying has_images filter: "${hasImages}"`);
     if (hasImages === 'with_images') {
-      query = query.eq('has_displayable_image', true);
+      console.log(`[ECOMMERCE-HERO PRODUCTS] Filtering for products WITH images`);
+      // Products with images have a cached_image_url set
+      query = query.not('cached_image_url', 'is', null);
     } else if (hasImages === 'without_images') {
-      query = query.or('has_displayable_image.is.null,has_displayable_image.eq.false');
+      console.log(`[ECOMMERCE-HERO PRODUCTS] Filtering for products WITHOUT images`);
+      // Products without images have null cached_image_url
+      query = query.is('cached_image_url', null);
     }
     // 'all' = no filter
 

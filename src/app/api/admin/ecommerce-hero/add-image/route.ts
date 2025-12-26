@@ -100,12 +100,58 @@ export async function POST(request: NextRequest) {
     let cloudinaryResult: CloudinaryUploadResult;
 
     if (isCloudinary) {
-      // Already on Cloudinary, use as-is
+      // Already on Cloudinary - generate proper transformation URLs
+      // Extract public_id from Cloudinary URL
+      // 
+      // Cloudinary URL structure: .../upload/{transformations}/{public_id}.{ext}
+      // We need JUST the public_id (e.g., bike-marketplace/ecommerce-hero/product-id/timestamp)
+      // NOT the transformations (e.g., w_400,ar_1:1,c_fill,...)
+      //
+      // All our public_ids start with "bike-marketplace/" so we look for that
+      
+      let publicId: string | null = null;
+      
+      // Method 1: Look for our folder structure (most reliable)
+      const folderMatch = imageUrl.match(/(bike-marketplace\/[^.?\s]+)/);
+      if (folderMatch && folderMatch[1]) {
+        // Remove file extension if present
+        publicId = folderMatch[1].replace(/\.\w+$/, '');
+      }
+      
+      // Method 2: Fallback for URLs with version number (v12345/public_id.ext)
+      if (!publicId) {
+        const versionMatch = imageUrl.match(/upload\/v\d+\/([^?]+?)(?:\.\w+)?$/);
+        if (versionMatch) {
+          publicId = versionMatch[1];
+        }
+      }
+      
+      if (!publicId) {
+        console.error(`[ADD-IMAGE] Could not extract public_id from URL: ${imageUrl}`);
+        return NextResponse.json({ error: 'Invalid Cloudinary URL format - could not extract public_id' }, { status: 400 });
+      }
+      
+      console.log(`[ADD-IMAGE] Extracted public_id: ${publicId}`);
+      
+      const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+      const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`;
+      
+      // Build fresh transformation URLs without any existing transformations
       cloudinaryResult = {
-        url: imageUrl,
-        cardUrl: imageUrl,
-        thumbnailUrl: imageUrl,
+        url: `${baseUrl}/${publicId}`,
+        cardUrl: `${baseUrl}/w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${publicId}`,
+        mobileCardUrl: `${baseUrl}/w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${publicId}`,
+        thumbnailUrl: `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${publicId}`,
+        galleryUrl: `${baseUrl}/w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp/${publicId}`,
+        detailUrl: `${baseUrl}/w_2000,c_limit,q_auto:best,f_webp/${publicId}`,
       };
+      
+      console.log(`[ADD-IMAGE] Generated Cloudinary variants:`, {
+        publicId,
+        cardUrl: cloudinaryResult.cardUrl,
+        galleryUrl: cloudinaryResult.galleryUrl,
+        detailUrl: cloudinaryResult.detailUrl,
+      });
     } else {
       // Upload to Cloudinary
       console.log(`[ADD-IMAGE] Uploading to Cloudinary...`);
@@ -183,17 +229,19 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ADD-IMAGE] Updating product with:`, JSON.stringify(updateData, null, 2));
 
-    // First, check if this is a Lightspeed product (has canonical_product_id)
+    // Get product info
     const { data: productInfo } = await supabase
       .from('products')
       .select('listing_type, canonical_product_id')
       .eq('id', productId)
       .single();
 
-    // For Lightspeed products, we need to insert into product_images table
-    // because the trigger looks there, not at the JSONB array
-    if (productInfo?.listing_type === 'lightspeed' || productInfo?.canonical_product_id) {
-      console.log(`[ADD-IMAGE] Lightspeed product detected, also inserting into product_images table`);
+    // ALWAYS insert into product_images table (not just for Lightspeed)
+    // This ensures:
+    // 1. Images are preserved when sync_product_images_to_jsonb runs
+    // 2. "Set as Hero" works correctly for ALL product types
+    // 3. Consistent data between product_images table and JSONB
+    console.log(`[ADD-IMAGE] Inserting into product_images table (listing_type: ${productInfo?.listing_type})`);
       
       // First, unset is_primary on all existing images for this product
       if (setAsHero) {
@@ -220,6 +268,7 @@ export async function POST(request: NextRequest) {
           external_url: cloudinaryResult.url,
           cloudinary_url: cloudinaryResult.url,
           card_url: cloudinaryResult.cardUrl,
+          mobile_card_url: cloudinaryResult.mobileCardUrl,
           thumbnail_url: cloudinaryResult.thumbnailUrl,
           gallery_url: cloudinaryResult.galleryUrl,
           detail_url: cloudinaryResult.detailUrl,
@@ -235,7 +284,6 @@ export async function POST(request: NextRequest) {
       } else {
         console.log(`[ADD-IMAGE] Inserted into product_images table`);
       }
-    }
 
     // DEBUG: Log the exact cardUrl we're trying to set
     console.log(`[ADD-IMAGE] ===== DEBUG =====`);

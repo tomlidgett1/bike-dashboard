@@ -116,7 +116,8 @@ export async function GET(
       `)
       .eq('user_id', storeId)
       .eq('is_active', true)
-      .gt('qoh', 0);
+      .gt('qoh', 0)
+      .eq('images_approved_by_admin', true); // Only show approved products
 
     // Apply search filter if we have search results
     if (searchQuery && searchProductIds) {

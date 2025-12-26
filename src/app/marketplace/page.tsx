@@ -13,6 +13,7 @@ import { ListItemBanner } from "@/components/marketplace/list-item-banner";
 import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
 import { SpaceNavigator, useMarketplaceSpace } from "@/components/marketplace/space-navigator";
 import { StoreFilterPills } from "@/components/marketplace/store-filter-pills";
+import { StoreCategoryPills } from "@/components/marketplace/store-category-pills";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
 import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type AdvancedFiltersState } from "@/components/marketplace/advanced-filters";
 import { StoresGrid } from "@/components/marketplace/stores-grid";
@@ -81,6 +82,9 @@ function MarketplacePageContent() {
 
   // Store filter state (for stores space - filter products by specific store)
   const [selectedStoreId, setSelectedStoreId] = React.useState<string | null>(null);
+  
+  // Store category filter state (for filtering within a selected store - zero API calls)
+  const [selectedStoreCategory, setSelectedStoreCategory] = React.useState<string | null>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = React.useState<string | null>(
@@ -426,6 +430,29 @@ function MarketplacePageContent() {
                   (currentPage === 1 && accumulatedProducts.length === 0 && isTransitioning);
   const hasMore = pagination?.hasMore || false;
   const totalCount = pagination?.total || 0;
+
+  // Derive store categories from fetched products (zero API calls - instant)
+  const storeCategories = React.useMemo(() => {
+    if (!selectedStoreId || !products?.length) return [];
+    
+    const categoryMap = new Map<string, number>();
+    products.forEach(product => {
+      const cat = product.marketplace_category;
+      if (cat) {
+        categoryMap.set(cat, (categoryMap.get(cat) || 0) + 1);
+      }
+    });
+    
+    return Array.from(categoryMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [selectedStoreId, products]);
+
+  // Filter products by selected store category (client-side, instant)
+  const displayProducts = React.useMemo(() => {
+    if (!selectedStoreCategory || !isStoresView) return products;
+    return products.filter(p => p.marketplace_category === selectedStoreCategory);
+  }, [products, selectedStoreCategory, isStoresView]);
 
   // Fetch stores when in stores view
   React.useEffect(() => {
@@ -983,28 +1010,43 @@ function MarketplacePageContent() {
                   />
                 </div>
 
-                {/* Store Filter Pills */}
-                <StoreFilterPills
-                  selectedStoreId={selectedStoreId}
-                  onStoreChange={(storeId) => {
-                    setSelectedStoreId(storeId);
-                    // Reset products when store filter changes
-                    setAccumulatedProducts([]);
-                    processedDataRef.current = new Set();
-                    setCurrentPage(1);
-                  }}
-                />
+                {/* Store Filter Pills + Category Pills (grouped to avoid space-y gap) */}
+                <div>
+                  <StoreFilterPills
+                    selectedStoreId={selectedStoreId}
+                    onStoreChange={(storeId) => {
+                      setSelectedStoreId(storeId);
+                      setSelectedStoreCategory(null); // Reset category when store changes
+                      // Reset products when store filter changes
+                      setAccumulatedProducts([]);
+                      processedDataRef.current = new Set();
+                      setCurrentPage(1);
+                    }}
+                  />
+
+                  {/* Store Category Pills - Show when a store is selected (zero API calls) */}
+                  <AnimatePresence>
+                    {selectedStoreId && storeCategories.length > 0 && (
+                      <StoreCategoryPills
+                        categories={storeCategories}
+                        selectedCategory={selectedStoreCategory}
+                        onCategoryChange={setSelectedStoreCategory}
+                      />
+                    )}
+                  </AnimatePresence>
+                </div>
 
                 {/* Product Count for Stores */}
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-700 font-medium">
-                      {totalCount.toLocaleString()} {totalCount === 1 ? 'product' : 'products'}
+                      {(selectedStoreCategory ? displayProducts.length : totalCount).toLocaleString()} {(selectedStoreCategory ? displayProducts.length : totalCount) === 1 ? 'product' : 'products'}
                     </span>
-                    {selectedStoreId && (
+                    {(selectedStoreId || selectedStoreCategory) && (
                       <button
                         onClick={() => {
                           setSelectedStoreId(null);
+                          setSelectedStoreCategory(null);
                           setAccumulatedProducts([]);
                           processedDataRef.current = new Set();
                           setCurrentPage(1);
@@ -1290,9 +1332,9 @@ function MarketplacePageContent() {
                   )}
 
                   {/* Products Grid - Progressive Loading */}
-                  {!searchQuery && products.length > 0 && (
+                  {!searchQuery && displayProducts.length > 0 && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-1.5 sm:gap-4">
-                      {products.map((product, index) => (
+                      {displayProducts.map((product, index) => (
                         <React.Fragment key={product.id}>
                           <ProductCard 
                             product={product}
@@ -1320,7 +1362,7 @@ function MarketplacePageContent() {
                   )}
 
                   {/* Load More Button */}
-                  {!searchQuery && !loading && hasMore && products.length > 0 && (
+                  {!searchQuery && !loading && hasMore && displayProducts.length > 0 && (
                     <div className="flex justify-center pt-6">
                       <Button
                         onClick={handleLoadMore}

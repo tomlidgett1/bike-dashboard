@@ -503,6 +503,10 @@ export default function EcommerceHeroPage() {
   
   // Track which products are being optimized (background removal)
   const [optimizingProducts, setOptimizingProducts] = useState<Set<number>>(new Set());
+  
+  // Track which existing images are being set as hero or removed
+  const [settingExistingAsHero, setSettingExistingAsHero] = useState<string | null>(null);
+  const [removingExistingImage, setRemovingExistingImage] = useState<string | null>(null);
 
   const supabase = createClient();
 
@@ -792,25 +796,43 @@ export default function EcommerceHeroPage() {
       const data = await response.json();
 
       if (data.success) {
-        // Update local state with the Cloudinary URLs from the response
-        const newHeroUrl = data.cachedImageUrl || imageUrl;
-        const newThumbnailUrl = data.cachedThumbnailUrl || image.thumbnailUrl || newHeroUrl;
+        // Refresh the product to get updated images from database
+        // This will fetch the new JSONB after sync_product_images_to_jsonb runs
+        console.log('[setAsHero] Success! Refreshing product to show updated images...');
         
-        const updateProduct = (p: Product): Product => {
-          if (p.id !== product.id) return p;
+        // Fetch fresh product data to reflect the new hero and updated images array
+        try {
+          const params = new URLSearchParams({ product_id: product.id });
+          const refreshResponse = await fetch(`/api/admin/ecommerce-hero/products?${params}`);
+          const refreshData = await refreshResponse.json();
           
-          return {
-            ...p,
-            cachedImageUrl: newHeroUrl,
-            cachedThumbnailUrl: newThumbnailUrl,
+          if (refreshData.success && refreshData.data.length > 0) {
+            const updatedProduct = refreshData.data[0];
+            console.log('[setAsHero] Refreshed product:', {
+              cachedImageUrl: updatedProduct.cachedImageUrl,
+              imageCount: updatedProduct.images?.length,
+            });
+            
+            setProducts(prev => prev.map(p => 
+              p.id === updatedProduct.id ? updatedProduct : p
+            ));
+            
+            if (selectedProduct?.id === product.id) {
+              setSelectedProduct(updatedProduct);
+            }
+          }
+        } catch (refreshError) {
+          console.error('[setAsHero] Failed to refresh product:', refreshError);
+          // Fallback to basic local update
+          const newHeroUrl = data.cachedImageUrl || imageUrl;
+          const updateProduct = (p: Product): Product => {
+            if (p.id !== product.id) return p;
+            return { ...p, cachedImageUrl: newHeroUrl };
           };
-        };
-
-        setProducts(prev => prev.map(updateProduct));
-        
-        // Update selected product
-        if (selectedProduct?.id === product.id) {
-          setSelectedProduct(updateProduct(selectedProduct));
+          setProducts(prev => prev.map(updateProduct));
+          if (selectedProduct?.id === product.id) {
+            setSelectedProduct(updateProduct(selectedProduct));
+          }
         }
       } else {
         console.error('Failed to set hero:', data.error);
@@ -1806,6 +1828,94 @@ export default function EcommerceHeroPage() {
       }
       return { ...p, excludedImageIds: newExcluded };
     }));
+  };
+
+  // Set an existing image as hero in bulk review
+  const setExistingImageAsHero = async (productId: string, image: SearchImageResult) => {
+    const key = `${productId}-${image.id}`;
+    setSettingExistingAsHero(key);
+    
+    try {
+      const response = await fetch('/api/admin/ecommerce-hero/set-hero', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId,
+          imageId: image.id,
+          cardUrl: image.url, // Will be processed by set-hero to generate variants
+          source: 'product_images',
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Update the bulk products state to reflect the new hero
+        setBulkProducts(prev => prev.map(p => {
+          if (p.id !== productId) return p;
+          return {
+            ...p,
+            heroImageId: image.id,
+            currentImageUrl: data.cachedImageUrl || image.url,
+          };
+        }));
+      } else {
+        console.error('Failed to set hero:', data.error);
+        alert(`Failed to set hero: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to set hero:', error);
+      alert('Failed to set hero image. Please try again.');
+    } finally {
+      setSettingExistingAsHero(null);
+    }
+  };
+
+  // Remove an existing image from a product in bulk review
+  const removeExistingImage = async (productId: string, imageId: string, productIndex: number) => {
+    const key = `${productId}-${imageId}`;
+    setRemovingExistingImage(key);
+    
+    try {
+      const response = await fetch('/api/admin/ecommerce-hero/manage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'remove_image',
+          productId,
+          imageId,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Update the bulk products state to remove the image
+        setBulkProducts(prev => prev.map((p, idx) => {
+          if (idx !== productIndex) return p;
+          
+          const updatedExistingImages = p.existingImages.filter(img => img.id !== imageId);
+          const wasHero = p.heroImageId === imageId;
+          
+          return {
+            ...p,
+            existingImages: updatedExistingImages,
+            // If removed image was hero, set first remaining image as hero (or null)
+            heroImageId: wasHero 
+              ? (updatedExistingImages[0]?.id || null) 
+              : p.heroImageId,
+          };
+        }));
+      } else {
+        console.error('Failed to remove image:', data.error);
+        alert(`Failed to remove image: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to remove image:', error);
+      alert('Failed to remove image. Please try again.');
+    } finally {
+      setRemovingExistingImage(null);
+    }
   };
 
   // ============================================================
@@ -3355,15 +3465,17 @@ export default function EcommerceHeroPage() {
                             <span className="text-xs font-medium text-gray-500 flex-shrink-0">Current:</span>
                             {product.existingImages.map((img) => {
                               const isHero = product.heroImageId === img.id;
+                              const isSettingHero = settingExistingAsHero === `${product.id}-${img.id}`;
+                              const isRemovingImg = removingExistingImage === `${product.id}-${img.id}`;
                               
                               return (
                                 <div
                                   key={img.id}
                                   className={cn(
-                                    "relative flex-shrink-0 w-28 h-28 rounded-lg overflow-hidden border-3 transition-all",
+                                    "relative flex-shrink-0 w-28 h-28 rounded-lg overflow-hidden border-3 transition-all group",
                                     isHero
                                       ? "border-yellow-500 ring-2 ring-yellow-300 shadow-lg"
-                                      : "border-gray-200"
+                                      : "border-gray-200 hover:border-gray-400"
                                   )}
                                 >
                                   <img
@@ -3377,13 +3489,42 @@ export default function EcommerceHeroPage() {
                                       HERO
                                     </div>
                                   )}
-                                  <div className="absolute bottom-1 left-1 right-1">
+                                  {/* Action buttons overlay - show on hover */}
+                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 p-1">
+                                    {!isHero && (
+                                      <button
+                                        onClick={() => setExistingImageAsHero(product.id, img)}
+                                        disabled={isSettingHero || isRemovingImg}
+                                        className="w-full px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-medium rounded-md flex items-center justify-center gap-1 disabled:opacity-50"
+                                      >
+                                        {isSettingHero ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <Flag className="h-3 w-3" />
+                                        )}
+                                        Set Hero
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => removeExistingImage(product.id, img.id, index)}
+                                      disabled={isSettingHero || isRemovingImg}
+                                      className="w-full px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium rounded-md flex items-center justify-center gap-1 disabled:opacity-50"
+                                    >
+                                      {isRemovingImg ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-3 w-3" />
+                                      )}
+                                      Remove
+                                    </button>
+                                  </div>
+                                  <div className="absolute bottom-1 left-1 right-1 group-hover:opacity-0 transition-opacity">
                                     <div className="bg-gray-900/70 backdrop-blur-sm px-1.5 py-0.5 rounded text-[9px] text-white text-center">
                                       Existing
-        </div>
-      </div>
-    </div>
-  );
+                                    </div>
+                                  </div>
+                                </div>
+                              );
                             })}
                           </div>
                         )}
