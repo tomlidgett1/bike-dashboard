@@ -167,10 +167,48 @@ serve(async (req) => {
           p_public_id: cloudinaryResult.publicId,
         });
 
-        // Step 5: Update product's cached image URL, primary_image_url, and mark as optimized
+        // Step 5: Update product's cached image URL, primary_image_url, images JSONB, and mark as optimized
+        // IMPORTANT: We need to update the images JSONB array because the product page reads from there first
+        
+        // First, get current images array
+        const { data: currentProduct } = await supabase
+          .from("products")
+          .select("images")
+          .eq("id", item.product_id)
+          .single();
+        
+        // Build the new AI image entry for JSONB
+        const aiImageEntry = {
+          id: `ai-hero-${Date.now()}`,
+          url: cloudinaryResult.url,
+          cardUrl: cloudinaryResult.cardUrl,
+          mobileCardUrl: cloudinaryResult.mobileCardUrl,
+          thumbnailUrl: cloudinaryResult.thumbnailUrl,
+          galleryUrl: cloudinaryResult.galleryUrl,
+          detailUrl: cloudinaryResult.detailUrl,
+          isPrimary: true,
+          order: 0,
+          source: "ai_hero",
+          isAiGenerated: true,
+        };
+        
+        // Get existing images and mark them as non-primary, shift order
+        const existingJsonbImages = (currentProduct?.images as any[]) || [];
+        const updatedImages = [
+          aiImageEntry,
+          ...existingJsonbImages.map((img: any, idx: number) => ({
+            ...img,
+            isPrimary: false,
+            order: idx + 1,
+          })),
+        ];
+        
+        console.log(`📦 [ECOMMERCE-HERO] Updating images JSONB with AI hero image (total: ${updatedImages.length} images)`);
+        
         const { error: updateError } = await supabase
           .from("products")
           .update({
+            images: updatedImages,
             cached_image_url: cloudinaryResult.cardUrl,
             cached_thumbnail_url: cloudinaryResult.thumbnailUrl,
             primary_image_url: cloudinaryResult.galleryUrl || cloudinaryResult.detailUrl || cloudinaryResult.cardUrl,
@@ -180,9 +218,9 @@ serve(async (req) => {
           .eq("id", item.product_id);
 
         if (updateError) {
-          console.error(`⚠️ [ECOMMERCE-HERO] Failed to update product cached image:`, updateError);
+          console.error(`⚠️ [ECOMMERCE-HERO] Failed to update product:`, updateError);
         } else {
-          console.log(`✅ [ECOMMERCE-HERO] Updated product ${item.product_id} cached_image_url, primary_image_url, and marked as optimized`);
+          console.log(`✅ [ECOMMERCE-HERO] Updated product ${item.product_id}: images JSONB, cached_image_url, primary_image_url, hero_background_optimized`);
         }
 
         // Step 6: Preserve original image and create new product_images record
