@@ -77,8 +77,11 @@ Deno.serve(async (req) => {
     // Filter and format results - prioritize higher quality images
     const results = images
       .filter((img) => {
-        // Require minimum 400px for decent quality (same as card size)
-        if (img.imageWidth < 400 || img.imageHeight < 400) return false
+        // Require minimum 800px for high quality (increased from 400px)
+        if (img.imageWidth < 800 || img.imageHeight < 800) {
+          console.log(`[SEARCH] Filtered out small image: ${img.imageWidth}x${img.imageHeight} from ${img.domain}`)
+          return false
+        }
         // Filter out social media and user-generated content sites
         const badDomains = ['facebook.com', 'twitter.com', 'instagram.com', 'pinterest.com', 'tiktok.com', 'reddit.com', 'imgur.com']
         if (badDomains.some((d) => img.domain.includes(d))) return false
@@ -87,16 +90,19 @@ Deno.serve(async (req) => {
       // Sort by image size (larger = better quality)
       .sort((a, b) => (b.imageWidth * b.imageHeight) - (a.imageWidth * a.imageHeight))
       .slice(0, 20) // Limit to 20 results
-      .map((img, index) => ({
-        id: `search-${index}`,
-        url: img.imageUrl,
-        thumbnailUrl: img.thumbnailUrl,
-        title: img.title,
-        source: img.source,
-        domain: img.domain,
-        width: img.imageWidth,
-        height: img.imageHeight,
-      }))
+      .map((img, index) => {
+        console.log(`[SEARCH] Result ${index + 1}: ${img.imageWidth}x${img.imageHeight} (${(img.imageWidth * img.imageHeight / 1000000).toFixed(1)}MP) from ${img.domain}`)
+        return {
+          id: `search-${index}`,
+          url: img.imageUrl,
+          thumbnailUrl: img.thumbnailUrl,
+          title: img.title,
+          source: img.source,
+          domain: img.domain,
+          width: img.imageWidth,
+          height: img.imageHeight,
+        }
+      })
 
     return new Response(
       JSON.stringify({

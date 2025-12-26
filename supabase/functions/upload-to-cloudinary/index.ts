@@ -99,6 +99,9 @@ serve(async (req) => {
       const arrayBuffer = await imageResponse.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
       const mimeType = imageResponse.headers.get("content-type") || "image/jpeg";
+      const fileSizeKB = (uint8Array.length / 1024).toFixed(1);
+      
+      console.log(`📸 [CLOUDINARY] Downloaded image: ${fileSizeKB}KB, type: ${mimeType}`);
 
       // Chunked base64 encoding
       let binary = '';
@@ -109,6 +112,8 @@ serve(async (req) => {
       }
       const base64 = btoa(binary);
       dataUri = `data:${mimeType};base64,${base64}`;
+      
+      console.log(`📸 [CLOUDINARY] Base64 encoded, total length: ${base64.length} characters`);
 
     } else {
       // Form data with file upload
@@ -187,6 +192,9 @@ serve(async (req) => {
 
     const result = await cloudinaryResponse.json();
     
+    console.log(`✅ [CLOUDINARY] Upload successful! Original dimensions: ${result.width}x${result.height} (${(result.width * result.height / 1000000).toFixed(1)}MP)`);
+    console.log(`✅ [CLOUDINARY] Format: ${result.format}, Bytes: ${(result.bytes / 1024).toFixed(1)}KB`);
+    
     // Build optimized URLs
     const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`;
     
@@ -199,8 +207,9 @@ serve(async (req) => {
     console.log(`🔍 [CLOUDINARY] ====== UPLOAD COMPLETE ======`);
     console.log(`🔍 [CLOUDINARY] index: ${index}`);
     console.log(`🔍 [CLOUDINARY] public_id: ${result.public_id}`);
-    console.log(`🔍 [CLOUDINARY] cardUrl: ${cardUrl}`);
-    console.log(`🔍 [CLOUDINARY] url: ${result.secure_url}`);
+    console.log(`🔍 [CLOUDINARY] cardUrl (400px): ${cardUrl}`);
+    console.log(`🔍 [CLOUDINARY] galleryUrl (1200px): ${galleryUrl}`);
+    console.log(`🔍 [CLOUDINARY] detailUrl (2000px): ${detailUrl}`);
 
     // Pre-warm CDN cache by requesting the most commonly used variants
     // This runs in background, doesn't block response
