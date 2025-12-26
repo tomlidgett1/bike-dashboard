@@ -482,8 +482,9 @@ async function uploadToCloudinary(
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = `bike-marketplace/ecommerce-hero/${productId}/${timestamp}`;
 
-    // Standard eager transformations matching existing system
-    const eagerTransforms = "w_100,c_limit,q_auto:low,f_webp|w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp|w_2000,c_limit,q_auto:best,f_webp";
+    // IMPORTANT: AI images are 1024x1024 from OpenAI - DO NOT upscale beyond this!
+    // Use c_limit to prevent upscaling, and use original dimensions for quality
+    const eagerTransforms = "w_100,c_limit,q_auto:low,f_webp|w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_1024,c_limit,q_auto:best,f_webp|w_1024,c_limit,q_auto:best,f_webp";
 
     // Generate signature
     const signatureString = `eager=${eagerTransforms}&eager_async=false&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`;
@@ -523,12 +524,14 @@ async function uploadToCloudinary(
     const result = await response.json();
     const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`;
 
-    // Build variant URLs matching existing system
+    // Build variant URLs - IMPORTANT: AI images are 1024x1024, DO NOT upscale!
+    // Use c_limit to prevent upscaling beyond source resolution
     const thumbnailUrl = `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${result.public_id}`;
     const mobileCardUrl = `${baseUrl}/w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${result.public_id}`;
     const cardUrl = `${baseUrl}/w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${result.public_id}`;
-    const galleryUrl = `${baseUrl}/w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp/${result.public_id}`;
-    const detailUrl = `${baseUrl}/w_2000,c_limit,q_auto:best,f_webp/${result.public_id}`;
+    // galleryUrl & detailUrl: Use 1024 max (original AI resolution) with c_limit to prevent upscaling
+    const galleryUrl = `${baseUrl}/w_1024,c_limit,q_auto:best,f_webp/${result.public_id}`;
+    const detailUrl = `${baseUrl}/w_1024,c_limit,q_auto:best,f_webp/${result.public_id}`;
 
     // Pre-warm CDN cache
     fetch(cardUrl).catch(() => {});
