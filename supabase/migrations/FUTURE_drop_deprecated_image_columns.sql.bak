@@ -10,7 +10,18 @@
 -- ============================================================
 
 -- ============================================================
--- Step 1: Drop Deprecated Sync Functions
+-- Step 1: Drop Dependent Objects
+-- ============================================================
+
+-- Drop materialized view that depends on images column
+DROP MATERIALIZED VIEW IF EXISTS products_with_images CASCADE;
+
+-- Drop trigger that depends on images column
+DROP TRIGGER IF EXISTS trg_update_product_cached_images ON products;
+DROP FUNCTION IF EXISTS update_product_cached_images() CASCADE;
+
+-- ============================================================
+-- Step 2: Drop Deprecated Sync Functions
 -- ============================================================
 
 -- These functions are no longer used now that triggers are removed
@@ -18,7 +29,7 @@ DROP FUNCTION IF EXISTS sync_product_images_to_jsonb(UUID);
 DROP FUNCTION IF EXISTS sync_canonical_images_to_products(UUID);
 
 -- ============================================================
--- Step 2: Drop Deprecated Columns from products table
+-- Step 3: Drop Deprecated Columns from products table
 -- ============================================================
 
 -- WARNING: This permanently deletes data!
