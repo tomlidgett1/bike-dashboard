@@ -172,6 +172,9 @@ interface BulkReviewProduct {
   aiStatus?: 'idle' | 'processing' | 'ready' | 'error'; // Track AI generation
   aiGeneratedImage?: SearchImageResult; // The AI-optimized image once complete
   aiError?: string;
+  // Approval status from database
+  imagesApprovedByAdmin: boolean;
+  hasDisplayableImage: boolean;
 }
 
 type MainTab = 'products' | 'bulk-review';
@@ -495,6 +498,8 @@ export default function EcommerceHeroPage() {
   const [bulkSelectedStoreId, setBulkSelectedStoreId] = useState<string>('');
   const [bulkSearchQuery, setBulkSearchQuery] = useState<string>('');
   const [bulkResultsPerImage, setBulkResultsPerImage] = useState<number>(8);
+  const [bulkHasImagesFilter, setBulkHasImagesFilter] = useState<'all' | 'with_images' | 'without_images'>('all');
+  const [bulkApprovalFilter, setBulkApprovalFilter] = useState<'all' | 'approved' | 'not_approved'>('all');
   
   // Track which products are being optimized (background removal)
   const [optimizingProducts, setOptimizingProducts] = useState<Set<number>>(new Set());
@@ -1333,14 +1338,26 @@ export default function EcommerceHeroPage() {
     setBulkNoProductsFound(false);
 
     try {
-      // Fetch unapproved products with filters
+      // Fetch products with filters
       const params = new URLSearchParams({
         page: '1',
         limit: bulkBatchSize.toString(),
         listing_type: bulkListingType,
-        admin_approved: 'not_approved',
         active_status: 'active',
       });
+      
+      // Apply approval filter (default to not_approved for bulk review workflow)
+      if (bulkApprovalFilter !== 'all') {
+        params.set('admin_approved', bulkApprovalFilter);
+      } else {
+        // Default behavior: show not approved for bulk review
+        params.set('admin_approved', 'not_approved');
+      }
+      
+      // Apply has images filter
+      if (bulkHasImagesFilter !== 'all') {
+        params.set('has_images', bulkHasImagesFilter);
+      }
       
       if (bulkSelectedBrand) {
         params.set('brand', bulkSelectedBrand);
@@ -1396,6 +1413,8 @@ export default function EcommerceHeroPage() {
             excludedImageIds: new Set<string>(),
             selectedImage: null,
             status: 'pending' as const,
+            imagesApprovedByAdmin: p.imagesApprovedByAdmin || false,
+            hasDisplayableImage: p.hasDisplayableImage || false,
           };
         });
         setBulkProducts(bulkItems);
@@ -1687,6 +1706,48 @@ export default function EcommerceHeroPage() {
       
     } catch (error) {
       console.error('[BULK REVIEW] Failed to approve:', error);
+      setBulkProducts(prev => prev.map((p, idx) => 
+        idx === index ? { ...p, status: 'ready' as const, errorMessage: error instanceof Error ? error.message : 'Error' } : p
+      ));
+    }
+  };
+
+  // Quick approve - marks existing images as approved without adding new ones
+  const quickApproveBulkProduct = async (index: number) => {
+    const product = bulkProducts[index];
+    console.log('[BULK REVIEW] Quick approve clicked for product', index, product.name);
+    
+    setBulkProducts(prev => prev.map((p, idx) => 
+      idx === index ? { ...p, status: 'searching' as const } : p
+    ));
+
+    try {
+      console.log('[BULK REVIEW] Calling manage API for quick approve...');
+      const response = await fetch('/api/admin/ecommerce-hero/manage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: product.id,
+          action: 'approve_images',
+        }),
+      });
+
+      const data = await response.json();
+      console.log('[BULK REVIEW] Manage API response:', data);
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to approve');
+      }
+
+      // Success - mark as approved
+      setBulkProducts(prev => prev.map((p, idx) => 
+        idx === index ? { ...p, status: 'approved' as const, imagesApprovedByAdmin: true } : p
+      ));
+      setBulkApprovedCount(prev => prev + 1);
+      console.log('[BULK REVIEW] Product quick-approved successfully');
+      
+    } catch (error) {
+      console.error('[BULK REVIEW] Failed to quick approve:', error);
       setBulkProducts(prev => prev.map((p, idx) => 
         idx === index ? { ...p, status: 'ready' as const, errorMessage: error instanceof Error ? error.message : 'Error' } : p
       ));
@@ -2904,6 +2965,48 @@ export default function EcommerceHeroPage() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                {/* Has Images Filter */}
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">Images:</span>
+                  <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+                    {(['all', 'with_images', 'without_images'] as const).map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => setBulkHasImagesFilter(status)}
+                        className={cn(
+                          "px-2 py-1 text-xs font-medium rounded-md transition-colors",
+                          bulkHasImagesFilter === status
+                            ? "text-gray-800 bg-white shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70"
+                        )}
+                      >
+                        {status === 'all' ? 'All' : status === 'with_images' ? 'Has' : 'None'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Approval Filter */}
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">Approved:</span>
+                  <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+                    {(['all', 'not_approved', 'approved'] as const).map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => setBulkApprovalFilter(status)}
+                        className={cn(
+                          "px-2 py-1 text-xs font-medium rounded-md transition-colors",
+                          bulkApprovalFilter === status
+                            ? "text-gray-800 bg-white shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70"
+                        )}
+                      >
+                        {status === 'all' ? 'All' : status === 'approved' ? 'Yes' : 'No'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -3163,11 +3266,31 @@ export default function EcommerceHeroPage() {
                           <p className="text-sm font-medium text-gray-900 leading-tight line-clamp-2 flex-1" title={product.name}>
                             {product.name}
                           </p>
-                          {product.existingImages.length > 0 && (
-                            <div className="flex-shrink-0 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-medium rounded">
-                              {product.existingImages.length} img{product.existingImages.length !== 1 ? 's' : ''}
-                            </div>
-                          )}
+                          <div className="flex-shrink-0 flex items-center gap-1">
+                            {/* Approval status badge */}
+                            {product.imagesApprovedByAdmin ? (
+                              <div className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-medium rounded flex items-center gap-0.5">
+                                <CheckCircle2 className="h-2.5 w-2.5" />
+                                OK
+                              </div>
+                            ) : (
+                              <div className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-medium rounded">
+                                Pending
+                              </div>
+                            )}
+                            {/* Image count badge */}
+                            {product.existingImages.length > 0 && (
+                              <div className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-medium rounded">
+                                {product.existingImages.length} img{product.existingImages.length !== 1 ? 's' : ''}
+                              </div>
+                            )}
+                            {/* No images indicator */}
+                            {product.existingImages.length === 0 && !product.hasDisplayableImage && (
+                              <div className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-medium rounded">
+                                No img
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           {product.brand && (
@@ -3380,7 +3503,19 @@ export default function EcommerceHeroPage() {
                               </div>
                             )}
                             
-                            {/* Approve Button */}
+                            {/* Quick Approve Button - for products with existing images that just need approval */}
+                            {!product.imagesApprovedByAdmin && (product.existingImages.length > 0 || product.hasDisplayableImage) && !product.selectedImage && (
+                              <Button
+                                onClick={() => quickApproveBulkProduct(index)}
+                                size="sm"
+                                className="h-8 text-xs bg-blue-600 hover:bg-blue-700"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                                Quick Approve
+                              </Button>
+                            )}
+                            
+                            {/* Approve Button - for new selected images */}
                             <Button
                               onClick={() => approveBulkProduct(index)}
                               disabled={!product.selectedImage}
