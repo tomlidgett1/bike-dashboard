@@ -434,6 +434,7 @@ export default function EcommerceHeroPage() {
   const [selectedBrand, setSelectedBrand] = useState<string>('');
   const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const [inStockOnly, setInStockOnly] = useState(false);
+  const [hasImagesFilter, setHasImagesFilter] = useState<'all' | 'with_images' | 'without_images'>('all');
   const [heroOptimized, setHeroOptimized] = useState<'all' | 'optimized' | 'not_optimized'>('all');
   const [adminApproved, setAdminApproved] = useState<'all' | 'approved' | 'not_approved'>('all');
   const [secondaryReview, setSecondaryReview] = useState<'all' | 'flagged' | 'not_flagged'>('all');
@@ -524,7 +525,6 @@ export default function EcommerceHeroPage() {
         page: page.toString(),
         limit: '240',
         listing_type: listingType,
-        // Removed has_images filter - show all products in admin tool
       });
       if (search) {
         params.set('search', search);
@@ -537,6 +537,9 @@ export default function EcommerceHeroPage() {
       }
       if (inStockOnly) {
         params.set('in_stock', 'true');
+      }
+      if (hasImagesFilter !== 'all') {
+        params.set('has_images', hasImagesFilter);
       }
       if (heroOptimized !== 'all') {
         params.set('hero_optimized', heroOptimized);
@@ -566,7 +569,7 @@ export default function EcommerceHeroPage() {
     } finally {
       setProductsLoading(false);
     }
-  }, [page, search, listingType, selectedBrand, selectedStoreId, inStockOnly, heroOptimized, adminApproved, secondaryReview, activeStatus]);
+  }, [page, search, listingType, selectedBrand, selectedStoreId, inStockOnly, hasImagesFilter, heroOptimized, adminApproved, secondaryReview, activeStatus]);
 
   const fetchQueueCounts = useCallback(async () => {
     setQueueLoading(true);
@@ -683,7 +686,7 @@ export default function EcommerceHeroPage() {
   useEffect(() => {
     fetchProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, search, listingType, selectedBrand, selectedStoreId, inStockOnly, heroOptimized, adminApproved, secondaryReview, activeStatus]);
+  }, [page, search, listingType, selectedBrand, selectedStoreId, inStockOnly, hasImagesFilter, heroOptimized, adminApproved, secondaryReview, activeStatus]);
 
   // ============================================================
   // Search Debounce
@@ -1220,6 +1223,7 @@ export default function EcommerceHeroPage() {
     setSelectedBrand('');
     setSelectedStoreId('');
     setInStockOnly(false);
+    setHasImagesFilter('all');
     setHeroOptimized('all');
     setAdminApproved('all');
     setSecondaryReview('all');
@@ -1228,7 +1232,7 @@ export default function EcommerceHeroPage() {
     setPage(1);
   };
 
-  const hasActiveFilters = search || selectedBrand || selectedStoreId || inStockOnly || heroOptimized !== 'all' || adminApproved !== 'all' || secondaryReview !== 'all' || activeStatus !== 'all' || listingType !== 'all';
+  const hasActiveFilters = search || selectedBrand || selectedStoreId || inStockOnly || hasImagesFilter !== 'all' || heroOptimized !== 'all' || adminApproved !== 'all' || secondaryReview !== 'all' || activeStatus !== 'all' || listingType !== 'all';
 
   // ============================================================
   // Image Search Functions
@@ -1909,6 +1913,27 @@ export default function EcommerceHeroPage() {
 
             {/* Second row: Status filters */}
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Has Images Filter */}
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-500">Images:</span>
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+                  {(['all', 'with_images', 'without_images'] as const).map((status) => (
+                    <button
+                      key={status}
+                      onClick={() => { setHasImagesFilter(status); setPage(1); }}
+                      className={cn(
+                        "px-2 py-1 text-xs font-medium rounded-md transition-colors",
+                        hasImagesFilter === status
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70"
+                      )}
+                    >
+                      {status === 'all' ? 'All' : status === 'with_images' ? 'Has' : 'None'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* AI Optimized Filter */}
               <div className="flex items-center gap-1">
                 <span className="text-xs text-gray-500">AI:</span>
@@ -3232,10 +3257,10 @@ export default function EcommerceHeroPage() {
                                   <div className="absolute bottom-1 left-1 right-1">
                                     <div className="bg-gray-900/70 backdrop-blur-sm px-1.5 py-0.5 rounded text-[9px] text-white text-center">
                                       Existing
-                                    </div>
-                                  </div>
-                                </div>
-                              );
+        </div>
+      </div>
+    </div>
+  );
                             })}
                           </div>
                         )}

@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = (page - 1) * limit;
-    const hasImages = searchParams.get('has_images') === 'true';
+    const hasImages = searchParams.get('has_images') || 'all'; // 'all', 'with_images', 'without_images'
     
     // New filters
     const brand = searchParams.get('brand') || '';
@@ -181,10 +181,13 @@ export async function GET(request: NextRequest) {
       query = query.or(`description.ilike.%${search}%,display_name.ilike.%${search}%,brand.ilike.%${search}%,model.ilike.%${search}%`);
     }
 
-    // Apply has_images filter if requested
-    if (hasImages) {
+    // Apply has_images filter
+    if (hasImages === 'with_images') {
       query = query.eq('has_displayable_image', true);
+    } else if (hasImages === 'without_images') {
+      query = query.or('has_displayable_image.is.null,has_displayable_image.eq.false');
     }
+    // 'all' = no filter
 
     // Apply pagination
     query = query.range(offset, offset + limit - 1);
