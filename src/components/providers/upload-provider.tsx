@@ -227,7 +227,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
       setState(prev => ({ ...prev, progress: { current: 0, total: filesToUpload.length } }));
       console.log("📤 [UPLOAD CONTEXT] Uploading to Cloudinary...");
 
-      const uploadedImages: Array<{ url: string; cardUrl: string; thumbnailUrl: string; galleryUrl?: string; detailUrl?: string }> = [];
+      const uploadedImages: Array<{ url: string; cardUrl: string; mobileCardUrl?: string; thumbnailUrl: string; galleryUrl?: string; detailUrl?: string }> = [];
 
       // If we have an enhanced cover, add it first
       if (enhancedCover) {
@@ -275,6 +275,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
             return {
               url: result.data.url,
               cardUrl: result.data.cardUrl,
+              mobileCardUrl: result.data.mobileCardUrl,
               thumbnailUrl: result.data.thumbnailUrl,
               galleryUrl: result.data.galleryUrl,
               detailUrl: result.data.detailUrl,
@@ -452,7 +453,7 @@ async function enhanceCoverImage(
 function buildFormData(
   analysis: ListingAnalysisResult,
   urls: string[],
-  uploadedImages: Array<{ url: string; cardUrl: string; thumbnailUrl: string; galleryUrl?: string; detailUrl?: string }>
+  uploadedImages: Array<{ url: string; cardUrl: string; mobileCardUrl?: string; thumbnailUrl: string; galleryUrl?: string; detailUrl?: string }>
 ): any {
   const generatedTitle = [analysis.brand, analysis.model].filter(Boolean).join(" ");
 
@@ -605,12 +606,15 @@ function buildFormData(
     formData.fieldConfidence = analysis.field_confidence;
   }
 
-  // Images
+  // Images - include ALL variant URLs for product_images table
   formData.images = urls.map((url, index) => ({
     id: `ai-${index}`,
     url,
     cardUrl: uploadedImages[index]?.cardUrl,
+    mobileCardUrl: uploadedImages[index]?.mobileCardUrl,
     thumbnailUrl: uploadedImages[index]?.thumbnailUrl,
+    galleryUrl: uploadedImages[index]?.galleryUrl,
+    detailUrl: uploadedImages[index]?.detailUrl,
     order: index,
     isPrimary: index === 0,
   }));
