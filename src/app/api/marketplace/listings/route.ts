@@ -302,8 +302,13 @@ export async function POST(request: NextRequest) {
     // REFACTORED: Use shared helper to insert images into product_images
     // This is now the ONLY place images are stored (single source of truth)
     // ============================================================
+    console.log(`📸 [LISTINGS API] ====== IMAGE INSERTION CHECK ======`);
+    console.log(`📸 [LISTINGS API] images.length: ${images.length}`);
+    console.log(`📸 [LISTINGS API] listing?.id: ${listing?.id}`);
+    console.log(`📸 [LISTINGS API] listing?.canonical_product_id: ${listing?.canonical_product_id}`);
+    
     if (images.length > 0 && listing?.id) {
-      console.log(`📸 [LISTINGS API] Inserting ${images.length} images via shared helper`);
+      console.log(`📸 [LISTINGS API] ✅ CONDITION MET - Inserting ${images.length} images via shared helper`);
       
       // Convert to format expected by addProductImages
       const imageData = images.map((img: any, index: number) => {
