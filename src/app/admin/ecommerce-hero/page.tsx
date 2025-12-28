@@ -1677,7 +1677,7 @@ export default function EcommerceHeroPage() {
     }
   };
 
-  // Approve bulk product - saves the selected image as hero
+  // Approve bulk product - saves ALL non-excluded images, with selected image as hero
   const approveBulkProduct = async (index: number) => {
     const product = bulkProducts[index];
     console.log('[BULK REVIEW] Approve clicked for product', index, product.name, 'selectedImage:', product.selectedImage?.url);
@@ -1687,27 +1687,71 @@ export default function EcommerceHeroPage() {
       return;
     }
 
+    // Get all non-excluded images (images the user wants to keep)
+    const includedImages = product.searchResults.filter(img => !product.excludedImageIds.has(img.id));
+    console.log(`[BULK REVIEW] Including ${includedImages.length} images (${product.searchResults.length} total, ${product.excludedImageIds.size} excluded)`);
+
+    if (includedImages.length === 0) {
+      console.log('[BULK REVIEW] No images to include - cannot approve');
+      return;
+    }
+
     setBulkProducts(prev => prev.map((p, idx) => 
       idx === index ? { ...p, status: 'searching' as const } : p
     ));
 
     try {
-      console.log('[BULK REVIEW] Calling add-image API...');
-      const addResponse = await fetch('/api/admin/ecommerce-hero/add-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productId: product.id,
-          imageUrl: product.selectedImage.url,
-          setAsHero: true,
-        }),
-      });
+      // Add ALL included images, not just the hero
+      // The hero image (selectedImage) should be added first with setAsHero: true
+      // Other images should be added with setAsHero: false
+      
+      // Sort so hero is first
+      const sortedImages = [
+        ...includedImages.filter(img => img.id === product.selectedImage?.id),
+        ...includedImages.filter(img => img.id !== product.selectedImage?.id),
+      ];
 
-      const addData = await addResponse.json();
-      console.log('[BULK REVIEW] Add image API response:', addData);
+      console.log(`[BULK REVIEW] Adding ${sortedImages.length} images...`);
+      
+      let successCount = 0;
+      let errorCount = 0;
 
-      if (!addData.success) {
-        throw new Error(addData.error || 'Failed to add image');
+      for (let i = 0; i < sortedImages.length; i++) {
+        const img = sortedImages[i];
+        const isHero = img.id === product.selectedImage?.id;
+        
+        console.log(`[BULK REVIEW] Adding image ${i + 1}/${sortedImages.length} (hero: ${isHero}): ${img.url.substring(0, 60)}...`);
+        
+        try {
+          const addResponse = await fetch('/api/admin/ecommerce-hero/add-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              productId: product.id,
+              imageUrl: img.url,
+              setAsHero: isHero,
+            }),
+          });
+
+          const addData = await addResponse.json();
+
+          if (addData.success) {
+            successCount++;
+            console.log(`[BULK REVIEW] Image ${i + 1} added successfully`);
+          } else {
+            errorCount++;
+            console.error(`[BULK REVIEW] Image ${i + 1} failed:`, addData.error);
+          }
+        } catch (imgError) {
+          errorCount++;
+          console.error(`[BULK REVIEW] Image ${i + 1} error:`, imgError);
+        }
+      }
+
+      console.log(`[BULK REVIEW] Finished: ${successCount} success, ${errorCount} errors`);
+
+      if (successCount === 0) {
+        throw new Error('Failed to add any images');
       }
 
       // Success - mark as approved
@@ -1726,7 +1770,7 @@ export default function EcommerceHeroPage() {
         return updated;
       });
       setBulkApprovedCount(prev => prev + 1);
-      console.log('[BULK REVIEW] Product approved successfully');
+      console.log(`[BULK REVIEW] Product approved successfully with ${successCount} images`);
       
     } catch (error) {
       console.error('[BULK REVIEW] Failed to approve:', error);
