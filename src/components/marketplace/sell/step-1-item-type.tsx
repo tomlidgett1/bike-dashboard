@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt, Star, Truck } from "lucide-react";
+import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt, Star, Truck, Sparkles } from "lucide-react";
 import { ItemType, ListingImage, ConditionRating } from "@/lib/types/listing";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -124,7 +124,7 @@ const BikeSpecificFields = ({ data, onChange }: { data: QuickListingData; onChan
       <div className="space-y-2">
         <label className="text-sm font-semibold text-gray-900">Bike Type <span className="text-gray-500 font-normal">(Optional)</span></label>
         <Select value={data.bikeType} onValueChange={(value) => onChange({ ...data, bikeType: value })}>
-          <SelectTrigger className="rounded-md h-11">
+          <SelectTrigger className="rounded-md !h-11 w-full text-base py-1">
             <SelectValue placeholder="Select type" />
           </SelectTrigger>
           <SelectContent>
@@ -157,7 +157,7 @@ const BikeSpecificFields = ({ data, onChange }: { data: QuickListingData; onChan
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-900">Wheel Size <span className="text-gray-500 font-normal">(Optional)</span></label>
           <Select value={data.wheelSize} onValueChange={(value) => onChange({ ...data, wheelSize: value })}>
-            <SelectTrigger className="rounded-md h-11">
+            <SelectTrigger className="rounded-md !h-11 w-full text-base py-1">
               <SelectValue placeholder="Select wheel size" />
             </SelectTrigger>
             <SelectContent>
@@ -176,7 +176,7 @@ const BikeSpecificFields = ({ data, onChange }: { data: QuickListingData; onChan
       <div className="space-y-2">
         <label className="text-sm font-semibold text-gray-900">Suspension <span className="text-gray-500 font-normal">(Optional)</span></label>
         <Select value={data.suspensionType} onValueChange={(value) => onChange({ ...data, suspensionType: value })}>
-          <SelectTrigger className="rounded-md h-11">
+          <SelectTrigger className="rounded-md !h-11 w-full text-base py-1">
             <SelectValue placeholder="Select suspension" />
           </SelectTrigger>
           <SelectContent>
@@ -275,7 +275,7 @@ const ApparelSpecificFields = ({ data, onChange }: { data: QuickListingData; onC
       <div className="space-y-2">
         <label className="text-sm font-semibold text-gray-900">Size <span className="text-gray-500 font-normal">(Optional)</span></label>
         <Select value={data.size} onValueChange={(value) => onChange({ ...data, size: value })}>
-          <SelectTrigger className="rounded-md h-11">
+          <SelectTrigger className="rounded-md !h-11 w-full text-base py-1">
             <SelectValue placeholder="Select size" />
           </SelectTrigger>
           <SelectContent>
@@ -293,7 +293,7 @@ const ApparelSpecificFields = ({ data, onChange }: { data: QuickListingData; onC
       <div className="space-y-2">
         <label className="text-sm font-semibold text-gray-900">Gender Fit <span className="text-gray-500 font-normal">(Optional)</span></label>
         <Select value={data.genderFit} onValueChange={(value) => onChange({ ...data, genderFit: value })}>
-          <SelectTrigger className="rounded-md h-11">
+          <SelectTrigger className="rounded-md !h-11 w-full text-base py-1">
             <SelectValue placeholder="Select fit" />
           </SelectTrigger>
           <SelectContent>
@@ -332,7 +332,50 @@ export function Step1ItemType({
   const [isMobile, setIsMobile] = React.useState(false);
   const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
   const [showDetails, setShowDetails] = React.useState(false);
+  const [isGeneratingDescription, setIsGeneratingDescription] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Generate description using AI with web search
+  const handleGenerateDescription = async () => {
+    if (!quickData.title && !quickData.brand && !quickData.model) {
+      return; // Need at least some info to generate
+    }
+
+    setIsGeneratingDescription(true);
+    try {
+      const response = await fetch('/api/generate-description', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: quickData.title || `${quickData.brand || ''} ${quickData.model || ''}`.trim(),
+          brand: quickData.brand,
+          model: quickData.model,
+          itemType: quickData.itemType,
+          bikeType: quickData.bikeType,
+          frameSize: quickData.frameSize,
+          frameMaterial: quickData.frameMaterial,
+          groupset: quickData.groupset,
+          wheelSize: quickData.wheelSize,
+          conditionRating: quickData.conditionRating,
+          partTypeDetail: quickData.partTypeDetail,
+          size: quickData.size,
+          genderFit: quickData.genderFit,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success && data.description) {
+        setQuickData(prev => ({ ...prev, productDescription: data.description }));
+      } else {
+        console.error('Failed to generate description:', data.error);
+      }
+    } catch (error) {
+      console.error('Error generating description:', error);
+    } finally {
+      setIsGeneratingDescription(false);
+    }
+  };
 
   // Handler to update both primaryImageIndex AND the isPrimary/order flags in images array
   const handleSetPrimaryImage = (index: number) => {
@@ -915,7 +958,7 @@ export function Step1ItemType({
                 onValueChange={(value) => setQuickData({ ...quickData, conditionRating: value as ConditionRating })}
               >
                 <SelectTrigger className={cn(
-                  "rounded-xl h-11",
+                  "rounded-xl !h-11 w-full text-base py-1",
                   !quickData.conditionRating && "border-red-500 focus:border-red-500 focus:ring-red-500"
                 )}>
                   <SelectValue placeholder="Select..." />
@@ -960,7 +1003,7 @@ export function Step1ItemType({
               value={quickData.itemType || 'bike'}
               onValueChange={(value) => setQuickData({ ...quickData, itemType: value as ItemType })}
             >
-              <SelectTrigger className="rounded-xl h-11">
+              <SelectTrigger className="rounded-xl !h-11 w-full text-base py-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1065,29 +1108,73 @@ export function Step1ItemType({
 
           {/* Description - Product description */}
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Description *</label>
-            <Textarea
-              value={quickData.productDescription || ''}
-              onChange={(e) => setQuickData({ ...quickData, productDescription: e.target.value })}
-              className={cn(
-                "rounded-xl resize-none text-base",
-                !quickData.productDescription && "border-red-500 focus:border-red-500 focus:ring-red-500"
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-medium text-gray-700">Description *</label>
+              <button
+                type="button"
+                onClick={handleGenerateDescription}
+                disabled={isGeneratingDescription || (!quickData.title && !quickData.brand && !quickData.model)}
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isGeneratingDescription ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-3 w-3" />
+                    Generate
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="relative">
+              <Textarea
+                value={quickData.productDescription || ''}
+                onChange={(e) => setQuickData({ ...quickData, productDescription: e.target.value })}
+                className={cn(
+                  "rounded-xl resize-none text-base pr-10",
+                  !quickData.productDescription && "border-red-500 focus:border-red-500 focus:ring-red-500"
+                )}
+                rows={3}
+                placeholder="Product description - features, specs, what it is..."
+              />
+              {quickData.productDescription && (
+                <button
+                  type="button"
+                  onClick={() => setQuickData({ ...quickData, productDescription: '' })}
+                  className="absolute top-2 right-2 p-1 rounded-md hover:bg-gray-100 transition-colors"
+                  aria-label="Clear description"
+                >
+                  <X className="h-4 w-4 text-gray-400" />
+                </button>
               )}
-              rows={3}
-              placeholder="Product description - features, specs, what it is..."
-            />
+            </div>
           </div>
 
           {/* Notes - Seller notes */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Notes <span className="text-gray-400">(Optional)</span></label>
-            <Textarea
-              value={quickData.sellerNotes || ''}
-              onChange={(e) => setQuickData({ ...quickData, sellerNotes: e.target.value })}
-              className="rounded-xl resize-none text-base"
-              rows={2}
-              placeholder="Your notes - condition, wear, why selling..."
-            />
+            <div className="relative">
+              <Textarea
+                value={quickData.sellerNotes || ''}
+                onChange={(e) => setQuickData({ ...quickData, sellerNotes: e.target.value })}
+                className="rounded-xl resize-none text-base pr-10"
+                rows={2}
+                placeholder="Your notes - condition, wear, why selling..."
+              />
+              {quickData.sellerNotes && (
+                <button
+                  type="button"
+                  onClick={() => setQuickData({ ...quickData, sellerNotes: '' })}
+                  className="absolute top-2 right-2 p-1 rounded-md hover:bg-gray-100 transition-colors"
+                  aria-label="Clear notes"
+                >
+                  <X className="h-4 w-4 text-gray-400" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Expandable Details Section */}
@@ -1219,7 +1306,7 @@ export function Step1ItemType({
                             value={quickData.genderFit || ''}
                             onValueChange={(value) => setQuickData({ ...quickData, genderFit: value })}
                           >
-                            <SelectTrigger className="rounded-xl h-11">
+                            <SelectTrigger className="rounded-xl !h-11 w-full text-base py-1">
                               <SelectValue placeholder="Select..." />
                             </SelectTrigger>
                             <SelectContent>
@@ -1462,31 +1549,75 @@ export function Step1ItemType({
 
                 {/* Description - Product description */}
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-900">Description *</label>
-                  <textarea
-                    value={quickData.productDescription || ''}
-                    onChange={(e) => setQuickData({ ...quickData, productDescription: e.target.value })}
-                    placeholder="Product description - features, specs, what it is..."
-                    rows={4}
-                    className={cn(
-                      "w-full px-3 py-2.5 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none",
-                      !quickData.productDescription
-                        ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                        : "border-gray-300 focus:ring-gray-900 focus:border-transparent"
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold text-gray-900">Description *</label>
+                    <button
+                      type="button"
+                      onClick={handleGenerateDescription}
+                      disabled={isGeneratingDescription || (!quickData.title && !quickData.brand && !quickData.model)}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isGeneratingDescription ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Generate with AI
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <textarea
+                      value={quickData.productDescription || ''}
+                      onChange={(e) => setQuickData({ ...quickData, productDescription: e.target.value })}
+                      placeholder="Product description - features, specs, what it is..."
+                      rows={4}
+                      className={cn(
+                        "w-full px-3 py-2.5 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none",
+                        !quickData.productDescription
+                          ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                          : "border-gray-300 focus:ring-gray-900 focus:border-transparent"
+                      )}
+                    />
+                    {quickData.productDescription && (
+                      <button
+                        type="button"
+                        onClick={() => setQuickData({ ...quickData, productDescription: '' })}
+                        className="absolute top-2.5 right-2 p-1 rounded-md hover:bg-gray-100 transition-colors"
+                        aria-label="Clear description"
+                      >
+                        <X className="h-4 w-4 text-gray-400" />
+                      </button>
                     )}
-                  />
+                  </div>
                 </div>
 
                 {/* Notes - Seller notes */}
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-gray-900">Notes <span className="text-gray-400 font-normal">(Optional)</span></label>
-                  <textarea
-                    value={quickData.sellerNotes || ''}
-                    onChange={(e) => setQuickData({ ...quickData, sellerNotes: e.target.value })}
-                    placeholder="Your notes - condition, wear, why selling..."
-                    rows={2}
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none"
-                  />
+                  <div className="relative">
+                    <textarea
+                      value={quickData.sellerNotes || ''}
+                      onChange={(e) => setQuickData({ ...quickData, sellerNotes: e.target.value })}
+                      placeholder="Your notes - condition, wear, why selling..."
+                      rows={2}
+                      className="w-full px-3 py-2.5 pr-10 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none"
+                    />
+                    {quickData.sellerNotes && (
+                      <button
+                        type="button"
+                        onClick={() => setQuickData({ ...quickData, sellerNotes: '' })}
+                        className="absolute top-2.5 right-2 p-1 rounded-md hover:bg-gray-100 transition-colors"
+                        aria-label="Clear notes"
+                      >
+                        <X className="h-4 w-4 text-gray-400" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Price & Condition Row */}
@@ -1517,7 +1648,7 @@ export function Step1ItemType({
                       onValueChange={(value) => setQuickData({ ...quickData, conditionRating: value as ConditionRating })}
                     >
                       <SelectTrigger className={cn(
-                        "rounded-md h-11",
+                        "rounded-md !h-11 w-full text-base py-1",
                         !quickData.conditionRating && "border-red-500 focus:border-red-500 focus:ring-red-500"
                       )}>
                         <SelectValue placeholder="Select condition" />

@@ -231,6 +231,15 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             />
           </button>
 
+          {/* Condition Badge - Only for private listings with condition */}
+          {(product as any).listing_type === 'private_listing' && (product as any).condition_rating && (
+            <div className="absolute top-2 left-2 z-10">
+              <span className="px-1.5 py-0.5 bg-white/90 backdrop-blur-sm rounded-md text-[10px] font-medium text-gray-700 shadow-sm">
+                {(product as any).condition_rating}
+              </span>
+            </div>
+          )}
+
           {/* Admin: Image Discovery Button */}
           {isAdmin && onImageDiscoveryClick && (
             <button

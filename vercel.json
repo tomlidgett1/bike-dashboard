@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/ecommerce-hero",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }
