@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
       .from('products')
       .select(fastFields, { count: countType, head: false })
       .eq('is_active', true)
-      .eq('has_displayable_image', true)  // Only products with images (uses index)
+      // REMOVED: has_displayable_image check - we now filter by product_images table
       .or('listing_status.is.null,listing_status.eq.active')
       // For non-private listings (Lightspeed/store products), require admin approval
       // Private listings can show without approval
@@ -406,16 +406,20 @@ export async function GET(request: NextRequest) {
       } as MarketplaceProduct;
     });
     
-    console.log(`⚡ [REFACTORED] Returned ${products.length} products with images from product_images table`);
+    // FILTER: Only include products that have images in product_images table
+    // This replaces the deprecated has_displayable_image column check
+    const productsWithImages = products.filter(p => p.primary_image_url || p.card_url);
+    
+    console.log(`⚡ [REFACTORED] Returned ${productsWithImages.length} products with images (filtered from ${products.length} fetched)`);
 
     const response: MarketplaceProductsResponse = {
-      products,
+      products: productsWithImages,
       pagination: {
         page,
         pageSize,
-        total,
-        totalPages,
-        hasMore,
+        total, // Keep original total from database query
+        totalPages, // Keep original totalPages from database query
+        hasMore, // Keep original hasMore from database query
       },
     };
 
