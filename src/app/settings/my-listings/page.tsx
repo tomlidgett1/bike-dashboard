@@ -12,7 +12,6 @@ import {
   Loader2,
   AlertCircle,
   Zap,
-  PowerOff,
   CheckCircle,
   MoreHorizontal,
   ExternalLink,
@@ -36,6 +35,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { motion, AnimatePresence } from "framer-motion";
@@ -50,7 +50,7 @@ interface Listing {
   user_id: string;
   description: string;
   price: number;
-  listing_status: "active" | "inactive" | "sold" | "expired" | "draft";
+  listing_status: "active" | "sold" | "expired" | "draft" | "published";
   marketplace_category: string;
   marketplace_subcategory: string | null;
   condition_rating: string | null;
@@ -73,7 +73,6 @@ interface ActionSheetProps {
   onClose: () => void;
   listing: Listing | null;
   onBoost: (id: string) => void;
-  onDeactivate: (id: string) => void;
   onMarkAsSold: (id: string) => void;
   onDelete: (id: string) => void;
   onView: (id: string) => void;
@@ -85,7 +84,6 @@ function MobileActionSheet({
   onClose,
   listing,
   onBoost,
-  onDeactivate,
   onMarkAsSold,
   onDelete,
   onView,
@@ -181,19 +179,6 @@ function MobileActionSheet({
                 <span className="text-sm font-medium text-gray-900">Boost Listing</span>
               </button>
 
-              {listing.listing_status === "active" && (
-                <button
-                  onClick={() => {
-                    onDeactivate(listing.id);
-                    onClose();
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
-                >
-                  <PowerOff className="h-5 w-5 text-gray-500" />
-                  <span className="text-sm font-medium text-gray-900">Deactivate</span>
-                </button>
-              )}
-
               {listing.listing_status !== "sold" && (
                 <button
                   onClick={() => {
@@ -235,6 +220,8 @@ interface ListingCardProps {
   formatDate: (date: string) => string;
   getStatusBadge: (status: string) => React.ReactNode;
   getCategoryLabel: (category: string) => string;
+  onToggleActive: (id: string, currentIsActive: boolean) => void;
+  isToggling: boolean;
 }
 
 function MobileListingCard({
@@ -244,6 +231,8 @@ function MobileListingCard({
   formatDate,
   getStatusBadge,
   getCategoryLabel,
+  onToggleActive,
+  isToggling,
 }: ListingCardProps) {
   const primaryImage =
     listing.primary_image_url ||
@@ -305,13 +294,26 @@ function MobileListingCard({
               </Badge>
             </div>
 
-            {/* Stats Row */}
-            <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-              <span className="flex items-center gap-1">
-                <Eye className="h-3.5 w-3.5" />
-                {listing.views?.toLocaleString() || 0} views
-              </span>
-              <span>{formatDate(listing.created_at)}</span>
+            {/* Stats Row with Active Toggle */}
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center gap-4 text-xs text-gray-500">
+                <span className="flex items-center gap-1">
+                  <Eye className="h-3.5 w-3.5" />
+                  {listing.views?.toLocaleString() || 0} views
+                </span>
+                <span>{formatDate(listing.created_at)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-600 font-medium">
+                  {listing.is_active ? 'Active' : 'Inactive'}
+                </span>
+                <Switch
+                  checked={listing.is_active}
+                  onCheckedChange={() => onToggleActive(listing.id, listing.is_active)}
+                  disabled={isToggling || listing.listing_status === 'sold'}
+                  className="data-[state=checked]:bg-green-500 scale-90"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -328,6 +330,7 @@ export default function MyListingsPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [actionSheetOpen, setActionSheetOpen] = React.useState(false);
   const [selectedListing, setSelectedListing] = React.useState<Listing | null>(null);
+  const [togglingIds, setTogglingIds] = React.useState<Set<string>>(new Set());
 
   // Fetch listings
   React.useEffect(() => {
@@ -361,10 +364,6 @@ export default function MyListingsPage() {
     // TODO: Implement boost functionality
   };
 
-  const handleDeactivate = (id: string) => {
-    // TODO: Implement deactivate functionality
-  };
-
   const handleDelete = (id: string) => {
     // TODO: Implement delete functionality
   };
@@ -384,6 +383,55 @@ export default function MyListingsPage() {
   const handleMobileActionClick = (listing: Listing) => {
     setSelectedListing(listing);
     setActionSheetOpen(true);
+  };
+
+  const handleToggleActive = async (id: string, currentIsActive: boolean) => {
+    // Prevent toggling if already in progress
+    if (togglingIds.has(id)) return;
+
+    setTogglingIds(prev => new Set(prev).add(id));
+
+    try {
+      const response = await fetch(`/api/marketplace/listings/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          is_active: !currentIsActive,
+          logChanges: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || `Failed to update listing status (${response.status})`;
+        throw new Error(errorMessage);
+      }
+
+      // Update local state
+      setListings(prev =>
+        prev.map(listing =>
+          listing.id === id
+            ? {
+                ...listing,
+                is_active: !currentIsActive,
+              }
+            : listing
+        )
+      );
+    } catch (error) {
+      console.error('Error toggling listing status:', error);
+      const message = error instanceof Error ? error.message : 'Failed to update listing status. Please try again.';
+      setError(message);
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setTogglingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -581,6 +629,8 @@ export default function MyListingsPage() {
                         formatDate={formatDate}
                         getStatusBadge={getStatusBadge}
                         getCategoryLabel={getCategoryLabel}
+                        onToggleActive={handleToggleActive}
+                        isToggling={togglingIds.has(listing.id)}
                       />
                     ))}
                   </div>
@@ -595,6 +645,7 @@ export default function MyListingsPage() {
                           <TableHead className="px-4">Price</TableHead>
                           <TableHead className="px-4">Condition</TableHead>
                           <TableHead className="px-4">Status</TableHead>
+                          <TableHead className="px-4">Active</TableHead>
                           <TableHead className="px-4">Views</TableHead>
                           <TableHead className="px-4">Created</TableHead>
                           <TableHead className="px-6 text-right">Actions</TableHead>
@@ -672,6 +723,27 @@ export default function MyListingsPage() {
                                 {getStatusBadge(listing.listing_status)}
                               </TableCell>
 
+                              {/* Active Toggle Column */}
+                              <TableCell className="py-3 px-4">
+                                <TooltipProvider delayDuration={0}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="flex items-center">
+                                        <Switch
+                                          checked={listing.is_active}
+                                          onCheckedChange={() => handleToggleActive(listing.id, listing.is_active)}
+                                          disabled={togglingIds.has(listing.id) || listing.listing_status === 'sold'}
+                                          className="data-[state=checked]:bg-green-500"
+                                        />
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom">
+                                      <p>{listing.is_active ? 'Deactivate listing' : 'Activate listing'}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </TableCell>
+
                               {/* Views Column */}
                               <TableCell className="py-3 px-4">
                                 <div className="flex items-center gap-1.5">
@@ -724,23 +796,6 @@ export default function MyListingsPage() {
                                       </TooltipTrigger>
                                       <TooltipContent side="bottom">
                                         <p>Boost</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-
-                                    {/* Deactivate */}
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleDeactivate(listing.id)}
-                                          className="rounded-md h-8 w-8 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                                        >
-                                          <PowerOff className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="bottom">
-                                        <p>Deactivate</p>
                                       </TooltipContent>
                                     </Tooltip>
 
@@ -799,7 +854,6 @@ export default function MyListingsPage() {
         onClose={() => setActionSheetOpen(false)}
         listing={selectedListing}
         onBoost={handleBoost}
-        onDeactivate={handleDeactivate}
         onMarkAsSold={handleMarkAsSold}
         onDelete={handleDelete}
         onView={handleView}

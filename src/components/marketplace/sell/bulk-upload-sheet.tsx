@@ -168,6 +168,9 @@ export function BulkUploadSheet({
   const [selectedForEnhancement, setSelectedForEnhancement] = React.useState<Set<string>>(new Set());
   const [enhancementProgress, setEnhancementProgress] = React.useState({ current: 0, total: 0 });
 
+  // Description generation state
+  const [isGeneratingDescription, setIsGeneratingDescription] = React.useState(false);
+
   // Refs
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
@@ -564,6 +567,52 @@ export function BulkUploadSheet({
       data.model &&
       data.price > 0
     );
+  };
+
+  // Generate description using AI with web search
+  const handleGenerateDescription = async () => {
+    const currentProduct = products[currentProductIndex];
+    if (!currentProduct) return;
+
+    const formData = currentProduct.formData;
+    if (!formData.title && !formData.brand && !formData.model) {
+      return; // Need at least some info to generate
+    }
+
+    setIsGeneratingDescription(true);
+    try {
+      const response = await fetch('/api/generate-description', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formData.title || `${formData.brand || ''} ${formData.model || ''}`.trim(),
+          brand: formData.brand,
+          model: formData.model,
+          itemType: formData.itemType,
+          bikeType: formData.bikeType,
+          frameSize: formData.frameSize,
+          frameMaterial: formData.frameMaterial,
+          groupset: formData.groupset,
+          wheelSize: formData.wheelSize,
+          conditionRating: formData.conditionRating,
+          partTypeDetail: formData.partTypeDetail,
+          size: formData.size,
+          genderFit: formData.genderFit,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success && data.description) {
+        updateProductField('description', data.description);
+      } else {
+        console.error('Failed to generate description:', data.error);
+      }
+    } catch (error) {
+      console.error('Error generating description:', error);
+    } finally {
+      setIsGeneratingDescription(false);
+    }
   };
 
   const goToNextProduct = () => {
@@ -1656,7 +1705,7 @@ export function BulkUploadSheet({
                         updateProductField("conditionRating", value)
                       }
                     >
-                      <SelectTrigger className="h-11 rounded-xl">
+                      <SelectTrigger className="!h-11 w-full text-base py-1 rounded-xl">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1785,7 +1834,7 @@ export function BulkUploadSheet({
                       updateProductField("itemType", value)
                     }
                   >
-                    <SelectTrigger className="h-11 rounded-xl">
+                    <SelectTrigger className="!h-11 w-full text-base py-1 rounded-xl">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1801,15 +1850,27 @@ export function BulkUploadSheet({
                   <label className="block text-xs font-medium text-gray-700 mb-1">
                     Seller Notes
                   </label>
-                  <Textarea
-                    value={currentProduct.formData.sellerNotes}
-                    onChange={(e) =>
-                      updateProductField("sellerNotes", e.target.value)
-                    }
-                    placeholder="Your notes about condition, wear, why selling..."
-                    className="text-base rounded-xl resize-none border-gray-200"
-                    rows={2}
-                  />
+                  <div className="relative">
+                    <Textarea
+                      value={currentProduct.formData.sellerNotes}
+                      onChange={(e) =>
+                        updateProductField("sellerNotes", e.target.value)
+                      }
+                      placeholder="Your notes about condition, wear, why selling..."
+                      className="text-base rounded-xl resize-none border-gray-200 pr-10"
+                      rows={2}
+                    />
+                    {currentProduct.formData.sellerNotes && (
+                      <button
+                        type="button"
+                        onClick={() => updateProductField("sellerNotes", "")}
+                        className="absolute top-2 right-2 p-1 rounded-md hover:bg-gray-100 transition-colors"
+                        aria-label="Clear notes"
+                      >
+                        <X className="h-4 w-4 text-gray-400" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Background Remover */}
@@ -1863,18 +1924,50 @@ export function BulkUploadSheet({
                     <div className="space-y-3 pt-2 pb-4">
                       {/* Description */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Description
-                        </label>
-                        <Textarea
-                          value={currentProduct.formData.description}
-                          onChange={(e) =>
-                            updateProductField("description", e.target.value)
-                          }
-                          placeholder="Describe your product..."
-                          className="text-base rounded-xl resize-none"
-                          rows={3}
-                        />
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-xs font-medium text-gray-700">
+                            Description
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleGenerateDescription}
+                            disabled={isGeneratingDescription || (!currentProduct.formData.title && !currentProduct.formData.brand && !currentProduct.formData.model)}
+                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {isGeneratingDescription ? (
+                              <>
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="h-3 w-3" />
+                                Generate
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <Textarea
+                            value={currentProduct.formData.description}
+                            onChange={(e) =>
+                              updateProductField("description", e.target.value)
+                            }
+                            placeholder="Describe your product..."
+                            className="text-base rounded-xl resize-none pr-10"
+                            rows={3}
+                          />
+                          {currentProduct.formData.description && (
+                            <button
+                              type="button"
+                              onClick={() => updateProductField("description", "")}
+                              className="absolute top-2 right-2 p-1 rounded-md hover:bg-gray-100 transition-colors"
+                              aria-label="Clear description"
+                            >
+                              <X className="h-4 w-4 text-gray-400" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* Bike-specific fields */}
@@ -2007,7 +2100,7 @@ export function BulkUploadSheet({
                                 updateProductField("genderFit", value)
                               }
                             >
-                              <SelectTrigger className="h-11 rounded-xl">
+                              <SelectTrigger className="!h-11 w-full text-base py-1 rounded-xl">
                                 <SelectValue placeholder="Select..." />
                               </SelectTrigger>
                               <SelectContent>

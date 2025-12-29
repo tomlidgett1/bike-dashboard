@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertCircle, Trash2, DollarSign, Package, ChevronDown, Shirt, Eraser, Loader2 } from "lucide-react";
+import { AlertCircle, Trash2, DollarSign, Package, ChevronDown, Shirt, Eraser, Loader2, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -133,6 +133,7 @@ export function BulkProductCard({
   const [imageUrls, setImageUrls] = React.useState<string[]>(initialImageUrls);
   const [isRemovingBackground, setIsRemovingBackground] = React.useState(false);
   const [backgroundRemoved, setBackgroundRemoved] = React.useState(false);
+  const [isGeneratingDescription, setIsGeneratingDescription] = React.useState(false);
 
   const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
   const [showDetails, setShowDetails] = React.useState(true); // Open by default
@@ -155,6 +156,48 @@ export function BulkProductCard({
 
   const updateField = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Generate description using AI with web search
+  const handleGenerateDescription = async () => {
+    if (!formData.title && !formData.brand && !formData.model) {
+      return; // Need at least some info to generate
+    }
+
+    setIsGeneratingDescription(true);
+    try {
+      const response = await fetch('/api/generate-description', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formData.title || `${formData.brand || ''} ${formData.model || ''}`.trim(),
+          brand: formData.brand,
+          model: formData.model,
+          itemType: formData.itemType,
+          bikeType: formData.bikeType,
+          frameSize: formData.frameSize,
+          frameMaterial: formData.frameMaterial,
+          groupset: formData.groupset,
+          wheelSize: formData.wheelSize,
+          conditionRating: formData.conditionRating,
+          partTypeDetail: formData.partTypeDetail,
+          size: formData.size,
+          genderFit: formData.genderFit,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success && data.description) {
+        updateField('description', data.description);
+      } else {
+        console.error('Failed to generate description:', data.error);
+      }
+    } catch (error) {
+      console.error('Error generating description:', error);
+    } finally {
+      setIsGeneratingDescription(false);
+    }
   };
 
   // Handle background removal
@@ -304,7 +347,7 @@ export function BulkProductCard({
                 value={formData.conditionRating}
                 onValueChange={(value) => updateField('conditionRating', value)}
               >
-                <SelectTrigger className={cn("rounded-xl", isMobile ? "h-11" : "rounded-md")}>
+                <SelectTrigger className={cn("rounded-xl !h-11 w-full text-base py-1", isMobile ? "" : "rounded-md")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -353,7 +396,7 @@ export function BulkProductCard({
               value={formData.itemType}
               onValueChange={(value) => updateField('itemType', value)}
             >
-              <SelectTrigger className={cn("rounded-xl", isMobile ? "h-11" : "rounded-md")}>
+              <SelectTrigger className={cn("rounded-xl !h-11 w-full text-base py-1", isMobile ? "" : "rounded-md")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -366,16 +409,48 @@ export function BulkProductCard({
 
           {/* Description */}
           <div>
-            <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
-              Description
-            </label>
-            <Textarea
-              value={formData.description}
-              onChange={(e) => updateField('description', e.target.value)}
-              placeholder="Describe your product..."
-              className={cn("rounded-xl resize-none", isMobile ? "text-base" : "rounded-md")}
-              rows={isMobile ? 3 : 4}
-            />
+            <div className="flex items-center justify-between mb-1">
+              <label className={cn("block font-medium text-gray-700", isMobile ? "text-xs" : "text-sm")}>
+                Description
+              </label>
+              <button
+                type="button"
+                onClick={handleGenerateDescription}
+                disabled={isGeneratingDescription || (!formData.title && !formData.brand && !formData.model)}
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isGeneratingDescription ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-3 w-3" />
+                    Generate
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="relative">
+              <Textarea
+                value={formData.description}
+                onChange={(e) => updateField('description', e.target.value)}
+                placeholder="Describe your product..."
+                className={cn("rounded-xl resize-none pr-10", isMobile ? "text-base" : "rounded-md")}
+                rows={isMobile ? 3 : 4}
+              />
+              {formData.description && (
+                <button
+                  type="button"
+                  onClick={() => updateField('description', '')}
+                  className="absolute top-2 right-2 p-1 rounded-md hover:bg-gray-100 transition-colors"
+                  aria-label="Clear description"
+                >
+                  <X className="h-4 w-4 text-gray-400" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Seller Notes */}
@@ -383,13 +458,25 @@ export function BulkProductCard({
             <label className={cn("block font-medium text-gray-700 mb-1", isMobile ? "text-xs" : "text-sm")}>
               Seller Notes
             </label>
-            <Textarea
-              value={formData.sellerNotes}
-              onChange={(e) => updateField('sellerNotes', e.target.value)}
-              placeholder="Your notes about condition, wear, why selling..."
-              className={cn("rounded-md resize-none border-gray-200", isMobile ? "text-base" : "")}
-              rows={isMobile ? 2 : 3}
-            />
+            <div className="relative">
+              <Textarea
+                value={formData.sellerNotes}
+                onChange={(e) => updateField('sellerNotes', e.target.value)}
+                placeholder="Your notes about condition, wear, why selling..."
+                className={cn("rounded-md resize-none border-gray-200 pr-10", isMobile ? "text-base" : "")}
+                rows={isMobile ? 2 : 3}
+              />
+              {formData.sellerNotes && (
+                <button
+                  type="button"
+                  onClick={() => updateField('sellerNotes', '')}
+                  className="absolute top-2 right-2 p-1 rounded-md hover:bg-gray-100 transition-colors"
+                  aria-label="Clear notes"
+                >
+                  <X className="h-4 w-4 text-gray-400" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Background Remover - always show */}
@@ -577,7 +664,7 @@ export function BulkProductCard({
                           value={formData.genderFit}
                           onValueChange={(value) => updateField('genderFit', value)}
                         >
-                          <SelectTrigger className={cn("rounded-xl", isMobile ? "h-11" : "rounded-md")}>
+                          <SelectTrigger className={cn("rounded-xl !h-11 w-full text-base py-1", isMobile ? "" : "rounded-md")}>
                             <SelectValue placeholder="Select..." />
                           </SelectTrigger>
                           <SelectContent>

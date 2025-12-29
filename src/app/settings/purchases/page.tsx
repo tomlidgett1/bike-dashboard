@@ -47,6 +47,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -153,6 +154,7 @@ interface Listing {
   created_at: string;
   sold_at: string | null;
   marketplace_category: string;
+  is_active: boolean;
 }
 
 interface Draft {
@@ -870,12 +872,16 @@ function MobileListingCard({
   onEdit,
   onArchive,
   onDelete,
+  onToggleActive,
+  isToggling,
 }: {
   listing: Listing;
   onClick: () => void;
   onEdit: () => void;
   onArchive: () => void;
   onDelete: () => void;
+  onToggleActive: (id: string, currentIsActive: boolean) => void;
+  isToggling: boolean;
 }) {
   const imageUrl = getListingImage(listing);
   const status = listing.sold_at ? 'sold' : (listing.listing_status || 'active');
@@ -893,16 +899,31 @@ function MobileListingCard({
           )}
         </button>
 
-        <button onClick={onClick} className="flex-1 min-w-0 text-left cursor-pointer">
-          <p className="font-medium text-sm line-clamp-1">{listing.display_name || listing.description}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {listing.marketplace_category} · {formatDate(listing.created_at)}
-          </p>
+        <div className="flex-1 min-w-0">
+          <button onClick={onClick} className="text-left cursor-pointer w-full">
+            <p className="font-medium text-sm line-clamp-1">{listing.display_name || listing.description}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {listing.marketplace_category} · {formatDate(listing.created_at)}
+            </p>
+          </button>
           <div className="flex items-center justify-between mt-2">
-            <StatusBadge status={status} type="listing" />
+            <div className="flex items-center gap-2">
+              <StatusBadge status={status} type="listing" />
+              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <span className="text-xs text-muted-foreground font-medium">
+                  {listing.is_active ? 'Active' : 'Inactive'}
+                </span>
+                <Switch
+                  checked={listing.is_active}
+                  onCheckedChange={() => onToggleActive(listing.id, listing.is_active)}
+                  disabled={isToggling || listing.sold_at !== null}
+                  className="data-[state=checked]:bg-green-500 scale-75"
+                />
+              </div>
+            </div>
             <span className="font-semibold text-sm">${listing.price.toFixed(2)}</span>
           </div>
-        </button>
+        </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -1576,6 +1597,8 @@ function DesktopListingsTable({
   onEdit,
   onArchive,
   onDelete,
+  onToggleActive,
+  togglingIds,
   loading,
 }: {
   listings: Listing[];
@@ -1583,6 +1606,8 @@ function DesktopListingsTable({
   onEdit: (listing: Listing) => void;
   onArchive: (listing: Listing) => void;
   onDelete: (listing: Listing) => void;
+  onToggleActive: (id: string, currentIsActive: boolean) => void;
+  togglingIds: Set<string>;
   loading: boolean;
 }) {
   if (loading) {
@@ -1614,6 +1639,7 @@ function DesktopListingsTable({
           <TableHead>Category</TableHead>
           <TableHead>Created</TableHead>
           <TableHead>Status</TableHead>
+          <TableHead>Active</TableHead>
           <TableHead className="text-right">Price</TableHead>
           <TableHead className="w-12"></TableHead>
         </TableRow>
@@ -1643,6 +1669,14 @@ function DesktopListingsTable({
               <TableCell>{listing.marketplace_category || '—'}</TableCell>
               <TableCell>{formatDate(listing.created_at)}</TableCell>
               <TableCell><StatusBadge status={status} type="listing" /></TableCell>
+              <TableCell onClick={(e) => e.stopPropagation()}>
+                <Switch
+                  checked={listing.is_active}
+                  onCheckedChange={() => onToggleActive(listing.id, listing.is_active)}
+                  disabled={togglingIds.has(listing.id) || listing.sold_at !== null}
+                  className="data-[state=checked]:bg-green-500"
+                />
+              </TableCell>
               <TableCell className="text-right font-medium">${listing.price.toFixed(2)}</TableCell>
               <TableCell onClick={(e) => e.stopPropagation()}>
                 <DropdownMenu>
@@ -2050,6 +2084,9 @@ export default function OrderManagementPage() {
 
   // Draft selection state
   const [selectedDraftIds, setSelectedDraftIds] = React.useState<Set<string>>(new Set());
+  
+  // Listings toggle state
+  const [togglingListingIds, setTogglingListingIds] = React.useState<Set<string>>(new Set());
 
   // Fetch pending payment offers for buyers
   const fetchPendingPaymentOffers = React.useCallback(async () => {
@@ -2382,17 +2419,22 @@ export default function OrderManagementPage() {
     
     try {
       const res = await fetch(`/api/marketplace/listings/${listing.id}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          listing_status: isArchived ? 'active' : 'archived' 
+          listingStatus: isArchived ? 'active' : 'archived',
+          logChanges: true,
         }),
       });
       
-      if (!res.ok) throw new Error('Failed to update');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to update');
+      }
       fetchListings();
     } catch (e) {
-      alert(`Failed to ${action} listing`);
+      const message = e instanceof Error ? e.message : `Failed to ${action} listing`;
+      alert(message);
     }
   };
 
@@ -2408,6 +2450,54 @@ export default function OrderManagementPage() {
       fetchListings();
     } catch (e) {
       alert('Failed to delete listing');
+    }
+  };
+
+  const handleToggleListingActive = async (id: string, currentIsActive: boolean) => {
+    // Prevent toggling if already in progress
+    if (togglingListingIds.has(id)) return;
+
+    setTogglingListingIds(prev => new Set(prev).add(id));
+
+    try {
+      const response = await fetch(`/api/marketplace/listings/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          is_active: !currentIsActive,
+          logChanges: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || `Failed to update listing status (${response.status})`;
+        throw new Error(errorMessage);
+      }
+
+      // Update local state
+      setListings(prev =>
+        prev.map(listing =>
+          listing.id === id
+            ? {
+                ...listing,
+                is_active: !currentIsActive,
+              }
+            : listing
+        )
+      );
+    } catch (error) {
+      console.error('Error toggling listing status:', error);
+      const message = error instanceof Error ? error.message : 'Failed to update listing status. Please try again.';
+      alert(message);
+    } finally {
+      setTogglingListingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
     }
   };
 
@@ -2792,6 +2882,8 @@ export default function OrderManagementPage() {
                       onEdit={handleEditListing}
                       onArchive={handleArchiveListing}
                       onDelete={handleDeleteListing}
+                      onToggleActive={handleToggleListingActive}
+                      togglingIds={togglingListingIds}
                       loading={listingsLoading} 
                     />
                   </div>
@@ -3171,6 +3263,8 @@ export default function OrderManagementPage() {
                           onEdit={() => handleEditListing(listing)}
                           onArchive={() => handleArchiveListing(listing)}
                           onDelete={() => handleDeleteListing(listing)}
+                          onToggleActive={handleToggleListingActive}
+                          isToggling={togglingListingIds.has(listing.id)}
                         />
                       );
                     })

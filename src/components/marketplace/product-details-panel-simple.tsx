@@ -4,7 +4,8 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck, Package } from "lucide-react";
+import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck } from "lucide-react";
+import { PickupLocationMap } from "./product-detail/pickup-location-map";
 import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -296,14 +297,21 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                     
                     {/* Pickup Option */}
                     {(product as any).pickup_location && (
-                      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200">
-                          <MapPin className="h-4 w-4 text-gray-600" />
+                      <div className="bg-gray-50 rounded-md overflow-hidden">
+                        <div className="flex items-center gap-3 p-3">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200">
+                            <MapPin className="h-4 w-4 text-gray-600" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">Pickup Available</p>
+                            <p className="text-xs text-gray-500">{(product as any).pickup_location}</p>
+                          </div>
                         </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">Pickup Available</p>
-                          <p className="text-xs text-gray-500">{(product as any).pickup_location}</p>
-                        </div>
+                        {/* Map with privacy circle */}
+                        <PickupLocationMap 
+                          location={(product as any).pickup_location} 
+                          className="h-36 mx-3 mb-3"
+                        />
                       </div>
                     )}
                     

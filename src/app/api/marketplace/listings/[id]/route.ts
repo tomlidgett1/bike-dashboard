@@ -135,6 +135,11 @@ export async function PUT(
       updateData.is_active = body.listingStatus === "active";
     }
 
+    // Direct is_active toggle (without changing listing_status)
+    if (body.is_active !== undefined && body.listingStatus === undefined) {
+      updateData.is_active = body.is_active;
+    }
+
     // Only include other fields if they're explicitly provided (full form update)
     if (body.title !== undefined) {
       updateData.description = body.title;
