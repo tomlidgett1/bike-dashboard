@@ -148,7 +148,16 @@ async function createSingleListing(
         };
       });
       
-      await addProductImages(supabase, data.id, imageData);
+      const insertedImages = await addProductImages(supabase, data.id, imageData);
+      
+      // Update has_displayable_image flag for marketplace visibility
+      if (insertedImages.length > 0) {
+        await supabase
+          .from('products')
+          .update({ has_displayable_image: true })
+          .eq('id', data.id);
+        console.log(`✅ [BULK API] Set has_displayable_image=true for product ${data.id}`);
+      }
     }
     
     return { success: true, listingId: data.id };

@@ -336,6 +336,15 @@ export async function POST(request: NextRequest) {
       );
       
       console.log(`✅ [LISTINGS API] ${insertedImages.length} images inserted via shared helper`);
+      
+      // Update has_displayable_image flag for marketplace visibility
+      if (insertedImages.length > 0) {
+        await supabase
+          .from('products')
+          .update({ has_displayable_image: true })
+          .eq('id', listing.id);
+        console.log(`✅ [LISTINGS API] Set has_displayable_image=true for product ${listing.id}`);
+      }
     } else {
       console.log('⚠️ [LISTINGS API] Skipping image insertion - no images or no listing ID');
     }
