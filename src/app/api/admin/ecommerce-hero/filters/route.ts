@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
         .filter((b): b is string => !!b && b.trim() !== '')
     )].sort();
 
-    // Fetch stores (users) that have active products with images
+    // Fetch stores (users) that have active products
     const { data: storesData, error: storesError } = await supabase
       .from('products')
       .select(`
@@ -54,8 +54,7 @@ export async function GET(request: NextRequest) {
           account_type
         )
       `)
-      .eq('is_active', true)
-      .eq('has_displayable_image', true);
+      .eq('is_active', true);
 
     if (storesError) {
       console.error('[ECOMMERCE-HERO FILTERS] Error fetching stores:', storesError);
