@@ -221,8 +221,44 @@ export async function addProductImage(
     approvalStatus = "approved",
   } = options;
 
-  // If setting as primary, unset all other primary flags first
-  if (setAsPrimary) {
+  // If setting as primary, unset all other primary flags and adjust sort orders
+  if (setAsPrimary && sortOrder === 0) {
+    // Get all existing images for this product
+    const { data: existingImages } = await supabase
+      .from("product_images")
+      .select("id, sort_order")
+      .eq("product_id", productId)
+      .order("sort_order", { ascending: true });
+
+    if (existingImages && existingImages.length > 0) {
+      // Increment sort_order of all existing images to make room at position 0
+      for (const img of existingImages) {
+        await supabase
+          .from("product_images")
+          .update({ is_primary: false, sort_order: img.sort_order + 1 })
+          .eq("id", img.id);
+      }
+    }
+
+    // Also handle canonical images if applicable
+    if (canonicalProductId) {
+      const { data: canonicalImages } = await supabase
+        .from("product_images")
+        .select("id, sort_order")
+        .eq("canonical_product_id", canonicalProductId)
+        .order("sort_order", { ascending: true });
+
+      if (canonicalImages && canonicalImages.length > 0) {
+        for (const img of canonicalImages) {
+          await supabase
+            .from("product_images")
+            .update({ is_primary: false, sort_order: img.sort_order + 1 })
+            .eq("id", img.id);
+        }
+      }
+    }
+  } else if (setAsPrimary) {
+    // Just unset is_primary flags without changing sort_order
     await supabase
       .from("product_images")
       .update({ is_primary: false })

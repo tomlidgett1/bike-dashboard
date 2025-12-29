@@ -177,6 +177,24 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[ADD-IMAGE] Inserting into product_images via shared helper (listing_type: ${productInfo?.listing_type})`);
+    
+    // Calculate sort_order: 0 for hero, otherwise next available position
+    let sortOrder = 0;
+    if (setAsHero) {
+      // Hero image always gets sort_order = 0
+      sortOrder = 0;
+      console.log(`[ADD-IMAGE] Setting as hero with sort_order: 0`);
+    } else {
+      // Get existing image count to determine next sort order
+      // Count all images (not just approved) to avoid conflicts
+      const { data: existingImages } = await supabase
+        .from('product_images')
+        .select('id')
+        .eq('product_id', productId);
+      
+      sortOrder = (existingImages?.length || 0);
+      console.log(`[ADD-IMAGE] Existing images: ${existingImages?.length || 0}, assigning sort_order: ${sortOrder}`);
+    }
       
     // Use the shared helper to insert the image
     const insertedImage = await addProductImage(
@@ -185,7 +203,7 @@ export async function POST(request: NextRequest) {
       cloudinaryResult,
       {
         setAsPrimary: setAsHero,
-        sortOrder: 0,
+        sortOrder: sortOrder,
         source: 'admin_search',
         approvalStatus: 'approved',
       },
