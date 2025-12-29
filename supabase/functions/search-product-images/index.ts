@@ -45,8 +45,7 @@ Deno.serve(async (req) => {
 
     console.log(`🔍 [SEARCH] Searching for: "${searchQuery}"`)
 
-    // Call Serper API with optimized settings for product images
-    // See: https://serper.dev/docs
+    // Call Serper API - simple search, no filters
     const response = await fetch('https://google.serper.dev/images', {
       method: 'POST',
       headers: {
@@ -54,13 +53,9 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        q: `${searchQuery} product photo`,  // Add "product photo" for better results
-        num: 100,  // Request more for better selection
+        q: searchQuery,  // Use exact search query
+        num: 100,  // Request many for selection
         gl: 'au',  // Australia locale
-        // tbs parameters for better image filtering:
-        // - isz:l = large images only
-        // - itp:photo = photo type (not clipart/drawings)
-        tbs: 'isz:l,itp:photo',
       }),
     })
 
@@ -78,41 +73,9 @@ Deno.serve(async (req) => {
 
     console.log(`✅ [SEARCH] Found ${images.length} images`)
 
-    // Filter and format results
+    // Simple formatting - no filters, just return results
     const results = images
-      .filter((img) => {
-        // Filter out social media, user-generated content, and low-quality sources
-        const badDomains = [
-          'facebook.com', 'twitter.com', 'instagram.com', 'pinterest.com', 
-          'tiktok.com', 'reddit.com', 'imgur.com', 'aliexpress.com', 
-          'alibaba.com', 'wish.com', 'ebay.com', 'gumtree.com',
-          'marketplace.', 'classified.', 'carousell.com'
-        ]
-        if (badDomains.some((d) => img.domain.includes(d))) return false
-        
-        // Require minimum image dimensions (at least 400x400)
-        if (img.imageWidth < 400 || img.imageHeight < 400) return false
-        
-        return true
-      })
-      // Sort by preferred cycling retailers first, then by image size
-      .sort((a, b) => {
-        const preferredDomains = [
-          'trekbikes.com', 'specialized.com', 'giant-bicycles.com', 'cannondale.com',
-          'santacruzbicycles.com', 'bike-discount.de', 'bikeexchange.com', 
-          'wiggle.com', 'chainreactioncycles.com', 'pushys.com.au', 'bicyclesonline.com.au',
-          'canyon.com', 'scott-sports.com', 'norco.com', 'orbea.com', 'bmc-switzerland.com'
-        ]
-        const aPreferred = preferredDomains.some(d => a.domain.includes(d)) ? 1 : 0
-        const bPreferred = preferredDomains.some(d => b.domain.includes(d)) ? 1 : 0
-        
-        // If one is from preferred domain and other isn't, prefer that one
-        if (aPreferred !== bPreferred) return bPreferred - aPreferred
-        
-        // Otherwise sort by size (larger = better)
-        return (b.imageWidth * b.imageHeight) - (a.imageWidth * a.imageHeight)
-      })
-      .slice(0, 30) // Return top 30 results
+      .slice(0, 50) // Return first 50 results
       .map((img, index) => {
         console.log(`[SEARCH] Result ${index + 1}: ${img.imageWidth}x${img.imageHeight} (${(img.imageWidth * img.imageHeight / 1000000).toFixed(1)}MP) from ${img.domain}`)
         return {

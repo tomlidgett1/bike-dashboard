@@ -40,8 +40,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build search query - add "cycling" or "bike" for better results
-    const query = searchQuery || `cycling ${brand ? brand + ' ' : ''}${productName}`;
+    // Build search query - simple, no extra context
+    const query = searchQuery || `${brand ? brand + ' ' : ''}${productName}`;
     
     console.log(`[SEARCH-IMAGES] Searching for: "${query}"`);
 

@@ -1484,9 +1484,8 @@ export default function EcommerceHeroPage() {
       ));
 
       try {
-        // Build search query with cycling context for better results
-        const baseName = [product.brand, product.name].filter(Boolean).join(' ');
-        const searchQuery = `${baseName} cycling bike`;
+        // Build search query - just brand + name
+        const searchQuery = [product.brand, product.name].filter(Boolean).join(' ');
         console.log('[BULK REVIEW] Search query:', searchQuery);
         
         const response = await fetch('/api/admin/ecommerce-hero/search-images', {
