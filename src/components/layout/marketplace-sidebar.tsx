@@ -175,9 +175,9 @@ function MarketplaceSidebarContent() {
     }
   };
 
-  // Check if user is a bicycle store with logo
+  // Show profile/store image whenever we have a logo URL (including Google avatars).
   const shouldShowLogo = () => {
-    return profile?.account_type === 'bicycle_store' && profile?.logo_url;
+    return !!profile?.logo_url;
   };
 
   // Get the appropriate settings route based on account type
@@ -199,22 +199,6 @@ function MarketplaceSidebarContent() {
     router.push('/marketplace');
     router.refresh();
   };
-  
-  // 🔍 DEBUG: Account approval status
-  React.useEffect(() => {
-    if (user) {
-      console.log('🔍 [SIDEBAR] Account Approval Debug:', {
-        userId: user.id,
-        hasProfile: !!profile,
-        accountType: profile?.account_type,
-        bicycleStoreFlag: profile?.bicycle_store,
-        isVerifiedStore,
-        isWaitingForApproval,
-        shouldShowApprovalBadge: isWaitingForApproval,
-        profileData: profile
-      });
-    }
-  }, [user, profile, isVerifiedStore, isWaitingForApproval]);
   
   // Build navigation items based on user type
   // Only show user-specific items when logged in
@@ -563,7 +547,7 @@ function MarketplaceSidebarContent() {
 export function MarketplaceSidebar() {
   return (
     <Suspense fallback={
-      <div className="hidden lg:block w-[60px] flex-shrink-0 bg-sidebar border-r border-sidebar-border" />
+      <div className="hidden lg:block w-[56px] flex-shrink-0" aria-hidden />
     }>
       <MarketplaceSidebarContent />
     </Suspense>

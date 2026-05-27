@@ -8,7 +8,7 @@ import type { MarketplaceProduct } from '@/lib/types/marketplace';
 // ============================================================
 
 interface MarketplaceDataParams {
-  viewMode: 'trending' | 'for-you' | 'all';
+  viewMode: 'trending' | 'all';
   page?: number;
   pageSize?: number;
   level1?: string | null;
@@ -123,8 +123,15 @@ function buildApiUrl(params: MarketplaceDataParams): string {
     if (level2) urlParams.set('level2', level2);
     if (level3) urlParams.set('level3', level3);
     endpoint = `/api/marketplace/products?${urlParams}`;
+  } else if (listingType === 'store_inventory') {
+    // Shop inventory is not served by the trending feed (score-based); always use the products index.
+    urlParams.set('pageSize', String(pageSize));
+    if (level1) urlParams.set('level1', level1);
+    if (level2) urlParams.set('level2', level2);
+    if (level3) urlParams.set('level3', level3);
+    endpoint = `/api/marketplace/products?${urlParams}`;
   } else {
-    // Handle different view modes
+    // Handle different view modes (marketplace / private listings)
     switch (viewMode) {
       case 'trending':
         urlParams.set('limit', String(pageSize));
@@ -134,16 +141,7 @@ function buildApiUrl(params: MarketplaceDataParams): string {
         }
         endpoint = `/api/marketplace/trending?${urlParams}`;
         break;
-      
-      case 'for-you':
-        urlParams.set('limit', String(pageSize));
-        urlParams.set('enrich', 'true');
-        if (level1) urlParams.set('level1', level1);
-        if (level2) urlParams.set('level2', level2);
-        if (level3) urlParams.set('level3', level3);
-        endpoint = `/api/recommendations/for-you?${urlParams}`;
-        break;
-      
+
       case 'all':
         urlParams.set('pageSize', String(pageSize));
         if (level1) urlParams.set('level1', level1);

@@ -7,10 +7,12 @@
  * - Active services
  * - Product counts per category
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { StoreProfile, StoreCategoryWithProducts } from '@/lib/types/store';
+import { resolveProductImage } from '@/lib/services/image-resolver';
 
 export async function GET(
   request: NextRequest,
@@ -87,37 +89,36 @@ export async function GET(
       }
     }
 
-    // Fetch all active products for this store with image optimization
+    // Fetch products from the readiness view so image approval and primary
+    // resolution happen before the store profile groups products.
     let productsQuery = supabase
-      .from('products')
+      .from('marketplace_ready_products')
       .select(`
         id,
         description,
         display_name,
         price,
-        primary_image_url,
-        use_custom_image,
-        custom_image_url,
-        images,
+        marketplace_category,
+        marketplace_subcategory,
         category_name,
         qoh,
+        model_year,
+        created_at,
+        user_id,
+        listing_type,
         lightspeed_category_id,
         canonical_product_id,
-        canonical_products!canonical_product_id (
-          id,
-          product_images!canonical_product_id (
-            id,
-            storage_path,
-            is_primary,
-            variants,
-            formats
-          )
-        )
+        resolved_image_id,
+        resolved_card_url,
+        resolved_thumbnail_url,
+        resolved_mobile_card_url,
+        resolved_gallery_url,
+        resolved_detail_url,
+        resolved_cloudinary_url,
+        resolved_cloudinary_public_id
       `)
       .eq('user_id', storeId)
-      .eq('is_active', true)
-      .gt('qoh', 0)
-      .eq('images_approved_by_admin', true); // Only show approved products
+      .gt('qoh', 0);
 
     // Apply search filter if we have search results
     if (searchQuery && searchProductIds) {
@@ -166,45 +167,24 @@ export async function GET(
       const sortedCategories = Array.from(productsByCategory.entries())
         .sort((a, b) => b[1].length - a[1].length);
 
-      // Build categories with products using optimized image loading
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      
+      // Build categories with products using the resolved image source of truth.
       sortedCategories.forEach(([categoryName, products], index) => {
         const marketplaceProducts = products
           .map((product) => {
-            // Optimized image URL selection (SAME as marketplace products API)
-            let primaryImageUrl = null;
-            let imageVariants = null;
-            let imageFormats = null;
+            const resolved = resolveProductImage({
+              id: product.resolved_image_id,
+              cloudinary_public_id: product.resolved_cloudinary_public_id,
+              cloudinary_url: product.resolved_cloudinary_url,
+              thumbnail_url: product.resolved_thumbnail_url,
+              mobile_card_url: product.resolved_mobile_card_url,
+              card_url: product.resolved_card_url,
+              gallery_url: product.resolved_gallery_url,
+              detail_url: product.resolved_detail_url,
+              approval_status: 'approved',
+            });
 
-            // Priority 1: Custom store image
-            if (product.use_custom_image && product.custom_image_url) {
-              primaryImageUrl = product.custom_image_url;
-            }
-            // Priority 2: Canonical product images (MUST have is_primary set)
-            else if (product.canonical_products?.product_images?.length > 0) {
-              const images = product.canonical_products.product_images;
-              // ONLY use image if it has is_primary flag set
-              const primaryImage = images.find((img: any) => img.is_primary);
-              
-              if (primaryImage) {
-                // Use the storage_path as primary (ProductCard will choose the right variant)
-                primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
-                // Pass ALL variants so ProductCard can choose the appropriate size
-                imageVariants = primaryImage.variants;
-                imageFormats = primaryImage.formats;
-              }
-            }
-            // Priority 3: Direct image URLs
-            else if (product.primary_image_url) {
-              primaryImageUrl = product.primary_image_url;
-            }
-            
-            // Priority 4: Use placeholder if no image available
-            if (!primaryImageUrl) {
-              primaryImageUrl = '/placeholder-product.svg';
-              console.log(`🖼️ [IMAGE] Using placeholder for store product ${product.id} (no image available)`);
-            }
+            const primaryImageUrl = resolved?.card_url || resolved?.original_url;
+            if (!primaryImageUrl) return null;
 
             return {
               id: product.id,
@@ -214,8 +194,9 @@ export async function GET(
               marketplace_category: product.marketplace_category || null,
               marketplace_subcategory: product.marketplace_subcategory || null,
               primary_image_url: primaryImageUrl,
-              image_variants: imageVariants,
-              image_formats: imageFormats,
+              card_url: primaryImageUrl,
+              thumbnail_url: resolved?.thumbnail_url || primaryImageUrl,
+              detail_url: resolved?.detail_url || resolved?.gallery_url || primaryImageUrl,
               store_name: storeUser.business_name,
               store_logo_url: storeUser.logo_url,
               store_id: storeId,
@@ -226,7 +207,8 @@ export async function GET(
               user_id: product.user_id,
               listing_type: 'store_inventory' as const,
             };
-          });
+          })
+          .filter((product): product is NonNullable<typeof product> => Boolean(product));
 
         // Only add category if it has products with images
         if (marketplaceProducts.length > 0) {

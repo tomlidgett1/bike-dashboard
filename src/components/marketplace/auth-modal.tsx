@@ -17,11 +17,16 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Mail, Lock, Loader2, Store, User } from "lucide-react";
-import Image from "next/image";
+import { getBrowserOAuthBaseUrl } from "@/lib/auth/oauth-site-url";
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Something went wrong";
+}
 
 // Google Icon SVG Component
 function GoogleIcon({ className }: { className?: string }) {
@@ -80,21 +85,6 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
   const router = useRouter();
   const supabase = createClient();
 
-  // Get the site URL for OAuth redirects
-  // In development with ngrok, we need to use the ngrok URL
-  const getSiteUrl = () => {
-    // Check if we're on a ngrok domain
-    if (typeof window !== 'undefined' && window.location.hostname.includes('ngrok')) {
-      return window.location.origin;
-    }
-    // Check env variable
-    if (process.env.NEXT_PUBLIC_SITE_URL) {
-      return process.env.NEXT_PUBLIC_SITE_URL;
-    }
-    // Fallback to current origin
-    return typeof window !== 'undefined' ? window.location.origin : '';
-  };
-
   // Handle Google OAuth sign-in
   const handleGoogleSignIn = async () => {
     try {
@@ -104,7 +94,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${getSiteUrl()}/auth/callback?next=/marketplace`,
+          redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
           queryParams: {
             access_type: "offline",
             prompt: "consent",
@@ -113,8 +103,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
       });
 
       if (error) throw error;
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error: unknown) {
+      setError(getErrorMessage(error));
       setGoogleLoading(false);
     }
   };
@@ -128,13 +118,13 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "apple",
         options: {
-          redirectTo: `${getSiteUrl()}/auth/callback?next=/marketplace`,
+          redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
         },
       });
 
       if (error) throw error;
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error: unknown) {
+      setError(getErrorMessage(error));
       setAppleLoading(false);
     }
   };
@@ -208,8 +198,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
           return;
         }
       }
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error: unknown) {
+      setError(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -236,14 +226,21 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
-        fullScreenMobile 
-        className="sm:max-w-[440px] bg-white sm:rounded-md flex flex-col"
+        mobileBottomSheet
+        overlayClassName="auth-sheet-overlay"
+        className="auth-sheet-content bg-white sm:max-w-[440px] flex flex-col overflow-hidden"
       >
+        <div className="flex justify-center pt-3 sm:hidden" aria-hidden="true">
+          <div className="h-1.5 w-10 rounded-full bg-gray-300" />
+        </div>
         {/* Header */}
-        <DialogHeader className="px-6 sm:px-8 pt-6 sm:pt-8 pb-4 flex-shrink-0">
+        <DialogHeader className="px-6 sm:px-8 pt-4 sm:pt-8 pb-4 flex-shrink-0">
           <DialogTitle className="text-center text-2xl sm:text-3xl font-bold text-gray-900">
             {mode === "login" ? "Welcome back" : "Create your account"}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Sign in or create an account to continue using Yellow Jersey.
+          </DialogDescription>
         </DialogHeader>
 
         {/* Form Content */}
@@ -470,4 +467,3 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     </Dialog>
   );
 }
-

@@ -60,7 +60,7 @@ export function FirstUploadPromoBanner({
         className="mb-4"
       >
         <Link href={linkHref}>
-          <div className="bg-black rounded-md px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-gray-900 transition-colors group">
+          <div className="bg-black rounded-lg px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-gray-900 transition-colors group">
             <div className="flex items-center gap-3">
               {/* Gift Icon */}
               <div className="flex items-center gap-2">

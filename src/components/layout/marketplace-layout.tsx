@@ -1,11 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import { MarketplaceSidebar } from "./marketplace-sidebar";
 import { MobileLoginPrompt } from "@/components/marketplace/mobile-login-prompt";
 import { Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSidebarState, SidebarStateProvider } from "@/lib/hooks/use-sidebar-state";
+import { shouldShowMarketplaceSidebar } from "@/lib/marketplace-nav";
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -17,25 +19,31 @@ interface MarketplaceLayoutProps {
   children: React.ReactNode;
   showFooter?: boolean;
   showStoreCTA?: boolean;
+  /** Force sidebar on/off; defaults to pathname-based settings detection */
+  showSidebar?: boolean;
 }
 
-function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = false }: MarketplaceLayoutProps) {
-  const { mounted } = useSidebarState();
-
-  // Log state for debugging
-  React.useEffect(() => {
-    console.log('MarketplaceLayout - mounted:', mounted);
-  }, [mounted]);
+function MarketplaceLayoutContent({
+  children,
+  showFooter = true,
+  showStoreCTA = false,
+  showSidebar,
+}: MarketplaceLayoutProps) {
+  const pathname = usePathname();
+  const { isCollapsed } = useSidebarState();
+  const sidebarVisible =
+    showSidebar ?? (pathname ? shouldShowMarketplaceSidebar(pathname) : false);
 
   return (
-    <div className="min-h-screen bg-white sm:bg-gray-50">
-      {/* Sidebar - starts below header */}
-      <MarketplaceSidebar />
-      
+    <div className="min-h-screen bg-white">
+      {sidebarVisible && <MarketplaceSidebar />}
+
       {/* Header is included in each marketplace page for more control */}
-      <main 
+      <main
         className={cn(
-          "w-full lg:pl-[56px]",
+          "w-full",
+          sidebarVisible &&
+            (isCollapsed ? "lg:pl-[56px]" : "lg:pl-[200px]"),
           showStoreCTA && "mb-32"
         )}
       >
@@ -68,7 +76,7 @@ function MarketplaceLayoutContent({ children, showFooter = true, showStoreCTA = 
                   </div>
                 </div>
                 <Button
-                  className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
+                  className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium shadow-sm"
                   onClick={() => window.location.href = '/connect-lightspeed'}
                 >
                   Sign Up Now

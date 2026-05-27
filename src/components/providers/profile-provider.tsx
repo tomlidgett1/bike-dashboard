@@ -1,9 +1,23 @@
 'use client'
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from './auth-provider'
 import type { ServerProfile } from '@/lib/server/get-user-profile'
+
+function getGooglePictureFromUser(user: User): string | undefined {
+  const hasGoogle = user.identities?.some((i) => i.provider === 'google')
+  if (!hasGoogle) return undefined
+  const meta = user.user_metadata || {}
+  const raw = meta.avatar_url ?? meta.picture
+  return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : undefined
+}
+
+function shouldSyncGoogleLogoToDb( currentLogo: string | undefined ): boolean {
+  if (!currentLogo) return true
+  return currentLogo.includes('googleusercontent.com')
+}
 
 export interface DayHours {
   open: string
@@ -118,6 +132,7 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
             store_type: '',
             address: '',
             website: '',
+            logo_url: getGooglePictureFromUser(user),
             account_type: 'individual',
             bicycle_store: false,
             preferences: {},
@@ -148,13 +163,7 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
       // Use account_type from serverProfile if available, otherwise infer from business_name
       const hasBusinessName = serverProfile.business_name && serverProfile.business_name.trim().length > 0;
       const accountType = serverProfile.account_type || (hasBusinessName ? 'bicycle_store' : 'individual');
-      
-      // 🔍 DEBUG: Server profile bicycle_store value
-      console.log('🔍 [PROFILE PROVIDER] Server profile data:', {
-        accountType: serverProfile.account_type,
-        bicycleStore: serverProfile.bicycle_store,
-        businessName: serverProfile.business_name,
-      });
+      const googlePicture = getGooglePictureFromUser(user)
       
       // We have server data - use it directly WITHOUT refetching
       // Server already fetched with proper caching, no need to hit DB again
@@ -169,7 +178,7 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
         store_type: '',
         address: '',
         website: '',
-        logo_url: serverProfile.logo_url || undefined,
+        logo_url: serverProfile.logo_url || googlePicture || undefined,
         account_type: accountType,
         bicycle_store: serverProfile.bicycle_store ?? false,
         preferences: {},
@@ -187,6 +196,47 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
       setInitializedFromServer(true)
     }
   }, [user, serverProfile, fetchFullProfile, initializedFromServer])
+
+  // Persist Google profile photo to users.logo_url when the DB row is missing it or still has a Google URL.
+  useEffect(() => {
+    if (!user || isFirstTime) return
+    const googleUrl = getGooglePictureFromUser(user)
+    if (!googleUrl) return
+
+    let cancelled = false
+
+    ;(async () => {
+      const supabase = createClient()
+      const { data: row, error: fetchError } = await supabase
+        .from('users')
+        .select('logo_url')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (cancelled || fetchError || !row) return
+
+      const dbLogo = row.logo_url || ''
+      if (!shouldSyncGoogleLogoToDb(dbLogo)) return
+      if (dbLogo === googleUrl) return
+
+      const { data: updated, error: updateError } = await supabase
+        .from('users')
+        .update({
+          logo_url: googleUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id)
+        .select()
+        .single()
+
+      if (cancelled || updateError || !updated) return
+      setProfile(updated)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user, isFirstTime])
 
   const saveProfile = async (profileData: Partial<UserProfile>) => {
     if (!user) return { success: false, error: 'No user logged in' }

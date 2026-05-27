@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getUserUnreadMessageCount } from '@/lib/server/get-user-unread-count';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,13 +30,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    // Fetch both counts in parallel for maximum speed
     const [messagesResult, offersResult] = await Promise.all([
-      // Get unread message count using the database function
-      supabase.rpc('get_user_unread_count', {
-        p_user_id: user.id,
-      }),
-      // Get pending offers count
+      getUserUnreadMessageCount(supabase, user.id),
       supabase
         .from('offers')
         .select('*', { count: 'exact', head: true })
@@ -43,7 +39,23 @@ export async function GET(request: NextRequest) {
         .eq('status', 'pending'),
     ]);
 
-    const messagesCount = messagesResult.data || 0;
+    if (messagesResult.error) {
+      console.error('Error fetching unread message count:', messagesResult.error);
+      return NextResponse.json(
+        { error: 'Failed to fetch unread counts' },
+        { status: 500 }
+      );
+    }
+
+    if (offersResult.error) {
+      console.error('Error fetching unread offers count:', offersResult.error);
+      return NextResponse.json(
+        { error: 'Failed to fetch unread counts' },
+        { status: 500 }
+      );
+    }
+
+    const messagesCount = messagesResult.count;
     const offersCount = offersResult.count || 0;
 
     const response: CombinedUnreadCountsResponse = {

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,13 +31,7 @@ export function StoreCategoryPills({
   if (categories.length === 0) return null;
 
   return (
-    <motion.div
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: "auto", opacity: 1 }}
-      exit={{ height: 0, opacity: 0 }}
-      transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
-      className={cn("overflow-hidden", className)}
-    >
+    <div className={cn(className)}>
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide mt-2 -mx-1 px-1">
         {/* All Products Pill */}
         <button
@@ -62,11 +55,10 @@ export function StoreCategoryPills({
           const isSelected = selectedCategory === category.name;
           
           return (
-            <motion.button
+            <button
               key={category.name}
+              type="button"
               onClick={() => onCategoryChange(isSelected ? null : category.name)}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer",
                 isSelected
@@ -83,11 +75,11 @@ export function StoreCategoryPills({
               )}>
                 {category.count.toLocaleString()}
               </span>
-            </motion.button>
+            </button>
           );
         })}
       </div>
-    </motion.div>
+    </div>
   );
 }
 

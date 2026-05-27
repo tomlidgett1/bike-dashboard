@@ -1,565 +1,462 @@
 "use client";
 
 import * as React from "react";
-import { 
-  Package, Loader2, X, 
-  ChevronRight, TrendingUp, Heart, Store
-} from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Package, ChevronRight, X, TrendingUp, Store } from "lucide-react";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { preload } from "swr";
-import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
+import {
+  BrowseFiltersToolbar,
+  type ProductGridLayout,
+} from "@/components/marketplace/browse-filters-toolbar";
+import {
+  MobileFilterContent,
+  countActiveFilters,
+  type AdvancedFiltersState,
+} from "@/components/marketplace/advanced-filters";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { BikeStoresPicker } from "@/components/marketplace/bike-stores-picker";
 
 // ============================================================
-// Unified Filter Bar (Explore Bar)
-// Clean, modern filter experience combining:
-// - View modes (Hot, For You, Browse, Stores)
-// - Category navigation (3-level hierarchy)
-// - Advanced filters (price, condition, etc.)
-// Mobile-first with smooth animations
-// Consolidates all navigation into a single row
+// Unified Filter Bar — view tabs + browse toolbar (hardcoded categories)
 // ============================================================
 
-// Prefetch function for category products
-const prefetchCategoryProducts = (level1?: string, level2?: string, level3?: string) => {
-  const params = new URLSearchParams();
-  params.set('page', '1');
-  params.set('pageSize', '50');
-  if (level1) params.set('level1', level1);
-  if (level2) params.set('level2', level2);
-  if (level3) params.set('level3', level3);
-  
-  const url = `/api/marketplace/products?${params}`;
-  preload(url, (url: string) => fetch(url).then(res => res.json()));
-};
+export type ViewMode = "trending" | "all";
+export type ListingTypeFilter = "all" | "stores" | "individuals";
 
-export type ViewMode = 'trending' | 'for-you' | 'all';
-export type ListingTypeFilter = 'all' | 'stores' | 'individuals';
-
-interface CategoryHierarchy {
-  level1: string;
-  level2Categories: {
-    name: string;
-    count: number;
-    level3Categories: {
-      name: string;
-      count: number;
-    }[];
-  }[];
-  totalProducts: number;
-}
+export type { ProductGridLayout };
 
 interface UnifiedFilterBarProps {
-  // View mode
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
-  showForYouBadge?: boolean;
-  
-  // Category filters
+
   selectedLevel1: string | null;
   selectedLevel2: string | null;
   selectedLevel3: string | null;
   onLevel1Change: (category: string | null) => void;
   onLevel2Change: (subcategory: string | null) => void;
   onLevel3Change: (level3: string | null) => void;
-  
-  // Listing type filter
+
   listingTypeFilter: ListingTypeFilter;
   onListingTypeChange: (filter: ListingTypeFilter) => void;
-  
-  // Product count
-  productCount?: number;
-  
-  // Additional filters slot (e.g., AdvancedFilters component)
-  additionalFilters?: React.ReactNode;
-  
-  // Ref for tracking scroll position (mobile only)
-  categoryPillsRef?: React.Ref<HTMLDivElement>;
-  
-  // Navigate to Bike Stores
-  onNavigateToStores?: () => void;
-}
 
-// Category icon mapping - now uses BikeIcon component
-const getCategoryIcon = (categoryName: string) => {
-  // Return the icon name instead of a component
-  return getCategoryIconName(categoryName);
-};
+  productCount?: number;
+
+  additionalFilters?: React.ReactNode;
+
+  categoryPillsRef?: React.RefObject<HTMLDivElement | null>;
+
+  onNavigateToStores?: () => void;
+
+  selectedStoreId?: string | null;
+  onStoreSelect?: (storeId: string) => void;
+
+  browseFilters: AdvancedFiltersState;
+  onBrowseFiltersChange: (f: AdvancedFiltersState) => void;
+  onBrowseFiltersApply: () => void;
+  onBrowseFiltersReset: () => void;
+  productGridLayout: ProductGridLayout;
+  onProductGridLayoutChange: (layout: ProductGridLayout) => void;
+
+  /** Mobile Browse: filter sheet open state (FAB lives in MarketplaceHeader). */
+  mobileBrowseSheetOpen?: boolean;
+  onMobileBrowseSheetOpenChange?: (open: boolean) => void;
+}
 
 export function UnifiedFilterBar({
   viewMode,
   onViewModeChange,
-  showForYouBadge = false,
   selectedLevel1,
   selectedLevel2,
   selectedLevel3,
   onLevel1Change,
   onLevel2Change,
   onNavigateToStores,
+  selectedStoreId,
+  onStoreSelect,
   onLevel3Change,
   listingTypeFilter,
   onListingTypeChange,
   productCount,
   additionalFilters,
   categoryPillsRef,
+  browseFilters,
+  onBrowseFiltersChange,
+  onBrowseFiltersApply,
+  onBrowseFiltersReset,
+  productGridLayout,
+  onProductGridLayoutChange,
+  mobileBrowseSheetOpen,
+  onMobileBrowseSheetOpenChange,
 }: UnifiedFilterBarProps) {
-  const [categories, setCategories] = React.useState<CategoryHierarchy[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [uncontrolledBrowseOpen, setUncontrolledBrowseOpen] = React.useState(false);
+  const browseSheetControlled =
+    mobileBrowseSheetOpen !== undefined &&
+    onMobileBrowseSheetOpenChange !== undefined;
+  const browseSheetOpen = browseSheetControlled
+    ? mobileBrowseSheetOpen!
+    : uncontrolledBrowseOpen;
+  const setBrowseSheetOpen = browseSheetControlled
+    ? onMobileBrowseSheetOpenChange!
+    : setUncontrolledBrowseOpen;
+  const isStoresMode = listingTypeFilter === "stores";
+  const activeTabIndex = isStoresMode ? 2 : viewMode === "trending" ? 0 : 1;
+  const tabIndicatorTransition = {
+    type: "tween" as const,
+    duration: 0.2,
+    ease: [0.04, 0.62, 0.23, 0.98] as const,
+  };
 
-  // Fetch categories
-  React.useEffect(() => {
-    const fetchCategories = async () => {
-      setLoading(true);
-      try {
-        const params = new URLSearchParams();
-        if (listingTypeFilter === 'stores') {
-          params.set('listingType', 'store_inventory');
-        } else if (listingTypeFilter === 'individuals') {
-          params.set('listingType', 'private_listing');
-        }
-        
-        const url = params.toString() 
-          ? `/api/marketplace/categories?${params}` 
-          : '/api/marketplace/categories';
-        
-        const response = await fetch(url);
-        if (response.ok) {
-          const data = await response.json();
-          setCategories(data.categories || []);
-        }
-      } catch (error) {
-        console.error('[UnifiedFilterBar] Error fetching categories:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCategories();
-  }, [listingTypeFilter]);
-
-  // Get current category data
-  const selectedCategory = categories.find(c => c.level1 === selectedLevel1);
-  const selectedSubcategory = selectedCategory?.level2Categories.find(l2 => l2.name === selectedLevel2);
-  
-  // Helper to clear all category filters
   const clearAllCategories = () => {
     onLevel1Change(null);
     onLevel2Change(null);
     onLevel3Change(null);
   };
 
-  // Determine what category options to show
-  const getCategoryOptions = () => {
-    if (selectedLevel2 && selectedSubcategory?.level3Categories.length) {
-      return selectedSubcategory.level3Categories.map(l3 => ({
-        name: l3.name,
-        count: l3.count,
-        level: 3 as const,
-        isActive: selectedLevel3 === l3.name,
-      }));
-    }
-    if (selectedLevel1 && selectedCategory?.level2Categories.length) {
-      return selectedCategory.level2Categories.map(l2 => ({
-        name: l2.name,
-        count: l2.count,
-        level: 2 as const,
-        isActive: selectedLevel2 === l2.name,
-        hasChildren: l2.level3Categories.length > 0,
-      }));
-    }
-    return categories.map(cat => ({
-      name: cat.level1,
-      count: cat.totalProducts,
-      level: 1 as const,
-      isActive: selectedLevel1 === cat.level1,
-      hasChildren: cat.level2Categories.length > 0,
-      iconName: getCategoryIcon(cat.level1),
-    }));
-  };
-
-  const categoryOptions = getCategoryOptions();
-
-  // Handle category selection
-  const handleCategorySelect = (option: typeof categoryOptions[0]) => {
-    if (option.level === 1) {
-      if (option.isActive) {
-        clearAllCategories();
-      } else {
-        onLevel1Change(option.name);
-        onLevel2Change(null);
-        onLevel3Change(null);
-        prefetchCategoryProducts(option.name);
-      }
-    } else if (option.level === 2) {
-      if (option.isActive) {
-        onLevel2Change(null);
-        onLevel3Change(null);
-      } else {
-        onLevel2Change(option.name);
-        onLevel3Change(null);
-        if (selectedLevel1) prefetchCategoryProducts(selectedLevel1, option.name);
-      }
-    } else if (option.level === 3) {
-      if (option.isActive) {
-        onLevel3Change(null);
-      } else {
-        onLevel3Change(option.name);
-        if (selectedLevel1 && selectedLevel2) {
-          prefetchCategoryProducts(selectedLevel1, selectedLevel2, option.name);
-        }
-      }
-    }
-  };
-
-  // Build breadcrumb trail
   const breadcrumbs = [];
   if (selectedLevel1) {
-    breadcrumbs.push({ label: selectedLevel1, onClick: () => { onLevel2Change(null); onLevel3Change(null); } });
+    breadcrumbs.push({
+      label: selectedLevel1,
+      onClick: () => {
+        onLevel2Change(null);
+        onLevel3Change(null);
+      },
+    });
   }
   if (selectedLevel2) {
-    breadcrumbs.push({ label: selectedLevel2, onClick: () => { onLevel3Change(null); } });
+    breadcrumbs.push({
+      label: selectedLevel2,
+      onClick: () => {
+        onLevel3Change(null);
+      },
+    });
   }
   if (selectedLevel3) {
     breadcrumbs.push({ label: selectedLevel3, onClick: () => {} });
   }
 
-  const isOnBrowseMode = viewMode === 'all';
-
-  // Track if stores mode is active (passed in via onNavigateToStores being the current space)
-  const isStoresMode = listingTypeFilter === 'stores';
+  const isOnBrowseMode = viewMode === "all";
+  const showBrowseChrome = isOnBrowseMode && !isStoresMode;
+  const mobileBrowseAdvancedCount = countActiveFilters(browseFilters);
 
   return (
-    <div className="space-y-3">
-      {/* Primary Row: Unified Explore Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-3">
-        
-        {/* Mobile Explore Bar - Single unified navigation with animated indicator */}
-        <div className="sm:hidden pt-3">
-          <div className="bg-gray-100 rounded-md p-1 mx-3">
-            <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
-              {/* Hot Tab */}
+    <div className={cn(showBrowseChrome && "space-y-1.5 sm:space-y-3")}>
+      <div className="flex flex-col gap-3 sm:min-h-9 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+        <div className="flex items-center gap-2 sm:hidden pt-1 pb-0.5 pr-3">
+          <div className="relative mx-3 min-w-0 flex-1 h-12 rounded-md bg-gray-100 p-0.5">
+            <motion.div
+              className="absolute bottom-0.5 left-0.5 top-0.5 rounded-md bg-white shadow-sm"
+              animate={{ x: `${activeTabIndex * 100}%` }}
+              transition={tabIndicatorTransition}
+              style={{ width: "calc((100% - 0.5rem) / 3)" }}
+            />
+            <div className="relative grid h-10 grid-cols-3">
               <button
-                onClick={() => onViewModeChange('trending')}
-                className="relative flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap min-w-0"
+                type="button"
+                onClick={() => onViewModeChange("trending")}
+                className="relative flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
               >
-                {/* Animated Background Indicator */}
-                {viewMode === 'trending' && !isStoresMode && (
-                  <motion.div
-                    layoutId="mobile-tab-indicator"
-                    className="absolute inset-0 bg-white rounded-md shadow-sm"
-                    transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-                  />
-                )}
-                <span className={cn(
-                  "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-                  viewMode === 'trending' && !isStoresMode ? "text-gray-900" : "text-gray-600"
-                )}>
+                <span
+                  className={cn(
+                    "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+                    viewMode === "trending" && !isStoresMode
+                      ? "text-gray-900"
+                      : "text-gray-600"
+                  )}
+                >
                   <TrendingUp className="h-4 w-4 flex-shrink-0" />
                   <span>Hot</span>
                 </span>
               </button>
-              
-              {/* For You Tab */}
+
               <button
-                onClick={() => onViewModeChange('for-you')}
-                className="relative flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap min-w-0"
+                type="button"
+                onClick={() => onViewModeChange("all")}
+                className="relative flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
               >
-                {viewMode === 'for-you' && !isStoresMode && (
-                  <motion.div
-                    layoutId="mobile-tab-indicator"
-                    className="absolute inset-0 bg-white rounded-md shadow-sm"
-                    transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-                  />
-                )}
-                <span className={cn(
-                  "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-                  viewMode === 'for-you' && !isStoresMode ? "text-gray-900" : "text-gray-600"
-                )}>
-                  <Heart className="h-4 w-4 flex-shrink-0" />
-                  <span>For You</span>
-                </span>
-                {showForYouBadge && (
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#FFC72C] rounded-full z-20" />
-                )}
-              </button>
-              
-              {/* Browse Tab */}
-              <button
-                onClick={() => onViewModeChange('all')}
-                className="relative flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap min-w-0"
-              >
-                {viewMode === 'all' && !isStoresMode && (
-                  <motion.div
-                    layoutId="mobile-tab-indicator"
-                    className="absolute inset-0 bg-white rounded-md shadow-sm"
-                    transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-                  />
-                )}
-                <span className={cn(
-                  "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-                  viewMode === 'all' && !isStoresMode ? "text-gray-900" : "text-gray-600"
-                )}>
+                <span
+                  className={cn(
+                    "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+                    viewMode === "all" && !isStoresMode
+                      ? "text-gray-900"
+                      : "text-gray-600"
+                  )}
+                >
                   <Package className="h-4 w-4 flex-shrink-0" />
                   <span>Browse</span>
                 </span>
               </button>
-              
-              {/* Stores Tab */}
+
               <button
+                type="button"
                 onClick={onNavigateToStores}
-                className="relative flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap min-w-0"
+                className="relative flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
               >
-                {isStoresMode && (
-                  <motion.div
-                    layoutId="mobile-tab-indicator"
-                    className="absolute inset-0 bg-white rounded-md shadow-sm"
-                    transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-                  />
-                )}
-                <span className={cn(
-                  "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-                  isStoresMode ? "text-gray-900" : "text-gray-600"
-                )}>
+                <span
+                  className={cn(
+                    "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+                    isStoresMode ? "text-gray-900" : "text-gray-600"
+                  )}
+                >
                   <Store className="h-4 w-4 flex-shrink-0" />
                   <span>Stores</span>
                 </span>
               </button>
             </div>
           </div>
+          {onStoreSelect && (
+            <BikeStoresPicker
+              selectedStoreId={selectedStoreId}
+              onStoreSelect={onStoreSelect}
+              onAllStores={onNavigateToStores}
+              className="shrink-0"
+            />
+          )}
         </div>
 
-        {/* Desktop View Mode Tabs with animated indicator */}
-        <div className="hidden sm:flex items-center gap-0 bg-gray-100 p-0.5 rounded-md w-auto">
+        <div className="hidden sm:flex items-center gap-2 self-start">
+        <div className="relative h-9 min-w-[328px] grid-cols-3 rounded-md bg-gray-100 p-0.5 grid">
+          <motion.div
+            className="absolute bottom-0.5 left-0.5 top-0.5 rounded-md bg-white shadow-sm"
+            animate={{ x: `${activeTabIndex * 100}%` }}
+            transition={tabIndicatorTransition}
+            style={{ width: "calc((100% - 0.25rem) / 3)" }}
+          />
           <button
-            onClick={() => onViewModeChange('trending')}
-            className="relative flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap"
+            type="button"
+            onClick={() => onViewModeChange("trending")}
+            className="relative flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
           >
-            {viewMode === 'trending' && !isStoresMode && (
-              <motion.div
-                layoutId="desktop-tab-indicator"
-                className="absolute inset-0 bg-white rounded-md shadow-sm"
-                transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-              />
-            )}
-            <span className={cn(
-              "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-              viewMode === 'trending' && !isStoresMode ? "text-gray-900" : "text-gray-600 hover:text-gray-800"
-            )}>
+            <span
+              className={cn(
+                "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+                viewMode === "trending" && !isStoresMode
+                  ? "text-gray-900"
+                  : "text-gray-600 hover:text-gray-800"
+              )}
+            >
               <TrendingUp className="h-4 w-4" />
               Trending
             </span>
           </button>
-          
+
           <button
-            onClick={() => onViewModeChange('for-you')}
-            className="relative flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap"
+            type="button"
+            onClick={() => onViewModeChange("all")}
+            className="relative flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
           >
-            {viewMode === 'for-you' && !isStoresMode && (
-              <motion.div
-                layoutId="desktop-tab-indicator"
-                className="absolute inset-0 bg-white rounded-md shadow-sm"
-                transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-              />
-            )}
-            <span className={cn(
-              "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-              viewMode === 'for-you' && !isStoresMode ? "text-gray-900" : "text-gray-600 hover:text-gray-800"
-            )}>
-              <Heart className="h-4 w-4" />
-              For You
-              {showForYouBadge && (
-                <span className="ml-1 w-2 h-2 bg-[#FFC72C] rounded-full" />
+            <span
+              className={cn(
+                "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+                viewMode === "all" && !isStoresMode
+                  ? "text-gray-900"
+                  : "text-gray-600 hover:text-gray-800"
               )}
-            </span>
-          </button>
-          
-          <button
-            onClick={() => onViewModeChange('all')}
-            className="relative flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap"
-          >
-            {viewMode === 'all' && !isStoresMode && (
-              <motion.div
-                layoutId="desktop-tab-indicator"
-                className="absolute inset-0 bg-white rounded-md shadow-sm"
-                transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-              />
-            )}
-            <span className={cn(
-              "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-              viewMode === 'all' && !isStoresMode ? "text-gray-900" : "text-gray-600 hover:text-gray-800"
-            )}>
+            >
               <Package className="h-4 w-4" />
               Browse
             </span>
           </button>
-          
-          {/* Separator */}
-          <div className="w-px h-5 bg-gray-300 mx-1" />
-          
-          {/* Bike Stores Tab */}
+
           <button
+            type="button"
             onClick={onNavigateToStores}
-            className="relative flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-md cursor-pointer whitespace-nowrap"
+            className="relative flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
           >
-            {isStoresMode && (
-              <motion.div
-                layoutId="desktop-tab-indicator"
-                className="absolute inset-0 bg-white rounded-md shadow-sm"
-                transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-              />
-            )}
-            <span className={cn(
-              "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-              isStoresMode ? "text-gray-900" : "text-gray-600 hover:text-gray-800"
-            )}>
+            <span
+              className={cn(
+                "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
+                isStoresMode ? "text-gray-900" : "text-gray-600 hover:text-gray-800"
+              )}
+            >
               <Store className="h-4 w-4" />
               Bike Stores
             </span>
           </button>
         </div>
-
-        {/* Advanced Filters + Product Count - only on Browse mode - Desktop only */}
-        {isOnBrowseMode && !isStoresMode && (
-          <div className="hidden sm:flex items-stretch gap-2">
-            {/* Additional Filters Slot (e.g., AdvancedFilters) */}
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
-              {additionalFilters}
-            </div>
-
-            {/* Product Count */}
-            {productCount !== undefined && (
-              <span className="hidden lg:flex items-center text-sm text-gray-500 font-medium tabular-nums whitespace-nowrap">
-                {productCount.toLocaleString()} items
-              </span>
-            )}
-          </div>
+        {onStoreSelect && (
+          <BikeStoresPicker
+            selectedStoreId={selectedStoreId}
+            onStoreSelect={onStoreSelect}
+            onAllStores={onNavigateToStores}
+          />
         )}
+        </div>
       </div>
 
-      {/* Category Navigation - Only on Browse mode (not Stores) */}
-      <AnimatePresence mode="wait">
-        {isOnBrowseMode && !isStoresMode && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className="overflow-hidden px-3 sm:px-0"
-          >
-            {/* Breadcrumb Trail - Compact, clickable */}
+      {showBrowseChrome && (
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.04,0.62,0.23,0.98)] motion-reduce:transition-none",
+          "grid-rows-[1fr]",
+        )}
+      >
+        <div
+          className={cn(
+            "min-h-0 overflow-hidden [contain:content]",
+            !showBrowseChrome && "pointer-events-none",
+          )}
+        >
+          {/* Desktop: inline category toolbar + advanced control */}
+          <div className="hidden sm:block px-3 sm:px-0">
             {breadcrumbs.length > 0 && (
-              <motion.div 
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="flex items-center gap-1 mb-2.5 overflow-x-auto scrollbar-hide"
-              >
+              <div className="mb-3 flex items-center gap-1 overflow-x-auto scrollbar-hide sm:mb-2.5">
                 <button
+                  type="button"
                   onClick={clearAllCategories}
-                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-700 rounded-md hover:bg-gray-100 transition-colors whitespace-nowrap"
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 transition-colors whitespace-nowrap hover:bg-gray-100 hover:text-gray-700"
                 >
-                  All Categories
+                  All categories
                 </button>
-                
+
                 {breadcrumbs.map((crumb, index) => (
                   <React.Fragment key={crumb.label}>
-                    <ChevronRight className="h-3 w-3 text-gray-300 flex-shrink-0" />
+                    <ChevronRight className="h-3 w-3 flex-shrink-0 text-gray-300" />
                     <button
+                      type="button"
                       onClick={crumb.onClick}
                       disabled={index === breadcrumbs.length - 1}
                       className={cn(
-                        "flex items-center px-2 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap",
+                        "flex items-center rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors",
                         index === breadcrumbs.length - 1
-                          ? "text-gray-900 bg-gray-100"
-                          : "text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+                          ? "cursor-default bg-gray-100 text-gray-900"
+                          : "text-gray-600 hover:bg-gray-100 hover:text-gray-800",
                       )}
                     >
                       {crumb.label}
                     </button>
                   </React.Fragment>
                 ))}
-                
-                {/* Clear button */}
+
                 <button
+                  type="button"
                   onClick={clearAllCategories}
-                  className="ml-1 p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
-                  aria-label="Clear filters"
+                  className="ml-1 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  aria-label="Clear category filters"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
-              </motion.div>
+              </div>
             )}
 
-            {/* Category Pills */}
-            {loading ? (
-              <div className="flex items-center gap-2 py-1">
-                <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                <span className="text-sm text-gray-500">Loading...</span>
-              </div>
-            ) : (
-              <motion.div
-                ref={categoryPillsRef}
-                key={`${selectedLevel1}-${selectedLevel2}`}
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.2 }}
-                className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1"
+            <BrowseFiltersToolbar
+              selectedLevel1={selectedLevel1}
+              selectedLevel2={selectedLevel2}
+              selectedLevel3={selectedLevel3}
+              onLevel1Change={onLevel1Change}
+              onLevel2Change={onLevel2Change}
+              onLevel3Change={onLevel3Change}
+              filters={browseFilters}
+              onFiltersChange={onBrowseFiltersChange}
+              onFiltersApply={onBrowseFiltersApply}
+              productCount={productCount}
+              gridLayout={productGridLayout}
+              onGridLayoutChange={onProductGridLayoutChange}
+              additionalFilters={additionalFilters ?? null}
+              toolbarScrollRef={categoryPillsRef}
+            />
+          </div>
+
+          {/* Mobile: category pills under tabs + filter sheet (opened from header FAB) */}
+          <div className="space-y-2 pb-1.5 sm:hidden">
+            <div className="px-3">
+              <BrowseFiltersToolbar
+                categoryPillsRowOnly
+                selectedLevel1={selectedLevel1}
+                selectedLevel2={selectedLevel2}
+                selectedLevel3={selectedLevel3}
+                onLevel1Change={onLevel1Change}
+                onLevel2Change={onLevel2Change}
+                onLevel3Change={onLevel3Change}
+                filters={browseFilters}
+                onFiltersChange={onBrowseFiltersChange}
+                onFiltersApply={onBrowseFiltersApply}
+                gridLayout={productGridLayout}
+                onGridLayoutChange={onProductGridLayoutChange}
+                toolbarScrollRef={categoryPillsRef}
+              />
+            </div>
+
+            <Sheet open={browseSheetOpen} onOpenChange={setBrowseSheetOpen}>
+              <SheetContent
+                side="right"
+                className="w-[50vw] min-w-[280px] max-w-[400px] gap-0 border-0 p-0 h-full flex flex-col"
+                showCloseButton={false}
               >
-                {/* Filters Button - Mobile only, first in line */}
-                <div className="sm:hidden flex-shrink-0">
-                  {additionalFilters}
-                </div>
-                
-                {categoryOptions.map((option) => {
-                  const iconName = 'iconName' in option ? option.iconName : undefined;
-                  
-                  return (
-                    <button
-                      key={option.name}
-                      onClick={() => handleCategorySelect(option)}
-                      onMouseEnter={() => {
-                        if (!option.isActive && option.level === 1) {
-                          prefetchCategoryProducts(option.name);
-                        }
-                      }}
-                      className={cn(
-                        "group flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-md font-medium transition-all whitespace-nowrap flex-shrink-0 cursor-pointer",
-                        option.isActive
-                          ? "bg-gray-900 text-white shadow-md"
-                          : "bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:shadow-sm"
+                <MobileFilterContent
+                  filters={browseFilters}
+                  onFiltersChange={onBrowseFiltersChange}
+                  onApply={() => {
+                    onBrowseFiltersApply();
+                    setBrowseSheetOpen(false);
+                  }}
+                  onReset={onBrowseFiltersReset}
+                  activeFilterCount={mobileBrowseAdvancedCount}
+                  listingTypeFilter={listingTypeFilter}
+                  onListingTypeChange={onListingTypeChange}
+                  onClose={() => setBrowseSheetOpen(false)}
+                  topSection={
+                    <div className="space-y-4 border-b border-gray-100 pb-4">
+                      {breadcrumbs.length > 0 && (
+                        <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
+                          <button
+                            type="button"
+                            onClick={clearAllCategories}
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 transition-colors whitespace-nowrap hover:bg-gray-100 hover:text-gray-700"
+                          >
+                            All categories
+                          </button>
+                          {breadcrumbs.map((crumb, index) => (
+                            <React.Fragment key={crumb.label}>
+                              <ChevronRight className="h-3 w-3 flex-shrink-0 text-gray-300" />
+                              <button
+                                type="button"
+                                onClick={crumb.onClick}
+                                disabled={index === breadcrumbs.length - 1}
+                                className={cn(
+                                  "flex items-center rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors",
+                                  index === breadcrumbs.length - 1
+                                    ? "cursor-default bg-gray-100 text-gray-900"
+                                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-800",
+                                )}
+                              >
+                                {crumb.label}
+                              </button>
+                            </React.Fragment>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={clearAllCategories}
+                            className="ml-1 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                            aria-label="Clear category filters"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       )}
-                    >
-                      {iconName && (
-                        <BikeIcon 
-                          iconName={iconName} 
-                          size={option.isActive ? 20 : 18}
-                          className={cn(
-                            "transition-opacity",
-                            option.isActive ? "opacity-100" : "opacity-60 group-hover:opacity-80"
-                          )} 
-                        />
-                      )}
-                      <span className="text-xs sm:text-sm">{option.name}</span>
-                      {option.count > 0 && (
-                        <span className={cn(
-                          "text-[10px] sm:text-xs px-1.5 py-0.5 rounded-md font-medium transition-colors",
-                          option.isActive
-                            ? "bg-white/20 text-white"
-                            : "bg-gray-100 text-gray-500 group-hover:bg-gray-200"
-                        )}>
-                          {option.count.toLocaleString()}
-                        </span>
-                      )}
-                      {'hasChildren' in option && option.hasChildren && !option.isActive && (
-                        <ChevronRight className="h-3 w-3 text-gray-400 -mr-1" />
-                      )}
-                    </button>
-                  );
-                })}
-              </motion.div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+                      <BrowseFiltersToolbar
+                        sheetMode
+                        hideCategoryPills
+                        selectedLevel1={selectedLevel1}
+                        selectedLevel2={selectedLevel2}
+                        selectedLevel3={selectedLevel3}
+                        onLevel1Change={onLevel1Change}
+                        onLevel2Change={onLevel2Change}
+                        onLevel3Change={onLevel3Change}
+                        filters={browseFilters}
+                        onFiltersChange={onBrowseFiltersChange}
+                        onFiltersApply={onBrowseFiltersApply}
+                        gridLayout={productGridLayout}
+                        onGridLayoutChange={onProductGridLayoutChange}
+                      />
+                    </div>
+                  }
+                />
+              </SheetContent>
+            </Sheet>
+          </div>
+        </div>
+      </div>
+      )}
     </div>
   );
 }
-

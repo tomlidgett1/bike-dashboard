@@ -1,3 +1,8 @@
+import {
+  buildCloudinaryImageUrl,
+  extractCloudinaryPublicId,
+} from "@/lib/utils/cloudinary-transforms";
+
 /**
  * Cloudinary Image CDN Integration
  * 
@@ -32,7 +37,7 @@ export function isCloudinaryConfigured(): boolean {
  * - Falls back to original URL for legacy images
  */
 export function getCardImageUrl(
-  imageData: { url?: string; cardUrl?: string } | string | null | undefined
+  imageData: { url?: string; cardUrl?: string; publicId?: string; cloudinaryPublicId?: string } | string | null | undefined
 ): string | null {
   if (!imageData) return null;
   
@@ -41,7 +46,13 @@ export function getCardImageUrl(
     return imageData;
   }
   
-  // Prefer pre-generated cardUrl (Cloudinary)
+  const generated = buildCloudinaryImageUrl(
+    imageData.cloudinaryPublicId || imageData.publicId || extractCloudinaryPublicId(imageData.url),
+    "grid_card"
+  );
+  if (generated) return generated;
+
+  // Prefer pre-generated cardUrl (legacy Cloudinary column)
   if (imageData.cardUrl) {
     return imageData.cardUrl;
   }
@@ -56,7 +67,7 @@ export function getCardImageUrl(
  * - Falls back to original URL for legacy images
  */
 export function getThumbnailUrl(
-  imageData: { url?: string; thumbnailUrl?: string } | string | null | undefined
+  imageData: { url?: string; thumbnailUrl?: string; publicId?: string; cloudinaryPublicId?: string } | string | null | undefined
 ): string | null {
   if (!imageData) return null;
   
@@ -65,7 +76,13 @@ export function getThumbnailUrl(
     return imageData;
   }
   
-  // Prefer pre-generated thumbnailUrl (Cloudinary)
+  const generated = buildCloudinaryImageUrl(
+    imageData.cloudinaryPublicId || imageData.publicId || extractCloudinaryPublicId(imageData.url),
+    "thumbnail"
+  );
+  if (generated) return generated;
+
+  // Prefer pre-generated thumbnailUrl (legacy Cloudinary column)
   if (imageData.thumbnailUrl) {
     return imageData.thumbnailUrl;
   }
@@ -80,7 +97,7 @@ export function getThumbnailUrl(
  * - Falls back to cardUrl, then original URL for legacy images
  */
 export function getMobileCardImageUrl(
-  imageData: { url?: string; mobileCardUrl?: string; cardUrl?: string } | string | null | undefined
+  imageData: { url?: string; mobileCardUrl?: string; cardUrl?: string; publicId?: string; cloudinaryPublicId?: string } | string | null | undefined
 ): string | null {
   if (!imageData) return null;
   
@@ -89,7 +106,13 @@ export function getMobileCardImageUrl(
     return imageData;
   }
   
-  // Prefer pre-generated mobileCardUrl (Cloudinary)
+  const generated = buildCloudinaryImageUrl(
+    imageData.cloudinaryPublicId || imageData.publicId || extractCloudinaryPublicId(imageData.url),
+    "mobile_card"
+  );
+  if (generated) return generated;
+
+  // Prefer pre-generated mobileCardUrl (legacy Cloudinary column)
   if (imageData.mobileCardUrl) {
     return imageData.mobileCardUrl;
   }
@@ -109,7 +132,7 @@ export function getMobileCardImageUrl(
  * - Falls back to detailUrl, then original URL for legacy images
  */
 export function getGalleryImageUrl(
-  imageData: { url?: string; galleryUrl?: string; detailUrl?: string } | string | null | undefined
+  imageData: { url?: string; galleryUrl?: string; detailUrl?: string; publicId?: string; cloudinaryPublicId?: string } | string | null | undefined
 ): string | null {
   if (!imageData) return null;
   
@@ -118,7 +141,13 @@ export function getGalleryImageUrl(
     return imageData;
   }
   
-  // Prefer pre-generated galleryUrl (Cloudinary - optimized for product pages)
+  const generated = buildCloudinaryImageUrl(
+    imageData.cloudinaryPublicId || imageData.publicId || extractCloudinaryPublicId(imageData.url),
+    "web_hero"
+  );
+  if (generated) return generated;
+
+  // Prefer pre-generated galleryUrl (legacy Cloudinary column)
   if (imageData.galleryUrl) {
     return imageData.galleryUrl;
   }
@@ -138,7 +167,7 @@ export function getGalleryImageUrl(
  * - Falls back to original URL for legacy images
  */
 export function getDetailImageUrl(
-  imageData: { url?: string; detailUrl?: string } | string | null | undefined
+  imageData: { url?: string; detailUrl?: string; publicId?: string; cloudinaryPublicId?: string } | string | null | undefined
 ): string | null {
   if (!imageData) return null;
   
@@ -147,7 +176,13 @@ export function getDetailImageUrl(
     return imageData;
   }
   
-  // Prefer pre-generated detailUrl (Cloudinary)
+  const generated = buildCloudinaryImageUrl(
+    imageData.cloudinaryPublicId || imageData.publicId || extractCloudinaryPublicId(imageData.url),
+    "zoom"
+  );
+  if (generated) return generated;
+
+  // Prefer pre-generated detailUrl (legacy Cloudinary column)
   if (imageData.detailUrl) {
     return imageData.detailUrl;
   }

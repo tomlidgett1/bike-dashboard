@@ -185,7 +185,7 @@ export default function ImageQADebugPage() {
                     Go to Image QA
                   </Button>
                   <Button
-                    onClick={() => window.open('https://supabase.com/dashboard/project/lvsxdoyptioyxuwvvpgb/editor', '_blank')}
+                    onClick={() => window.open('https://supabase.com/dashboard/project/frjcluhuictnbimitvrm/editor', '_blank')}
                     variant="outline"
                     className="rounded-md"
                   >

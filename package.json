@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "check:google-oauth": "node --env-file=.env.local scripts/check-google-oauth.mjs",
     "migrate:canonical": "ts-node scripts/migrate-to-canonical.ts"
   },
   "dependencies": {

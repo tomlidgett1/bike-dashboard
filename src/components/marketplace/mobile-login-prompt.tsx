@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getBrowserOAuthBaseUrl } from "@/lib/auth/oauth-site-url";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -50,17 +51,6 @@ export function MobileLoginPrompt() {
   const [appleLoading, setAppleLoading] = useState(false);
   const supabase = createClient();
 
-  // Get the site URL for OAuth redirects
-  const getSiteUrl = () => {
-    if (typeof window !== 'undefined' && window.location.hostname.includes('ngrok')) {
-      return window.location.origin;
-    }
-    if (process.env.NEXT_PUBLIC_SITE_URL) {
-      return process.env.NEXT_PUBLIC_SITE_URL;
-    }
-    return typeof window !== 'undefined' ? window.location.origin : '';
-  };
-
   // Handle Google OAuth sign-in
   const handleGoogleSignIn = async () => {
     try {
@@ -69,7 +59,7 @@ export function MobileLoginPrompt() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${getSiteUrl()}/auth/callback?next=/marketplace`,
+          redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
           queryParams: {
             access_type: "offline",
             prompt: "consent",
@@ -92,7 +82,7 @@ export function MobileLoginPrompt() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "apple",
         options: {
-          redirectTo: `${getSiteUrl()}/auth/callback?next=/marketplace`,
+          redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
         },
       });
 

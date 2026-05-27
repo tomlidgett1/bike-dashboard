@@ -2,13 +2,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { cloudinaryUploadAuthHeader } from '../_shared/cloudinary-auth.ts'
+import { buildCloudinaryUrls, CLOUDINARY_EAGER_TRANSFORMS } from '../_shared/cloudinary-transforms.ts'
 
 console.log('Function "download-image" initialized!')
 
 // ============================================================
 // Download Image & Upload to Cloudinary
 // Downloads external images and uploads to Cloudinary CDN
-// Creates 3 variants: thumbnail (100px), card (400px), detail (800px)
+// Creates standard marketplace variants from the shared Cloudinary transform map.
 // ============================================================
 
 Deno.serve(async (req) => {
@@ -21,9 +23,9 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
   // Cloudinary credentials
-  const cloudName = Deno.env.get('CLOUDINARY_CLOUD_NAME')
-  const apiKey = Deno.env.get('CLOUDINARY_API_KEY')
-  const apiSecret = Deno.env.get('CLOUDINARY_API_SECRET')
+  const cloudName = Deno.env.get('CLOUDINARY_CLOUD_NAME')?.trim()
+  const apiKey = Deno.env.get('CLOUDINARY_API_KEY')?.trim()
+  const apiSecret = Deno.env.get('CLOUDINARY_API_SECRET')?.trim()
 
   if (!cloudName || !apiKey || !apiSecret) {
     console.error('❌ [DOWNLOAD IMAGE] Cloudinary credentials not configured')
@@ -106,38 +108,22 @@ Deno.serve(async (req) => {
     const mimeType = contentType || 'image/jpeg'
     const dataUri = `data:${mimeType};base64,${base64}`
 
-    // Generate Cloudinary signature
     const timestamp = Math.floor(Date.now() / 1000)
     const publicId = `bike-marketplace/canonical/${canonicalProductId}/${timestamp}-${sortOrder || 0}`
     
-    // Eager transformations: thumbnail (100px), mobile_card (200px), card (400px), gallery (1200px), detail (2000px)
-    // Card variants use c_fill,g_center for predictable center cropping (no borders)
-    // Gallery uses ar_4:3,c_pad with white background for full product display on detail pages
-    const eagerTransforms = 'w_100,c_limit,q_auto:low,f_webp|w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp|w_2000,c_limit,q_auto:best,f_webp'
-    
-    const signatureString = `eager=${eagerTransforms}&eager_async=false&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`
-    const encoder = new TextEncoder()
-    const data = encoder.encode(signatureString)
-    const hashBuffer = await crypto.subtle.digest('SHA-1', data)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    const signature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-
-    // Upload to Cloudinary
     console.log(`📤 [DOWNLOAD IMAGE] Uploading to Cloudinary: ${publicId}`)
     
     const cloudinaryForm = new FormData()
     cloudinaryForm.append('file', dataUri)
-    cloudinaryForm.append('api_key', apiKey)
-    cloudinaryForm.append('timestamp', timestamp.toString())
-    cloudinaryForm.append('signature', signature)
     cloudinaryForm.append('public_id', publicId)
-    cloudinaryForm.append('eager', eagerTransforms)
+    cloudinaryForm.append('eager', CLOUDINARY_EAGER_TRANSFORMS)
     cloudinaryForm.append('eager_async', 'false')
 
     const cloudinaryResponse = await fetch(
       `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
       {
         method: 'POST',
+        headers: { Authorization: cloudinaryUploadAuthHeader(apiKey, apiSecret) },
         body: cloudinaryForm,
       }
     )
@@ -154,13 +140,12 @@ Deno.serve(async (req) => {
     const cloudinaryResult = await cloudinaryResponse.json()
     console.log(`✅ [DOWNLOAD IMAGE] Uploaded to Cloudinary: ${cloudinaryResult.public_id}`)
 
-    // Build optimised URLs
-    const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`
-    const thumbnailUrl = `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${cloudinaryResult.public_id}`
-    const mobileCardUrl = `${baseUrl}/w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${cloudinaryResult.public_id}`
-    const cardUrl = `${baseUrl}/w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${cloudinaryResult.public_id}`
-    const galleryUrl = `${baseUrl}/w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp/${cloudinaryResult.public_id}`
-    const detailUrl = `${baseUrl}/w_2000,c_limit,q_auto:best,f_webp/${cloudinaryResult.public_id}`
+    const urls = buildCloudinaryUrls(cloudName, cloudinaryResult.public_id)
+    const thumbnailUrl = urls.thumbnailUrl
+    const mobileCardUrl = urls.mobileCardUrl
+    const cardUrl = urls.cardUrl
+    const galleryUrl = urls.galleryUrl
+    const detailUrl = urls.detailUrl
 
     // Update product_images record with Cloudinary URLs
     const { error: updateError } = await supabase

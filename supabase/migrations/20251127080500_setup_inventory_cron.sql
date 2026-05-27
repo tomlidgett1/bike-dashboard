@@ -18,10 +18,15 @@ DECLARE
 BEGIN
   -- Call the Edge Function using pg_net
   SELECT net.http_post(
-    url := current_setting('app.settings.supabase_url') || '/functions/v1/update-inventory-stock',
+    url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'SUPABASE_URL')
+      || '/functions/v1/update-inventory-stock',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key')
+      'Authorization', 'Bearer ' || (
+        SELECT decrypted_secret
+        FROM vault.decrypted_secrets
+        WHERE name = 'SUPABASE_SERVICE_ROLE_KEY'
+      )
     ),
     body := '{}'::jsonb
   ) INTO request_id;
@@ -37,6 +42,6 @@ SELECT cron.schedule(
   $$SELECT trigger_inventory_stock_update()$$
 );
 
--- Note: You need to set these config values in Supabase:
--- ALTER DATABASE postgres SET app.settings.supabase_url = 'https://lvsxdoyptioyxuwvvpgb.supabase.co';
--- ALTER DATABASE postgres SET app.settings.service_role_key = 'your-service-role-key';
+-- Note: this reads secrets from Supabase Vault:
+-- - SUPABASE_URL
+-- - SUPABASE_SERVICE_ROLE_KEY

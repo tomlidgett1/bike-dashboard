@@ -4,11 +4,12 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { Package, Heart, Sparkles, Store, BadgeCheck } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
+import { cn } from "@/lib/utils";
+import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
 
 // ============================================================
 // Product Card - Image-First Design
@@ -19,15 +20,32 @@ import { getCardImageUrl } from "@/lib/utils/cloudinary";
 interface ProductCardProps {
   product: MarketplaceProduct;
   priority?: boolean;
+  featuredMobile?: boolean;
+  /** Row layout for marketplace list view */
+  layout?: "grid" | "list";
   isAdmin?: boolean;
   onNavigate?: () => void;
   onImageDiscoveryClick?: (productId: string) => void;
 }
 
+type ListingImage = {
+  url: string;
+  cardUrl?: string;
+  isPrimary?: boolean;
+};
+
+type ProductCardData = MarketplaceProduct & {
+  store_name?: string;
+  card_url?: string | null;
+  images?: ListingImage[] | null;
+};
+
 // Memoized product card to prevent unnecessary re-renders
 export const ProductCard = React.memo<ProductCardProps>(function ProductCard({ 
   product, 
   priority = false,
+  featuredMobile = false,
+  layout = "grid",
   isAdmin = false,
   onNavigate,
   onImageDiscoveryClick 
@@ -36,8 +54,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   const [imageError, setImageError] = React.useState(false);
   const [isVisible, setIsVisible] = React.useState(priority);
   const [isLiked, setIsLiked] = React.useState(false);
-  const [isHovered, setIsHovered] = React.useState(false);
   const imageRef = React.useRef<HTMLDivElement>(null);
+  const productData = product as ProductCardData;
 
   // Get relative time for new listings (show for products < 24 hours old)
   const relativeTime = React.useMemo(() => {
@@ -88,21 +106,14 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   // Image URL - uses card_url from product_images table (source of truth)
   // The API fetches the primary image and passes it as card_url
   const imageUrl = React.useMemo(() => {
-    const productAny = product as any;
-    
     // Priority 1: card_url from API (fetched from product_images table)
-    if (productAny.card_url) {
-      return productAny.card_url;
+    if (productData.card_url) {
+      return productData.card_url;
     }
     
     // Priority 2: For private listings with images array (legacy fallback)
-    if (productAny.listing_type === 'private_listing' && Array.isArray(productAny.images)) {
-      const listingImages = productAny.images as Array<{ 
-        url: string; 
-        cardUrl?: string; 
-        isPrimary?: boolean 
-      }>;
-      const primaryImage = listingImages.find(img => img.isPrimary) || listingImages[0];
+    if (productData.listing_type === 'private_listing' && Array.isArray(productData.images)) {
+      const primaryImage = productData.images.find(img => img.isPrimary) || productData.images[0];
       
       if (primaryImage) {
         return getCardImageUrl(primaryImage);
@@ -115,7 +126,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     }
     
     return null;
-  }, [product.id, product.primary_image_url, (product as any).card_url, (product as any).images]);
+  }, [product.primary_image_url, productData.card_url, productData.images, productData.listing_type]);
 
   // Memoize click handler to prevent recreating on every render
   const handleClick = React.useCallback((e: React.MouseEvent) => {
@@ -151,26 +162,35 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     });
   }, [isLiked, product.id]);
 
+  const isList = layout === "list";
+
   return (
     <Link 
       href={`/marketplace/product/${product.id}`}
       onClick={handleClick}
-      className="block"
+      className={cn(
+        "block",
+        isList && "w-full",
+        !isList && featuredMobile && "col-span-2 sm:col-span-1"
+      )}
     >
-      <motion.div
+      <div
         id={`product-${product.id}`}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-        className="group cursor-pointer relative"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        className={cn(
+          "group cursor-pointer relative",
+          isList && "flex flex-row gap-3 items-stretch w-full rounded-md border border-gray-200/80 bg-white p-2 sm:p-3"
+        )}
       >
         {/* Image Container - Main focus */}
         <div 
           ref={imageRef}
-          className="relative w-full overflow-hidden rounded-md bg-gray-100 mb-0.5 border border-gray-200/80"
-          style={{ aspectRatio: '1 / 1' }}
+          className={cn(
+            "relative overflow-hidden rounded-md bg-gray-100 border border-gray-200/80",
+            isList
+              ? "w-28 sm:w-32 flex-shrink-0 aspect-square mb-0"
+              : "w-full mb-0.5",
+            !isList && (featuredMobile ? "aspect-[4/3]" : "aspect-square")
+          )}
         >
           {isVisible && imageUrl && !imageError ? (
             <Image
@@ -196,7 +216,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
           )}
 
           {/* Uber Express Badge - Only for Ashburton Cycles */}
-          {(product as any).store_name === 'Ashburton Cycles' && (
+          {MARKETPLACE_PROMO_BANNERS_ENABLED &&
+            productData.store_name === "Ashburton Cycles" && (
             <div className="absolute bottom-2.5 right-2.5">
               <div className="bg-black/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
                 <Image 
@@ -232,10 +253,10 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
           </button>
 
           {/* Condition Badge - Only for private listings with condition */}
-          {(product as any).listing_type === 'private_listing' && (product as any).condition_rating && (
+          {productData.listing_type === 'private_listing' && productData.condition_rating && (
             <div className="absolute top-2 left-2 z-10">
               <span className="px-1.5 py-0.5 bg-white/90 backdrop-blur-sm rounded-md text-[10px] font-medium text-gray-700 shadow-sm">
-                {(product as any).condition_rating}
+                {productData.condition_rating}
               </span>
             </div>
           )}
@@ -259,21 +280,42 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         </div>
 
         {/* Product Info - Improved text layout */}
-        <div className="px-0.5 mb-2">
+        <div
+          className={cn(
+            isList && "flex flex-1 flex-col justify-center min-w-0 py-0",
+            !isList && (featuredMobile ? "px-0.5 pt-1 mb-3" : "px-0.5 mb-2")
+          )}
+        >
           {/* Product Title - Enhanced typography */}
-          <h3 className="text-sm text-gray-900 font-medium leading-tight line-clamp-1 mb-0">
-            {(product as any).display_name || product.description}
+          <h3
+            className={cn(
+              "text-gray-900 leading-tight line-clamp-2",
+              isList && "text-sm font-semibold mb-1",
+              !isList &&
+                (featuredMobile
+                  ? "text-base font-semibold line-clamp-1 mb-0.5"
+                  : "text-sm font-medium line-clamp-1 mb-0")
+            )}
+          >
+            {productData.display_name || product.description}
           </h3>
 
           {/* Price - Below title, size between title and location */}
-          <p className="text-xs font-semibold text-gray-900 mb-0 leading-tight">
+          <p
+            className={cn(
+              "font-semibold text-gray-900 mb-0 leading-tight",
+              isList && "text-sm",
+              !isList &&
+                (featuredMobile ? "text-sm" : "text-xs")
+            )}
+          >
             ${product.price.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </p>
 
           {/* Seller info - Better organized layout */}
-          <div className="flex items-center gap-0.5 flex-wrap mt-0.5">
+          <div className={cn("flex items-center gap-0.5 flex-wrap", isList ? "mt-1" : "mt-0.5")}>
             {/* Store badge for store inventory items */}
-            {(product as any).listing_type === 'store_inventory' && (
+            {productData.listing_type === 'store_inventory' && (
               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">
                 <Store className="h-2.5 w-2.5" />
                 Store
@@ -284,18 +326,17 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             <div className="flex items-center gap-0.5 flex-1 min-w-0">
               <p className="text-xs text-gray-600 font-medium truncate">
                 {(() => {
-                  const productAny = product as any;
                   // For private listings, show pickup location instead of seller name
-                  if (productAny.listing_type === 'private_listing') {
-                    return productAny.pickup_location || 'Melbourne';
+                  if (productData.listing_type === 'private_listing') {
+                    return productData.pickup_location || 'Melbourne';
                   }
                   // For bike stores, show business name or "Bike Store"
-                  if (productAny.store_account_type === 'bicycle_store' || productAny.listing_type === 'store_inventory') {
+                  if (productData.store_account_type === 'bicycle_store' || productData.listing_type === 'store_inventory') {
                     return product.store_name || 'Bike Store';
                   }
                   // For individual users (fallback), show "FirstName L."
-                  if (productAny.first_name && productAny.last_name) {
-                    return `${productAny.first_name} ${productAny.last_name.charAt(0)}.`;
+                  if (productData.first_name && productData.last_name) {
+                    return `${productData.first_name} ${productData.last_name.charAt(0)}.`;
                   }
                   // Fallback to store_name
                   return product.store_name || 'Seller';
@@ -317,21 +358,35 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             )}
           </div>
         </div>
-      </motion.div>
+      </div>
     </Link>
   );
 }, (prevProps, nextProps) => {
   // Custom comparison function for React.memo
   // Only re-render if product id or priority changes
   return prevProps.product.id === nextProps.product.id &&
-         prevProps.priority === nextProps.priority;
+         prevProps.priority === nextProps.priority &&
+         prevProps.featuredMobile === nextProps.featuredMobile &&
+         prevProps.layout === nextProps.layout;
 });
 
 // ============================================================
 // Product Card Skeleton - Matching image-first design
 // ============================================================
 
-export function ProductCardSkeleton() {
+export function ProductCardSkeleton({ layout = "grid" }: { layout?: "grid" | "list" }) {
+  if (layout === "list") {
+    return (
+      <div className="flex flex-row gap-3 w-full rounded-md border border-gray-200/80 bg-white p-2 sm:p-3">
+        <div className="w-28 sm:w-32 flex-shrink-0 aspect-square rounded-md bg-gray-100 animate-pulse border border-gray-200" />
+        <div className="flex-1 min-w-0 flex flex-col justify-center space-y-2 py-0.5">
+          <div className="h-4 w-[85%] bg-gray-100 rounded animate-pulse" />
+          <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" />
+          <div className="h-3 w-24 bg-gray-100 rounded animate-pulse" />
+        </div>
+      </div>
+    );
+  }
   return (
     <div>
       {/* Image Skeleton */}

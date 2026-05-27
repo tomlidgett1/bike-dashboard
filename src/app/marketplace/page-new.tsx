@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp, LogIn, Heart, Package } from "lucide-react";
+import { TrendingUp, Package } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductGrid } from "@/components/marketplace/product-grid";
@@ -11,9 +11,13 @@ import { ViewModePills, ViewMode } from "@/components/marketplace/view-mode-pill
 import { CategoryPills } from "@/components/marketplace/category-pills";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
-import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { useInteractionTracker } from "@/lib/tracking/interaction-tracker";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
+
+function normalisePageNewViewParam(raw: string | null): ViewMode {
+  if (raw === "trending" || raw === "all") return raw;
+  return "trending";
+}
 
 // ============================================================
 // Marketplace Page - Discovery-Focused Homepage
@@ -24,12 +28,10 @@ export default function MarketplacePage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
-  const { openAuthModal } = useAuthModal();
   const tracker = useInteractionTracker(user?.id);
 
-  // View mode state (trending, for-you, all)
-  const [viewMode, setViewMode] = React.useState<ViewMode>(
-    (searchParams.get('view') as ViewMode) || 'trending'
+  const [viewMode, setViewMode] = React.useState<ViewMode>(() =>
+    normalisePageNewViewParam(searchParams.get("view"))
   );
 
   // Category filter state
@@ -65,10 +67,6 @@ export default function MarketplacePage() {
       switch (viewMode) {
         case 'trending':
           endpoint = `/api/marketplace/trending?${params}`;
-          break;
-        case 'for-you':
-          params.set('enrich', 'true');
-          endpoint = `/api/recommendations/for-you?${params}`;
           break;
         case 'all':
           endpoint = `/api/marketplace/products?${params}`;
@@ -204,7 +202,6 @@ export default function MarketplacePage() {
               <ViewModePills
                 activeMode={viewMode}
                 onModeChange={handleViewModeChange}
-                showForYouBadge={!user && viewMode !== 'for-you'}
               />
 
               {/* Product Count */}
@@ -222,34 +219,6 @@ export default function MarketplacePage() {
                 onCategoryChange={handleCategoryChange}
                 counts={categoryCounts}
               />
-            )}
-
-            {/* Anonymous user on For You - Show sign-in message */}
-            {!user && viewMode === 'for-you' && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-white rounded-md border border-gray-200 p-4 flex items-center justify-between gap-4"
-              >
-                <div className="flex items-center gap-3">
-                  <Heart className="h-5 w-5 text-gray-400" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Sign in for personalised recommendations
-                    </p>
-                    <p className="text-xs text-gray-600 mt-0.5">
-                      Showing trending products for now
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  onClick={openAuthModal}
-                  className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium flex items-center gap-2"
-                >
-                  <LogIn className="h-4 w-4" />
-                  Sign In
-                </Button>
-              </motion.div>
             )}
 
             {/* Empty State - No Products */}
@@ -279,26 +248,6 @@ export default function MarketplacePage() {
                         className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
                       >
                         Browse All Products
-                      </Button>
-                    </>
-                  )}
-
-                  {viewMode === 'for-you' && (
-                    <>
-                      <Heart className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                      <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                        {user ? "We're learning your preferences" : "Sign in for personalised recommendations"}
-                      </h3>
-                      <p className="text-gray-600 max-w-md mx-auto mb-6">
-                        {user 
-                          ? 'Browse products to help us understand what you like. Your personalised feed will appear here!'
-                          : 'Sign in to get recommendations based on your browsing history and preferences.'}
-                      </p>
-                      <Button
-                        onClick={() => user ? setViewMode('trending') : openAuthModal()}
-                        className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
-                      >
-                        {user ? 'Browse Trending' : 'Sign In'}
                       </Button>
                     </>
                   )}
@@ -348,57 +297,6 @@ export default function MarketplacePage() {
                 </motion.div>
               )}
             </AnimatePresence>
-
-            {/* Info Section for Trending/For You */}
-            {!loading && products.length > 0 && viewMode !== 'all' && (
-              <div className="bg-white rounded-md border border-gray-200 p-6 mt-8">
-                {viewMode === 'trending' && (
-                  <>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4" />
-                      About Trending
-                    </h3>
-                    <ul className="space-y-2 text-sm text-gray-600">
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#FFC72C] mt-1">•</span>
-                        <span>Products getting the most attention right now</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#FFC72C] mt-1">•</span>
-                        <span>Updated every 15 minutes based on real user activity</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#FFC72C] mt-1">•</span>
-                        <span>Discover what the cycling community is browsing</span>
-                      </li>
-                    </ul>
-                  </>
-                )}
-
-                {viewMode === 'for-you' && user && (
-                  <>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                      <Heart className="h-4 w-4" />
-                      Your Personalised Feed
-                    </h3>
-                    <ul className="space-y-2 text-sm text-gray-600">
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#FFC72C] mt-1">•</span>
-                        <span>Based on products you've viewed and clicked</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#FFC72C] mt-1">•</span>
-                        <span>Matches keywords from your browsing history</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#FFC72C] mt-1">•</span>
-                        <span>Gets smarter as you browse more products</span>
-                      </li>
-                    </ul>
-                  </>
-                )}
-              </div>
-            )}
           </motion.div>
         </div>
       </MarketplaceLayout>

@@ -32,7 +32,7 @@ SELECT cron.schedule(
   '*/5 * * * *', -- Every 5 minutes
   $$
   SELECT net.http_post(
-    url := 'https://lvsxdoyptioyxuwvvpgb.supabase.co/functions/v1/process-image-discovery-queue',
+    url := 'https://frjcluhuictnbimitvrm.supabase.co/functions/v1/process-image-discovery-queue',
     headers := '{"Authorization": "Bearer YOUR_SERVICE_KEY_HERE", "Content-Type": "application/json"}'::jsonb,
     body := '{}'::jsonb
   )

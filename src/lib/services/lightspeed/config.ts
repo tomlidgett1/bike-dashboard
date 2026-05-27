@@ -40,10 +40,14 @@ export const LIGHTSPEED_CONFIG = {
  * Get Lightspeed client credentials from environment
  */
 export function getLightspeedCredentials() {
-  const clientId = process.env.LIGHTSPEED_CLIENT_ID
-  const clientSecret = process.env.LIGHTSPEED_CLIENT_SECRET
-  const redirectUri = process.env.LIGHTSPEED_REDIRECT_URI || 
+  // Trim — Vercel/.env pastes often include a trailing newline (%0A), which breaks OAuth
+  // (client_id no longer matches Lightspeed; nested redirect URLs get corrupted).
+  const clientId = process.env.LIGHTSPEED_CLIENT_ID?.trim()
+  const clientSecret = process.env.LIGHTSPEED_CLIENT_SECRET?.trim()
+  const redirectUri = (
+    process.env.LIGHTSPEED_REDIRECT_URI ||
     `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/lightspeed/auth/callback`
+  ).trim()
 
   if (!clientId) {
     throw new Error('LIGHTSPEED_CLIENT_ID environment variable is required')

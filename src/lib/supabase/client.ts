@@ -1,19 +1,18 @@
 import { createBrowserClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-let supabaseClient: SupabaseClient | null = null
-
-export function createClient() {
-  if (supabaseClient) {
-    return supabaseClient
-  }
-  
-  supabaseClient = createBrowserClient(
+export function createClient(): SupabaseClient {
+  return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      // Fresh client per call avoids stale PKCE state after sign-out (see supabase/ssr#55).
+      isSingleton: false,
+      auth: {
+        detectSessionInUrl: false,
+      },
+    }
   )
-  
-  return supabaseClient
 }
 
 

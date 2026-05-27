@@ -25,8 +25,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Header } from "@/components/layout";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
+import { useUserProfile } from "@/components/providers/profile-provider";
 import { motion, AnimatePresence } from "framer-motion";
 
 // ============================================================
@@ -253,6 +255,9 @@ function MobileDraftCard({
 
 export default function DraftsPage() {
   const router = useRouter();
+  const { profile } = useUserProfile();
+  const isVerifiedStore =
+    profile?.account_type === "bicycle_store" && profile?.bicycle_store === true;
   const [drafts, setDrafts] = React.useState<Draft[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -348,42 +353,52 @@ export default function DraftsPage() {
     return draft.draft_name || "Untitled Draft";
   };
 
-  return (
+  const draftsBody = (
     <>
-      <MarketplaceHeader compactSearchOnMobile />
-
-      <MarketplaceLayout>
-        <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-24 sm:pb-8">
-          {/* Page Header */}
-          <div className="border-b border-gray-200 bg-white">
-            <div className="max-w-[1920px] mx-auto px-4 sm:px-6 py-4 sm:py-6">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                  <div className="hidden sm:flex items-center justify-center w-12 h-12 rounded-md bg-gray-100 flex-shrink-0">
-                    <FileEdit className="h-6 w-6 text-gray-700" />
-                  </div>
-                  <div className="min-w-0">
-                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Draft Listings</h1>
-                    <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">
-                      Continue working on your saved drafts
-                    </p>
-                  </div>
+      {!isVerifiedStore && (
+        <div className="border-b border-gray-200 bg-white">
+          <div className="max-w-[1920px] mx-auto px-4 sm:px-6 py-4 sm:py-6">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                <div className="hidden sm:flex items-center justify-center w-12 h-12 rounded-md bg-gray-100 flex-shrink-0">
+                  <FileEdit className="h-6 w-6 text-gray-700" />
                 </div>
-
-                <Button
-                  onClick={() => router.push("/marketplace/sell")}
-                  className="rounded-md bg-gray-900 hover:bg-gray-800 text-white flex-shrink-0"
-                  size="sm"
-                >
-                  <Plus className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Create New Listing</span>
-                </Button>
+                <div className="min-w-0">
+                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Draft Listings</h1>
+                  <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">
+                    Continue working on your saved drafts
+                  </p>
+                </div>
               </div>
+
+              <Button
+                onClick={() => router.push("/marketplace/sell")}
+                className="rounded-md bg-gray-900 hover:bg-gray-800 text-white flex-shrink-0"
+                size="sm"
+              >
+                <Plus className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Create New Listing</span>
+              </Button>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Content Container */}
-          <div className="max-w-[1920px] mx-auto">
+      {isVerifiedStore && (
+        <div className="mb-4 flex justify-end">
+          <Button
+            onClick={() => router.push("/marketplace/sell")}
+            className="rounded-md bg-gray-900 hover:bg-gray-800 text-white flex-shrink-0"
+            size="sm"
+          >
+            <Plus className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Create New Listing</span>
+          </Button>
+        </div>
+      )}
+
+      {/* Content Container */}
+      <div className="max-w-[1920px] mx-auto">
             {/* Error Message */}
             {error && (
               <div className="mx-4 sm:mx-6 my-4">
@@ -566,8 +581,29 @@ export default function DraftsPage() {
               )}
             </div>
           </div>
-        </div>
-      </MarketplaceLayout>
+    </>
+  );
+
+  return (
+    <>
+      {isVerifiedStore ? (
+        <>
+          <Header
+            title="Draft Listings"
+            description="Continue working on your saved drafts"
+          />
+          <div className="p-4 lg:p-6">{draftsBody}</div>
+        </>
+      ) : (
+        <>
+          <MarketplaceHeader compactSearchOnMobile />
+          <MarketplaceLayout showFooter={false}>
+            <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-24 sm:pb-8">
+              {draftsBody}
+            </div>
+          </MarketplaceLayout>
+        </>
+      )}
 
       {/* Mobile Action Sheet */}
       <MobileActionSheet

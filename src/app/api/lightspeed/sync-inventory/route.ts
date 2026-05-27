@@ -167,6 +167,8 @@ export async function POST(request: NextRequest) {
         last_synced_at: new Date().toISOString(),
         is_active: true,
         is_archived: false,
+        listing_source: 'lightspeed',
+        listing_type: 'store_inventory',
       }
     })
 

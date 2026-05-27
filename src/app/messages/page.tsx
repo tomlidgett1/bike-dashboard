@@ -22,11 +22,10 @@ import { OfferDetailCard } from '@/components/offers/offer-detail-card';
 import { CounterOfferModal } from '@/components/offers/counter-offer-modal';
 import { OfferConfirmationDialog } from '@/components/offers/offer-confirmation-dialog';
 import { MarketplaceHeader } from '@/components/marketplace/marketplace-header';
-import { MarketplaceSidebar } from '@/components/layout/marketplace-sidebar';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Archive, MessageCircle, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useSidebarState, SidebarStateProvider } from '@/lib/hooks/use-sidebar-state';
+import { SidebarStateProvider } from '@/lib/hooks/use-sidebar-state';
 import Image from 'next/image';
 import type { EnrichedOffer, OfferRole, OfferStatus } from '@/lib/types/offer';
 
@@ -37,8 +36,6 @@ function MessagesPageInner() {
   const { user } = useAuth();
   const router = useRouter();
   const { setIsHidden: setMobileNavHidden } = useMobileNav();
-  const { isCollapsed } = useSidebarState();
-  
   // Only fetch unread counts if user is authenticated
   const { counts: unreadCounts } = useCombinedUnreadCount(user ? 30000 : 0);
   
@@ -341,15 +338,9 @@ function MessagesPageInner() {
         <MarketplaceHeader />
       </div>
 
-      {/* Desktop: Marketplace Sidebar */}
-      <div className="hidden lg:block">
-        <MarketplaceSidebar />
-      </div>
-
       <div className={cn(
         "w-full max-w-full overflow-hidden bg-gray-50",
-        "lg:pt-16", // Account for fixed header on desktop
-        isCollapsed ? "lg:pl-[56px]" : "lg:pl-[200px]" // Account for sidebar on desktop
+        "lg:pt-16" // Account for fixed header on desktop
       )}>
         <div className="flex h-[100dvh] lg:h-[calc(100vh-4rem)] bg-gray-50 overflow-hidden w-full max-w-full">
         {/* Left Sidebar: Conversation List or Offers List */}

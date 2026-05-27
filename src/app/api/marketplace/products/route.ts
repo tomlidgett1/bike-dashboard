@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createClient } from '@/lib/supabase/server';
 import type { MarketplaceProduct, MarketplaceProductsResponse } from '@/lib/types/marketplace';
-
-// ============================================================
-// Image fetching helper - queries product_images as source of truth
-// ============================================================
-interface ProductImageRow {
-  product_id: string | null;
-  canonical_product_id: string | null;
-  card_url: string | null;
-  thumbnail_url: string | null;
-  cloudinary_url: string | null;
-}
+import { resolveProductImage } from '@/lib/services/image-resolver';
 
 // ============================================================
 // Marketplace Products API - Public Endpoint
@@ -56,20 +47,21 @@ export async function GET(request: NextRequest) {
     // Create Supabase client (public access, no auth required)
     const supabase = await createClient();
 
-    // Start building query - join with canonical products, images, and store info
-    // Use estimated count for better performance on large datasets
-    // For enterprise scale (10M+ users), we use estimated counts more aggressively
     const useEstimatedCount = page > 1; // Only use exact count on first page
-    
-    // Optimize: Use count planning hint for better performance
     const countType = useEstimatedCount ? 'planned' : 'exact';
-    
-    // REFACTORED: Query product_images as source of truth for images
-    // Join with product_images to get the primary image
-    // This replaces the cached_image_url approach for cleaner data model
+
     const fastFields = `
         id,
         canonical_product_id,
+        resolved_image_id,
+        resolved_image_source,
+        resolved_card_url,
+        resolved_thumbnail_url,
+        resolved_mobile_card_url,
+        resolved_gallery_url,
+        resolved_detail_url,
+        resolved_cloudinary_url,
+        resolved_cloudinary_public_id,
         display_name,
         description,
         price,
@@ -83,29 +75,13 @@ export async function GET(request: NextRequest) {
         listing_status,
         model_year,
         condition_rating,
-        pickup_location,
-        cached_image_url,
-        cached_thumbnail_url,
-        has_displayable_image,
-        images,
-        users!user_id (
-          business_name,
-          logo_url,
-          account_type,
-          first_name,
-          last_name
-        )
+        pickup_location
       `;
     
     let query = supabase
-      .from('products')
+      .from('marketplace_ready_products')
       .select(fastFields, { count: countType, head: false })
-      .eq('is_active', true)
-      // REMOVED: has_displayable_image check - we now filter by product_images table
-      .or('listing_status.is.null,listing_status.eq.active')
-      // For non-private listings (Lightspeed/store products), require admin approval
-      // Private listings can show without approval
-      .or('listing_type.eq.private_listing,images_approved_by_admin.eq.true');
+      .not('resolved_image_id', 'is', null);
 
     // Apply new 3-level taxonomy filters (takes precedence)
     if (level1) {
@@ -145,7 +121,42 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply listing type filter
-    if (listingType) {
+    if (listingType === 'store_inventory') {
+      // Shop inventory is identified by verified seller, not only listing_type
+      // (Lightspeed sync historically left listing_type NULL).
+      const { data: storeUsers, error: storeUsersError } = await supabase
+        .from('users')
+        .select('user_id')
+        .eq('account_type', 'bicycle_store')
+        .eq('bicycle_store', true);
+
+      if (storeUsersError) {
+        console.error('Bike store user lookup error:', storeUsersError);
+        return NextResponse.json(
+          { error: 'Failed to fetch products' },
+          { status: 500 }
+        );
+      }
+
+      const storeUserIds = (storeUsers ?? []).map((u: { user_id: string }) => u.user_id);
+      if (storeUserIds.length === 0) {
+        return NextResponse.json({
+          products: [],
+          pagination: {
+            page,
+            pageSize,
+            total: 0,
+            totalPages: 0,
+            hasMore: false,
+          },
+        });
+      }
+
+      query = query
+        .in('user_id', storeUserIds)
+        .or('listing_type.eq.store_inventory,listing_type.is.null');
+      console.log(`🏪 [FILTER] Bike stores: ${storeUserIds.length} verified sellers`);
+    } else if (listingType) {
       query = query.eq('listing_type', listingType);
     }
 
@@ -166,9 +177,6 @@ export async function GET(request: NextRequest) {
       query = query.ilike('display_name', `%${brand}%`);
       console.log(`🏷️ [FILTER] Applying brand filter: "${brand}"`);
     }
-
-    // Note: We'll filter out bicycle store products after fetching
-    // because Supabase client doesn't easily support filtering on joined table columns
 
     // Apply enterprise-level search (multi-field fuzzy search with relevance)
     // Note: We'll handle search separately using our enterprise search function
@@ -236,7 +244,7 @@ export async function GET(request: NextRequest) {
     const to = from + pageSize - 1;
     query = query.range(from, to);
 
-    // Execute query
+    // Execute query. Image readiness is already filtered in marketplace_ready_products.
     const { data, error, count } = await query;
 
     if (error) {
@@ -247,20 +255,22 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Deduplicate the data first (JOIN with product_images can create duplicates)
-    const uniqueProductsMap = new Map<string, any>();
-    (data || []).forEach((product: any) => {
-      if (!uniqueProductsMap.has(product.id)) {
-        uniqueProductsMap.set(product.id, product);
-      }
-    });
-    let uniqueData = Array.from(uniqueProductsMap.values());
+    let uniqueData = data || [];
+
+    const userIds = [...new Set(uniqueData.map((product: any) => product.user_id).filter(Boolean))];
+    const { data: usersData } = userIds.length > 0
+      ? await supabase
+          .from('users')
+          .select('user_id, business_name, logo_url, account_type, first_name, last_name')
+          .in('user_id', userIds)
+      : { data: [] as any[] };
+
+    const usersById = new Map((usersData || []).map((user: any) => [user.user_id, user]));
 
     // Exclude products from bicycle stores if requested
     if (excludeBicycleStores) {
       uniqueData = uniqueData.filter((product: any) => {
-        // Check if the user's account_type is 'bicycle_store'
-        const userAccountType = product.users?.account_type;
+        const userAccountType = usersById.get(product.user_id)?.account_type;
         return userAccountType !== 'bicycle_store';
       });
       console.log(`🚫 [FILTER] Excluded bicycle store products. Remaining: ${uniqueData.length}`);
@@ -277,102 +287,33 @@ export async function GET(request: NextRequest) {
       console.log(`🔍 [SEARCH] Results sorted by relevance`);
     }
 
-    console.log(`📊 [MARKETPLACE API] Raw results: ${data?.length || 0}, Unique: ${uniqueData.length}`);
+    console.log(`📊 [MARKETPLACE API] Ready products: ${uniqueData.length}`);
 
     // Calculate pagination metadata
     const total = count || 0;
     const totalPages = Math.ceil(total / pageSize);
     const hasMore = page < totalPages;
 
-    // ============================================================
-    // REFACTORED: Fetch images from product_images table (source of truth)
-    // Batch-fetch primary images for all products in one query
-    // ============================================================
-    
-    // Collect product IDs and canonical IDs for image lookup
-    const productIds = uniqueData.map((p: any) => p.id).filter(Boolean);
-    const canonicalIds = uniqueData
-      .map((p: any) => p.canonical_product_id)
-      .filter(Boolean);
-    
-    // Batch-fetch primary images from product_images table
-    // This is the NEW source of truth, replacing cached_image_url
-    let productImagesMap = new Map<string, ProductImageRow>();
-    let canonicalImagesMap = new Map<string, ProductImageRow>();
-    
-    if (productIds.length > 0 || canonicalIds.length > 0) {
-      // Query by product_id
-      if (productIds.length > 0) {
-        const { data: productImagesData } = await supabase
-          .from('product_images')
-          .select('product_id, canonical_product_id, card_url, thumbnail_url, cloudinary_url, is_primary')
-          .in('product_id', productIds)
-          .eq('approval_status', 'approved')
-          .order('is_primary', { ascending: false })
-          .order('sort_order', { ascending: true });
-        
-        if (productImagesData) {
-          // Group by product_id, keep first (primary) image only
-          for (const img of productImagesData) {
-            if (img.product_id && !productImagesMap.has(img.product_id)) {
-              productImagesMap.set(img.product_id, img);
-            }
-          }
-        }
-      }
-      
-      // Query by canonical_product_id (for products without direct product_id images)
-      if (canonicalIds.length > 0) {
-        const { data: canonicalImagesData } = await supabase
-          .from('product_images')
-          .select('product_id, canonical_product_id, card_url, thumbnail_url, cloudinary_url, is_primary')
-          .in('canonical_product_id', canonicalIds)
-          .eq('approval_status', 'approved')
-          .order('is_primary', { ascending: false })
-          .order('sort_order', { ascending: true });
-        
-        if (canonicalImagesData) {
-          // Group by canonical_product_id, keep first (primary) image only
-          for (const img of canonicalImagesData) {
-            if (img.canonical_product_id && !canonicalImagesMap.has(img.canonical_product_id)) {
-              canonicalImagesMap.set(img.canonical_product_id, img);
-            }
-          }
-        }
-      }
-    }
-    
-    console.log(`🖼️ [IMAGES] Fetched ${productImagesMap.size} product images, ${canonicalImagesMap.size} canonical images`);
-    
     // Transform data to marketplace product format
-    // Use product_images as primary source, fall back to cached columns during transition
     const products: MarketplaceProduct[] = uniqueData.map((product: any) => {
-      // Look up image from product_images table (NEW source of truth)
-      const productImage = productImagesMap.get(product.id);
-      const canonicalImage = product.canonical_product_id 
-        ? canonicalImagesMap.get(product.canonical_product_id) 
-        : null;
-      
-      // Priority: product_images data > cached columns (fallback during transition)
-      const imageFromTable = productImage || canonicalImage;
-      const primaryImageUrl = imageFromTable?.card_url 
-        || imageFromTable?.cloudinary_url 
-        || product.cached_image_url; // Fallback to cached column
-      const thumbnailUrl = imageFromTable?.thumbnail_url 
-        || product.cached_thumbnail_url; // Fallback to cached column
-      
-      // For private listings, pass through the images array for gallery
-      const listingImages = product.listing_type === 'private_listing' ? product.images : null;
-      
-      // Build all_images array (simplified - detail page fetches full gallery)
-      const allImages: string[] = primaryImageUrl ? [primaryImageUrl] : [];
-      if (listingImages && Array.isArray(listingImages)) {
-        listingImages.forEach((img: any) => {
-          if (img.url && !allImages.includes(img.url)) {
-            allImages.push(img.url);
-          }
-        });
-      }
+      const user = usersById.get(product.user_id);
+      const resolved = resolveProductImage({
+        id: product.resolved_image_id,
+        cloudinary_public_id: product.resolved_cloudinary_public_id,
+        cloudinary_url: product.resolved_cloudinary_url,
+        thumbnail_url: product.resolved_thumbnail_url,
+        mobile_card_url: product.resolved_mobile_card_url,
+        card_url: product.resolved_card_url,
+        gallery_url: product.resolved_gallery_url,
+        detail_url: product.resolved_detail_url,
+        approval_status: 'approved',
+      });
+
+      const primaryImageUrl = resolved?.card_url || resolved?.original_url || null;
+      const thumbnailUrl = resolved?.thumbnail_url || primaryImageUrl;
+      const allImages = [resolved?.gallery_url, resolved?.detail_url, primaryImageUrl]
+        .filter((url): url is string => !!url)
+        .filter((url, index, arr) => arr.indexOf(url) === index);
       
       return {
         id: product.id,
@@ -385,35 +326,30 @@ export async function GET(request: NextRequest) {
         primary_image_url: primaryImageUrl,
         image_variants: null, // Only needed on detail page
         all_images: allImages,
-        images: listingImages,
-        // Use image from product_images table
+        images: null,
         card_url: primaryImageUrl,
         thumbnail_url: thumbnailUrl,
-        detail_url: primaryImageUrl, // Detail page will fetch full resolution
+        detail_url: resolved?.detail_url || resolved?.gallery_url || primaryImageUrl,
         qoh: product.qoh || 0,
         model_year: product.model_year,
         created_at: product.created_at,
         user_id: product.user_id,
-        store_name: product.users?.business_name || 'Bike Store',
-        store_logo_url: product.users?.logo_url || null,
-        store_account_type: product.users?.account_type || null,
-        first_name: product.users?.first_name || null,
-        last_name: product.users?.last_name || null,
+        store_name: user?.business_name || 'Bike Store',
+        store_logo_url: user?.logo_url || null,
+        store_account_type: user?.account_type || null,
+        first_name: user?.first_name || null,
+        last_name: user?.last_name || null,
         listing_type: product.listing_type,
         listing_status: product.listing_status,
         condition_rating: product.condition_rating || null,
         pickup_location: product.pickup_location || null,
       } as MarketplaceProduct;
     });
-    
-    // FILTER: Only include products that have images in product_images table
-    // This replaces the deprecated has_displayable_image column check
-    const productsWithImages = products.filter(p => p.primary_image_url || p.card_url);
-    
-    console.log(`⚡ [REFACTORED] Returned ${productsWithImages.length} products with images (filtered from ${products.length} fetched)`);
+
+    console.log(`⚡ [READY PRODUCTS] Returned ${products.length} products with resolved images`);
 
     const response: MarketplaceProductsResponse = {
-      products: productsWithImages,
+      products,
       pagination: {
         page,
         pageSize,

@@ -3,10 +3,11 @@
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { Menu, X, Settings, LogOut, Sparkles, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Upload, Bell } from "lucide-react";
+import { Menu, X, Settings, LogOut, Sparkles, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Upload, Bell, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
+import { DesktopHeaderPill } from "./desktop-header-pill";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
@@ -44,6 +45,11 @@ import { useUpload } from "@/components/providers/upload-provider";
 // Space navigator import removed - now integrated into UnifiedFilterBar
 import type { ListingImage } from "@/lib/types/listing";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
+import { getBrowserOAuthBaseUrl } from "@/lib/auth/oauth-site-url";
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Something went wrong";
+}
 
 // ============================================================
 // OAuth Icon Components
@@ -133,6 +139,10 @@ interface MarketplaceHeaderProps {
   isNavigating?: boolean;
   /** When true, indicates sticky filters are visible (triggers button animation on mobile) */
   showStickyFilters?: boolean;
+  /** Mobile marketplace Browse: floating filter FAB next to Sell Now (icon only; opens browse filter sheet). */
+  showMobileBrowseFiltersFab?: boolean;
+  mobileBrowseFiltersBadge?: number;
+  onOpenMobileBrowseFilters?: () => void;
 }
 
 export function MarketplaceHeader({ 
@@ -143,6 +153,9 @@ export function MarketplaceHeader({
   onSpaceChange,
   isNavigating = false,
   showStickyFilters = false,
+  showMobileBrowseFiltersFab = false,
+  mobileBrowseFiltersBadge = 0,
+  onOpenMobileBrowseFilters,
 }: MarketplaceHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
@@ -328,26 +341,15 @@ export function MarketplaceHeader({
     return '/marketplace/settings'; // Individual user settings
   };
 
-  // Check if user is a bicycle store with logo
+  // Show profile/store image whenever we have a logo URL (including Google avatars).
   const shouldShowLogo = () => {
-    return profile?.account_type === 'bicycle_store' && profile?.logo_url;
+    return !!profile?.logo_url;
   };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/marketplace');
     router.refresh();
-  };
-
-  // Get the site URL for OAuth redirects
-  const getSiteUrl = () => {
-    if (typeof window !== 'undefined' && window.location.hostname.includes('ngrok')) {
-      return window.location.origin;
-    }
-    if (process.env.NEXT_PUBLIC_SITE_URL) {
-      return process.env.NEXT_PUBLIC_SITE_URL;
-    }
-    return typeof window !== 'undefined' ? window.location.origin : '';
   };
 
   // Handle Google OAuth sign-in
@@ -358,7 +360,7 @@ export function MarketplaceHeader({
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${getSiteUrl()}/auth/callback?next=/marketplace`,
+          redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
           queryParams: {
             access_type: "offline",
             prompt: "consent",
@@ -367,8 +369,8 @@ export function MarketplaceHeader({
       });
 
       if (error) throw error;
-    } catch (error: any) {
-      console.error("Google sign-in error:", error.message);
+    } catch (error: unknown) {
+      console.error("Google sign-in error:", getErrorMessage(error));
       setGoogleLoading(false);
     }
   };
@@ -381,13 +383,13 @@ export function MarketplaceHeader({
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "apple",
         options: {
-          redirectTo: `${getSiteUrl()}/auth/callback?next=/marketplace`,
+          redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
         },
       });
 
       if (error) throw error;
-    } catch (error: any) {
-      console.error("Apple sign-in error:", error.message);
+    } catch (error: unknown) {
+      console.error("Apple sign-in error:", getErrorMessage(error));
       setAppleLoading(false);
     }
   };
@@ -412,7 +414,7 @@ export function MarketplaceHeader({
           boxShadow: headerShadow,
           backgroundColor: headerBg,
         }}
-        className="fixed top-0 left-0 right-0 z-40 w-full border-b border-gray-200 backdrop-blur-sm"
+        className="fixed top-0 left-0 right-0 z-40 w-full backdrop-blur-sm"
       >
         {/* Navigation Loading Bar */}
         <AnimatePresence>
@@ -422,7 +424,7 @@ export function MarketplaceHeader({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="absolute top-0 left-0 right-0 h-1 bg-[#FFC72C] overflow-hidden"
+              className="absolute top-0 left-0 right-0 h-1 bg-[#ffde59] overflow-hidden"
             >
               {/* Animated shimmer effect */}
               <motion.div
@@ -444,13 +446,13 @@ export function MarketplaceHeader({
                   duration: 1,
                   ease: [0.4, 0, 0.2, 1],
                 }}
-                className="absolute inset-y-0 bg-[#E6B328]"
+                className="absolute inset-y-0 bg-[#f0cf45]"
               />
             </motion.div>
           )}
         </AnimatePresence>
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6">
-          <div className="flex h-14 sm:h-16 items-center justify-start gap-2 sm:gap-4">
+          <div className="flex h-14 sm:h-16 items-center justify-start gap-2 sm:gap-3 min-w-0">
             {/* Logo - Left side on mobile */}
             <button
               onClick={() => router.push('/marketplace')}
@@ -470,8 +472,8 @@ export function MarketplaceHeader({
             {/* Desktop Search Bar (always visible) + Mobile Search (conditional) */}
             {compactSearchOnMobile ? (
               <>
-                {/* Desktop: Full search bar */}
-                <div className="hidden sm:block flex-[2] ml-[14px]">
+                {/* Tablet (sm-md): Inline search bar; lg+ uses the floating pill instead */}
+                <div className="hidden sm:block lg:hidden flex-[2] ml-[14px]">
                   <InstantSearch listingType={searchListingType} />
                 </div>
                 {/* Mobile: Search icon, Messages button, and Hamburger (far right) */}
@@ -512,8 +514,8 @@ export function MarketplaceHeader({
               </>
             ) : (
               <>
-                {/* Always hide search on mobile, show on desktop */}
-                <div className="hidden sm:block flex-[2] ml-[14px]">
+                {/* Tablet (sm-md): Inline search bar; lg+ uses the floating pill instead */}
+                <div className="hidden sm:block lg:hidden flex-[2] ml-[14px]">
                   <InstantSearch listingType={searchListingType} />
                 </div>
                 {/* Mobile: Search icon, Messages button, and Hamburger (far right) */}
@@ -554,167 +556,61 @@ export function MarketplaceHeader({
               </>
             )}
 
-            {/* Desktop Actions - Fixed on far right */}
+            {/* Desktop: Floating pill (nav + search + icons + avatar) + Sell CTA */}
             <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
-              {mounted && user ? (
-                <>
-                  {/* Icons Group - Messages and Profile */}
-                  <div className="flex items-center gap-3">
-                    {/* Messages Button */}
-                    <NotificationsDropdown />
+              <DesktopHeaderPill searchListingType={searchListingType} />
 
-                    <button
-                      onClick={() => router.push('/messages')}
-                      className="relative h-9 w-9 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center"
-                      aria-label="Messages"
+              {mounted && (
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      className="rounded-full bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium shadow-sm h-12 px-5"
                     >
-                      <Mail className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
-                      {unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-                          {unreadCount > 99 ? '99+' : unreadCount}
-                        </span>
-                      )}
-                    </button>
-
-                    <DropdownMenu modal={false}>
-                      <DropdownMenuTrigger asChild>
-                        <button className="outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-0 cursor-pointer">
-                          {shouldShowLogo() ? (
-                            <div className="relative h-9 w-9 rounded-full overflow-hidden border border-gray-300 flex-shrink-0">
-                              <Image
-                                src={profile!.logo_url!}
-                                alt={getDisplayName()}
-                                fill
-                                className="object-cover"
-                              />
-                            </div>
-                          ) : (
-                            <UserAvatar name={getDisplayName()} size="sm" className="h-9 w-9 border-gray-300" />
-                          )}
-                        </button>
-                      </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48 bg-white rounded-md">
-                      {canAccessSettings() && (
-                        <>
-                          <DropdownMenuItem
-                            onClick={() => router.push(getSettingsRoute())}
-                            className="cursor-pointer rounded-md"
-                          >
-                            <Settings className="mr-2 h-4 w-4" />
-                            <span>Settings</span>
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                        </>
-                      )}
-                      <DropdownMenuItem
-                        onClick={handleSignOut}
-                        className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
-                      >
-                        <LogOut className="mr-2 h-4 w-4" />
-                        <span>Sign Out</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  </div>
-
-                  {/* Sell Button */}
-                  <DropdownMenu modal={false}>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                      >
-                        Sell Item
-                        <ChevronDown className="ml-1.5 h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
-                      <DropdownMenuItem
-                        onClick={() => setSmartUploadModalOpen(true)}
-                        className="cursor-pointer rounded-md"
-                      >
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        <div className="flex flex-col">
-                          <span className="font-medium">Quick Upload</span>
-                          <span className="text-xs text-gray-500">AI-powered analysis</span>
-                        </div>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setFacebookModalOpen(true)}
-                        className="cursor-pointer rounded-md"
-                      >
-                        <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
-                        <div className="flex flex-col">
-                          <span className="font-medium">Facebook Import</span>
-                          <span className="text-xs text-gray-500">Import from Facebook</span>
-                        </div>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => router.push('/marketplace/sell?mode=bulk')}
-                        className="cursor-pointer rounded-md"
-                      >
-                        <Upload className="mr-2 h-4 w-4" />
-                        <div className="flex flex-col">
-                          <span className="font-medium">Bulk Upload</span>
-                          <span className="text-xs text-gray-500">Upload multiple products</span>
-                        </div>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </>
-              ) : (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={openAuthModal}
-                    className="rounded-md border-[#FFE8B3] hover:bg-[#FFF8E5] hover:border-[#FFC72C]"
-                  >
-                    Sign In
-                  </Button>
-                  {mounted && (
-                    <DropdownMenu modal={false}>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium shadow-sm"
-                        >
-                          Sell Item
-                          <ChevronDown className="ml-1.5 h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
-                      <DropdownMenuItem
-                        onClick={() => setSellRequirementModalOpen(true)}
-                        className="cursor-pointer rounded-md"
-                      >
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        <div className="flex flex-col">
-                          <span className="font-medium">Quick Upload</span>
-                          <span className="text-xs text-gray-500">AI-powered analysis</span>
-                        </div>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setSellRequirementModalOpen(true)}
-                        className="cursor-pointer rounded-md"
-                      >
-                        <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
-                        <div className="flex flex-col">
-                          <span className="font-medium">Facebook Import</span>
-                          <span className="text-xs text-gray-500">Import from Facebook</span>
-                        </div>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setSellRequirementModalOpen(true)}
-                        className="cursor-pointer rounded-md"
-                      >
-                        <Upload className="mr-2 h-4 w-4" />
-                        <div className="flex flex-col">
-                          <span className="font-medium">Bulk Upload</span>
-                          <span className="text-xs text-gray-500">Upload multiple products</span>
-                        </div>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  )}
-                </>
+                      Sell Item
+                      <ChevronDown className="ml-1.5 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
+                    <DropdownMenuItem
+                      onClick={() =>
+                        user ? setSmartUploadModalOpen(true) : setSellRequirementModalOpen(true)
+                      }
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Quick Upload</span>
+                        <span className="text-xs text-gray-500">AI-powered analysis</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        user ? setFacebookModalOpen(true) : setSellRequirementModalOpen(true)
+                      }
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Facebook Import</span>
+                        <span className="text-xs text-gray-500">Import from Facebook</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        user
+                          ? router.push('/marketplace/sell?mode=bulk')
+                          : setSellRequirementModalOpen(true)
+                      }
+                      className="cursor-pointer rounded-md"
+                    >
+                      <Upload className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Bulk Upload</span>
+                        <span className="text-xs text-gray-500">Upload multiple products</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           </div>
@@ -754,7 +650,7 @@ export function MarketplaceHeader({
               }}
             >
               {/* Main button */}
-              <div className="relative flex items-center gap-2.5 px-6 py-3.5 bg-gradient-to-r from-[#FFC72C] to-[#FFD54F] rounded-full border border-white/20 shadow-lg">
+              <div className="relative flex items-center gap-2.5 px-6 py-3.5 bg-[#ffde59] rounded-full border border-white/20 shadow-lg">
                 <div className="flex items-center justify-center w-6 h-6 bg-gray-900 rounded-full">
                   <Plus className="h-4 w-4 text-white" strokeWidth={2.5} />
                 </div>
@@ -763,6 +659,31 @@ export function MarketplaceHeader({
                 </span>
               </div>
             </motion.button>
+
+            {showMobileBrowseFiltersFab && onOpenMobileBrowseFilters && (
+              <motion.button
+                type="button"
+                onClick={onOpenMobileBrowseFilters}
+                whileTap={{ scale: 0.95 }}
+                className="relative"
+                layout
+                aria-label="Filters"
+                transition={{
+                  layout: { duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }
+                }}
+              >
+                <div className="relative flex items-center justify-center px-4 py-3.5 bg-[#ffde59] rounded-full border border-white/20 shadow-lg">
+                  <div className="flex items-center justify-center w-6 h-6 bg-gray-900 rounded-full">
+                    <SlidersHorizontal className="h-4 w-4 text-white" strokeWidth={2.5} />
+                  </div>
+                  {mobileBrowseFiltersBadge > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-md bg-gray-900 px-1 text-[10px] font-semibold text-white shadow-sm">
+                      {mobileBrowseFiltersBadge > 9 ? "9+" : mobileBrowseFiltersBadge}
+                    </span>
+                  )}
+                </div>
+              </motion.button>
+            )}
 
             {/* Circular Search Button - Appears when sticky filters are visible */}
             <AnimatePresence mode="popLayout">
@@ -777,7 +698,7 @@ export function MarketplaceHeader({
                   }}
                   onClick={() => setMobileSearchOpen(true)}
                   whileTap={{ scale: 0.9 }}
-                  className="flex items-center justify-center w-[54px] h-[54px] bg-gradient-to-r from-[#FFC72C] to-[#FFD54F] rounded-full border border-white/20 shadow-lg"
+                  className="flex items-center justify-center w-[54px] h-[54px] bg-[#ffde59] rounded-full border border-white/20 shadow-lg"
                   aria-label="Search"
                 >
                   <Search className="h-5 w-5 text-gray-900 stroke-[2]" />
@@ -853,7 +774,7 @@ export function MarketplaceHeader({
                       setSellRequirementModalOpen(true);
                     }
                   }}
-                  className="w-full flex items-center justify-center gap-2 rounded-md bg-[#FFC72C] hover:bg-[#E6B328] px-4 py-2.5 text-sm font-medium text-gray-900 transition-colors"
+                  className="w-full flex items-center justify-center gap-2 rounded-md bg-[#ffde59] hover:bg-[#f0cf45] px-4 py-2.5 text-sm font-medium text-gray-900 transition-colors"
                 >
                   <Plus className="h-4 w-4" />
                   Sell Item
@@ -984,7 +905,7 @@ export function MarketplaceHeader({
                       setMobileMenuOpen(false);
                       openAuthModal();
                     }}
-                    className="w-full rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
+                    className="w-full rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
                   >
                     Sign In
                   </Button>
@@ -995,8 +916,15 @@ export function MarketplaceHeader({
 
       {/* Sell Item Requirement Modal */}
       <Dialog open={sellRequirementModalOpen} onOpenChange={setSellRequirementModalOpen}>
-        <DialogContent className="sm:max-w-[425px] rounded-md bg-white">
-          <DialogHeader>
+        <DialogContent
+          mobileBottomSheet
+          overlayClassName="auth-sheet-overlay"
+          className="auth-sheet-content bg-white sm:max-w-[425px]"
+        >
+          <div className="flex justify-center pt-3 sm:hidden" aria-hidden="true">
+            <div className="h-1.5 w-10 rounded-full bg-gray-300" />
+          </div>
+          <DialogHeader className="px-6 pt-4 pb-2">
             <DialogTitle className="text-xl font-semibold text-gray-900">
               Sign in required
             </DialogTitle>
@@ -1005,7 +933,7 @@ export function MarketplaceHeader({
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex flex-col gap-3 pt-4">
+          <div className="flex flex-col gap-3 px-6 pb-6 pt-2">
             {/* Google Sign-In Button */}
             <Button
               type="button"
@@ -1091,7 +1019,7 @@ export function MarketplaceHeader({
           console.log('🔍 [HEADER] formData.frameSize:', formData.frameSize);
           console.log('🔍 [HEADER] formData.description:', formData.description?.substring(0, 50));
           console.log('🔍 [HEADER] formData.images count:', formData.images?.length);
-          formData.images?.forEach((img: any, idx: number) => {
+          formData.images?.forEach((img: ListingImage, idx: number) => {
             console.log(`🔍 [HEADER] images[${idx}]:`, {
               order: img.order,
               isPrimary: img.isPrimary,

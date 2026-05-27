@@ -6,7 +6,7 @@
 # Use this to manually trigger AI image discovery without waiting for pg_cron
 
 # Configuration
-SUPABASE_URL="https://lvsxdoyptioyxuwvvpgb.supabase.co"
+SUPABASE_URL="https://frjcluhuictnbimitvrm.supabase.co"
 SERVICE_KEY="YOUR_SERVICE_KEY_HERE"  # Replace with actual service key
 
 # Colors for output

@@ -3,6 +3,28 @@
 -- Tracks progress of long-running inventory syncs
 -- ============================================================
 
+-- Historical migration repair: this table is referenced below but its original
+-- creation migration sorts later, so fresh databases need the dependency here.
+CREATE TABLE IF NOT EXISTS lightspeed_sync_logs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  connection_id UUID REFERENCES lightspeed_connections(id) ON DELETE SET NULL,
+  sync_type TEXT NOT NULL CHECK (sync_type IN ('full', 'incremental', 'manual', 'products', 'orders', 'customers', 'inventory')),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'in_progress', 'completed', 'failed', 'cancelled')),
+  entities_synced TEXT[],
+  records_processed INTEGER DEFAULT 0,
+  records_created INTEGER DEFAULT 0,
+  records_updated INTEGER DEFAULT 0,
+  records_failed INTEGER DEFAULT 0,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  duration_ms INTEGER,
+  error_message TEXT,
+  error_details JSONB,
+  metadata JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS lightspeed_sync_state (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,

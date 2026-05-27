@@ -24,10 +24,14 @@ SELECT cron.schedule(
   $$
   SELECT
     net.http_post(
-      url := (SELECT current_setting('app.settings.api_external_url', true)) || '/functions/v1/refresh-lightspeed-tokens',
+      url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'SUPABASE_URL') || '/functions/v1/refresh-lightspeed-tokens',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
-        'Authorization', 'Bearer ' || (SELECT current_setting('app.settings.service_role_key', true))
+        'Authorization', 'Bearer ' || (
+          SELECT decrypted_secret
+          FROM vault.decrypted_secrets
+          WHERE name = 'SUPABASE_SERVICE_ROLE_KEY'
+        )
       ),
       body := '{}'::jsonb
     ) AS request_id;
@@ -59,10 +63,14 @@ WHERE jobname IN ('refresh-lightspeed-tokens', 'cleanup-cron-logs');
 -- To manually trigger the token refresh right now, run:
 -- 
 -- SELECT net.http_post(
---   url := (SELECT current_setting('app.settings.api_external_url', true)) || '/functions/v1/refresh-lightspeed-tokens',
+--   url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'SUPABASE_URL') || '/functions/v1/refresh-lightspeed-tokens',
 --   headers := jsonb_build_object(
 --     'Content-Type', 'application/json',
---     'Authorization', 'Bearer ' || (SELECT current_setting('app.settings.service_role_key', true))
+--     'Authorization', 'Bearer ' || (
+--       SELECT decrypted_secret
+--       FROM vault.decrypted_secrets
+--       WHERE name = 'SUPABASE_SERVICE_ROLE_KEY'
+--     )
 --   ),
 --   body := '{}'::jsonb
 -- );

@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Suspense } from "react";
+import { Suspense, startTransition } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
-import { TrendingUp, LogIn, Heart, Package, X, Search, Store as StoreIcon, User, Clock, DollarSign, SlidersHorizontal } from "lucide-react";
+import { TrendingUp, Package, X, Search, Store as StoreIcon, User, Clock, DollarSign, SlidersHorizontal } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
@@ -24,10 +24,10 @@ import { useUserVouchers } from "@/lib/hooks/use-user-vouchers";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/components/providers/auth-provider";
-import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { useInteractionTracker } from "@/lib/tracking/interaction-tracker";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { useMarketplaceData } from "@/lib/hooks/use-marketplace-data";
+import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -36,6 +36,13 @@ import { cn } from "@/lib/utils";
 // - Marketplace (default): Private listings from individuals
 // - Bike Stores: Products from bike stores
 // ============================================================
+
+// Default marketplace tab when URL is missing or legacy (?view=for-you)
+function normaliseMarketplaceViewParam(raw: string | null): ViewMode {
+  if (raw === "trending" || raw === "all") return raw;
+  if (raw === "for-you") return "trending";
+  return "all";
+}
 
 interface Store {
   id: string;
@@ -53,7 +60,6 @@ function MarketplacePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
-  const { openAuthModal } = useAuthModal();
   const tracker = useInteractionTracker(user?.id);
   
   // User vouchers and first upload eligibility
@@ -69,11 +75,11 @@ function MarketplacePageContent() {
   const isStoresView = currentSpace === 'stores';
   const isMarketplaceView = currentSpace === 'marketplace';
 
-  // View mode state (trending, for-you, all) - only for products view
+  // View mode state (trending, all) - only for products view
   // Default to 'all' for browsing all products
-  const urlView = searchParams.get('view');
-  const [viewMode, setViewMode] = React.useState<ViewMode>(
-    (!isStoresView && urlView as ViewMode) || 'all'
+  const urlView = searchParams.get("view");
+  const [viewMode, setViewMode] = React.useState<ViewMode>(() =>
+    !isStoresView ? normaliseMarketplaceViewParam(urlView) : "all"
   );
 
   // Stores state
@@ -143,6 +149,15 @@ function MarketplacePageContent() {
   const [privateOnly, setPrivateOnly] = React.useState(false);
   const [quickPriceRange, setQuickPriceRange] = React.useState<string | null>(null);
   const [recentlyAdded, setRecentlyAdded] = React.useState<string | null>(null);
+
+  /** Mobile Browse: filter sheet opened from header FAB (controlled with UnifiedFilterBar). */
+  const [mobileBrowseSheetOpen, setMobileBrowseSheetOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isMarketplaceView || viewMode !== "all") {
+      setMobileBrowseSheetOpen(false);
+    }
+  }, [isMarketplaceView, viewMode]);
 
   // Handler for private only toggle
   const handlePrivateOnlyChange = (checked: boolean) => {
@@ -229,7 +244,10 @@ function MarketplacePageContent() {
   // Sticky filter header state (mobile only)
   const [showStickyFilters, setShowStickyFilters] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
-  const categoryPillsRef = React.useRef<HTMLDivElement>(null!);
+  const categoryPillsRef = React.useRef<HTMLDivElement | null>(null);
+  const [productGridLayout, setProductGridLayout] = React.useState<
+    "grid" | "list"
+  >("grid");
   const sentinelRef = React.useRef<HTMLDivElement>(null); // Sentinel for tracking scroll
 
   // Track if we're on mobile
@@ -257,20 +275,13 @@ function MarketplacePageContent() {
     }
 
     if (!sentinelRef.current) {
-      console.log('[Sticky Filters] Sentinel ref not available');
       return;
     }
-
-    console.log('[Sticky Filters] Setting up observer for sentinel');
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         // Show sticky filters when sentinel scrolls out of view
         const shouldShow = !entry.isIntersecting;
-        console.log('[Sticky Filters] Intersection changed:', { 
-          isIntersecting: entry.isIntersecting, 
-          shouldShow
-        });
         setShowStickyFilters(shouldShow);
       },
       {
@@ -296,19 +307,76 @@ function MarketplacePageContent() {
   const processedDataRef = React.useRef<Set<string>>(new Set());
   const lastProcessedPageRef = React.useRef(0);
   const lastDataHashRef = React.useRef<string>('');
+  /** True until we apply the first completed fetch after `filterKey` changed (handles empty results vs ""). */
+  const awaitingFreshPageRef = React.useRef(false);
   const [isTransitioning, setIsTransitioning] = React.useState(false);
 
   // Sync listing type filter when space changes
   React.useEffect(() => {
     if (prevSpaceRef.current !== currentSpace) {
       setListingTypeFilter(spaceListingType);
-      // Reset products when space changes
+      // Reset products when space changes (avoid showing marketplace inventory under Bike Stores, etc.)
       setAccumulatedProducts([]);
       processedDataRef.current = new Set();
       setCurrentPage(1);
       prevSpaceRef.current = currentSpace;
     }
   }, [currentSpace, spaceListingType]);
+
+  const resetProductsForFilterChange = React.useCallback(() => {
+    setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setCurrentPage(1);
+  }, []);
+
+  const handleNavigateToAllStores = React.useCallback(() => {
+    setSelectedStoreId(null);
+    setSelectedStoreCategory(null);
+    resetProductsForFilterChange();
+    router.push("/marketplace?space=stores", { scroll: false });
+  }, [router, resetProductsForFilterChange]);
+
+  const handleNavigateToStore = React.useCallback(
+    (storeId: string) => {
+      setSelectedStoreId(storeId);
+      setSelectedStoreCategory(null);
+      resetProductsForFilterChange();
+      const params = new URLSearchParams();
+      params.set("space", "stores");
+      params.set("store", storeId);
+      router.push(`/marketplace?${params.toString()}`, { scroll: false });
+    },
+    [router, resetProductsForFilterChange]
+  );
+
+  const handleStoreFilterChange = React.useCallback(
+    (storeId: string | null) => {
+      setSelectedStoreId(storeId);
+      setSelectedStoreCategory(null);
+      resetProductsForFilterChange();
+      const params = new URLSearchParams();
+      params.set("space", "stores");
+      if (storeId) params.set("store", storeId);
+      else params.delete("store");
+      router.replace(`/marketplace?${params.toString()}`, { scroll: false });
+    },
+    [router, resetProductsForFilterChange]
+  );
+
+  React.useEffect(() => {
+    const storeFromUrl = searchParams.get("store");
+    if (!isStoresView) return;
+    if (storeFromUrl && storeFromUrl !== selectedStoreId) {
+      setSelectedStoreId(storeFromUrl);
+    }
+  }, [searchParams, isStoresView, selectedStoreId]);
+
+  // Bike Stores always uses the browse/products index, not trending — keeps filterKey and fetchers aligned.
+  React.useEffect(() => {
+    if (isStoresView && viewMode !== "all") {
+      setViewMode("all");
+    }
+  }, [isStoresView, viewMode]);
 
   // Calculate created after date based on recentlyAdded filter
   const createdAfter = React.useMemo(() => {
@@ -365,59 +433,45 @@ function MarketplacePageContent() {
     }
   );
 
-  // Handle initial page load from SWR (page 1 only)
-  // Pagination is handled manually in handleLoadMore
+  // Handle initial page load from SWR (page 1 only). Pagination: handleLoadMore.
   React.useEffect(() => {
-    // Create a hash of current fetched products to detect data changes
-    const currentDataHash = fetchedProducts.map(p => p.id).join(',');
-    
-    // Check if filters changed
     const filtersChanged = filterKey !== prevFilterKeyRef.current;
-    
-    // Check if data actually changed (new products arrived from SWR)
-    const dataChanged = currentDataHash !== lastDataHashRef.current && currentDataHash !== '';
-    
-    console.log('[MARKETPLACE] SWR Effect triggered:', {
-      filtersChanged,
-      dataChanged,
-      isValidating,
-      isTransitioning,
-      fetchedCount: fetchedProducts.length,
-      accumulatedCount: accumulatedProducts.length,
-    });
-    
+
     if (filtersChanged) {
-      // Filters changed - reset tracking refs
-      // Don't set products here - wait for NEW data to arrive
-      // This prevents showing stale data from keepPreviousData
-      console.log('[MARKETPLACE] Filter changed, resetting refs...');
       prevFilterKeyRef.current = filterKey;
       lastProcessedPageRef.current = 0;
       lastDataHashRef.current = '';
       processedDataRef.current = new Set();
+      awaitingFreshPageRef.current = true;
       setIsTransitioning(true);
-      // Products will be set on next effect run when dataChanged becomes true
-    } else if (dataChanged && fetchedProducts.length > 0) {
-      // New data arrived for current filter - set it
-      console.log('[MARKETPLACE] Setting products from SWR:', fetchedProducts.length, 'products');
+      return;
+    }
+
+    // keepPreviousData can surface the prior key's payload while the new request runs;
+    // never merge that into the grid until validation for this key settles.
+    if (isValidating) return;
+
+    if (awaitingFreshPageRef.current) {
+      awaitingFreshPageRef.current = false;
+      const hash = fetchedProducts.map(p => p.id).join(',');
+      setAccumulatedProducts(fetchedProducts);
+      processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
+      lastDataHashRef.current = hash;
+      setIsTransitioning(false);
+      return;
+    }
+
+    const currentDataHash = fetchedProducts.map(p => p.id).join(',');
+    const dataChanged = currentDataHash !== lastDataHashRef.current;
+
+    if (dataChanged && fetchedProducts.length > 0) {
       setAccumulatedProducts(fetchedProducts);
       processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
       lastDataHashRef.current = currentDataHash;
-      setIsTransitioning(false);
-    } else if (!isValidating && accumulatedProducts.length === 0 && isTransitioning) {
-      // Fetch completed but no products - clear transition state
-      // This allows empty state to show
-      console.log('[MARKETPLACE] Fetch complete, clearing transition');
-      setIsTransitioning(false);
-      if (fetchedProducts.length > 0 && currentDataHash !== '') {
-        // Fallback: If we have data but accumulated is empty - set it
-        console.log('[MARKETPLACE] Fallback: Setting products:', fetchedProducts.length, 'products');
-        setAccumulatedProducts(fetchedProducts);
-        processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
-        lastDataHashRef.current = currentDataHash;
-      }
     }
-  }, [fetchedProducts, filterKey, accumulatedProducts.length, isValidating, isTransitioning]);
+
+    setIsTransitioning(false);
+  }, [fetchedProducts, filterKey, isValidating]);
 
   // Derive display state
   const products = accumulatedProducts;
@@ -425,9 +479,13 @@ function MarketplacePageContent() {
   // 1. Initial loading (isLoading is true), OR
   // 2. On page 1 with no products while validating (filter just changed), OR
   // 3. Transitioning between view modes (waiting for new data)
-  const loading = (isLoading && currentPage === 1) || 
-                  (currentPage === 1 && accumulatedProducts.length === 0 && isValidating) ||
-                  (currentPage === 1 && accumulatedProducts.length === 0 && isTransitioning);
+  // Stores: avoid skeleton flash on SWR background revalidate (keepPreviousData + stale key edge cases).
+  const loading =
+    currentPage === 1 &&
+    accumulatedProducts.length === 0 &&
+    (isStoresView
+      ? isLoading || isTransitioning
+      : isLoading || isValidating || isTransitioning);
   const hasMore = pagination?.hasMore || false;
   const totalCount = pagination?.total || 0;
 
@@ -505,7 +563,9 @@ function MarketplacePageContent() {
       ? `/marketplace?${params.toString()}`
       : '/marketplace';
 
-    router.replace(newUrl, { scroll: false });
+    startTransition(() => {
+      router.replace(newUrl, { scroll: false });
+    });
   }, [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, isStoresView, router]);
 
   const handleLoadMore = async () => {
@@ -543,6 +603,11 @@ function MarketplacePageContent() {
         if (selectedLevel2) params.set('level2', selectedLevel2);
         if (selectedLevel3) params.set('level3', selectedLevel3);
         endpoint = `/api/marketplace/products?${params}`;
+      } else if (listingTypeFilter === 'stores') {
+        if (selectedLevel1) params.set('level1', selectedLevel1);
+        if (selectedLevel2) params.set('level2', selectedLevel2);
+        if (selectedLevel3) params.set('level3', selectedLevel3);
+        endpoint = `/api/marketplace/products?${params}`;
       } else {
         switch (viewMode) {
           case 'trending':
@@ -553,16 +618,6 @@ function MarketplacePageContent() {
               params.set('category', selectedLevel1);
             }
             endpoint = `/api/marketplace/trending?${params}`;
-            break;
-          
-          case 'for-you':
-            params.delete('pageSize');
-            params.set('limit', '200'); // Load 200 products per page
-            params.set('enrich', 'true');
-            if (selectedLevel1) params.set('level1', selectedLevel1);
-            if (selectedLevel2) params.set('level2', selectedLevel2);
-            if (selectedLevel3) params.set('level3', selectedLevel3);
-            endpoint = `/api/recommendations/for-you?${params}`;
             break;
           
           case 'all':
@@ -610,15 +665,9 @@ function MarketplacePageContent() {
   const handleViewModeChange = (mode: ViewMode) => {
     // Don't reset if clicking the same tab and already in marketplace
     if (mode === viewMode && !isStoresView) return;
-    
-    // Set transitioning state immediately for instant loading feedback
-    setIsTransitioning(true);
-    
-    // Clear all product state FIRST before changing mode
-    setAccumulatedProducts([]);
-    processedDataRef.current = new Set();
+
     setCurrentPage(1);
-    
+
     // Switch back to marketplace space if we're on stores view
     if (isStoresView) {
       setSpace('marketplace');
@@ -627,8 +676,8 @@ function MarketplacePageContent() {
     // Then change the mode
     setViewMode(mode);
     
-    // Clear category filters when switching to Trending or For You
-    if (mode === 'trending' || mode === 'for-you') {
+    // Clear category filters when switching to Trending
+    if (mode === "trending") {
       setSelectedLevel1(null);
       setSelectedLevel2(null);
       setSelectedLevel3(null);
@@ -785,6 +834,9 @@ function MarketplacePageContent() {
         onSpaceChange={setSpace}
         isNavigating={isNavigating}
         showStickyFilters={showStickyFilters}
+        showMobileBrowseFiltersFab={isMarketplaceView && viewMode === "all"}
+        mobileBrowseFiltersBadge={activeFilterCount}
+        onOpenMobileBrowseFilters={() => setMobileBrowseSheetOpen(true)}
       />
 
       {/* Sticky Filter Header - Mobile Only (appears when category pills scroll out) */}
@@ -805,7 +857,7 @@ function MarketplacePageContent() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute top-0 left-0 right-0 h-1 bg-[#FFC72C] overflow-hidden"
+                  className="absolute top-0 left-0 right-0 h-1 bg-[#ffde59] overflow-hidden"
                 >
                   {/* Animated shimmer effect */}
                   <motion.div
@@ -827,7 +879,7 @@ function MarketplacePageContent() {
                       duration: 1,
                       ease: [0.4, 0, 0.2, 1],
                     }}
-                    className="absolute inset-y-0 bg-[#E6B328]"
+                    className="absolute inset-y-0 bg-[#f0cf45]"
                   />
                 </motion.div>
               )}
@@ -927,64 +979,91 @@ function MarketplacePageContent() {
       </AnimatePresence>
 
       <MarketplaceLayout showFooter={false} showStoreCTA={false}>
-        {/* Sticky Explore Bar on Mobile - Always visible for unified navigation */}
-        <div className="sticky top-14 sm:top-16 z-30 bg-white sm:hidden">
-          <UnifiedFilterBar
-            viewMode={viewMode}
-            onViewModeChange={handleViewModeChange}
-            showForYouBadge={!user && viewMode !== 'for-you'}
-            selectedLevel1={selectedLevel1}
-            selectedLevel2={selectedLevel2}
-            selectedLevel3={selectedLevel3}
-            onLevel1Change={handleLevel1Change}
-            onLevel2Change={handleLevel2Change}
-            onLevel3Change={handleLevel3Change}
-            listingTypeFilter={listingTypeFilter}
-            onListingTypeChange={handleListingTypeChange}
-            productCount={!searchQuery ? totalCount : undefined}
-            categoryPillsRef={categoryPillsRef}
-            onNavigateToStores={() => setSpace('stores')}
-            additionalFilters={
-              <AdvancedFilters
-                filters={advancedFilters}
-                onFiltersChange={handleAdvancedFiltersChange}
-                onApply={handleAdvancedFiltersApply}
-                onReset={handleAdvancedFiltersReset}
-                activeFilterCount={activeFilterCount}
-                listingTypeFilter={listingTypeFilter}
-                onListingTypeChange={handleListingTypeChange}
+        {/* Mobile: promo above Hot / Browse / Stores, then sticky tabs + category pills */}
+        <div className="sm:hidden bg-white pt-14">
+          {MARKETPLACE_PROMO_BANNERS_ENABLED &&
+            (isMarketplaceView || isStoresView) &&
+            !searchQuery && (
+            <div className="px-3 pt-1 pb-1">
+              <PromoBannerCarousel
+                hasListings={listingCount > 0}
+                isLoggedIn={!!user}
+                onNavigateToStores={() => setSpace("stores")}
               />
-            }
-          />
+            </div>
+          )}
+          <div className="sticky top-14 z-30 bg-white border-b border-gray-100 shadow-sm">
+            <UnifiedFilterBar
+              viewMode={viewMode}
+              onViewModeChange={handleViewModeChange}
+              selectedLevel1={selectedLevel1}
+              selectedLevel2={selectedLevel2}
+              selectedLevel3={selectedLevel3}
+              onLevel1Change={handleLevel1Change}
+              onLevel2Change={handleLevel2Change}
+              onLevel3Change={handleLevel3Change}
+              listingTypeFilter={listingTypeFilter}
+              onListingTypeChange={handleListingTypeChange}
+              productCount={!searchQuery && !isStoresView ? totalCount : undefined}
+              categoryPillsRef={categoryPillsRef}
+              onNavigateToStores={handleNavigateToAllStores}
+              selectedStoreId={selectedStoreId}
+              onStoreSelect={handleNavigateToStore}
+              browseFilters={advancedFilters}
+              onBrowseFiltersChange={handleAdvancedFiltersChange}
+              onBrowseFiltersApply={handleAdvancedFiltersApply}
+              onBrowseFiltersReset={handleAdvancedFiltersReset}
+              productGridLayout={productGridLayout}
+              onProductGridLayoutChange={setProductGridLayout}
+              mobileBrowseSheetOpen={mobileBrowseSheetOpen}
+              onMobileBrowseSheetOpenChange={setMobileBrowseSheetOpen}
+            />
+            {isStoresView && (
+              <div className="px-3 pt-2 pb-2.5">
+                <StoreFilterPills
+                  selectedStoreId={selectedStoreId}
+                  onStoreChange={handleStoreFilterChange}
+                />
+                <AnimatePresence>
+                  {selectedStoreId && storeCategories.length > 0 && (
+                    <StoreCategoryPills
+                      categories={storeCategories}
+                      selectedCategory={selectedStoreCategory}
+                      onCategoryChange={setSelectedStoreCategory}
+                      className="mt-1"
+                    />
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
         </div>
         {/* Sentinel div for scroll tracking - invisible marker */}
         <div ref={sentinelRef} className="sm:hidden h-px" aria-hidden="true" />
 
-        <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20 pb-24 sm:pb-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="space-y-6"
-          >
-            {/* Promo Banners - Marketplace view only */}
-            {isMarketplaceView && !searchQuery && (
-              <PromoBannerCarousel 
-                hasListings={listingCount > 0} 
-                isLoggedIn={!!user}
-                onNavigateToStores={() => setSpace('stores')}
-              />
+        <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-4 sm:pt-20 pb-24 sm:pb-8">
+          <div className="space-y-4">
+            {/* Promo Banners - Marketplace and Bike Stores (hidden while searching) */}
+            {MARKETPLACE_PROMO_BANNERS_ENABLED &&
+              (isMarketplaceView || isStoresView) &&
+              !searchQuery && (
+              <div className="hidden sm:block">
+                <PromoBannerCarousel
+                  hasListings={listingCount > 0}
+                  isLoggedIn={!!user}
+                  onNavigateToStores={() => setSpace("stores")}
+                />
+              </div>
             )}
 
             {/* Stores View - Products from Stores with Store Filter */}
             {isStoresView && (
-              <div className="space-y-4 sm:space-y-6">
-                {/* Desktop Unified Filter Bar for Stores */}
-                <div className="hidden sm:block">
+              <div className="space-y-3 sm:space-y-4">
+                {/* Desktop: main tabs + store pills grouped tightly */}
+                <div className="hidden sm:block space-y-2.5">
                   <UnifiedFilterBar
                     viewMode={viewMode}
                     onViewModeChange={handleViewModeChange}
-                    showForYouBadge={!user && viewMode !== 'for-you'}
                     selectedLevel1={selectedLevel1}
                     selectedLevel2={selectedLevel2}
                     selectedLevel3={selectedLevel3}
@@ -995,7 +1074,15 @@ function MarketplacePageContent() {
                     onListingTypeChange={handleListingTypeChange}
                     productCount={!searchQuery ? totalCount : undefined}
                     categoryPillsRef={categoryPillsRef}
-                    onNavigateToStores={() => setSpace('stores')}
+                    onNavigateToStores={handleNavigateToAllStores}
+                    selectedStoreId={selectedStoreId}
+                    onStoreSelect={handleNavigateToStore}
+                    browseFilters={advancedFilters}
+                    onBrowseFiltersChange={handleAdvancedFiltersChange}
+                    onBrowseFiltersApply={handleAdvancedFiltersApply}
+                    onBrowseFiltersReset={handleAdvancedFiltersReset}
+                    productGridLayout={productGridLayout}
+                    onProductGridLayoutChange={setProductGridLayout}
                     additionalFilters={
                       <AdvancedFilters
                         filters={advancedFilters}
@@ -1008,68 +1095,45 @@ function MarketplacePageContent() {
                       />
                     }
                   />
-                </div>
-
-                {/* Store Filter Pills + Category Pills (grouped to avoid space-y gap) */}
-                <div>
                   <StoreFilterPills
                     selectedStoreId={selectedStoreId}
-                    onStoreChange={(storeId) => {
-                      setSelectedStoreId(storeId);
-                      setSelectedStoreCategory(null); // Reset category when store changes
-                      // Reset products when store filter changes
-                      setAccumulatedProducts([]);
-                      processedDataRef.current = new Set();
-                      setCurrentPage(1);
-                    }}
+                    onStoreChange={handleStoreFilterChange}
                   />
-
-                  {/* Store Category Pills - Show when a store is selected (zero API calls) */}
                   <AnimatePresence>
                     {selectedStoreId && storeCategories.length > 0 && (
                       <StoreCategoryPills
                         categories={storeCategories}
                         selectedCategory={selectedStoreCategory}
                         onCategoryChange={setSelectedStoreCategory}
+                        className="mt-1"
                       />
                     )}
                   </AnimatePresence>
                 </div>
 
-                {/* Product Count for Stores */}
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-700 font-medium">
-                      {(selectedStoreCategory ? displayProducts.length : totalCount).toLocaleString()} {(selectedStoreCategory ? displayProducts.length : totalCount) === 1 ? 'product' : 'products'}
-                    </span>
-                    {(selectedStoreId || selectedStoreCategory) && (
-                      <button
-                        onClick={() => {
-                          setSelectedStoreId(null);
-                          setSelectedStoreCategory(null);
-                          setAccumulatedProducts([]);
-                          processedDataRef.current = new Set();
-                          setCurrentPage(1);
-                        }}
-                        className="text-xs text-gray-500 hover:text-gray-700 underline"
-                      >
-                        Clear filter
-                      </button>
-                    )}
-                  </div>
-                  
-                  {/* Advanced Filters for Stores - Mobile only (desktop has it in filter bar) */}
-                  <div className="sm:hidden">
-                    <AdvancedFilters
-                      filters={advancedFilters}
-                      onFiltersChange={handleAdvancedFiltersChange}
-                      onApply={handleAdvancedFiltersApply}
-                      onReset={handleAdvancedFiltersReset}
-                      activeFilterCount={activeFilterCount}
-                      listingTypeFilter={listingTypeFilter}
-                      onListingTypeChange={handleListingTypeChange}
-                    />
-                  </div>
+                {(selectedStoreId || selectedStoreCategory) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleNavigateToAllStores();
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-700 underline"
+                  >
+                    Clear filter
+                  </button>
+                )}
+
+                {/* Advanced Filters for Stores - Mobile only (desktop has it in filter bar) */}
+                <div className="flex justify-end sm:hidden">
+                  <AdvancedFilters
+                    filters={advancedFilters}
+                    onFiltersChange={handleAdvancedFiltersChange}
+                    onApply={handleAdvancedFiltersApply}
+                    onReset={handleAdvancedFiltersReset}
+                    activeFilterCount={activeFilterCount}
+                    listingTypeFilter={listingTypeFilter}
+                    onListingTypeChange={handleListingTypeChange}
+                  />
                 </div>
               </div>
             )}
@@ -1083,7 +1147,6 @@ function MarketplacePageContent() {
                     <UnifiedFilterBar
                       viewMode={viewMode}
                       onViewModeChange={handleViewModeChange}
-                      showForYouBadge={!user && viewMode !== 'for-you'}
                       selectedLevel1={selectedLevel1}
                       selectedLevel2={selectedLevel2}
                       selectedLevel3={selectedLevel3}
@@ -1094,7 +1157,15 @@ function MarketplacePageContent() {
                       onListingTypeChange={handleListingTypeChange}
                       productCount={!searchQuery ? totalCount : undefined}
                       categoryPillsRef={categoryPillsRef}
-                      onNavigateToStores={() => setSpace('stores')}
+                      onNavigateToStores={handleNavigateToAllStores}
+                      selectedStoreId={selectedStoreId}
+                      onStoreSelect={handleNavigateToStore}
+                      browseFilters={advancedFilters}
+                      onBrowseFiltersChange={handleAdvancedFiltersChange}
+                      onBrowseFiltersApply={handleAdvancedFiltersApply}
+                      onBrowseFiltersReset={handleAdvancedFiltersReset}
+                      productGridLayout={productGridLayout}
+                      onProductGridLayoutChange={setProductGridLayout}
                       additionalFilters={
                         <AdvancedFilters
                           filters={advancedFilters}
@@ -1215,149 +1286,155 @@ function MarketplacePageContent() {
                   />
                 )}
 
-                {/* Loading State - Amazon-style instant skeletons */}
-                {!searchQuery && loading && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-4">
-                    {Array.from({ length: 36 }).map((_, i) => (
-                      <ProductCardSkeleton key={i} />
-                    ))}
+                {!searchQuery && (loading || displayProducts.length > 0) && (
+                  <div className="min-h-0">
+                    {loading ? (
+                      <div className="space-y-3">
+                        {isStoresView && (
+                          <p className="text-sm text-gray-500 px-0.5">
+                            Loading shop inventory…
+                          </p>
+                        )}
+                        <div
+                          className={
+                            productGridLayout === "list"
+                              ? "flex flex-col gap-3"
+                              : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-4"
+                          }
+                        >
+                          {Array.from({
+                            length: isStoresView ? 12 : 36,
+                          }).map((_, i) => (
+                            <ProductCardSkeleton key={i} layout={productGridLayout} />
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className={cn(
+                          productGridLayout === "list"
+                            ? "flex flex-col gap-3"
+                            : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-1.5 sm:gap-4",
+                          isTransitioning &&
+                            displayProducts.length > 0 &&
+                            !isStoresView &&
+                            "opacity-50 transition-opacity duration-200 ease-out",
+                        )}
+                      >
+                        {displayProducts.map((product, index) => (
+                          <React.Fragment key={product.id}>
+                            <ProductCard 
+                              product={product}
+                              priority={index < 18}
+                              layout={productGridLayout}
+                              isAdmin={isAdmin}
+                              onNavigate={() => setIsNavigating(true)}
+                              onImageDiscoveryClick={(productId) => {
+                                const canonicalId = product.canonical_product_id || product.id;
+                                setImageDiscoveryModal({
+                                  isOpen: true,
+                                  productId: canonicalId,
+                                  productName: (product as any).display_name || product.description,
+                                });
+                              }}
+                            />
+                            {MARKETPLACE_PROMO_BANNERS_ENABLED &&
+                              index === 11 &&
+                              isMarketplaceView && (
+                              <div
+                                className={productGridLayout === "list" ? "w-full" : undefined}
+                              >
+                                <ListItemBanner className="sm:hidden" />
+                              </div>
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Anonymous user on For You - Show sign-in message */}
-                {!searchQuery && !user && viewMode === 'for-you' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-md border border-gray-200 p-4 flex items-center justify-between gap-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Heart className="h-5 w-5 text-gray-400" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          Sign in for personalised recommendations
-                        </p>
-                        <p className="text-xs text-gray-600 mt-0.5">
-                          Showing trending products for now
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      onClick={openAuthModal}
-                      className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium flex items-center gap-2"
-                    >
-                      <LogIn className="h-4 w-4" />
-                      Sign In
-                    </Button>
-                  </motion.div>
-                )}
-
-                  {/* Empty State - No Products */}
                   {!searchQuery && !loading && products.length === 0 && (
-                    <AnimatePresence mode="wait">
-                      <motion.div
-                        key="empty-state"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ duration: 0.3 }}
-                        className="bg-white rounded-md border border-gray-200 p-12 text-center"
-                      >
-                        {viewMode === 'trending' ? (
-                          <>
-                            <TrendingUp className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                              No trending items from private sellers
-                            </h3>
-                            <p className="text-gray-600 max-w-md mx-auto mb-6">
-                              {selectedLevel1 
-                                ? `No trending ${selectedLevel1.toLowerCase()} items from private sellers right now. Try browsing all listings or check back soon!`
-                                : 'Popular items from private sellers will appear here. Browse all listings or check back soon!'}
-                            </p>
-                            <Button
-                              onClick={() => setViewMode('all')}
-                              className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
-                            >
-                              Browse All Listings
-                            </Button>
-                          </>
-                        ) : viewMode === 'for-you' ? (
-                          <>
-                            <Heart className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                              {user ? "We're learning your preferences" : "Sign in for personalised recommendations"}
-                            </h3>
-                            <p className="text-gray-600 max-w-md mx-auto mb-6">
-                              {user 
-                                ? 'Browse items from private sellers to help us understand what you like. Your personalised marketplace feed will appear here!'
-                                : 'Sign in to get recommendations based on your browsing history and preferences.'}
-                            </p>
-                            <Button
-                              onClick={() => user ? setViewMode('trending') : openAuthModal()}
-                              className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
-                            >
-                              {user ? 'Browse Trending' : 'Sign In'}
-                            </Button>
-                          </>
-                        ) : null}
-
-                        {viewMode === 'all' && (
-                          <>
-                            <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                              No listings found
-                            </h3>
-                            <p className="text-gray-600 max-w-md mx-auto mb-6">
-                              {selectedLevel1 
-                                ? `No ${selectedLevel1.toLowerCase()} listings from private sellers available. Try a different category!`
-                                : 'No listings from private sellers available at the moment.'}
-                            </p>
-                            {selectedLevel1 && (
+                    <div className="bg-white rounded-md border border-gray-200 p-12 text-center">
+                      {isStoresView ? (
+                        <>
+                          <StoreIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                            No shop products to show yet
+                          </h3>
+                          <p className="text-gray-600 max-w-md mx-auto mb-6">
+                            {selectedStoreId
+                              ? "This store has no visible inventory in the marketplace right now. Try all stores or check back soon."
+                              : "There are no bike shop products listed yet, or filters are hiding results. Try clearing filters or browse private listings."}
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-3">
+                            {(selectedStoreId || selectedStoreCategory) && (
                               <Button
                                 onClick={() => {
-                                  setSelectedLevel1(null);
-                                  setSelectedLevel2(null);
-                                  setSelectedLevel3(null);
+                                  setSelectedStoreId(null);
+                                  setSelectedStoreCategory(null);
+                                  setAccumulatedProducts([]);
+                                  processedDataRef.current = new Set();
+                                  setCurrentPage(1);
                                 }}
                                 variant="outline"
                                 className="rounded-md"
                               >
-                                Clear Filters
+                                Clear store filters
                               </Button>
                             )}
-                          </>
-                        )}
-                      </motion.div>
-                    </AnimatePresence>
-                  )}
-
-                  {/* Products Grid - Progressive Loading */}
-                  {!searchQuery && displayProducts.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-1.5 sm:gap-4">
-                      {displayProducts.map((product, index) => (
-                        <React.Fragment key={product.id}>
-                          <ProductCard 
-                            product={product}
-                            priority={index < 18} // Prioritize first 18 images (top 3 rows on XL screens)
-                            isAdmin={isAdmin}
-                            onNavigate={() => setIsNavigating(true)}
-                            onImageDiscoveryClick={(productId) => {
-                              // Use canonical_product_id if available (for private listings)
-                              // Otherwise use product id (for store inventory which IS the canonical product)
-                              const canonicalId = product.canonical_product_id || product.id;
-                              setImageDiscoveryModal({
-                                isOpen: true,
-                                productId: canonicalId,
-                                productName: (product as any).display_name || product.description,
-                              });
-                            }}
-                          />
-                          {/* Mobile-only promo banner after 6th row (12 products on 2-col grid) */}
-                          {index === 11 && isMarketplaceView && (
-                            <ListItemBanner className="sm:hidden" />
+                            <Button
+                              onClick={() => setSpace("marketplace")}
+                              className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
+                            >
+                              Back to marketplace
+                            </Button>
+                          </div>
+                        </>
+                      ) : viewMode === "trending" ? (
+                        <>
+                          <TrendingUp className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                            No trending items from private sellers
+                          </h3>
+                          <p className="text-gray-600 max-w-md mx-auto mb-6">
+                            {selectedLevel1
+                              ? `No trending ${selectedLevel1.toLowerCase()} items from private sellers right now. Try browsing all listings or check back soon!`
+                              : "Popular items from private sellers will appear here. Browse all listings or check back soon!"}
+                          </p>
+                          <Button
+                            onClick={() => setViewMode("all")}
+                            className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
+                          >
+                            Browse All Listings
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                            No listings found
+                          </h3>
+                          <p className="text-gray-600 max-w-md mx-auto mb-6">
+                            {selectedLevel1
+                              ? `No ${selectedLevel1.toLowerCase()} listings from private sellers available. Try a different category!`
+                              : "No listings from private sellers available at the moment."}
+                          </p>
+                          {selectedLevel1 && (
+                            <Button
+                              onClick={() => {
+                                setSelectedLevel1(null);
+                                setSelectedLevel2(null);
+                                setSelectedLevel3(null);
+                              }}
+                              variant="outline"
+                              className="rounded-md"
+                            >
+                              Clear Filters
+                            </Button>
                           )}
-                        </React.Fragment>
-                      ))}
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -1373,60 +1450,9 @@ function MarketplacePageContent() {
                       </Button>
                     </div>
                   )}
-
-                  {/* Info Section for Trending/For You */}
-                  {!loading && products.length > 0 && viewMode !== 'all' && (
-                    <div className="bg-white rounded-md border border-gray-200 p-6 mt-8">
-                      {viewMode === 'trending' && (
-                        <>
-                          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                            <TrendingUp className="h-4 w-4" />
-                            About Trending
-                          </h3>
-                          <ul className="space-y-2 text-sm text-gray-600">
-                            <li className="flex items-start gap-2">
-                              <span className="text-[#FFC72C] mt-1">•</span>
-                              <span>Products getting the most attention right now</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                              <span className="text-[#FFC72C] mt-1">•</span>
-                              <span>Updated every 15 minutes based on real user activity</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                              <span className="text-[#FFC72C] mt-1">•</span>
-                              <span>Discover what the cycling community is browsing</span>
-                            </li>
-                          </ul>
-                        </>
-                      )}
-
-                      {viewMode === 'for-you' && user && (
-                        <>
-                          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                            <Heart className="h-4 w-4" />
-                            Your Personalised Feed
-                          </h3>
-                          <ul className="space-y-2 text-sm text-gray-600">
-                            <li className="flex items-start gap-2">
-                              <span className="text-[#FFC72C] mt-1">•</span>
-                              <span>Based on products you've viewed and clicked</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                              <span className="text-[#FFC72C] mt-1">•</span>
-                              <span>Matches keywords from your browsing history</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                              <span className="text-[#FFC72C] mt-1">•</span>
-                              <span>Gets smarter as you browse more products</span>
-                            </li>
-                          </ul>
-                        </>
-                      )}
-                    </div>
-                  )}
               </>
             )}
-          </motion.div>
+          </div>
         </div>
       </MarketplaceLayout>
 
@@ -1460,4 +1486,3 @@ export default function MarketplacePage() {
     </Suspense>
   );
 }
-

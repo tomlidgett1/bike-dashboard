@@ -88,8 +88,8 @@ async function refreshAccessToken(
   encryptionKey: string
 ): Promise<string | null> {
   try {
-    const clientId = Deno.env.get('LIGHTSPEED_CLIENT_ID')
-    const clientSecret = Deno.env.get('LIGHTSPEED_CLIENT_SECRET')
+    const clientId = Deno.env.get('LIGHTSPEED_CLIENT_ID')?.trim()
+    const clientSecret = Deno.env.get('LIGHTSPEED_CLIENT_SECRET')?.trim()
     
     if (!clientId || !clientSecret) {
       console.error('Missing Lightspeed credentials')

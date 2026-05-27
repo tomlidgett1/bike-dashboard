@@ -47,6 +47,8 @@ import {
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import NextDynamic from "next/dynamic";
+import { MarketplaceReadinessBadges } from "@/components/products/marketplace-readiness-badges";
+import type { MarketplaceReadiness } from "@/lib/marketplace/product-readiness";
 
 // Dynamically import Dialog components to avoid SSR issues
 const Dialog = NextDynamic(
@@ -100,6 +102,9 @@ interface Product {
   last_synced_at: string;
   is_active: boolean;
   listing_source: string | null;
+  listing_status: string | null;
+  listing_type: string | null;
+  marketplace_readiness?: MarketplaceReadiness;
 }
 
 interface DiscoveredImage {
@@ -356,6 +361,11 @@ const ProductTableHeader = React.memo(({
             Status
             <SortIcon column="is_active" />
           </button>
+        </TableHead>
+        <TableHead className="h-10 px-4 font-semibold min-w-[180px]">
+          <span className="text-xs uppercase tracking-wider">
+            Marketplace
+          </span>
         </TableHead>
         <TableHead className="h-10 px-6 text-center font-semibold">
           <span className="text-xs uppercase tracking-wider">
@@ -655,10 +665,7 @@ export default function ProductsPage() {
         throw new Error('Failed to update product status');
       }
 
-      // If status filter is set to active/inactive only, refresh to remove from view
-      if (statusFilter !== 'all') {
-        fetchProducts(pagination.page);
-      }
+      fetchProducts(paginationRef.current.page);
     } catch (error) {
       console.error('Error toggling product status:', error);
       // Revert optimistic update on error
@@ -1099,6 +1106,17 @@ export default function ProductsPage() {
                             {product.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </div>
+                      </TableCell>
+
+                      {/* Marketplace Column */}
+                      <TableCell className="py-2.5 px-4 align-top">
+                        {product.marketplace_readiness ? (
+                          <MarketplaceReadinessBadges
+                            readiness={product.marketplace_readiness}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TableCell>
 
                       {/* Actions Column */}

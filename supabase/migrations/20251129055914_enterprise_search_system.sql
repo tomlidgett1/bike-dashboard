@@ -16,6 +16,8 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- Add Generated Search Column
 -- ============================================================
 -- Combines all searchable fields into one for efficient full-text search
+ALTER TABLE products ADD COLUMN IF NOT EXISTS display_name TEXT;
+
 ALTER TABLE products 
 ADD COLUMN IF NOT EXISTS search_text TEXT GENERATED ALWAYS AS (
   COALESCE(display_name, '') || ' ' ||

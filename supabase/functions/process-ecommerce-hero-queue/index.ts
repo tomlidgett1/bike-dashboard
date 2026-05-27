@@ -1,12 +1,18 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { cloudinaryUploadAuthHeader } from "../_shared/cloudinary-auth.ts";
+import { buildCloudinaryUrls, CLOUDINARY_EAGER_TRANSFORMS } from "../_shared/cloudinary-transforms.ts";
+import {
+  callOpenAIEcommerceHeroEdit,
+  downloadImageAsBase64,
+  ECOMMERCE_HERO_PROMPT,
+  OPENAI_ECOMMERCE_IMAGE_MODEL,
+} from "../_shared/ecommerce-hero-openai.ts";
 
 // ============================================================
 // Process E-Commerce Hero Queue
 // ============================================================
-// Uses OpenAI GPT Image 1.5 Edit API to transform product images
-// into professional e-commerce hero shots with clean backgrounds
-// while preserving exact product condition (scratches, dirt, wear)
+// OpenAI Images Edit (gpt-image-2): light grey primer + soft studio shadow.
 // ============================================================
 
 const corsHeaders = {
@@ -14,20 +20,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-// The prompt that instructs GPT Image 1.5 to preserve the product exactly
-const ECOMMERCE_HERO_PROMPT = `Place this exact product photograph on a soft light gray e-commerce background (not pure white - use a subtle off-white/very light gray tone like #F5F5F5 or #F8F8F8). Create a perfect 1024x1024 square hero product shot. Add subtle professional product photography shadows beneath the product to give it depth and grounding.
-
-CRITICAL REQUIREMENTS:
-1. Do NOT alter, enhance, clean, repair, or modify the product itself in ANY way
-2. Preserve every scratch, dirt mark, scuff, wear sign, and imperfection exactly as shown
-3. The product must remain photographically identical to the input - same colours, same condition, same details
-4. Only change the BACKGROUND to a soft light gray/off-white tone and add realistic soft shadows beneath the product
-5. Centre the product in the frame with appropriate padding for a professional e-commerce look
-6. Ensure the entire product is visible within the square frame
-7. Maintain the original image quality and sharpness of the product
-
-The goal is to make this look like a professional product listing photo while showing the true condition of the item.`;
 
 interface QueueItem {
   id: string;
@@ -57,9 +49,9 @@ serve(async (req) => {
 
     // Get required environment variables
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    const CLOUDINARY_CLOUD_NAME = Deno.env.get("CLOUDINARY_CLOUD_NAME");
-    const CLOUDINARY_API_KEY = Deno.env.get("CLOUDINARY_API_KEY");
-    const CLOUDINARY_API_SECRET = Deno.env.get("CLOUDINARY_API_SECRET");
+    const CLOUDINARY_CLOUD_NAME = Deno.env.get("CLOUDINARY_CLOUD_NAME")?.trim();
+    const CLOUDINARY_API_KEY = Deno.env.get("CLOUDINARY_API_KEY")?.trim();
+    const CLOUDINARY_API_SECRET = Deno.env.get("CLOUDINARY_API_SECRET")?.trim();
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -119,21 +111,24 @@ serve(async (req) => {
       console.log(`\n🖼️ [ECOMMERCE-HERO] Processing item ${item.id} for product ${item.product_id}`);
       
       try {
-        // Step 1: Download source image and convert to base64
+        // Step 1: Download source image
         console.log(`📥 [ECOMMERCE-HERO] Downloading source image...`);
-        const imageBase64 = await downloadImageAsBase64(item.source_image_url);
-        
-        if (!imageBase64) {
+        const downloaded = await downloadImageAsBase64(item.source_image_url);
+
+        if (!downloaded) {
           throw new Error("Failed to download source image");
         }
-        console.log(`✅ [ECOMMERCE-HERO] Downloaded image (${(imageBase64.length / 1024).toFixed(0)}KB base64)`);
+        console.log(
+          `✅ [ECOMMERCE-HERO] Downloaded image (${(downloaded.base64.length / 1024).toFixed(0)}KB base64, ${downloaded.mimeType})`,
+        );
 
-        // Step 2: Call OpenAI GPT Image 1.5 Edit API
-        console.log(`🤖 [ECOMMERCE-HERO] Calling OpenAI GPT Image 1.5...`);
-        const heroImageBase64 = await callOpenAIImageEdit(
+        // Step 2: OpenAI Images Edit (gpt-image-2)
+        console.log(`🤖 [ECOMMERCE-HERO] Calling OpenAI ${OPENAI_ECOMMERCE_IMAGE_MODEL}...`);
+        const heroImageBase64 = await callOpenAIEcommerceHeroEdit(
           OPENAI_API_KEY,
-          imageBase64,
-          ECOMMERCE_HERO_PROMPT
+          downloaded.base64,
+          downloaded.mimeType,
+          ECOMMERCE_HERO_PROMPT,
         );
         
         if (!heroImageBase64) {
@@ -362,103 +357,6 @@ serve(async (req) => {
 // ============================================================
 
 /**
- * Downloads an image from URL and returns base64 encoded string
- */
-async function downloadImageAsBase64(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; BikeMarketplace/1.0)",
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`Failed to download image: HTTP ${response.status}`);
-      return null;
-    }
-
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.startsWith("image/")) {
-      console.error(`Invalid content type: ${contentType}`);
-      return null;
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
-
-    // Convert to base64 in chunks to avoid stack overflow
-    let binary = "";
-    const chunkSize = 8192;
-    for (let i = 0; i < uint8Array.length; i += chunkSize) {
-      const chunk = uint8Array.slice(i, i + chunkSize);
-      binary += String.fromCharCode(...chunk);
-    }
-
-    return btoa(binary);
-  } catch (error) {
-    console.error("Error downloading image:", error);
-    return null;
-  }
-}
-
-/**
- * Calls OpenAI GPT Image 1.5 Edit API
- */
-async function callOpenAIImageEdit(
-  apiKey: string,
-  imageBase64: string,
-  prompt: string
-): Promise<string | null> {
-  try {
-    // Detect mime type from base64 header or default to png
-    const mimeType = "image/png";
-    const dataUri = `data:${mimeType};base64,${imageBase64}`;
-
-    // Create form data for multipart upload
-    const formData = new FormData();
-    
-    // Convert base64 to blob for the image field
-    const binaryString = atob(imageBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: "image/png" });
-    formData.append("image", blob, "source.png");
-    formData.append("prompt", prompt);
-    formData.append("model", "gpt-image-1.5");
-    formData.append("size", "1024x1024");
-    formData.append("quality", "high");
-
-    const response = await fetch("https://api.openai.com/v1/images/edits", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`OpenAI API error: ${response.status} - ${errorText}`);
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
-
-    const result = await response.json();
-
-    if (!result.data || !result.data[0]) {
-      throw new Error("No image in OpenAI response");
-    }
-
-    // GPT Image models return base64 encoded images
-    return result.data[0].b64_json;
-  } catch (error) {
-    console.error("OpenAI Image Edit error:", error);
-    throw error;
-  }
-}
-
-/**
  * Uploads base64 image to Cloudinary with e-commerce variants
  */
 async function uploadToCloudinary(
@@ -482,35 +380,19 @@ async function uploadToCloudinary(
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = `bike-marketplace/ecommerce-hero/${productId}/${timestamp}`;
 
-    // IMPORTANT: AI images are 1024x1024 from OpenAI - DO NOT upscale beyond this!
-    // Use c_limit to prevent upscaling, and use original dimensions for quality
-    const eagerTransforms = "w_100,c_limit,q_auto:low,f_webp|w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_1024,c_limit,q_auto:best,f_webp|w_1024,c_limit,q_auto:best,f_webp";
-
-    // Generate signature
-    const signatureString = `eager=${eagerTransforms}&eager_async=false&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`;
-    const encoder = new TextEncoder();
-    const data = encoder.encode(signatureString);
-    const hashBuffer = await crypto.subtle.digest("SHA-1", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-
-    // Build data URI
     const dataUri = `data:image/png;base64,${imageBase64}`;
 
-    // Create form data
     const formData = new FormData();
     formData.append("file", dataUri);
-    formData.append("api_key", apiKey);
-    formData.append("timestamp", timestamp.toString());
-    formData.append("signature", signature);
     formData.append("public_id", publicId);
-    formData.append("eager", eagerTransforms);
+    formData.append("eager", CLOUDINARY_EAGER_TRANSFORMS);
     formData.append("eager_async", "false");
 
     const response = await fetch(
       `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
       {
         method: "POST",
+        headers: { Authorization: cloudinaryUploadAuthHeader(apiKey, apiSecret) },
         body: formData,
       }
     );
@@ -522,16 +404,12 @@ async function uploadToCloudinary(
     }
 
     const result = await response.json();
-    const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`;
-
-    // Build variant URLs - IMPORTANT: AI images are 1024x1024, DO NOT upscale!
-    // Use c_limit to prevent upscaling beyond source resolution
-    const thumbnailUrl = `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${result.public_id}`;
-    const mobileCardUrl = `${baseUrl}/w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${result.public_id}`;
-    const cardUrl = `${baseUrl}/w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${result.public_id}`;
-    // galleryUrl & detailUrl: Use 1024 max (original AI resolution) with c_limit to prevent upscaling
-    const galleryUrl = `${baseUrl}/w_1024,c_limit,q_auto:best,f_webp/${result.public_id}`;
-    const detailUrl = `${baseUrl}/w_1024,c_limit,q_auto:best,f_webp/${result.public_id}`;
+    const urls = buildCloudinaryUrls(cloudName, result.public_id);
+    const thumbnailUrl = urls.thumbnailUrl;
+    const mobileCardUrl = urls.mobileCardUrl;
+    const cardUrl = urls.cardUrl;
+    const galleryUrl = urls.galleryUrl;
+    const detailUrl = urls.detailUrl;
 
     // Pre-warm CDN cache
     fetch(cardUrl).catch(() => {});

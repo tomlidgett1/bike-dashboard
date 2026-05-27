@@ -256,7 +256,7 @@ export function SplitSearchResults({
           </p>
           <Button
             onClick={onClearSearch}
-            className="rounded-md bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-medium"
+            className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
           >
             Clear Search
           </Button>

@@ -1,9 +1,11 @@
 import * as React from "react";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { notFound } from "next/navigation";
 import { createClient } from '@/lib/supabase/server';
 import { ProductPageClient } from "./product-page-client";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { getProductImages, toJsonbFormat } from "@/lib/services/product-images";
+import { resolveProductImage } from "@/lib/services/image-resolver";
 
 // ============================================================
 // Product Page - Server Component with Parallel Data Fetching
@@ -45,6 +47,7 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         created_at,
         user_id,
         canonical_product_id,
+        selected_product_image_id,
         use_custom_image,
         custom_image_url,
         images,
@@ -141,7 +144,10 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       // Convert to JSONB format for backwards compatibility with client
       imagesForClient = toJsonbFormat(productImages) as any;
       
-      const primaryImage = productImages.find(img => img.is_primary) || productImages[0];
+      const primaryImage =
+        productImages.find(img => img.id === product.selected_product_image_id) ||
+        productImages.find(img => img.is_primary) ||
+        productImages[0];
       // Use galleryUrl for product pages (1200px landscape, padded - shows full product)
       primaryImageUrl = primaryImage?.gallery_url 
         || primaryImage?.detail_url 
@@ -232,37 +238,34 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
     
     if (!sourceProduct?.marketplace_category) return [];
     
-    // Fetch similar products from same category
+    // Fetch similar ready products from same category
     const { data: products } = await supabase
-      .from('products')
+      .from('marketplace_ready_products')
       .select(`
         id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
-        marketplace_level_3_category, created_at, user_id, images,
-        users!user_id (business_name, name, logo_url, account_type)
+        marketplace_level_3_category, created_at, user_id,
+        resolved_image_id, resolved_card_url, resolved_thumbnail_url, resolved_mobile_card_url,
+        resolved_gallery_url, resolved_detail_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
       .eq('marketplace_category', sourceProduct.marketplace_category)
-      .eq('is_active', true)
       .neq('id', productId)
-      .or('listing_status.is.null,listing_status.eq.active')
       .limit(12);
     
     if (!products) return [];
     
     return products.map((p: any) => {
-      // Format seller name: For bike stores use business_name, for individuals use "FirstName L."
-      let displayName = 'Unknown Seller';
-      if (p.users?.account_type === 'bicycle_store' && p.users?.business_name) {
-        displayName = p.users.business_name;
-      } else if (p.users?.name) {
-        const nameParts = p.users.name.trim().split(' ');
-        if (nameParts.length >= 2) {
-          // Format as "FirstName L."
-          displayName = `${nameParts[0]} ${nameParts[nameParts.length - 1].charAt(0)}.`;
-        } else {
-          // Just use the first name if only one name provided
-          displayName = nameParts[0];
-        }
-      }
+      const resolved = resolveProductImage({
+        id: p.resolved_image_id,
+        cloudinary_public_id: p.resolved_cloudinary_public_id,
+        cloudinary_url: p.resolved_cloudinary_url,
+        thumbnail_url: p.resolved_thumbnail_url,
+        mobile_card_url: p.resolved_mobile_card_url,
+        card_url: p.resolved_card_url,
+        gallery_url: p.resolved_gallery_url,
+        detail_url: p.resolved_detail_url,
+        approval_status: 'approved',
+      });
+      const imageUrl = resolved?.card_url || resolved?.original_url || null;
 
       return {
         id: p.id,
@@ -276,11 +279,13 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
         model_year: p.model_year || null,
         created_at: p.created_at,
         user_id: p.user_id,
-        primary_image_url: p.images?.[0]?.cloudinaryUrl || p.images?.[0]?.url || null,
-        card_url: p.images?.[0]?.cardUrl || null,
-        store_name: displayName,
-        store_logo_url: p.users?.logo_url || null,
-        store_account_type: p.users?.account_type || null,
+        primary_image_url: imageUrl,
+        card_url: imageUrl,
+        thumbnail_url: resolved?.thumbnail_url || imageUrl,
+        detail_url: resolved?.detail_url || resolved?.gallery_url || imageUrl,
+        store_name: 'Bike Store',
+        store_logo_url: null,
+        store_account_type: null,
       } as MarketplaceProduct;
     });
   } catch (error) {
@@ -310,18 +315,17 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
       .eq('user_id', sourceProduct.user_id)
       .single();
     
-    // Fetch seller's other products
+    // Fetch seller's other ready products
     const { data: products } = await supabase
-      .from('products')
+      .from('marketplace_ready_products')
       .select(`
         id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
-        created_at, user_id, images,
-        users!user_id (business_name, name, logo_url, account_type)
+        created_at, user_id,
+        resolved_image_id, resolved_card_url, resolved_thumbnail_url, resolved_mobile_card_url,
+        resolved_gallery_url, resolved_detail_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
       .eq('user_id', sourceProduct.user_id)
-      .eq('is_active', true)
       .neq('id', productId)
-      .or('listing_status.is.null,listing_status.eq.active')
       .is('sold_at', null)
       .order('created_at', { ascending: false })
       .limit(12);
@@ -335,20 +339,18 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
     } : null;
     
     const formattedProducts = (products || []).map((p: any) => {
-      // Format seller name: For bike stores use business_name, for individuals use "FirstName L."
-      let displayName = 'Unknown Seller';
-      if (p.users?.account_type === 'bicycle_store' && p.users?.business_name) {
-        displayName = p.users.business_name;
-      } else if (p.users?.name) {
-        const nameParts = p.users.name.trim().split(' ');
-        if (nameParts.length >= 2) {
-          // Format as "FirstName L."
-          displayName = `${nameParts[0]} ${nameParts[nameParts.length - 1].charAt(0)}.`;
-        } else {
-          // Just use the first name if only one name provided
-          displayName = nameParts[0];
-        }
-      }
+      const resolved = resolveProductImage({
+        id: p.resolved_image_id,
+        cloudinary_public_id: p.resolved_cloudinary_public_id,
+        cloudinary_url: p.resolved_cloudinary_url,
+        thumbnail_url: p.resolved_thumbnail_url,
+        mobile_card_url: p.resolved_mobile_card_url,
+        card_url: p.resolved_card_url,
+        gallery_url: p.resolved_gallery_url,
+        detail_url: p.resolved_detail_url,
+        approval_status: 'approved',
+      });
+      const imageUrl = resolved?.card_url || resolved?.original_url || null;
 
       return {
         id: p.id,
@@ -361,11 +363,13 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
         model_year: p.model_year || null,
         created_at: p.created_at,
         user_id: p.user_id,
-        primary_image_url: p.images?.[0]?.cloudinaryUrl || p.images?.[0]?.url || null,
-        card_url: p.images?.[0]?.cardUrl || null,
-        store_name: displayName,
-        store_logo_url: p.users?.logo_url || null,
-        store_account_type: p.users?.account_type || null,
+        primary_image_url: imageUrl,
+        card_url: imageUrl,
+        thumbnail_url: resolved?.thumbnail_url || imageUrl,
+        detail_url: resolved?.detail_url || resolved?.gallery_url || imageUrl,
+        store_name: sellerInfo?.name || 'Unknown Seller',
+        store_logo_url: sellerInfo?.logo_url || null,
+        store_account_type: sellerInfo?.account_type || null,
       } as MarketplaceProduct;
     });
     

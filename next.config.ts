@@ -1,18 +1,29 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    // OAuth PKCE cookies are host-specific; mixing www and apex breaks sign-in.
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.yellowjersey.store" }],
+        destination: "https://yellowjersey.store/:path*",
+        permanent: true,
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       // Supabase Storage
       {
         protocol: 'https',
-        hostname: 'lvsxdoyptioyxuwvvpgb.supabase.co',
+        hostname: 'frjcluhuictnbimitvrm.supabase.co',
         port: '',
         pathname: '/storage/v1/object/public/**',
       },
       {
         protocol: 'https',
-        hostname: 'lvsxdoyptioyxuwvvpgb.supabase.co',
+        hostname: 'frjcluhuictnbimitvrm.supabase.co',
         port: '',
         pathname: '/storage/v1/render/image/public/**',
       },
@@ -27,6 +38,31 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'images.unsplash.com',
+        port: '',
+        pathname: '/**',
+      },
+      // Google account profile photos (OAuth)
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'lh4.googleusercontent.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'lh5.googleusercontent.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'lh6.googleusercontent.com',
         port: '',
         pathname: '/**',
       },

@@ -199,7 +199,7 @@ function ActiveFilterChip({
   );
 }
 
-function MobileFilterContent({
+export function MobileFilterContent({
   filters,
   onFiltersChange,
   onApply,
@@ -208,7 +208,9 @@ function MobileFilterContent({
   listingTypeFilter,
   onListingTypeChange,
   activeFilterCount,
-}: AdvancedFiltersProps & { onClose?: () => void }) {
+  /** Content above sort/price (e.g. category pills) inside the scrollable area */
+  topSection,
+}: AdvancedFiltersProps & { onClose?: () => void; topSection?: React.ReactNode }) {
   const [localFilters, setLocalFilters] = React.useState(filters);
   const [brandSearch, setBrandSearch] = React.useState('');
   const [showBrandDropdown, setShowBrandDropdown] = React.useState(false);
@@ -388,6 +390,8 @@ function MobileFilterContent({
       {/* Scrollable Content - Fixed for proper scrolling */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         <div className="px-4 pb-4 space-y-4">
+          {topSection}
+
           {/* Sort By - Inline with Select dropdown */}
           <div className="flex items-center justify-between py-2 border-b border-gray-100">
             <span className="text-sm font-medium text-gray-700">Sort by</span>
@@ -911,10 +915,10 @@ export function AdvancedFilters({
   const triggerButton = variant === 'default' ? (
     <button
       className={cn(
-        "group flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-md font-medium transition-all whitespace-nowrap flex-shrink-0 cursor-pointer",
+        "group flex h-10 min-h-10 items-center gap-1.5 sm:gap-2 rounded-lg px-3 sm:px-3.5 font-medium transition-all whitespace-nowrap flex-shrink-0 cursor-pointer box-border border-2",
         activeFilterCount > 0
-          ? "bg-gray-900 text-white shadow-md"
-          : "bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:shadow-sm"
+          ? "border-gray-900 bg-gray-900 text-white shadow-md"
+          : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:shadow-sm"
       )}
     >
       <SlidersHorizontal className={cn(
@@ -934,10 +938,10 @@ export function AdvancedFilters({
     // Compact variant for floating bar
     <button
       className={cn(
-        "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-all",
+        "flex h-10 min-h-10 items-center gap-1.5 rounded-lg border-2 px-3 text-xs font-medium transition-all box-border",
         activeFilterCount > 0
-          ? "bg-gray-900 text-white border-gray-900"
-          : "bg-white text-gray-700 border-gray-300 hover:border-gray-400"
+          ? "border-gray-900 bg-gray-900 text-white"
+          : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
       )}
     >
       <SlidersHorizontal className="h-3.5 w-3.5" />

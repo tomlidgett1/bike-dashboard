@@ -8,6 +8,7 @@
  */
 
 import { SupabaseClient } from "@supabase/supabase-js";
+import { buildCloudinaryVariantUrls } from "@/lib/utils/cloudinary-transforms";
 
 // ============================================================
 // Types
@@ -557,16 +558,16 @@ export function generateCloudinaryVariants(
     );
     const cloudName = cloudNameMatch?.[1] || "dydrzocpt";
 
-    const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`;
+    const variants = buildCloudinaryVariantUrls(publicId, cloudName);
 
     return {
-      url: `${baseUrl}/${publicId}`,
+      url: `https://res.cloudinary.com/${cloudName}/image/upload/${publicId}`,
       publicId,
-      cardUrl: `${baseUrl}/w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${publicId}`,
-      mobileCardUrl: `${baseUrl}/w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${publicId}`,
-      thumbnailUrl: `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${publicId}`,
-      galleryUrl: `${baseUrl}/w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp/${publicId}`,
-      detailUrl: `${baseUrl}/w_2000,c_limit,q_auto:best,f_webp/${publicId}`,
+      cardUrl: variants.cardUrl || cloudinaryUrl,
+      mobileCardUrl: variants.mobileCardUrl || cloudinaryUrl,
+      thumbnailUrl: variants.thumbnailUrl || cloudinaryUrl,
+      galleryUrl: variants.galleryUrl || cloudinaryUrl,
+      detailUrl: variants.detailUrl || cloudinaryUrl,
     };
   } catch {
     return null;

@@ -46,7 +46,7 @@
 
 :root {
   /* Notion-inspired Light Theme */
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   
   /* Core colours - Notion warm neutrals */
   --background: #FFFFFF;
@@ -240,6 +240,86 @@
   
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+
+  /* iOS-style auth bottom sheet */
+  .auth-sheet-overlay {
+    background: rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(2px);
+    animation-duration: 200ms !important;
+    animation-timing-function: ease-out !important;
+  }
+
+  .auth-sheet-content {
+    border-radius: 28px 28px 0 0;
+    box-shadow: 0 -24px 80px rgba(15, 23, 42, 0.18), 0 -4px 24px rgba(15, 23, 42, 0.08);
+    transform: translate3d(0, 0, 0);
+    will-change: transform, opacity;
+    animation-duration: 300ms !important;
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1) !important;
+  }
+
+  .auth-sheet-content[data-state="open"] {
+    animation-name: auth-sheet-slide-up !important;
+  }
+
+  .auth-sheet-content[data-state="closed"] {
+    animation-name: auth-sheet-slide-down !important;
+  }
+
+  @media (min-width: 640px) {
+    .auth-sheet-content {
+      border-radius: var(--radius-md);
+      animation-name: auth-sheet-desktop-in !important;
+    }
+
+    .auth-sheet-content[data-state="closed"] {
+      animation-name: auth-sheet-desktop-out !important;
+    }
+  }
+
+  @keyframes auth-sheet-slide-up {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 26px, 0) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes auth-sheet-slide-down {
+    from {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translate3d(0, 22px, 0) scale(0.99);
+    }
+  }
+
+  @keyframes auth-sheet-desktop-in {
+    from {
+      opacity: 0;
+      transform: translate3d(-50%, calc(-50% + 18px), 0) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(-50%, -50%, 0) scale(1);
+    }
+  }
+
+  @keyframes auth-sheet-desktop-out {
+    from {
+      opacity: 1;
+      transform: translate3d(-50%, -50%, 0) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translate3d(-50%, calc(-50% + 14px), 0) scale(0.98);
+    }
   }
   
   /* Mobile app-like behavior */

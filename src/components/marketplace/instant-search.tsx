@@ -661,7 +661,7 @@ export function InstantSearch({
                     : "text-gray-600 hover:text-gray-900 hover:bg-white rounded-md border border-transparent hover:border-gray-200"
                 )}
               >
-                <Sparkles className="h-4 w-4 text-[#FFC72C]" />
+                <Sparkles className="h-4 w-4 text-[#ffde59]" />
                 <span className="font-medium">Ask Cycling Expert</span>
                 <ArrowRight className="h-4 w-4 ml-auto text-gray-400" />
               </button>

@@ -167,8 +167,8 @@ export function ProductPageClient({
                 />
               </div>
 
-              {/* Right Column - Product Details */}
-              <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:bg-white lg:rounded-md lg:overflow-y-auto lg:border lg:border-gray-200">
+              {/* Right Column - Floating card (all breakpoints; below hero on mobile) */}
+              <div className="mx-3 mt-4 mb-2 sm:mx-5 sm:mt-6 sm:mb-4 lg:mx-0 lg:mt-2 lg:mb-2 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:self-start rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-200/60 ring-1 ring-black/5 overflow-hidden">
                 <ProductDetailsPanelSimple product={product} />
               </div>
             </div>

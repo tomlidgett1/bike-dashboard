@@ -1,6 +1,12 @@
 -- Add performance indexes for marketplace product queries
 -- These indexes significantly speed up the main marketplace page and infinite scroll
 
+-- Historical migration repair: these listing columns were originally introduced
+-- later, but this migration indexes them.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS listing_source TEXT DEFAULT 'lightspeed';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS listing_type TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS listing_status TEXT;
+
 -- Index for the main marketplace query filter (is_active + listing_status)
 -- This covers the most common WHERE clause in the marketplace API
 CREATE INDEX IF NOT EXISTS idx_products_marketplace_active 

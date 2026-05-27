@@ -93,8 +93,8 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
     const encryptionKey = Deno.env.get('TOKEN_ENCRYPTION_KEY')!
-    const clientId = Deno.env.get('LIGHTSPEED_CLIENT_ID')!
-    const clientSecret = Deno.env.get('LIGHTSPEED_CLIENT_SECRET')!
+    const clientId = Deno.env.get('LIGHTSPEED_CLIENT_ID')!.trim()
+    const clientSecret = Deno.env.get('LIGHTSPEED_CLIENT_SECRET')!.trim()
 
     console.log('🔄 Starting scheduled token refresh...')
 

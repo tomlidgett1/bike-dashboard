@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getMarketplaceReadiness } from '@/lib/marketplace/product-readiness'
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,6 +43,15 @@ export async function GET(request: NextRequest) {
       .from('products')
       .select(`
         *,
+        product_images!product_id (
+          id,
+          thumbnail_url,
+          card_url,
+          cloudinary_url,
+          is_primary,
+          approval_status,
+          sort_order
+        ),
         canonical_products!canonical_product_id (
           id,
           upc,
@@ -55,7 +65,8 @@ export async function GET(request: NextRequest) {
             is_primary,
             approval_status,
             variants,
-            formats
+            formats,
+            sort_order
           )
         )
       `, { count: 'exact' })
@@ -172,9 +183,29 @@ export async function GET(request: NextRequest) {
         resolvedImageUrl = product.cached_image_url || product.cached_thumbnail_url;
       }
       
+      const productImages = Array.isArray(product.product_images)
+        ? product.product_images
+        : [];
+      const canonicalImages = Array.isArray(
+        product.canonical_products?.product_images
+      )
+        ? product.canonical_products.product_images
+        : [];
+
+      const marketplace_readiness = getMarketplaceReadiness({
+        is_active: product.is_active ?? false,
+        listing_status: product.listing_status ?? null,
+        listing_type: product.listing_type ?? null,
+        qoh: product.qoh ?? null,
+        selected_product_image_id: product.selected_product_image_id ?? null,
+        productImages,
+        canonicalImages,
+      });
+
       return {
         ...product,
         resolved_image_url: resolvedImageUrl,
+        marketplace_readiness,
       };
     });
 

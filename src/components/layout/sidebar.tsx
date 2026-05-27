@@ -37,6 +37,8 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
   requiresStore?: boolean;
   isAdmin?: boolean;
+  /** Shown but not navigable (e.g. coming soon) */
+  disabled?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -57,21 +59,17 @@ const navItems: NavItem[] = [
     icon: Edit,
   },
   {
-    title: "Settings",
-    href: "/settings",
-    icon: Settings,
-  },
-  {
-    title: "Draft Listings",
-    href: "/settings/drafts",
-    icon: Edit,
-  },
-  {
     title: "Connect Lightspeed",
     href: "/connect-lightspeed",
     icon: Zap,
   },
 ];
+
+const settingsNavItem: NavItem = {
+  title: "Settings",
+  href: "/settings",
+  icon: Settings,
+};
 
 const adminItems: NavItem[] = [
   {
@@ -85,14 +83,72 @@ const adminItems: NavItem[] = [
     href: "/admin/instagram-posts",
     icon: Instagram,
     isAdmin: true,
+    disabled: true,
   },
   {
     title: "Scheduled Uploads",
     href: "/admin/scheduled-uploads",
     icon: CalendarClock,
     isAdmin: true,
+    disabled: true,
   },
 ];
+
+function StoreSidebarLink({
+  item,
+  pathname,
+  onNavigate,
+  mobile,
+}: {
+  item: NavItem;
+  pathname: string | null;
+  onNavigate?: () => void;
+  mobile?: boolean;
+}) {
+  const isActive = pathname === item.href;
+  const Icon = item.icon;
+  const py = mobile ? "py-2.5" : "py-2";
+
+  if (item.disabled) {
+    return (
+      <div
+        className={cn(
+          "flex cursor-not-allowed select-none items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/40",
+          py
+        )}
+        aria-disabled="true"
+        title="Coming soon"
+      >
+        <Icon className="h-[18px] w-[18px] shrink-0 text-sidebar-foreground/40" />
+        <span className="overflow-hidden whitespace-nowrap">{item.title}</span>
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      className={cn(
+        "group flex items-center gap-3 rounded-md px-3 text-sm font-medium transition-all duration-150",
+        py,
+        isActive
+          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+          : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+      )}
+    >
+      <Icon
+        className={cn(
+          "h-[18px] w-[18px] shrink-0 transition-colors",
+          isActive
+            ? "text-sidebar-foreground"
+            : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+        )}
+      />
+      <span className="overflow-hidden whitespace-nowrap">{item.title}</span>
+    </Link>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -144,82 +200,38 @@ export function Sidebar() {
       <Separator className="bg-sidebar-border" />
 
       {/* Navigation */}
-      <ScrollArea className="flex-1 px-3 py-4">
+      <ScrollArea className="min-h-0 flex-1 px-3 py-4">
         <nav className="flex flex-col gap-1">
-          {filteredNavItems.map((item) => {
-            const isActive = pathname === item.href;
-            const Icon = item.icon;
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150",
-                  isActive
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                )}
-              >
-                <Icon
-                  className={cn(
-                    "h-[18px] w-[18px] shrink-0 transition-colors",
-                    isActive
-                      ? "text-sidebar-foreground"
-                      : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
-                  )}
-                />
-                <span className="overflow-hidden whitespace-nowrap">
-                  {item.title}
-                </span>
-              </Link>
-            );
-          })}
+          {filteredNavItems.map((item) => (
+            <StoreSidebarLink
+              key={item.href}
+              item={item}
+              pathname={pathname}
+            />
+          ))}
 
           {/* Admin Section */}
-          <div className="mt-4 pt-4 border-t border-sidebar-border">
-            <p className="px-3 text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider mb-2">
+          <div className="mt-4 border-t border-sidebar-border pt-4">
+            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
               Admin
             </p>
-            {adminItems.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150",
-                    isActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                  )}
-                >
-                  <Icon
-                    className={cn(
-                      "h-[18px] w-[18px] shrink-0 transition-colors",
-                      isActive
-                        ? "text-sidebar-foreground"
-                        : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
-                    )}
-                  />
-                  <span className="overflow-hidden whitespace-nowrap">
-                    {item.title}
-                  </span>
-                </Link>
-              );
-            })}
+            {adminItems.map((item) => (
+              <StoreSidebarLink
+                key={item.href}
+                item={item}
+                pathname={pathname}
+              />
+            ))}
           </div>
 
           {/* Go to Marketplace Button */}
-          <div className="mt-4 pt-4 border-t border-sidebar-border">
+          <div className="mt-4 border-t border-sidebar-border pt-4">
             <Link
               href="/marketplace"
-              className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/80 transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
             >
               <Store
-                className="h-[18px] w-[18px] shrink-0 transition-colors text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                className="h-[18px] w-[18px] shrink-0 text-sidebar-foreground/60 transition-colors group-hover:text-sidebar-foreground"
               />
               <span className="overflow-hidden whitespace-nowrap">
                 Go to Marketplace
@@ -231,10 +243,10 @@ export function Sidebar() {
           <div className="mt-1">
             <Link
               href="/marketplace/help"
-              className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/80 transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
             >
               <HelpCircle
-                className="h-[18px] w-[18px] shrink-0 transition-colors text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                className="h-[18px] w-[18px] shrink-0 text-sidebar-foreground/60 transition-colors group-hover:text-sidebar-foreground"
               />
               <span className="overflow-hidden whitespace-nowrap">
                 Help & Support
@@ -243,6 +255,10 @@ export function Sidebar() {
           </div>
         </nav>
       </ScrollArea>
+
+      <div className="shrink-0 border-t border-sidebar-border px-3 py-3">
+        <StoreSidebarLink item={settingsNavItem} pathname={pathname} />
+      </div>
     </aside>
   );
 }
@@ -276,7 +292,7 @@ export function MobileSidebar() {
       </SheetTrigger>
       <SheetContent
         side="left"
-        className="w-[280px] bg-sidebar p-0"
+        className="flex h-full w-[280px] flex-col bg-sidebar p-0"
       >
         <SheetHeader className="border-b border-sidebar-border px-4 py-3">
           <SheetTitle className="flex items-center gap-2 text-left">
@@ -314,81 +330,43 @@ export function MobileSidebar() {
           </Link>
         </div>
 
-        <ScrollArea className="flex-1 px-3 py-4">
+        <ScrollArea className="min-h-0 flex-1 px-3 py-4">
           <nav className="flex flex-col gap-1">
-            {filteredNavItems.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setOpen(false)}
-                  className={cn(
-                    "group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-150",
-                    isActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                  )}
-                >
-                  <Icon
-                    className={cn(
-                      "h-[18px] w-[18px] shrink-0 transition-colors",
-                      isActive
-                        ? "text-sidebar-foreground"
-                        : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
-                    )}
-                  />
-                  <span>{item.title}</span>
-                </Link>
-              );
-            })}
+            {filteredNavItems.map((item) => (
+              <StoreSidebarLink
+                key={item.href}
+                item={item}
+                pathname={pathname}
+                mobile
+                onNavigate={() => setOpen(false)}
+              />
+            ))}
 
             {/* Admin Section */}
-            <div className="mt-4 pt-4 border-t border-sidebar-border">
-              <p className="px-3 text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider mb-2">
+            <div className="mt-4 border-t border-sidebar-border pt-4">
+              <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
                 Admin
               </p>
-              {adminItems.map((item) => {
-                const isActive = pathname === item.href;
-                const Icon = item.icon;
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-150",
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                    )}
-                  >
-                    <Icon
-                      className={cn(
-                        "h-[18px] w-[18px] shrink-0 transition-colors",
-                        isActive
-                          ? "text-sidebar-foreground"
-                          : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
-                      )}
-                    />
-                    <span>{item.title}</span>
-                  </Link>
-                );
-              })}
+              {adminItems.map((item) => (
+                <StoreSidebarLink
+                  key={item.href}
+                  item={item}
+                  pathname={pathname}
+                  mobile
+                  onNavigate={() => setOpen(false)}
+                />
+              ))}
             </div>
 
             {/* Go to Marketplace Button */}
-            <div className="mt-4 pt-4 border-t border-sidebar-border">
+            <div className="mt-4 border-t border-sidebar-border pt-4">
               <Link
                 href="/marketplace"
                 onClick={() => setOpen(false)}
-                className="group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-150 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                className="group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sidebar-foreground/80 transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
               >
                 <Store
-                  className="h-[18px] w-[18px] shrink-0 transition-colors text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                  className="h-[18px] w-[18px] shrink-0 text-sidebar-foreground/60 transition-colors group-hover:text-sidebar-foreground"
                 />
                 <span>Go to Marketplace</span>
               </Link>
@@ -399,16 +377,25 @@ export function MobileSidebar() {
               <Link
                 href="/marketplace/help"
                 onClick={() => setOpen(false)}
-                className="group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-150 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                className="group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sidebar-foreground/80 transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
               >
                 <HelpCircle
-                  className="h-[18px] w-[18px] shrink-0 transition-colors text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                  className="h-[18px] w-[18px] shrink-0 text-sidebar-foreground/60 transition-colors group-hover:text-sidebar-foreground"
                 />
                 <span>Help & Support</span>
               </Link>
             </div>
           </nav>
         </ScrollArea>
+
+        <div className="shrink-0 border-t border-sidebar-border px-3 py-3">
+          <StoreSidebarLink
+            item={settingsNavItem}
+            pathname={pathname}
+            mobile
+            onNavigate={() => setOpen(false)}
+          />
+        </div>
       </SheetContent>
     </Sheet>
   );

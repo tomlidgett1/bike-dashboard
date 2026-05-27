@@ -8,9 +8,11 @@
  * - Response caching
  * - Fast thumbnail variants
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { resolveProductImage } from '@/lib/services/image-resolver';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,97 +66,49 @@ export async function GET(request: NextRequest) {
       console.error('Stores search error:', storesResult.error);
     }
 
-    // ============================================================
-    // REFACTORED: Fetch images from product_images table (source of truth)
-    // Batch-fetch primary images for all search results
-    // ============================================================
     const rawProducts = productsResult.data || [];
+    const productIds = rawProducts.map((p: any) => p.product_id).filter(Boolean);
     
-    // Collect all product IDs and canonical IDs for image lookup
-    const allProductIds = rawProducts.map((p: any) => p.product_id).filter(Boolean);
-    const allCanonicalIds = rawProducts
-      .filter((p: any) => p.canonical_product_id)
-      .map((p: any) => p.canonical_product_id);
-    
-    // Batch-fetch primary images from product_images table (NEW source of truth)
-    let productImagesMap = new Map<string, any>();
-    let canonicalImagesMap = new Map<string, any>();
-    
-    // Query by product_id
-    if (allProductIds.length > 0) {
-      const { data: productImagesData } = await supabase
-        .from('product_images')
-        .select('product_id, canonical_product_id, thumbnail_url, card_url, cloudinary_url, is_primary')
-        .in('product_id', allProductIds)
-        .eq('approval_status', 'approved')
-        .order('is_primary', { ascending: false })
-        .order('sort_order', { ascending: true });
-      
-      if (productImagesData) {
-        for (const img of productImagesData) {
-          if (img.product_id && !productImagesMap.has(img.product_id)) {
-            productImagesMap.set(img.product_id, img);
-          }
-        }
-      }
-    }
-    
-    // Query by canonical_product_id (for products without direct product_id images)
-    if (allCanonicalIds.length > 0) {
-      const { data: canonicalImagesData } = await supabase
-        .from('product_images')
-        .select('product_id, canonical_product_id, thumbnail_url, card_url, cloudinary_url, is_primary')
-        .in('canonical_product_id', allCanonicalIds)
-        .eq('approval_status', 'approved')
-        .order('is_primary', { ascending: false })
-        .order('sort_order', { ascending: true });
-      
-      if (canonicalImagesData) {
-        for (const img of canonicalImagesData) {
-          if (img.canonical_product_id && !canonicalImagesMap.has(img.canonical_product_id)) {
-            canonicalImagesMap.set(img.canonical_product_id, img);
-          }
-        }
-      }
-    }
-    
-    console.log(`🖼️ [SEARCH] Fetched ${productImagesMap.size} product images, ${canonicalImagesMap.size} canonical images`);
+    const { data: readyProducts } = productIds.length > 0
+      ? await supabase
+          .from('marketplace_ready_products')
+          .select(`
+            id,
+            resolved_image_id,
+            resolved_card_url,
+            resolved_thumbnail_url,
+            resolved_mobile_card_url,
+            resolved_gallery_url,
+            resolved_detail_url,
+            resolved_cloudinary_url,
+            resolved_cloudinary_public_id
+          `)
+          .in('id', productIds)
+      : { data: [] as any[] };
+
+    const readyById = new Map((readyProducts || []).map((product: any) => [product.id, product]));
 
     // Transform products with images from product_images table
     const products = rawProducts
       .map((product: any) => {
-        // Look up image from product_images table (NEW source of truth)
-        const productImage = productImagesMap.get(product.product_id);
-        const canonicalImage = product.canonical_product_id 
-          ? canonicalImagesMap.get(product.canonical_product_id) 
-          : null;
-        
-        const imageFromTable = productImage || canonicalImage;
-        
-        let imageUrl = null;
-        let thumbnailUrl = null;
-        let hasCloudinaryImage = false;
-        
-        // Priority 1: Images from product_images table (NEW source of truth)
-        if (imageFromTable?.cloudinary_url || imageFromTable?.card_url) {
-          hasCloudinaryImage = true;
-          thumbnailUrl = imageFromTable.thumbnail_url || null;
-          imageUrl = imageFromTable.card_url || imageFromTable.cloudinary_url;
-        }
-        // Priority 2: Fallback to cached columns during transition
-        else if (product.cached_image_url && product.cached_image_url.includes('cloudinary')) {
-          hasCloudinaryImage = true;
-          imageUrl = product.cached_image_url;
-          thumbnailUrl = product.cached_thumbnail_url || null;
-        }
-        // Priority 3: Custom store image fallback
-        else if (product.use_custom_image && product.custom_image_url?.includes('cloudinary')) {
-          hasCloudinaryImage = true;
-          imageUrl = product.custom_image_url;
-        }
+        const readyProduct = readyById.get(product.product_id);
+        if (!readyProduct) return null;
 
-        // Skip products without cloudinary images
-        if (!hasCloudinaryImage || !imageUrl) return null;
+        const resolved = resolveProductImage({
+          id: readyProduct.resolved_image_id,
+          cloudinary_public_id: readyProduct.resolved_cloudinary_public_id,
+          cloudinary_url: readyProduct.resolved_cloudinary_url,
+          thumbnail_url: readyProduct.resolved_thumbnail_url,
+          mobile_card_url: readyProduct.resolved_mobile_card_url,
+          card_url: readyProduct.resolved_card_url,
+          gallery_url: readyProduct.resolved_gallery_url,
+          detail_url: readyProduct.resolved_detail_url,
+          approval_status: 'approved',
+        });
+
+        const imageUrl = resolved?.card_url || resolved?.original_url;
+        const thumbnailUrl = resolved?.thumbnail_url;
+        if (!imageUrl) return null;
 
         return {
           id: product.product_id,

@@ -2,8 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { motion } from "framer-motion";
-import { Store, Loader2, Check } from "lucide-react";
+import { Store, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -16,7 +15,6 @@ interface StoreFilterOption {
   id: string;
   name: string;
   logo_url: string | null;
-  product_count: number;
 }
 
 interface StoreFilterPillsProps {
@@ -54,9 +52,13 @@ export function StoreFilterPills({
 
   if (loading) {
     return (
-      <div className={cn("flex items-center gap-2 py-1", className)}>
-        <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-        <span className="text-sm text-gray-500">Loading stores...</span>
+      <div className={cn("flex items-center gap-2 py-1", className)} aria-busy="true">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-8 w-24 flex-shrink-0 rounded-md bg-gray-100 animate-pulse"
+          />
+        ))}
       </div>
     );
   }
@@ -94,13 +96,12 @@ export function StoreFilterPills({
           const isSelected = selectedStoreId === store.id;
           
           return (
-            <motion.button
+            <button
               key={store.id}
+              type="button"
               onClick={() => onStoreChange(isSelected ? null : store.id)}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
               className={cn(
-                "relative flex items-center gap-2 px-3 py-1.5 rounded-md font-medium transition-all whitespace-nowrap flex-shrink-0 cursor-pointer",
+                "relative flex items-center gap-2 px-3 py-1.5 rounded-md font-medium transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer",
                 isSelected
                   ? "bg-gray-900 text-white shadow-md"
                   : "bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:shadow-sm"
@@ -125,22 +126,12 @@ export function StoreFilterPills({
               
               {/* Store Name */}
               <span className="text-sm">{store.name}</span>
-              
-              {/* Product Count Badge */}
-              <span className={cn(
-                "text-[10px] px-1.5 py-0.5 rounded-md font-medium transition-colors",
-                isSelected
-                  ? "bg-white/20 text-white"
-                  : "bg-gray-100 text-gray-500"
-              )}>
-                {store.product_count.toLocaleString()}
-              </span>
-              
+
               {/* Selected Indicator */}
               {isSelected && (
                 <Check className="h-3.5 w-3.5 ml-0.5" />
               )}
-            </motion.button>
+            </button>
           );
         })}
       </div>

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
 import { Loader2, Package } from "lucide-react";
 import { ProductCard } from "./product-card";
 import { Button } from "@/components/ui/button";
@@ -18,16 +17,6 @@ interface ProductGridProps {
   hasMore?: boolean;
   onLoadMore?: () => void;
 }
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.05,
-    },
-  },
-};
 
 export function ProductGrid({
   products,
@@ -112,12 +101,7 @@ export function ProductGrid({
   return (
     <div className="space-y-8">
       {/* Products Grid - 2 columns on mobile, 6 on XL screens */}
-      <motion.div
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-1.5 sm:gap-4"
-      >
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-1.5 sm:gap-4">
         {uniqueProducts.map((product, index) => (
           <ProductCard
             key={product.id}
@@ -125,7 +109,7 @@ export function ProductGrid({
             priority={index < 8} // Prioritize first 8 images
           />
         ))}
-      </motion.div>
+      </div>
 
       {/* Infinite Scroll Trigger */}
       {hasMore && (

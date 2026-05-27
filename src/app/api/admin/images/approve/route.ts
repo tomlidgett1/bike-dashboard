@@ -15,6 +15,7 @@ interface ApprovalRequest {
   canonicalProductId: string;
   approveImageIds: string[]; // Images to approve
   rejectPendingImages?: boolean; // Reject all other pending images
+  primaryImageId?: string; // Exactly one approved image to use as canonical primary
 }
 
 interface ImageToUpload {
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body: ApprovalRequest = await request.json();
-    const { canonicalProductId, approveImageIds, rejectPendingImages = true } = body;
+    const { canonicalProductId, approveImageIds, rejectPendingImages = true, primaryImageId } = body;
 
     if (!canonicalProductId || !approveImageIds || !Array.isArray(approveImageIds)) {
       return NextResponse.json(
@@ -140,7 +141,7 @@ export async function POST(request: NextRequest) {
         );
 
         if (response.ok) {
-          const result = await response.json();
+          await response.json();
           console.log(`[ADMIN APPROVE] ✅ Image ${image.id} uploaded to Cloudinary`);
           uploadResults.push({ id: image.id, success: true });
         } else {
@@ -181,6 +182,25 @@ export async function POST(request: NextRequest) {
       console.log(`[ADMIN APPROVE] Approved ${approveImageIds.length} images`);
     }
 
+    const finalPrimaryImageId = primaryImageId || approveImageIds[0];
+    if (finalPrimaryImageId) {
+      await supabase
+        .from('product_images')
+        .update({ is_primary: false })
+        .eq('canonical_product_id', canonicalProductId);
+
+      const { error: primaryError } = await supabase
+        .from('product_images')
+        .update({ is_primary: true, approval_status: 'approved' })
+        .eq('canonical_product_id', canonicalProductId)
+        .eq('id', finalPrimaryImageId);
+
+      if (primaryError) {
+        console.error('[ADMIN APPROVE] Primary image error:', primaryError);
+        return NextResponse.json({ error: 'Failed to set primary image' }, { status: 500 });
+      }
+    }
+
     // Reject other pending images if requested
     if (rejectPendingImages) {
       const { error: rejectError } = await supabase
@@ -209,6 +229,16 @@ export async function POST(request: NextRequest) {
       pending: updatedImages?.filter(img => img.approval_status === 'pending').length || 0,
       rejected: updatedImages?.filter(img => img.approval_status === 'rejected').length || 0,
     };
+
+    await supabase
+      .from('canonical_products')
+      .update({
+        image_review_status: finalPrimaryImageId ? 'ready' : 'in_review',
+        image_reviewed_at: finalPrimaryImageId ? new Date().toISOString() : null,
+        image_reviewed_by: finalPrimaryImageId ? user.id : null,
+        image_review_source: finalPrimaryImageId ? 'admin_approval' : null,
+      })
+      .eq('id', canonicalProductId);
 
     return NextResponse.json({
       success: true,

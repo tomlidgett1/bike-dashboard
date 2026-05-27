@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck } from "lucide-react";
 import { PickupLocationMap } from "./product-detail/pickup-location-map";
 import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
+import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
@@ -56,7 +57,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
   };
 
   return (
-    <div className="bg-white">
+    <div className="bg-white pb-5 sm:pb-6">
       {/* Header: Title, Price, Save/Share */}
       <div className="px-4 pt-4 pb-3">
         <h1 className="text-xl font-bold text-gray-900 leading-tight">
@@ -67,9 +68,10 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
             ${product.price.toLocaleString("en-AU")}
           </p>
           {/* Uber Delivery - Discreet inline badge (only for Ashburton Cycles) */}
-          {!isSold && !isOwner && product.store_name === 'Ashburton Cycles' && (
-            <UberDeliveryInlineBadge />
-          )}
+          {MARKETPLACE_PROMO_BANNERS_ENABLED &&
+            !isSold &&
+            !isOwner &&
+            product.store_name === "Ashburton Cycles" && <UberDeliveryInlineBadge />}
         </div>
         {(product as any).pickup_location && (
           <div className="flex items-center gap-1.5 mt-1.5">

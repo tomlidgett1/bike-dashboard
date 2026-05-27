@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { cloudinaryUploadAuthHeader } from "../_shared/cloudinary-auth.ts";
+import { buildCloudinaryUrls, CLOUDINARY_EAGER_TRANSFORMS } from "../_shared/cloudinary-transforms.ts";
 
 // ============================================================
 // Upload to Cloudinary Edge Function
@@ -21,12 +23,14 @@ serve(async (req) => {
 
   try {
     // Get Cloudinary credentials from environment
-    const cloudName = Deno.env.get("CLOUDINARY_CLOUD_NAME");
-    const apiKey = Deno.env.get("CLOUDINARY_API_KEY");
-    const apiSecret = Deno.env.get("CLOUDINARY_API_SECRET");
+    const cloudName = Deno.env.get("CLOUDINARY_CLOUD_NAME")?.trim();
+    const apiKey = Deno.env.get("CLOUDINARY_API_KEY")?.trim();
+    const apiSecret = Deno.env.get("CLOUDINARY_API_SECRET")?.trim();
 
     if (!cloudName || !apiKey || !apiSecret) {
-      throw new Error("Cloudinary credentials not configured");
+      throw new Error(
+        "Cloudinary credentials not configured for Edge Functions. In Supabase Dashboard → Project Settings → Edge Functions → Secrets, set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET (from Cloudinary console). Or run: supabase secrets set --project-ref <ref> CLOUDINARY_CLOUD_NAME=... CLOUDINARY_API_KEY=... CLOUDINARY_API_SECRET=...",
+      );
     }
 
     // Verify authentication
@@ -150,36 +154,21 @@ serve(async (req) => {
       dataUri = `data:${file.type};base64,${base64}`;
     }
 
-    // Generate signature for secure upload
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = `bike-marketplace/listings/${user.id}/${listingId}/${timestamp}-${index}`;
-    
-    // Create signature (Cloudinary requires signed uploads)
-    // Variants: thumbnail (100px), mobile_card (200px), card (400px), gallery (1200px landscape), detail (2000px)
-    // Card variants use c_fill,g_center for predictable center cropping (no borders)
-    // Gallery uses ar_4:3,c_pad with white background for full product display on detail pages
-    const eagerTransforms = 'w_100,c_limit,q_auto:low,f_webp|w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp|w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp|w_2000,c_limit,q_auto:best,f_webp';
-    const signatureString = `eager=${eagerTransforms}&eager_async=false&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`;
-    const encoder = new TextEncoder();
-    const data = encoder.encode(signatureString);
-    const hashBuffer = await crypto.subtle.digest("SHA-1", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
-    // Upload to Cloudinary
+    // Upload to Cloudinary (Basic Auth — no manual signature; see Cloudinary upload API docs)
     const cloudinaryForm = new FormData();
     cloudinaryForm.append("file", dataUri);
-    cloudinaryForm.append("api_key", apiKey);
-    cloudinaryForm.append("timestamp", timestamp.toString());
-    cloudinaryForm.append("signature", signature);
     cloudinaryForm.append("public_id", publicId);
-    cloudinaryForm.append("eager", eagerTransforms);
+    cloudinaryForm.append("eager", CLOUDINARY_EAGER_TRANSFORMS);
     cloudinaryForm.append("eager_async", "false");
 
     const cloudinaryResponse = await fetch(
       `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
       {
         method: "POST",
+        headers: { Authorization: cloudinaryUploadAuthHeader(apiKey, apiSecret) },
         body: cloudinaryForm,
       }
     );
@@ -195,14 +184,12 @@ serve(async (req) => {
     console.log(`✅ [CLOUDINARY] Upload successful! Original dimensions: ${result.width}x${result.height} (${(result.width * result.height / 1000000).toFixed(1)}MP)`);
     console.log(`✅ [CLOUDINARY] Format: ${result.format}, Bytes: ${(result.bytes / 1024).toFixed(1)}KB`);
     
-    // Build optimized URLs
-    const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`;
-    
-    const thumbnailUrl = `${baseUrl}/w_100,c_limit,q_auto:low,f_webp/${result.public_id}`;
-    const mobileCardUrl = `${baseUrl}/w_200,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${result.public_id}`;
-    const cardUrl = `${baseUrl}/w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp/${result.public_id}`;
-    const galleryUrl = `${baseUrl}/w_1200,ar_4:3,c_pad,b_white,q_auto:best,f_webp/${result.public_id}`;
-    const detailUrl = `${baseUrl}/w_2000,c_limit,q_auto:best,f_webp/${result.public_id}`;
+    const urls = buildCloudinaryUrls(cloudName, result.public_id);
+    const thumbnailUrl = urls.thumbnailUrl;
+    const mobileCardUrl = urls.mobileCardUrl;
+    const cardUrl = urls.cardUrl;
+    const galleryUrl = urls.galleryUrl;
+    const detailUrl = urls.detailUrl;
 
     console.log(`🔍 [CLOUDINARY] ====== UPLOAD COMPLETE ======`);
     console.log(`🔍 [CLOUDINARY] index: ${index}`);
