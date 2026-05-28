@@ -36,8 +36,9 @@ export interface UseUserVouchersResult {
   getApplicableVoucher: (amountCents: number) => VoucherInfo | null;
 }
 
-export function useUserVouchers(): UseUserVouchersResult {
+export function useUserVouchers(enabled = true): UseUserVouchersResult {
   const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [eligibleForFirstUploadPromo, setEligibleForFirstUploadPromo] = useState(false);
   const [listingCount, setListingCount] = useState(0);
   const [activeVouchers, setActiveVouchers] = useState<VoucherInfo[]>([]);
@@ -45,7 +46,7 @@ export function useUserVouchers(): UseUserVouchersResult {
   const [error, setError] = useState<string | null>(null);
 
   const fetchVouchers = useCallback(async () => {
-    if (!user) {
+    if (!enabled || !userId) {
       setIsLoading(false);
       setEligibleForFirstUploadPromo(false);
       setListingCount(0);
@@ -58,13 +59,13 @@ export function useUserVouchers(): UseUserVouchersResult {
 
     try {
       const response = await fetch('/api/vouchers/check');
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch voucher data');
       }
 
       const data = await response.json();
-      
+
       setEligibleForFirstUploadPromo(data.eligibleForFirstUploadPromo);
       setListingCount(data.listingCount);
       setActiveVouchers(data.activeVouchers || []);
@@ -74,7 +75,7 @@ export function useUserVouchers(): UseUserVouchersResult {
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
   useEffect(() => {
     fetchVouchers();

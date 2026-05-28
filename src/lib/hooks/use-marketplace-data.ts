@@ -2,6 +2,7 @@
 
 import useSWR from 'swr';
 import type { MarketplaceProduct } from '@/lib/types/marketplace';
+import { MARKETPLACE_INITIAL_PAGE_SIZE } from '@/lib/marketplace-constants';
 
 // ============================================================
 // SWR Hook for Marketplace Data - Enterprise Caching
@@ -78,7 +79,7 @@ function buildApiUrl(params: MarketplaceDataParams): string {
   const { 
     viewMode, 
     page = 1, 
-    pageSize = 200, // Default to 200 products per page
+    pageSize = MARKETPLACE_INITIAL_PAGE_SIZE,
     level1, 
     level2, 
     level3, 
@@ -190,9 +191,9 @@ export function useMarketplaceData(
       revalidateOnFocus,
       revalidateOnReconnect: false,
       dedupingInterval,
-      // Keep previous data while fetching (smooth filter transitions)
-      // This is fine now since we only use SWR for page 1
-      keepPreviousData: true,
+      // Don't keep previous key's data — lets isLoading work correctly and allows
+      // instant display from cache on re-visits (cache hit → isLoading false, no skeleton).
+      keepPreviousData: false,
       // Retry once on error
       errorRetryCount: 1,
       errorRetryInterval: 3000,
