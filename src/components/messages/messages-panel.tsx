@@ -92,6 +92,21 @@ export function MessagesPanel() {
     }
   }, [requestedConversationId, isOpen, clearRequestedConversation]);
 
+  // Auto-select the most recent conversation when the panel opens with no
+  // specific conversation requested and nothing already selected.
+  useEffect(() => {
+    if (
+      isOpen &&
+      activeTab === 'messages' &&
+      !requestedConversationId &&
+      !activeConversationId &&
+      conversations.length > 0 &&
+      !loadingList
+    ) {
+      setActiveConversationId(conversations[0].id);
+    }
+  }, [isOpen, activeTab, requestedConversationId, activeConversationId, conversations, loadingList]);
+
   // Escape key closes panel
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
