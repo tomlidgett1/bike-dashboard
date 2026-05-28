@@ -4,12 +4,13 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useParams } from "next/navigation";
-import { Loader2, User, Package } from "lucide-react";
+import { Loader2, User, Package, Wrench } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
 import { ProductCard } from "@/components/marketplace/product-card";
 import { SellerHeader, SellerCategories } from "@/components/marketplace/seller-profile";
+import { ServicesSection } from "@/components/marketplace/store-profile/services-section";
 import { useAuth } from "@/components/providers/auth-provider";
 import type { StoreProfile } from "@/lib/types/store";
 import type { SellerProfile, SellerCategory } from "@/app/api/marketplace/seller/[sellerId]/route";
@@ -96,6 +97,7 @@ export default function StoreProfilePage() {
   const [error, setError] = React.useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [selectedTab, setSelectedTab] = React.useState<'for-sale' | 'sold'>('for-sale');
+  const [selectedView, setSelectedView] = React.useState<'products' | 'services'>('products');
   const [isMobile, setIsMobile] = React.useState(false);
 
   // Check if viewing own profile
@@ -283,14 +285,15 @@ export default function StoreProfilePage() {
       <MarketplaceLayout showFooter={false}>
         <div className="pt-16 min-h-screen bg-gray-50">
           {/* Unified Header - Works for both stores and sellers */}
-          <SellerHeader 
-            seller={unifiedProfile} 
+          <SellerHeader
+            seller={unifiedProfile}
             isOwnProfile={isOwnProfile}
             onEditClick={() => {
-              window.location.href = profileType === 'store' 
-                ? '/settings/store' 
+              window.location.href = profileType === 'store'
+                ? '/settings/store'
                 : '/marketplace/settings';
             }}
+            brands={profileType === 'store' && store ? store.brands : undefined}
           />
 
           {/* Category Tabs (For Sale/Sold) - Only for individual sellers */}
@@ -341,36 +344,37 @@ export default function StoreProfilePage() {
             )
           )}
 
-          {/* Category Pills - For stores (no For Sale/Sold tabs) */}
-          {profileType === 'store' && categories.length > 0 && (
+          {/* Navigation bar - category pills + optional Services tab, for stores */}
+          {profileType === 'store' && (categories.length > 0 || (store && store.services.length > 0)) && (
             <div className="bg-white border-b border-gray-100 sticky top-16 z-30">
               <div className="max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8">
                 <div className="py-2.5 sm:py-3">
                   <div className="relative -mx-3 sm:mx-0">
-                    {/* Fade gradient at the end on mobile */}
                     <div className="absolute right-0 top-0 bottom-1 w-8 bg-gradient-to-l from-white to-transparent pointer-events-none z-10 sm:hidden" />
-                    
+
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide px-3 sm:px-0 snap-x snap-mandatory sm:snap-none">
-                      {/* All Items */}
-                      <button
-                        onClick={() => setSelectedCategory(null)}
-                        className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap flex-shrink-0 snap-start ${
-                          selectedCategory === null
-                            ? "text-gray-800 bg-white shadow-sm border border-gray-200"
-                            : "text-gray-600 bg-gray-100 hover:bg-gray-200"
-                        }`}
-                      >
-                        <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
-                        <span>All Products</span>
-                      </button>
+                      {/* All Products */}
+                      {categories.length > 0 && (
+                        <button
+                          onClick={() => { setSelectedView('products'); setSelectedCategory(null); }}
+                          className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap flex-shrink-0 snap-start ${
+                            selectedView === 'products' && selectedCategory === null
+                              ? "text-gray-800 bg-white shadow-sm border border-gray-200"
+                              : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+                          }`}
+                        >
+                          <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
+                          <span>All Products</span>
+                        </button>
+                      )}
 
                       {/* Category Pills */}
-                      {categories.map((category) => (
+                      {selectedView === 'products' && categories.map((category) => (
                         <button
                           key={category.id}
-                          onClick={() => setSelectedCategory(category.id)}
+                          onClick={() => setSelectedCategory(category.name)}
                           className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap flex-shrink-0 snap-start ${
-                            selectedCategory === category.id
+                            selectedCategory === category.name
                               ? "text-gray-800 bg-white shadow-sm border border-gray-200"
                               : "text-gray-600 bg-gray-100 hover:bg-gray-200"
                           }`}
@@ -379,7 +383,27 @@ export default function StoreProfilePage() {
                           <span className="text-gray-500">({category.product_count})</span>
                         </button>
                       ))}
-                      {/* Spacer for mobile scroll end */}
+
+                      {/* Services tab - shown if the store has services */}
+                      {store && store.services.length > 0 && (
+                        <>
+                          {categories.length > 0 && (
+                            <div className="w-px h-5 bg-gray-200 flex-shrink-0 mx-1 self-center" />
+                          )}
+                          <button
+                            onClick={() => { setSelectedView('services'); setSelectedCategory(null); }}
+                            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap flex-shrink-0 snap-start ${
+                              selectedView === 'services'
+                                ? "text-gray-800 bg-white shadow-sm border border-gray-200"
+                                : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+                            }`}
+                          >
+                            <Wrench className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
+                            <span>Services</span>
+                          </button>
+                        </>
+                      )}
+
                       <div className="w-3 flex-shrink-0 sm:hidden" />
                     </div>
                   </div>
@@ -388,56 +412,63 @@ export default function StoreProfilePage() {
             </div>
           )}
 
+          {/* Services view */}
+          {profileType === 'store' && selectedView === 'services' && store && (
+            <div className="max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+              <ServicesSection services={store.services} />
+            </div>
+          )}
+
           {/* Products by Category - Full Width Carousels */}
-          <div className="max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
-            {hasProducts ? (
-              // For sellers on mobile: show simple 2-column grid without categories
-              profileType === 'seller' && isMobile ? (
-                <div className="grid grid-cols-2 gap-3">
-                  {displayedCarousels
-                    .flatMap(carousel => carousel.products)
-                    .map((product, index) => (
-                      <ProductCard key={product.id} product={product} priority={index < 6} />
-                    ))}
-                </div>
-              ) : (
-                // For stores or desktop: show carousels by category
-                <div className="space-y-3 sm:space-y-4">
-                  {displayedCarousels.map((carousel, index) => (
-                    carousel.products.length > 0 && (
-                      <ProductCarousel
-                        key={`${carousel.name}-${index}`}
-                        categoryName={carousel.name}
-                        products={carousel.products}
-                      />
-                    )
-                  ))}
-                </div>
-              )
-            ) : (
-              <div className="flex items-center justify-center py-16 sm:py-24 px-4">
-                <div className="text-center">
-                  <div className="rounded-full bg-gray-100 p-5 sm:p-6 mb-3 sm:mb-4 inline-block">
-                    <Package className="h-10 w-10 sm:h-12 sm:w-12 text-gray-400" />
+          {selectedView === 'products' && (
+            <div className="max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+              {hasProducts ? (
+                profileType === 'seller' && isMobile ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {displayedCarousels
+                      .flatMap(carousel => carousel.products)
+                      .map((product, index) => (
+                        <ProductCard key={product.id} product={product} priority={index < 6} />
+                      ))}
                   </div>
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
-                    {profileType === 'seller' && selectedTab === 'sold'
-                      ? 'No sold items yet'
-                      : 'No products available'
-                    }
-                  </h3>
-                  <p className="text-xs sm:text-sm text-gray-600 max-w-xs mx-auto">
-                    {profileType === 'seller' && selectedTab === 'sold'
-                      ? "This seller hasn't sold any items yet."
-                      : isOwnProfile
-                        ? "You haven't listed any products yet."
-                        : "This profile doesn't have any products listed."
-                    }
-                  </p>
+                ) : (
+                  <div className="space-y-3 sm:space-y-4">
+                    {displayedCarousels.map((carousel, index) => (
+                      carousel.products.length > 0 && (
+                        <ProductCarousel
+                          key={`${carousel.name}-${index}`}
+                          categoryName={carousel.name}
+                          products={carousel.products}
+                        />
+                      )
+                    ))}
+                  </div>
+                )
+              ) : (
+                <div className="flex items-center justify-center py-16 sm:py-24 px-4">
+                  <div className="text-center">
+                    <div className="rounded-full bg-gray-100 p-5 sm:p-6 mb-3 sm:mb-4 inline-block">
+                      <Package className="h-10 w-10 sm:h-12 sm:w-12 text-gray-400" />
+                    </div>
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
+                      {profileType === 'seller' && selectedTab === 'sold'
+                        ? 'No sold items yet'
+                        : 'No products available'
+                      }
+                    </h3>
+                    <p className="text-xs sm:text-sm text-gray-600 max-w-xs mx-auto">
+                      {profileType === 'seller' && selectedTab === 'sold'
+                        ? "This seller hasn't sold any items yet."
+                        : isOwnProfile
+                          ? "You haven't listed any products yet."
+                          : "This profile doesn't have any products listed."
+                      }
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </MarketplaceLayout>
     </>

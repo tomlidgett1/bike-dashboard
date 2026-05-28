@@ -6,8 +6,12 @@ import {
   AlertCircle,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Expand,
   Loader2,
   Package,
+  RefreshCw,
   SkipForward,
   Star,
   ThumbsDown,
@@ -26,7 +30,7 @@ import {
   type SpeedWorkbenchProduct,
 } from "@/lib/admin/image-qa-speed";
 
-const BATCH_SIZE = 15;
+const DEFAULT_BATCH_SIZE = 15;
 const PREFETCH_CONCURRENCY = 4;
 const IMAGES_PER_PRODUCT = 12;
 
@@ -39,6 +43,12 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
   const [categoryOptions, setCategoryOptions] = React.useState<string[]>([]);
   const [loadingCategories, setLoadingCategories] = React.useState(true);
   const [loadingQueue, setLoadingQueue] = React.useState(false);
+  // Configurable batch size
+  const [batchSize, setBatchSize] = React.useState(DEFAULT_BATCH_SIZE);
+  // SOH / price filters
+  const [minSoh, setMinSoh] = React.useState("");
+  const [minPrice, setMinPrice] = React.useState("");
+  const [maxPrice, setMaxPrice] = React.useState("");
   const [queue, setQueue] = React.useState<SpeedQueueItem[]>([]);
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [selectedUrls, setSelectedUrls] = React.useState<Set<string>>(new Set());
@@ -46,23 +56,31 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
   const [backgroundSaveCount, setBackgroundSaveCount] = React.useState(0);
   const [approvedCount, setApprovedCount] = React.useState(0);
   const [skippedCount, setSkippedCount] = React.useState(0);
+  // Editable search query for the active product
+  const [queryDraft, setQueryDraft] = React.useState("");
+  // Lightbox — URL of the image currently shown full-screen (null = closed)
+  const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoadingCategories(true);
       try {
+        // Fetch a large sample to collect all unique categories.
+        // We combine both the raw Lightspeed `category` field and `marketplace_category`
+        // because `marketplace_category` is often null on canonical products.
         const params = new URLSearchParams({ page: "1", limit: "200", status: "needs_work" });
         const response = await fetch(`/api/admin/images/products?${params.toString()}`);
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.error || "Failed to load categories");
+        const products = (result.data || []) as SpeedWorkbenchProduct[];
         const values = Array.from(
           new Set(
-            ((result.data || []) as SpeedWorkbenchProduct[])
-              .map((p) => p.marketplace_category)
-              .filter(Boolean),
+            products
+              .flatMap((p) => [p.category, p.marketplace_category])
+              .filter((v): v is string => Boolean(v)),
           ),
-        ) as string[];
+        );
         values.sort((a, b) => a.localeCompare(b));
         if (!cancelled) setCategoryOptions(values);
       } catch {
@@ -123,10 +141,13 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
     try {
       const params = new URLSearchParams({
         page: "1",
-        limit: String(BATCH_SIZE),
+        limit: String(batchSize),
         status: "needs_work",
       });
       if (category !== "all") params.set("category", category);
+      if (minSoh.trim()) params.set("min_qoh", minSoh.trim());
+      if (minPrice.trim()) params.set("min_price", minPrice.trim());
+      if (maxPrice.trim()) params.set("max_price", maxPrice.trim());
 
       const response = await fetch(`/api/admin/images/products?${params.toString()}`);
       const result = await response.json();
@@ -134,7 +155,7 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
 
       const products = (result.data || []) as SpeedWorkbenchProduct[];
       if (products.length === 0) {
-        onSessionMessage?.("No products match this category. Try another filter.");
+        onSessionMessage?.("No products match these filters. Try adjusting them.");
         setQueue([]);
         return;
       }
@@ -171,7 +192,9 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
   React.useEffect(() => {
     setSelectedUrls(new Set());
     setPrimaryUrl(null);
-  }, [activeIndex, activeItem?.product.id]);
+    // Sync editable query with the active item's search query
+    if (activeItem) setQueryDraft(activeItem.searchQuery);
+  }, [activeIndex, activeItem?.product.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goToNextIncomplete = React.useCallback(
     (fromIndex: number) => {
@@ -324,10 +347,78 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
     onSessionMessage?.(null);
   };
 
+  const researchProduct = React.useCallback(async () => {
+    if (!activeItem) return;
+    const newQuery = queryDraft.trim();
+    if (!newQuery) return;
+
+    const idx = activeIndex;
+    // Update the stored search query and reset to loading
+    setQueue((current) => {
+      const next = [...current];
+      if (next[idx]) {
+        next[idx] = { ...next[idx], searchQuery: newQuery, status: "loading", candidates: [], dismissedUrls: [] };
+      }
+      return next;
+    });
+    setSelectedUrls(new Set());
+    setPrimaryUrl(null);
+
+    try {
+      const candidates = await fetchSerperCandidates(activeItem.product, newQuery);
+      const trimmed = candidates.slice(0, IMAGES_PER_PRODUCT);
+      setQueue((current) => {
+        const next = [...current];
+        if (!next[idx]) return current;
+        next[idx] = {
+          ...next[idx],
+          status: trimmed.length > 0 ? "ready" : "no_results",
+          candidates: trimmed,
+          error: trimmed.length > 0 ? undefined : "No images found",
+        };
+        return next;
+      });
+    } catch (error) {
+      setQueue((current) => {
+        const next = [...current];
+        if (!next[idx]) return current;
+        next[idx] = {
+          ...next[idx],
+          status: "error",
+          candidates: [],
+          error: error instanceof Error ? error.message : "Search failed",
+        };
+        return next;
+      });
+    }
+  }, [activeItem, activeIndex, queryDraft]);
+
+  // Lightbox navigation helpers
+  const lightboxIndex = lightboxUrl
+    ? visibleCandidates.findIndex((c) => c.url === lightboxUrl)
+    : -1;
+  const openLightbox = (url: string) => setLightboxUrl(url);
+  const closeLightbox = () => setLightboxUrl(null);
+  const lightboxPrev = () => {
+    if (lightboxIndex > 0) setLightboxUrl(visibleCandidates[lightboxIndex - 1].url);
+  };
+  const lightboxNext = () => {
+    if (lightboxIndex < visibleCandidates.length - 1)
+      setLightboxUrl(visibleCandidates[lightboxIndex + 1].url);
+  };
+
   const canApprove = selectedUrls.size > 0 && Boolean(primaryUrl);
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // Lightbox takes over arrow keys and Escape when open
+      if (lightboxUrl) {
+        if (event.key === "Escape") { event.preventDefault(); closeLightbox(); }
+        if (event.key === "ArrowLeft") { event.preventDefault(); lightboxPrev(); }
+        if (event.key === "ArrowRight") { event.preventDefault(); lightboxNext(); }
+        return;
+      }
+
       if (!activeItem) return;
       const target = event.target as HTMLElement | null;
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
@@ -352,9 +443,10 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeIndex, activeItem, canApprove, goToNextIncomplete, skipProduct]);
+  }, [activeIndex, activeItem, canApprove, goToNextIncomplete, lightboxUrl, lightboxNext, lightboxPrev, skipProduct]);
 
   return (
+    <>
     <div className="space-y-6">
       <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -364,15 +456,16 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
               <h2 className="text-sm font-medium text-gray-900">Rapid image review</h2>
             </div>
             <p className="max-w-2xl text-xs text-gray-500">
-              Pick a category and preload {BATCH_SIZE} products. Click images to select, star one as primary, then
+              Pick filters, set a batch size, and load products. Click images to select, star one as primary, then
               approve — searches run in the background so you are not waiting per product.
             </p>
             <div className="flex flex-wrap gap-3">
+              {/* Category */}
               <div className="min-w-[12rem]">
                 <label className="mb-1 block text-xs text-gray-500">Category</label>
                 <Select value={category} onValueChange={setCategory} disabled={loadingCategories}>
                   <SelectTrigger className="h-9 w-full rounded-md">
-                    <SelectValue placeholder={loadingCategories ? "Loading…" : "Category"} />
+                    <SelectValue placeholder={loadingCategories ? "Loading…" : "All categories"} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All categories</SelectItem>
@@ -384,6 +477,61 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Min SOH */}
+              <div className="w-28">
+                <label className="mb-1 block text-xs text-gray-500">Min SOH</label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Any"
+                  value={minSoh}
+                  onChange={(e) => setMinSoh(e.target.value)}
+                  className="h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+                />
+              </div>
+
+              {/* Price range */}
+              <div className="w-28">
+                <label className="mb-1 block text-xs text-gray-500">Min price ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Any"
+                  value={minPrice}
+                  onChange={(e) => setMinPrice(e.target.value)}
+                  className="h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+                />
+              </div>
+              <div className="w-28">
+                <label className="mb-1 block text-xs text-gray-500">Max price ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Any"
+                  value={maxPrice}
+                  onChange={(e) => setMaxPrice(e.target.value)}
+                  className="h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+                />
+              </div>
+
+              {/* Batch size */}
+              <div className="w-28">
+                <label className="mb-1 block text-xs text-gray-500">Batch size</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="200"
+                  step="1"
+                  value={batchSize}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value);
+                    if (!isNaN(v) && v >= 1) setBatchSize(Math.min(v, 200));
+                  }}
+                  className="h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 focus:border-gray-400 focus:outline-none"
+                />
+              </div>
+
               <div className="flex items-end">
                 <Button
                   type="button"
@@ -392,7 +540,7 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
                   onClick={() => void loadQueue()}
                 >
                   {loadingQueue ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                  Load {BATCH_SIZE} products
+                  Load {batchSize} products
                 </Button>
               </div>
             </div>
@@ -421,7 +569,7 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
           Click an image to select · star for primary ·{" "}
           <span className="font-medium text-gray-700">Approve</span> saves in the background — keep moving ·{" "}
           <span className="font-medium text-gray-700">N</span> skip ·{" "}
-          <span className="font-medium text-gray-700">Enter</span> approve when ready
+          <span className="font-medium text-gray-700">Enter</span> approve (or re-search when query focused)
         </p>
       </div>
 
@@ -478,7 +626,7 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
                   </div>
                   <div className="min-w-0 flex-1">
                     <span className="line-clamp-2 font-medium text-gray-900">
-                      {item.product.display_name || item.product.normalized_name}
+                      {item.product.store_product_name || item.product.display_name || item.product.normalized_name}
                     </span>
                     <span className="mt-0.5 block text-[10px] text-gray-500">
                       {item.status === "loading" && "Searching…"}
@@ -503,12 +651,42 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="text-base font-medium text-gray-900">
-                      {activeItem.product.display_name || activeItem.product.normalized_name}
+                      {activeItem.product.store_product_name || activeItem.product.display_name || activeItem.product.normalized_name}
                     </h3>
+                    {activeItem.product.store_product_name && (activeItem.product.display_name || activeItem.product.normalized_name) && (
+                      <p className="mt-0.5 text-[11px] text-gray-400 italic">
+                        {activeItem.product.display_name || activeItem.product.normalized_name}
+                      </p>
+                    )}
                     <p className="mt-1 text-xs text-gray-500">
                       {activeItem.product.manufacturer || "Unknown brand"} · UPC {activeItem.product.upc || "—"}
                     </p>
-                    <p className="mt-1 line-clamp-2 text-[11px] text-gray-400">{activeItem.searchQuery}</p>
+                    {/* Editable Serper search query */}
+                    <div className="mt-2 flex items-start gap-1.5">
+                      <textarea
+                        rows={2}
+                        value={queryDraft}
+                        onChange={(e) => setQueryDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            void researchProduct();
+                          }
+                        }}
+                        className="flex-1 resize-none rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-700 focus:border-gray-400 focus:bg-white focus:outline-none"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void researchProduct()}
+                        disabled={activeItem.status === "loading" || !queryDraft.trim()}
+                        className="h-auto rounded-md px-2 py-1.5 text-xs"
+                        title="Re-search with this query (Enter)"
+                      >
+                        <RefreshCw className={cn("h-3.5 w-3.5", activeItem.status === "loading" && "animate-spin")} />
+                      </Button>
+                    </div>
                     {selectedUrls.size > 0 && (
                       <p className="mt-2 text-xs text-gray-600">
                         {selectedUrls.size} selected
@@ -577,27 +755,38 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
                             primary && "ring-2 ring-gray-900 ring-offset-1",
                           )}
                         >
-                          <button
-                            type="button"
-                            onClick={() => toggleCandidate(candidate)}
-                            className="relative block aspect-square w-full bg-gray-100"
-                          >
-                            <Image
-                              src={candidate.thumbnailUrl || candidate.url}
-                              alt={candidate.title || "Candidate"}
-                              fill
-                              unoptimized
-                              className="object-cover"
-                            />
-                            {selected && (
-                              <CheckCircle2 className="absolute right-2 top-2 h-5 w-5 rounded-md bg-white text-gray-900" />
-                            )}
-                            {primary && (
-                              <span className="absolute left-2 top-2 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-800 shadow-sm">
-                                Primary
-                              </span>
-                            )}
-                          </button>
+                          <div className="relative aspect-square w-full bg-gray-100">
+                            <button
+                              type="button"
+                              onClick={() => toggleCandidate(candidate)}
+                              className="absolute inset-0 block"
+                            >
+                              <Image
+                                src={candidate.thumbnailUrl || candidate.url}
+                                alt={candidate.title || "Candidate"}
+                                fill
+                                unoptimized
+                                className="object-cover"
+                              />
+                              {selected && (
+                                <CheckCircle2 className="absolute right-2 top-2 h-5 w-5 rounded-md bg-white text-gray-900" />
+                              )}
+                              {primary && (
+                                <span className="absolute left-2 top-2 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-800 shadow-sm">
+                                  Primary
+                                </span>
+                              )}
+                            </button>
+                            {/* Expand button */}
+                            <button
+                              type="button"
+                              onClick={() => openLightbox(candidate.url)}
+                              className="absolute bottom-2 right-2 flex h-6 w-6 items-center justify-center rounded-md bg-white/90 shadow-sm hover:bg-white"
+                              title="Expand image"
+                            >
+                              <Expand className="h-3.5 w-3.5 text-gray-700" />
+                            </button>
+                          </div>
                           <div className="space-y-2 p-2">
                             <p className="line-clamp-2 text-xs text-gray-600">
                               {candidate.title || candidate.domain || "Image"}
@@ -648,5 +837,73 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
         </div>
       )}
     </div>
+
+      {/* ── Lightbox overlay ── */}
+
+      {lightboxUrl && (() => {
+        const lbCandidate = visibleCandidates[lightboxIndex];
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            onClick={closeLightbox}
+          >
+            {/* Close */}
+            <button
+              type="button"
+              onClick={closeLightbox}
+              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            {/* Prev */}
+            {lightboxIndex > 0 && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); lightboxPrev(); }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+                aria-label="Previous image"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+            )}
+
+            {/* Next */}
+            {lightboxIndex < visibleCandidates.length - 1 && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); lightboxNext(); }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+                aria-label="Next image"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            )}
+
+            {/* Image */}
+            <div
+              className="relative max-h-[85vh] max-w-[85vw] overflow-hidden rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={lightboxUrl}
+                alt={lbCandidate?.title || "Preview"}
+                className="block max-h-[85vh] max-w-[85vw] object-contain"
+              />
+            </div>
+
+            {/* Caption + counter */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-black/50 px-3 py-1.5 text-center text-xs text-white/80">
+              {lbCandidate?.title || lbCandidate?.domain || "Image"}{" "}
+              <span className="opacity-50">
+                · {lightboxIndex + 1} / {visibleCandidates.length}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+    </>
   );
 }

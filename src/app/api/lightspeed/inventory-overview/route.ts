@@ -141,6 +141,7 @@ export async function GET() {
         categoryId: product.category_id,
         categoryName: categoryNamesMap.get(product.category_id || '') || `Category ${product.category_id || 'Unknown'}`,
         manufacturerId: product.manufacturer_id,
+        price: parseFloat(product.price) || 0,
         totalQoh: product.total_qoh,
         totalSellable: product.total_sellable,
         stockData: product.stock_data,

@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { SellerProfile } from "@/app/api/marketplace/seller/[sellerId]/route";
+import type { StoreBrand } from "@/lib/types/store";
 
 // ============================================================
 // Seller Profile Header
@@ -46,9 +47,10 @@ interface SellerHeaderProps {
   isOwnProfile?: boolean;
   onEditClick?: () => void;
   onFollowToggle?: () => Promise<void>;
+  brands?: StoreBrand[];
 }
 
-export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle }: SellerHeaderProps) {
+export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle, brands }: SellerHeaderProps) {
   const router = useRouter();
   const [bioExpanded, setBioExpanded] = React.useState(false);
   const bioRef = React.useRef<HTMLParagraphElement>(null);
@@ -309,6 +311,29 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
               <span className="sm:hidden">{memberSince}</span>
             </div>
           </div>
+
+          {/* Brand Logos - subtle row for store profiles */}
+          {brands && brands.length > 0 && (
+            <div className="flex items-center gap-4 flex-wrap">
+              {brands.map((brand) => (
+                <div key={brand.id} className="flex-shrink-0">
+                  {brand.logo_url ? (
+                    <div className="relative h-6 w-14 grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all duration-200">
+                      <Image
+                        src={brand.logo_url}
+                        alt={brand.name}
+                        fill
+                        className="object-contain"
+                        sizes="56px"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray-400 font-medium">{brand.name}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Social Links */}
           {hasSocialLinks && (

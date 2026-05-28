@@ -556,9 +556,20 @@ export function MarketplaceHeader({
               </>
             )}
 
-            {/* Desktop: Floating pill (nav + search + icons + avatar) + Sell CTA */}
+            {/* Desktop: Nav pill + Search pill + Sell CTA */}
             <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
-              <DesktopHeaderPill searchListingType={searchListingType} />
+              {/* Standalone search pill */}
+              <div className={cn(
+                "flex items-center bg-white border border-gray-200 rounded-full shadow-sm h-12 w-80 px-2",
+                "[&_input]:!border-0 [&_input]:!bg-transparent [&_input]:!shadow-none",
+                "[&_input]:!ring-0 [&_input:focus]:!ring-0 [&_input:focus]:!border-0",
+                "[&_input]:!h-9",
+                "[&_kbd]:!hidden",
+              )}>
+                <InstantSearch listingType={searchListingType} />
+              </div>
+
+              <DesktopHeaderPill />
 
               {mounted && (
                 <DropdownMenu modal={false}>

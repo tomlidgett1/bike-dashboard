@@ -120,7 +120,7 @@ export function StoreCategoriesManager() {
     } finally {
       setLoading(false);
     }
-  }, [categories]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     fetchData();

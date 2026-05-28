@@ -45,6 +45,17 @@ export interface StoreService {
   updated_at?: string;
 }
 
+export interface StoreBrand {
+  id: string;
+  user_id: string;
+  name: string;
+  logo_url: string | null;
+  display_order: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface StoreProfile {
   id: string;
   store_name: string;
@@ -55,6 +66,7 @@ export interface StoreProfile {
   opening_hours: OpeningHours;
   categories: StoreCategoryWithProducts[];
   services: StoreService[];
+  brands: StoreBrand[];
 }
 
 export interface StoreCategoryWithProducts {
@@ -97,6 +109,20 @@ export interface UpdateServiceRequest {
   id: string;
   name?: string;
   description?: string;
+  display_order?: number;
+  is_active?: boolean;
+}
+
+export interface CreateBrandRequest {
+  name: string;
+  logo_url?: string;
+  display_order?: number;
+}
+
+export interface UpdateBrandRequest {
+  id: string;
+  name?: string;
+  logo_url?: string;
   display_order?: number;
   is_active?: boolean;
 }

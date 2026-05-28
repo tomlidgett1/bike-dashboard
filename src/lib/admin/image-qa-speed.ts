@@ -20,6 +20,14 @@ export interface SpeedWorkbenchProduct {
   marketplace_subcategory: string | null;
   image_review_search_query: string | null;
   primary_image_url?: string | null;
+  // Aggregates from linked store products (added by 20260528120000 migration)
+  total_qoh?: number | null;
+  min_price?: number | null;
+  max_price?: number | null;
+  avg_price?: number | null;
+  linked_products?: number | null;
+  // Representative store product name (actual product name, not canonical normalized_name)
+  store_product_name?: string | null;
 }
 
 export type SpeedQueueStatus =

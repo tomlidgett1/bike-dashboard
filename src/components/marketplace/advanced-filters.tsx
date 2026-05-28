@@ -915,7 +915,7 @@ export function AdvancedFilters({
   const triggerButton = variant === 'default' ? (
     <button
       className={cn(
-        "group flex h-10 min-h-10 items-center gap-1.5 sm:gap-2 rounded-lg px-3 sm:px-3.5 font-medium transition-all whitespace-nowrap flex-shrink-0 cursor-pointer box-border border-2",
+        "group flex h-10 min-h-10 items-center gap-1.5 sm:gap-2 rounded-full px-3 sm:px-4 font-medium transition-all whitespace-nowrap flex-shrink-0 cursor-pointer box-border border-2",
         activeFilterCount > 0
           ? "border-gray-900 bg-gray-900 text-white shadow-md"
           : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:shadow-sm"
@@ -929,7 +929,7 @@ export function AdvancedFilters({
       />
       <span className="text-xs sm:text-sm">Filters</span>
       {activeFilterCount > 0 && (
-        <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded-md font-medium bg-white/20 text-white">
+        <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full font-medium bg-white/20 text-white">
           {activeFilterCount}
         </span>
       )}
@@ -938,7 +938,7 @@ export function AdvancedFilters({
     // Compact variant for floating bar
     <button
       className={cn(
-        "flex h-10 min-h-10 items-center gap-1.5 rounded-lg border-2 px-3 text-xs font-medium transition-all box-border",
+        "flex h-10 min-h-10 items-center gap-1.5 rounded-full border-2 px-3 text-xs font-medium transition-all box-border",
         activeFilterCount > 0
           ? "border-gray-900 bg-gray-900 text-white"
           : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
@@ -947,7 +947,7 @@ export function AdvancedFilters({
       <SlidersHorizontal className="h-3.5 w-3.5" />
       All Filters
       {activeFilterCount > 0 && (
-        <span className="ml-0.5 bg-white/20 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-md">
+        <span className="ml-0.5 bg-white/20 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
           {activeFilterCount}
         </span>
       )}

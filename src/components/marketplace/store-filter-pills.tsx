@@ -31,7 +31,6 @@ export function StoreFilterPills({
   const [stores, setStores] = React.useState<StoreFilterOption[]>([]);
   const [loading, setLoading] = React.useState(true);
 
-  // Fetch available stores
   React.useEffect(() => {
     const fetchStores = async () => {
       setLoading(true);
@@ -56,7 +55,7 @@ export function StoreFilterPills({
         {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
-            className="h-8 w-24 flex-shrink-0 rounded-md bg-gray-100 animate-pulse"
+            className="h-8 w-24 flex-shrink-0 rounded-full bg-gray-100 animate-pulse"
           />
         ))}
       </div>
@@ -69,23 +68,21 @@ export function StoreFilterPills({
 
   return (
     <div className={cn("w-full", className)}>
-      {/* Store Filter Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1">
         {/* All Stores Pill */}
         <button
+          type="button"
           onClick={() => onStoreChange(null)}
           className={cn(
-            "relative flex items-center gap-2 px-3 py-1.5 rounded-md font-medium transition-all whitespace-nowrap flex-shrink-0 cursor-pointer",
+            "relative flex items-center gap-2 px-3 py-1.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 cursor-pointer border",
             selectedStoreId === null
-              ? "bg-gray-900 text-white shadow-md"
-              : "bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:shadow-sm"
+              ? "bg-gray-900 text-white border-transparent shadow-md"
+              : "bg-white text-gray-700 border-gray-200 hover:border-gray-300"
           )}
         >
           <Store className="h-4 w-4" />
           <span className="text-sm">All Stores</span>
-          {selectedStoreId === null && (
-            <Check className="h-3.5 w-3.5 ml-0.5" />
-          )}
+          {selectedStoreId === null && <Check className="h-3.5 w-3.5 ml-0.5" />}
         </button>
 
         {/* Divider */}
@@ -94,22 +91,21 @@ export function StoreFilterPills({
         {/* Individual Store Pills */}
         {stores.map((store) => {
           const isSelected = selectedStoreId === store.id;
-          
+
           return (
             <button
               key={store.id}
               type="button"
               onClick={() => onStoreChange(isSelected ? null : store.id)}
               className={cn(
-                "relative flex items-center gap-2 px-3 py-1.5 rounded-md font-medium transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer",
+                "flex items-center gap-2 px-3 py-1.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 cursor-pointer border",
                 isSelected
-                  ? "bg-gray-900 text-white shadow-md"
-                  : "bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:shadow-sm"
+                  ? "bg-gray-900 text-white border-transparent shadow-md"
+                  : "bg-white text-gray-700 border-gray-200 hover:border-gray-300"
               )}
             >
-              {/* Store Logo or Icon */}
               {store.logo_url ? (
-                <div className="relative h-5 w-5 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
+                <div className="relative h-5 w-5 rounded-full overflow-hidden border border-white/30 flex-shrink-0">
                   <Image
                     src={store.logo_url}
                     alt={store.name}
@@ -118,19 +114,10 @@ export function StoreFilterPills({
                   />
                 </div>
               ) : (
-                <Store className={cn(
-                  "h-4 w-4",
-                  isSelected ? "text-white" : "text-gray-400"
-                )} />
+                <Store className={cn("h-4 w-4", isSelected ? "text-white" : "text-gray-400")} />
               )}
-              
-              {/* Store Name */}
               <span className="text-sm">{store.name}</span>
-
-              {/* Selected Indicator */}
-              {isSelected && (
-                <Check className="h-3.5 w-3.5 ml-0.5" />
-              )}
+              {isSelected && <Check className="h-3.5 w-3.5 ml-0.5" />}
             </button>
           );
         })}
@@ -138,4 +125,3 @@ export function StoreFilterPills({
     </div>
   );
 }
-

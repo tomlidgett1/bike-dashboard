@@ -10,6 +10,9 @@ import { UploadProvider } from "@/components/providers/upload-provider";
 import { OrderNotificationsProvider } from "@/components/providers/order-notifications-provider";
 import { FloatingUploadBar } from "@/components/marketplace/floating-upload-bar";
 import { ConditionalLayout } from "@/components/layout";
+import { GenieProvider } from "@/components/providers/genie-provider";
+import { GeniePanel } from "@/components/genie/genie-panel";
+import { GenieButton } from "@/components/genie/genie-button";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
 import "./globals.css";
@@ -83,9 +86,13 @@ export default async function RootLayout({
                   <SellModalProvider>
                     <UploadProvider>
                       <MobileNavProvider>
-                        <ConditionalLayout>{children}</ConditionalLayout>
-                        <FloatingUploadBar />
-                        <WebVitalsReporter />
+                        <GenieProvider>
+                          <ConditionalLayout>{children}</ConditionalLayout>
+                          <FloatingUploadBar />
+                          <WebVitalsReporter />
+                          <GeniePanel />
+                          <GenieButton />
+                        </GenieProvider>
                       </MobileNavProvider>
                     </UploadProvider>
                   </SellModalProvider>

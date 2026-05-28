@@ -63,7 +63,7 @@ export interface UserProfile {
   store_type: string
   address: string
   website: string
-  logo_url?: string
+  logo_url?: string | null
   opening_hours?: OpeningHours
   account_type: string
   bicycle_store: boolean
@@ -171,22 +171,22 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
         user_id: user.id,
         name: serverProfile.name || '',
         email: user.email || '',
-        phone: '',
+        phone: serverProfile.phone || '',
         first_name: serverProfile.first_name || '',
         last_name: serverProfile.last_name || '',
         business_name: serverProfile.business_name || '',
-        store_type: '',
-        address: '',
-        website: '',
+        store_type: serverProfile.store_type || '',
+        address: serverProfile.address || '',
+        website: serverProfile.website || '',
         logo_url: serverProfile.logo_url || googlePicture || undefined,
         account_type: accountType,
         bicycle_store: serverProfile.bicycle_store ?? false,
         preferences: {},
         onboarding_completed: false,
-        email_notifications: true,
-        order_alerts: true,
-        inventory_alerts: true,
-        marketing_emails: false,
+        email_notifications: serverProfile.email_notifications ?? true,
+        order_alerts: serverProfile.order_alerts ?? true,
+        inventory_alerts: serverProfile.inventory_alerts ?? true,
+        marketing_emails: serverProfile.marketing_emails ?? false,
       })
       setInitializedFromServer(true)
       // DON'T call fetchFullProfile() - server data is sufficient for display
@@ -219,6 +219,9 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
       if (!shouldSyncGoogleLogoToDb(dbLogo)) return
       if (dbLogo === googleUrl) return
 
+      // Only overwrite if DB still has a Google URL or no logo — prevents
+      // a race condition where the user saves a custom logo between our
+      // SELECT above and this UPDATE.
       const { data: updated, error: updateError } = await supabase
         .from('users')
         .update({
@@ -226,6 +229,7 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', user.id)
+        .or('logo_url.is.null,logo_url.eq.,logo_url.ilike.%googleusercontent.com%')
         .select()
         .single()
 

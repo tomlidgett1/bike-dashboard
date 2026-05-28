@@ -434,6 +434,7 @@ export default function ConnectLightspeedPage() {
                       sku: p.sku,
                       modelYear: p.modelYear,
                       categoryId: p.categoryId,
+                      price: p.price ?? 0,
                       totalQoh: p.totalQoh,
                       totalSellable: p.totalSellable,
                       isSynced: p.isSynced,

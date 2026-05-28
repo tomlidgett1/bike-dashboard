@@ -37,7 +37,7 @@ export function StoreCategoryPills({
         <button
           onClick={() => onCategoryChange(null)}
           className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer",
+            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer",
             selectedCategory === null
               ? "text-gray-800 bg-white shadow-sm border border-gray-200"
               : "text-gray-600 bg-gray-100 hover:bg-gray-200"
@@ -60,7 +60,7 @@ export function StoreCategoryPills({
               type="button"
               onClick={() => onCategoryChange(isSelected ? null : category.name)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer",
+                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer",
                 isSelected
                   ? "text-gray-800 bg-white shadow-sm border border-gray-200"
                   : "text-gray-600 bg-gray-100 hover:bg-gray-200"
@@ -68,7 +68,7 @@ export function StoreCategoryPills({
             >
               <span>{category.name}</span>
               <span className={cn(
-                "text-xs px-1.5 py-0.5 rounded-md font-medium",
+                "text-xs px-1.5 py-0.5 rounded-full font-medium",
                 isSelected
                   ? "bg-gray-100 text-gray-600"
                   : "bg-gray-200/70 text-gray-500"

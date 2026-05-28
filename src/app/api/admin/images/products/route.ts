@@ -22,13 +22,18 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '24'), 100);
+    // Allow up to 200 for the rapid review batch loader
+    const limit = Math.min(parseInt(searchParams.get('limit') || '24'), 200);
     const status = searchParams.get('status') || 'needs_work';
     const search = searchParams.get('search') || '';
     const category = searchParams.get('category') || '';
     const subcategory = searchParams.get('subcategory') || '';
     const level3 = searchParams.get('level3') || '';
     const manufacturer = searchParams.get('manufacturer') || '';
+    // SOH / price filters (use aggregates from linked store products)
+    const minQoh = searchParams.get('min_qoh') ? parseInt(searchParams.get('min_qoh')!) : null;
+    const minPrice = searchParams.get('min_price') ? parseFloat(searchParams.get('min_price')!) : null;
+    const maxPrice = searchParams.get('max_price') ? parseFloat(searchParams.get('max_price')!) : null;
     const offset = (page - 1) * limit;
 
     let query = supabase
@@ -41,10 +46,19 @@ export async function GET(request: NextRequest) {
       query = query.or(`normalized_name.ilike.%${search}%,display_name.ilike.%${search}%,upc.ilike.%${search}%`);
     }
 
-    if (category) query = query.eq('marketplace_category', category);
+    // Category filter — prefer the raw Lightspeed `category` column which is better populated
+    // than `marketplace_category` on canonical products. Also support marketplace_category.
+    if (category) {
+      query = query.or(`category.eq.${category},marketplace_category.eq.${category}`);
+    }
     if (subcategory) query = query.eq('marketplace_subcategory', subcategory);
     if (level3) query = query.eq('marketplace_level_3_category', level3);
     if (manufacturer) query = query.eq('manufacturer', manufacturer);
+
+    // SOH / price — filter on view columns added by the 20260528120000 migration
+    if (minQoh !== null) query = query.gte('total_qoh', minQoh);
+    if (minPrice !== null) query = query.gte('min_price', minPrice);
+    if (maxPrice !== null) query = query.lte('max_price', maxPrice);
 
     if (status === 'missing') {
       query = query.eq('approved_images', 0).eq('pending_images', 0);

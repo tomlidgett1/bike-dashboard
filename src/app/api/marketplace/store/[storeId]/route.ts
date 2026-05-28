@@ -61,6 +61,18 @@ export async function GET(
       console.error('Error fetching services:', servicesError);
     }
 
+    // Fetch active brands
+    const { data: brands, error: brandsError } = await supabase
+      .from('store_brands')
+      .select('*')
+      .eq('user_id', storeId)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true });
+
+    if (brandsError) {
+      console.error('Error fetching brands:', brandsError);
+    }
+
     // Fetch display name overrides
     const { data: displayOverrides } = await supabase
       .from('store_categories')
@@ -136,94 +148,152 @@ export async function GET(
       console.error('Error fetching products:', productsError);
     }
 
-    // Group products by their category_name (same as Products page)
+    // Helper: resolve image and shape one product row into the API response format
+    const toMarketplaceProduct = (product: any) => {
+      const resolved = resolveProductImage({
+        id: product.resolved_image_id,
+        cloudinary_public_id: product.resolved_cloudinary_public_id,
+        cloudinary_url: product.resolved_cloudinary_url,
+        thumbnail_url: product.resolved_thumbnail_url,
+        mobile_card_url: product.resolved_mobile_card_url,
+        card_url: product.resolved_card_url,
+        gallery_url: product.resolved_gallery_url,
+        detail_url: product.resolved_detail_url,
+        approval_status: 'approved',
+      });
+      const primaryImageUrl = resolved?.card_url || resolved?.original_url;
+      if (!primaryImageUrl) return null;
+      return {
+        id: product.id,
+        description: product.description,
+        display_name: product.display_name,
+        price: parseFloat(product.price),
+        marketplace_category: product.marketplace_category || null,
+        marketplace_subcategory: product.marketplace_subcategory || null,
+        primary_image_url: primaryImageUrl,
+        card_url: primaryImageUrl,
+        thumbnail_url: resolved?.thumbnail_url || primaryImageUrl,
+        detail_url: resolved?.detail_url || resolved?.gallery_url || primaryImageUrl,
+        store_name: storeUser.business_name,
+        store_logo_url: storeUser.logo_url,
+        store_id: storeId,
+        category: product.category_name,
+        qoh: product.qoh,
+        model_year: product.model_year,
+        created_at: product.created_at,
+        user_id: product.user_id,
+        listing_type: 'store_inventory' as const,
+      };
+    };
+
     const categoriesWithProducts: StoreCategoryWithProducts[] = [];
 
-    if (allProducts && allProducts.length > 0) {
-      // Sort products by relevance if search is active
-      let sortedProducts = allProducts;
-      if (searchQuery && searchProductIds && searchProductIds.length > 0) {
-        const orderMap = new Map(searchProductIds.map((id, index) => [id, index]));
-        sortedProducts = [...allProducts].sort((a, b) => {
-          const orderA = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-          const orderB = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
-          return orderA - orderB;
-        });
-        console.log('[STORE SEARCH] Products sorted by relevance');
-      }
-
-      // Group products by category
-      const productsByCategory = new Map<string, any[]>();
-      
-      sortedProducts.forEach((product) => {
-        const categoryName = product.category_name || 'Uncategorized';
-        if (!productsByCategory.has(categoryName)) {
-          productsByCategory.set(categoryName, []);
-        }
-        productsByCategory.get(categoryName)!.push(product);
+    // Sort products by search relevance when a query is active
+    let sortedProducts = allProducts ?? [];
+    if (searchQuery && searchProductIds && searchProductIds.length > 0) {
+      const orderMap = new Map(searchProductIds.map((id, index) => [id, index]));
+      sortedProducts = [...sortedProducts].sort((a, b) => {
+        const orderA = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const orderB = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        return orderA - orderB;
       });
+      console.log('[STORE SEARCH] Products sorted by relevance');
+    }
 
-      // Convert to array and sort by product count (descending)
-      const sortedCategories = Array.from(productsByCategory.entries())
-        .sort((a, b) => b[1].length - a[1].length);
+    // Fetch active store-defined categories (excludes display_override renaming entries)
+    const { data: customCategories } = await supabase
+      .from('store_categories')
+      .select('id, name, source, lightspeed_category_id, product_ids, display_order')
+      .eq('user_id', storeId)
+      .eq('is_active', true)
+      .neq('source', 'display_override')
+      .order('display_order', { ascending: true });
 
-      // Build categories with products using the resolved image source of truth.
-      sortedCategories.forEach(([categoryName, products], index) => {
-        const marketplaceProducts = products
-          .map((product) => {
-            const resolved = resolveProductImage({
-              id: product.resolved_image_id,
-              cloudinary_public_id: product.resolved_cloudinary_public_id,
-              cloudinary_url: product.resolved_cloudinary_url,
-              thumbnail_url: product.resolved_thumbnail_url,
-              mobile_card_url: product.resolved_mobile_card_url,
-              card_url: product.resolved_card_url,
-              gallery_url: product.resolved_gallery_url,
-              detail_url: product.resolved_detail_url,
-              approval_status: 'approved',
-            });
+    if (customCategories && customCategories.length > 0 && sortedProducts.length > 0) {
+      // ── Mode A: use store-defined categories ──────────────────────────────
+      // Lightspeed categories match dynamically by lightspeed_category_id so new
+      // synced products appear automatically without a re-scan.
+      // Custom categories match by the explicit product_ids array.
+      const productById = new Map<string, any>(sortedProducts.map((p) => [p.id, p]));
+      const matchedIds = new Set<string>();
 
-            const primaryImageUrl = resolved?.card_url || resolved?.original_url;
-            if (!primaryImageUrl) return null;
+      for (const cat of customCategories) {
+        let catRawProducts: any[];
 
-            return {
-              id: product.id,
-              description: product.description,
-              display_name: product.display_name, // Include cleaned AI name
-              price: parseFloat(product.price),
-              marketplace_category: product.marketplace_category || null,
-              marketplace_subcategory: product.marketplace_subcategory || null,
-              primary_image_url: primaryImageUrl,
-              card_url: primaryImageUrl,
-              thumbnail_url: resolved?.thumbnail_url || primaryImageUrl,
-              detail_url: resolved?.detail_url || resolved?.gallery_url || primaryImageUrl,
-              store_name: storeUser.business_name,
-              store_logo_url: storeUser.logo_url,
-              store_id: storeId,
-              category: product.category_name,
-              qoh: product.qoh,
-              model_year: product.model_year,
-              created_at: product.created_at,
-              user_id: product.user_id,
-              listing_type: 'store_inventory' as const,
-            };
-          })
-          .filter((product): product is NonNullable<typeof product> => Boolean(product));
+        if (cat.source === 'lightspeed' && cat.lightspeed_category_id) {
+          catRawProducts = sortedProducts.filter(
+            (p) => p.lightspeed_category_id === cat.lightspeed_category_id
+          );
+        } else {
+          // custom: explicit product list
+          catRawProducts = (cat.product_ids ?? [])
+            .map((id: string) => productById.get(id))
+            .filter(Boolean);
+        }
 
-        // Only add category if it has products with images
+        catRawProducts.forEach((p) => matchedIds.add(p.id));
+
+        const marketplaceProducts = catRawProducts
+          .map(toMarketplaceProduct)
+          .filter((p): p is NonNullable<typeof p> => Boolean(p));
+
         if (marketplaceProducts.length > 0) {
-          // Use display override name if exists
-          const displayName = displayNamesMap.get(categoryName) || categoryName;
-
+          // Display-override name takes priority over the category's own name
+          const displayName =
+            displayNamesMap.get(cat.lightspeed_category_id ?? cat.name) ?? cat.name;
           categoriesWithProducts.push({
-            id: `category-${index}`,
+            id: cat.id,
             name: displayName,
-            display_order: index,
+            display_order: cat.display_order,
             products: marketplaceProducts,
             product_count: marketplaceProducts.length,
           });
         }
+      }
+
+      // Products not matched by any defined category → "Other" at the end
+      const otherRaw = sortedProducts.filter((p) => !matchedIds.has(p.id));
+      if (otherRaw.length > 0) {
+        const otherProducts = otherRaw
+          .map(toMarketplaceProduct)
+          .filter((p): p is NonNullable<typeof p> => Boolean(p));
+        if (otherProducts.length > 0) {
+          categoriesWithProducts.push({
+            id: 'category-other',
+            name: 'Other',
+            display_order: 9999,
+            products: otherProducts,
+            product_count: otherProducts.length,
+          });
+        }
+      }
+    } else if (sortedProducts.length > 0) {
+      // ── Mode B: fallback — auto-group by raw category_name ────────────────
+      const productsByCategory = new Map<string, any[]>();
+      sortedProducts.forEach((product) => {
+        const key = product.category_name || 'Uncategorized';
+        if (!productsByCategory.has(key)) productsByCategory.set(key, []);
+        productsByCategory.get(key)!.push(product);
       });
+
+      Array.from(productsByCategory.entries())
+        .sort((a, b) => b[1].length - a[1].length)
+        .forEach(([categoryName, products], index) => {
+          const marketplaceProducts = products
+            .map(toMarketplaceProduct)
+            .filter((p): p is NonNullable<typeof p> => Boolean(p));
+
+          if (marketplaceProducts.length > 0) {
+            const displayName = displayNamesMap.get(categoryName) || categoryName;
+            categoriesWithProducts.push({
+              id: `category-${index}`,
+              name: displayName,
+              display_order: index,
+              products: marketplaceProducts,
+              product_count: marketplaceProducts.length,
+            });
+          }
+        });
     }
 
     // Build store profile response
@@ -245,6 +315,7 @@ export async function GET(
       },
       categories: categoriesWithProducts,
       services: services || [],
+      brands: brands || [],
     };
 
     return NextResponse.json({ store: storeProfile });

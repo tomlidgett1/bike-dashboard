@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { Package, ChevronRight, X, TrendingUp, Store } from "lucide-react";
-import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import {
   BrowseFiltersToolbar,
@@ -99,12 +98,15 @@ export function UnifiedFilterBar({
     ? onMobileBrowseSheetOpenChange!
     : setUncontrolledBrowseOpen;
   const isStoresMode = listingTypeFilter === "stores";
-  const activeTabIndex = isStoresMode ? 2 : viewMode === "trending" ? 0 : 1;
-  const tabIndicatorTransition = {
-    type: "tween" as const,
-    duration: 0.2,
-    ease: [0.04, 0.62, 0.23, 0.98] as const,
-  };
+
+  // Optimistic tab — updates in the same microtask as the click, before the
+  // parent re-renders. Cleared once the parent's props confirm the change.
+  const [optimisticTab, setOptimisticTab] = React.useState<'trending' | 'all' | 'stores' | null>(null);
+  React.useEffect(() => { setOptimisticTab(null); }, [viewMode, listingTypeFilter]);
+
+  const isTrendingActive = optimisticTab ? optimisticTab === 'trending' : (viewMode === "trending" && !isStoresMode);
+  const isBrowseActive   = optimisticTab ? optimisticTab === 'all'      : (viewMode === "all"      && !isStoresMode);
+  const isStoresActive   = optimisticTab ? optimisticTab === 'stores'   : isStoresMode;
 
   const clearAllCategories = () => {
     onLevel1Change(null);
@@ -142,66 +144,42 @@ export function UnifiedFilterBar({
     <div className={cn(showBrowseChrome && "space-y-1.5 sm:space-y-3")}>
       <div className="flex flex-col gap-3 sm:min-h-9 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <div className="flex items-center gap-2 sm:hidden pt-1 pb-0.5 pr-3">
-          <div className="relative mx-3 min-w-0 flex-1 h-12 rounded-md bg-gray-100 p-0.5">
-            <motion.div
-              className="absolute bottom-0.5 left-0.5 top-0.5 rounded-md bg-white shadow-sm"
-              animate={{ x: `${activeTabIndex * 100}%` }}
-              transition={tabIndicatorTransition}
-              style={{ width: "calc((100% - 0.5rem) / 3)" }}
-            />
-            <div className="relative grid h-10 grid-cols-3">
+          <div className="mx-3 min-w-0 flex-1 h-12 rounded-full bg-white border border-gray-200 shadow-sm p-1 grid grid-cols-3">
               <button
                 type="button"
-                onClick={() => onViewModeChange("trending")}
-                className="relative flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
+                onClick={() => { setOptimisticTab('trending'); onViewModeChange("trending"); }}
+                className={cn(
+                  "flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                  isTrendingActive ? "bg-gray-100 text-gray-900" : "text-gray-500"
+                )}
               >
-                <span
-                  className={cn(
-                    "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-                    viewMode === "trending" && !isStoresMode
-                      ? "text-gray-900"
-                      : "text-gray-600"
-                  )}
-                >
-                  <TrendingUp className="h-4 w-4 flex-shrink-0" />
-                  <span>Hot</span>
-                </span>
+                <TrendingUp className="h-4 w-4 flex-shrink-0" />
+                <span>Hot</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => onViewModeChange("all")}
-                className="relative flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
+                onClick={() => { setOptimisticTab('all'); onViewModeChange("all"); }}
+                className={cn(
+                  "flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                  isBrowseActive ? "bg-gray-100 text-gray-900" : "text-gray-500"
+                )}
               >
-                <span
-                  className={cn(
-                    "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-                    viewMode === "all" && !isStoresMode
-                      ? "text-gray-900"
-                      : "text-gray-600"
-                  )}
-                >
-                  <Package className="h-4 w-4 flex-shrink-0" />
-                  <span>Browse</span>
-                </span>
+                <Package className="h-4 w-4 flex-shrink-0" />
+                <span>Browse</span>
               </button>
 
               <button
                 type="button"
-                onClick={onNavigateToStores}
-                className="relative flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
+                onClick={() => { setOptimisticTab('stores'); onNavigateToStores?.(); }}
+                className={cn(
+                  "flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                  isStoresActive ? "bg-gray-100 text-gray-900" : "text-gray-500"
+                )}
               >
-                <span
-                  className={cn(
-                    "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-                    isStoresMode ? "text-gray-900" : "text-gray-600"
-                  )}
-                >
-                  <Store className="h-4 w-4 flex-shrink-0" />
-                  <span>Stores</span>
-                </span>
+                <Store className="h-4 w-4 flex-shrink-0" />
+                <span>Stores</span>
               </button>
-            </div>
           </div>
           {onStoreSelect && (
             <BikeStoresPicker
@@ -214,63 +192,41 @@ export function UnifiedFilterBar({
         </div>
 
         <div className="hidden sm:flex items-center gap-2 self-start">
-        <div className="relative h-9 min-w-[328px] grid-cols-3 rounded-md bg-gray-100 p-0.5 grid">
-          <motion.div
-            className="absolute bottom-0.5 left-0.5 top-0.5 rounded-md bg-white shadow-sm"
-            animate={{ x: `${activeTabIndex * 100}%` }}
-            transition={tabIndicatorTransition}
-            style={{ width: "calc((100% - 0.25rem) / 3)" }}
-          />
+        <div className="h-11 min-w-[328px] grid-cols-3 rounded-full bg-white border border-gray-200 shadow-sm p-1 grid">
           <button
             type="button"
-            onClick={() => onViewModeChange("trending")}
-            className="relative flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
+            onClick={() => { setOptimisticTab('trending'); onViewModeChange("trending"); }}
+            className={cn(
+              "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              isTrendingActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700"
+            )}
           >
-            <span
-              className={cn(
-                "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-                viewMode === "trending" && !isStoresMode
-                  ? "text-gray-900"
-                  : "text-gray-600 hover:text-gray-800"
-              )}
-            >
-              <TrendingUp className="h-4 w-4" />
-              Trending
-            </span>
+            <TrendingUp className="h-4 w-4" />
+            Trending
           </button>
 
           <button
             type="button"
-            onClick={() => onViewModeChange("all")}
-            className="relative flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
+            onClick={() => { setOptimisticTab('all'); onViewModeChange("all"); }}
+            className={cn(
+              "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              isBrowseActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700"
+            )}
           >
-            <span
-              className={cn(
-                "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-                viewMode === "all" && !isStoresMode
-                  ? "text-gray-900"
-                  : "text-gray-600 hover:text-gray-800"
-              )}
-            >
-              <Package className="h-4 w-4" />
-              Browse
-            </span>
+            <Package className="h-4 w-4" />
+            Browse
           </button>
 
           <button
             type="button"
-            onClick={onNavigateToStores}
-            className="relative flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
+            onClick={() => { setOptimisticTab('stores'); onNavigateToStores?.(); }}
+            className={cn(
+              "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              isStoresActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700"
+            )}
           >
-            <span
-              className={cn(
-                "relative z-10 flex items-center gap-1.5 transition-colors duration-200",
-                isStoresMode ? "text-gray-900" : "text-gray-600 hover:text-gray-800"
-              )}
-            >
-              <Store className="h-4 w-4" />
-              Bike Stores
-            </span>
+            <Store className="h-4 w-4" />
+            Bike Stores
           </button>
         </div>
         {onStoreSelect && (
@@ -284,12 +240,7 @@ export function UnifiedFilterBar({
       </div>
 
       {showBrowseChrome && (
-      <div
-        className={cn(
-          "grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.04,0.62,0.23,0.98)] motion-reduce:transition-none",
-          "grid-rows-[1fr]",
-        )}
-      >
+      <div>
         <div
           className={cn(
             "min-h-0 overflow-hidden [contain:content]",

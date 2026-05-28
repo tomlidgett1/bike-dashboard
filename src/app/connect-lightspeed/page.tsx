@@ -4,9 +4,21 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Zap, AlertCircle } from "lucide-react";
+import { Loader2, Zap, AlertCircle, SlidersHorizontal, X, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
 import { MetricsHeader } from "@/components/lightspeed/metrics-header";
@@ -17,6 +29,14 @@ import { DeleteConfirmDialog } from "@/components/lightspeed/delete-confirm-dial
 import { InventoryLogsView } from "@/components/lightspeed/inventory-logs-view";
 
 type ViewMode = 'categories' | 'products' | 'logs';
+
+interface SyncFilters {
+  minSoh: string;
+  maxSoh: string;
+  minPrice: string;
+  maxPrice: string;
+  inStockOnly: boolean;
+}
 
 interface Category {
   categoryId: string;
@@ -70,6 +90,12 @@ export default function ConnectLightspeedPage() {
   const [syncResult, setSyncResult] = React.useState<any>(null);
   const [syncError, setSyncError] = React.useState('');
 
+  // Sync filter state — applied filters vs in-sheet draft
+  const emptyFilters: SyncFilters = { minSoh: '', maxSoh: '', minPrice: '', maxPrice: '', inStockOnly: false };
+  const [filterSheetOpen, setFilterSheetOpen] = React.useState(false);
+  const [syncFilters, setSyncFilters] = React.useState<SyncFilters>(emptyFilters);
+  const [draftFilters, setDraftFilters] = React.useState<SyncFilters>(emptyFilters);
+
   // Delete state
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<{ type: 'categories' | 'products', ids: string[] } | null>(null);
@@ -109,6 +135,73 @@ export default function ConnectLightspeedPage() {
     }
   };
 
+  // Count how many filter fields are active
+  const activeFilterCount = [
+    syncFilters.inStockOnly,
+    syncFilters.minSoh !== '' && !syncFilters.inStockOnly,
+    syncFilters.maxSoh !== '',
+    syncFilters.minPrice !== '',
+    syncFilters.maxPrice !== '',
+  ].filter(Boolean).length;
+
+  const resetFilters = () => {
+    setDraftFilters(emptyFilters);
+  };
+
+  const openFilterSheet = () => {
+    setDraftFilters(syncFilters); // seed draft from currently applied filters
+    setFilterSheetOpen(true);
+  };
+
+  const applyFilters = () => {
+    setSyncFilters(draftFilters);
+    setFilterSheetOpen(false);
+  };
+
+  // Returns true if the product passes the active sync filters
+  const productPassesFilters = (product: any): boolean => {
+    const minSoh = syncFilters.inStockOnly ? 1 : (syncFilters.minSoh !== '' ? parseFloat(syncFilters.minSoh) : null);
+    const maxSoh = syncFilters.maxSoh !== '' ? parseFloat(syncFilters.maxSoh) : null;
+    const minPrice = syncFilters.minPrice !== '' ? parseFloat(syncFilters.minPrice) : null;
+    const maxPrice = syncFilters.maxPrice !== '' ? parseFloat(syncFilters.maxPrice) : null;
+
+    if (minSoh !== null && (product.totalQoh ?? 0) < minSoh) return false;
+    if (maxSoh !== null && (product.totalQoh ?? 0) > maxSoh) return false;
+    if (minPrice !== null && (product.price ?? 0) < minPrice) return false;
+    if (maxPrice !== null && (product.price ?? 0) > maxPrice) return false;
+
+    return true;
+  };
+
+  // Preview: count of not-synced products that pass the *draft* filters (shown live in the sheet)
+  const draftFilterCount = [
+    draftFilters.inStockOnly,
+    draftFilters.minSoh !== '' && !draftFilters.inStockOnly,
+    draftFilters.maxSoh !== '',
+    draftFilters.minPrice !== '',
+    draftFilters.maxPrice !== '',
+  ].filter(Boolean).length;
+
+  const filteredNotSyncedCount = React.useMemo(() => {
+    if (!inventoryData || draftFilterCount === 0) return null;
+    const allNotSynced = inventoryData.categories.flatMap(cat =>
+      cat.notSyncedProducts > 0 ? cat.products : []
+    );
+    const passesDraft = (product: any): boolean => {
+      const minSoh = draftFilters.inStockOnly ? 1 : (draftFilters.minSoh !== '' ? parseFloat(draftFilters.minSoh) : null);
+      const maxSoh = draftFilters.maxSoh !== '' ? parseFloat(draftFilters.maxSoh) : null;
+      const minPrice = draftFilters.minPrice !== '' ? parseFloat(draftFilters.minPrice) : null;
+      const maxPrice = draftFilters.maxPrice !== '' ? parseFloat(draftFilters.maxPrice) : null;
+      if (minSoh !== null && (product.totalQoh ?? 0) < minSoh) return false;
+      if (maxSoh !== null && (product.totalQoh ?? 0) > maxSoh) return false;
+      if (minPrice !== null && (product.price ?? 0) < minPrice) return false;
+      if (maxPrice !== null && (product.price ?? 0) > maxPrice) return false;
+      return true;
+    };
+    return { passing: allNotSynced.filter(passesDraft).length, total: allNotSynced.length };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inventoryData, draftFilters]);
+
   const handleCategoryToggle = (categoryId: string) => {
     setSelectedCategories(prev => {
       const newSet = new Set(prev);
@@ -121,17 +214,7 @@ export default function ConnectLightspeedPage() {
     });
   };
 
-  const handleSyncSelected = async () => {
-    // Get categories that need syncing (not fully synced)
-    const categoriesToSync = Array.from(selectedCategories).filter(catId => {
-      const category = inventoryData?.categories.find(c => c.categoryId === catId);
-      return category && category.notSyncedProducts > 0;
-    });
-
-    if (categoriesToSync.length === 0 && selectedProducts.size === 0) {
-      return;
-    }
-
+  const runSseSync = async (requestBody: { categoryIds?: string[]; itemIds?: string[] }) => {
     setSyncModalOpen(true);
     setSyncStatus('syncing');
     setSyncProgress(0);
@@ -140,26 +223,11 @@ export default function ConnectLightspeedPage() {
     setSyncError('');
 
     try {
-      // Get session token for direct edge function call
       const supabase = (await import('@/lib/supabase/client')).createClient();
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No active session');
 
-      if (!session) {
-        throw new Error('No active session');
-      }
-
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const functionUrl = `${supabaseUrl}/functions/v1/sync-from-cache`;
-
-      // Prepare request body with SSE enabled
-      const requestBody = {
-        categoryIds: categoriesToSync,
-        sse: true, // Enable Server-Sent Events for real-time progress
-      };
-
-      console.log('[Sync] Starting SSE sync with categories:', categoriesToSync);
-
-      // Use fetch with streaming response for SSE
+      const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/sync-from-cache`;
       const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
@@ -167,98 +235,90 @@ export default function ConnectLightspeedPage() {
           'Authorization': `Bearer ${session.access_token}`,
           'Accept': 'text/event-stream',
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({ ...requestBody, sse: true }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Sync request failed: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Sync request failed: ${response.status}`);
+      if (!response.body) throw new Error('No response body for SSE');
 
-      if (!response.body) {
-        throw new Error('No response body for SSE');
-      }
-
-      // Read SSE stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
-        
-        if (done) {
-          console.log('[Sync SSE] Stream complete');
-          break;
-        }
+        if (done) break;
 
-        // Decode chunk and add to buffer
         buffer += decoder.decode(value, { stream: true });
-        
-        // Process complete SSE messages
         const lines = buffer.split('\n\n');
-        buffer = lines.pop() || ''; // Keep incomplete message in buffer
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
           if (!line.trim()) continue;
-
-          // Parse SSE message
           const eventMatch = line.match(/^event: (.+)$/m);
           const dataMatch = line.match(/^data: (.+)$/m);
+          if (!dataMatch) continue;
 
-          if (dataMatch) {
-            try {
-              const data = JSON.parse(dataMatch[1]);
-              console.log('[Sync SSE] Event:', eventMatch?.[1] || 'message', data);
-
-              if (eventMatch?.[1] === 'complete') {
-                // Sync complete
-                setSyncProgress(100);
-                setSyncStatus('success');
-                setSyncResult(data);
-                setSelectedCategories(new Set());
-                setSelectedProducts(new Set());
-                await fetchInventoryData();
-              } else if (eventMatch?.[1] === 'error') {
-                // Sync error
-                setSyncStatus('error');
-                setSyncError(data.error || 'Sync failed');
-              } else {
-                // Progress update
-                if (data.phase) {
-                  setSyncPhase(data.phase.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()));
-                }
-                if (data.message) {
-                  setSyncMessage(data.message);
-                }
-                if (typeof data.progress === 'number') {
-                  setSyncProgress(Math.min(data.progress, 99)); // Never show 100% until complete event
-                }
-                
-                // Enhanced details display
-                if (data.details) {
-                  const d = data.details;
-                  let detailText = data.message;
-                  
-                  if (d.itemsFetched) detailText += ` • ${d.itemsFetched} items fetched`;
-                  if (d.itemsToSync) detailText += ` • ${d.itemsToSync} to sync`;
-                  if (d.itemsSynced) detailText += ` • ${d.itemsSynced} synced`;
-                  if (d.categoryId) detailText += ` • Category ${d.categoryId}`;
-                  
-                  setSyncMessage(detailText);
-                }
+          try {
+            const data = JSON.parse(dataMatch[1]);
+            if (eventMatch?.[1] === 'complete') {
+              setSyncProgress(100);
+              setSyncStatus('success');
+              setSyncResult(data);
+              setSelectedCategories(new Set());
+              setSelectedProducts(new Set());
+              await fetchInventoryData();
+            } else if (eventMatch?.[1] === 'error') {
+              setSyncStatus('error');
+              setSyncError(data.error || 'Sync failed');
+            } else {
+              if (data.phase) setSyncPhase(data.phase.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()));
+              if (data.message) setSyncMessage(data.message);
+              if (typeof data.progress === 'number') setSyncProgress(Math.min(data.progress, 99));
+              if (data.details) {
+                const d = data.details;
+                let detailText = data.message;
+                if (d.itemsFetched) detailText += ` • ${d.itemsFetched} items fetched`;
+                if (d.itemsToSync) detailText += ` • ${d.itemsToSync} to sync`;
+                if (d.itemsSynced) detailText += ` • ${d.itemsSynced} synced`;
+                setSyncMessage(detailText);
               }
-            } catch (error) {
-              console.error('[Sync SSE] Parse error:', error);
             }
+          } catch {
+            console.error('[Sync SSE] Parse error');
           }
         }
       }
-
     } catch (error) {
       console.error('[Sync] Error:', error);
       setSyncStatus('error');
       setSyncError(error instanceof Error ? error.message : 'Unknown error');
     }
+  };
+
+  const handleSyncSelected = async () => {
+    const categoriesToSync = Array.from(selectedCategories).filter(catId => {
+      const category = inventoryData?.categories.find(c => c.categoryId === catId);
+      return category && category.notSyncedProducts > 0;
+    });
+    if (categoriesToSync.length === 0) return;
+
+    if (activeFilterCount > 0) {
+      const productsInSelection = categoriesToSync.flatMap(catId => {
+        const cat = inventoryData?.categories.find(c => c.categoryId === catId);
+        return (cat?.products ?? []).filter((p: any) => !p.isSynced);
+      });
+      const filteredItemIds = productsInSelection.filter(productPassesFilters).map((p: any) => p.itemId);
+      if (filteredItemIds.length === 0) return;
+      await runSseSync({ itemIds: filteredItemIds });
+    } else {
+      await runSseSync({ categoryIds: categoriesToSync });
+    }
+  };
+
+  const handleSyncSelectedProducts = async () => {
+    if (selectedProducts.size === 0) return;
+    await runSseSync({ itemIds: Array.from(selectedProducts) });
   };
 
   const handleRemoveSelected = () => {
@@ -482,29 +542,59 @@ export default function ConnectLightspeedPage() {
                 </div>
 
                 {/* Action Buttons */}
-                {viewMode === 'categories' && selectedCategories.size > 0 && (
-                  <div className="flex items-center gap-2">
-                    {hasNotSyncedSelected && (
-                      <Button
-                        onClick={handleSyncSelected}
-                        size="sm"
-                        className="rounded-md"
-                      >
-                        Sync to Marketplace
-                      </Button>
-                    )}
-                    {hasSyncedSelected && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRemoveSelected}
-                        className="rounded-md"
-                      >
-                        Remove from Marketplace
-                      </Button>
-                    )}
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {/* Filters button — visible in categories and products views */}
+                  {(viewMode === 'categories' || viewMode === 'products') && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-md relative"
+                      onClick={openFilterSheet}
+                    >
+                      <SlidersHorizontal className="h-4 w-4 mr-1.5" />
+                      {viewMode === 'products' ? 'Filters' : 'Sync Filters'}
+                      {activeFilterCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[10px] font-semibold text-background">
+                          {activeFilterCount}
+                        </span>
+                      )}
+                    </Button>
+                  )}
+
+                  {viewMode === 'categories' && selectedCategories.size > 0 && (
+                    <>
+                      {hasNotSyncedSelected && (
+                        <Button
+                          onClick={handleSyncSelected}
+                          size="sm"
+                          className="rounded-md"
+                        >
+                          Sync to Marketplace
+                        </Button>
+                      )}
+                      {hasSyncedSelected && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRemoveSelected}
+                          className="rounded-md"
+                        >
+                          Remove from Marketplace
+                        </Button>
+                      )}
+                    </>
+                  )}
+
+                  {viewMode === 'products' && selectedProducts.size > 0 && (
+                    <Button
+                      onClick={handleSyncSelectedProducts}
+                      size="sm"
+                      className="rounded-md"
+                    >
+                      Sync {selectedProducts.size} product{selectedProducts.size !== 1 ? 's' : ''} to Marketplace
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -520,25 +610,26 @@ export default function ConnectLightspeedPage() {
                 />
               ) : viewMode === 'products' ? (
                 <ProductTableView
-                  products={[
-                    ...inventoryData?.notSynced.products.map((p: any) => ({ ...p, isSynced: false })) || [],
-                    ...inventoryData?.synced.products.map((p: any) => ({ ...p, isSynced: true })) || [],
-                  ].map(p => ({
+                  products={(inventoryData?.notSynced.products || []).map((p: any) => ({
                     id: p.id,
                     itemId: p.itemId,
                     name: p.name,
                     sku: p.sku,
                     modelYear: p.modelYear,
                     categoryId: p.categoryId,
+                    price: p.price ?? 0,
                     totalQoh: p.totalQoh,
                     totalSellable: p.totalSellable,
-                    isSynced: p.isSynced,
+                    isSynced: false,
                   }))}
                   selectedProducts={selectedProducts}
                   onProductToggle={handleProductToggle}
                   onSelectAll={handleSelectAllProducts}
                   onClearAll={handleClearAllProducts}
                   onDeleteProducts={handleDeleteProducts}
+                  syncFilters={syncFilters}
+                  activeFilterCount={activeFilterCount}
+                  onOpenFilters={openFilterSheet}
                 />
               ) : (
                 <InventoryLogsView />
@@ -572,6 +663,170 @@ export default function ConnectLightspeedPage() {
         itemCount={deleteTarget?.ids.length || 0}
         itemType={deleteTarget?.type || 'products'}
       />
+
+      {/* Sync Filters Sheet */}
+      <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md flex flex-col gap-0 p-0">
+          <SheetHeader className="px-6 py-5 border-b border-border">
+            <div className="flex items-center justify-between">
+              <SheetTitle className="text-base">Sync Filters</SheetTitle>
+              {draftFilterCount > 0 && (
+                <button
+                  onClick={resetFilters}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Reset all
+                </button>
+              )}
+            </div>
+            <SheetDescription>
+              Filter which products are shown in All Products and included when syncing to the marketplace.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+            {/* Stock on Hand */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold">Stock on Hand (SOH)</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Filter by quantity currently in stock across all locations.
+                </p>
+              </div>
+
+              {/* In stock only toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">In stock only</Label>
+                  <p className="text-xs text-muted-foreground">Exclude products with zero stock (SOH ≥ 1)</p>
+                </div>
+                <Switch
+                  checked={draftFilters.inStockOnly}
+                  onCheckedChange={(checked) =>
+                    setDraftFilters(prev => ({ ...prev, inStockOnly: checked, minSoh: checked ? '' : prev.minSoh }))
+                  }
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="minSoh" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Min SOH
+                  </Label>
+                  <Input
+                    id="minSoh"
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 1"
+                    value={draftFilters.inStockOnly ? '1' : draftFilters.minSoh}
+                    disabled={draftFilters.inStockOnly}
+                    onChange={(e) => setDraftFilters(prev => ({ ...prev, minSoh: e.target.value }))}
+                    className="rounded-md h-9 text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="maxSoh" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Max SOH
+                  </Label>
+                  <Input
+                    id="maxSoh"
+                    type="number"
+                    min={0}
+                    placeholder="No limit"
+                    value={draftFilters.maxSoh}
+                    onChange={(e) => setDraftFilters(prev => ({ ...prev, maxSoh: e.target.value }))}
+                    className="rounded-md h-9 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Price Range */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold">Price Range</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Filter by the product's sell price from Lightspeed.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="minPrice" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Min Price
+                  </Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                    <Input
+                      id="minPrice"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      placeholder="0.00"
+                      value={draftFilters.minPrice}
+                      onChange={(e) => setDraftFilters(prev => ({ ...prev, minPrice: e.target.value }))}
+                      className="rounded-md h-9 text-sm pl-7"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="maxPrice" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Max Price
+                  </Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                    <Input
+                      id="maxPrice"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      placeholder="No limit"
+                      value={draftFilters.maxPrice}
+                      onChange={(e) => setDraftFilters(prev => ({ ...prev, maxPrice: e.target.value }))}
+                      className="rounded-md h-9 text-sm pl-7"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Live preview */}
+            {filteredNotSyncedCount !== null && (
+              <>
+                <Separator />
+                <div className="rounded-md bg-secondary/60 px-4 py-3 space-y-1">
+                  <p className="text-sm font-medium">Filter Preview</p>
+                  <p className="text-sm text-muted-foreground">
+                    <span className="font-semibold text-foreground">{filteredNotSyncedCount.passing.toLocaleString()}</span>
+                    {' '}of{' '}
+                    <span className="font-semibold text-foreground">{filteredNotSyncedCount.total.toLocaleString()}</span>
+                    {' '}unsynced products match these filters.
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+
+          <SheetFooter className="px-6 py-4 border-t border-border flex flex-row gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 rounded-md"
+              onClick={() => setFilterSheetOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 rounded-md"
+              onClick={applyFilters}
+            >
+              {draftFilterCount > 0 ? `Apply ${draftFilterCount} filter${draftFilterCount > 1 ? 's' : ''}` : 'Apply'}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

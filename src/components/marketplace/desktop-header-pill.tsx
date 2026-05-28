@@ -4,11 +4,8 @@ import * as React from "react";
 import { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  Search,
-  X,
   Mail,
   Settings,
   LogOut,
@@ -19,7 +16,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { NotificationsDropdown } from "@/components/layout/notifications-dropdown";
-import { InstantSearch } from "./instant-search";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
@@ -40,9 +36,8 @@ import {
   type MarketplaceNavItem,
 } from "@/lib/marketplace-nav";
 
-interface DesktopHeaderPillProps {
-  searchListingType: "private_listing" | "store_inventory" | null;
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface DesktopHeaderPillProps {}
 
 type LinkItem = MarketplaceNavItem & {
   type: "item";
@@ -50,7 +45,7 @@ type LinkItem = MarketplaceNavItem & {
   title: string;
 };
 
-function DesktopHeaderPillContent({ searchListingType }: DesktopHeaderPillProps) {
+function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -59,7 +54,6 @@ function DesktopHeaderPillContent({ searchListingType }: DesktopHeaderPillProps)
   const { openAuthModal } = useAuthModal();
   const supabase = createClient();
 
-  const [searchOpen, setSearchOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
   const [shouldFetchUnread, setShouldFetchUnread] = React.useState(false);
 
@@ -68,21 +62,6 @@ function DesktopHeaderPillContent({ searchListingType }: DesktopHeaderPillProps)
     const t = setTimeout(() => setShouldFetchUnread(true), 500);
     return () => clearTimeout(t);
   }, []);
-
-  // Close search on Escape
-  React.useEffect(() => {
-    if (!searchOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSearchOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen]);
-
-  // Auto-close search when route changes
-  React.useEffect(() => {
-    setSearchOpen(false);
-  }, [pathname]);
 
   const { counts } = useCombinedUnreadCount(
     user && shouldFetchUnread ? 30000 : 0
@@ -136,196 +115,136 @@ function DesktopHeaderPillContent({ searchListingType }: DesktopHeaderPillProps)
   };
 
   return (
-    <motion.div
-      layout
-      transition={{ duration: 0.35, ease: [0.04, 0.62, 0.23, 0.98] }}
-      className={cn(
-        "relative flex items-center bg-white border border-gray-200 rounded-full shadow-sm h-12",
-        searchOpen ? "w-[460px] px-2" : "px-1.5"
-      )}
-    >
-      <AnimatePresence mode="wait" initial={false}>
-        {searchOpen ? (
-          <motion.div
-            key="search"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            className="flex items-center gap-1 w-full"
-          >
-            <div
-              className={cn(
-                "flex-1 min-w-0",
-                // Strip InstantSearch input chrome so it blends into the pill
-                "[&_input]:!border-0 [&_input]:!bg-transparent [&_input]:!shadow-none",
-                "[&_input]:!ring-0 [&_input:focus]:!ring-0 [&_input:focus]:!border-0",
-                "[&_input]:!h-9 [&_input]:!pr-9",
-                "[&_kbd]:!hidden"
-              )}
-            >
-              <InstantSearch listingType={searchListingType} autoFocus />
-            </div>
-            <button
-              type="button"
-              onClick={() => setSearchOpen(false)}
-              className="h-8 w-8 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center flex-shrink-0"
-              aria-label="Close search"
-            >
-              <X className="h-4 w-4 text-gray-600" />
-            </button>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="nav"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            className="flex items-center gap-1"
-          >
-            {showNavLinks &&
-              linkItems.map((item) => {
-                const isActive = activeView === item.value;
-                return (
-                  <Link
-                    key={item.value}
-                    href={getHref(item.value)}
-                    className={cn(
-                      "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
-                      isActive
-                        ? "text-gray-900 bg-gray-100"
-                        : "text-gray-700 hover:bg-gray-100"
-                    )}
-                  >
-                    {item.title}
-                  </Link>
-                );
-              })}
+    <div className="flex items-center bg-white border border-gray-200 rounded-full shadow-sm h-12 px-1.5">
+      <div className="flex items-center gap-1">
+        {showNavLinks &&
+          linkItems.map((item) => {
+            const isActive = activeView === item.value;
+            return (
+              <Link
+                key={item.value}
+                href={getHref(item.value)}
+                className={cn(
+                  "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                  isActive
+                    ? "text-gray-900 bg-gray-100"
+                    : "text-gray-700 hover:bg-gray-100"
+                )}
+              >
+                {item.title}
+              </Link>
+            );
+          })}
 
-            {showNavLinks && (
-              <div className="w-px h-5 bg-gray-200 mx-1" aria-hidden />
-            )}
+        {showNavLinks && (
+          <div className="w-px h-5 bg-gray-200 mx-1" aria-hidden />
+        )}
+
+        {mounted && user ? (
+          <>
+            <NotificationsDropdown />
 
             <button
               type="button"
-              onClick={() => setSearchOpen(true)}
-              className="h-9 w-9 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center"
-              aria-label="Search"
+              onClick={() => router.push("/messages")}
+              className="relative h-9 w-9 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center"
+              aria-label="Messages"
             >
-              <Search
+              <Mail
                 className="h-[18px] w-[18px] text-gray-700"
                 strokeWidth={2}
               />
+              {unreadCount > 0 && (
+                <span className="absolute top-0.5 right-0.5 h-4 min-w-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
             </button>
 
-            {mounted && user ? (
-              <>
-                <NotificationsDropdown />
-
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
                 <button
-                  type="button"
-                  onClick={() => router.push("/messages")}
-                  className="relative h-9 w-9 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center"
-                  aria-label="Messages"
+                  className="ml-1 outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 cursor-pointer"
+                  aria-label="Account"
                 >
-                  <Mail
-                    className="h-[18px] w-[18px] text-gray-700"
-                    strokeWidth={2}
-                  />
-                  {unreadCount > 0 && (
-                    <span className="absolute top-0.5 right-0.5 h-4 min-w-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold">
-                      {unreadCount > 99 ? "99+" : unreadCount}
-                    </span>
+                  {showLogo ? (
+                    <div className="relative h-9 w-9 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
+                      <Image
+                        src={profile!.logo_url!}
+                        alt={getDisplayName()}
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <UserAvatar
+                      name={getDisplayName()}
+                      size="sm"
+                      className="h-9 w-9 border-gray-200"
+                    />
                   )}
                 </button>
-
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      className="ml-1 outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 cursor-pointer"
-                      aria-label="Account"
-                    >
-                      {showLogo ? (
-                        <div className="relative h-9 w-9 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
-                          <Image
-                            src={profile!.logo_url!}
-                            alt={getDisplayName()}
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <UserAvatar
-                          name={getDisplayName()}
-                          size="sm"
-                          className="h-9 w-9 border-gray-200"
-                        />
-                      )}
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="w-56 bg-white rounded-md"
-                  >
-                    <DropdownMenuItem
-                      onClick={() =>
-                        router.push(
-                          `/marketplace/store/${profile?.user_id || user?.id}`
-                        )
-                      }
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Store className="mr-2 h-4 w-4" />
-                      <span>My Store</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => router.push(getPurchasesRoute())}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <ShoppingBag className="mr-2 h-4 w-4" />
-                      <span>Order Management</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => router.push(getSettingsRoute())}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Settings className="mr-2 h-4 w-4" />
-                      <span>Settings</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={handleSignOut}
-                      className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      <span>Sign Out</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
-            ) : (
-              mounted && (
-                <Button
-                  variant="ghost"
-                  onClick={openAuthModal}
-                  className="rounded-full text-sm font-medium hover:bg-gray-100 h-9 px-4"
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="w-56 bg-white rounded-md"
+              >
+                <DropdownMenuItem
+                  onClick={() =>
+                    router.push(
+                      `/marketplace/store/${profile?.user_id || user?.id}`
+                    )
+                  }
+                  className="cursor-pointer rounded-md"
                 >
-                  Sign In
-                </Button>
-              )
-            )}
-          </motion.div>
+                  <Store className="mr-2 h-4 w-4" />
+                  <span>My Store</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => router.push(getPurchasesRoute())}
+                  className="cursor-pointer rounded-md"
+                >
+                  <ShoppingBag className="mr-2 h-4 w-4" />
+                  <span>Order Management</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => router.push(getSettingsRoute())}
+                  className="cursor-pointer rounded-md"
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={handleSignOut}
+                  className="cursor-pointer text-red-600 focus:text-red-600 rounded-md"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Sign Out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        ) : (
+          mounted && (
+            <Button
+              variant="ghost"
+              onClick={openAuthModal}
+              className="rounded-full text-sm font-medium hover:bg-gray-100 h-9 px-4"
+            >
+              Sign In
+            </Button>
+          )
         )}
-      </AnimatePresence>
-    </motion.div>
+      </div>
+    </div>
   );
 }
 
-export function DesktopHeaderPill(props: DesktopHeaderPillProps) {
+export function DesktopHeaderPill() {
   return (
     <Suspense fallback={null}>
-      <DesktopHeaderPillContent {...props} />
+      <DesktopHeaderPillContent />
     </Suspense>
   );
 }

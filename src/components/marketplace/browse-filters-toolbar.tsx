@@ -78,7 +78,7 @@ function priceValueFromFilters(f: AdvancedFiltersState): string {
 
 /** Match category pill row height (h-10). Override Trigger size presets (h-8/h-9). */
 const selectTriggerClass =
-  "h-10 min-h-10 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 shadow-none min-w-[7.5rem] gap-1.5 px-3 py-0 data-[size=default]:h-10 data-[size=sm]:h-10 [&_svg]:shrink-0";
+  "h-10 min-h-10 rounded-full border border-gray-200 bg-white text-sm text-gray-800 shadow-none min-w-[7.5rem] gap-1.5 px-4 py-0 data-[size=default]:h-10 data-[size=sm]:h-10 [&_svg]:shrink-0";
 
 export type ProductGridLayout = "grid" | "list";
 
@@ -173,7 +173,7 @@ export function BrowseFiltersToolbar({
               onClick={() => handleCategoryClick(level1)}
               onMouseEnter={() => prefetchProducts(level1)}
               className={cn(
-                "box-border flex h-10 min-h-10 shrink-0 items-center gap-2 rounded-lg border-2 px-3.5 text-sm font-medium transition-colors",
+                "box-border flex h-10 min-h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors",
                 isActive
                   ? "bg-white text-gray-900"
                   : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
@@ -306,7 +306,7 @@ export function BrowseFiltersToolbar({
 
         <div
           className={cn(
-            "flex h-10 min-h-10 shrink-0 items-stretch gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5 box-border",
+            "flex h-10 min-h-10 shrink-0 items-stretch gap-0.5 rounded-full border border-gray-200 bg-white p-1 box-border",
             sheetMode && "w-full shrink",
           )}
           role="group"
@@ -317,7 +317,7 @@ export function BrowseFiltersToolbar({
             aria-label="Grid layout"
             onClick={() => onGridLayoutChange("grid")}
             className={cn(
-              "flex flex-1 items-center justify-center rounded-md px-2 transition-colors min-w-[2.25rem]",
+              "flex flex-1 items-center justify-center rounded-full px-2 transition-colors min-w-[2.25rem]",
               gridLayout === "grid" ? "text-[#ffde59]" : "text-gray-400 hover:text-gray-600"
             )}
           >
@@ -328,7 +328,7 @@ export function BrowseFiltersToolbar({
             aria-label="List layout"
             onClick={() => onGridLayoutChange("list")}
             className={cn(
-              "flex flex-1 items-center justify-center rounded-md px-2 transition-colors min-w-[2.25rem]",
+              "flex flex-1 items-center justify-center rounded-full px-2 transition-colors min-w-[2.25rem]",
               gridLayout === "list" ? "text-[#ffde59]" : "text-gray-400 hover:text-gray-600"
             )}
           >

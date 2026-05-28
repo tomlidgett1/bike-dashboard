@@ -86,7 +86,7 @@ export function Header({ title, description }: HeaderProps) {
           
           {user && <NotificationsDropdown />}
           {user && <MessagesDropdown />}
-          
+
           <ThemeToggle />
           
           {user && (

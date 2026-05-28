@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Search, X, Trash2, Package } from "lucide-react";
+import { Search, X, Trash2, Package, SlidersHorizontal } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -15,9 +15,18 @@ interface Product {
   sku: string | null;
   modelYear: string | null;
   categoryId: string | null;
+  price: number;
   totalQoh: number;
   totalSellable: number;
   isSynced?: boolean;
+}
+
+export interface SyncFilters {
+  minSoh: string;
+  maxSoh: string;
+  minPrice: string;
+  maxPrice: string;
+  inStockOnly: boolean;
 }
 
 interface ProductTableViewProps {
@@ -27,6 +36,23 @@ interface ProductTableViewProps {
   onSelectAll: () => void;
   onClearAll: () => void;
   onDeleteProducts: (itemIds: string[]) => void;
+  syncFilters?: SyncFilters;
+  activeFilterCount?: number;
+  onOpenFilters?: () => void;
+}
+
+function passesFilters(product: Product, filters: SyncFilters): boolean {
+  const minSoh = filters.inStockOnly ? 1 : (filters.minSoh !== '' ? parseFloat(filters.minSoh) : null);
+  const maxSoh = filters.maxSoh !== '' ? parseFloat(filters.maxSoh) : null;
+  const minPrice = filters.minPrice !== '' ? parseFloat(filters.minPrice) : null;
+  const maxPrice = filters.maxPrice !== '' ? parseFloat(filters.maxPrice) : null;
+
+  if (minSoh !== null && (product.totalQoh ?? 0) < minSoh) return false;
+  if (maxSoh !== null && (product.totalQoh ?? 0) > maxSoh) return false;
+  if (minPrice !== null && (product.price ?? 0) < minPrice) return false;
+  if (maxPrice !== null && (product.price ?? 0) > maxPrice) return false;
+
+  return true;
 }
 
 export function ProductTableView({
@@ -36,18 +62,26 @@ export function ProductTableView({
   onSelectAll,
   onClearAll,
   onDeleteProducts,
+  syncFilters,
+  activeFilterCount = 0,
+  onOpenFilters,
 }: ProductTableViewProps) {
   const [search, setSearch] = React.useState("");
-  const [sortBy, setSortBy] = React.useState<'name' | 'sku' | 'stock'>('name');
+  const [sortBy, setSortBy] = React.useState<'name' | 'sku' | 'stock' | 'price'>('name');
   const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('asc');
 
   const filteredAndSortedProducts = React.useMemo(() => {
     let filtered = products;
 
+    // Apply sync filters first
+    if (syncFilters && activeFilterCount > 0) {
+      filtered = filtered.filter(p => passesFilters(p, syncFilters));
+    }
+
     // Apply search filter
     if (search) {
       const searchLower = search.toLowerCase();
-      filtered = products.filter(p => 
+      filtered = filtered.filter(p =>
         p.name?.toLowerCase().includes(searchLower) ||
         p.sku?.toLowerCase().includes(searchLower) ||
         p.itemId?.toLowerCase().includes(searchLower)
@@ -57,7 +91,7 @@ export function ProductTableView({
     // Apply sorting
     return [...filtered].sort((a, b) => {
       let comparison = 0;
-      
+
       switch (sortBy) {
         case 'name':
           comparison = (a.name || '').localeCompare(b.name || '');
@@ -68,17 +102,25 @@ export function ProductTableView({
         case 'stock':
           comparison = a.totalQoh - b.totalQoh;
           break;
+        case 'price':
+          comparison = (a.price ?? 0) - (b.price ?? 0);
+          break;
       }
 
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [products, search, sortBy, sortOrder]);
+  }, [products, search, sortBy, sortOrder, syncFilters, activeFilterCount]);
 
-  const allSelected = filteredAndSortedProducts.length > 0 && 
+  const hiddenByFilterCount = React.useMemo(() => {
+    if (!syncFilters || activeFilterCount === 0) return 0;
+    return products.filter(p => !passesFilters(p, syncFilters)).length;
+  }, [products, syncFilters, activeFilterCount]);
+
+  const allSelected = filteredAndSortedProducts.length > 0 &&
     filteredAndSortedProducts.every(p => selectedProducts.has(p.itemId));
   const someSelected = filteredAndSortedProducts.some(p => selectedProducts.has(p.itemId));
 
-  const handleSort = (field: 'name' | 'sku' | 'stock') => {
+  const handleSort = (field: 'name' | 'sku' | 'stock' | 'price') => {
     if (sortBy === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
@@ -87,10 +129,35 @@ export function ProductTableView({
     }
   };
 
+  const SortIndicator = ({ field }: { field: typeof sortBy }) =>
+    sortBy === field ? (
+      <span className="text-foreground">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+    ) : null;
+
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-800 space-y-3">
+        {/* Filter notice */}
+        {hiddenByFilterCount > 0 && (
+          <div className="flex items-center justify-between rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 px-3 py-2">
+            <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-400">
+              <SlidersHorizontal className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>
+                <span className="font-semibold">{hiddenByFilterCount.toLocaleString()}</span> product{hiddenByFilterCount !== 1 ? 's' : ''} hidden by sync filters
+              </span>
+            </div>
+            {onOpenFilters && (
+              <button
+                onClick={onOpenFilters}
+                className="text-xs text-amber-700 dark:text-amber-400 underline underline-offset-2 hover:no-underline flex-shrink-0 ml-3"
+              >
+                Edit filters
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -114,9 +181,9 @@ export function ProductTableView({
         {/* Stats and Actions */}
         <div className="flex items-center justify-between">
           <div className="text-xs text-muted-foreground">
-            Showing {filteredAndSortedProducts.length} of {products.length} products
+            Showing {filteredAndSortedProducts.length.toLocaleString()} of {products.length.toLocaleString()} products
           </div>
-          
+
           {selectedProducts.size > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium">
@@ -157,55 +224,58 @@ export function ProductTableView({
                   }}
                 />
               </th>
-              <th 
+              <th
                 className="px-4 py-3 text-left text-xs font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                 onClick={() => handleSort('name')}
               >
                 <div className="flex items-center gap-1">
                   Product Name
-                  {sortBy === 'name' && (
-                    <span className="text-foreground">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                  )}
+                  <SortIndicator field="name" />
                 </div>
               </th>
-              <th 
+              <th
                 className="px-4 py-3 text-left text-xs font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                 onClick={() => handleSort('sku')}
               >
                 <div className="flex items-center gap-1">
                   SKU
-                  {sortBy === 'sku' && (
-                    <span className="text-foreground">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                  )}
+                  <SortIndicator field="sku" />
                 </div>
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
                 Category
               </th>
-              <th 
+              <th
+                className="px-4 py-3 text-right text-xs font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+                onClick={() => handleSort('price')}
+              >
+                <div className="flex items-center justify-end gap-1">
+                  Price
+                  <SortIndicator field="price" />
+                </div>
+              </th>
+              <th
                 className="px-4 py-3 text-left text-xs font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                 onClick={() => handleSort('stock')}
               >
                 <div className="flex items-center gap-1">
-                  Stock
-                  {sortBy === 'stock' && (
-                    <span className="text-foreground">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                  )}
+                  Stock (SOH)
+                  <SortIndicator field="stock" />
                 </div>
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
                 Status
               </th>
-              <th className="w-24 px-4 py-3 text-right text-xs font-medium text-muted-foreground">
-                Actions
-              </th>
+              <th className="w-16 px-4 py-3" />
             </tr>
           </thead>
           <tbody>
             {filteredAndSortedProducts.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                  No products found
+                <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  {activeFilterCount > 0
+                    ? 'No products match the current sync filters.'
+                    : 'No products found'}
                 </td>
               </tr>
             ) : (
@@ -227,18 +297,16 @@ export function ProductTableView({
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <div className="text-sm font-medium truncate max-w-md">
+                      <div className="text-sm font-medium truncate max-w-xs">
                         {product.name || 'Unnamed Product'}
                       </div>
                       {product.modelYear && (
-                        <div className="text-xs text-muted-foreground">
-                          {product.modelYear}
-                        </div>
+                        <div className="text-xs text-muted-foreground">{product.modelYear}</div>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="text-sm text-muted-foreground font-mono">
-                        {product.sku || '-'}
+                        {product.sku || '—'}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -246,12 +314,18 @@ export function ProductTableView({
                         {product.categoryId || 'N/A'}
                       </Badge>
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className="text-sm font-medium tabular-nums">
+                        {product.price > 0
+                          ? `$${product.price.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : <span className="text-muted-foreground">—</span>
+                        }
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Package className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-sm font-medium">
-                          {product.totalQoh}
-                        </span>
+                        <span className="text-sm font-medium tabular-nums">{product.totalQoh}</span>
                         <span className="text-xs text-muted-foreground">
                           ({product.totalSellable} sellable)
                         </span>
@@ -292,4 +366,3 @@ export function ProductTableView({
     </div>
   );
 }
-
