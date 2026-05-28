@@ -223,19 +223,15 @@ export default function ConnectLightspeedPage() {
     setSyncError('');
 
     try {
-      const supabase = (await import('@/lib/supabase/client')).createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('No active session');
-
-      const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/sync-from-cache`;
-      const response = await fetch(functionUrl, {
+      // Route through Next.js proxy to avoid Supabase gateway SSE buffering.
+      // Auth is handled server-side; no client-side token needed.
+      const response = await fetch('/api/lightspeed/sync-sse', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
           'Accept': 'text/event-stream',
         },
-        body: JSON.stringify({ ...requestBody, sse: true }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) throw new Error(`Sync request failed: ${response.status}`);
@@ -264,7 +260,12 @@ export default function ConnectLightspeedPage() {
             if (eventMatch?.[1] === 'complete') {
               setSyncProgress(100);
               setSyncStatus('success');
-              setSyncResult(data);
+              // Normalise field name — edge function returns totalItemsInCategories,
+              // but SyncProgressModal expects totalItems.
+              setSyncResult({
+                ...data,
+                totalItems: data.totalItems ?? data.totalItemsInCategories ?? 0,
+              });
               setSelectedCategories(new Set());
               setSelectedProducts(new Set());
               await fetchInventoryData();

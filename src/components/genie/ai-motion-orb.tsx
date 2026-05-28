@@ -28,42 +28,41 @@ export default function AIMotionOrb({ size = 56 }: AIMotionOrbProps) {
     const cy = h / 2;
     let time = 0;
 
-    const drawCurve = (phase: number, radius: number, wobble: number, points: number, strands: number, opacity: number, lineWidth: number) => {
-      const scale = Math.min(w, h) * radius;
-      for (let s = 0; s < strands; s++) {
-        const p = phase + (s / strands) * Math.PI * 2;
+    const drawGroup = (
+      count: number,
+      phaseOffset: number,
+      radiusFactor: number,
+      wobble: number,
+      opacity: number,
+      lineWidth: number,
+      hue: number,
+      lightness: number,
+    ) => {
+      const scale = Math.min(w, h) * radiusFactor;
+      const points = 160;
+      for (let s = 0; s < count; s++) {
+        const p = phaseOffset + (s / count) * Math.PI * 2;
         ctx.beginPath();
         for (let i = 0; i <= points; i++) {
           const a = (i / points) * Math.PI * 2;
           const ripple =
-            Math.sin(a * 3 + time * 0.014 + p) * wobble +
-            Math.cos(a * 5 - time * 0.009 + p * 0.7) * wobble * 0.6;
-          const twist = time * 0.003 + p * 0.2;
-          const x = cx + Math.cos(a + twist) * scale * (0.94 + ripple) + Math.sin(a * 2.05 - time * 0.007 + p) * scale * 0.15;
-          const y = cy + Math.sin(a * 1.12 - twist) * scale * (0.78 + ripple) + Math.cos(a * 2.4 + time * 0.006 + p) * scale * 0.17;
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            Math.sin(a * 2 + time * 0.008 + p) * wobble +
+            Math.cos(a * 3.5 - time * 0.005 + p * 0.7) * wobble * 0.45;
+          const twist = time * 0.002 + p * 0.15;
+          const x =
+            cx +
+            Math.cos(a + twist) * scale * (0.9 + ripple) +
+            Math.sin(a * 1.9 - time * 0.004 + p) * scale * 0.11;
+          const y =
+            cy +
+            Math.sin(a * 1.05 - twist) * scale * (0.76 + ripple) +
+            Math.cos(a * 2.2 + time * 0.003 + p) * scale * 0.13;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
         }
-        const brightness = 43 + Math.sin(time * 0.012 + s * 0.18) * 10;
-        ctx.strokeStyle = `hsla(48, 92%, ${brightness}%, ${opacity})`;
+        ctx.strokeStyle = `hsla(${hue}, 70%, ${lightness}%, ${opacity})`;
         ctx.lineWidth = lineWidth;
         ctx.stroke();
-      }
-    };
-
-    const drawParticles = () => {
-      const outer = Math.min(w, h) * 0.43;
-      for (let i = 0; i < 50; i++) {
-        const seed = i * 999.91;
-        const angle = seed + time * 0.0009;
-        const drift = 0.55 + 0.45 * Math.sin(seed * 0.2 + time * 0.003);
-        const r = outer * drift;
-        const x = cx + Math.cos(angle) * r;
-        const y = cy + Math.sin(angle * 1.4) * r * 0.76;
-        const alpha = 0.1 + 0.15 * Math.sin(seed + time * 0.01) ** 2;
-        ctx.beginPath();
-        ctx.fillStyle = `rgba(190, 142, 0, ${alpha})`;
-        ctx.arc(x, y, 0.8, 0, Math.PI * 2);
-        ctx.fill();
       }
     };
 
@@ -71,32 +70,45 @@ export default function AIMotionOrb({ size = 56 }: AIMotionOrbProps) {
       time++;
       ctx.clearRect(0, 0, w, h);
       ctx.save();
-      ctx.shadowColor = "rgba(226, 175, 0, 0.4)";
+
+      // Soft gold glow so lines bloom slightly on dark bg
+      ctx.shadowColor = "rgba(234, 170, 0, 0.3)";
       ctx.shadowBlur = 4;
-      drawCurve(0,              0.32, 0.1,   180, 14, 0.55, 1.2);
-      drawCurve(Math.PI * 0.7,  0.34, 0.085, 180, 10, 0.45, 1.0);
-      ctx.shadowBlur = 8;
-      drawCurve(Math.PI * 1.25, 0.31, 0.075, 160,  8, 0.65, 1.4);
-      drawParticles();
+
+      // Outer layer — 7 strands
+      drawGroup(7, 0, 0.32, 0.09, 0.40, 0.9, 45, 62);
+      // Mid layer — 5 strands, slightly lighter
+      drawGroup(5, Math.PI * 0.4, 0.28, 0.07, 0.32, 0.75, 43, 72);
+      // Inner layer — 4 strands, brightest (closest to centre)
+      drawGroup(4, Math.PI * 0.9, 0.24, 0.06, 0.28, 0.65, 40, 80);
+
       ctx.restore();
       frameRef.current = requestAnimationFrame(draw);
     };
 
     draw();
-    return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    };
   }, [size]);
 
   return (
     <div
-      className="relative overflow-hidden rounded-full border-2 border-yellow-400 bg-white shadow-xl shadow-yellow-900/10"
+      className="relative overflow-hidden rounded-full border border-gray-200 shadow-sm"
       style={{ width: size, height: size }}
     >
+      {/* Dark background — gold strands pop against it */}
+      <div
+        className="pointer-events-none absolute inset-0 rounded-full"
+        style={{
+          background: "radial-gradient(circle at 50% 40%, #1c1300 0%, #000000 100%)",
+        }}
+      />
       <canvas
         ref={canvasRef}
         style={{ width: size, height: size, display: "block" }}
         className="absolute inset-0"
       />
-      <div className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-yellow-100" />
     </div>
   );
 }

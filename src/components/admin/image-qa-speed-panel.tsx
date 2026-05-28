@@ -40,7 +40,7 @@ interface ImageQaSpeedPanelProps {
 
 export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) {
   const [category, setCategory] = React.useState("all");
-  const [categoryOptions, setCategoryOptions] = React.useState<string[]>([]);
+  const [categoryOptions, setCategoryOptions] = React.useState<{ id: string; name: string }[]>([]);
   const [loadingCategories, setLoadingCategories] = React.useState(true);
   const [loadingQueue, setLoadingQueue] = React.useState(false);
   // Configurable batch size
@@ -66,23 +66,12 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
     (async () => {
       setLoadingCategories(true);
       try {
-        // Fetch a large sample to collect all unique categories.
-        // We combine both the raw Lightspeed `category` field and `marketplace_category`
-        // because `marketplace_category` is often null on canonical products.
-        const params = new URLSearchParams({ page: "1", limit: "200", status: "needs_work" });
-        const response = await fetch(`/api/admin/images/products?${params.toString()}`);
+        // Fetch category names from the dedicated endpoint — resolves real names
+        // from the Lightspeed API using the raw category IDs stored on products.
+        const response = await fetch("/api/admin/images/lightspeed-categories");
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.error || "Failed to load categories");
-        const products = (result.data || []) as SpeedWorkbenchProduct[];
-        const values = Array.from(
-          new Set(
-            products
-              .flatMap((p) => [p.category, p.marketplace_category])
-              .filter((v): v is string => Boolean(v)),
-          ),
-        );
-        values.sort((a, b) => a.localeCompare(b));
-        if (!cancelled) setCategoryOptions(values);
+        if (!cancelled) setCategoryOptions(result.categories as { id: string; name: string }[]);
       } catch {
         if (!cancelled) setCategoryOptions([]);
       } finally {
@@ -144,7 +133,7 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
         limit: String(batchSize),
         status: "needs_work",
       });
-      if (category !== "all") params.set("category", category);
+      if (category !== "all") params.set("ls_category_id", category);
       if (minSoh.trim()) params.set("min_qoh", minSoh.trim());
       if (minPrice.trim()) params.set("min_price", minPrice.trim());
       if (maxPrice.trim()) params.set("max_price", maxPrice.trim());
@@ -469,9 +458,9 @@ export function ImageQaSpeedPanel({ onSessionMessage }: ImageQaSpeedPanelProps) 
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All categories</SelectItem>
-                    {categoryOptions.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {value}
+                    {categoryOptions.map((opt) => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        {opt.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

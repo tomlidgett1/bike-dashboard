@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Send, Bike, Loader2, AlertCircle, Globe, Maximize2, Minimize2,
@@ -62,9 +63,18 @@ function formatPrice(price: number | null | undefined): string {
   return `$${price.toFixed(2)}`;
 }
 
+function stripUrlsAndLinks(s: string): string {
+  // Markdown links [text](url) → just text
+  return s
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    // Bare URLs → remove entirely
+    .replace(/https?:\/\/[^\s<>"')\]]+/g, '');
+}
+
 function parseMarkdown(text: string): string {
   const inline = (s: string) =>
-    s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    stripUrlsAndLinks(s)
+     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
      .replace(/\*(.+?)\*/g, '<em>$1</em>');
 
   const lines = text.split('\n');
@@ -322,12 +332,21 @@ export function GeniePanel() {
   const [conversations, setConversations] = useState<SavedConversation[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  // Min-height applied to the last message so a freshly-sent message can scroll to the top
+  const [lastMsgMinHeight, setLastMsgMinHeight] = useState<number | undefined>(undefined);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastUserMsgRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const suppressScrollUntilRef = useRef<number>(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  // Auto-scroll to bottom while streaming — suppressed briefly after user sends
+  useEffect(() => {
+    if (Date.now() < suppressScrollUntilRef.current) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
   useEffect(() => { if (isOpen) setTimeout(() => inputRef.current?.focus(), 300); }, [isOpen]);
   useEffect(() => { if (!isOpen) abortRef.current?.abort(); }, [isOpen]);
   useEffect(() => { if (view === 'history' && user) loadConversationList(); }, [view, user]);
@@ -351,6 +370,7 @@ export function GeniePanel() {
       }));
       setMessages(loaded);
       setConversationId(id);
+      setLastMsgMinHeight(undefined);
       setView('chat');
     } catch {}
   };
@@ -362,7 +382,7 @@ export function GeniePanel() {
     if (conversationId === id) { setConversationId(null); setMessages([]); }
   };
 
-  const startNewChat = () => { setMessages([]); setConversationId(null); setView('chat'); };
+  const startNewChat = () => { setMessages([]); setConversationId(null); setLastMsgMinHeight(undefined); setView('chat'); };
 
   const saveConversation = useCallback(async (msgs: ChatMessage[], currentId: string | null) => {
     if (!user) return null;
@@ -386,9 +406,29 @@ export function GeniePanel() {
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text.trim() };
     const assistantId = crypto.randomUUID();
 
-    setMessages(prev => [...prev, userMsg, { id: assistantId, role: 'assistant', content: '', isStreaming: true }]);
-    setInput('');
+    // Measure the visible chat area — the last message gets this as min-height so the
+    // freshly-sent message always has room to scroll to the very top (ChatGPT technique).
+    const containerH = scrollContainerRef.current?.clientHeight ?? 0;
+
+    // flushSync forces React to commit DOM synchronously — refs are live immediately after
+    suppressScrollUntilRef.current = Date.now() + 120_000; // suppress for 2 min — cleared on next send
+    flushSync(() => {
+      setLastMsgMinHeight(containerH);
+      setMessages(prev => [...prev, userMsg, { id: assistantId, role: 'assistant', content: '', isStreaming: true }]);
+      setInput('');
+    });
     setIsLoading(true);
+
+    // DOM is committed and there's now enough scroll room — snap user message to the top
+    {
+      const container = scrollContainerRef.current;
+      const el = lastUserMsgRef.current;
+      if (container && el) {
+        const elRect = el.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        container.scrollTo({ top: container.scrollTop + (elRect.top - containerRect.top) - 12, behavior: 'smooth' });
+      }
+    }
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -468,6 +508,14 @@ export function GeniePanel() {
           } catch { /* skip malformed */ }
         }
       }
+
+      // Stream closed — ensure the message is finalised even if 'done' event was missing
+      if (ss.rafId !== null) { cancelAnimationFrame(ss.rafId); flushText(); }
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId && m.isStreaming
+          ? { ...m, isStreaming: false, currentStatus: undefined }
+          : m
+      ));
     } catch (err) {
       if (ss.rafId !== null) { cancelAnimationFrame(ss.rafId); ss.rafId = null; }
       if ((err as Error).name !== 'AbortError') {
@@ -609,7 +657,7 @@ export function GeniePanel() {
             {/* ── Chat View ─────────────────────────────────── */}
             {view === 'chat' && (
               <>
-                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
                   {isEmpty ? (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
                       className="flex flex-col items-center justify-center h-full text-center px-4 pb-8">
@@ -625,7 +673,21 @@ export function GeniePanel() {
                       </div>
                     </motion.div>
                   ) : (
-                    messages.map(msg => <MessageBubble key={msg.id} message={msg} />)
+                    messages.map((msg, i) => {
+                      const isLastUser =
+                        msg.role === 'user' &&
+                        !messages.slice(i + 1).some(m => m.role === 'user');
+                      const isLast = i === messages.length - 1;
+                      return (
+                        <div
+                          key={msg.id}
+                          ref={isLastUser ? lastUserMsgRef : undefined}
+                          style={isLast && lastMsgMinHeight ? { minHeight: lastMsgMinHeight } : undefined}
+                        >
+                          <MessageBubble message={msg} />
+                        </div>
+                      );
+                    })
                   )}
                   <div ref={messagesEndRef} />
                 </div>

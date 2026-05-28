@@ -13,6 +13,8 @@ import { ConditionalLayout } from "@/components/layout";
 import { GenieProvider } from "@/components/providers/genie-provider";
 import { GeniePanel } from "@/components/genie/genie-panel";
 import { GenieButton } from "@/components/genie/genie-button";
+import { MessagesProvider } from "@/components/providers/messages-provider";
+import { MessagesPanel } from "@/components/messages/messages-panel";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
 import "./globals.css";
@@ -86,13 +88,16 @@ export default async function RootLayout({
                   <SellModalProvider>
                     <UploadProvider>
                       <MobileNavProvider>
-                        <GenieProvider>
-                          <ConditionalLayout>{children}</ConditionalLayout>
-                          <FloatingUploadBar />
-                          <WebVitalsReporter />
-                          <GeniePanel />
-                          <GenieButton />
-                        </GenieProvider>
+                        <MessagesProvider>
+                          <GenieProvider>
+                            <ConditionalLayout>{children}</ConditionalLayout>
+                            <FloatingUploadBar />
+                            <WebVitalsReporter />
+                            <MessagesPanel />
+                            <GeniePanel />
+                            <GenieButton />
+                          </GenieProvider>
+                        </MessagesProvider>
                       </MobileNavProvider>
                     </UploadProvider>
                   </SellModalProvider>

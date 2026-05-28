@@ -51,6 +51,8 @@ type SortKey = "featured" | "price-asc" | "price-desc" | "newest";
 interface StoreProfileViewProps {
   store: StoreProfile;
   isOwnProfile?: boolean;
+  /** Immersive / full-screen mode — hides YJ header, adds top breathing room */
+  immersive?: boolean;
 }
 
 const DAY_KEYS: (keyof OpeningHours)[] = [
@@ -92,7 +94,7 @@ function getOpenStatus(hours: OpeningHours | undefined): { open: boolean; label:
   return { open: true, label: `Open until ${today.close}` };
 }
 
-export function StoreProfileView({ store, isOwnProfile }: StoreProfileViewProps) {
+export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfileViewProps) {
   const [activeTab, setActiveTab] = React.useState<StoreTab>("products");
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [sort, setSort] = React.useState<SortKey>("featured");
@@ -207,9 +209,9 @@ export function StoreProfileView({ store, isOwnProfile }: StoreProfileViewProps)
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-[1400px] mx-auto px-1 sm:px-2 lg:px-3 py-3 sm:py-4">
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+    <div className={cn("min-h-screen", immersive ? "bg-white" : "bg-gray-50")}>
+      <div className={immersive ? "pt-14" : "max-w-[1400px] mx-auto px-1 sm:px-2 lg:px-3 py-3 sm:py-4"}>
+        <div className={immersive ? "" : "bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"}>
       {/* ══ HERO ══════════════════════════════════════════ */}
       <section className="bg-white border-b border-gray-100">
         {store.cover_image_url && (
@@ -235,26 +237,30 @@ export function StoreProfileView({ store, isOwnProfile }: StoreProfileViewProps)
 
               {/* Identity */}
               <div className="min-w-0 py-1">
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">
+                <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
                   {store.store_name}
                 </h1>
 
-                {store.store_type && (
-                  <p className="mt-1 text-sm sm:text-base text-gray-500 font-medium">
-                    {store.store_type}
-                  </p>
-                )}
-                {openStatus && (
-                  <p className={cn("mt-0.5 text-sm font-medium", openStatus.open ? "text-green-600" : "text-gray-400")}>
-                    {openStatus.label}
-                  </p>
-                )}
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  {store.store_type && (
+                    <span className="text-sm text-gray-500">{store.store_type}</span>
+                  )}
+                  {store.store_type && openStatus && (
+                    <span className="text-gray-300 text-sm">·</span>
+                  )}
+                  {openStatus && (
+                    <span className="flex items-center gap-1.5 text-sm text-gray-500">
+                      <span className={cn("inline-block h-1.5 w-1.5 rounded-full flex-shrink-0", openStatus.open ? "bg-emerald-500" : "bg-gray-300")} />
+                      {openStatus.label}
+                    </span>
+                  )}
+                </div>
 
                 {/* Rating (only when data exists) */}
                 {store.rating != null && (
-                  <div className="flex items-center gap-1.5 mt-2 text-sm">
-                    <Star className="h-4 w-4 fill-current text-amber-400" />
-                    <span className="font-semibold text-gray-900">{store.rating.toFixed(1)}</span>
+                  <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-500">
+                    <Star className="h-3.5 w-3.5 fill-current text-gray-400" />
+                    <span className="font-medium text-gray-700">{store.rating.toFixed(1)}</span>
                     {store.review_count != null && (
                       <span className="text-gray-400">({store.review_count} reviews)</span>
                     )}
@@ -263,8 +269,8 @@ export function StoreProfileView({ store, isOwnProfile }: StoreProfileViewProps)
 
                 {/* Address */}
                 {store.address && (
-                  <div className="flex items-center gap-1.5 mt-2 text-sm text-gray-400">
-                    <MapPin className="h-4 w-4 flex-shrink-0" />
+                  <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-400">
+                    <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="truncate">{store.address}</span>
                   </div>
                 )}
@@ -285,7 +291,10 @@ export function StoreProfileView({ store, isOwnProfile }: StoreProfileViewProps)
       </section>
 
       {/* ── Pill tab bar ─────────────────────────────────── */}
-      <div className="px-5 sm:px-8 lg:px-10 py-3 border-b border-gray-100">
+      <div className={cn(
+        "py-3 border-b border-gray-100",
+        immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
+      )}>
         <div className="overflow-x-auto scrollbar-hide">
           <div className="inline-flex h-11 items-center gap-1 rounded-full bg-white border border-gray-200 shadow-sm p-1">
             {tabs.map(({ key, label, icon: Icon }) => {
@@ -315,7 +324,10 @@ export function StoreProfileView({ store, isOwnProfile }: StoreProfileViewProps)
       {/* ══ CATEGORY / FILTER BAR (Products only) ═════════ */}
       {activeTab === "products" && allProducts.length > 0 && (
         <div className="bg-white border-b border-gray-200">
-          <div className="px-5 sm:px-8 lg:px-10 py-3">
+          <div className={cn(
+            "py-3",
+            immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
+          )}>
             <div className="flex items-center gap-2 sm:gap-3">
               {/* All Categories dropdown */}
               {store.categories.length > 1 && (
@@ -382,7 +394,12 @@ export function StoreProfileView({ store, isOwnProfile }: StoreProfileViewProps)
       )}
 
       {/* ══ TAB CONTENT ═══════════════════════════════════ */}
-      <div className="px-5 sm:px-8 lg:px-10 py-5 sm:py-7">
+      <div className={cn(
+        "py-5 sm:py-7",
+        immersive
+          ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12"
+          : "px-5 sm:px-8 lg:px-10"
+      )}>
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}

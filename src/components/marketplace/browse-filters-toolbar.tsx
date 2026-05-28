@@ -162,7 +162,7 @@ export function BrowseFiltersToolbar({
               return (
                 <button key={level1} type="button" onClick={() => handleCategoryClick(level1)}
                   className={cn(
-                    "flex h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors",
+                    "flex h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer",
                     isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
                   )}
                   style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}
@@ -214,7 +214,7 @@ export function BrowseFiltersToolbar({
             <button key={level1} type="button" onClick={() => handleCategoryClick(level1)}
               onMouseEnter={() => prefetchProducts(level1)}
               className={cn(
-                "box-border flex h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors",
+                "box-border flex h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer",
                 isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
               )}
               style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}
@@ -244,7 +244,7 @@ export function BrowseFiltersToolbar({
                 onClick={() => handleCategoryClick(level1)}
                 onMouseEnter={() => prefetchProducts(level1)}
                 className={cn(
-                  "box-border flex h-10 min-h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors",
+                  "box-border flex h-10 min-h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer",
                   isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
                 )}
                 style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}

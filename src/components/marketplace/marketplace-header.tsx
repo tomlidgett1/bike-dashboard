@@ -413,7 +413,7 @@ export function MarketplaceHeader({
       <div className="fixed top-0 left-0 right-0 z-40 px-3 sm:px-4 pt-2">
       <motion.header
         style={{ boxShadow: headerShadow }}
-        className="rounded-full bg-white/95 backdrop-blur-md border border-gray-200/80 overflow-hidden"
+        className="rounded-full bg-white/95 backdrop-blur-md border border-gray-200"
       >
         {/* Navigation Loading Bar */}
         <AnimatePresence>
@@ -441,16 +441,16 @@ export function MarketplaceHeader({
           )}
         </AnimatePresence>
         <div className="max-w-[1920px] mx-auto px-4 sm:px-5">
-          <div className="flex h-12 sm:h-14 items-center justify-start gap-2 sm:gap-3 min-w-0">
-            {/* Logo - Left side on mobile */}
+          <div className="flex h-12 sm:h-14 items-center min-w-0">
+            {/* Left: Logo */}
             <button
               onClick={() => router.push('/marketplace')}
               className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 cursor-pointer translate-y-[1px]"
             >
-              <Image 
-                src="/yj.svg" 
-                alt="Yellow Jersey" 
-                width={220} 
+              <Image
+                src="/yj.svg"
+                alt="Yellow Jersey"
+                width={220}
                 height={36}
                 className="h-26 w-auto sm:h-32"
                 priority
@@ -458,108 +458,62 @@ export function MarketplaceHeader({
               />
             </button>
 
-            {/* Desktop Search Bar (always visible) + Mobile Search (conditional) */}
-            {compactSearchOnMobile ? (
-              <>
-                {/* Tablet (sm-md): Inline search bar; lg+ uses the floating pill instead */}
-                <div className="hidden sm:block lg:hidden flex-[2] ml-[14px]">
-                  <InstantSearch listingType={searchListingType} />
-                </div>
-                {/* Mobile: Search icon, Messages button, and Hamburger (far right) */}
-                <div className="sm:hidden flex items-center gap-1 ml-auto">
-                  <button
-                    onClick={() => setMobileSearchOpen(true)}
-                    className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
-                    aria-label="Open search"
-                  >
-                    <Search className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
-                  </button>
-                  {mounted && user && (
-                    <>
-                      <NotificationsDropdown />
-                      <button
-                        onClick={() => router.push('/messages')}
-                        className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center overflow-visible"
-                        aria-label="Messages"
-                      >
-                        <Mail className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
-                        {unreadCount > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[11px] flex items-center justify-center font-bold shadow-sm z-10">
-                            {unreadCount > 99 ? '99+' : unreadCount}
-                          </span>
-                        )}
-                      </button>
-                    </>
-                  )}
-                  {/* Mobile Menu Button - Far right */}
-                  <button
-                    onClick={() => setMobileMenuOpen(true)}
-                    className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
-                    aria-label="Open menu"
-                  >
-                    <Menu className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Tablet (sm-md): Inline search bar; lg+ uses the floating pill instead */}
-                <div className="hidden sm:block lg:hidden flex-[2] ml-[14px]">
-                  <InstantSearch listingType={searchListingType} />
-                </div>
-                {/* Mobile: Search icon, Messages button, and Hamburger (far right) */}
-                <div className="sm:hidden flex items-center gap-1 ml-auto">
-                  <button
-                    onClick={() => setMobileSearchOpen(true)}
-                    className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
-                    aria-label="Open search"
-                  >
-                    <Search className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
-                  </button>
-                  {mounted && user && (
-                    <>
-                      <NotificationsDropdown />
-                      <button
-                        onClick={() => setMessagesSheetOpen(true)}
-                        className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center overflow-visible"
-                        aria-label="Messages"
-                      >
-                        <Mail className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
-                        {unreadCount > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[11px] flex items-center justify-center font-bold shadow-sm z-10">
-                            {unreadCount > 99 ? '99+' : unreadCount}
-                          </span>
-                        )}
-                      </button>
-                    </>
-                  )}
-                  {/* Mobile Menu Button - Far right */}
-                  <button
-                    onClick={() => setMobileMenuOpen(true)}
-                    className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
-                    aria-label="Open menu"
-                  >
-                    <Menu className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* Desktop: search + nav + sell */}
-            <div className="hidden lg:flex items-center gap-1 flex-shrink-0 ml-auto">
-              {/* Search — flat, no extra pill wrapper */}
+            {/* Center: search (flex-1 keeps it from ever overlapping the right side) */}
+            <div className="flex-1 flex items-center justify-center px-3 sm:px-4 min-w-0">
+              {/* Tablet (sm–md) */}
+              <div className="hidden sm:block lg:hidden w-full max-w-sm">
+                <InstantSearch listingType={searchListingType} />
+              </div>
+              {/* Desktop search pill */}
               <div className={cn(
-                "w-72 xl:w-88",
+                "hidden lg:flex items-center border border-gray-200 rounded-full h-9 px-2 w-[583px]",
                 "[&_input]:!border-0 [&_input]:!bg-transparent [&_input]:!shadow-none",
                 "[&_input]:!ring-0 [&_input:focus]:!ring-0 [&_input:focus]:!border-0",
-                "[&_input]:!h-9",
+                "[&_input]:!h-8",
                 "[&_kbd]:!hidden",
               )}>
                 <InstantSearch listingType={searchListingType} />
               </div>
+            </div>
 
-              <div className="w-px h-5 bg-gray-200 mx-2 flex-shrink-0" />
+            {/* Right: mobile icons / desktop nav + sell */}
+            {/* Mobile */}
+            <div className="sm:hidden flex items-center gap-1 flex-shrink-0">
+              <button
+                onClick={() => setMobileSearchOpen(true)}
+                className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
+                aria-label="Open search"
+              >
+                <Search className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
+              </button>
+              {mounted && user && (
+                <>
+                  <NotificationsDropdown />
+                  <button
+                    onClick={() => compactSearchOnMobile ? router.push('/messages') : setMessagesSheetOpen(true)}
+                    className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center overflow-visible"
+                    aria-label="Messages"
+                  >
+                    <Mail className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[11px] flex items-center justify-center font-bold shadow-sm z-10">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
+                aria-label="Open menu"
+              >
+                <Menu className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
+              </button>
+            </div>
 
+            {/* Desktop nav + sell */}
+            <div className="hidden lg:flex items-center gap-1 flex-shrink-0">
               <DesktopHeaderPill />
 
               <div className="w-px h-5 bg-gray-200 mx-1 flex-shrink-0" />

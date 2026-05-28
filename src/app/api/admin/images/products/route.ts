@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || 'needs_work';
     const search = searchParams.get('search') || '';
     const category = searchParams.get('category') || '';
+    const lsCategoryId = searchParams.get('ls_category_id') || '';
     const subcategory = searchParams.get('subcategory') || '';
     const level3 = searchParams.get('level3') || '';
     const manufacturer = searchParams.get('manufacturer') || '';
@@ -46,10 +47,12 @@ export async function GET(request: NextRequest) {
       query = query.or(`normalized_name.ilike.%${search}%,display_name.ilike.%${search}%,upc.ilike.%${search}%`);
     }
 
-    // Category filter — prefer the raw Lightspeed `category` column which is better populated
-    // than `marketplace_category` on canonical products. Also support marketplace_category.
-    if (category) {
-      query = query.or(`category.eq.${category},marketplace_category.eq.${category}`);
+    // Filter by Lightspeed category ID (preferred — always populated by both sync paths)
+    if (lsCategoryId) {
+      query = query.eq('ls_category_id', lsCategoryId);
+    } else if (category) {
+      // Legacy: filter by canonical category / marketplace_category or stored category name
+      query = query.or(`ls_category_name.eq.${category},category.eq.${category},marketplace_category.eq.${category}`);
     }
     if (subcategory) query = query.eq('marketplace_subcategory', subcategory);
     if (level3) query = query.eq('marketplace_level_3_category', level3);

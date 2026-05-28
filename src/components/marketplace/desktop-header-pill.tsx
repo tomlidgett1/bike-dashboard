@@ -22,6 +22,7 @@ import { useUserProfile } from "@/components/providers/profile-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { createClient } from "@/lib/supabase/client";
 import { useCombinedUnreadCount } from "@/lib/hooks/use-combined-unread-count";
+import { useMessages } from "@/components/providers/messages-provider";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,6 +58,7 @@ function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
     user && shouldFetchUnread ? 30000 : 0
   );
   const unreadCount = counts.total;
+  const { open: openInbox } = useMessages();
 
   const isVerifiedStore =
     profile?.account_type === "bicycle_store" && profile?.bicycle_store === true;
@@ -149,9 +151,9 @@ function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
 
             <button
               type="button"
-              onClick={() => router.push("/messages")}
-              className="relative h-9 w-9 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center"
-              aria-label="Messages"
+              onClick={openInbox}
+              className="relative h-9 w-9 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center cursor-pointer"
+              aria-label="Open inbox"
             >
               <Mail
                 className="h-[18px] w-[18px] text-gray-700"

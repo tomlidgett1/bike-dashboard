@@ -1,12 +1,6 @@
-// ============================================================
-// MESSAGES DROPDOWN COMPONENT
-// ============================================================
-// Header dropdown for viewing notifications and unread messages
-
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -18,31 +12,32 @@ import {
 import { MessageCircle, Mail } from 'lucide-react';
 import { useCombinedUnreadCount } from '@/lib/hooks/use-combined-unread-count';
 import { useNotifications } from '@/lib/hooks/use-notifications';
+import { useMessages } from '@/components/providers/messages-provider';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 export function MessagesDropdown() {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const { counts, refresh: refreshCount } = useCombinedUnreadCount();
   const count = counts.messages;
   const { notifications, markAsRead, refresh: refreshNotifications } = useNotifications(5, true);
+  const { open: openPanel, openConversation } = useMessages();
 
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
-    if (isOpen) {
-      refreshNotifications();
-    }
+    if (isOpen) refreshNotifications();
   };
 
   const handleNotificationClick = async (notificationId: string, conversationId: string) => {
+    setOpen(false);
     await markAsRead(notificationId);
-    router.push(`/messages?conversation=${conversationId}`);
+    openConversation(conversationId);
     refreshCount();
   };
 
   const handleViewAll = () => {
-    router.push('/messages');
+    setOpen(false);
+    openPanel();
   };
 
   return (
@@ -67,15 +62,12 @@ export function MessagesDropdown() {
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold">Messages</span>
             {count > 0 && (
-              <span className="text-xs text-gray-600">
-                {count} unread
-              </span>
+              <span className="text-xs text-gray-600">{count} unread</span>
             )}
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
-        {/* Notifications List */}
         <div className="max-h-[50vh] sm:max-h-[400px] overflow-y-auto">
           {notifications.length === 0 ? (
             <div className="p-3 sm:p-4 text-center text-gray-500 text-xs sm:text-sm">
@@ -88,25 +80,19 @@ export function MessagesDropdown() {
                 <button
                   key={notification.id}
                   onClick={() =>
-                    handleNotificationClick(
-                      notification.id,
-                      notification.conversation_id
-                    )
+                    handleNotificationClick(notification.id, notification.conversation_id)
                   }
                   className={cn(
                     'w-full text-left p-2.5 sm:p-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0',
-                    !notification.is_read && 'bg-blue-50/50'
+                    !notification.is_read && 'bg-blue-50/50',
                   )}
                 >
                   <div className="flex items-start gap-2 sm:gap-3">
-                    {/* Avatar */}
                     <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-medium">
                       {notification.sender?.name?.[0]?.toUpperCase() ||
                         notification.sender?.business_name?.[0]?.toUpperCase() ||
                         '?'}
                     </div>
-
-                    {/* Content */}
                     <div className="flex-1 min-w-0">
                       <p className="text-xs sm:text-sm font-medium text-gray-900 truncate">
                         {notification.sender?.business_name ||
@@ -122,8 +108,6 @@ export function MessagesDropdown() {
                         })}
                       </p>
                     </div>
-
-                    {/* Unread Indicator */}
                     {!notification.is_read && (
                       <div className="flex-shrink-0 w-2 h-2 rounded-full bg-blue-500 mt-1" />
                     )}
@@ -136,18 +120,16 @@ export function MessagesDropdown() {
 
         <DropdownMenuSeparator />
 
-        {/* View All Button */}
         <div className="p-1.5 sm:p-2">
           <Button
             variant="ghost"
             className="w-full rounded-md text-xs sm:text-sm"
             onClick={handleViewAll}
           >
-            View All Messages
+            Open Inbox
           </Button>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
-

@@ -3,8 +3,9 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { useParams } from "next/navigation";
-import { Loader2, User, Package } from "lucide-react";
+import Image from "next/image";
+import { useParams, useRouter } from "next/navigation";
+import { Loader2, User, Package, ArrowLeft, Sparkles, X } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard } from "@/components/marketplace/product-card";
@@ -62,6 +63,8 @@ export default function StoreProfilePage() {
   const params = useParams();
   const storeId = params.storeId as string;
   const { user } = useAuth();
+  const router = useRouter();
+  const [immersive, setImmersive] = React.useState(false);
 
   const [profileType, setProfileType] = React.useState<ProfileType>(null);
   const [store, setStore] = React.useState<StoreProfile | null>(null);
@@ -167,6 +170,42 @@ export default function StoreProfilePage() {
 
   // ── Bicycle store ──────────────────────────────────────
   if (profileType === 'store' && store) {
+    // ── Immersive / full-screen mode ──────────────────
+    if (immersive) {
+      return (
+        <div className="relative">
+          {/* Minimal floating bar */}
+          <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none">
+            {/* Grouped: YJ logo + back */}
+            <button
+              onClick={() => router.push('/marketplace')}
+              className="pointer-events-auto inline-flex items-center gap-0 bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm rounded-full overflow-hidden cursor-pointer hover:bg-white transition-colors"
+            >
+              <span className="px-3 py-1.5 border-r border-gray-200">
+                <Image src="/yj.svg" alt="Yellow Jersey" width={72} height={14} className="h-[14px] w-auto block" unoptimized />
+              </span>
+              <span className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-600">
+                <ArrowLeft className="h-3 w-3" />
+                Back
+              </span>
+            </button>
+
+            {/* Exit immersive (testing) */}
+            <button
+              onClick={() => setImmersive(false)}
+              className="pointer-events-auto inline-flex items-center justify-center h-8 w-8 bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm rounded-full text-gray-400 hover:text-gray-700 hover:bg-white transition-colors cursor-pointer"
+              title="Exit immersive mode"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <StoreProfileView store={store} isOwnProfile={isOwnProfile} immersive />
+        </div>
+      );
+    }
+
+    // ── Standard mode ─────────────────────────────────
     return (
       <>
         <MarketplaceHeader />
@@ -175,6 +214,15 @@ export default function StoreProfilePage() {
             <StoreProfileView store={store} isOwnProfile={isOwnProfile} />
           </div>
         </MarketplaceLayout>
+
+        {/* ── Testing toggle: enter immersive mode ── */}
+        <button
+          onClick={() => setImmersive(true)}
+          className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-2 rounded-full bg-gray-900 text-white px-4 py-2.5 text-sm font-semibold shadow-lg hover:bg-gray-800 transition-colors cursor-pointer"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          New
+        </button>
       </>
     );
   }
