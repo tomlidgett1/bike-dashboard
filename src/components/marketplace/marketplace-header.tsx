@@ -409,12 +409,11 @@ export function MarketplaceHeader({
 
   return (
     <>
+      {/* Floating pill header wrapper */}
+      <div className="fixed top-0 left-0 right-0 z-40 px-3 sm:px-4 pt-2">
       <motion.header
-        style={{
-          boxShadow: headerShadow,
-          backgroundColor: headerBg,
-        }}
-        className="fixed top-0 left-0 right-0 z-40 w-full backdrop-blur-sm"
+        style={{ boxShadow: headerShadow }}
+        className="rounded-full bg-white/95 backdrop-blur-md border border-gray-200/80 overflow-hidden"
       >
         {/* Navigation Loading Bar */}
         <AnimatePresence>
@@ -424,35 +423,25 @@ export function MarketplaceHeader({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="absolute top-0 left-0 right-0 h-1 bg-[#ffde59] overflow-hidden"
+              className="absolute top-0 left-0 right-0 h-0.5 bg-[#ffde59] overflow-hidden"
             >
-              {/* Animated shimmer effect */}
               <motion.div
                 initial={{ x: "-100%" }}
                 animate={{ x: "200%" }}
-                transition={{
-                  repeat: Infinity,
-                  duration: 1.2,
-                  ease: "easeInOut",
-                }}
+                transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut" }}
                 className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent"
               />
-              {/* Indeterminate progress animation */}
               <motion.div
                 initial={{ left: "-40%", width: "40%" }}
                 animate={{ left: "100%", width: "40%" }}
-                transition={{
-                  repeat: Infinity,
-                  duration: 1,
-                  ease: [0.4, 0, 0.2, 1],
-                }}
+                transition={{ repeat: Infinity, duration: 1, ease: [0.4, 0, 0.2, 1] }}
                 className="absolute inset-y-0 bg-[#f0cf45]"
               />
             </motion.div>
           )}
         </AnimatePresence>
-        <div className="max-w-[1920px] mx-auto px-4 sm:px-6">
-          <div className="flex h-14 sm:h-16 items-center justify-start gap-2 sm:gap-3 min-w-0">
+        <div className="max-w-[1920px] mx-auto px-4 sm:px-5">
+          <div className="flex h-12 sm:h-14 items-center justify-start gap-2 sm:gap-3 min-w-0">
             {/* Logo - Left side on mobile */}
             <button
               onClick={() => router.push('/marketplace')}
@@ -556,11 +545,11 @@ export function MarketplaceHeader({
               </>
             )}
 
-            {/* Desktop: Nav pill + Search pill + Sell CTA */}
-            <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
-              {/* Standalone search pill */}
+            {/* Desktop: search + nav + sell */}
+            <div className="hidden lg:flex items-center gap-1 flex-shrink-0 ml-auto">
+              {/* Search — flat, no extra pill wrapper */}
               <div className={cn(
-                "flex items-center bg-white border border-gray-200 rounded-full shadow-sm h-12 w-96 px-2",
+                "w-72 xl:w-88",
                 "[&_input]:!border-0 [&_input]:!bg-transparent [&_input]:!shadow-none",
                 "[&_input]:!ring-0 [&_input:focus]:!ring-0 [&_input:focus]:!border-0",
                 "[&_input]:!h-9",
@@ -569,16 +558,20 @@ export function MarketplaceHeader({
                 <InstantSearch listingType={searchListingType} />
               </div>
 
+              <div className="w-px h-5 bg-gray-200 mx-2 flex-shrink-0" />
+
               <DesktopHeaderPill />
+
+              <div className="w-px h-5 bg-gray-200 mx-1 flex-shrink-0" />
 
               {mounted && (
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      className="rounded-full bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium shadow-sm h-12 px-5"
+                      className="rounded-full bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-semibold h-9 px-4 text-sm"
                     >
                       Sell Item
-                      <ChevronDown className="ml-1.5 h-4 w-4" />
+                      <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
@@ -627,6 +620,7 @@ export function MarketplaceHeader({
           </div>
         </div>
       </motion.header>
+      </div>{/* end floating pill wrapper */}
 
       {/* Mobile Space Navigator removed - now integrated into UnifiedFilterBar */}
 

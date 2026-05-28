@@ -86,8 +86,7 @@ function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
   };
 
   return (
-    <div className="flex items-center bg-white border border-gray-200 rounded-full shadow-sm h-12 px-1.5">
-      <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1">
         {showNavLinks && mounted && user && (
           <>
             <Link
@@ -247,7 +246,6 @@ function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
             </Button>
           )
         )}
-      </div>
     </div>
   );
 }

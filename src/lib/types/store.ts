@@ -67,6 +67,11 @@ export interface StoreProfile {
   categories: StoreCategoryWithProducts[];
   services: StoreService[];
   brands: StoreBrand[];
+  /** Optional storefront enrichments — rendered only when present */
+  cover_image_url?: string | null;
+  description?: string | null;
+  rating?: number | null;
+  review_count?: number | null;
 }
 
 export interface StoreCategoryWithProducts {

@@ -171,7 +171,7 @@ export default function StoreProfilePage() {
       <>
         <MarketplaceHeader />
         <MarketplaceLayout showFooter={false}>
-          <div className="pt-16">
+          <div className="pt-14 sm:pt-16">
             <StoreProfileView store={store} isOwnProfile={isOwnProfile} />
           </div>
         </MarketplaceLayout>

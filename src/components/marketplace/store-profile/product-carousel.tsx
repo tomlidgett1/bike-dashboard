@@ -16,12 +16,14 @@ interface ProductCarouselProps {
   categoryName: string;
   products: MarketplaceProduct[];
   initialVisibleCount?: number;
+  isFeatured?: boolean;
 }
 
 export function ProductCarousel({
   categoryName,
   products,
   initialVisibleCount = 10,
+  isFeatured = false,
 }: ProductCarouselProps) {
   const [isExpanded, setIsExpanded] = React.useState(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -76,7 +78,14 @@ export function ProductCarousel({
     <section className="py-2.5 sm:py-3">
       {/* Category Header */}
       <div className="flex items-center justify-between mb-2.5 sm:mb-3">
-        <h3 className="text-sm sm:text-base font-semibold text-gray-900">{categoryName}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm sm:text-base font-semibold text-gray-900">{categoryName}</h3>
+          {isFeatured && (
+            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-800" style={{ backgroundColor: '#ffde59' }}>
+              Featured
+            </span>
+          )}
+        </div>
         {hasMore && (
           <Button
             variant="ghost"

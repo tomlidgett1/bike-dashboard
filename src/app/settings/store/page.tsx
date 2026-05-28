@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Store, Wrench, Tag, FileText } from "lucide-react";
+import { Loader2, Store, Wrench, Tag, FileText, Star } from "lucide-react";
 import { Header } from "@/components/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -83,6 +83,17 @@ export default function StoreSettingsPage() {
             </TabsList>
 
             <TabsContent value="categories">
+              {/* Featured collection callout */}
+              <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <Star className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-amber-900">Featured Collection</p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    The <strong>first category</strong> in your list below is shown as the featured collection tile on your public store profile. Drag categories to reorder and choose which one is featured.
+                  </p>
+                </div>
+              </div>
+
               <Card className="bg-white dark:bg-card rounded-md border-border">
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-3">
