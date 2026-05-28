@@ -349,7 +349,7 @@ export function NotificationsDropdown() {
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <button
-          className="relative h-9 w-9 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center"
+          className="relative h-9 w-9 rounded-md hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center"
           aria-label="Notifications"
         >
           <Bell className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />

@@ -67,6 +67,7 @@ export async function fetchInitialMarketplaceProducts(): Promise<InitialMarketpl
     const { data, error, count } = await supabase
       .from('marketplace_ready_products')
       .select(FAST_FIELDS, { count: 'exact', head: false })
+      .eq('listing_type', 'private_listing')
       .not('resolved_image_id', 'is', null)
       .order('created_at', { ascending: false })
       .range(0, MARKETPLACE_INITIAL_PAGE_SIZE - 1)

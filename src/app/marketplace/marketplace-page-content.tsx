@@ -12,7 +12,6 @@ import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/produ
 import { ListItemBanner } from "@/components/marketplace/list-item-banner";
 import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
 import { SpaceNavigator, useMarketplaceSpace } from "@/components/marketplace/space-navigator";
-import { StoreFilterPills } from "@/components/marketplace/store-filter-pills";
 import { StoreCategoryPills } from "@/components/marketplace/store-category-pills";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
 import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type AdvancedFiltersState } from "@/components/marketplace/advanced-filters";
@@ -41,8 +40,7 @@ import { cn } from "@/lib/utils";
 
 // Default marketplace tab when URL is missing or legacy (?view=for-you)
 function normaliseMarketplaceViewParam(raw: string | null): ViewMode {
-  if (raw === "trending" || raw === "all") return raw;
-  if (raw === "for-you") return "trending";
+  if (raw === "all") return "all";
   return "all";
 }
 
@@ -830,7 +828,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -80, opacity: 0 }}
             transition={{ duration: 0.25, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className="sm:hidden fixed top-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-md"
+            className="sm:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 shadow-md"
           >
             {/* Navigation Loading Bar */}
             <AnimatePresence>
@@ -1001,21 +999,14 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               mobileBrowseSheetOpen={mobileBrowseSheetOpen}
               onMobileBrowseSheetOpenChange={setMobileBrowseSheetOpen}
             />
-            {isStoresView && (
+            {isStoresView && selectedStoreId && storeCategories.length > 0 && (
               <div className="px-3 pt-2 pb-2.5">
-                <StoreFilterPills
-                  selectedStoreId={selectedStoreId}
-                  onStoreChange={handleStoreFilterChange}
-                />
                 <AnimatePresence>
-                  {selectedStoreId && storeCategories.length > 0 && (
-                    <StoreCategoryPills
-                      categories={storeCategories}
-                      selectedCategory={selectedStoreCategory}
-                      onCategoryChange={setSelectedStoreCategory}
-                      className="mt-1"
-                    />
-                  )}
+                  <StoreCategoryPills
+                    categories={storeCategories}
+                    selectedCategory={selectedStoreCategory}
+                    onCategoryChange={setSelectedStoreCategory}
+                  />
                 </AnimatePresence>
               </div>
             )}
@@ -1078,17 +1069,12 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       />
                     }
                   />
-                  <StoreFilterPills
-                    selectedStoreId={selectedStoreId}
-                    onStoreChange={handleStoreFilterChange}
-                  />
                   <AnimatePresence>
                     {selectedStoreId && storeCategories.length > 0 && (
                       <StoreCategoryPills
                         categories={storeCategories}
                         selectedCategory={selectedStoreCategory}
                         onCategoryChange={setSelectedStoreCategory}
-                        className="mt-1"
                       />
                     )}
                   </AnimatePresence>

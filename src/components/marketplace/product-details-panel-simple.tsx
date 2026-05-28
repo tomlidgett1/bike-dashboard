@@ -20,6 +20,84 @@ import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
 
+// Renders **bold** spans within a line of text
+function InlineText({ text }: { text: string }) {
+  const parts = text.split(/\*\*(.+?)\*\*/g);
+  if (parts.length === 1) return <>{text}</>;
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1
+          ? <strong key={i} className="font-semibold text-gray-900">{part}</strong>
+          : part || null
+      )}
+    </>
+  );
+}
+
+// Full markdown-aware description renderer
+// Handles: **bold**, ## headings, • / - / * bullets, paragraphs
+function ProductDescription({ text }: { text: string }) {
+  const blocks = text.split(/\n{2,}/).filter(b => b.trim());
+
+  return (
+    <div className="space-y-3">
+      {blocks.map((block, bi) => {
+        const lines = block.trim().split('\n').map(l => l.trim()).filter(Boolean);
+
+        // Heading block: single line starting with # or ##
+        if (lines.length === 1 && /^#{1,3}\s/.test(lines[0])) {
+          return (
+            <h4 key={bi} className="text-sm font-semibold text-gray-900">
+              <InlineText text={lines[0].replace(/^#+\s/, '')} />
+            </h4>
+          );
+        }
+
+        // Detect bullet lines (•, -, *)
+        const isBullet = (l: string) => /^[•\-\*]\s/.test(l);
+        const bulletLines = lines.filter(isBullet);
+        const nonBulletLines = lines.filter(l => !isBullet(l));
+
+        // Mixed block: optional header + bullet list
+        if (bulletLines.length > 0) {
+          // A standalone non-bullet line at the top is the section header
+          const header = nonBulletLines.length === 1 ? nonBulletLines[0] : null;
+          const headerIsBold = header?.startsWith('**') && header.endsWith('**');
+
+          return (
+            <div key={bi} className="space-y-1.5">
+              {header && (
+                <h4 className="text-sm font-semibold text-gray-900">
+                  <InlineText text={headerIsBold ? header.slice(2, -2) : header} />
+                </h4>
+              )}
+              <ul className="space-y-1.5">
+                {bulletLines.map((line, li) => {
+                  const content = line.replace(/^[•\-\*]\s/, '');
+                  return (
+                    <li key={li} className="flex gap-2 text-sm text-gray-600 leading-relaxed">
+                      <span className="text-gray-400 mt-[3px] flex-shrink-0 select-none">•</span>
+                      <span><InlineText text={content} /></span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        }
+
+        // Plain paragraph — join lines (handles soft-wrapped AI output)
+        return (
+          <p key={bi} className="text-sm text-gray-600 leading-relaxed">
+            <InlineText text={lines.join(' ')} />
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 // ============================================================
 // Product Details Panel - Underline Tabs Design
 // Clean, modern design with tabbed navigation
@@ -243,9 +321,13 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               {/* Description */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 mb-2">Description</h3>
-                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
-                  {(product as any).product_description || product.description}
-                </p>
+                {(product as any).product_description ? (
+                  <ProductDescription text={(product as any).product_description} />
+                ) : (
+                  <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                    {product.description}
+                  </p>
+                )}
               </div>
 
               {/* Seller Notes */}
@@ -335,119 +417,124 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
               transition={{ duration: 0.2 }}
-              className="space-y-0 divide-y divide-gray-100"
             >
+              {/* Condition row — always shown at top when set */}
               {(product as any).condition_rating && (
-                <div className="flex justify-between py-2.5">
+                <div className="flex justify-between py-2.5 border-b border-gray-100 mb-4">
                   <span className="text-sm text-gray-500">Condition</span>
                   <span className="text-sm font-medium text-gray-900">{(product as any).condition_rating}</span>
                 </div>
               )}
-              {(product as any).brand && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Brand</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).brand}</span>
-                </div>
-              )}
-              {(product as any).model && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Model</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).model}</span>
-                </div>
-              )}
-              {(product as any).model_year && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Year</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).model_year}</span>
-                </div>
-              )}
-              {(product as any).bike_type && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Type</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).bike_type}</span>
-                </div>
-              )}
-              {((product as any).frame_size || (product as any).size) && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Size</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).frame_size || (product as any).size}</span>
-                </div>
-              )}
-              {(product as any).frame_material && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Frame Material</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).frame_material}</span>
-                </div>
-              )}
-              {(product as any).groupset && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Groupset</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).groupset}</span>
-                </div>
-              )}
-              {(product as any).wheel_size && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Wheel Size</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).wheel_size}</span>
-                </div>
-              )}
-              {(product as any).suspension_type && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Suspension</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).suspension_type}</span>
-                </div>
-              )}
-              {(product as any).color_primary && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Colour</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).color_primary}</span>
-                </div>
-              )}
-              {/* Apparel-Specific Fields */}
-              {(product as any).gender_fit && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Gender Fit</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).gender_fit}</span>
-                </div>
-              )}
-              {(product as any).apparel_material && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Material</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).apparel_material}</span>
-                </div>
-              )}
-              {/* Part/Accessory Fields */}
-              {(product as any).part_type_detail && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Part Type</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).part_type_detail}</span>
-                </div>
-              )}
-              {(product as any).compatibility_notes && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Compatibility</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).compatibility_notes}</span>
-                </div>
-              )}
-              {(product as any).material && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Material</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).material}</span>
-                </div>
-              )}
-              {(product as any).weight && (
-                <div className="flex justify-between py-2.5">
-                  <span className="text-sm text-gray-500">Weight</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).weight}</span>
-                </div>
-              )}
-              {/* If no specs exist, show a message */}
-              {!(product as any).condition_rating && 
-               !(product as any).brand && 
-               !(product as any).model && 
-               !(product as any).bike_type && (
-                <div className="py-4 text-center text-sm text-gray-400">
-                  No specifications available
+
+              {(product as any).product_specs ? (
+                /* AI-generated comprehensive spec sheet */
+                <ProductDescription text={(product as any).product_specs} />
+              ) : (
+                /* Fallback: field-by-field display from database */
+                <div className="space-y-0 divide-y divide-gray-100">
+                  {(product as any).brand && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Brand</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).brand}</span>
+                    </div>
+                  )}
+                  {(product as any).model && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Model</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).model}</span>
+                    </div>
+                  )}
+                  {(product as any).model_year && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Year</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).model_year}</span>
+                    </div>
+                  )}
+                  {(product as any).bike_type && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Type</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).bike_type}</span>
+                    </div>
+                  )}
+                  {((product as any).frame_size || (product as any).size) && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Size</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).frame_size || (product as any).size}</span>
+                    </div>
+                  )}
+                  {(product as any).frame_material && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Frame Material</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).frame_material}</span>
+                    </div>
+                  )}
+                  {(product as any).groupset && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Groupset</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).groupset}</span>
+                    </div>
+                  )}
+                  {(product as any).wheel_size && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Wheel Size</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).wheel_size}</span>
+                    </div>
+                  )}
+                  {(product as any).suspension_type && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Suspension</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).suspension_type}</span>
+                    </div>
+                  )}
+                  {(product as any).color_primary && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Colour</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).color_primary}</span>
+                    </div>
+                  )}
+                  {(product as any).gender_fit && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Gender Fit</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).gender_fit}</span>
+                    </div>
+                  )}
+                  {(product as any).apparel_material && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Material</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).apparel_material}</span>
+                    </div>
+                  )}
+                  {(product as any).part_type_detail && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Part Type</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).part_type_detail}</span>
+                    </div>
+                  )}
+                  {(product as any).compatibility_notes && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Compatibility</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).compatibility_notes}</span>
+                    </div>
+                  )}
+                  {(product as any).material && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Material</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).material}</span>
+                    </div>
+                  )}
+                  {(product as any).weight && (
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-sm text-gray-500">Weight</span>
+                      <span className="text-sm font-medium text-gray-900">{(product as any).weight}</span>
+                    </div>
+                  )}
+                  {!(product as any).brand &&
+                   !(product as any).model &&
+                   !(product as any).bike_type && (
+                    <div className="py-4 text-center text-sm text-gray-400">
+                      No specifications available
+                    </div>
+                  )}
                 </div>
               )}
             </motion.div>

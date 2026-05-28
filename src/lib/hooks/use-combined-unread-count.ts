@@ -100,22 +100,14 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
         }, Math.max(refreshInterval, 5000));
       }
 
-      // Subscribe to messages and offers tables for instant badge updates
+      // Subscribe to conversation_participants (filtered to current user) and offers
+      // for instant badge updates. We intentionally do NOT subscribe to the raw
+      // messages table — that would fire for every message sent by any user on the
+      // platform. Instead we rely on the conversation_participants UPDATE that
+      // increment_unread_count triggers after each new message, which is already
+      // scoped to this user.
       channelRef.current = supabase
         .channel('unread-counts-realtime')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-          },
-          (payload) => {
-            console.log('[Realtime] Unread counts - new message:', payload);
-            // New message - refresh counts
-            fetchCountsRef.current?.();
-          }
-        )
         .on(
           'postgres_changes',
           {
@@ -126,7 +118,7 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
           },
           (payload) => {
             console.log('[Realtime] Unread counts - participant update:', payload);
-            // Unread count updated (e.g., messages marked as read)
+            // Covers both new messages (unread_count++) and read receipts (unread_count=0)
             fetchCountsRef.current?.();
           }
         )

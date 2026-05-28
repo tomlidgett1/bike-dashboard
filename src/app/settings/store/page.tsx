@@ -4,13 +4,14 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Store, Wrench, Tag } from "lucide-react";
+import { Loader2, Store, Wrench, Tag, FileText } from "lucide-react";
 import { Header } from "@/components/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StoreCategoriesManager } from "@/components/settings/store-categories-manager";
 import { StoreServicesManager } from "@/components/settings/store-services-manager";
 import { StoreBrandsManager } from "@/components/settings/store-brands-manager";
+import { StoreProductDescriptionsManager } from "@/components/settings/store-product-descriptions-manager";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 
@@ -74,6 +75,10 @@ export default function StoreSettingsPage() {
               <TabsTrigger value="brands" className="flex-none gap-2">
                 <Tag className="h-4 w-4" />
                 Brands
+              </TabsTrigger>
+              <TabsTrigger value="products" className="flex-none gap-2">
+                <FileText className="h-4 w-4" />
+                Products
               </TabsTrigger>
             </TabsList>
 
@@ -142,6 +147,28 @@ export default function StoreSettingsPage() {
                 </CardHeader>
                 <CardContent>
                   <StoreBrandsManager />
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="products">
+              <Card className="bg-white dark:bg-card rounded-md border-border">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
+                      <FileText className="h-5 w-5 text-foreground" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-semibold">
+                        Product Descriptions
+                      </CardTitle>
+                      <CardDescription className="text-sm">
+                        Generate AI-powered ecommerce descriptions for your live products using web search.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <StoreProductDescriptionsManager />
                 </CardContent>
               </Card>
             </TabsContent>

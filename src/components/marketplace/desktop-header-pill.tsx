@@ -4,13 +4,14 @@ import * as React from "react";
 import { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Mail,
   Settings,
   LogOut,
   Store,
   ShoppingBag,
+  Home,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,25 +30,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  buildMarketplaceNavUrl,
-  getMarketplaceActiveView,
-  marketplaceBrowsingNavItems,
   shouldShowMarketplaceSidebar,
-  type MarketplaceNavItem,
 } from "@/lib/marketplace-nav";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface DesktopHeaderPillProps {}
 
-type LinkItem = MarketplaceNavItem & {
-  type: "item";
-  value: string;
-  title: string;
-};
-
 function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
   const { profile } = useUserProfile();
@@ -71,26 +61,7 @@ function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
   const isVerifiedStore =
     profile?.account_type === "bicycle_store" && profile?.bicycle_store === true;
 
-  const activeView = getMarketplaceActiveView(
-    pathname,
-    searchParams,
-    profile?.user_id,
-    user?.id
-  );
-
   const showNavLinks = !shouldShowMarketplaceSidebar(pathname);
-
-  const linkItems = marketplaceBrowsingNavItems.filter(
-    (item): item is LinkItem =>
-      item.type === "item" && !!item.value && !!item.title
-  );
-
-  const getHref = (value: string) =>
-    buildMarketplaceNavUrl(value, {
-      isVerifiedStore,
-      profileUserId: profile?.user_id,
-      authUserId: user?.id,
-    });
 
   const getDisplayName = () => {
     if (!profile) return user?.email || "User";
@@ -117,27 +88,60 @@ function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
   return (
     <div className="flex items-center bg-white border border-gray-200 rounded-full shadow-sm h-12 px-1.5">
       <div className="flex items-center gap-1">
-        {showNavLinks &&
-          linkItems.map((item) => {
-            const isActive = activeView === item.value;
-            return (
-              <Link
-                key={item.value}
-                href={getHref(item.value)}
-                className={cn(
-                  "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
-                  isActive
-                    ? "text-gray-900 bg-gray-100"
-                    : "text-gray-700 hover:bg-gray-100"
-                )}
-              >
-                {item.title}
-              </Link>
-            );
-          })}
-
-        {showNavLinks && (
-          <div className="w-px h-5 bg-gray-200 mx-1" aria-hidden />
+        {showNavLinks && mounted && user && (
+          <>
+            <Link
+              href="/marketplace"
+              className={cn(
+                "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                pathname === "/marketplace"
+                  ? "text-gray-900 bg-gray-100"
+                  : "text-gray-700 hover:bg-gray-100"
+              )}
+            >
+              Home
+            </Link>
+            <Link
+              href={`/marketplace/store/${profile?.user_id || user?.id}`}
+              className={cn(
+                "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                pathname.startsWith("/marketplace/store/")
+                  ? "text-gray-900 bg-gray-100"
+                  : "text-gray-700 hover:bg-gray-100"
+              )}
+            >
+              My Store
+            </Link>
+            <Link
+              href={getPurchasesRoute()}
+              className={cn(
+                "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                pathname === "/marketplace/purchases" ||
+                pathname === "/settings/purchases" ||
+                pathname.startsWith("/marketplace/purchases/") ||
+                pathname.startsWith("/settings/purchases/")
+                  ? "text-gray-900 bg-gray-100"
+                  : "text-gray-700 hover:bg-gray-100"
+              )}
+            >
+              Order Management
+            </Link>
+            <Link
+              href={getSettingsRoute()}
+              className={cn(
+                "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                pathname === "/settings" ||
+                pathname === "/marketplace/settings" ||
+                (pathname.startsWith("/settings/") &&
+                  !pathname.startsWith("/settings/purchases"))
+                  ? "text-gray-900 bg-gray-100"
+                  : "text-gray-700 hover:bg-gray-100"
+              )}
+            >
+              Settings
+            </Link>
+            <div className="w-px h-5 bg-gray-200 mx-1" aria-hidden />
+          </>
         )}
 
         {mounted && user ? (
@@ -189,6 +193,13 @@ function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
                 align="end"
                 className="w-56 bg-white rounded-md"
               >
+                <DropdownMenuItem
+                  onClick={() => router.push("/marketplace")}
+                  className="cursor-pointer rounded-md"
+                >
+                  <Home className="mr-2 h-4 w-4" />
+                  <span>Home</span>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() =>
                     router.push(

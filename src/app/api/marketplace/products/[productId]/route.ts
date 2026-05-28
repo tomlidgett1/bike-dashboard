@@ -37,6 +37,7 @@ export async function GET(
         id,
         description,
         product_description,
+        product_specs,
         display_name,
         price,
         marketplace_category,

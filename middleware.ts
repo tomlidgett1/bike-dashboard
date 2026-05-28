@@ -37,7 +37,8 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/marketplace/new-products') ||
     request.nextUrl.pathname.startsWith('/api/marketplace') ||
     request.nextUrl.pathname.startsWith('/api/stripe') ||  // Stripe webhooks
-    request.nextUrl.pathname.startsWith('/api/cron')       // Cron jobs
+    request.nextUrl.pathname.startsWith('/api/cron') ||    // Cron jobs
+    request.nextUrl.pathname === '/api/genie'              // Public AI chat
   
   if (isPublicRoute) {
     return NextResponse.next()

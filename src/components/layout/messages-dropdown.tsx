@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,15 +16,24 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MessageCircle, Mail } from 'lucide-react';
-import { useUnreadCount } from '@/lib/hooks/use-unread-count';
+import { useCombinedUnreadCount } from '@/lib/hooks/use-combined-unread-count';
 import { useNotifications } from '@/lib/hooks/use-notifications';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 export function MessagesDropdown() {
   const router = useRouter();
-  const { count, refresh: refreshCount } = useUnreadCount(30000); // Poll every 30s
-  const { notifications, markAsRead } = useNotifications(5, true); // Latest 5 unread
+  const [open, setOpen] = useState(false);
+  const { counts, refresh: refreshCount } = useCombinedUnreadCount();
+  const count = counts.messages;
+  const { notifications, markAsRead, refresh: refreshNotifications } = useNotifications(5, true);
+
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen);
+    if (isOpen) {
+      refreshNotifications();
+    }
+  };
 
   const handleNotificationClick = async (notificationId: string, conversationId: string) => {
     await markAsRead(notificationId);
@@ -37,7 +46,7 @@ export function MessagesDropdown() {
   };
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"

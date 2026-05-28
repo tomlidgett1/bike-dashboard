@@ -46,7 +46,7 @@ export function MobileBottomNav() {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 lg:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background lg:hidden">
       {/* Safe area padding for iOS */}
       <div className="flex items-center justify-around pb-[env(safe-area-inset-bottom)]">
         {navItems.map((item) => {

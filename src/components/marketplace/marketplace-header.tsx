@@ -560,7 +560,7 @@ export function MarketplaceHeader({
             <div className="hidden lg:flex items-center gap-3 flex-shrink-0 ml-auto">
               {/* Standalone search pill */}
               <div className={cn(
-                "flex items-center bg-white border border-gray-200 rounded-full shadow-sm h-12 w-80 px-2",
+                "flex items-center bg-white border border-gray-200 rounded-full shadow-sm h-12 w-96 px-2",
                 "[&_input]:!border-0 [&_input]:!bg-transparent [&_input]:!shadow-none",
                 "[&_input]:!ring-0 [&_input:focus]:!ring-0 [&_input:focus]:!border-0",
                 "[&_input]:!h-9",

@@ -492,31 +492,34 @@ export function GeniePanel() {
 
   return (
     <>
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div key="backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-40 bg-black/15 backdrop-blur-[2px]"
-            onClick={close} />
-        )}
-      </AnimatePresence>
+      {/* Backdrop — CSS opacity transition, no JS animation */}
+      <div
+        className="fixed inset-0 z-40 bg-black/20"
+        style={{
+          opacity: isOpen ? 1 : 0,
+          pointerEvents: isOpen ? 'auto' : 'none',
+          transition: 'opacity 0.2s ease',
+        }}
+        onClick={close}
+      />
 
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            key="panel"
-            initial={{ x: '100%', opacity: 0.6 }}
-            animate={{ x: 0, opacity: 1, width: isExpanded ? 'calc(100vw - 24px)' : '420px' }}
-            exit={{ x: '100%', opacity: 0 }}
-            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-            className={cn(
-              'fixed right-3 top-[1.5%] z-50 flex flex-col',
-              'max-w-[calc(100vw-24px)]',
-              'rounded-2xl overflow-hidden',
-              'shadow-2xl shadow-black/15 border border-border/50 bg-background',
-            )}
-            style={{ height: '97vh' }}
-          >
+      {/* Panel — always mounted, pure CSS transform (compositor thread, no JS per-frame) */}
+      <div
+        className={cn(
+          'fixed right-3 top-[1.5%] z-50 flex flex-col',
+          'max-w-[calc(100vw-24px)]',
+          'rounded-2xl overflow-hidden',
+          'shadow-2xl shadow-black/15 border border-border/50 bg-background',
+        )}
+        style={{
+          height: '97vh',
+          width: isExpanded ? 'calc(100vw - 24px)' : '420px',
+          transform: isOpen ? 'translateX(0)' : 'translateX(calc(100% + 24px))',
+          transition: 'transform 0.38s cubic-bezier(0.32, 0.72, 0, 1), width 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+          willChange: 'transform',
+          pointerEvents: isOpen ? 'auto' : 'none',
+        }}
+      >
             {/* ── Header ─────────────────────────────────────── */}
             <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-border">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -669,9 +672,7 @@ export function GeniePanel() {
                 </div>
               </>
             )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </div>
     </>
   );
 }

@@ -165,11 +165,11 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   const isList = layout === "list";
 
   return (
-    <Link 
+    <Link
       href={`/marketplace/product/${product.id}`}
       onClick={handleClick}
       className={cn(
-        "block",
+        "product-card-root block",
         isList && "w-full",
         !isList && featuredMobile && "col-span-2 sm:col-span-1"
       )}
@@ -219,7 +219,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
           {MARKETPLACE_PROMO_BANNERS_ENABLED &&
             productData.store_name === "Ashburton Cycles" && (
             <div className="absolute bottom-2.5 right-2.5">
-              <div className="bg-black/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
+              <div className="bg-black/85 px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
                 <Image 
                   src="/uber.jpg" 
                   alt="Uber" 
@@ -255,7 +255,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
           {/* Condition Badge - Only for private listings with condition */}
           {productData.listing_type === 'private_listing' && productData.condition_rating && (
             <div className="absolute top-2 left-2 z-10">
-              <span className="px-1.5 py-0.5 bg-white/90 backdrop-blur-sm rounded-md text-[10px] font-medium text-gray-700 shadow-sm">
+              <span className="px-1.5 py-0.5 bg-white/90 rounded-md text-[10px] font-medium text-gray-700 shadow-sm">
                 {productData.condition_rating}
               </span>
             </div>

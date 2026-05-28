@@ -4,7 +4,9 @@ import { MobileSidebar } from "./sidebar";
 import { ThemeToggle } from "./theme-toggle";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -32,6 +34,20 @@ export function Header({ title, description }: HeaderProps) {
   const { profile } = useUserProfile();
   const { isSyncing, formattedLastSync } = useSyncStatus();
   const router = useRouter();
+  const pathname = usePathname();
+
+  const navTabs = [
+    { label: 'My Store', href: '/products' },
+    { label: 'Order Management', href: '/settings/purchases' },
+    { label: 'Settings', href: '/settings' },
+  ];
+
+  const isTabActive = (href: string) => {
+    if (href === '/settings') {
+      return pathname === '/settings' || (pathname.startsWith('/settings/') && !pathname.startsWith('/settings/purchases'));
+    }
+    return pathname === href || pathname.startsWith(href + '/');
+  };
   const supabase = createClient();
 
   const handleSignOut = async () => {
@@ -53,16 +69,37 @@ export function Header({ title, description }: HeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 lg:px-6">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-border bg-background px-4 shadow-sm lg:px-6">
       <MobileSidebar />
       
       <div className="flex flex-1 items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">{title}</h1>
-          {description && (
-            <p className="hidden text-sm text-muted-foreground sm:block">
-              {description}
-            </p>
+        <div className="flex items-center gap-6">
+          <div>
+            <h1 className="text-lg font-semibold text-foreground">{title}</h1>
+            {description && (
+              <p className="hidden text-sm text-muted-foreground sm:block">
+                {description}
+              </p>
+            )}
+          </div>
+
+          {user && (
+            <nav className="hidden md:flex items-center gap-1">
+              {navTabs.map(tab => (
+                <Link
+                  key={tab.href}
+                  href={tab.href}
+                  className={cn(
+                    "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                    isTabActive(tab.href)
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  )}
+                >
+                  {tab.label}
+                </Link>
+              ))}
+            </nav>
           )}
         </div>
         

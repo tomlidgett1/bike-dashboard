@@ -91,10 +91,17 @@ export function BikeStoresPicker({
           type="button"
           aria-label="Choose a bike store"
           className={cn(
-            "flex h-12 sm:h-11 max-w-[148px] sm:max-w-[180px] items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 cursor-pointer",
+            "flex h-12 sm:h-11 max-w-[148px] sm:max-w-[200px] items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 cursor-pointer",
             className
           )}
         >
+          {selectedStore?.logo_url ? (
+            <div className="relative h-5 w-5 flex-shrink-0 overflow-hidden rounded-full border border-gray-200">
+              <Image src={selectedStore.logo_url} alt="" fill className="object-cover" />
+            </div>
+          ) : (
+            <Store className="h-4 w-4 flex-shrink-0 text-gray-400" />
+          )}
           <span className="truncate">{loading ? "Stores…" : triggerLabel}</span>
           <ChevronDown
             className={cn(
