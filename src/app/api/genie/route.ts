@@ -217,7 +217,8 @@ export async function POST(request: NextRequest) {
           for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
             const isLastIteration = iteration === MAX_ITERATIONS - 1
 
-            const response = await openai.responses.create({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const response: any = await openai.responses.create({
               model: MODEL,
               instructions: SYSTEM_PROMPT,
               ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
