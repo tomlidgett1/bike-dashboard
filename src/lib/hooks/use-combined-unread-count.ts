@@ -100,12 +100,19 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
         }, Math.max(refreshInterval, 5000));
       }
 
-      // Subscribe to conversation_participants (filtered to current user) and offers
-      // for instant badge updates. We intentionally do NOT subscribe to the raw
-      // messages table — that would fire for every message sent by any user on the
-      // platform. Instead we rely on the conversation_participants UPDATE that
-      // increment_unread_count triggers after each new message, which is already
-      // scoped to this user.
+      // Subscribe to conversation_participants and offers for instant badge updates.
+      //
+      // WHY NO SERVER-SIDE FILTER:
+      // conversation_participants has a surrogate PK (id UUID). Without REPLICA
+      // IDENTITY FULL, Postgres only writes the PK into the WAL for UPDATE events,
+      // so a server-side filter like `user_id=eq.UUID` can never match — the
+      // column isn't in the WAL record — and every event gets silently dropped.
+      //
+      // Instead we receive all UPDATE events and gate in the callback on
+      // payload.new.user_id (the NEW row values are always fully logged).
+      // A companion migration (20260528210000_fix_replica_identity.sql) sets
+      // REPLICA IDENTITY FULL so the server-side filter can be restored once
+      // it is applied to the live database.
       channelRef.current = supabase
         .channel('unread-counts-realtime')
         .on(
@@ -114,9 +121,11 @@ export function useCombinedUnreadCount(refreshInterval: number = 30000) {
             event: 'UPDATE',
             schema: 'public',
             table: 'conversation_participants',
-            filter: `user_id=eq.${user.id}`,
+            // No server-side filter — see note above. Gate in the callback instead.
           },
           (payload) => {
+            const row = payload.new as { user_id?: string } | null;
+            if (row?.user_id !== userIdRef.current) return;
             console.log('[Realtime] Unread counts - participant update:', payload);
             // Covers both new messages (unread_count++) and read receipts (unread_count=0)
             fetchCountsRef.current?.();
