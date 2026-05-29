@@ -14,13 +14,19 @@ import {
   Wrench,
   Info,
   Star,
-  Heart,
   Bookmark,
-  Navigation,
-  MessageSquare,
   ChevronRight,
   Search,
   X,
+  LayoutGrid,
+  Grip,
+  Tag,
+  Shield,
+  Zap,
+  Lock,
+  Shirt,
+  CircleDot,
+  Leaf,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,7 +41,6 @@ import { ProductCard } from "@/components/marketplace/product-card";
 import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
 import { ServicesSection } from "@/components/marketplace/store-profile/services-section";
 import { RentalsSection } from "@/components/marketplace/store-profile/rentals-section";
-import { ContactModal } from "@/components/marketplace/store-profile/contact-modal";
 import type { StoreProfile, OpeningHours } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 
@@ -96,15 +101,36 @@ function getOpenStatus(hours: OpeningHours | undefined): { open: boolean; label:
   return { open: true, label: `Open until ${today.close}` };
 }
 
+const CATEGORY_ICON_MAP: [RegExp, typeof Package][] = [
+  [/bike|bicycle|cycling|road|mountain|bmx|gravel|enduro|trail/i, Bike],
+  [/e-?bike|electric/i, Zap],
+  [/helmet|safety|protection|head/i, Shield],
+  [/clothing|apparel|jersey|shorts|kit|wear/i, Shirt],
+  [/wheel|tyre|tire|tube|rim/i, CircleDot],
+  [/lock|security/i, Lock],
+  [/light|lighting|led/i, Zap],
+  [/nutrition|food|energy|gel|bar|drink/i, Leaf],
+  [/part|component|drivetrain|brake|gear|derailleur/i, Wrench],
+  [/tool/i, Wrench],
+  [/accessory|accessories|bag|pack|luggage/i, Tag],
+];
+
+function getCategoryIcon(name: string): typeof Package {
+  for (const [re, Icon] of CATEGORY_ICON_MAP) {
+    if (re.test(name)) return Icon;
+  }
+  return Package;
+}
+
 export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfileViewProps) {
   const [activeTab, setActiveTab] = React.useState<StoreTab>("products");
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [sort, setSort] = React.useState<SortKey>("featured");
   const [storeSearch, setStoreSearch] = React.useState("");
-  const [contactOpen, setContactOpen] = React.useState(false);
-  const [isFollowing, setIsFollowing] = React.useState(false);
   const [isSaved, setIsSaved] = React.useState(false);
-  const [followLoading, setFollowLoading] = React.useState(false);
+  const [expandedCategories, setExpandedCategories] = React.useState<Set<string>>(new Set());
+  const [compact, setCompact] = React.useState(false);
+  const CATEGORY_ROW_MAX = compact ? 16 : 12;
 
   const openStatus = getOpenStatus(store.opening_hours);
 
@@ -146,27 +172,6 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     });
   }, [selectedCategory, sort, store.categories, storeSearch]);
 
-  const handleFollow = async () => {
-    if (followLoading) return;
-    setFollowLoading(true);
-    setIsFollowing((v) => !v); // optimistic
-    try {
-      const res = await fetch("/api/marketplace/follow", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: store.id }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setIsFollowing(data.isFollowing);
-      }
-    } catch {
-      setIsFollowing((v) => !v); // revert
-    } finally {
-      setFollowLoading(false);
-    }
-  };
-
   const directionsUrl = store.address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`
     : null;
@@ -181,33 +186,13 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
   const actionButtons = (
     <>
-      {isOwnProfile ? (
-        <button
+      {isOwnProfile && (
+        <HeroAction
+          icon={Settings}
+          label="Edit Store"
           onClick={() => (window.location.href = "/settings/store")}
-          className="inline-flex items-center gap-2 rounded-full px-4 h-9 text-sm font-semibold text-gray-900 cursor-pointer transition hover:brightness-95"
-          style={{ backgroundColor: BRAND_YELLOW }}
-        >
-          <Settings className="h-4 w-4" />
-          Edit Store
-        </button>
-      ) : (
-        <button
-          onClick={handleFollow}
-          disabled={followLoading}
-          className={cn(
-            "inline-flex items-center gap-2 rounded-full px-4 h-9 text-sm font-semibold cursor-pointer transition-all disabled:opacity-70 border",
-            isFollowing
-              ? "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-              : "text-gray-900 border-transparent hover:brightness-95"
-          )}
-          style={isFollowing ? undefined : { backgroundColor: BRAND_YELLOW }}
-        >
-          <Heart className={cn("h-4 w-4", isFollowing && "fill-current")} />
-          {isFollowing ? "Following" : "Follow Store"}
-        </button>
+        />
       )}
-      <HeroAction icon={MessageSquare} label="Contact" onClick={() => setContactOpen(true)} />
-      {directionsUrl && <HeroAction icon={Navigation} label="Directions" href={directionsUrl} />}
       {!isOwnProfile && (
         <HeroAction
           icon={Bookmark}
@@ -226,129 +211,128 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
       {/* ══ HERO ══════════════════════════════════════════ */}
       <section className="bg-white">
         {store.cover_image_url && (
-          <div className="relative h-40 sm:h-52 overflow-hidden">
+          <div className="relative h-40 sm:h-56 overflow-hidden">
             <Image src={store.cover_image_url} alt="" fill className="object-cover" priority />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/15 to-transparent" />
           </div>
         )}
 
-        <div className="px-5 sm:px-8 lg:px-10 pt-5 sm:pt-6 pb-5 sm:pb-6">
+        <div className="px-5 sm:px-8 lg:px-10 pt-6 pb-5">
           <div className="flex items-start justify-between gap-4">
             {/* Logo + identity */}
-            <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-5 min-w-0">
+            <div className="flex items-start gap-4 sm:gap-5 min-w-0">
               {/* Logo */}
-              <div className="relative h-20 w-20 sm:h-24 sm:w-24 rounded-2xl overflow-hidden bg-gray-100 border border-gray-200 shadow-sm flex-shrink-0">
+              <div
+                className={cn(
+                  "relative h-16 w-16 sm:h-[72px] sm:w-[72px] rounded-full overflow-hidden bg-white ring-1 ring-gray-200 flex-shrink-0",
+                  store.cover_image_url && "ring-4 ring-white shadow-sm -mt-12 sm:-mt-14"
+                )}
+              >
                 {store.logo_url ? (
                   <Image src={store.logo_url} alt={store.store_name} fill className="object-cover" priority />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gray-100">
-                    <Store className="h-9 w-9 text-gray-400" />
+                  <div className="flex h-full w-full items-center justify-center bg-gray-50">
+                    <Store className="h-7 w-7 text-gray-400" />
                   </div>
                 )}
               </div>
 
               {/* Identity */}
-              <div className="min-w-0 py-1">
-                <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
+              <div className="min-w-0 pt-0.5">
+                <h1 className="text-[25px] sm:text-[31px] font-bold tracking-tight text-gray-900 leading-[1.15]">
                   {store.store_name}
                 </h1>
 
-                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                  {store.store_type && (
-                    <span className="text-sm text-gray-500">{store.store_type}</span>
-                  )}
-                  {store.store_type && openStatus && (
-                    <span className="text-gray-300 text-sm">·</span>
-                  )}
-                  {openStatus && (
-                    <span className="flex items-center gap-1.5 text-sm text-gray-500">
-                      <span className={cn("inline-block h-1.5 w-1.5 rounded-full flex-shrink-0", openStatus.open ? "bg-emerald-500" : "bg-gray-300")} />
-                      {openStatus.label}
-                    </span>
-                  )}
-                </div>
-
-                {/* Rating (only when data exists) */}
+                {/* Rating */}
                 {store.rating != null && (
-                  <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-500">
-                    <Star className="h-3.5 w-3.5 fill-current text-gray-400" />
-                    <span className="font-medium text-gray-700">{store.rating.toFixed(1)}</span>
+                  <div className="inline-flex items-center gap-1 mt-2 text-sm">
+                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                    <span className="font-semibold text-gray-900">{store.rating.toFixed(1)}</span>
                     {store.review_count != null && (
-                      <span className="text-gray-400">({store.review_count} reviews)</span>
+                      <span className="text-gray-400">({store.review_count})</span>
                     )}
                   </div>
                 )}
 
-                {/* Address */}
-                {store.address && (
-                  <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-400">
-                    <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
-                    <span className="truncate">{store.address}</span>
+                {/* Address | Phone */}
+                {(store.address || store.phone) && (
+                  <div className="flex items-center gap-2 mt-2 text-sm text-gray-500 min-w-0">
+                    {store.address && (
+                      directionsUrl ? (
+                        <a
+                          href={directionsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="group inline-flex items-center gap-1.5 hover:text-gray-900 transition-colors min-w-0"
+                        >
+                          <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-gray-400 group-hover:text-gray-500" />
+                          <span className="truncate underline-offset-2 group-hover:underline">{store.address}</span>
+                        </a>
+                      ) : (
+                        <div className="inline-flex items-center gap-1.5 min-w-0">
+                          <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                          <span className="truncate">{store.address}</span>
+                        </div>
+                      )
+                    )}
+                    {store.address && store.phone && (
+                      <span className="text-gray-300 flex-shrink-0 select-none">|</span>
+                    )}
+                    {store.phone && (
+                      <a
+                        href={`tel:${store.phone}`}
+                        className="inline-flex items-center gap-1.5 flex-shrink-0 hover:text-gray-900 transition-colors"
+                      >
+                        <Phone className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                        <span>{store.phone}</span>
+                      </a>
+                    )}
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Top-right actions (desktop) */}
-            <div className="hidden sm:flex items-center gap-2 flex-shrink-0 pt-1">
+            {/* Top-right: search (products) + actions */}
+            <div className="hidden sm:flex items-center gap-2.5 flex-shrink-0">
+              {activeTab === "products" && allProducts.length > 0 && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={storeSearch}
+                    onChange={(e) => setStoreSearch(e.target.value)}
+                    placeholder="Search products…"
+                    className="h-9 w-48 lg:w-56 rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
+                  />
+                  {storeSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setStoreSearch("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
               {actionButtons}
             </div>
           </div>
 
-          {/* Actions (mobile) */}
-          <div className="flex sm:hidden flex-wrap items-center gap-2 mt-4">
-            {actionButtons}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Pill tab bar ─────────────────────────────────── */}
-      <div className={cn(
-        "py-3",
-        immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
-      )}>
-        <div className="overflow-x-auto scrollbar-hide">
-          <div className="inline-flex h-11 items-center gap-1 rounded-full bg-white border border-gray-200 shadow-sm p-1">
-            {tabs.map(({ key, label, icon: Icon }) => {
-              const active = activeTab === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => {
-                    setActiveTab(key);
-                    setSelectedCategory(null);
-                  }}
-                  className={cn(
-                    "flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-3 sm:px-3.5 text-sm font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-                    active ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700"
-                  )}
-                >
-                  <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* ══ CATEGORY / FILTER BAR (Products only) ═════════ */}
-      {activeTab === "products" && allProducts.length > 0 && (
-        <div className="bg-white border-b border-gray-200">
-          <div className={cn(
-            "py-3",
-            immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
-          )}>
-            <div className="flex items-center gap-2 sm:gap-3">
-              {/* Store search */}
-              <div className="relative flex-shrink-0">
+          {/* Actions + search (mobile) */}
+          <div className="sm:hidden mt-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {actionButtons}
+            </div>
+            {activeTab === "products" && allProducts.length > 0 && (
+              <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                 <input
                   type="text"
                   value={storeSearch}
                   onChange={(e) => setStoreSearch(e.target.value)}
                   placeholder="Search products…"
-                  className="h-9 w-44 sm:w-56 rounded-full border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
+                  className="h-9 w-full rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
                 />
                 {storeSearch && (
                   <button
@@ -360,55 +344,111 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                   </button>
                 )}
               </div>
+            )}
+          </div>
 
-              {/* All Categories dropdown */}
-              {store.categories.length > 1 && (
-                <Select
-                  value={selectedCategory ?? "__all__"}
-                  onValueChange={(v) => setSelectedCategory(v === "__all__" ? null : v)}
-                >
-                  <SelectTrigger className="h-9 w-auto rounded-full border-gray-200 cursor-pointer flex-shrink-0 gap-1.5 font-medium text-gray-700">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">All Categories</SelectItem>
-                    {store.categories.map((c) => (
-                      <SelectItem key={c.id} value={c.name}>
-                        {c.name} ({c.product_count})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+        </div>
+      </section>
 
-              {/* Category pills */}
-              <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide flex-1 min-w-0">
-                {store.categories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() =>
-                      setSelectedCategory((cur) => (cur === cat.name ? null : cat.name))
-                    }
-                    className={cn(
-                      "flex-shrink-0 cursor-pointer px-3.5 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
-                      selectedCategory === cat.name
-                        ? "bg-gray-900 text-white border-gray-900"
-                        : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                    )}
-                  >
-                    {cat.name}
-                  </button>
-                ))}
+      {/* ── Underline tab bar ────────────────────────────── */}
+      <div className={cn(
+        "border-b border-gray-200",
+        immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
+      )}>
+        <div className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto scrollbar-hide">
+          {tabs.map(({ key, label, icon: Icon }) => {
+            const active = activeTab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setActiveTab(key);
+                  setSelectedCategory(null);
+                }}
+                className={cn(
+                  "relative flex cursor-pointer items-center gap-1.5 px-3 sm:px-3.5 py-3.5 text-sm font-medium whitespace-nowrap transition-colors focus:outline-none",
+                  active ? "text-gray-900" : "text-gray-500 hover:text-gray-900"
+                )}
+              >
+                <Icon className={cn("h-3.5 w-3.5 flex-shrink-0", active ? "text-gray-900" : "text-gray-400")} />
+                {label}
+                {active && (
+                  <motion.span
+                    layoutId="storeTabUnderline"
+                    className="absolute inset-x-1.5 -bottom-px h-[2px] rounded-full bg-gray-900"
+                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Products filter bar ─────────────────────────── */}
+      {activeTab === "products" && allProducts.length > 0 && (
+        <div className="bg-white">
+          <div className={cn(
+            "pt-3 pb-2",
+            immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
+          )}>
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* Category pills (scrollable) */}
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide flex-1 min-w-0">
+                {store.categories.map((cat) => {
+                  const CatIcon = getCategoryIcon(cat.name);
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setSelectedCategory((cur) => (cur === cat.name ? null : cat.name))}
+                      className={cn(
+                        "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap border",
+                        selectedCategory === cat.name
+                          ? "bg-gray-900 text-white border-gray-900"
+                          : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                      )}
+                    >
+                      <CatIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                      {cat.name}
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* Sort + count */}
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <span className="hidden sm:inline text-sm text-gray-500 tabular-nums">
+              {/* Sort + density + count */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="hidden sm:inline text-sm text-gray-500 tabular-nums mr-1">
                   {sortedCategories.reduce((n, c) => n + c.products.length, 0)} items
                 </span>
+                {/* View density toggle */}
+                <div className="hidden sm:flex items-center rounded-md border border-gray-200 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setCompact(false)}
+                    className={cn(
+                      "flex items-center justify-center w-8 h-8 transition-colors cursor-pointer",
+                      !compact ? "bg-gray-900 text-white" : "bg-white text-gray-400 hover:text-gray-700"
+                    )}
+                    title="Default view"
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompact(true)}
+                    className={cn(
+                      "flex items-center justify-center w-8 h-8 transition-colors cursor-pointer",
+                      compact ? "bg-gray-900 text-white" : "bg-white text-gray-400 hover:text-gray-700"
+                    )}
+                    title="Compact view"
+                  >
+                    <Grip className="h-3.5 w-3.5" />
+                  </button>
+                </div>
                 <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-                  <SelectTrigger className="h-9 w-auto rounded-full border-gray-200 cursor-pointer gap-1.5 font-medium text-gray-700">
+                  <SelectTrigger className="h-9 w-auto rounded-md border-gray-200 cursor-pointer gap-1.5 font-medium text-gray-700">
                     <span className="text-gray-500 mr-1">Sort:</span>
                     <SelectValue />
                   </SelectTrigger>
@@ -427,7 +467,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
       {/* ══ TAB CONTENT ═══════════════════════════════════ */}
       <div className={cn(
-        "py-5 sm:py-7",
+        "pt-3 pb-5 sm:pt-4 sm:pb-7",
         immersive
           ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12"
           : "px-5 sm:px-8 lg:px-10"
@@ -444,28 +484,43 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
             {activeTab === "products" &&
               (allProducts.length > 0 ? (
                 <div className="space-y-8">
-                  {sortedCategories.map((cat, i) =>
-                    cat.products.length > 0 ? (
+                  {sortedCategories.map((cat, i) => {
+                    if (cat.products.length === 0) return null;
+                    const isExpanded = expandedCategories.has(cat.id);
+                    const visible = isExpanded ? cat.products : cat.products.slice(0, CATEGORY_ROW_MAX);
+                    const hasMore = cat.products.length > CATEGORY_ROW_MAX;
+                    return (
                       <section key={cat.id}>
-                        {/* Category header */}
-                        <div className="flex items-center gap-2 mb-3">
-                          <h3 className="text-sm font-semibold text-gray-900">{cat.name}</h3>
-                          {!selectedCategory && i === 0 && (
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-800" style={{ backgroundColor: '#ffde59' }}>
-                              Featured
-                            </span>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-semibold text-gray-900">{cat.name}</h3>
+                            <span className="text-xs text-gray-400 tabular-nums">({cat.products.length})</span>
+                          </div>
+                          {hasMore && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedCategories((prev) => {
+                                const next = new Set(prev);
+                                isExpanded ? next.delete(cat.id) : next.add(cat.id);
+                                return next;
+                              })}
+                              className="text-xs text-gray-500 hover:text-gray-900 cursor-pointer transition-colors flex-shrink-0"
+                            >
+                              {isExpanded ? "Show less" : `See all ${cat.products.length}`}
+                            </button>
                           )}
-                          <span className="text-xs text-gray-400 tabular-nums">({cat.products.length})</span>
                         </div>
-                        {/* 6-column grid */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                          {cat.products.map((product, j) => (
-                            <ProductCard key={product.id} product={product} priority={i === 0 && j < 6} />
+                        <div
+                          className={cn("grid", compact ? "gap-2" : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3")}
+                          style={compact ? { gridTemplateColumns: "repeat(8, minmax(0, 1fr))" } : undefined}
+                        >
+                          {visible.map((product, j) => (
+                            <ProductCard key={product.id} product={product} priority={i === 0 && j < 6} hideStoreMeta compact={compact} />
                           ))}
                         </div>
                       </section>
-                    ) : null
-                  )}
+                    );
+                  })}
                 </div>
               ) : (
                 <EmptyState
@@ -540,19 +595,11 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
         </div>
       </div>
 
-      <ContactModal
-        isOpen={contactOpen}
-        onClose={() => setContactOpen(false)}
-        storeName={store.store_name}
-        phone={store.phone}
-        address={store.address}
-        openingHours={store.opening_hours}
-      />
     </div>
   );
 }
 
-// ── Hero action button (translucent on dark) ───────────────
+// ── Hero secondary action button ───────────────────────────
 function HeroAction({
   icon: Icon,
   label,
@@ -567,22 +614,22 @@ function HeroAction({
   active?: boolean;
 }) {
   const cls = cn(
-    "inline-flex items-center gap-2 rounded-full px-4 h-9 text-sm font-medium cursor-pointer transition-colors border",
+    "inline-flex items-center gap-1.5 rounded-md px-2.5 h-8 text-sm font-medium cursor-pointer transition-colors",
     active
-      ? "bg-gray-900 text-white border-gray-900"
-      : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+      ? "bg-gray-100 text-gray-900"
+      : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
   );
   if (href) {
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
-        <Icon className="h-4 w-4" />
+        <Icon className="h-3.5 w-3.5" />
         {label}
       </a>
     );
   }
   return (
     <button type="button" onClick={onClick} className={cls}>
-      <Icon className={cn("h-4 w-4", active && "fill-current")} />
+      <Icon className={cn("h-3.5 w-3.5", active && "fill-current")} />
       {label}
     </button>
   );

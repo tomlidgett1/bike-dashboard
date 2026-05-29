@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import * as React from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
-import { Loader2, User, Package, ArrowLeft, Sparkles, X } from "lucide-react";
+import { Loader2, User, Package, ArrowLeft, X } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard } from "@/components/marketplace/product-card";
@@ -215,14 +215,6 @@ export default function StoreProfilePage() {
           </div>
         </MarketplaceLayout>
 
-        {/* ── Testing toggle: enter immersive mode ── */}
-        <button
-          onClick={() => setImmersive(true)}
-          className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-2 rounded-full bg-gray-900 text-white px-4 py-2.5 text-sm font-semibold shadow-lg hover:bg-gray-800 transition-colors cursor-pointer"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          New
-        </button>
       </>
     );
   }

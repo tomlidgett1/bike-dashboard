@@ -68,7 +68,7 @@ function extractCitations(response: any): Citation[] {
   return citations
 }
 
-// Stem keywords to handle plurals and common suffixes
+// Stem keywords to handle plurals and common suffixes (used as fallback)
 function toStems(query: string): string[] {
   const words = query.toLowerCase().split(/\s+/).filter(w => w.length >= 3)
   const stems = new Set<string>()
@@ -81,39 +81,86 @@ function toStems(query: string): string[] {
   return Array.from(stems)
 }
 
-// Search live marketplace inventory, ranked by how many query keywords each listing matches
+// Search live marketplace inventory using the same DB-level full-text + trigram search
+// as the marketplace search API. Falls back to stem-based client ranking if the RPC fails.
+//
+// Note: we do NOT add .gt('qoh', 0) — the marketplace_ready_products view already handles
+// availability correctly. Private listings (individually uploaded items) often have qoh = null,
+// and store_inventory items may have qoh = null during POS sync. The view includes both.
 async function runMarketplaceSearch(
   supabase: Awaited<ReturnType<typeof createClient>>,
   rawQuery: string,
 ) {
-  const stems = toStems(rawQuery)
+  if (!rawQuery.trim()) {
+    return {
+      products: [] as any[],
+      output: { found: 0, products: [], message: 'No matching in-stock listings right now.' },
+    }
+  }
 
-  const { data: allProducts } = await supabase
+  // ── Step 1: rank candidate IDs via DB search ──────────────────────────────
+  // Primary: full-text + trigram similarity RPC (same as marketplace search bar)
+  let rankedIds: string[] = []
+
+  const { data: searchData, error: searchError } = await supabase.rpc(
+    'search_marketplace_products',
+    { search_query: rawQuery.trim(), similarity_threshold: 0.15 },
+  )
+
+  if (!searchError && searchData && searchData.length > 0) {
+    rankedIds = (searchData as Array<{ product_id: string; relevance_score: number }>)
+      .sort((a, b) => b.relevance_score - a.relevance_score)
+      .slice(0, 20)
+      .map(r => r.product_id)
+  } else {
+    // Fallback: pull up to 500 marketplace-ready products and do stem matching client-side
+    const { data: allProducts } = await supabase
+      .from('marketplace_ready_products')
+      .select('id, display_name, description, marketplace_category, brand, model')
+      .limit(500)
+
+    const stems = toStems(rawQuery)
+    const pool = allProducts ?? []
+
+    rankedIds = stems.length > 0
+      ? pool
+          .map(p => {
+            const haystack = [p.display_name, p.description, p.marketplace_category, p.brand, p.model]
+              .filter(Boolean).join(' ').toLowerCase()
+            const score = stems.reduce((n, s) => n + (haystack.includes(s) ? 1 : 0), 0)
+            return { id: p.id, score }
+          })
+          .filter(x => x.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 20)
+          .map(x => x.id)
+      : pool.slice(0, 8).map(p => p.id)
+  }
+
+  if (rankedIds.length === 0) {
+    return {
+      products: [] as any[],
+      output: { found: 0, products: [], message: 'No matching in-stock listings right now.' },
+    }
+  }
+
+  // ── Step 2: fetch full details from the view ──────────────────────────────
+  // marketplace_ready_products enforces: active, approved image, and correct
+  // listing_type/qoh logic. No extra qoh filter needed here.
+  const { data: products } = await supabase
     .from('marketplace_ready_products')
     .select(`
       id, display_name, description, price, qoh, marketplace_category,
       listing_type, resolved_cloudinary_public_id, resolved_cloudinary_url, resolved_external_url,
       brand, model, condition_rating, user_id
     `)
-    .gt('qoh', 0)
-    .limit(200)
+    .in('id', rankedIds)
 
-  const pool = allProducts ?? []
-
-  // Relevance ranking: score each listing by how many query stems it contains
-  const ranked = stems.length > 0
-    ? pool
-        .map(p => {
-          const haystack = [p.display_name, p.description, p.marketplace_category, p.brand, p.model]
-            .filter(Boolean).join(' ').toLowerCase()
-          const score = stems.reduce((n, s) => n + (haystack.includes(s) ? 1 : 0), 0)
-          return { p, score }
-        })
-        .filter(x => x.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 8)
-        .map(x => x.p)
-    : pool.slice(0, 8)
+  // Re-sort to preserve relevance order from the DB search
+  const orderMap = new Map(rankedIds.map((id, i) => [id, i]))
+  const ranked = (products ?? [])
+    .sort((a, b) => (orderMap.get(a.id) ?? 999) - (orderMap.get(b.id) ?? 999))
+    .slice(0, 8)
 
   if (ranked.length === 0) {
     return {
@@ -122,7 +169,7 @@ async function runMarketplaceSearch(
     }
   }
 
-  // Resolve seller business names
+  // ── Step 3: resolve seller business names ─────────────────────────────────
   const userIds = [...new Set(ranked.map(p => p.user_id).filter(Boolean))]
   const storeMap: Record<string, string> = {}
   if (userIds.length > 0) {

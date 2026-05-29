@@ -25,6 +25,7 @@ interface UnifiedCategoryTableProps {
   onCategoryToggle: (categoryId: string) => void;
   expandedCategory: string | null;
   onCategoryExpand: (categoryId: string | null) => void;
+  syncFilter?: 'not_synced' | 'synced';
 }
 
 export function UnifiedCategoryTable({
@@ -33,7 +34,17 @@ export function UnifiedCategoryTable({
   onCategoryToggle,
   expandedCategory,
   onCategoryExpand,
+  syncFilter,
 }: UnifiedCategoryTableProps) {
+  const displayedCategories = React.useMemo(() => {
+    if (!syncFilter) return categories;
+    if (syncFilter === 'synced') {
+      // Show categories that have at least some synced products
+      return categories.filter(c => c.syncStatus === 'fully_synced' || c.syncStatus === 'partial');
+    }
+    // 'not_synced': show categories that still have products to sync
+    return categories.filter(c => c.syncStatus === 'not_synced' || c.syncStatus === 'partial');
+  }, [categories, syncFilter]);
   const getSyncBadge = (status: string, syncedCount: number, totalCount: number) => {
     if (status === 'fully_synced') {
       return (
@@ -101,14 +112,18 @@ export function UnifiedCategoryTable({
           </tr>
         </thead>
         <tbody>
-          {categories.length === 0 ? (
+          {displayedCategories.length === 0 ? (
             <tr>
               <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                No categories found
+                {syncFilter === 'synced'
+                  ? 'No synced categories yet.'
+                  : syncFilter === 'not_synced'
+                  ? 'All categories are fully synced.'
+                  : 'No categories found'}
               </td>
             </tr>
           ) : (
-            categories.map((category) => {
+            displayedCategories.map((category) => {
               const isSelected = selectedCategories.has(category.categoryId);
               const isExpanded = expandedCategory === category.categoryId;
 

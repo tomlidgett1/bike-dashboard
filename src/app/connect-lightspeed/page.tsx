@@ -74,6 +74,10 @@ export default function ConnectLightspeedPage() {
   const [inventoryData, setInventoryData] = React.useState<InventoryData | null>(null);
   const [loadingInventory, setLoadingInventory] = React.useState(false);
   
+  // Synced / Not Synced filter per view
+  const [productSyncFilter, setProductSyncFilter] = React.useState<'not_synced' | 'synced'>('not_synced');
+  const [categorySyncFilter, setCategorySyncFilter] = React.useState<'not_synced' | 'synced'>('not_synced');
+
   // Selection state
   const [selectedCategories, setSelectedCategories] = React.useState<Set<string>>(new Set());
   const [selectedProducts, setSelectedProducts] = React.useState<Set<string>>(new Set());
@@ -385,9 +389,15 @@ export default function ConnectLightspeedPage() {
     });
   };
 
+  // Clear selection when the sync filter changes so stale IDs don't carry over
+  React.useEffect(() => { setSelectedProducts(new Set()); }, [productSyncFilter]);
+  React.useEffect(() => { setSelectedCategories(new Set()); }, [categorySyncFilter]);
+
   const handleSelectAllProducts = () => {
-    const allItemIds = inventoryData?.notSynced.products.map(p => p.itemId) || [];
-    setSelectedProducts(new Set(allItemIds));
+    const source = productSyncFilter === 'synced'
+      ? inventoryData?.synced.products
+      : inventoryData?.notSynced.products;
+    setSelectedProducts(new Set((source || []).map((p: any) => p.itemId)));
   };
 
   const handleClearAllProducts = () => {
@@ -494,56 +504,95 @@ export default function ConnectLightspeedPage() {
           <>
             {/* Tabs and Actions Bar - with horizontal padding only */}
             <div className="px-6 py-4 bg-white dark:bg-card border-b border-gray-200 dark:border-gray-800">
-              <div className="flex items-center justify-between">
-                {/* View Mode Tabs */}
-                <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-                  <button
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                      viewMode === 'categories'
-                        ? "text-gray-800 bg-white shadow-sm"
-                        : "text-gray-600 hover:bg-gray-200/70"
-                    )}
-                    onClick={() => setViewMode('categories')}
-                  >
-                    By Categories
-                    {selectedCategories.size > 0 && (
-                      <Badge variant="secondary" className="rounded-md ml-1 h-5 px-1.5 text-xs">
-                        {selectedCategories.size}
-                      </Badge>
-                    )}
-                  </button>
-                  <button
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                      viewMode === 'products'
-                        ? "text-gray-800 bg-white shadow-sm"
-                        : "text-gray-600 hover:bg-gray-200/70"
-                    )}
-                    onClick={() => setViewMode('products')}
-                  >
-                    All Products
-                    {selectedProducts.size > 0 && (
-                      <Badge variant="secondary" className="rounded-md ml-1 h-5 px-1.5 text-xs">
-                        {selectedProducts.size}
-                      </Badge>
-                    )}
-                  </button>
-                  <button
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                      viewMode === 'logs'
-                        ? "text-gray-800 bg-white shadow-sm"
-                        : "text-gray-600 hover:bg-gray-200/70"
-                    )}
-                    onClick={() => setViewMode('logs')}
-                  >
-                    Logs
-                  </button>
+              <div className="flex items-center justify-between gap-3">
+                {/* Left: view tabs + synced/not-synced toggle */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* View Mode Tabs */}
+                  <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                    <button
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                        viewMode === 'categories'
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70"
+                      )}
+                      onClick={() => setViewMode('categories')}
+                    >
+                      By Categories
+                      {selectedCategories.size > 0 && (
+                        <Badge variant="secondary" className="rounded-md ml-1 h-5 px-1.5 text-xs">
+                          {selectedCategories.size}
+                        </Badge>
+                      )}
+                    </button>
+                    <button
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                        viewMode === 'products'
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70"
+                      )}
+                      onClick={() => setViewMode('products')}
+                    >
+                      All Products
+                      {selectedProducts.size > 0 && (
+                        <Badge variant="secondary" className="rounded-md ml-1 h-5 px-1.5 text-xs">
+                          {selectedProducts.size}
+                        </Badge>
+                      )}
+                    </button>
+                    <button
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                        viewMode === 'logs'
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70"
+                      )}
+                      onClick={() => setViewMode('logs')}
+                    >
+                      Logs
+                    </button>
+                  </div>
+
+                  {/* Synced / Not Synced toggle — only for categories and products views */}
+                  {(viewMode === 'categories' || viewMode === 'products') && (
+                    <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+                      <button
+                        className={cn(
+                          "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                          (viewMode === 'products' ? productSyncFilter : categorySyncFilter) === 'not_synced'
+                            ? "text-gray-800 bg-white shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70"
+                        )}
+                        onClick={() =>
+                          viewMode === 'products'
+                            ? setProductSyncFilter('not_synced')
+                            : setCategorySyncFilter('not_synced')
+                        }
+                      >
+                        Not Synced
+                      </button>
+                      <button
+                        className={cn(
+                          "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                          (viewMode === 'products' ? productSyncFilter : categorySyncFilter) === 'synced'
+                            ? "text-gray-800 bg-white shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70"
+                        )}
+                        onClick={() =>
+                          viewMode === 'products'
+                            ? setProductSyncFilter('synced')
+                            : setCategorySyncFilter('synced')
+                        }
+                      >
+                        Synced
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {/* Action Buttons */}
-                <div className="flex items-center gap-2">
+                {/* Right: Action Buttons */}
+                <div className="flex items-center gap-2 flex-shrink-0">
                   {/* Filters button — visible in categories and products views */}
                   {(viewMode === 'categories' || viewMode === 'products') && (
                     <Button
@@ -587,13 +636,24 @@ export default function ConnectLightspeedPage() {
                   )}
 
                   {viewMode === 'products' && selectedProducts.size > 0 && (
-                    <Button
-                      onClick={handleSyncSelectedProducts}
-                      size="sm"
-                      className="rounded-md"
-                    >
-                      Sync {selectedProducts.size} product{selectedProducts.size !== 1 ? 's' : ''} to Marketplace
-                    </Button>
+                    productSyncFilter === 'synced' ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteProducts(Array.from(selectedProducts))}
+                        className="rounded-md"
+                      >
+                        Remove {selectedProducts.size} from Marketplace
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={handleSyncSelectedProducts}
+                        size="sm"
+                        className="rounded-md"
+                      >
+                        Sync {selectedProducts.size} product{selectedProducts.size !== 1 ? 's' : ''} to Marketplace
+                      </Button>
+                    )
                   )}
                 </div>
               </div>
@@ -608,21 +668,27 @@ export default function ConnectLightspeedPage() {
                   onCategoryToggle={handleCategoryToggle}
                   expandedCategory={expandedCategory}
                   onCategoryExpand={setExpandedCategory}
+                  syncFilter={categorySyncFilter}
                 />
               ) : viewMode === 'products' ? (
                 <ProductTableView
-                  products={(inventoryData?.notSynced.products || []).map((p: any) => ({
-                    id: p.id,
-                    itemId: p.itemId,
-                    name: p.name,
-                    sku: p.sku,
-                    modelYear: p.modelYear,
-                    categoryId: p.categoryId,
-                    price: p.price ?? 0,
-                    totalQoh: p.totalQoh,
-                    totalSellable: p.totalSellable,
-                    isSynced: false,
-                  }))}
+                  products={
+                    (productSyncFilter === 'synced'
+                      ? (inventoryData?.synced.products ?? [])
+                      : (inventoryData?.notSynced.products ?? [])
+                    ).map((p: any) => ({
+                      id: p.id,
+                      itemId: p.itemId,
+                      name: p.name,
+                      sku: p.sku,
+                      modelYear: p.modelYear,
+                      categoryId: p.categoryId,
+                      price: p.price ?? 0,
+                      totalQoh: p.totalQoh,
+                      totalSellable: p.totalSellable,
+                      isSynced: productSyncFilter === 'synced',
+                    }))
+                  }
                   selectedProducts={selectedProducts}
                   onProductToggle={handleProductToggle}
                   onSelectAll={handleSelectAllProducts}

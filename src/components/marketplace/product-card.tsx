@@ -29,6 +29,10 @@ interface ProductCardProps {
   /** Row layout for marketplace list view */
   layout?: "grid" | "list";
   isAdmin?: boolean;
+  /** Hide store badge + relative time (use on store profile where they're redundant) */
+  hideStoreMeta?: boolean;
+  /** Compact density — smaller text for 8-col grid */
+  compact?: boolean;
   onNavigate?: () => void;
   onImageDiscoveryClick?: (productId: string) => void;
 }
@@ -47,14 +51,16 @@ type ProductCardData = MarketplaceProduct & {
 };
 
 // Memoized product card to prevent unnecessary re-renders
-export const ProductCard = React.memo<ProductCardProps>(function ProductCard({ 
-  product, 
+export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
+  product,
   priority = false,
   featuredMobile = false,
   layout = "grid",
   isAdmin = false,
+  hideStoreMeta = false,
+  compact = false,
   onNavigate,
-  onImageDiscoveryClick 
+  onImageDiscoveryClick
 }) {
   const router = useRouter();
   const [imageError, setImageError] = React.useState(false);
@@ -332,7 +338,9 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
               !isList &&
                 (featuredMobile
                   ? "text-base font-semibold line-clamp-1 mb-0.5"
-                  : "text-sm font-medium line-clamp-1 mb-0")
+                  : compact
+                    ? "text-[11px] font-medium line-clamp-1 mb-0"
+                    : "text-sm font-medium line-clamp-1 mb-0")
             )}
           >
             {productData.display_name || product.description}
@@ -353,7 +361,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
           {/* Seller info - Better organized layout */}
           <div className={cn("flex items-center gap-0.5 flex-wrap", isList ? "mt-1" : "mt-0.5")}>
             {/* Store badge for store inventory items */}
-            {productData.listing_type === 'store_inventory' && (
+            {!hideStoreMeta && productData.listing_type === 'store_inventory' && (
               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">
                 <Store className="h-2.5 w-2.5" />
                 Store
@@ -387,7 +395,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </div>
 
             {/* Secondary info - Time */}
-            {relativeTime && (
+            {!hideStoreMeta && relativeTime && (
               <div className="flex items-center gap-0.5 text-xs">
                 <span className="text-emerald-600 font-medium whitespace-nowrap">
                   {relativeTime}

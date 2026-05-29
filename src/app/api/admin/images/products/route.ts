@@ -38,6 +38,10 @@ export async function GET(request: NextRequest) {
     // live_only=true: restrict to canonical products that have at least one
     // active listing belonging to the current user (is_active = true).
     const liveOnly = searchParams.get('live_only') === 'true';
+    // bg_filter: '' (off) | 'all' (tag only) | 'removed' | 'original'.
+    // Distinguishes products whose CURRENT primary image is a background-removed
+    // studio hero from those still showing their original photo.
+    const bgFilter = (searchParams.get('bg_filter') || '').trim();
     const offset = (page - 1) * limit;
 
     // When live_only is requested, fetch the set of canonical_product_ids that
@@ -55,19 +59,54 @@ export async function GET(request: NextRequest) {
         : [];
     }
 
+    // The view doesn't expose the primary image's `source`, so derive the set of
+    // canonical products whose current primary IS a studio hero. Both the hero
+    // panel and auto-pilot write source='openai_studio_hero' + is_primary=true,
+    // so this reliably identifies "background removed" (unlike image_review_source,
+    // which studio-hero leaves as 'serper_workbench').
+    let heroSet: Set<string> | null = null;
+    if (bgFilter === 'all' || bgFilter === 'removed' || bgFilter === 'original') {
+      const { data: heroRows } = await supabase
+        .from('product_images')
+        .select('canonical_product_id')
+        .eq('source', 'openai_studio_hero')
+        .eq('is_primary', true)
+        .eq('approval_status', 'approved')
+        .not('canonical_product_id', 'is', null);
+      heroSet = new Set(
+        (heroRows || []).map((r: any) => r.canonical_product_id as string).filter(Boolean),
+      );
+    }
+
+    // Express both live + bg filters as a single id allow-list so they intersect.
+    let restrictIds: string[] | null = liveCanonicalIds; // null = no live filter
+    if ((bgFilter === 'removed' || bgFilter === 'original') && heroSet) {
+      if (restrictIds !== null) {
+        restrictIds = restrictIds.filter((id) =>
+          bgFilter === 'removed' ? heroSet!.has(id) : !heroSet!.has(id),
+        );
+      } else if (bgFilter === 'removed') {
+        restrictIds = [...heroSet];
+      }
+      // 'original' with no live filter is handled via NOT IN below.
+    }
+
     let query = supabase
       .from('image_workbench_products')
       .select('*', { count: 'exact' })
       .order('updated_at', { ascending: false, nullsFirst: false })
       .range(offset, offset + limit - 1);
 
-    // Restrict to live products for this user when requested
-    if (liveCanonicalIds !== null) {
-      if (liveCanonicalIds.length === 0) {
-        // User has no active listings — return empty immediately
+    // Apply the combined id allow-list when present.
+    if (restrictIds !== null) {
+      if (restrictIds.length === 0) {
+        // Nothing matches (no live listings, or no products in this bg bucket).
         return NextResponse.json({ success: true, data: [], pagination: { page, limit, total: 0, total_pages: 0 } });
       }
-      query = query.in('id', liveCanonicalIds);
+      query = query.in('id', restrictIds);
+    } else if (bgFilter === 'original' && heroSet && heroSet.size > 0) {
+      // Standalone "original only" (no live filter): exclude the studio-hero set.
+      query = query.not('id', 'in', `(${[...heroSet].join(',')})`);
     }
 
     if (search) {
@@ -127,6 +166,8 @@ export async function GET(request: NextRequest) {
         ...product,
         primary_image_url: primary?.card_url || primary?.original_url || null,
         primary_thumbnail_url: primary?.thumbnail_url || null,
+        // Only defined when bg_filter was requested (heroSet computed).
+        bg_removed: heroSet ? heroSet.has(product.id) : undefined,
         readiness_status: product.primary_image_id
           ? 'ready'
           : product.approved_images > 0
