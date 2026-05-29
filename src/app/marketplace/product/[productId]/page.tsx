@@ -6,6 +6,7 @@ import { ProductPageClient } from "./product-page-client";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { getProductImages, toJsonbFormat } from "@/lib/services/product-images";
 import { resolveProductImage, getProductImageSlotUrl } from "@/lib/services/image-resolver";
+import { buildHeroPublicId, isHeroCompoundId } from "@/lib/utils/cloudinary-transforms";
 
 // ============================================================
 // Product Page - Server Component with Parallel Data Fetching
@@ -241,18 +242,21 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
       .select(`
         id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
         marketplace_level_3_category, created_at, user_id,
-        resolved_image_id, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
+        resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
       .eq('marketplace_category', sourceProduct.marketplace_category)
       .neq('id', productId)
       .limit(12);
-    
+
     if (!products) return [];
-    
+
     return products.map((p: any) => {
+      const rawPid: string | null = p.resolved_cloudinary_public_id ?? null;
+      const effectivePid = (p.resolved_image_source === 'openai_studio_hero' && rawPid && !isHeroCompoundId(rawPid))
+        ? buildHeroPublicId(rawPid) : rawPid;
       const resolved = resolveProductImage({
         id: p.resolved_image_id,
-        cloudinary_public_id: p.resolved_cloudinary_public_id,
+        cloudinary_public_id: effectivePid,
         cloudinary_url: p.resolved_cloudinary_url,
         external_url: p.resolved_external_url,
         approval_status: 'approved',
@@ -273,6 +277,7 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
         user_id: p.user_id,
         primary_image_url: imageUrl,
         card_url: imageUrl,
+        cloudinary_public_id: effectivePid,
         thumbnail_url: resolved?.thumbnail_url || imageUrl,
         detail_url: resolved?.detail_url || resolved?.gallery_url || imageUrl,
         store_name: 'Bike Store',
@@ -313,14 +318,14 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
       .select(`
         id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
         created_at, user_id,
-        resolved_image_id, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
+        resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
       .eq('user_id', sourceProduct.user_id)
       .neq('id', productId)
       .is('sold_at', null)
       .order('created_at', { ascending: false })
       .limit(12);
-    
+
     const sellerInfo = seller ? {
       id: seller.user_id,
       name: seller.seller_display_name || seller.business_name || 
@@ -330,9 +335,12 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
     } : null;
     
     const formattedProducts = (products || []).map((p: any) => {
+      const rawPid: string | null = p.resolved_cloudinary_public_id ?? null;
+      const effectivePid = (p.resolved_image_source === 'openai_studio_hero' && rawPid && !isHeroCompoundId(rawPid))
+        ? buildHeroPublicId(rawPid) : rawPid;
       const resolved = resolveProductImage({
         id: p.resolved_image_id,
-        cloudinary_public_id: p.resolved_cloudinary_public_id,
+        cloudinary_public_id: effectivePid,
         cloudinary_url: p.resolved_cloudinary_url,
         external_url: p.resolved_external_url,
         approval_status: 'approved',
@@ -352,6 +360,7 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
         user_id: p.user_id,
         primary_image_url: imageUrl,
         card_url: imageUrl,
+        cloudinary_public_id: effectivePid,
         thumbnail_url: resolved?.thumbnail_url || imageUrl,
         detail_url: resolved?.detail_url || resolved?.gallery_url || imageUrl,
         store_name: sellerInfo?.name || 'Unknown Seller',

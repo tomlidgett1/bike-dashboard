@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { resolveProductImage } from '@/lib/services/image-resolver'
+import { buildHeroPublicId, isHeroCompoundId } from '@/lib/utils/cloudinary-transforms'
 import type { MarketplaceProduct } from '@/lib/types/marketplace'
 import { MARKETPLACE_INITIAL_PAGE_SIZE } from '@/lib/marketplace-constants'
 
@@ -10,6 +11,7 @@ const FAST_FIELDS = `
   id,
   canonical_product_id,
   resolved_image_id,
+  resolved_image_source,
   resolved_external_url,
   resolved_cloudinary_url,
   resolved_cloudinary_public_id,
@@ -83,9 +85,14 @@ export async function fetchInitialMarketplaceProducts(): Promise<InitialMarketpl
 
     const products: MarketplaceProduct[] = data.map((product: any) => {
       const user = usersById.get(product.user_id)
+      const rawPublicId: string | null = product.resolved_cloudinary_public_id ?? null
+      const isOldHero = product.resolved_image_source === 'openai_studio_hero'
+        && rawPublicId !== null
+        && !isHeroCompoundId(rawPublicId)
+      const effectivePublicId = isOldHero ? buildHeroPublicId(rawPublicId) : rawPublicId
       const resolved = resolveProductImage({
         id: product.resolved_image_id,
-        cloudinary_public_id: product.resolved_cloudinary_public_id,
+        cloudinary_public_id: effectivePublicId,
         cloudinary_url: product.resolved_cloudinary_url,
         external_url: product.resolved_external_url,
         approval_status: 'approved',
@@ -109,7 +116,7 @@ export async function fetchInitialMarketplaceProducts(): Promise<InitialMarketpl
         image_variants: null,
         all_images: allImages,
         images: null,
-        cloudinary_public_id: product.resolved_cloudinary_public_id ?? null,
+        cloudinary_public_id: effectivePublicId,
         card_url: primaryImageUrl,
         mobile_card_url: resolved?.mobile_card_url ?? primaryImageUrl,
         thumbnail_url: thumbnailUrl,

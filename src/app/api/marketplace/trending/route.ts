@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { resolveProductImage } from '@/lib/services/image-resolver';
+import { buildHeroPublicId, isHeroCompoundId } from '@/lib/utils/cloudinary-transforms';
 
 // Enable ISR caching - trending updates every 15 minutes
 export const revalidate = 900; // 15 minutes
@@ -39,14 +40,20 @@ const READY_PRODUCT_FIELDS = `
   resolved_image_id,
   resolved_external_url,
   resolved_cloudinary_url,
-  resolved_cloudinary_public_id
+  resolved_cloudinary_public_id,
+  resolved_image_source
 `;
 
 // Helper function to transform a ready-view product to API response format
 function transformProduct(product: any) {
+  const rawPublicId: string | null = product.resolved_cloudinary_public_id ?? null;
+  const isOldHero = product.resolved_image_source === 'openai_studio_hero'
+    && rawPublicId !== null
+    && !isHeroCompoundId(rawPublicId);
+  const effectivePublicId = isOldHero ? buildHeroPublicId(rawPublicId) : rawPublicId;
   const resolved = resolveProductImage({
     id: product.resolved_image_id,
-    cloudinary_public_id: product.resolved_cloudinary_public_id,
+    cloudinary_public_id: effectivePublicId,
     cloudinary_url: product.resolved_cloudinary_url,
     external_url: product.resolved_external_url,
     approval_status: 'approved',
@@ -65,6 +72,7 @@ function transformProduct(product: any) {
     marketplace_subcategory: product.marketplace_subcategory,
     primary_image_url: primaryUrl,
     card_url: primaryUrl,
+    cloudinary_public_id: effectivePublicId,
     thumbnail_url: resolved?.thumbnail_url || primaryUrl,
     detail_url: resolved?.detail_url || resolved?.gallery_url || primaryUrl,
     all_images: allImages,

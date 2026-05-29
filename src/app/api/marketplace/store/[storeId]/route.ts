@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { StoreProfile, StoreCategoryWithProducts } from '@/lib/types/store';
 import { resolveProductImage } from '@/lib/services/image-resolver';
+import { buildHeroPublicId, isHeroCompoundId } from '@/lib/utils/cloudinary-transforms';
 
 export async function GET(
   request: NextRequest,
@@ -123,7 +124,8 @@ export async function GET(
         resolved_image_id,
         resolved_external_url,
         resolved_cloudinary_url,
-        resolved_cloudinary_public_id
+        resolved_cloudinary_public_id,
+        resolved_image_source
       `)
       .eq('user_id', storeId)
       .gt('qoh', 0);
@@ -146,9 +148,14 @@ export async function GET(
 
     // Helper: resolve image and shape one product row into the API response format
     const toMarketplaceProduct = (product: any) => {
+      const rawPublicId: string | null = product.resolved_cloudinary_public_id ?? null;
+      const isOldHero = product.resolved_image_source === 'openai_studio_hero'
+        && rawPublicId !== null
+        && !isHeroCompoundId(rawPublicId);
+      const effectivePublicId = isOldHero ? buildHeroPublicId(rawPublicId) : rawPublicId;
       const resolved = resolveProductImage({
         id: product.resolved_image_id,
-        cloudinary_public_id: product.resolved_cloudinary_public_id,
+        cloudinary_public_id: effectivePublicId,
         cloudinary_url: product.resolved_cloudinary_url,
         external_url: product.resolved_external_url,
         approval_status: 'approved',
@@ -164,6 +171,7 @@ export async function GET(
         marketplace_subcategory: product.marketplace_subcategory || null,
         primary_image_url: primaryImageUrl,
         card_url: primaryImageUrl,
+        cloudinary_public_id: effectivePublicId,
         thumbnail_url: resolved?.thumbnail_url || primaryImageUrl,
         detail_url: resolved?.detail_url || resolved?.gallery_url || primaryImageUrl,
         store_name: storeUser.business_name,
