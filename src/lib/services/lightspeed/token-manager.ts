@@ -187,19 +187,35 @@ export function tokenNeedsRefresh(expiresAt: Date): boolean {
 }
 
 /**
- * Refresh the access token using the refresh token
+ * Refresh the access token using the refresh token.
+ *
+ * Guard: if another process refreshed in the last 10 seconds, skip and return the
+ * current (already-fresh) token instead.  This prevents two concurrent requests
+ * from both consuming the same refresh token, which would cause Lightspeed to
+ * revoke one of the resulting tokens.
  */
 export async function refreshAccessToken(userId: string): Promise<{
   accessToken: string
   expiresAt: Date
 } | null> {
   const tokens = await getDecryptedTokens(userId)
-  
+
   if (!tokens) {
     console.error('No tokens found for user')
     return null
   }
-  
+
+  // If a refresh happened in the last 10 seconds, another request beat us to it.
+  // Return the token that was just stored rather than consuming the refresh token again.
+  const lastRefresh = tokens.connection.last_token_refresh_at
+  if (lastRefresh) {
+    const secondsSinceRefresh = (Date.now() - new Date(lastRefresh).getTime()) / 1000
+    if (secondsSinceRefresh < 10 && !tokenNeedsRefresh(tokens.expiresAt)) {
+      console.log('[Lightspeed] Recent refresh detected, returning current token')
+      return { accessToken: tokens.accessToken, expiresAt: tokens.expiresAt }
+    }
+  }
+
   const { clientId, clientSecret } = getLightspeedCredentials()
   
   try {

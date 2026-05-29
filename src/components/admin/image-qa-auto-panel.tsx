@@ -5,8 +5,12 @@ import Image from "next/image";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Loader2,
   Package,
+  Plus,
+  RefreshCw,
   Sparkles,
   Star,
   Wand2,
@@ -52,6 +56,8 @@ interface AutoItem {
   savedCount?: number;
   costUsd?: number;
   error?: string;
+  showAdditional?: boolean;
+  reloadingCandidates?: boolean;
 }
 
 interface AiSelectResponse {
@@ -263,6 +269,43 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
     });
   }, []);
 
+  const addCandidate = React.useCallback((index: number, candidate: SpeedSearchCandidate) => {
+    setQueue((current) => {
+      const item = current[index];
+      if (!item || item.status !== "ready") return current;
+      if (item.selectedUrls.includes(candidate.url)) return current;
+      const selectedUrls = [...item.selectedUrls, candidate.url];
+      const selectedCandidates = [...item.selectedCandidates, candidate];
+      const primaryUrl = item.primaryUrl ?? candidate.url;
+      const next = [...current];
+      next[index] = { ...item, selectedUrls, selectedCandidates, primaryUrl };
+      return next;
+    });
+  }, []);
+
+  const reloadCandidates = React.useCallback(
+    async (item: AutoItem, index: number) => {
+      if (item.reloadingCandidates) return;
+      patchItem(index, { reloadingCandidates: true });
+      try {
+        const fresh = await fetchSerperCandidates(item.product, item.searchQuery);
+        // Merge with existing candidates, de-dupe by url.
+        setQueue((current) => {
+          const it = current[index];
+          if (!it) return current;
+          const existingUrls = new Set(it.candidates.map((c) => c.url));
+          const merged = [...it.candidates, ...fresh.filter((c) => !existingUrls.has(c.url))];
+          const next = [...current];
+          next[index] = { ...it, candidates: merged, showAdditional: true, reloadingCandidates: false };
+          return next;
+        });
+      } catch {
+        patchItem(index, { reloadingCandidates: false });
+      }
+    },
+    [patchItem],
+  );
+
   const runAutoPilot = async () => {
     setRunning(true);
     onSessionMessage?.(null);
@@ -338,13 +381,13 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
               </div>
 
               <div className="w-32">
-                <label className="mb-1 block text-xs text-gray-500">Products (1–5)</label>
+                <label className="mb-1 block text-xs text-gray-500">Products (1–50)</label>
                 <Select value={String(count)} onValueChange={(v) => setCount(Number(v))}>
                   <SelectTrigger className="h-9 w-full rounded-md">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[1, 2, 3, 4, 5].map((n) => (
+                    {[1, 2, 3, 4, 5, 10, 15, 20, 25, 30, 40, 50].map((n) => (
                       <SelectItem key={n} value={String(n)}>
                         {n}
                       </SelectItem>
@@ -429,6 +472,7 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
       ) : (
         <div className="space-y-4">
           {queue.map((item, index) => {
+            if (item.status === "done") return null;
             const label =
               item.product.store_product_name || item.product.display_name || item.product.normalized_name;
             const busy = ["searching", "selecting", "saving"].includes(item.status);
@@ -453,20 +497,16 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                     <span
                       className={cn(
                         "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs",
-                        item.status === "done"
-                          ? "border-gray-300 bg-gray-50 text-gray-800"
-                          : item.status === "error" || item.status === "no_results"
-                            ? "border-gray-300 bg-white text-gray-700"
-                            : "border-gray-200 bg-white text-gray-600",
+                        item.status === "error" || item.status === "no_results"
+                          ? "border-gray-300 bg-white text-gray-700"
+                          : "border-gray-200 bg-white text-gray-600",
                       )}
                     >
                       {busy && <Loader2 className="h-3 w-3 animate-spin" />}
-                      {item.status === "done" && <CheckCircle2 className="h-3 w-3" />}
                       {(item.status === "error" || item.status === "no_results") && (
                         <AlertCircle className="h-3 w-3" />
                       )}
                       {STATUS_LABEL[item.status]}
-                      {item.status === "done" && item.savedCount ? ` · ${item.savedCount} images` : ""}
                     </span>
                     {item.status === "ready" && (
                       <Button
@@ -496,9 +536,34 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                 {item.selectedUrls.length > 0 && (
                   <>
                     {item.status === "ready" && (
-                      <p className="mt-3 text-[11px] text-gray-400">
-                        Click the star to set the primary image, or remove any image you don&apos;t want before approving.
-                      </p>
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <p className="text-[11px] text-gray-400">
+                          Click the star to set the primary image, or remove any image you don&apos;t want before approving.
+                        </p>
+                        <button
+                          type="button"
+                          disabled={item.reloadingCandidates}
+                          onClick={() =>
+                            item.showAdditional
+                              ? patchItem(index, { showAdditional: false })
+                              : void reloadCandidates(item, index)
+                          }
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[11px] text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {item.reloadingCandidates ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : item.showAdditional ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : (
+                            <RefreshCw className="h-3 w-3" />
+                          )}
+                          {item.reloadingCandidates
+                            ? "Loading…"
+                            : item.showAdditional
+                              ? "Hide additional"
+                              : "Reload images"}
+                        </button>
+                      </div>
                     )}
                     <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
                       {item.selectedUrls.map((url) => {
@@ -557,6 +622,70 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                         );
                       })}
                     </div>
+
+                    {/* ── Additional candidates ── */}
+                    {item.showAdditional && (() => {
+                      const extra = item.candidates.filter((c) => !item.selectedUrls.includes(c.url));
+                      if (extra.length === 0) return (
+                        <p className="mt-3 text-center text-[11px] text-gray-400">
+                          No additional candidates — all Serper results are already selected.
+                        </p>
+                      );
+                      return (
+                        <>
+                          <div className="mt-4 flex items-center gap-2">
+                            <div className="h-px flex-1 bg-gray-200" />
+                            <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                              Additional candidates
+                            </span>
+                            <div className="h-px flex-1 bg-gray-200" />
+                          </div>
+                          <p className="mt-1 text-[11px] text-gray-400">
+                            These were not auto-selected. Click + to add any to your selection.
+                          </p>
+                          <div className="mt-2 max-h-96 overflow-y-auto rounded-md">
+                          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                            {extra.map((candidate) => {
+                              const atMax = item.selectedUrls.length >= MAX_SELECTED;
+                              return (
+                                <div
+                                  key={candidate.url}
+                                  className="group relative aspect-square overflow-hidden rounded-md border border-dashed border-gray-300 bg-gray-50"
+                                >
+                                  <Image
+                                    src={candidate.thumbnailUrl || candidate.url}
+                                    alt=""
+                                    fill
+                                    unoptimized
+                                    className="object-cover opacity-80"
+                                  />
+                                  {!atMax && (
+                                    <button
+                                      type="button"
+                                      aria-label="Add image"
+                                      title="Add to selection"
+                                      onClick={() => addCandidate(index, candidate)}
+                                      className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100"
+                                    >
+                                      <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-gray-800 shadow-sm">
+                                        <Plus className="h-3 w-3" />
+                                        Add
+                                      </span>
+                                    </button>
+                                  )}
+                                  {atMax && (
+                                    <div className="absolute inset-x-0 bottom-0 bg-white/80 px-1.5 py-0.5 text-center text-[10px] text-gray-500">
+                                      Max {MAX_SELECTED}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </>
                 )}
               </div>

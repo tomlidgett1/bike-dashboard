@@ -6,7 +6,7 @@
  */
 
 import { LIGHTSPEED_CONFIG } from './config'
-import { getValidAccessToken, updateLastSyncTime } from './token-manager'
+import { getValidAccessToken, refreshAccessToken, updateLastSyncTime } from './token-manager'
 import type {
   LightspeedAccountResponse,
   LightspeedItemsResponse,
@@ -77,25 +77,29 @@ export class LightspeedClient {
   }
 
   /**
-   * Make an authenticated API request with retry logic
+   * Make an authenticated API request with retry logic and automatic token refresh on 401.
+   *
+   * Lightspeed recommendation: wait for a 401, then refresh once.
+   * We also proactively refresh via getValidAccessToken before the first attempt.
    */
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const accessToken = await getValidAccessToken(this.userId)
-    
+    let accessToken = await getValidAccessToken(this.userId)
+
     if (!accessToken) {
       throw new Error('No valid access token available. Please reconnect your Lightspeed account.')
     }
 
-    await this.rateLimiter.waitForSlot()
-
     const url = `${LIGHTSPEED_CONFIG.API_BASE_URL}${endpoint}`
-    
+
     let lastError: Error | null = null
-    
+    let tokenRefreshed = false
+
     for (let attempt = 0; attempt < LIGHTSPEED_CONFIG.MAX_RETRIES; attempt++) {
+      await this.rateLimiter.waitForSlot()
+
       try {
         const response = await fetch(url, {
           ...options,
@@ -107,12 +111,25 @@ export class LightspeedClient {
           },
         })
 
+        // Token expired — refresh once and retry without consuming a retry slot
+        if (response.status === 401 && !tokenRefreshed) {
+          tokenRefreshed = true
+          console.log('[Lightspeed] 401 received, refreshing access token...')
+          const refreshed = await refreshAccessToken(this.userId)
+          if (refreshed) {
+            accessToken = refreshed.accessToken
+            attempt-- // don't count this as a retry attempt
+            continue
+          }
+          throw new Error('Session expired. Please reconnect your Lightspeed account.')
+        }
+
         // Handle rate limiting (429)
         if (response.status === 429) {
           const retryAfter = response.headers.get('Retry-After')
-          const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : 
+          const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 :
             LIGHTSPEED_CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
-          
+
           console.log(`Rate limited, waiting ${waitTime}ms before retry`)
           await new Promise(resolve => setTimeout(resolve, waitTime))
           continue
@@ -134,12 +151,15 @@ export class LightspeedClient {
         return await response.json()
       } catch (error) {
         lastError = error as Error
-        
+
         // Don't retry on non-retryable errors
-        if (lastError.message.includes('No valid access token')) {
+        if (
+          lastError.message.includes('No valid access token') ||
+          lastError.message.includes('Session expired')
+        ) {
           throw lastError
         }
-        
+
         // Exponential backoff for network errors
         if (attempt < LIGHTSPEED_CONFIG.MAX_RETRIES - 1) {
           const waitTime = LIGHTSPEED_CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
