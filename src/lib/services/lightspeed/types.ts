@@ -201,8 +201,11 @@ export interface LightspeedCategoriesResponse {
   Category: LightspeedCategory | LightspeedCategory[]
   '@attributes'?: {
     count: string
-    offset: string
+    offset?: string
     limit: string
+    /** Cursor-based pagination: full URL for the next page (Lightspeed deprecated offset) */
+    next?: string
+    previous?: string
   }
 }
 

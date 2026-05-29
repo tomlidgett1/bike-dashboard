@@ -92,7 +92,10 @@ export class LightspeedClient {
       throw new Error('No valid access token available. Please reconnect your Lightspeed account.')
     }
 
-    const url = `${LIGHTSPEED_CONFIG.API_BASE_URL}${endpoint}`
+    // Support full URLs returned by cursor-based pagination (e.g. @attributes.next)
+    const url = endpoint.startsWith('http')
+      ? endpoint
+      : `${LIGHTSPEED_CONFIG.API_BASE_URL}${endpoint}`
 
     let lastError: Error | null = null
     let tokenRefreshed = false
@@ -293,40 +296,33 @@ export class LightspeedClient {
   }
 
   /**
-   * Get ALL categories across all pages (handles shops with >100 categories).
+   * Get ALL categories across all pages.
    *
-   * Uses @attributes.count from the Lightspeed response to stop reliably,
-   * with a page-length fallback and a hard 50-page guard to prevent infinite
-   * loops on endpoints that ignore the offset parameter.
+   * Lightspeed deprecated offset-based pagination for the Category endpoint.
+   * We now follow the @attributes.next cursor URL returned in each response.
+   * Falls back to single-page fetch when no next URL is present.
    */
   async getAllCategories(additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>): Promise<LightspeedCategory[]> {
     const allCategories: LightspeedCategory[] = []
-    let offset = 0
-    const limit = 100 // Lightspeed max per request
-    let totalCount: number | null = null
-    let iterations = 0
-    const MAX_ITERATIONS = 50 // safety guard against infinite loops
+    const limit = 100
+    const MAX_PAGES = 50 // safety guard
+    let pageCount = 0
 
     const accountId = await this.getAccountId()
 
-    while (iterations++ < MAX_ITERATIONS) {
-      const queryString = this.buildQueryString({ ...additionalParams, offset, limit })
-      const response = await this.request<LightspeedCategoriesResponse>(
-        `/Account/${accountId}/Category.json${queryString}`
-      )
+    // First request — use limit only, no offset (offset is no longer accepted)
+    const queryString = this.buildQueryString({ ...additionalParams, limit })
+    let endpoint: string = `/Account/${accountId}/Category.json${queryString}`
 
-      // Resolve total count from first response so we can stop accurately
-      if (totalCount === null && response['@attributes']?.count) {
-        totalCount = parseInt(response['@attributes'].count, 10)
-      }
-
+    while (pageCount++ < MAX_PAGES) {
+      const response = await this.request<LightspeedCategoriesResponse>(endpoint)
       const page = this.ensureArray(response.Category)
       allCategories.push(...page)
 
-      // Stop when we have everything (count-based) or when the page is short (fallback)
-      if (totalCount !== null && allCategories.length >= totalCount) break
-      if (page.length < limit) break
-      offset += limit
+      // Follow the cursor URL for the next page, or stop
+      const nextUrl = response['@attributes']?.next
+      if (!nextUrl || page.length < limit) break
+      endpoint = nextUrl // request() now accepts full URLs
     }
 
     return allCategories
