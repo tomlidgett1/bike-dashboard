@@ -12,7 +12,7 @@ export const CLOUDINARY_IMAGE_TRANSFORMS = {
 export const CLOUDINARY_EAGER_TRANSFORMS = Object.values(CLOUDINARY_IMAGE_TRANSFORMS).join("|");
 
 export function buildCloudinaryUrls(cloudName: string, publicId: string) {
-  const baseUrl = `https://res.cloudinary.com/${cloudName}/image/upload`;
+  const baseUrl = `https://res.cloudinary.com/${cloudName.trim()}/image/upload`;
 
   return {
     thumbnailUrl: `${baseUrl}/${CLOUDINARY_IMAGE_TRANSFORMS.thumbnail}/${publicId}`,

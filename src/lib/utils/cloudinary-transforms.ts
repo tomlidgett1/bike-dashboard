@@ -40,19 +40,28 @@ export function extractCloudinaryPublicId(url: string | null | undefined): strin
   }
 }
 
+// Trim to guard against env vars with trailing newlines (common in CI/CD and .env files)
+function resolveCloudName(
+  override?: string
+): string | undefined {
+  const raw = override ?? (process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME);
+  return raw?.trim() || undefined;
+}
+
 export function buildCloudinaryImageUrl(
   publicId: string | null | undefined,
   slot: CloudinaryImageSlot,
-  cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME
+  cloudName?: string
 ): string | null {
-  if (!publicId || !cloudName) return null;
+  const cn = resolveCloudName(cloudName);
+  if (!publicId || !cn) return null;
 
-  return `https://res.cloudinary.com/${cloudName}/image/upload/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${publicId}`;
+  return `https://res.cloudinary.com/${cn}/image/upload/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${publicId}`;
 }
 
 export function buildCloudinaryVariantUrls(
   publicId: string | null | undefined,
-  cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME
+  cloudName?: string
 ) {
   return {
     thumbnailUrl: buildCloudinaryImageUrl(publicId, "thumbnail", cloudName),
@@ -75,7 +84,6 @@ export function cloudinaryCardLoader({
   width: number;
   quality?: number;
 }): string {
-  const cloudName =
-    process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME;
+  const cloudName = resolveCloudName();
   return `https://res.cloudinary.com/${cloudName}/image/upload/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${src}`;
 }
