@@ -1,6 +1,6 @@
 /**
  * OpenAI Images Edit — ecommerce hero (light-grey primer + soft contact shadow).
- * Uses gpt-image-2 on /v1/images/edits.
+ * Uses gpt-image-2 on /v1/images/edits (newest OpenAI image model).
  */
 
 export const OPENAI_ECOMMERCE_IMAGE_MODEL = "gpt-image-2";
@@ -116,7 +116,11 @@ export async function callOpenAIEcommerceHeroEdit(
   formData.append("prompt", prompt);
   formData.append("model", OPENAI_ECOMMERCE_IMAGE_MODEL);
   formData.append("size", "1024x1024");
-  formData.append("quality", "high");
+  // quality drives latency hard on gpt-image-2 image edits:
+  //   high ≈ 184 s, medium ≈ 68 s, low ≈ 29 s (measured 2026-05).
+  // "low" still produces a clean studio-grade hero for product packshots and
+  // is the only tier that comfortably fits the < 60 s budget.
+  formData.append("quality", "low");
 
   const response = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",
