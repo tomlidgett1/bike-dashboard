@@ -111,12 +111,12 @@ export async function GET() {
       // Use the Lightspeed client to fetch categories
       const { createLightspeedClient } = await import('@/lib/services/lightspeed')
       const client = createLightspeedClient(user.id)
-      const categories = await client.getCategories({ archived: 'false' })
-      
+      const categories = await client.getAllCategories({ archived: 'false' })
+
       console.log(`[Inventory Overview] Fetched ${categories.length} category names from Lightspeed`)
-      
+
       categories.forEach((cat: any) => {
-        categoryNamesMap.set(cat.categoryID, cat.name)
+        categoryNamesMap.set(cat.categoryID, cat.fullPathName || cat.name)
       })
     } catch (error) {
       console.error('[Inventory Overview] Error fetching category names:', error)

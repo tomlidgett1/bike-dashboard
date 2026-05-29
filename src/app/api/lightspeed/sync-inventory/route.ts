@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
 
     // Fetch categories for enrichment
     console.log(`📂 Fetching categories...`)
-    const categories = await client.getCategories({ archived: 'false' })
+    const categories = await client.getAllCategories({ archived: 'false' })
     const categoryMap = new Map(categories.map(cat => [cat.categoryID, {
       name: cat.name,
       fullPath: cat.fullPathName,

@@ -27,7 +27,7 @@ export async function GET() {
     const client = createLightspeedClient(user.id)
 
     // Fetch all categories
-    const categories = await client.getCategories({ archived: 'false' })
+    const categories = await client.getAllCategories({ archived: 'false' })
 
     return NextResponse.json({
       success: true,

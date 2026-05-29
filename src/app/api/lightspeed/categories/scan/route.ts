@@ -59,7 +59,7 @@ export async function GET() {
     const client = createLightspeedClient(user.id);
 
     // Fetch all categories from Lightspeed (same as categories-sync endpoint)
-    const lightspeedCategoriesResponse = await client.getCategories({ archived: 'false' });
+    const lightspeedCategoriesResponse = await client.getAllCategories({ archived: 'false' });
     
     if (!lightspeedCategoriesResponse || !Array.isArray(lightspeedCategoriesResponse)) {
       return NextResponse.json({ categories: [] });

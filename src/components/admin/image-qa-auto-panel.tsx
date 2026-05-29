@@ -58,6 +58,10 @@ interface AutoItem {
   error?: string;
   showAdditional?: boolean;
   reloadingCandidates?: boolean;
+  /** URLs currently being background-removed (show spinner overlay). */
+  enhancingUrls?: string[];
+  /** Maps original URL → enhanced Cloudinary URL (for display + approval). */
+  enhancedUrls?: Record<string, string>;
 }
 
 interface AiSelectResponse {
@@ -304,6 +308,64 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
       }
     },
     [patchItem],
+  );
+
+  const enhanceImage = React.useCallback(
+    async (item: AutoItem, itemIndex: number, originalUrl: string) => {
+      if ((item.enhancingUrls ?? []).includes(originalUrl)) return;
+
+      // Mark URL as enhancing
+      setQueue((q) => {
+        const it = q[itemIndex];
+        if (!it) return q;
+        const next = [...q];
+        next[itemIndex] = { ...it, enhancingUrls: [...(it.enhancingUrls ?? []), originalUrl] };
+        return next;
+      });
+
+      try {
+        const res = await fetch('/api/admin/images/enhance-preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageUrl: originalUrl,
+            canonicalProductId: item.product.id,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success || !json.url) throw new Error(json.error || 'Enhancement failed');
+
+        const enhancedUrl: string = json.url;
+        const enhancedThumb: string = json.thumbnailUrl ?? json.url;
+
+        setQueue((q) => {
+          const it = q[itemIndex];
+          if (!it) return q;
+          // Replace the original URL everywhere with the enhanced one.
+          const selectedUrls = it.selectedUrls.map((u) => (u === originalUrl ? enhancedUrl : u));
+          const selectedCandidates = it.selectedCandidates.map((c) =>
+            c.url === originalUrl
+              ? { ...c, url: enhancedUrl, thumbnailUrl: enhancedThumb }
+              : c,
+          );
+          const primaryUrl = it.primaryUrl === originalUrl ? enhancedUrl : it.primaryUrl;
+          const enhancedUrls = { ...(it.enhancedUrls ?? {}), [originalUrl]: enhancedUrl };
+          const enhancingUrls = (it.enhancingUrls ?? []).filter((u) => u !== originalUrl);
+          const next = [...q];
+          next[itemIndex] = { ...it, selectedUrls, selectedCandidates, primaryUrl, enhancedUrls, enhancingUrls };
+          return next;
+        });
+      } catch {
+        setQueue((q) => {
+          const it = q[itemIndex];
+          if (!it) return q;
+          const next = [...q];
+          next[itemIndex] = { ...it, enhancingUrls: (it.enhancingUrls ?? []).filter((u) => u !== originalUrl) };
+          return next;
+        });
+      }
+    },
+    [],
   );
 
   const runAutoPilot = async () => {
@@ -567,9 +629,17 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                     )}
                     <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
                       {item.selectedUrls.map((url) => {
+                        // Resolve: if this URL was enhanced, show the enhanced image
+                        const resolvedUrl = item.enhancedUrls?.[url] ?? url;
                         const candidate = item.candidates.find((c) => c.url === url);
+                        const displaySrc = item.enhancedUrls?.[url]
+                          ? item.enhancedUrls[url]
+                          : candidate?.thumbnailUrl ?? url;
                         const primary = url === item.primaryUrl;
                         const editable = item.status === "ready";
+                        const isEnhancing = (item.enhancingUrls ?? []).includes(url);
+                        const isEnhanced = !!(item.enhancedUrls?.[url]);
+                        void resolvedUrl; // used via displaySrc
                         return (
                           <div
                             key={url}
@@ -579,19 +649,32 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                             )}
                           >
                             <Image
-                              src={candidate?.thumbnailUrl || url}
+                              src={displaySrc}
                               alt=""
                               fill
                               unoptimized
                               className="object-cover"
                             />
+                            {/* Enhanced badge */}
+                            {isEnhanced && !primary && (
+                              <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-gray-900 px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                                <Wand2 className="h-2.5 w-2.5" />
+                                Enhanced
+                              </span>
+                            )}
                             {primary && (
                               <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-800 shadow-sm">
                                 <Star className="h-2.5 w-2.5 fill-current" />
-                                Primary
+                                {isEnhanced ? "Primary · Enhanced" : "Primary"}
                               </span>
                             )}
-                            {editable && (
+                            {/* Enhancing spinner overlay */}
+                            {isEnhancing && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-white/70">
+                                <Loader2 className="h-5 w-5 animate-spin text-gray-500" />
+                              </div>
+                            )}
+                            {editable && !isEnhancing && (
                               <>
                                 {item.selectedUrls.length > 1 && (
                                   <button
@@ -604,16 +687,28 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                                     <X className="h-3.5 w-3.5" />
                                   </button>
                                 )}
+                                {/* Remove background button */}
+                                {!isEnhanced && (
+                                  <button
+                                    type="button"
+                                    aria-label="Remove background"
+                                    title="Remove background & add white backdrop"
+                                    onClick={() => void enhanceImage(item, index, url)}
+                                    className="absolute left-1.5 bottom-1.5 inline-flex items-center gap-1 rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-medium text-gray-700 opacity-0 shadow-sm transition hover:bg-white hover:text-gray-900 group-hover:opacity-100"
+                                  >
+                                    <Wand2 className="h-2.5 w-2.5" />
+                                    Remove BG
+                                  </button>
+                                )}
                                 {!primary && (
                                   <button
                                     type="button"
                                     aria-label="Set as primary"
                                     title="Set as primary"
                                     onClick={() => setPrimary(index, url)}
-                                    className="absolute inset-x-1.5 bottom-1.5 inline-flex items-center justify-center gap-1 rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-medium text-gray-700 opacity-0 shadow-sm transition hover:bg-white hover:text-gray-900 group-hover:opacity-100"
+                                    className="absolute bottom-1.5 right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/90 text-gray-700 opacity-0 shadow-sm transition hover:bg-white hover:text-gray-900 group-hover:opacity-100"
                                   >
-                                    <Star className="h-2.5 w-2.5" />
-                                    Set primary
+                                    <Star className="h-3 w-3" />
                                   </button>
                                 )}
                               </>

@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     console.log(`Total items collected: ${allItems.length} from ${categoryIds.length} categories`)
 
     // Fetch categories for item details
-    const categories = await client.getCategories({ archived: 'false' })
+    const categories = await client.getAllCategories({ archived: 'false' })
     const categoryMap = new Map(categories.map(cat => [cat.categoryID, cat.name]))
 
     // Fetch inventory levels (ItemShops) for all items

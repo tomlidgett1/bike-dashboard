@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const { createLightspeedClient } = await import('@/lib/services/lightspeed');
     const client = createLightspeedClient(user.id);
     
-    const lightspeedCategories = await client.getCategories({ archived: 'false' });
+    const lightspeedCategories = await client.getAllCategories({ archived: 'false' });
 
     // Get user's sync preferences
     const { data: preferences } = await supabase

@@ -281,7 +281,7 @@ export class LightspeedClient {
   // ============================================================
 
   /**
-   * Get all categories
+   * Get a single page of categories
    */
   async getCategories(params?: LightspeedQueryParams): Promise<LightspeedCategory[]> {
     const accountId = await this.getAccountId()
@@ -290,6 +290,30 @@ export class LightspeedClient {
       `/Account/${accountId}/Category.json${queryString}`
     )
     return this.ensureArray(response.Category)
+  }
+
+  /**
+   * Get ALL categories across all pages (handles shops with >100 categories)
+   */
+  async getAllCategories(additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>): Promise<LightspeedCategory[]> {
+    const allCategories: LightspeedCategory[] = []
+    let offset = 0
+    const limit = 100 // Lightspeed max per request
+
+    while (true) {
+      const page = await this.getCategories({
+        ...additionalParams,
+        offset,
+        limit,
+      })
+
+      allCategories.push(...page)
+
+      if (page.length < limit) break
+      offset += limit
+    }
+
+    return allCategories
   }
 
   // ============================================================

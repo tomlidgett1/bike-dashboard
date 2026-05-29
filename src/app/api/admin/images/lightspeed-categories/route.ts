@@ -59,7 +59,7 @@ export async function GET(request: Request) {
     try {
       const { createLightspeedClient } = await import('@/lib/services/lightspeed')
       const client = createLightspeedClient(user.id)
-      const lsCategories = await client.getCategories({ archived: 'false' })
+      const lsCategories = await client.getAllCategories({ archived: 'false' })
 
       for (const cat of lsCategories as any[]) {
         nameMap.set(String(cat.categoryID), cat.fullPathName || cat.name || String(cat.categoryID))
