@@ -105,14 +105,26 @@ is the "consensus product"; it is almost certainly the correct listing.
      matches the product name/brand above and discard the other group entirely.
 
 STEP 2 — PICK THE PRIMARY (must come FROM the consensus group):
-   - Choose the consensus-group image that is the cleanest studio shot: white/neutral background,
-     product only (no people/lifestyle), front view, well-lit, high resolution.
-   - Aesthetics only decide ties WITHIN the consensus group. A prettier shot of a DIFFERENT product is
-     never the primary — matching the majority/product identity always wins over photo quality.
+   The primary must be a HERO PACKSHOT: a photo of the physical product itself — the item or its
+   front-of-pack packaging — shown as the main subject on a clean white/neutral background, front view,
+   well-lit, high resolution, no people/lifestyle.
+   CRITICAL — the primary must NOT be an information panel. Even when they have clean backgrounds, the
+   following are NEVER acceptable as the primary (rank them last for the primary slot):
+     - nutrition-facts / supplement-facts tables
+     - ingredient lists or "directions / how to use" text
+     - spec sheets, sizing charts, feature/benefit infographics, callout diagrams
+     - the BACK of packaging, or any image that is mostly text/numbers rather than the product
+   If an image is dominated by text or a facts table, it is an information panel, not a packshot — keep
+   it only as a SUPPORTING image, never the primary.
+   Prefer, in order: (1) clean front-of-pack hero packshot, (2) clear photo of the product/packaging at a
+   slight angle, (3) anything else. Aesthetics only decide ties between two genuine packshots. Matching
+   the majority/product identity always wins over photo quality.
 
 STEP 3 — ADD SUPPORTING IMAGES (also from the consensus group):
    - Different angles or detail shots of the SAME product and SAME configuration as the primary.
-   - Professional quality, prefer variety of angles, no near-identical duplicates, no watermarks/text/collages.
+   - Nutrition/ingredient/spec/back-of-pack panels ARE allowed here (they are useful supporting info),
+     just never as the primary.
+   - Professional quality, prefer variety of angles, no near-identical duplicates, no watermarks/collages.
 
 GOAL: aim for ${TARGET_MIN}-${maxImages} images total — ONE primary plus ${TARGET_MIN - 1}-${maxImages - 1}
 additional images, ALL from the consensus group. Include EVERY consensus-group image that clearly shows
@@ -130,8 +142,9 @@ Images are numbered 0 to ${count - 1}.
 Return ONLY valid JSON (no markdown):
 {
   "selectedImages": [
-    { "index": 0, "isPrimary": true, "reason": "Single front light, white bg, matches the named product" },
-    { "index": 2, "isPrimary": false, "reason": "Same front light, side angle showing mount" }
+    { "index": 0, "isPrimary": true, "reason": "Front-of-pack hero packshot of the product on white bg" },
+    { "index": 2, "isPrimary": false, "reason": "Same product, angled detail shot" },
+    { "index": 5, "isPrimary": false, "reason": "Nutrition-facts panel — supporting info only, not primary" }
   ],
   "reasoning": "What the exact product is and why these images match it"
 }`;
@@ -311,6 +324,18 @@ export async function POST(request: NextRequest) {
     // Resolve a single primary: prefer the AI's flagged primary, else first selection.
     let primaryIndex = selections.find((s) => s.isPrimary)?.index;
     if (primaryIndex === undefined) primaryIndex = selections[0].index;
+
+    // Safety net: a nutrition/ingredient/spec/back-of-pack panel must never be the primary.
+    // The AI describes each pick in `reason`; if the chosen primary reads like an info panel and
+    // another selection does NOT, promote that non-panel image instead.
+    const INFO_PANEL_RE = /nutrition|ingredient|supplement\s*facts|\bfacts\b|spec(?:s|ification)?\b|sizing|directions|how to use|back[\s-]?of[\s-]?pack|\bpanel\b|infographic|label/i;
+    const reasonOf = (idx: number) => selections.find((s) => s.index === idx)?.reason || '';
+    if (INFO_PANEL_RE.test(reasonOf(primaryIndex))) {
+      const cleanPick = selections.find(
+        (s) => s.index !== primaryIndex && !INFO_PANEL_RE.test(s.reason || ''),
+      );
+      if (cleanPick) primaryIndex = cleanPick.index;
+    }
 
     // De-dupe by index, cap at maxImages, ensure primary is first.
     const orderedIndexes = [

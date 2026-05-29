@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { ImageQaSpeedPanel } from "@/components/admin/image-qa-speed-panel";
 import { ImageQaAutoPanel } from "@/components/admin/image-qa-auto-panel";
+import { HeroBackgroundPanel } from "@/components/admin/hero-background-panel";
 
 type WorkbenchStatus = "needs_work" | "missing" | "pending" | "needs_primary" | "ready" | "failed";
 
@@ -90,7 +91,7 @@ function buildDefaultQuery(product: WorkbenchProduct) {
     .join(" ");
 }
 
-type WorkbenchMode = "workbench" | "rapid" | "auto";
+type WorkbenchMode = "workbench" | "rapid" | "auto" | "hero";
 
 export default function ImageQAPage() {
   const [mode, setMode] = React.useState<WorkbenchMode>("rapid");
@@ -381,6 +382,18 @@ export default function ImageQAPage() {
                 type="button"
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                  mode === "hero"
+                    ? "text-gray-800 bg-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70",
+                )}
+                onClick={() => setMode("hero")}
+              >
+                Hero background
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
                   mode === "workbench"
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70",
@@ -402,6 +415,8 @@ export default function ImageQAPage() {
             <ImageQaSpeedPanel onSessionMessage={setMessage} />
           ) : mode === "auto" ? (
             <ImageQaAutoPanel onSessionMessage={setMessage} />
+          ) : mode === "hero" ? (
+            <HeroBackgroundPanel onSessionMessage={setMessage} />
           ) : !selectedProduct ? (
             <div className="flex min-h-[50vh] items-center justify-center rounded-md border border-dashed border-gray-200 bg-white p-8 text-sm text-gray-500">
               Select a product from the list on the right.
@@ -653,7 +668,7 @@ export default function ImageQAPage() {
         <aside
           className={cn(
             "w-full shrink-0 border-gray-200 bg-white px-4 py-4 sm:px-5 lg:sticky lg:top-0 lg:h-screen lg:w-[min(100%,20rem)] lg:max-w-[20rem] lg:overflow-y-auto lg:border-l xl:w-[22rem] xl:max-w-[22rem]",
-            (mode === "rapid" || mode === "auto") && "hidden lg:hidden",
+            (mode === "rapid" || mode === "auto" || mode === "hero") && "hidden lg:hidden",
           )}
         >
           <div className="mb-4 flex items-center justify-between gap-2">
