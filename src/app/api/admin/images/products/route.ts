@@ -35,13 +35,40 @@ export async function GET(request: NextRequest) {
     const minQoh = searchParams.get('min_qoh') ? parseInt(searchParams.get('min_qoh')!) : null;
     const minPrice = searchParams.get('min_price') ? parseFloat(searchParams.get('min_price')!) : null;
     const maxPrice = searchParams.get('max_price') ? parseFloat(searchParams.get('max_price')!) : null;
+    // live_only=true: restrict to canonical products that have at least one
+    // active listing belonging to the current user (is_active = true).
+    const liveOnly = searchParams.get('live_only') === 'true';
     const offset = (page - 1) * limit;
+
+    // When live_only is requested, fetch the set of canonical_product_ids that
+    // have at least one active product row for this user.
+    let liveCanonicalIds: string[] | null = null;
+    if (liveOnly) {
+      const { data: liveRows } = await supabase
+        .from('products')
+        .select('canonical_product_id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .not('canonical_product_id', 'is', null);
+      liveCanonicalIds = liveRows
+        ? [...new Set(liveRows.map((r: any) => r.canonical_product_id as string).filter(Boolean))]
+        : [];
+    }
 
     let query = supabase
       .from('image_workbench_products')
       .select('*', { count: 'exact' })
       .order('updated_at', { ascending: false, nullsFirst: false })
       .range(offset, offset + limit - 1);
+
+    // Restrict to live products for this user when requested
+    if (liveCanonicalIds !== null) {
+      if (liveCanonicalIds.length === 0) {
+        // User has no active listings — return empty immediately
+        return NextResponse.json({ success: true, data: [], pagination: { page, limit, total: 0, total_pages: 0 } });
+      }
+      query = query.in('id', liveCanonicalIds);
+    }
 
     if (search) {
       query = query.or(`normalized_name.ilike.%${search}%,display_name.ilike.%${search}%,upc.ilike.%${search}%`);

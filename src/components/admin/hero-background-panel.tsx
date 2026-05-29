@@ -94,7 +94,8 @@ export function HeroBackgroundPanel({ onSessionMessage }: HeroBackgroundPanelPro
         const params = new URLSearchParams({
           page: String(nextPage),
           limit: "48",
-          status: "ready", // only products that have primary images
+          status: "ready",   // only products that have a primary image
+          live_only: "true", // only products live on the marketplace for this user
         });
         if (nextSearch.trim()) params.set("search", nextSearch.trim());
         if (nextCategory !== "all") params.set("category", nextCategory);
@@ -460,7 +461,7 @@ export function HeroBackgroundPanel({ onSessionMessage }: HeroBackgroundPanelPro
         </div>
       ) : items.length === 0 ? (
         <div className="flex min-h-[30vh] items-center justify-center rounded-md border border-dashed border-gray-200 bg-white text-sm text-gray-500">
-          No products with primary images found.
+          No live marketplace products with primary images found.
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
