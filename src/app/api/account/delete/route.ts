@@ -59,7 +59,23 @@ export async function DELETE() {
       }
     }
 
-    // 4. Remove logo from storage
+    // 4. Null out product_images.uploaded_by — this FK has no ON DELETE CASCADE,
+    //    so deleteUser() would be blocked if we don't clear it first.
+    //    The images themselves are preserved (they're shared canonical data).
+    const { error: imagesError } = await adminClient
+      .from('product_images')
+      .update({ uploaded_by: null })
+      .eq('uploaded_by', user.id)
+
+    if (imagesError) {
+      console.error('Error nulling product_images.uploaded_by:', imagesError)
+      return NextResponse.json(
+        { error: `Failed to unlink product images: ${imagesError.message}` },
+        { status: 500 }
+      )
+    }
+
+    // 6. Remove logo from storage
     const { data: logoFiles } = await adminClient.storage
       .from('logo')
       .list(user.id)
@@ -69,7 +85,7 @@ export async function DELETE() {
       await adminClient.storage.from('logo').remove(paths)
     }
 
-    // 5. Delete the auth user — cascades to: users, lightspeed_tokens,
+    // 7. Delete the auth user — cascades to: users, lightspeed_tokens,
     //    stripe_connect_accounts, conversations, messages, notifications, offers,
     //    follows, vouchers, genie_conversations, etc.
     const { error: deleteUserError } = await adminClient.auth.admin.deleteUser(user.id)
