@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch categories for item details
     const categories = await client.getAllCategories({ archived: 'false' })
-    const categoryMap = new Map(categories.map(cat => [cat.categoryID, cat.name]))
+    const categoryMap = new Map(categories.map(cat => [String(cat.categoryID), cat.name]))
 
     // Fetch inventory levels (ItemShops) for all items
     const itemIds = allItems.map(item => item.id)

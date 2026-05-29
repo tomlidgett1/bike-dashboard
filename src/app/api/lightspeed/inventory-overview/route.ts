@@ -116,7 +116,7 @@ export async function GET() {
       console.log(`[Inventory Overview] Fetched ${categories.length} category names from Lightspeed`)
 
       categories.forEach((cat: any) => {
-        categoryNamesMap.set(cat.categoryID, cat.fullPathName || cat.name)
+        categoryNamesMap.set(String(cat.categoryID), cat.fullPathName || cat.name)
       })
     } catch (error) {
       console.error('[Inventory Overview] Error fetching category names:', error)
@@ -139,7 +139,7 @@ export async function GET() {
         modelYear: product.model_year,
         upc: product.upc,
         categoryId: product.category_id,
-        categoryName: categoryNamesMap.get(product.category_id || '') || `Category ${product.category_id || 'Unknown'}`,
+        categoryName: categoryNamesMap.get(String(product.category_id ?? '')) || `Category ${product.category_id || 'Unknown'}`,
         manufacturerId: product.manufacturer_id,
         price: parseFloat(product.price) || 0,
         totalQoh: product.total_qoh,

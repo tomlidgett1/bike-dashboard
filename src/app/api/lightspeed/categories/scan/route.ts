@@ -96,7 +96,7 @@ export async function GET() {
     const categoryOptions: LightspeedCategoryOption[] = [];
     
     for (const category of lightspeedCategoriesResponse) {
-      const categoryId = category.categoryID;
+      const categoryId = String(category.categoryID);
       const productInfo = categoryProductCounts.get(categoryId);
       
       // Only include categories that have products with inventory
