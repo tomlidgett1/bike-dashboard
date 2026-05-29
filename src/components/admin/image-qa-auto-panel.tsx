@@ -94,6 +94,13 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
   const [running, setRunning] = React.useState(false);
   const [queue, setQueue] = React.useState<AutoItem[]>([]);
 
+  // ── Enhancement queue (serial — gpt-image-2 takes 60–120 s per image) ──────
+  // We keep the pending jobs in a ref so the async processor never sees stale
+  // state; a separate counter drives the UI badge.
+  const enhanceJobsRef = React.useRef<Array<{ itemIndex: number; url: string }>>([]);
+  const [enhanceQueueCount, setEnhanceQueueCount] = React.useState(0);
+  const enhanceProcessing = React.useRef(false);
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -310,11 +317,10 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
     [patchItem],
   );
 
-  const enhanceImage = React.useCallback(
-    async (item: AutoItem, itemIndex: number, originalUrl: string) => {
-      if ((item.enhancingUrls ?? []).includes(originalUrl)) return;
-
-      // Mark URL as enhancing
+  // Core enhancement logic — called by the queue processor, never directly.
+  const doEnhanceImage = React.useCallback(
+    async (itemIndex: number, originalUrl: string) => {
+      // Mark as actively enhancing
       setQueue((q) => {
         const it = q[itemIndex];
         if (!it) return q;
@@ -324,13 +330,15 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
       });
 
       try {
+        // Read product id from current queue state without stale closure
+        const productId = await new Promise<string | undefined>((resolve) =>
+          setQueue((q) => { resolve(q[itemIndex]?.product?.id); return q; }),
+        );
+
         const res = await fetch('/api/admin/images/enhance-preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            imageUrl: originalUrl,
-            canonicalProductId: item.product.id,
-          }),
+          body: JSON.stringify({ imageUrl: originalUrl, canonicalProductId: productId }),
         });
         const json = await res.json();
         if (!res.ok || !json.success || !json.url) throw new Error(json.error || 'Enhancement failed');
@@ -341,12 +349,9 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
         setQueue((q) => {
           const it = q[itemIndex];
           if (!it) return q;
-          // Replace the original URL everywhere with the enhanced one.
           const selectedUrls = it.selectedUrls.map((u) => (u === originalUrl ? enhancedUrl : u));
           const selectedCandidates = it.selectedCandidates.map((c) =>
-            c.url === originalUrl
-              ? { ...c, url: enhancedUrl, thumbnailUrl: enhancedThumb }
-              : c,
+            c.url === originalUrl ? { ...c, url: enhancedUrl, thumbnailUrl: enhancedThumb } : c,
           );
           const primaryUrl = it.primaryUrl === originalUrl ? enhancedUrl : it.primaryUrl;
           const enhancedUrls = { ...(it.enhancedUrls ?? {}), [originalUrl]: enhancedUrl };
@@ -367,6 +372,51 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
     },
     [],
   );
+
+  // Queue processor — runs jobs serially so we don't hammer OpenAI concurrently.
+  const processEnhanceQueue = React.useCallback(async () => {
+    if (enhanceProcessing.current) return;
+    enhanceProcessing.current = true;
+    while (enhanceJobsRef.current.length > 0) {
+      const job = enhanceJobsRef.current.shift()!;
+      setEnhanceQueueCount(enhanceJobsRef.current.length);
+      await doEnhanceImage(job.itemIndex, job.url);
+    }
+    enhanceProcessing.current = false;
+    setEnhanceQueueCount(0);
+  }, [doEnhanceImage]);
+
+  // Public: enqueue a single image for enhancement (called by per-image wand button).
+  const enhanceImage = React.useCallback(
+    (item: AutoItem, itemIndex: number, originalUrl: string) => {
+      if ((item.enhancingUrls ?? []).includes(originalUrl)) return;
+      // Skip if already queued
+      if (enhanceJobsRef.current.some((j) => j.itemIndex === itemIndex && j.url === originalUrl)) return;
+      enhanceJobsRef.current.push({ itemIndex, url: originalUrl });
+      setEnhanceQueueCount(enhanceJobsRef.current.length);
+      void processEnhanceQueue();
+    },
+    [processEnhanceQueue],
+  );
+
+  // Public: enqueue ALL un-enhanced selected images across the entire queue.
+  const enhanceAll = React.useCallback(() => {
+    let added = 0;
+    queue.forEach((item, itemIndex) => {
+      if (item.status !== 'ready' && item.status !== 'done') return;
+      item.selectedUrls.forEach((url) => {
+        if (item.enhancedUrls?.[url]) return; // already enhanced
+        if ((item.enhancingUrls ?? []).includes(url)) return; // in progress
+        if (enhanceJobsRef.current.some((j) => j.itemIndex === itemIndex && j.url === url)) return; // queued
+        enhanceJobsRef.current.push({ itemIndex, url });
+        added++;
+      });
+    });
+    if (added > 0) {
+      setEnhanceQueueCount(enhanceJobsRef.current.length);
+      void processEnhanceQueue();
+    }
+  }, [queue, processEnhanceQueue]);
 
   const runAutoPilot = async () => {
     setRunning(true);
@@ -497,6 +547,32 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                 <CheckCircle2 className="mr-2 h-4 w-4" />
                 Approve all{readyCount > 0 ? ` (${readyCount})` : ""}
               </Button>
+
+              {/* Enhance all — queues every un-enhanced selected image serially */}
+              {queue.some((it) =>
+                (it.status === 'ready' || it.status === 'done') &&
+                it.selectedUrls.some((u) => !it.enhancedUrls?.[u])
+              ) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-md"
+                  onClick={enhanceAll}
+                  disabled={enhanceQueueCount > 0}
+                >
+                  {enhanceQueueCount > 0 ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Enhancing… ({enhanceQueueCount} left)
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="mr-2 h-4 w-4" />
+                      Enhance all BGs
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
           </div>
 
