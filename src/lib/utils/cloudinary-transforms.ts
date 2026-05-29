@@ -94,6 +94,37 @@ export function buildHeroPublicId(rawPublicId: string | null | undefined): strin
   return `${HERO_NORMALIZE_TRANSFORM}/${rawPublicId}`;
 }
 
+/**
+ * Normalise any hero public_id to use the CURRENT HERO_NORMALIZE_TRANSFORM.
+ *
+ * - Compound PIDs of any version (h_973, h_870, …) → extract rawId, re-wrap
+ *   with the current transform so all hero images share the same product height
+ *   regardless of when they were approved.
+ * - Raw PIDs where imageSource === 'openai_studio_hero' → wrap with current
+ *   transform (handles the pre-compound-PID approval era).
+ * - All other PIDs → returned unchanged.
+ *
+ * Call this at the API / server level before passing cloudinary_public_id to
+ * ProductCard. The URL builders (buildCloudinaryImageUrl, cloudinaryCardLoader)
+ * then trust whatever transform is stored in the compound PID.
+ */
+export function toCurrentHeroPublicId(
+  publicId: string | null | undefined,
+  imageSource?: string | null
+): string | null {
+  if (!publicId) return null;
+  const heroMatch = HERO_COMPOUND_RE.exec(publicId);
+  if (heroMatch) {
+    // Any compound PID (any h_N) → re-wrap with current transform
+    return `${HERO_NORMALIZE_TRANSFORM}/${heroMatch[2]}`;
+  }
+  if (imageSource === 'openai_studio_hero') {
+    // Raw PID from pre-compound era → wrap with current transform
+    return `${HERO_NORMALIZE_TRANSFORM}/${publicId}`;
+  }
+  return publicId;
+}
+
 // Build the hero delivery URL from a raw Cloudinary URL using the CURRENT
 // normalisation setting (used by the admin panel preview).
 export function buildNormalizedHeroUrl(
@@ -149,12 +180,12 @@ export function buildCloudinaryImageUrl(
   const cn = resolveCloudName(cloudName);
   if (!publicId || !cn) return null;
 
-  // Hero compound public_id: always re-apply the CURRENT HERO_NORMALIZE_TRANSFORM
-  // so all hero images share a consistent product height, even if an older compound
-  // PID was stored with a different h_N value (e.g. h_973 from HERO_PRODUCT_HEIGHT_PCT=0.95).
+  // Hero compound public_id: use the transform stored in the PID so the URL
+  // stays stable. Height normalisation to the CURRENT value happens upstream
+  // (toCurrentHeroPublicId) before the PID reaches this function.
   const hero = parseHeroCompoundId(publicId);
   if (hero) {
-    return `https://res.cloudinary.com/${cn}/image/upload/${HERO_NORMALIZE_TRANSFORM}/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${hero.rawId}`;
+    return `https://res.cloudinary.com/${cn}/image/upload/${hero.normalizeTransform}/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${hero.rawId}`;
   }
 
   return `https://res.cloudinary.com/${cn}/image/upload/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${publicId}`;
@@ -187,11 +218,11 @@ export function cloudinaryCardLoader({
 }): string {
   const cloudName = resolveCloudName();
 
-  // Hero compound public_id: always use the CURRENT HERO_NORMALIZE_TRANSFORM so
-  // every product card, regardless of when it was approved, renders at the same height.
+  // Hero compound public_id: use the stored transform. Height normalisation to
+  // the current value happens upstream (toCurrentHeroPublicId).
   const hero = parseHeroCompoundId(src);
   if (hero) {
-    return `https://res.cloudinary.com/${cloudName}/image/upload/${HERO_NORMALIZE_TRANSFORM}/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${hero.rawId}`;
+    return `https://res.cloudinary.com/${cloudName}/image/upload/${hero.normalizeTransform}/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${hero.rawId}`;
   }
 
   return `https://res.cloudinary.com/${cloudName}/image/upload/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${src}`;

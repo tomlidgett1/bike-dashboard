@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { StoreProfile, StoreCategoryWithProducts } from '@/lib/types/store';
 import { resolveProductImage } from '@/lib/services/image-resolver';
-import { buildHeroPublicId, isHeroCompoundId } from '@/lib/utils/cloudinary-transforms';
+import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms';
 
 export async function GET(
   request: NextRequest,
@@ -148,11 +148,11 @@ export async function GET(
 
     // Helper: resolve image and shape one product row into the API response format
     const toMarketplaceProduct = (product: any) => {
-      const rawPublicId: string | null = product.resolved_cloudinary_public_id ?? null;
-      const isOldHero = product.resolved_image_source === 'openai_studio_hero'
-        && rawPublicId !== null
-        && !isHeroCompoundId(rawPublicId);
-      const effectivePublicId = isOldHero ? buildHeroPublicId(rawPublicId) : rawPublicId;
+      // Normalise hero PIDs to the current HERO_NORMALIZE_TRANSFORM.
+      const effectivePublicId = toCurrentHeroPublicId(
+        product.resolved_cloudinary_public_id,
+        product.resolved_image_source
+      );
       const resolved = resolveProductImage({
         id: product.resolved_image_id,
         cloudinary_public_id: effectivePublicId,

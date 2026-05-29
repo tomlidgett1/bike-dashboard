@@ -6,7 +6,7 @@ import { ProductPageClient } from "./product-page-client";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { getProductImages, toJsonbFormat } from "@/lib/services/product-images";
 import { resolveProductImage, getProductImageSlotUrl } from "@/lib/services/image-resolver";
-import { buildHeroPublicId, isHeroCompoundId } from "@/lib/utils/cloudinary-transforms";
+import { toCurrentHeroPublicId } from "@/lib/utils/cloudinary-transforms";
 
 // ============================================================
 // Product Page - Server Component with Parallel Data Fetching
@@ -251,9 +251,10 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
     if (!products) return [];
 
     return products.map((p: any) => {
-      const rawPid: string | null = p.resolved_cloudinary_public_id ?? null;
-      const effectivePid = (p.resolved_image_source === 'openai_studio_hero' && rawPid && !isHeroCompoundId(rawPid))
-        ? buildHeroPublicId(rawPid) : rawPid;
+      const effectivePid = toCurrentHeroPublicId(
+        p.resolved_cloudinary_public_id,
+        p.resolved_image_source
+      );
       const resolved = resolveProductImage({
         id: p.resolved_image_id,
         cloudinary_public_id: effectivePid,
@@ -335,9 +336,10 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
     } : null;
     
     const formattedProducts = (products || []).map((p: any) => {
-      const rawPid: string | null = p.resolved_cloudinary_public_id ?? null;
-      const effectivePid = (p.resolved_image_source === 'openai_studio_hero' && rawPid && !isHeroCompoundId(rawPid))
-        ? buildHeroPublicId(rawPid) : rawPid;
+      const effectivePid = toCurrentHeroPublicId(
+        p.resolved_cloudinary_public_id,
+        p.resolved_image_source
+      );
       const resolved = resolveProductImage({
         id: p.resolved_image_id,
         cloudinary_public_id: effectivePid,

@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { resolveProductImage } from '@/lib/services/image-resolver'
-import { buildHeroPublicId, isHeroCompoundId } from '@/lib/utils/cloudinary-transforms'
+import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms'
 import type { MarketplaceProduct } from '@/lib/types/marketplace'
 import { MARKETPLACE_INITIAL_PAGE_SIZE } from '@/lib/marketplace-constants'
 
@@ -85,11 +85,11 @@ export async function fetchInitialMarketplaceProducts(): Promise<InitialMarketpl
 
     const products: MarketplaceProduct[] = data.map((product: any) => {
       const user = usersById.get(product.user_id)
-      const rawPublicId: string | null = product.resolved_cloudinary_public_id ?? null
-      const isOldHero = product.resolved_image_source === 'openai_studio_hero'
-        && rawPublicId !== null
-        && !isHeroCompoundId(rawPublicId)
-      const effectivePublicId = isOldHero ? buildHeroPublicId(rawPublicId) : rawPublicId
+      // Normalise hero PIDs to the current HERO_NORMALIZE_TRANSFORM.
+      const effectivePublicId = toCurrentHeroPublicId(
+        product.resolved_cloudinary_public_id,
+        product.resolved_image_source
+      )
       const resolved = resolveProductImage({
         id: product.resolved_image_id,
         cloudinary_public_id: effectivePublicId,
