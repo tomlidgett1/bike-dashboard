@@ -25,9 +25,9 @@ export const CLOUDINARY_EAGER_TRANSFORMS = Object.values(CLOUDINARY_IMAGE_TRANSF
 //                          backdrop a high tolerance would eat light/near-white
 //                          product edges, so 5 removes only the flat ~#FEFEFE
 //                          border and leaves the product intact.
-//   2. c_fit,h_973,w_973 — scale so the product's LONGER side = 973px (95% of
-//                          1024), preserving aspect ratio. Portrait/square shots
-//                          land at 95% height; wide products (e.g. whole bikes)
+//   2. c_fit,h_N,w_N   — scale so the product's LONGER side = N px (HERO_PRODUCT_HEIGHT_PCT
+//                          of 1024), preserving aspect ratio. Portrait/square shots
+//                          land at target height; wide products (e.g. whole bikes)
 //                          bound by width instead, so nothing overflows.
 //   3. c_pad,1024²,b_rgb:ffffff — pad back to a perfect square with pure white,
 //                          which matches the model's flat output to within ~1
@@ -35,15 +35,16 @@ export const CLOUDINARY_EAGER_TRANSFORMS = Object.values(CLOUDINARY_IMAGE_TRANSF
 //
 // Because step 1 fully removes the model's background and step 3 fills ALL
 // surrounding space with one fixed white, the final image has exactly ONE
-// background tone everywhere — the "square within a square" seam (which came from
-// partially trimming a non-flat backdrop and padding with a mismatched tone) is
-// impossible. The fixed colour also keeps every product's backdrop identical
-// across the grid. The grey contact shadow sits inside the product's bounding box
-// (beneath it, not at the frame edge), so the trim never touches it.
+// background tone everywhere. The fixed colour also keeps every product's
+// backdrop identical across the grid. The grey contact shadow sits inside the
+// product's bounding box (beneath it, not at the frame edge), so the trim
+// never touches it.
 //
-// 973 = round(1024 × 0.95). Adjust HERO_PRODUCT_HEIGHT_PCT to retune the rule.
-export const HERO_PRODUCT_HEIGHT_PCT = 0.95;
-const HERO_FIT_PX = Math.round(1024 * HERO_PRODUCT_HEIGHT_PCT); // 973
+// Adjust HERO_PRODUCT_HEIGHT_PCT to change how much of the frame the product
+// occupies. At 0.85 the product fills 85% of the height, leaving ~7.5% white
+// breathing room on both top and bottom.
+export const HERO_PRODUCT_HEIGHT_PCT = 0.85;
+const HERO_FIT_PX = Math.round(1024 * HERO_PRODUCT_HEIGHT_PCT); // 870
 export const HERO_NORMALIZE_TRANSFORM = `e_trim:5/c_fit,h_${HERO_FIT_PX},w_${HERO_FIT_PX}/c_pad,h_1024,w_1024,b_rgb:ffffff`;
 
 // ── Compound public_id for hero images ─────────────────────────────────────────
@@ -51,29 +52,48 @@ export const HERO_NORMALIZE_TRANSFORM = `e_trim:5/c_fit,h_${HERO_FIT_PX},w_${HER
 // Instead of baking a new Cloudinary asset (which needs API creds), we store
 // the normalisation transform as a prefix of the public_id:
 //
-//   e_trim:5/c_fit,h_973,w_973/c_pad,h_1024,w_1024,b_rgb:ffffff/<rawPublicId>
+//   e_trim:5/c_fit,h_870,w_870/c_pad,h_1024,w_1024,b_rgb:ffffff/<rawPublicId>
 //
 // buildCloudinaryImageUrl and cloudinaryCardLoader detect this prefix and
 // inject the normalisation BEFORE any slot transform in the delivery URL, so
 // Cloudinary applies: trim → fit → pad → slot-crop (in that order).
 //
 // No Cloudinary upload credentials are needed — everything happens on-the-fly.
-export const HERO_PID_MARKER = `${HERO_NORMALIZE_TRANSFORM}/`;
+//
+// DETECTION: we use a regex rather than an exact HERO_PID_MARKER string so that
+// images approved under a previous HERO_PRODUCT_HEIGHT_PCT (e.g. 0.95 → h_973)
+// are still handled correctly. The normalization stored IN the PID is reused as-is
+// for those old images; only freshly approved images pick up the new h_870 value.
+const HERO_COMPOUND_RE =
+  /^(e_trim:\d+\/c_fit,h_\d+,w_\d+\/c_pad,h_\d+,w_\d+,b_rgb:[0-9a-fA-F]+)\/(.+)/;
+
+/** @internal Split a compound hero public_id into its transform prefix + raw id. */
+function parseHeroCompoundId(
+  publicId: string
+): { normalizeTransform: string; rawId: string } | null {
+  const m = HERO_COMPOUND_RE.exec(publicId);
+  if (!m) return null;
+  return { normalizeTransform: m[1], rawId: m[2] };
+}
+
+/** Returns true if the public_id is a compound hero id (any version). */
+export function isHeroCompoundId(publicId: string | null | undefined): boolean {
+  return !!publicId && HERO_COMPOUND_RE.test(publicId);
+}
 
 /**
  * Wrap a raw model-output public_id into a compound hero public_id that
- * carries the normalization transform prefix. Idempotent — calling it twice
- * on the same id is safe.
+ * carries the current normalisation transform prefix. Idempotent — if the id
+ * is already compound (any version) it is returned unchanged.
  */
 export function buildHeroPublicId(rawPublicId: string | null | undefined): string | null {
   if (!rawPublicId) return null;
-  if (rawPublicId.startsWith(HERO_PID_MARKER)) return rawPublicId;
-  return `${HERO_PID_MARKER}${rawPublicId}`;
+  if (isHeroCompoundId(rawPublicId)) return rawPublicId;
+  return `${HERO_NORMALIZE_TRANSFORM}/${rawPublicId}`;
 }
 
-// Build the deterministic 95%-height hero delivery URL from a raw Cloudinary URL
-// (the gpt-image-2 output saved by enhance-preview). Returns null if the URL
-// isn't a Cloudinary asset or the cloud name can't be resolved.
+// Build the hero delivery URL from a raw Cloudinary URL using the CURRENT
+// normalisation setting (used by the admin panel preview).
 export function buildNormalizedHeroUrl(
   url: string | null | undefined,
   cloudName?: string
@@ -128,10 +148,12 @@ export function buildCloudinaryImageUrl(
   if (!publicId || !cn) return null;
 
   // Hero compound public_id: the normalisation transform is baked into the
-  // prefix so Cloudinary can apply it BEFORE the per-slot crop.
-  if (publicId.startsWith(HERO_PID_MARKER)) {
-    const rawId = publicId.slice(HERO_PID_MARKER.length);
-    return `https://res.cloudinary.com/${cn}/image/upload/${HERO_NORMALIZE_TRANSFORM}/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${rawId}`;
+  // prefix so Cloudinary can apply it BEFORE the per-slot crop. We use the
+  // transform stored in the PID (not the current constant) so images approved
+  // under an older HERO_PRODUCT_HEIGHT_PCT keep the framing they were created with.
+  const hero = parseHeroCompoundId(publicId);
+  if (hero) {
+    return `https://res.cloudinary.com/${cn}/image/upload/${hero.normalizeTransform}/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${hero.rawId}`;
   }
 
   return `https://res.cloudinary.com/${cn}/image/upload/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${publicId}`;
@@ -165,10 +187,11 @@ export function cloudinaryCardLoader({
   const cloudName = resolveCloudName();
 
   // Hero compound public_id: normalisation must run before the card crop so
-  // every product lands at 95% height before the square fill is applied.
-  if (src.startsWith(HERO_PID_MARKER)) {
-    const rawId = src.slice(HERO_PID_MARKER.length);
-    return `https://res.cloudinary.com/${cloudName}/image/upload/${HERO_NORMALIZE_TRANSFORM}/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${rawId}`;
+  // every product lands at the stored target height before the square fill is
+  // applied. Use the transform baked into the PID, not the current constant.
+  const hero = parseHeroCompoundId(src);
+  if (hero) {
+    return `https://res.cloudinary.com/${cloudName}/image/upload/${hero.normalizeTransform}/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${hero.rawId}`;
   }
 
   return `https://res.cloudinary.com/${cloudName}/image/upload/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${src}`;

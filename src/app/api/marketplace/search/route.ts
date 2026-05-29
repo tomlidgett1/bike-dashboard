@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { resolveProductImage } from '@/lib/services/image-resolver';
-import { buildHeroPublicId, HERO_PID_MARKER } from '@/lib/utils/cloudinary-transforms';
+import { buildHeroPublicId, isHeroCompoundId } from '@/lib/utils/cloudinary-transforms';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
         const rawPid: string | null = readyProduct.resolved_cloudinary_public_id || null;
         const isOldHero = readyProduct.resolved_image_source === 'openai_studio_hero'
           && rawPid !== null
-          && !rawPid.startsWith(HERO_PID_MARKER);
+          && !isHeroCompoundId(rawPid);
         const effectivePid = isOldHero ? buildHeroPublicId(rawPid) : rawPid;
 
         const resolved = resolveProductImage({

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { MarketplaceProduct, MarketplaceProductsResponse } from '@/lib/types/marketplace';
 import { resolveProductImage } from '@/lib/services/image-resolver';
-import { buildHeroPublicId, HERO_PID_MARKER } from '@/lib/utils/cloudinary-transforms';
+import { buildHeroPublicId, isHeroCompoundId } from '@/lib/utils/cloudinary-transforms';
 
 // ============================================================
 // Marketplace Products API - Public Endpoint
@@ -302,7 +302,7 @@ export async function GET(request: NextRequest) {
       const rawPublicId: string | null = product.resolved_cloudinary_public_id || null;
       const isOldHero = product.resolved_image_source === 'openai_studio_hero'
         && rawPublicId !== null
-        && !rawPublicId.startsWith(HERO_PID_MARKER);
+        && !isHeroCompoundId(rawPublicId);
       const effectivePublicId = isOldHero ? buildHeroPublicId(rawPublicId) : rawPublicId;
 
       const resolved = resolveProductImage({
