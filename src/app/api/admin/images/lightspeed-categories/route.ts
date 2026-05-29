@@ -14,7 +14,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -23,12 +23,21 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
     }
 
+    const { searchParams } = new URL(request.url)
+    const filterStatus = searchParams.get('filter') // e.g. 'no_approved'
+
     // ── Step 1: Distinct category IDs present in the workbench ──────────────
-    const { data: rows, error: viewError } = await supabase
+    let categoryQuery = supabase
       .from('image_workbench_products')
       .select('ls_category_id')
       .not('ls_category_id', 'is', null)
       .neq('ls_category_id', '')
+
+    if (filterStatus === 'no_approved') {
+      categoryQuery = categoryQuery.eq('approved_images', 0)
+    }
+
+    const { data: rows, error: viewError } = await categoryQuery
 
     if (viewError) {
       console.error('[lightspeed-categories] View query error:', viewError)

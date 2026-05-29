@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { ProductPageClient } from "./product-page-client";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { getProductImages, toJsonbFormat } from "@/lib/services/product-images";
-import { resolveProductImage } from "@/lib/services/image-resolver";
+import { resolveProductImage, getProductImageSlotUrl } from "@/lib/services/image-resolver";
 
 // ============================================================
 // Product Page - Server Component with Parallel Data Fetching
@@ -149,16 +149,12 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         productImages.find(img => img.id === product.selected_product_image_id) ||
         productImages.find(img => img.is_primary) ||
         productImages[0];
-      // Use galleryUrl for product pages (1200px landscape, padded - shows full product)
-      primaryImageUrl = primaryImage?.gallery_url 
-        || primaryImage?.detail_url 
-        || primaryImage?.cloudinary_url 
-        || primaryImage?.card_url 
-        || null;
-      
+      // Single source of truth: the web_hero variant is computed from the public_id.
+      primaryImageUrl = getProductImageSlotUrl(primaryImage, 'web_hero');
+
       allImages = productImages
         .sort((a, b) => a.sort_order - b.sort_order)
-        .map(img => img.gallery_url || img.detail_url || img.cloudinary_url || img.card_url)
+        .map(img => getProductImageSlotUrl(img, 'web_hero'))
         .filter((url): url is string => !!url && !url.startsWith('blob:'));
     }
     // Fallback to JSONB during transition
@@ -245,8 +241,7 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
       .select(`
         id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
         marketplace_level_3_category, created_at, user_id,
-        resolved_image_id, resolved_card_url, resolved_thumbnail_url, resolved_mobile_card_url,
-        resolved_gallery_url, resolved_detail_url, resolved_cloudinary_url, resolved_cloudinary_public_id
+        resolved_image_id, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
       .eq('marketplace_category', sourceProduct.marketplace_category)
       .neq('id', productId)
@@ -259,11 +254,7 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
         id: p.resolved_image_id,
         cloudinary_public_id: p.resolved_cloudinary_public_id,
         cloudinary_url: p.resolved_cloudinary_url,
-        thumbnail_url: p.resolved_thumbnail_url,
-        mobile_card_url: p.resolved_mobile_card_url,
-        card_url: p.resolved_card_url,
-        gallery_url: p.resolved_gallery_url,
-        detail_url: p.resolved_detail_url,
+        external_url: p.resolved_external_url,
         approval_status: 'approved',
       });
       const imageUrl = resolved?.card_url || resolved?.original_url || null;
@@ -322,8 +313,7 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
       .select(`
         id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
         created_at, user_id,
-        resolved_image_id, resolved_card_url, resolved_thumbnail_url, resolved_mobile_card_url,
-        resolved_gallery_url, resolved_detail_url, resolved_cloudinary_url, resolved_cloudinary_public_id
+        resolved_image_id, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
       .eq('user_id', sourceProduct.user_id)
       .neq('id', productId)
@@ -344,11 +334,7 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
         id: p.resolved_image_id,
         cloudinary_public_id: p.resolved_cloudinary_public_id,
         cloudinary_url: p.resolved_cloudinary_url,
-        thumbnail_url: p.resolved_thumbnail_url,
-        mobile_card_url: p.resolved_mobile_card_url,
-        card_url: p.resolved_card_url,
-        gallery_url: p.resolved_gallery_url,
-        detail_url: p.resolved_detail_url,
+        external_url: p.resolved_external_url,
         approval_status: 'approved',
       });
       const imageUrl = resolved?.card_url || resolved?.original_url || null;

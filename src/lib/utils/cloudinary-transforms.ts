@@ -1,10 +1,12 @@
+// f_auto lets Cloudinary negotiate AVIF/WebP/JPEG per the browser's Accept header
+// (AVIF is ~20-30% smaller than WebP), so we never hardcode a single format.
 export const CLOUDINARY_IMAGE_TRANSFORMS = {
-  thumbnail: "w_120,c_limit,q_auto:low,f_webp",
-  mobile_card: "w_320,ar_1:1,c_fill,g_center,q_auto:good,f_webp",
-  grid_card: "w_640,ar_1:1,c_fill,g_center,q_auto:good,f_webp",
-  mobile_hero: "w_1000,ar_1:1,c_pad,b_white,q_auto:best,f_webp",
-  web_hero: "w_1600,ar_4:3,c_pad,b_white,q_auto:best,f_webp",
-  zoom: "w_2000,c_limit,q_auto:best,f_webp",
+  thumbnail: "w_120,c_limit,q_auto:low,f_auto",
+  mobile_card: "w_320,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
+  grid_card: "w_640,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
+  mobile_hero: "w_1000,ar_1:1,c_pad,b_white,q_auto:best,f_auto",
+  web_hero: "w_1600,ar_4:3,c_pad,b_white,q_auto:best,f_auto",
+  zoom: "w_2000,c_limit,q_auto:best,f_auto",
 } as const;
 
 export type CloudinaryImageSlot = keyof typeof CLOUDINARY_IMAGE_TRANSFORMS;
@@ -60,4 +62,20 @@ export function buildCloudinaryVariantUrls(
     galleryUrl: buildCloudinaryImageUrl(publicId, "web_hero", cloudName),
     detailUrl: buildCloudinaryImageUrl(publicId, "zoom", cloudName),
   };
+}
+
+// next/image loader for square product-card crops. `src` is the Cloudinary
+// public_id; next/image calls this once per device width to build a real
+// DPR-aware srcset. Cloudinary handles crop, format (AVIF) and quality.
+export function cloudinaryCardLoader({
+  src,
+  width,
+}: {
+  src: string;
+  width: number;
+  quality?: number;
+}): string {
+  const cloudName =
+    process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME;
+  return `https://res.cloudinary.com/${cloudName}/image/upload/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${src}`;
 }

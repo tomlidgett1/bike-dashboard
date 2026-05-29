@@ -541,11 +541,6 @@ Deno.serve(async (req) => {
             .update({
               cloudinary_url: cloudinaryResult.cloudinaryUrl,
               cloudinary_public_id: cloudinaryResult.cloudinaryPublicId,
-              thumbnail_url: cloudinaryResult.thumbnailUrl,
-              mobile_card_url: cloudinaryResult.mobileCardUrl,
-              card_url: cloudinaryResult.cardUrl,
-              gallery_url: cloudinaryResult.cardUrl, // Use card URL for gallery
-              detail_url: cloudinaryResult.detailUrl,
               is_downloaded: true,
               width: cloudinaryResult.width,
               height: cloudinaryResult.height,

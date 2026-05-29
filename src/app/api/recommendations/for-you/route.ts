@@ -12,6 +12,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { generateHybridRecommendations } from '@/lib/recommendations/algorithms';
+import { resolveProductImage, pickPrimaryImage } from '@/lib/services/image-resolver';
+import { extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
 
 // ============================================================
 // Cache Configuration
@@ -136,14 +138,12 @@ async function enrichProducts(
         canonical_products!canonical_product_id (
           id,
           product_images!canonical_product_id (
-            storage_path,
             is_primary,
-            variants,
+            sort_order,
+            approval_status,
+            cloudinary_public_id,
             cloudinary_url,
-            card_url,
-            detail_url,
-            thumbnail_url,
-            approval_status
+            external_url
           )
         )
       `)
@@ -177,79 +177,43 @@ async function enrichProducts(
 
     const scoreMap = new Map(scores?.map((s: any) => [s.product_id, s]) || []);
 
-    // Transform to marketplace format - only products with Cloudinary images
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    
+    // Transform to marketplace format — resolve every image from the single
+    // source of truth (cloudinary_public_id) via the shared resolver.
     const enriched = products.map((product: any) => {
       const score = scoreMap.get(product.id);
-      let primaryImageUrl = null;
-      let imageVariants = null;
-      let allImages: string[] = [];
-      let hasCloudinaryImage = false;
-      
-      // Priority 1: Private listing images - check for cloudinary URLs
+
+      // Derive a public_id (+ external fallback) from whichever source applies.
+      let publicId: string | null = null;
+      let externalUrl: string | null = null;
       if (product.listing_type === 'private_listing' && Array.isArray(product.images) && product.images.length > 0) {
-        const cloudinaryImage = product.images.find((img: any) => 
-          img.url?.includes('cloudinary') || img.cloudinaryUrl
-        );
-        if (cloudinaryImage) {
-          hasCloudinaryImage = true;
-          const primaryImage = product.images.find((img: any) => img.isPrimary) || product.images[0];
-          if (primaryImage?.url) {
-            primaryImageUrl = primaryImage.url;
-          }
-          if (!primaryImageUrl && product.primary_image_url) {
-            primaryImageUrl = product.primary_image_url;
-          }
-          allImages = product.images.map((img: any) => img.url).filter(Boolean);
-        }
+        const primary = product.images.find((img: any) => img.isPrimary) || product.images[0];
+        publicId = extractCloudinaryPublicId(primary?.cloudinaryUrl || primary?.url);
+        externalUrl = primary?.url || product.primary_image_url || null;
+      } else if (product.use_custom_image && product.custom_image_url) {
+        publicId = extractCloudinaryPublicId(product.custom_image_url);
+        externalUrl = product.custom_image_url;
+      } else if (product.canonical_products?.product_images) {
+        const primary = pickPrimaryImage(product.canonical_products.product_images);
+        publicId = primary?.cloudinary_public_id || extractCloudinaryPublicId(primary?.cloudinary_url);
+        externalUrl = primary?.external_url || primary?.cloudinary_url || null;
       }
-      // Priority 2: Custom store image - check for cloudinary URL
-      else if (product.use_custom_image && product.custom_image_url) {
-        if (product.custom_image_url.includes('cloudinary')) {
-          hasCloudinaryImage = true;
-          primaryImageUrl = product.custom_image_url;
-          allImages.push(product.custom_image_url);
-        }
-      }
-      // Priority 3: Canonical product images - only approved cloudinary images
-      else if (product.canonical_products?.product_images) {
-        // Filter to only approved images with cloudinary_url
-        const images = product.canonical_products.product_images.filter((img: any) =>
-          img.approval_status === 'approved' && img.cloudinary_url
-        );
-        
-        // Get primary image - must have cloudinary_url
-        const primaryImage = images.find((img: any) => img.is_primary);
-        if (primaryImage) {
-          hasCloudinaryImage = true;
-          // Prefer cloudinary URLs
-          primaryImageUrl = primaryImage.card_url || primaryImage.cloudinary_url;
-          imageVariants = primaryImage.variants;
-        }
-        
-        // Get ALL images for gallery (primary first) - only cloudinary
-        const sortedImages = [...images]
-          .sort((a: any, b: any) => {
-            if (a.is_primary) return -1;
-            if (b.is_primary) return 1;
-            return 0;
-          });
-        
-        allImages = sortedImages
-          .map((img: any) => {
-            if (img.detail_url) return img.detail_url;
-            if (img.cloudinary_url) return img.cloudinary_url;
-            return null;
-          })
-          .filter(Boolean);
-      }
-      
-      // FILTER: Skip products without cloudinary images
-      if (!hasCloudinaryImage || !primaryImageUrl) {
+
+      const resolved = resolveProductImage({
+        cloudinary_public_id: publicId,
+        external_url: externalUrl,
+        approval_status: 'approved',
+      });
+      const primaryImageUrl = resolved?.card_url || resolved?.original_url || null;
+
+      // FILTER: skip products with no resolvable image (preserves prior behaviour).
+      if (!primaryImageUrl) {
         return null;
       }
-    
+
+      const allImages = [resolved?.gallery_url, resolved?.detail_url, primaryImageUrl]
+        .filter((url): url is string => !!url)
+        .filter((url, i, arr) => arr.indexOf(url) === i);
+
       return {
         id: product.id,
         description: product.description,
@@ -258,7 +222,10 @@ async function enrichProducts(
         marketplace_category: product.marketplace_category,
         marketplace_subcategory: product.marketplace_subcategory,
         primary_image_url: primaryImageUrl,
-        image_variants: imageVariants,
+        cloudinary_public_id: publicId,
+        card_url: primaryImageUrl,
+        thumbnail_url: resolved?.thumbnail_url || primaryImageUrl,
+        image_variants: null,
         all_images: allImages,
         user_id: product.user_id,
         store_name: product.users?.business_name || 'Unknown Store',

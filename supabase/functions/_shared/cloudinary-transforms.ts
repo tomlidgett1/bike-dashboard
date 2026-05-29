@@ -1,10 +1,12 @@
+// f_auto negotiates AVIF/WebP/JPEG per browser; keep in sync with
+// src/lib/utils/cloudinary-transforms.ts so eager pre-warm matches delivery.
 export const CLOUDINARY_IMAGE_TRANSFORMS = {
-  thumbnail: "w_120,c_limit,q_auto:low,f_webp",
-  mobileCard: "w_320,ar_1:1,c_fill,g_center,q_auto:good,f_webp",
-  gridCard: "w_640,ar_1:1,c_fill,g_center,q_auto:good,f_webp",
-  mobileHero: "w_1000,ar_1:1,c_pad,b_white,q_auto:best,f_webp",
-  webHero: "w_1600,ar_4:3,c_pad,b_white,q_auto:best,f_webp",
-  zoom: "w_2000,c_limit,q_auto:best,f_webp",
+  thumbnail: "w_120,c_limit,q_auto:low,f_auto",
+  mobileCard: "w_320,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
+  gridCard: "w_640,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
+  mobileHero: "w_1000,ar_1:1,c_pad,b_white,q_auto:best,f_auto",
+  webHero: "w_1600,ar_4:3,c_pad,b_white,q_auto:best,f_auto",
+  zoom: "w_2000,c_limit,q_auto:best,f_auto",
 } as const;
 
 export const CLOUDINARY_EAGER_TRANSFORMS = Object.values(CLOUDINARY_IMAGE_TRANSFORMS).join("|");

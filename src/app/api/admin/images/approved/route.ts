@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase
       .from('product_images')
       .select(
-        'id, canonical_product_id, cloudinary_public_id, cloudinary_url, external_url, thumbnail_url, mobile_card_url, card_url, gallery_url, detail_url, approval_status, is_primary, sort_order, source, created_at'
+        'id, canonical_product_id, cloudinary_public_id, cloudinary_url, external_url, approval_status, is_primary, sort_order, source, created_at'
       )
       .eq('canonical_product_id', canonicalProductId)
       .eq('approval_status', 'approved')

@@ -46,11 +46,6 @@ function scheduleCloudinaryUpload(
         .update({
           cloudinary_url: uploaded.url,
           cloudinary_public_id: uploaded.publicId,
-          thumbnail_url: uploaded.thumbnailUrl,
-          mobile_card_url: uploaded.mobileCardUrl,
-          card_url: uploaded.cardUrl,
-          gallery_url: uploaded.galleryUrl,
-          detail_url: uploaded.detailUrl,
           width: uploaded.width || candidate.width || null,
           height: uploaded.height || candidate.height || null,
           is_downloaded: true,
@@ -136,7 +131,6 @@ export async function POST(request: NextRequest) {
           .insert({
             canonical_product_id: canonicalProductId,
             external_url: candidate.url,
-            thumbnail_url: candidate.thumbnailUrl || candidate.url,
             width: candidate.width || null,
             height: candidate.height || null,
             is_downloaded: false,
@@ -170,8 +164,12 @@ export async function POST(request: NextRequest) {
       const finalPrimaryId = savedIdByUrl.get(primaryCandidateUrl) || quickSavedIds[0];
 
       if (!finalPrimaryId) {
+        const detail = uploadFailures[0]?.error;
         return NextResponse.json(
-          { error: 'No images could be saved', uploadFailures },
+          {
+            error: detail ? `No images could be saved: ${detail}` : 'No images could be saved',
+            uploadFailures,
+          },
           { status: 400 },
         );
       }
@@ -259,11 +257,6 @@ export async function POST(request: NextRequest) {
             external_url: candidate.url,
             cloudinary_url: uploaded.url,
             cloudinary_public_id: uploaded.publicId,
-            thumbnail_url: uploaded.thumbnailUrl,
-            mobile_card_url: uploaded.mobileCardUrl,
-            card_url: uploaded.cardUrl,
-            gallery_url: uploaded.galleryUrl,
-            detail_url: uploaded.detailUrl,
             width: uploaded.width || candidate.width || null,
             height: uploaded.height || candidate.height || null,
             is_downloaded: true,

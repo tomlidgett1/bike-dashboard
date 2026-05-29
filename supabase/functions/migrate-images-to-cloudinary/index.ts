@@ -132,6 +132,20 @@ Deno.serve(async (req) => {
     const batchSize = body.batchSize || BATCH_SIZE
     const migrateFromStorage = body.migrateFromStorage !== false // Default true
     const migrateFromExternal = body.migrateFromExternal === true // Default false (only approved)
+    const createFromLightspeed = body.createFromLightspeed === true // Default false
+
+    // Ensure Lightspeed inventory has product_images rows before we migrate them.
+    // The DB function is strictly additive + idempotent (only creates rows for
+    // products with no approved image yet), so this is safe to run every time.
+    if (createFromLightspeed) {
+      const { data: createdCount, error: backfillError } = await supabase
+        .rpc('backfill_lightspeed_product_images')
+      if (backfillError) {
+        console.error('⚠️ [MIGRATE] Lightspeed backfill failed:', backfillError.message)
+      } else {
+        console.log(`🆕 [MIGRATE] Created ${createdCount ?? 0} Lightspeed product_images rows`)
+      }
+    }
 
     console.log(`\n🔄 [MIGRATE] ========================================`)
     console.log(`🔄 [MIGRATE] Starting Cloudinary migration`)
@@ -148,7 +162,7 @@ Deno.serve(async (req) => {
     
     let query = supabase
       .from('product_images')
-      .select('id, canonical_product_id, storage_path, external_url, sort_order, approval_status, migration_attempts, migration_error')
+      .select('id, canonical_product_id, product_id, storage_path, external_url, sort_order, approval_status, migration_attempts, migration_error')
       .is('cloudinary_url', null)
       .limit(batchSize)
 
@@ -285,7 +299,12 @@ Deno.serve(async (req) => {
         const dataUri = `data:${mimeType};base64,${base64}`
 
         const timestamp = Math.floor(Date.now() / 1000)
-        const publicId = `bike-marketplace/canonical/${image.canonical_product_id}/${timestamp}-${image.sort_order || 0}`
+        // Scope the public_id by canonical OR product id so product-scoped rows
+        // (e.g. Lightspeed images with no canonical) get unique, non-colliding ids.
+        const scope = image.canonical_product_id
+          ? `canonical/${image.canonical_product_id}`
+          : `product/${image.product_id}`
+        const publicId = `bike-marketplace/${scope}/${timestamp}-${image.sort_order || 0}`
         
         console.log(`📤 [MIGRATE] Uploading to Cloudinary...`)
         
@@ -327,11 +346,6 @@ Deno.serve(async (req) => {
           .update({
             cloudinary_url: cloudinaryResult.secure_url,
             cloudinary_public_id: cloudinaryResult.public_id,
-            thumbnail_url: thumbnailUrl,
-            mobile_card_url: mobileCardUrl,
-            card_url: cardUrl,
-            gallery_url: galleryUrl,
-            detail_url: detailUrl,
             is_downloaded: true,
             width: cloudinaryResult.width || 800,
             height: cloudinaryResult.height || 800,

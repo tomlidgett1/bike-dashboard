@@ -722,7 +722,7 @@ export default function ProductsPage() {
 
         const { data, error } = await (await import('@/lib/supabase/client')).createClient()
           .from('product_images')
-          .select('id, external_url, cloudinary_url, card_url, is_primary, approval_status')
+          .select('id, external_url, cloudinary_url, is_primary, approval_status')
           .eq('canonical_product_id', product.canonical_product_id)
           .eq('approval_status', 'pending')
           .order('created_at', { ascending: false });
@@ -735,7 +735,7 @@ export default function ProductsPage() {
           console.log(`[DISCOVER] ✅ Found ${data.length} pending images:`, data);
           const mappedImages = data.map(img => ({
             id: img.id,
-            url: img.card_url || img.cloudinary_url || img.external_url || '',
+            url: img.cloudinary_url || img.external_url || '',
             is_primary: img.is_primary || false,
             approval_status: img.approval_status as 'pending' | 'approved' | 'rejected'
           }));

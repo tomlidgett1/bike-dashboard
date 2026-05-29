@@ -164,14 +164,23 @@ export function UploadProvider({ children }: UploadProviderProps) {
     });
 
     try {
-      // Get Supabase session
+      // Get Supabase session - refresh to ensure token is not expired
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
+      // Try to get a fresh session (refreshes access token if expired)
+      let { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const refreshed = await supabase.auth.refreshSession();
+        if (refreshed.data.session) {
+          session = refreshed.data.session;
+        }
+      }
 
       if (!session) {
         throw new Error("You must be logged in to upload");
       }
+
+      console.log("✅ [UPLOAD CONTEXT] Session OK, user:", session.user.email);
 
       // Phase 0: Enhance cover image if requested
       let enhancedCover: {
@@ -353,6 +362,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
       console.error("❌ [UPLOAD CONTEXT] Error:", err);
       setState(prev => ({
         ...prev,
+        isUploading: true, // keep true so floating bar stays visible
         stage: "error",
         error: err.message || "Upload failed",
       }));

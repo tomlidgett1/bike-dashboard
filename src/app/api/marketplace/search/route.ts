@@ -75,11 +75,7 @@ export async function GET(request: NextRequest) {
           .select(`
             id,
             resolved_image_id,
-            resolved_card_url,
-            resolved_thumbnail_url,
-            resolved_mobile_card_url,
-            resolved_gallery_url,
-            resolved_detail_url,
+            resolved_external_url,
             resolved_cloudinary_url,
             resolved_cloudinary_public_id
           `)
@@ -98,11 +94,7 @@ export async function GET(request: NextRequest) {
           id: readyProduct.resolved_image_id,
           cloudinary_public_id: readyProduct.resolved_cloudinary_public_id,
           cloudinary_url: readyProduct.resolved_cloudinary_url,
-          thumbnail_url: readyProduct.resolved_thumbnail_url,
-          mobile_card_url: readyProduct.resolved_mobile_card_url,
-          card_url: readyProduct.resolved_card_url,
-          gallery_url: readyProduct.resolved_gallery_url,
-          detail_url: readyProduct.resolved_detail_url,
+          external_url: readyProduct.resolved_external_url,
           approval_status: 'approved',
         });
 

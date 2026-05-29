@@ -63,7 +63,10 @@ export async function GET(request: NextRequest) {
     if (minPrice !== null) query = query.gte('min_price', minPrice);
     if (maxPrice !== null) query = query.lte('max_price', maxPrice);
 
-    if (status === 'missing') {
+    if (status === 'no_approved') {
+      // Auto-pilot target: products with no approved images at all (pending ones are fine).
+      query = query.eq('approved_images', 0);
+    } else if (status === 'missing') {
       query = query.eq('approved_images', 0).eq('pending_images', 0);
     } else if (status === 'pending') {
       query = query.gt('pending_images', 0);
@@ -89,8 +92,7 @@ export async function GET(request: NextRequest) {
         id: product.primary_image_id,
         cloudinary_public_id: product.primary_cloudinary_public_id,
         cloudinary_url: product.primary_cloudinary_url,
-        thumbnail_url: product.primary_thumbnail_url,
-        card_url: product.primary_card_url,
+        external_url: product.primary_external_url,
         approval_status: 'approved',
       });
 

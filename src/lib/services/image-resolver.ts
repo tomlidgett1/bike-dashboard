@@ -40,17 +40,15 @@ export function getProductImageSlotUrl(
 ): string | null {
   if (!image) return null;
 
+  // Single source of truth: every variant is generated from the public_id
+  // (extracted from cloudinary_url for any straggler that lacks the column).
   const publicId = image.cloudinary_public_id || extractCloudinaryPublicId(image.cloudinary_url);
   const generated = buildCloudinaryImageUrl(publicId, slot);
   if (generated) return generated;
 
-  if (slot === "thumbnail") return image.thumbnail_url || image.card_url || image.cloudinary_url || image.external_url || null;
-  if (slot === "mobile_card") return image.mobile_card_url || image.card_url || image.cloudinary_url || image.external_url || null;
-  if (slot === "grid_card") return image.card_url || image.cloudinary_url || image.external_url || null;
-  if (slot === "mobile_hero") return image.gallery_url || image.detail_url || image.cloudinary_url || image.card_url || image.external_url || null;
-  if (slot === "web_hero") return image.gallery_url || image.detail_url || image.cloudinary_url || image.card_url || image.external_url || null;
-
-  return image.detail_url || image.gallery_url || image.cloudinary_url || image.card_url || image.external_url || null;
+  // Non-Cloudinary fallback: retailer/external images that can't be hosted on
+  // Cloudinary (e.g. sources that 403 on download) are served at their origin URL.
+  return image.external_url || image.cloudinary_url || null;
 }
 
 export function resolveProductImage(image: ResolvableProductImage | null | undefined): ResolvedProductImage | null {

@@ -8,7 +8,11 @@
  */
 
 import { SupabaseClient } from "@supabase/supabase-js";
-import { buildCloudinaryVariantUrls } from "@/lib/utils/cloudinary-transforms";
+import {
+  buildCloudinaryVariantUrls,
+  buildCloudinaryImageUrl,
+  extractCloudinaryPublicId,
+} from "@/lib/utils/cloudinary-transforms";
 
 // ============================================================
 // Types
@@ -18,6 +22,7 @@ export interface ProductImage {
   id: string;
   product_id: string | null;
   canonical_product_id: string | null;
+  cloudinary_public_id: string | null;
   cloudinary_url: string | null;
   external_url: string | null;
   card_url: string | null;
@@ -115,10 +120,16 @@ export async function getProductCardUrl(
   productId: string,
   canonicalProductId?: string | null
 ): Promise<string | null> {
+  const toCard = (row: { cloudinary_public_id: string | null; cloudinary_url: string | null; external_url: string | null } | null) => {
+    if (!row) return null;
+    const publicId = row.cloudinary_public_id || extractCloudinaryPublicId(row.cloudinary_url);
+    return buildCloudinaryImageUrl(publicId, "grid_card") || row.external_url || row.cloudinary_url;
+  };
+
   // Try product_id first
   const { data: byProductId } = await supabase
     .from("product_images")
-    .select("card_url, cloudinary_url, is_primary")
+    .select("cloudinary_public_id, cloudinary_url, external_url, is_primary")
     .eq("product_id", productId)
     .eq("approval_status", "approved")
     .order("is_primary", { ascending: false })
@@ -127,14 +138,14 @@ export async function getProductCardUrl(
     .single();
 
   if (byProductId) {
-    return byProductId.card_url || byProductId.cloudinary_url;
+    return toCard(byProductId);
   }
 
   // Fall back to canonical_product_id
   if (canonicalProductId) {
     const { data: byCanonicalId } = await supabase
       .from("product_images")
-      .select("card_url, cloudinary_url, is_primary")
+      .select("cloudinary_public_id, cloudinary_url, external_url, is_primary")
       .eq("canonical_product_id", canonicalProductId)
       .eq("approval_status", "approved")
       .order("is_primary", { ascending: false })
@@ -143,7 +154,7 @@ export async function getProductCardUrl(
       .single();
 
     if (byCanonicalId) {
-      return byCanonicalId.card_url || byCanonicalId.cloudinary_url;
+      return toCard(byCanonicalId);
     }
   }
 
@@ -158,10 +169,16 @@ export async function getProductThumbnailUrl(
   productId: string,
   canonicalProductId?: string | null
 ): Promise<string | null> {
+  const toThumb = (row: { cloudinary_public_id: string | null; cloudinary_url: string | null; external_url: string | null } | null) => {
+    if (!row) return null;
+    const publicId = row.cloudinary_public_id || extractCloudinaryPublicId(row.cloudinary_url);
+    return buildCloudinaryImageUrl(publicId, "thumbnail") || row.external_url || row.cloudinary_url;
+  };
+
   // Try product_id first
   const { data: byProductId } = await supabase
     .from("product_images")
-    .select("thumbnail_url, card_url, cloudinary_url, is_primary")
+    .select("cloudinary_public_id, cloudinary_url, external_url, is_primary")
     .eq("product_id", productId)
     .eq("approval_status", "approved")
     .order("is_primary", { ascending: false })
@@ -170,18 +187,14 @@ export async function getProductThumbnailUrl(
     .single();
 
   if (byProductId) {
-    return (
-      byProductId.thumbnail_url ||
-      byProductId.card_url ||
-      byProductId.cloudinary_url
-    );
+    return toThumb(byProductId);
   }
 
   // Fall back to canonical_product_id
   if (canonicalProductId) {
     const { data: byCanonicalId } = await supabase
       .from("product_images")
-      .select("thumbnail_url, card_url, cloudinary_url, is_primary")
+      .select("cloudinary_public_id, cloudinary_url, external_url, is_primary")
       .eq("canonical_product_id", canonicalProductId)
       .eq("approval_status", "approved")
       .order("is_primary", { ascending: false })
@@ -190,11 +203,7 @@ export async function getProductThumbnailUrl(
       .single();
 
     if (byCanonicalId) {
-      return (
-        byCanonicalId.thumbnail_url ||
-        byCanonicalId.card_url ||
-        byCanonicalId.cloudinary_url
-      );
+      return toThumb(byCanonicalId);
     }
   }
 
@@ -281,11 +290,8 @@ export async function addProductImage(
       canonical_product_id: canonicalProductId,
       external_url: cloudinaryResult.url,
       cloudinary_url: cloudinaryResult.url,
-      card_url: cloudinaryResult.cardUrl,
-      mobile_card_url: cloudinaryResult.mobileCardUrl || null,
-      thumbnail_url: cloudinaryResult.thumbnailUrl,
-      gallery_url: cloudinaryResult.galleryUrl || null,
-      detail_url: cloudinaryResult.detailUrl || null,
+      cloudinary_public_id:
+        cloudinaryResult.publicId || extractCloudinaryPublicId(cloudinaryResult.url),
       is_primary: setAsPrimary,
       sort_order: sortOrder,
       approval_status: approvalStatus,
@@ -422,11 +428,8 @@ export async function addProductImages(
     canonical_product_id: canonicalProductId,
     external_url: img.cloudinaryResult.url,
     cloudinary_url: img.cloudinaryResult.url,
-    card_url: img.cloudinaryResult.cardUrl,
-    mobile_card_url: img.cloudinaryResult.mobileCardUrl || null,
-    thumbnail_url: img.cloudinaryResult.thumbnailUrl,
-    gallery_url: img.cloudinaryResult.galleryUrl || null,
-    detail_url: img.cloudinaryResult.detailUrl || null,
+    cloudinary_public_id:
+      img.cloudinaryResult.publicId || extractCloudinaryPublicId(img.cloudinaryResult.url),
     is_primary: img.isPrimary || false,
     sort_order: img.sortOrder ?? index,
     approval_status: "approved" as const,
@@ -468,18 +471,25 @@ export function toJsonbFormat(images: ProductImage[]): Array<{
   order: number;
   source: string | null;
 }> {
-  return images.map((img) => ({
-    id: img.id,
-    url: img.cloudinary_url || img.external_url || "",
-    cardUrl: img.card_url,
-    mobileCardUrl: img.mobile_card_url,
-    thumbnailUrl: img.thumbnail_url,
-    galleryUrl: img.gallery_url,
-    detailUrl: img.detail_url,
-    isPrimary: img.is_primary,
-    order: img.sort_order,
-    source: img.source,
-  }));
+  return images.map((img) => {
+    // Single source of truth: derive every variant from the public_id.
+    const publicId = img.cloudinary_public_id || extractCloudinaryPublicId(img.cloudinary_url);
+    const fallback = img.cloudinary_url || img.external_url || null;
+    const slot = (s: Parameters<typeof buildCloudinaryImageUrl>[1]) =>
+      buildCloudinaryImageUrl(publicId, s) || fallback;
+    return {
+      id: img.id,
+      url: img.cloudinary_url || img.external_url || "",
+      cardUrl: slot("grid_card"),
+      mobileCardUrl: slot("mobile_card"),
+      thumbnailUrl: slot("thumbnail"),
+      galleryUrl: slot("web_hero"),
+      detailUrl: slot("zoom"),
+      isPrimary: img.is_primary,
+      order: img.sort_order,
+      source: img.source,
+    };
+  });
 }
 
 /**

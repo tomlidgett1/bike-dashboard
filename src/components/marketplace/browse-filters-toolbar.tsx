@@ -175,7 +175,7 @@ export function BrowseFiltersToolbar({
           </div>
         )}
         <div className="flex flex-col gap-3">
-          <Select value="melbourne">
+          <Select defaultValue="melbourne">
             <SelectTrigger className="h-10 rounded-full border border-gray-200 bg-white text-sm text-gray-700 px-4 w-full">
               <MapPin className="h-4 w-4 text-gray-400" />
               <SelectValue placeholder="Location" />
@@ -262,7 +262,7 @@ export function BrowseFiltersToolbar({
         <div className="flex h-11 items-stretch rounded-full border border-gray-200 bg-white shadow-sm overflow-hidden">
 
           {/* Location */}
-          <Select value="melbourne">
+          <Select defaultValue="melbourne">
             <SelectTrigger className={cn(pillTriggerClass, "min-w-[8.5rem]")}>
               <MapPin className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
               <SelectValue placeholder="Location" />

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
 import { getStripe, calculatePlatformFee, calculateSellerPayout, calculateBuyerFee } from '@/lib/stripe';
 
 // Delivery fees (same as payment-intent)
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
     // Fetch product image from product_images table
     const { data: productImages } = await supabase
       .from('product_images')
-      .select('cloudinary_url, card_url, detail_url, is_primary')
+      .select('cloudinary_public_id, cloudinary_url, external_url, is_primary')
       .eq('product_id', productId)
       .eq('approval_status', 'approved')
       .order('is_primary', { ascending: false })
@@ -188,7 +189,8 @@ export async function POST(request: NextRequest) {
     
     // Priority 1: Image from product_images table
     if (primaryImage) {
-      productImage = primaryImage.detail_url || primaryImage.cloudinary_url || primaryImage.card_url;
+      const publicId = primaryImage.cloudinary_public_id || extractCloudinaryPublicId(primaryImage.cloudinary_url);
+      productImage = buildCloudinaryImageUrl(publicId, 'web_hero') || primaryImage.cloudinary_url || primaryImage.external_url || undefined;
     }
     // Priority 2: Legacy JSONB images
     else if (Array.isArray(product.images) && product.images.length > 0) {

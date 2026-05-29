@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
 
 export const dynamic = 'force-dynamic';
 
@@ -187,13 +188,12 @@ export async function POST(request: NextRequest) {
       // Get existing product_images to check for duplicates
       const { data: existingImages } = await supabase
         .from('product_images')
-        .select('cloudinary_url, card_url, external_url')
+        .select('cloudinary_url, external_url')
         .eq('product_id', productId);
-      
+
       const existingUrls = new Set<string>();
       for (const img of existingImages || []) {
         if (img.cloudinary_url) existingUrls.add(img.cloudinary_url);
-        if (img.card_url) existingUrls.add(img.card_url);
         if (img.external_url) existingUrls.add(img.external_url);
       }
       
@@ -221,10 +221,7 @@ export async function POST(request: NextRequest) {
           .insert({
             product_id: productId,
             cloudinary_url: imgUrl,
-            card_url: jsonbImg.cardUrl || imgUrl,
-            thumbnail_url: jsonbImg.thumbnailUrl,
-            gallery_url: jsonbImg.galleryUrl,
-            detail_url: jsonbImg.detailUrl,
+            cloudinary_public_id: extractCloudinaryPublicId(imgUrl),
             external_url: imgUrl,
             is_primary: jsonbImg.isPrimary || false,
             is_downloaded: false,

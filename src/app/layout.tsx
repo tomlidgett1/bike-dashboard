@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Outfit, JetBrains_Mono } from "next/font/google";
+import { Open_Sans, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { ProfileProvider } from "@/components/providers/profile-provider";
@@ -23,8 +23,8 @@ import "./globals.css";
 // Removed 'force-dynamic' to allow page-level ISR caching to work properly
 // Individual pages can set their own caching with `revalidate` export
 
-const outfit = Outfit({
-  variable: "--font-outfit",
+const openSans = Open_Sans({
+  variable: "--font-sans",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700", "800"],
 });
@@ -72,7 +72,7 @@ export default async function RootLayout({
         <meta name="format-detection" content="telephone=no" />
       </head>
       <body
-        className={`${outfit.variable} ${jetbrainsMono.variable} font-sans antialiased touch-manipulation`}
+        className={`${openSans.variable} ${jetbrainsMono.variable} font-sans antialiased touch-manipulation`}
         style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as any}
       >
         <ThemeProvider

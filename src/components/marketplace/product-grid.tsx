@@ -49,7 +49,7 @@ export function ProductGrid({
           onLoadMore();
         }
       },
-      { threshold: 0.1, rootMargin: '100px' }
+      { threshold: 0, rootMargin: '400px' }
     );
 
     const target = observerTarget.current;
@@ -67,7 +67,7 @@ export function ProductGrid({
   // Loading skeleton for initial load
   if (loading && uniqueProducts.length === 0) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-1.5 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-1.5 sm:gap-4">
         {Array.from({ length: 24 }).map((_, i) => (
           <div key={i} className="bg-white rounded-md border border-gray-200 overflow-hidden animate-pulse">
             <div className="bg-gray-200" style={{ aspectRatio: '1 / 1' }} />
@@ -101,7 +101,7 @@ export function ProductGrid({
   return (
     <div className="space-y-8">
       {/* Products Grid - 2 columns on mobile, 6 on XL screens */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-1.5 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-1.5 sm:gap-4">
         {uniqueProducts.map((product, index) => (
           <ProductCard
             key={product.id}
@@ -111,29 +111,12 @@ export function ProductGrid({
         ))}
       </div>
 
-      {/* Infinite Scroll Trigger */}
-      {hasMore && (
-        <div ref={observerTarget} className="flex justify-center py-8">
-          {loading ? (
-            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-          ) : (
-            <div className="h-8" /> // Invisible trigger area
-          )}
-        </div>
-      )}
-
-      {/* Load More Button (fallback) */}
-      {hasMore && !loading && (
-        <div className="flex justify-center">
-          <Button
-            onClick={onLoadMore}
-            variant="outline"
-            className="rounded-md border-gray-300 hover:bg-gray-50"
-          >
-            Load More Products
-          </Button>
-        </div>
-      )}
+      {/* Infinite scroll sentinel — triggers load when approaching viewport */}
+      <div ref={observerTarget} className="flex justify-center py-6">
+        {loading && uniqueProducts.length > 0 && (
+          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        )}
+      </div>
     </div>
   );
 }

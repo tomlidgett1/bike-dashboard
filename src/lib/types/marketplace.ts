@@ -44,8 +44,12 @@ export interface MarketplaceProduct {
   image_formats?: any;
   all_images?: string[]; // All product images for gallery
   images?: any; // Raw images field (for listings)
-  // Cloudinary optimised URLs for instant loading
+  // Cloudinary: public_id is the single source of truth — responsive URLs are
+  // computed from it at render time (see cloudinaryCardLoader). The *_url fields
+  // are fallbacks for legacy/external images that have no public_id.
+  cloudinary_public_id?: string | null;
   card_url?: string | null; // 400px product card image
+  mobile_card_url?: string | null; // 320px product card image (mobile)
   thumbnail_url?: string | null; // 100px thumbnail for search
   detail_url?: string | null; // 800px detail page image
   qoh: number;

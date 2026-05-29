@@ -151,10 +151,10 @@ Deno.serve(async (req) => {
             const { error: completeError } = await supabase.rpc('mark_discovery_complete', {
               p_queue_id: item.id,
               p_images_found: aiResult.images.length,
-              p_images_downloaded: uploadedImages.length,
+              p_images_downloaded: savedImages.length,
               p_openai_response: {
                 reasoning: aiResult.reasoning,
-                uploadedImages,
+                savedImages,
                 primaryImageId,
               },
               p_search_query: aiResult.searchQuery,
@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
             return {
               productName: item.product_name,
               success: true,
-              imagesDownloaded: uploadedImages.length,
+              imagesDownloaded: savedImages.length,
             }
           } catch (error) {
             console.error(`❌ [${itemIndex}/${queueItems.length}] Failed:`, error)

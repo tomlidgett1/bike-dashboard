@@ -239,12 +239,12 @@ export function FloatingUploadBar() {
                   )}
                 </div>
 
-                {/* Cancel button (only during processing) */}
-                {isProcessing && (
+                {/* Cancel button (during processing) or Dismiss (on error) */}
+                {(isProcessing || isError) && (
                   <button
                     onClick={cancelUpload}
                     className="p-1.5 rounded-md hover:bg-gray-100 transition-colors flex-shrink-0"
-                    aria-label="Cancel upload"
+                    aria-label={isError ? "Dismiss" : "Cancel upload"}
                   >
                     <X className="h-4 w-4 text-gray-400" />
                   </button>

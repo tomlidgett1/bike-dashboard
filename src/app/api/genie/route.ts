@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
+import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -91,7 +92,7 @@ async function runMarketplaceSearch(
     .from('marketplace_ready_products')
     .select(`
       id, display_name, description, price, qoh, marketplace_category,
-      listing_type, resolved_thumbnail_url, resolved_card_url,
+      listing_type, resolved_cloudinary_public_id, resolved_cloudinary_url, resolved_external_url,
       brand, model, condition_rating, user_id
     `)
     .gt('qoh', 0)
@@ -142,7 +143,10 @@ async function runMarketplaceSearch(
     qoh: p.qoh,
     listing_type: p.listing_type,
     condition: p.condition_rating,
-    image: p.resolved_thumbnail_url ?? p.resolved_card_url ?? null,
+    image: buildCloudinaryImageUrl(
+      p.resolved_cloudinary_public_id ?? extractCloudinaryPublicId(p.resolved_cloudinary_url),
+      'thumbnail'
+    ) ?? p.resolved_external_url ?? p.resolved_cloudinary_url ?? null,
     store_name: p.user_id ? (storeMap[p.user_id] ?? null) : null,
   }))
 

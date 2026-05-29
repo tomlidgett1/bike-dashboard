@@ -5,7 +5,7 @@ import { Suspense, startTransition } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
-import { TrendingUp, Package, X, Search, Store as StoreIcon, User, Clock, DollarSign, SlidersHorizontal } from "lucide-react";
+import { TrendingUp, Package, X, Search, Store as StoreIcon, User, Clock, DollarSign, SlidersHorizontal, Loader2 } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
@@ -302,6 +302,9 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     };
   }, [isMobile, viewMode, isStoresView]);
 
+  // Infinite scroll sentinel ref — effect added after handleLoadMore is declared
+  const bottomSentinelRef = React.useRef<HTMLDivElement>(null);
+
   // Tracks IDs already in accumulatedProducts to deduplicate pagination appends
   const processedDataRef = React.useRef<Set<string>>(new Set());
 
@@ -437,6 +440,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     if (currentPage > 1) return;
     setAccumulatedProducts(fetchedProducts);
     processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
+    setLocalHasMore(null); // reset so hasMore re-reads from fresh SWR response
   }, [fetchedProducts, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Only use server-prefetched products when the view is in its default state —
@@ -466,7 +470,10 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   // Only show the skeleton when there is genuinely no data yet (SWR loading AND no
   // server-prefetched products to fall back to).
   const loading = isLoading && products.length === 0;
-  const hasMore = pagination?.hasMore ?? initialPagination?.hasMore ?? false;
+  // localHasMore tracks whether the last paginated fetch returned more pages.
+  // null = not yet paginated (fall back to SWR's first-page value).
+  const [localHasMore, setLocalHasMore] = React.useState<boolean | null>(null);
+  const hasMore = localHasMore ?? (pagination?.hasMore ?? initialPagination?.hasMore ?? false);
   const totalCount = pagination?.total ?? initialPagination?.total ?? 0;
 
   // Resolve the currently selected store object (for identity strip)
@@ -554,8 +561,11 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     });
   }, [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, isStoresView, router]);
 
+  const [isPaginating, setIsPaginating] = React.useState(false);
+
   const handleLoadMore = async () => {
-    if (isValidating || !hasMore) return;
+    if (isValidating || isPaginating || !hasMore) return;
+    setIsPaginating(true);
 
     const nextPage = currentPage + 1;
     // Snapshot page-1 data before the async fetch in case the effect hasn't seeded
@@ -637,15 +647,38 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       setAccumulatedProducts([...baseProducts, ...newFiltered]);
       setCurrentPage(nextPage);
       
-      // Update pagination state if provided
+      // Update local hasMore from this page's pagination response
       if (data.pagination) {
-        // Note: We can't easily update the SWR pagination state, 
-        // but we can track hasMore locally if needed
+        setLocalHasMore(data.pagination.hasMore ?? false);
+      } else {
+        // No pagination info — assume no more pages if we got fewer than a full page
+        setLocalHasMore(newProducts.length >= MARKETPLACE_INITIAL_PAGE_SIZE);
       }
     } catch (error) {
       console.error('[MARKETPLACE] Error loading more products:', error);
+    } finally {
+      setIsPaginating(false);
     }
   };
+
+  // Infinite scroll — re-observe whenever the ability to load more changes
+  React.useEffect(() => {
+    const el = bottomSentinelRef.current;
+    if (!el || !hasMore || isPaginating || isValidating || searchQuery) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          handleLoadMore();
+        }
+      },
+      { threshold: 0, rootMargin: '300px' }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMore, isPaginating, isValidating, searchQuery]);
 
   const handleViewModeChange = (mode: ViewMode) => {
     // Don't reset if clicking the same tab and already in marketplace
@@ -782,6 +815,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     setAccumulatedProducts([]);
     processedDataRef.current = new Set();
     setCurrentPage(1);
+    setLocalHasMore(null); // fall back to SWR for the fresh query
     
     // Track filter application
     tracker.trackClick(undefined, {
@@ -1295,7 +1329,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                           className={
                             productGridLayout === "list"
                               ? "flex flex-col gap-3"
-                              : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-4"
+                              : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4"
                           }
                         >
                           {Array.from({
@@ -1310,7 +1344,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                         className={cn(
                           productGridLayout === "list"
                             ? "flex flex-col gap-3"
-                            : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-1.5 sm:gap-4",
+                            : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-4",
                         )}
                       >
                         {displayProducts.map((product, index) => (
@@ -1430,16 +1464,19 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     </div>
                   )}
 
-                  {/* Load More Button */}
-                  {!searchQuery && !loading && hasMore && displayProducts.length > 0 && (
-                    <div className="flex justify-center pt-6">
-                      <Button
-                        onClick={handleLoadMore}
-                        variant="outline"
-                        className="rounded-md px-8"
-                      >
-                        Load More Products
-                      </Button>
+                  {/* Infinite scroll sentinel — sits just below the product grid */}
+                  <div ref={bottomSentinelRef} className="h-4" aria-hidden="true" />
+
+                  {/* Skeleton cards while next page loads */}
+                  {!searchQuery && isPaginating && displayProducts.length > 0 && (
+                    <div className={
+                      productGridLayout === "list"
+                        ? "flex flex-col gap-3"
+                        : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-4"
+                    }>
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <ProductCardSkeleton key={i} layout={productGridLayout} />
+                      ))}
                     </div>
                   )}
               </>

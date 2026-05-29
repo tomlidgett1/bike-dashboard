@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { MarketplaceProduct } from '@/lib/types/marketplace';
+import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
 
 // ============================================================
 // Individual Product API - Public Endpoint
@@ -125,10 +126,8 @@ export async function GET(
       .from('product_images')
       .select(`
         id,
+        cloudinary_public_id,
         cloudinary_url,
-        card_url,
-        thumbnail_url,
-        detail_url,
         external_url,
         is_primary,
         sort_order,
@@ -146,10 +145,8 @@ export async function GET(
         .from('product_images')
         .select(`
           id,
+          cloudinary_public_id,
           cloudinary_url,
-          card_url,
-          thumbnail_url,
-          detail_url,
           external_url,
           is_primary,
           sort_order,
@@ -172,14 +169,16 @@ export async function GET(
     
     // Priority 1: Images from product_images table
     if (allProductImages.length > 0) {
+      // Compute the gallery (web_hero) URL from the public_id — single source of truth
+      const heroUrl = (img: any): string | null =>
+        buildCloudinaryImageUrl(img?.cloudinary_public_id || extractCloudinaryPublicId(img?.cloudinary_url), 'web_hero')
+        || img?.cloudinary_url || img?.external_url || null;
       const primaryImage = allProductImages.find((img: any) => img.is_primary) || allProductImages[0];
-      // Use detail_url for full resolution, fallback to card_url or cloudinary_url
-      primaryImageUrl = primaryImage?.detail_url || primaryImage?.cloudinary_url || primaryImage?.card_url || null;
-      
-      // Get all images - use detail_url for gallery
+      primaryImageUrl = heroUrl(primaryImage);
+
       allImages = allProductImages
-        .map((img: any) => img.detail_url || img.cloudinary_url || img.card_url)
-        .filter((url: string | null) => url && !url.startsWith('blob:'));
+        .map((img: any) => heroUrl(img))
+        .filter((url: string | null) => url && !url.startsWith('blob:')) as string[];
       
       console.log(`📸 [PRODUCT API] Using ${allProductImages.length} images from product_images table`);
     }

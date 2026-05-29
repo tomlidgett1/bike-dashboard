@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { MarketplaceProduct } from '@/lib/types/marketplace';
+import { resolveProductImage, pickPrimaryImage } from '@/lib/services/image-resolver';
+import { extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
 
 // ============================================================
 // Seller Products API
@@ -91,13 +93,12 @@ export async function GET(
         canonical_products!canonical_product_id (
           id,
           product_images!canonical_product_id (
-            storage_path,
             is_primary,
-            variants,
+            sort_order,
             approval_status,
-            is_downloaded,
-            card_url,
-            cloudinary_url
+            cloudinary_public_id,
+            cloudinary_url,
+            external_url
           )
         )
       `)
@@ -127,16 +128,17 @@ export async function GET(
         if (hasCloudinaryImage) return true;
       }
       
-      // Check 2: Canonical products with product_images having cloudinary_url
+      // Check 2: Canonical products with an approved image (public_id/url/external)
       const canonicalProduct = product.canonical_products as any;
       const productImages = canonicalProduct?.product_images || [];
       if (productImages.length > 0) {
-        const hasCloudinaryImage = productImages.some((img: any) => 
-          img.cloudinary_url || img.card_url
+        const hasImage = productImages.some((img: any) =>
+          (img.approval_status == null || img.approval_status === 'approved') &&
+          (img.cloudinary_public_id || img.cloudinary_url || img.external_url)
         );
-        if (hasCloudinaryImage) return true;
+        if (hasImage) return true;
       }
-      
+
       return false;
     }).slice(0, limit); // Apply the limit after filtering
 
@@ -153,44 +155,31 @@ export async function GET(
       });
     }
 
-    // Format products for response
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    // Format products for response — resolve every image from the single
+    // source of truth (cloudinary_public_id) via the shared resolver.
     const formattedProducts: MarketplaceProduct[] = productsWithImages.map(product => {
       const user = product.users as any;
       const canonicalProduct = product.canonical_products as any;
       const productImages = canonicalProduct?.product_images || [];
-      
-      // Build image URL - prioritise Cloudinary URLs
-      let primaryImageUrl = null;
-      let cardUrl = null;
 
-      // Priority 1: Manually uploaded images with Cloudinary URLs
-      if (product.images && Array.isArray(product.images) && product.images.length > 0) {
-        const manualImages = product.images as Array<{ url: string; cardUrl?: string; cloudinaryUrl?: string; isPrimary?: boolean }>;
-        const primaryImage = manualImages.find(img => img.isPrimary) || manualImages[0];
-        primaryImageUrl = primaryImage?.cloudinaryUrl || primaryImage?.url;
-        cardUrl = primaryImage?.cardUrl || null;
+      let publicId: string | null = null;
+      let externalUrl: string | null = null;
+      if (Array.isArray(product.images) && product.images.length > 0) {
+        const primary = product.images.find((img: any) => img.isPrimary) || product.images[0];
+        publicId = extractCloudinaryPublicId(primary?.cloudinaryUrl || primary?.url);
+        externalUrl = primary?.url || null;
+      } else {
+        const primary = pickPrimaryImage(productImages);
+        publicId = primary?.cloudinary_public_id || extractCloudinaryPublicId(primary?.cloudinary_url);
+        externalUrl = primary?.external_url || primary?.cloudinary_url || null;
       }
-      // Priority 2: Canonical images with Cloudinary URLs
-      else if (productImages.length > 0) {
-        const primaryImage = productImages.find((img: any) => img.is_primary) || productImages[0];
-        // Prefer Cloudinary URLs
-        if (primaryImage?.cloudinary_url) {
-          primaryImageUrl = primaryImage.cloudinary_url;
-        } else if (primaryImage?.storage_path) {
-          primaryImageUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.storage_path}`;
-        }
-        // Card URL from Cloudinary
-        if (primaryImage?.card_url) {
-          cardUrl = primaryImage.card_url;
-        } else if (primaryImage?.variants?.card) {
-          cardUrl = `${baseUrl}/storage/v1/object/public/product-images/${primaryImage.variants.card}`;
-        }
-      }
-      // Priority 3: Direct URL
-      else if (product.primary_image_url) {
-        primaryImageUrl = product.primary_image_url;
-      }
+
+      const resolved = resolveProductImage({
+        cloudinary_public_id: publicId,
+        external_url: externalUrl,
+        approval_status: 'approved',
+      });
+      const primaryImageUrl = resolved?.card_url || resolved?.original_url || null;
 
       return {
         id: product.id,
@@ -205,7 +194,9 @@ export async function GET(
         created_at: product.created_at,
         user_id: product.user_id,
         primary_image_url: primaryImageUrl,
-        card_url: cardUrl,
+        cloudinary_public_id: publicId,
+        card_url: primaryImageUrl,
+        thumbnail_url: resolved?.thumbnail_url || primaryImageUrl,
         images: product.images,
         listing_type: product.listing_type,
         listing_status: product.listing_status,

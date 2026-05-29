@@ -1,18 +1,22 @@
 import { createBrowserClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+// Module-level singleton — all browser components share one GoTrueClient instance
+// so session state stays consistent across providers, modals, and edge function calls.
+let _client: SupabaseClient | null = null
+
 export function createClient(): SupabaseClient {
-  return createBrowserClient(
+  if (_client) return _client
+  _client = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      // Fresh client per call avoids stale PKCE state after sign-out (see supabase/ssr#55).
-      isSingleton: false,
       auth: {
         detectSessionInUrl: false,
       },
     }
   )
+  return _client
 }
 
 

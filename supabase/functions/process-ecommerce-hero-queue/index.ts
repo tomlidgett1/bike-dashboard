@@ -223,16 +223,15 @@ serve(async (req) => {
         // First, check how many images exist in product_images for this product
         const { data: existingImages } = await supabase
           .from("product_images")
-          .select("id, cloudinary_url, card_url, external_url")
+          .select("id, cloudinary_url, external_url")
           .eq("product_id", item.product_id);
         
         // If source_image_id is null, the original image came from JSONB, not product_images
         // We need to preserve it by inserting it into product_images first
         if (!item.source_image_id) {
           // Check if this source URL already exists in product_images
-          const sourceAlreadyExists = existingImages?.some(img => 
-            img.cloudinary_url === item.source_image_url || 
-            img.card_url === item.source_image_url ||
+          const sourceAlreadyExists = existingImages?.some(img =>
+            img.cloudinary_url === item.source_image_url ||
             img.external_url === item.source_image_url
           );
           
@@ -245,7 +244,6 @@ serve(async (req) => {
                 product_id: item.product_id,
                 external_url: item.source_image_url,
                 cloudinary_url: item.source_image_url,
-                card_url: item.source_image_url,
                 is_primary: false,
                 is_downloaded: false,
                 is_ai_generated: false,
@@ -274,10 +272,7 @@ serve(async (req) => {
           .insert({
             product_id: item.product_id,
             cloudinary_url: cloudinaryResult.url,
-            card_url: cloudinaryResult.cardUrl,
-            thumbnail_url: cloudinaryResult.thumbnailUrl,
-            gallery_url: cloudinaryResult.galleryUrl,
-            detail_url: cloudinaryResult.detailUrl,
+            cloudinary_public_id: cloudinaryResult.publicId,
             external_url: cloudinaryResult.url,
             is_primary: true,
             is_downloaded: true,

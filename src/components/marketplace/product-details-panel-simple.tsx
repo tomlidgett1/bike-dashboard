@@ -20,6 +20,16 @@ import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
 
+// Adaptive spec row: short values inline (label ↔ value), long values stacked
+function SpecRow({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex items-start gap-4 py-2.5">
+      <span className="text-sm text-gray-500 w-[110px] flex-shrink-0">{label}</span>
+      <span className="text-sm text-gray-900 flex-1 leading-relaxed">{String(value)}</span>
+    </div>
+  );
+}
+
 // Renders **bold** spans within a line of text
 function InlineText({ text }: { text: string }) {
   const parts = text.split(/\*\*(.+?)\*\*/g);
@@ -420,10 +430,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
             >
               {/* Condition row — always shown at top when set */}
               {(product as any).condition_rating && (
-                <div className="flex justify-between py-2.5 border-b border-gray-100 mb-4">
-                  <span className="text-sm text-gray-500">Condition</span>
-                  <span className="text-sm font-medium text-gray-900">{(product as any).condition_rating}</span>
-                </div>
+                <SpecRow label="Condition" value={(product as any).condition_rating} />
               )}
 
               {(product as any).product_specs ? (
@@ -431,103 +438,25 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                 <ProductDescription text={(product as any).product_specs} />
               ) : (
                 /* Fallback: field-by-field display from database */
-                <div className="space-y-0 divide-y divide-gray-100">
-                  {(product as any).brand && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Brand</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).brand}</span>
-                    </div>
-                  )}
-                  {(product as any).model && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Model</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).model}</span>
-                    </div>
-                  )}
-                  {(product as any).model_year && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Year</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).model_year}</span>
-                    </div>
-                  )}
-                  {(product as any).bike_type && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Type</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).bike_type}</span>
-                    </div>
-                  )}
+                <div className="divide-y divide-gray-100">
+                  {(product as any).brand && <SpecRow label="Brand" value={(product as any).brand} />}
+                  {(product as any).model && <SpecRow label="Model" value={(product as any).model} />}
+                  {(product as any).model_year && <SpecRow label="Year" value={(product as any).model_year} />}
+                  {(product as any).bike_type && <SpecRow label="Type" value={(product as any).bike_type} />}
                   {((product as any).frame_size || (product as any).size) && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Size</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).frame_size || (product as any).size}</span>
-                    </div>
+                    <SpecRow label="Size" value={(product as any).frame_size || (product as any).size} />
                   )}
-                  {(product as any).frame_material && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Frame Material</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).frame_material}</span>
-                    </div>
-                  )}
-                  {(product as any).groupset && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Groupset</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).groupset}</span>
-                    </div>
-                  )}
-                  {(product as any).wheel_size && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Wheel Size</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).wheel_size}</span>
-                    </div>
-                  )}
-                  {(product as any).suspension_type && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Suspension</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).suspension_type}</span>
-                    </div>
-                  )}
-                  {(product as any).color_primary && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Colour</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).color_primary}</span>
-                    </div>
-                  )}
-                  {(product as any).gender_fit && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Gender Fit</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).gender_fit}</span>
-                    </div>
-                  )}
-                  {(product as any).apparel_material && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Material</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).apparel_material}</span>
-                    </div>
-                  )}
-                  {(product as any).part_type_detail && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Part Type</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).part_type_detail}</span>
-                    </div>
-                  )}
-                  {(product as any).compatibility_notes && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Compatibility</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).compatibility_notes}</span>
-                    </div>
-                  )}
-                  {(product as any).material && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Material</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).material}</span>
-                    </div>
-                  )}
-                  {(product as any).weight && (
-                    <div className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">Weight</span>
-                      <span className="text-sm font-medium text-gray-900">{(product as any).weight}</span>
-                    </div>
-                  )}
+                  {(product as any).frame_material && <SpecRow label="Frame Material" value={(product as any).frame_material} />}
+                  {(product as any).groupset && <SpecRow label="Groupset" value={(product as any).groupset} />}
+                  {(product as any).wheel_size && <SpecRow label="Wheel Size" value={(product as any).wheel_size} />}
+                  {(product as any).suspension_type && <SpecRow label="Suspension" value={(product as any).suspension_type} />}
+                  {(product as any).color_primary && <SpecRow label="Colour" value={(product as any).color_primary} />}
+                  {(product as any).gender_fit && <SpecRow label="Gender Fit" value={(product as any).gender_fit} />}
+                  {(product as any).apparel_material && <SpecRow label="Material" value={(product as any).apparel_material} />}
+                  {(product as any).part_type_detail && <SpecRow label="Part Type" value={(product as any).part_type_detail} />}
+                  {(product as any).compatibility_notes && <SpecRow label="Compatibility" value={(product as any).compatibility_notes} />}
+                  {(product as any).material && <SpecRow label="Material" value={(product as any).material} />}
+                  {(product as any).weight && <SpecRow label="Weight" value={(product as any).weight} />}
                   {!(product as any).brand &&
                    !(product as any).model &&
                    !(product as any).bike_type && (

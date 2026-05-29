@@ -15,6 +15,12 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const SYSTEM_PROMPT = `You are an experienced cyclist selling your own gear on a marketplace. Write condition descriptions in FIRST PERSON as if you personally own and are selling this item.
 
+ABSOLUTE RULE - NO LINKS OR URLS EVER:
+- Never include URLs, website links, or domain names in ANY field
+- Never cite sources inline (no "according to...", no "source:", no footnotes)
+- Never include "www.", "http", ".com", ".au" or any web reference in descriptions
+- Product descriptions must read as plain prose with no citations
+
 CRITICAL - CONDITION DESCRIPTION STYLE:
 - Write in FIRST PERSON - you own this item and are describing it
 - Say "I've" not "it looks like" - you know this item personally
@@ -171,15 +177,16 @@ Deno.serve(async (req) => {
     const imageData = await Promise.all(
       imageUrls.map(async (url: string, index: number) => {
         try {
-          // Check if it's a Supabase storage URL
-          const supabaseMatch = url.match(/\/storage\/v1\/object\/public\/product-images\/(.+)$/);
+          // Check if it's a Supabase storage URL (listing-images or product-images)
+          const supabaseMatch = url.match(/\/storage\/v1\/object\/public\/(listing-images|product-images)\/(.+)$/);
           if (supabaseMatch) {
-            const path = supabaseMatch[1];
-            console.log(`✓ [AI EDGE FUNCTION] Downloading image ${index + 1} from Supabase:`, path);
-            
+            const bucket = supabaseMatch[1];
+            const path = supabaseMatch[2];
+            console.log(`✓ [AI EDGE FUNCTION] Downloading image ${index + 1} from Supabase (${bucket}):`, path);
+
             // Download from Supabase storage
             const { data, error } = await supabase.storage
-              .from('product-images')
+              .from(bucket)
               .download(path);
             
             if (error) {
@@ -258,7 +265,7 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-mini',
+        model: 'gpt-5.4-mini',
         input: [{
           role: 'user',
           content: [
@@ -420,9 +427,11 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
 
 Focus on cycling-specific sources. Prioritise Australian retailers for pricing.
 
+CRITICAL: The product_description field must contain ONLY plain prose text. Never include URLs, hyperlinks, website addresses, domain names, or source citations of any kind in the product_description or any other text field. Sources go only in sources_consulted.
+
 Return ONLY valid JSON (no markdown):
 {
-  "product_description": "Detailed product description...",
+  "product_description": "Detailed product description with no links or URLs...",
   "technical_specs": {
     "frame_material": "Carbon",
     "groupset": "Shimano 105"
@@ -451,7 +460,7 @@ Return ONLY valid JSON (no markdown):
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'gpt-4.1',
+            model: 'gpt-5.4-mini',
             input: searchPrompt,
             tools: [{ 
               type: 'web_search_preview',
@@ -518,22 +527,34 @@ Return ONLY valid JSON (no markdown):
     // ============================================================
     // Phase 3: Merge Image Analysis + Web Search Data
     // ============================================================
+
+    // Strip any URLs/links from a text field (safety net in case AI ignores instructions)
+    const stripUrls = (text: string | undefined | null): string | undefined => {
+      if (!text) return undefined;
+      return text
+        .replace(/https?:\/\/[^\s)>\]"']+/gi, '')       // full URLs
+        .replace(/www\.[^\s)>\]"']+/gi, '')               // www. links
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')          // markdown links → keep label only
+        .replace(/\s{2,}/g, ' ')                          // collapse extra spaces
+        .trim() || undefined;
+    };
+
     const mergedAnalysis = { ...analysis };
     const dataSources: Record<string, "image" | "web" | "both"> = {};
-    
+
     if (webEnrichment) {
       // Merge product description (prefer web for comprehensive description)
       // Keep description and condition separate:
       // - description: product info from web search
       // - seller_notes: condition assessment from image analysis (written in first person)
       if (webEnrichment.product_description) {
-        mergedAnalysis.description = webEnrichment.product_description;
-        mergedAnalysis.seller_notes = analysis.condition_details;
+        mergedAnalysis.description = stripUrls(webEnrichment.product_description);
+        mergedAnalysis.seller_notes = stripUrls(analysis.condition_details);
         dataSources.description = 'both';
       }
     } else {
       // No web enrichment - use condition_details as seller_notes
-      mergedAnalysis.seller_notes = analysis.condition_details;
+      mergedAnalysis.seller_notes = stripUrls(analysis.condition_details);
     }
     
     if (webEnrichment) {

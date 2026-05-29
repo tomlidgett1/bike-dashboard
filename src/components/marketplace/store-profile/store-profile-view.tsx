@@ -19,6 +19,8 @@ import {
   Navigation,
   MessageSquare,
   ChevronRight,
+  Search,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -98,6 +100,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   const [activeTab, setActiveTab] = React.useState<StoreTab>("products");
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [sort, setSort] = React.useState<SortKey>("featured");
+  const [storeSearch, setStoreSearch] = React.useState("");
   const [contactOpen, setContactOpen] = React.useState(false);
   const [isFollowing, setIsFollowing] = React.useState(false);
   const [isSaved, setIsSaved] = React.useState(false);
@@ -124,8 +127,16 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     const cats = selectedCategory
       ? store.categories.filter((c) => c.name === selectedCategory)
       : store.categories;
+    const q = storeSearch.trim().toLowerCase();
     return cats.map((cat) => {
-      const products = [...cat.products];
+      let products = [...cat.products];
+      if (q) {
+        products = products.filter(
+          (p) =>
+            (p.display_name ?? p.description ?? "").toLowerCase().includes(q) ||
+            (p.description ?? "").toLowerCase().includes(q)
+        );
+      }
       switch (sort) {
         case "price-asc": products.sort((a, b) => (a.price ?? 0) - (b.price ?? 0)); break;
         case "price-desc": products.sort((a, b) => (b.price ?? 0) - (a.price ?? 0)); break;
@@ -133,7 +144,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
       }
       return { ...cat, products };
     });
-  }, [selectedCategory, sort, store.categories]);
+  }, [selectedCategory, sort, store.categories, storeSearch]);
 
   const handleFollow = async () => {
     if (followLoading) return;
@@ -210,10 +221,10 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
   return (
     <div className={cn("min-h-screen", immersive ? "bg-white" : "bg-gray-50")}>
-      <div className={immersive ? "pt-14" : "max-w-[1400px] mx-auto px-1 sm:px-2 lg:px-3 py-3 sm:py-4"}>
+      <div className={immersive ? "pt-14" : "px-3 sm:px-4 py-3 sm:py-4"}>
         <div className={immersive ? "" : "bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"}>
       {/* ══ HERO ══════════════════════════════════════════ */}
-      <section className="bg-white border-b border-gray-100">
+      <section className="bg-white">
         {store.cover_image_url && (
           <div className="relative h-40 sm:h-52 overflow-hidden">
             <Image src={store.cover_image_url} alt="" fill className="object-cover" priority />
@@ -292,7 +303,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
       {/* ── Pill tab bar ─────────────────────────────────── */}
       <div className={cn(
-        "py-3 border-b border-gray-100",
+        "py-3",
         immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
       )}>
         <div className="overflow-x-auto scrollbar-hide">
@@ -329,6 +340,27 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
             immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
           )}>
             <div className="flex items-center gap-2 sm:gap-3">
+              {/* Store search */}
+              <div className="relative flex-shrink-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={storeSearch}
+                  onChange={(e) => setStoreSearch(e.target.value)}
+                  placeholder="Search products…"
+                  className="h-9 w-44 sm:w-56 rounded-full border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
+                />
+                {storeSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setStoreSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
               {/* All Categories dropdown */}
               {store.categories.length > 1 && (
                 <Select
@@ -411,15 +443,27 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
             {/* PRODUCTS */}
             {activeTab === "products" &&
               (allProducts.length > 0 ? (
-                <div className="space-y-1">
+                <div className="space-y-8">
                   {sortedCategories.map((cat, i) =>
                     cat.products.length > 0 ? (
-                      <ProductCarousel
-                        key={cat.id}
-                        categoryName={cat.name}
-                        products={cat.products}
-                        isFeatured={!selectedCategory && i === 0}
-                      />
+                      <section key={cat.id}>
+                        {/* Category header */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <h3 className="text-sm font-semibold text-gray-900">{cat.name}</h3>
+                          {!selectedCategory && i === 0 && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-800" style={{ backgroundColor: '#ffde59' }}>
+                              Featured
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-400 tabular-nums">({cat.products.length})</span>
+                        </div>
+                        {/* 6-column grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                          {cat.products.map((product, j) => (
+                            <ProductCard key={product.id} product={product} priority={i === 0 && j < 6} />
+                          ))}
+                        </div>
+                      </section>
                     ) : null
                   )}
                 </div>

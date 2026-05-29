@@ -8,7 +8,12 @@ import { Package, Heart, Sparkles, Store, BadgeCheck } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
+import { cloudinaryCardLoader, extractCloudinaryPublicId } from "@/lib/utils/cloudinary-transforms";
 import { cn } from "@/lib/utils";
+
+// 1x1 light-grey SVG used as the blur-up placeholder for card images
+const CARD_BLUR_DATA_URL =
+  "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iI2Y3ZjdmNyIvPjwvc3ZnPg==";
 import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
 
 // ============================================================
@@ -37,6 +42,7 @@ type ListingImage = {
 type ProductCardData = MarketplaceProduct & {
   store_name?: string;
   card_url?: string | null;
+  cloudinary_public_id?: string | null;
   images?: ListingImage[] | null;
 };
 
@@ -128,6 +134,22 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     return null;
   }, [product.primary_image_url, productData.card_url, productData.images, productData.listing_type]);
 
+  // Cloudinary public_id is the single source of truth. When present we render a
+  // real DPR-aware AVIF srcset via the loader; otherwise we fall back to the
+  // single pre-built URL (legacy/external images that were never on Cloudinary).
+  const cardPublicId = React.useMemo(
+    () => productData.cloudinary_public_id || extractCloudinaryPublicId(imageUrl),
+    [productData.cloudinary_public_id, imageUrl]
+  );
+
+  // Width the card occupies at each breakpoint, so the browser fetches the
+  // smallest sufficient variant. Grid: 2-col mobile, 3 md, 4 lg, 6 xl.
+  const cardSizes = layout === "list"
+    ? "128px"
+    : featuredMobile
+      ? "(max-width: 640px) 100vw, (min-width: 1280px) 16vw, (min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
+      : "(min-width: 1280px) 16vw, (min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw";
+
   // Memoize click handler to prevent recreating on every render
   const handleClick = React.useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -192,19 +214,35 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             !isList && (featuredMobile ? "aspect-[4/3]" : "aspect-square")
           )}
         >
-          {isVisible && imageUrl && !imageError ? (
-            <Image
-              src={imageUrl}
-              alt={product.description}
-              fill
-              unoptimized // Cloudinary already optimizes - skip Next.js processing
-              className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
-              loading={priority ? 'eager' : 'lazy'}
-              priority={priority}
-              placeholder="blur"
-              blurDataURL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iI2Y3ZjdmNyIvPjwvc3ZnPg=="
-              onError={() => setImageError(true)}
-            />
+          {isVisible && (cardPublicId || imageUrl) && !imageError ? (
+            cardPublicId ? (
+              <Image
+                loader={cloudinaryCardLoader}
+                src={cardPublicId}
+                alt={product.description}
+                fill
+                sizes={cardSizes}
+                className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
+                loading={priority ? 'eager' : 'lazy'}
+                priority={priority}
+                placeholder="blur"
+                blurDataURL={CARD_BLUR_DATA_URL}
+                onError={() => setImageError(true)}
+              />
+            ) : (
+              <Image
+                src={imageUrl!}
+                alt={product.description}
+                fill
+                unoptimized // legacy/external image — already a finished URL, skip Next processing
+                className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
+                loading={priority ? 'eager' : 'lazy'}
+                priority={priority}
+                placeholder="blur"
+                blurDataURL={CARD_BLUR_DATA_URL}
+                onError={() => setImageError(true)}
+              />
+            )
           ) : !isVisible ? (
             <div className="flex h-full w-full items-center justify-center">
               <div className="animate-pulse h-full w-full bg-gray-200/50" />

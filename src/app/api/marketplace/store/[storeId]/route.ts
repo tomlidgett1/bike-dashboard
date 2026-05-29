@@ -121,11 +121,7 @@ export async function GET(
         lightspeed_category_id,
         canonical_product_id,
         resolved_image_id,
-        resolved_card_url,
-        resolved_thumbnail_url,
-        resolved_mobile_card_url,
-        resolved_gallery_url,
-        resolved_detail_url,
+        resolved_external_url,
         resolved_cloudinary_url,
         resolved_cloudinary_public_id
       `)
@@ -154,11 +150,7 @@ export async function GET(
         id: product.resolved_image_id,
         cloudinary_public_id: product.resolved_cloudinary_public_id,
         cloudinary_url: product.resolved_cloudinary_url,
-        thumbnail_url: product.resolved_thumbnail_url,
-        mobile_card_url: product.resolved_mobile_card_url,
-        card_url: product.resolved_card_url,
-        gallery_url: product.resolved_gallery_url,
-        detail_url: product.resolved_detail_url,
+        external_url: product.resolved_external_url,
         approval_status: 'approved',
       });
       const primaryImageUrl = resolved?.card_url || resolved?.original_url;

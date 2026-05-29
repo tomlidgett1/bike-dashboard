@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms'
 import { getMarketplaceReadiness } from '@/lib/marketplace/product-readiness'
 
 export async function GET(request: NextRequest) {
@@ -45,9 +46,9 @@ export async function GET(request: NextRequest) {
         *,
         product_images!product_id (
           id,
-          thumbnail_url,
-          card_url,
+          cloudinary_public_id,
           cloudinary_url,
+          external_url,
           is_primary,
           approval_status,
           sort_order
@@ -58,14 +59,11 @@ export async function GET(request: NextRequest) {
           normalized_name,
           product_images!canonical_product_id (
             id,
-            storage_path,
-            thumbnail_url,
-            card_url,
+            cloudinary_public_id,
             cloudinary_url,
+            external_url,
             is_primary,
             approval_status,
-            variants,
-            formats,
             sort_order
           )
         )
@@ -171,10 +169,11 @@ export async function GET(request: NextRequest) {
         const primaryImage = approvedImages.find((img: any) => img.is_primary) || approvedImages[0];
         
         if (primaryImage) {
-          // Use thumbnail_url for table display (optimized 100px)
-          resolvedImageUrl = primaryImage.thumbnail_url || 
-                            primaryImage.card_url || 
-                            primaryImage.cloudinary_url;
+          // Compute the 100px thumbnail from the public_id (single source of truth)
+          const publicId = primaryImage.cloudinary_public_id || extractCloudinaryPublicId(primaryImage.cloudinary_url);
+          resolvedImageUrl = buildCloudinaryImageUrl(publicId, 'thumbnail') ||
+                            primaryImage.cloudinary_url ||
+                            primaryImage.external_url;
         }
       }
       
