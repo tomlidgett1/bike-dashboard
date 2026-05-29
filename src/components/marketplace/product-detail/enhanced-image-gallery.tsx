@@ -39,6 +39,14 @@ export function EnhancedImageGallery({
   const [fullscreenIndex, setFullscreenIndex] = React.useState(0);
   const [mobileImageIndex, setMobileImageIndex] = React.useState(0);
 
+  // Next.js can only optimize images from hosts whitelisted in next.config.ts
+  // (Cloudinary + Supabase). Raw external URLs — e.g. Serper-discovered retailer
+  // images stored in product_images.external_url that haven't been uploaded to
+  // Cloudinary yet — come from arbitrary hosts and would throw a "hostname not
+  // configured" error. Render those directly with `unoptimized`.
+  const isOptimizableHost = (src: string) =>
+    src.includes("res.cloudinary.com") || src.includes("supabase.co");
+
   const handlePrev = () => {
     setFullscreenIndex(fullscreenIndex === 0 ? images.length - 1 : fullscreenIndex - 1);
   };
@@ -102,6 +110,7 @@ export function EnhancedImageGallery({
         src={src}
         alt={`${productName} - Image ${index + 1}`}
         fill
+        unoptimized={!isOptimizableHost(src)}
         className="object-cover"
         sizes="(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px"
         priority={index < 2} // Prioritize first 2 images for faster LCP
@@ -262,6 +271,7 @@ export function EnhancedImageGallery({
                 src={images[mobileImageIndex]}
                 alt={`${productName} - Image ${mobileImageIndex + 1}`}
                 fill
+                unoptimized={!isOptimizableHost(images[mobileImageIndex])}
                 className="object-cover"
                 sizes="100vw"
                 priority={mobileImageIndex === 0}
@@ -384,6 +394,7 @@ export function EnhancedImageGallery({
                   src={images[fullscreenIndex]}
                   alt={`${productName} - Fullscreen`}
                   fill
+                  unoptimized={!isOptimizableHost(images[fullscreenIndex])}
                   className="object-contain"
                   sizes="100vw"
                   priority
@@ -443,6 +454,7 @@ export function EnhancedImageGallery({
                       src={image}
                       alt={`Thumbnail ${index + 1}`}
                       fill
+                      unoptimized={!isOptimizableHost(image)}
                       className="object-cover"
                       sizes="48px"
                       quality={60}
