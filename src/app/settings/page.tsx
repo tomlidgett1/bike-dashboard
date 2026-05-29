@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/select";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
 import { StripeConnectCard } from "@/components/settings/stripe-connect-card";
+import { DeleteAccountDialog } from "@/components/settings/delete-account-dialog";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -514,6 +515,32 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
               <SaveButton />
+
+              {/* Danger Zone */}
+              <Card className="bg-white dark:bg-card rounded-md border-red-200 dark:border-red-900/50">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-red-100 dark:bg-red-900/30">
+                      <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-semibold text-red-700 dark:text-red-400">Danger Zone</CardTitle>
+                      <CardDescription className="text-sm">Irreversible account actions</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">Delete account</p>
+                      <p className="text-xs text-muted-foreground">
+                        Permanently remove your account, store profile, and all marketplace listings.
+                      </p>
+                    </div>
+                    <DeleteAccountDialog />
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* Business Profile */}
