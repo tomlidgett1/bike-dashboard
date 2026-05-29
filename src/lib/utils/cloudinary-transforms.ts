@@ -60,10 +60,12 @@ export const HERO_NORMALIZE_TRANSFORM = `e_trim:5/c_fit,h_${HERO_FIT_PX},w_${HER
 //
 // No Cloudinary upload credentials are needed — everything happens on-the-fly.
 //
-// DETECTION: we use a regex rather than an exact HERO_PID_MARKER string so that
-// images approved under a previous HERO_PRODUCT_HEIGHT_PCT (e.g. 0.95 → h_973)
-// are still handled correctly. The normalization stored IN the PID is reused as-is
-// for those old images; only freshly approved images pick up the new h_870 value.
+// DETECTION: we use a regex rather than an exact string so that images approved
+// under any previous HERO_PRODUCT_HEIGHT_PCT are still recognised. The raw asset
+// id is extracted from the compound PID and the CURRENT HERO_NORMALIZE_TRANSFORM
+// is always applied — so all hero images share the same product height regardless
+// of when they were approved. Changing HERO_PRODUCT_HEIGHT_PCT instantly re-tunes
+// every hero image across the whole marketplace.
 const HERO_COMPOUND_RE =
   /^(e_trim:\d+\/c_fit,h_\d+,w_\d+\/c_pad,h_\d+,w_\d+,b_rgb:[0-9a-fA-F]+)\/(.+)/;
 
@@ -147,13 +149,12 @@ export function buildCloudinaryImageUrl(
   const cn = resolveCloudName(cloudName);
   if (!publicId || !cn) return null;
 
-  // Hero compound public_id: the normalisation transform is baked into the
-  // prefix so Cloudinary can apply it BEFORE the per-slot crop. We use the
-  // transform stored in the PID (not the current constant) so images approved
-  // under an older HERO_PRODUCT_HEIGHT_PCT keep the framing they were created with.
+  // Hero compound public_id: always re-apply the CURRENT HERO_NORMALIZE_TRANSFORM
+  // so all hero images share a consistent product height, even if an older compound
+  // PID was stored with a different h_N value (e.g. h_973 from HERO_PRODUCT_HEIGHT_PCT=0.95).
   const hero = parseHeroCompoundId(publicId);
   if (hero) {
-    return `https://res.cloudinary.com/${cn}/image/upload/${hero.normalizeTransform}/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${hero.rawId}`;
+    return `https://res.cloudinary.com/${cn}/image/upload/${HERO_NORMALIZE_TRANSFORM}/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${hero.rawId}`;
   }
 
   return `https://res.cloudinary.com/${cn}/image/upload/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${publicId}`;
@@ -186,12 +187,11 @@ export function cloudinaryCardLoader({
 }): string {
   const cloudName = resolveCloudName();
 
-  // Hero compound public_id: normalisation must run before the card crop so
-  // every product lands at the stored target height before the square fill is
-  // applied. Use the transform baked into the PID, not the current constant.
+  // Hero compound public_id: always use the CURRENT HERO_NORMALIZE_TRANSFORM so
+  // every product card, regardless of when it was approved, renders at the same height.
   const hero = parseHeroCompoundId(src);
   if (hero) {
-    return `https://res.cloudinary.com/${cloudName}/image/upload/${hero.normalizeTransform}/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${hero.rawId}`;
+    return `https://res.cloudinary.com/${cloudName}/image/upload/${HERO_NORMALIZE_TRANSFORM}/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${hero.rawId}`;
   }
 
   return `https://res.cloudinary.com/${cloudName}/image/upload/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${src}`;
