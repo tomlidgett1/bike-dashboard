@@ -102,10 +102,10 @@ export function PhotosPanel({ onSessionMessage }: Props) {
   const fetchProducts = React.useCallback(async (nextPage = 1, searchOverride?: string) => {
     setLoadingProducts(true);
     const search = searchOverride !== undefined ? searchOverride : productSearch;
-    const params = new URLSearchParams({ page: String(nextPage), limit: "50", status: "needs_work" });
+    // live_only=true restricts to canonical products that have at least one
+    // active listing owned by the current user (user_id match in products table).
+    const params = new URLSearchParams({ page: String(nextPage), limit: "50", live_only: "true" });
     if (search.trim()) params.set("search", search.trim());
-    // Show all statuses so the user can manage any product
-    params.delete("status");
 
     try {
       const res = await fetch(`/api/admin/images/products?${params}`);
