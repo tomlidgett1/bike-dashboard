@@ -10,14 +10,16 @@
  * Returns the enhanced Cloudinary URL without writing to any DB table — the
  * caller (auto-pilot panel) uses it as a candidate URL that gets saved on
  * normal approval.
+ *
+ * maxDuration = 300: gpt-image-2 image edits take 60–120 s; the previous
+ * maxDuration = 60 dropped the connection mid-call and killed the edge function.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
-// Image processing can take 15–30 s; raise the timeout ceiling.
-export const maxDuration = 60;
+export const maxDuration = 300; // gpt-image-2 image edits can take 60–120 s
 
 export async function POST(request: NextRequest) {
   try {
