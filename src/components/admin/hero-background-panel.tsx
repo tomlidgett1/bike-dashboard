@@ -18,6 +18,7 @@
 import * as React from "react";
 import Image from "next/image";
 import {
+  ArrowLeftRight,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -32,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { buildNormalizedHeroUrl } from "@/lib/utils/cloudinary-transforms";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,14 @@ interface HeroProduct {
   marketplace_category: string | null;
   primary_image_url: string | null;
   primary_image_id: string | null;
+  bg_removed?: boolean; // true when the current primary is a studio hero
+}
+
+type BgFilter = "all" | "removed" | "original";
+
+interface CategoryOption {
+  id: string;
+  name: string;
 }
 
 type ItemStatus =
@@ -77,8 +87,18 @@ export function HeroBackgroundPanel({ onSessionMessage }: HeroBackgroundPanelPro
   const [totalPages, setTotalPages] = React.useState(1);
   const [search, setSearch] = React.useState("");
   const [searchInput, setSearchInput] = React.useState("");
-  const [category, setCategory] = React.useState("all");
-  const [categories, setCategories] = React.useState<string[]>([]);
+  const [category, setCategory] = React.useState("all"); // ls_category_id or "all"
+  const [categoryOptions, setCategoryOptions] = React.useState<CategoryOption[]>([]);
+  const [bgFilter, setBgFilter] = React.useState<BgFilter>("all");
+
+  // ── Ref mirror so async queue callbacks can read current item data ────────
+  // React may bail out of a setState updater that returns `prev` unchanged
+  // (same reference), so the Promise-in-setState trick is unreliable.
+  // Instead we keep a ref that is always in sync with the `items` state.
+  const itemsRef = React.useRef<HeroItem[]>([]);
+  React.useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   // ── Serial enhance queue ──────────────────────────────────────────────────
   const enhanceJobsRef = React.useRef<number[]>([]); // indexes into `items`
@@ -88,17 +108,23 @@ export function HeroBackgroundPanel({ onSessionMessage }: HeroBackgroundPanelPro
   // ── Load products ─────────────────────────────────────────────────────────
 
   const fetchProducts = React.useCallback(
-    async (nextPage = 1, nextSearch = search, nextCategory = category) => {
+    async (
+      nextPage = 1,
+      nextSearch = search,
+      nextCategory = category,
+      nextBg = bgFilter,
+    ) => {
       setLoading(true);
       try {
         const params = new URLSearchParams({
           page: String(nextPage),
           limit: "48",
-          status: "ready",   // only products that have a primary image
-          live_only: "true", // only products live on the marketplace for this user
+          status: "ready",    // only products that have a primary image
+          live_only: "true",  // only products live on the marketplace for this user
+          bg_filter: nextBg,  // tag/filter by background-removed status
         });
         if (nextSearch.trim()) params.set("search", nextSearch.trim());
-        if (nextCategory !== "all") params.set("category", nextCategory);
+        if (nextCategory !== "all") params.set("ls_category_id", nextCategory);
 
         const res = await fetch(`/api/admin/images/products?${params}`);
         const json = await res.json();
@@ -111,28 +137,36 @@ export function HeroBackgroundPanel({ onSessionMessage }: HeroBackgroundPanelPro
         setItems(products.map((p) => ({ product: p, status: "idle" })));
         setPage(json.pagination?.page || nextPage);
         setTotalPages(json.pagination?.total_pages || 1);
-
-        // Collect category options
-        const cats = Array.from(
-          new Set(
-            (json.data || [])
-              .map((p: HeroProduct) => p.marketplace_category)
-              .filter(Boolean) as string[],
-          ),
-        );
-        if (cats.length > 0) setCategories((prev) => Array.from(new Set([...prev, ...cats])));
       } catch (err) {
         onSessionMessage?.(err instanceof Error ? err.message : "Failed to load products");
       } finally {
         setLoading(false);
       }
     },
-    [category, search, onSessionMessage],
+    [category, search, bgFilter, onSessionMessage],
   );
 
   React.useEffect(() => {
     void fetchProducts(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load the full Lightspeed category list (names resolved server-side) so the
+  // category filter is complete, not just whatever happened to be on this page.
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/images/lightspeed-categories");
+        const json = await res.json();
+        if (json?.success && Array.isArray(json.categories)) {
+          setCategoryOptions(
+            json.categories.filter((c: CategoryOption) => c?.id && c?.name),
+          );
+        }
+      } catch {
+        /* categories are an optional convenience — ignore failures */
+      }
+    })();
   }, []);
 
   // ── Patch a single item ───────────────────────────────────────────────────
@@ -186,19 +220,10 @@ export function HeroBackgroundPanel({ onSessionMessage }: HeroBackgroundPanelPro
 
   const doEnhance = React.useCallback(
     async (index: number) => {
-      // Read the current item's data without stale closure
-      const imageUrl = await new Promise<string | null>((resolve) =>
-        setItems((prev) => {
-          resolve(prev[index]?.product.primary_image_url ?? null);
-          return prev;
-        }),
-      );
-      const productId = await new Promise<string | undefined>((resolve) =>
-        setItems((prev) => {
-          resolve(prev[index]?.product.id);
-          return prev;
-        }),
-      );
+      // Read directly from the ref — safe even inside an async queue callback.
+      const item = itemsRef.current[index];
+      const imageUrl = item?.product.primary_image_url ?? null;
+      const productId = item?.product.id;
 
       if (!imageUrl) {
         patch(index, { status: "error", error: "No primary image URL" });
@@ -248,39 +273,37 @@ export function HeroBackgroundPanel({ onSessionMessage }: HeroBackgroundPanelPro
 
   // Enqueue all selected items
   const enqueueSelected = React.useCallback(() => {
-    let added = 0;
-    setItems((prev) => {
-      prev.forEach((it, i) => {
-        if (it.status === "selected") {
-          if (!enhanceJobsRef.current.includes(i)) {
-            enhanceJobsRef.current.push(i);
-            added++;
-          }
-        }
-      });
-      // Mark queued
-      return prev.map((it, i) =>
-        it.status === "selected" && enhanceJobsRef.current.includes(i)
-          ? { ...it, status: "queued" as ItemStatus }
-          : it,
-      );
+    // Read selected indexes synchronously from the ref mirror.
+    // Do NOT rely on a variable mutated inside setItems — React calls updaters
+    // lazily during the render phase, so `added` would always be 0 here.
+    const newJobs: number[] = [];
+    itemsRef.current.forEach((it, i) => {
+      if (it.status === "selected" && !enhanceJobsRef.current.includes(i)) {
+        newJobs.push(i);
+        enhanceJobsRef.current.push(i); // populate ref NOW, before setItems
+      }
     });
-    if (added > 0) {
-      setEnhanceQueueCount(enhanceJobsRef.current.length);
-      void processQueue();
-    }
+
+    if (newJobs.length === 0) return;
+
+    setEnhanceQueueCount(enhanceJobsRef.current.length);
+
+    // Update UI to show queued status (async — purely cosmetic)
+    setItems((prev) =>
+      prev.map((it, i) =>
+        newJobs.includes(i) ? { ...it, status: "queued" as ItemStatus } : it,
+      ),
+    );
+
+    // Start the processor — queue ref is already populated so this will run
+    void processQueue();
   }, [processQueue]);
 
   // ── Approve ───────────────────────────────────────────────────────────────
 
   const approve = React.useCallback(
     async (index: number) => {
-      const item = await new Promise<HeroItem | undefined>((resolve) =>
-        setItems((prev) => {
-          resolve(prev[index]);
-          return prev;
-        }),
-      );
+      const item = itemsRef.current[index];
       if (!item || !item.enhancedUrl) return;
 
       patch(index, { status: "approving" });
@@ -369,27 +392,44 @@ export function HeroBackgroundPanel({ onSessionMessage }: HeroBackgroundPanelPro
         </div>
 
         {/* Category */}
-        {categories.length > 0 && (
-          <Select
-            value={category}
-            onValueChange={(v) => {
-              setCategory(v);
-              void fetchProducts(1, search, v);
-            }}
-          >
-            <SelectTrigger className="h-8 w-40 rounded-md text-sm">
-              <SelectValue placeholder="All categories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All categories</SelectItem>
-              {categories.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <Select
+          value={category}
+          onValueChange={(v) => {
+            setCategory(v);
+            void fetchProducts(1, search, v, bgFilter);
+          }}
+        >
+          <SelectTrigger className="h-8 w-44 rounded-md text-sm">
+            <SelectValue placeholder="All categories" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {categoryOptions.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Background-removed filter */}
+        <Select
+          value={bgFilter}
+          onValueChange={(v) => {
+            const next = v as BgFilter;
+            setBgFilter(next);
+            void fetchProducts(1, search, category, next);
+          }}
+        >
+          <SelectTrigger className="h-8 w-44 rounded-md text-sm">
+            <SelectValue placeholder="All images" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All images</SelectItem>
+            <SelectItem value="removed">Background removed</SelectItem>
+            <SelectItem value="original">Original only</SelectItem>
+          </SelectContent>
+        </Select>
 
         <div className="ml-auto flex items-center gap-2">
           {/* Select / clear all */}
@@ -525,6 +565,19 @@ function HeroCard({ item, index, onToggleSelect, onApprove, onReject, onRetry }:
   const originalUrl = product.primary_image_url;
   const name = product.display_name || product.normalized_name;
 
+  // Preview the deterministic 95%-height hero (trim → fit → pad) — this is the
+  // exact framing that hero-approve bakes into the saved asset, so what the user
+  // sees here is what lands on the marketplace. Falls back to the raw model
+  // output if the URL isn't a Cloudinary asset.
+  const displayEnhancedUrl = React.useMemo(
+    () => buildNormalizedHeroUrl(enhancedUrl) ?? enhancedUrl,
+    [enhancedUrl],
+  );
+
+  // In preview, default to showing the new (enhanced) image; let the user flip
+  // to the original with the toggle button.
+  const [showOriginal, setShowOriginal] = React.useState(false);
+
   const isSelectable = ["idle", "selected", "rejected", "error"].includes(status);
   const isSelected = status === "selected";
   const isPreview = status === "preview";
@@ -547,30 +600,43 @@ function HeroCard({ item, index, onToggleSelect, onApprove, onReject, onRetry }:
     >
       {/* ── Image area ── */}
       {isPreview ? (
-        /* Before / after split */
-        <div className="flex aspect-[2/1] w-full overflow-hidden">
-          {/* Before */}
-          <div className="relative w-1/2 bg-gray-100">
-            {originalUrl ? (
-              <Image src={originalUrl} alt="Original" fill unoptimized className="object-cover" />
+        /* Full-frame single image with a toggle to flip between new ↔ old.
+           The whole hero is always visible (object-contain, never cropped). */
+        <div className="relative aspect-square w-full overflow-hidden bg-gray-50">
+          {showOriginal ? (
+            originalUrl ? (
+              <Image src={originalUrl} alt="Original" fill unoptimized className="object-contain" />
             ) : (
               <Package className="absolute inset-0 m-auto h-6 w-6 text-gray-300" />
+            )
+          ) : enhancedUrl ? (
+            <Image src={displayEnhancedUrl ?? enhancedUrl} alt="Enhanced" fill unoptimized className="object-contain" />
+          ) : (
+            <Package className="absolute inset-0 m-auto h-6 w-6 text-gray-300" />
+          )}
+
+          {/* New ↔ Old toggle */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowOriginal((v) => !v);
+            }}
+            className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1 rounded-md bg-black/70 px-2 py-1 text-[10px] font-medium text-white backdrop-blur transition-colors hover:bg-black/85"
+          >
+            <ArrowLeftRight className="h-3 w-3" />
+            {showOriginal ? "View new" : "View old"}
+          </button>
+
+          {/* Label of what's currently shown */}
+          <span
+            className={cn(
+              "absolute bottom-1 left-1 z-10 rounded px-1.5 py-0.5 text-[9px] font-medium text-white",
+              showOriginal ? "bg-black/60" : "bg-emerald-600/80",
             )}
-            <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 py-0.5 text-[9px] font-medium text-white">
-              Before
-            </span>
-          </div>
-          {/* After */}
-          <div className="relative w-1/2 bg-gray-50">
-            {enhancedUrl ? (
-              <Image src={enhancedUrl} alt="Enhanced" fill unoptimized className="object-cover" />
-            ) : (
-              <Package className="absolute inset-0 m-auto h-6 w-6 text-gray-300" />
-            )}
-            <span className="absolute bottom-1 right-1 rounded bg-emerald-600/80 px-1 py-0.5 text-[9px] font-medium text-white">
-              After
-            </span>
-          </div>
+          >
+            {showOriginal ? "Before (original)" : "After (new hero)"}
+          </span>
         </div>
       ) : (
         /* Single image */
@@ -581,7 +647,7 @@ function HeroCard({ item, index, onToggleSelect, onApprove, onReject, onRetry }:
           disabled={!isSelectable}
         >
           {isApproved && enhancedUrl ? (
-            <Image src={enhancedUrl} alt={name} fill unoptimized className="object-cover" />
+            <Image src={displayEnhancedUrl ?? enhancedUrl} alt={name} fill unoptimized className="object-contain" />
           ) : originalUrl ? (
             <Image src={originalUrl} alt={name} fill unoptimized className="object-cover" />
           ) : (
@@ -614,6 +680,13 @@ function HeroCard({ item, index, onToggleSelect, onApprove, onReject, onRetry }:
           {isSelected && (
             <div className="absolute right-1.5 top-1.5">
               <CheckCircle2 className="h-5 w-5 rounded-full bg-white text-gray-900" />
+            </div>
+          )}
+          {product.bg_removed && !isApproved && !isRejected && (
+            <div className="absolute left-1.5 top-1.5">
+              <span className="rounded bg-indigo-600/85 px-1.5 py-0.5 text-[9px] font-medium text-white shadow-sm">
+                BG removed
+              </span>
             </div>
           )}
           {isError && (

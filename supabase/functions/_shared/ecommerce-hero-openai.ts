@@ -1,25 +1,39 @@
 /**
- * OpenAI Images Edit — ecommerce hero (light-grey primer + soft contact shadow).
+ * OpenAI Images Edit — ecommerce hero (flat white background + soft grey contact shadow).
  * Uses gpt-image-2 on /v1/images/edits (newest OpenAI image model).
  */
 
 export const OPENAI_ECOMMERCE_IMAGE_MODEL = "gpt-image-2";
 
-/** Prompt: background primer + professional shadow; preserve product pixels/condition. */
-export const ECOMMERCE_HERO_PROMPT = `Place this exact product photograph on a soft light grey e‑commerce background (not pure white — use a subtle off‑white / very light grey like #F5F5F5 or #F8F8F8). Create a square hero product shot suitable for marketplace listings.
+/** Prompt: flat single-colour backdrop + consistent framing; preserve product pixels/condition. */
+export const ECOMMERCE_HERO_PROMPT = `Place this exact product photograph on a single, perfectly FLAT, uniform PURE WHITE background (clean bright white, #FFFFFF). Create a square 1:1 hero product shot for marketplace listings.
 
-Add a soft, realistic product photography shadow beneath and slightly behind the product (contact shadow + gentle falloff) so the product feels grounded on the surface — professional studio look, not harsh.
+BACKGROUND — it must be ONE seamless white:
+- The background must be a SINGLE flat white filling the ENTIRE frame, edge to edge and corner to corner.
+- Do NOT create a floor and a wall, a horizon line, a tabletop, a platform, or any visible surface or scene.
+- No gradient, no vignette, no darkening or greying around the product, no second tone — the whole background is one even pure white.
 
-CRITICAL REQUIREMENTS:
-1. Do NOT alter, enhance, clean, repair, or modify the product itself in ANY way
-2. Preserve every scratch, dirt mark, scuff, wear sign, and imperfection exactly as shown
-3. The product must remain photographically identical to the input — same colours, same condition, same details
-4. Only replace the scene with the soft light grey backing and add the subtle shadows described above
-5. Centre the product in the frame with comfortable padding for e‑commerce
-6. Ensure the entire product is visible in the frame
-7. Keep the product sharp and true to the source
+FRAMING — must be consistent for EVERY product:
+- Centre the product in the frame.
+- Scale the product so it occupies about 80% of the frame's height, leaving roughly equal empty padding above and below it (about 10% margin at the top and 10% at the bottom).
+- Keep this sizing consistent so different products are all presented at the same scale.
+- Ensure the entire product is visible with comfortable, even margins on all sides.
 
-The goal is a clean listing hero with a true-to-life product presentation.`;
+SHADOW:
+- Add only a small, soft, neutral GREY contact shadow directly beneath the product so it feels grounded on the white background. Keep it subtle and tight to the product — do NOT render it as a floor or surface plane.
+
+REMOVE EVERYTHING THAT IS NOT THE PRODUCT:
+- The final image must contain ONLY the physical product on the white background — nothing else.
+- Remove any graphics that were overlaid on top of the source photo: text boxes, captions, watermarks, price tags, promotional banners, "sale"/"new" badges, stickers, separate logos, borders, frames, arrows, or call-out boxes. Erase them completely and fill that area with the clean white background.
+- DISTINCTION — keep the product's own design: do NOT remove text, labels, branding, or artwork that is physically printed ON the product or its packaging (for example a wrapper's flavour name or a box's printed graphics). That printing IS the product and must be preserved exactly as shown.
+
+CRITICAL — do NOT change the product:
+1. Do NOT alter, enhance, clean, repair, or modify the product itself in ANY way.
+2. Preserve every scratch, dirt mark, scuff, wear sign, and imperfection exactly as shown.
+3. The product must remain photographically identical to the input — same colours, same condition, same details, same sharpness.
+4. Only replace the scene with the flat white background, remove the non-product overlays described above, and add the subtle grey contact shadow described above.
+
+The goal is a clean, consistent listing hero: the same product, presented at a uniform size on one seamless flat white background.`;
 
 export interface DownloadedImage {
   base64: string;

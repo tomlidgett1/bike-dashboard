@@ -25,6 +25,34 @@ function configureCloudinary() {
 }
 
 /**
+ * Fetch a (transformed) Cloudinary delivery URL and re-upload it so the
+ * transformation is BAKED into a brand-new stored asset. We need this because
+ * the image resolver always rebuilds variant URLs from the stored public_id —
+ * any transform left only in the delivery URL would be discarded. Baking it
+ * into the pixels makes the normalization survive into the marketplace.
+ *
+ * Returns the new asset's secure URL + public_id, or null on failure so the
+ * caller can fall back to saving the un-baked image.
+ */
+export async function uploadBakedImage(
+  sourceUrl: string,
+  folder = 'product-heroes'
+): Promise<{ url: string; publicId: string } | null> {
+  try {
+    const cloud = configureCloudinary();
+    const res = await cloud.uploader.upload(sourceUrl, {
+      folder,
+      resource_type: 'image',
+      overwrite: false,
+    });
+    return { url: res.secure_url, publicId: res.public_id };
+  } catch (error) {
+    console.error('[Cloudinary Bake] Upload failed:', error);
+    return null;
+  }
+}
+
+/**
  * Generate a transformed image with text overlays and upload it
  * Returns a clean, short Cloudinary URL
  */

@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { resolveProductImage } from '@/lib/services/image-resolver';
+import { buildHeroPublicId, HERO_PID_MARKER } from '@/lib/utils/cloudinary-transforms';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,6 +76,7 @@ export async function GET(request: NextRequest) {
           .select(`
             id,
             resolved_image_id,
+            resolved_image_source,
             resolved_external_url,
             resolved_cloudinary_url,
             resolved_cloudinary_public_id
@@ -90,9 +92,16 @@ export async function GET(request: NextRequest) {
         const readyProduct = readyById.get(product.product_id);
         if (!readyProduct) return null;
 
+        // Upgrade old hero images (raw PID) to compound PID on the fly.
+        const rawPid: string | null = readyProduct.resolved_cloudinary_public_id || null;
+        const isOldHero = readyProduct.resolved_image_source === 'openai_studio_hero'
+          && rawPid !== null
+          && !rawPid.startsWith(HERO_PID_MARKER);
+        const effectivePid = isOldHero ? buildHeroPublicId(rawPid) : rawPid;
+
         const resolved = resolveProductImage({
           id: readyProduct.resolved_image_id,
-          cloudinary_public_id: readyProduct.resolved_cloudinary_public_id,
+          cloudinary_public_id: effectivePid,
           cloudinary_url: readyProduct.resolved_cloudinary_url,
           external_url: readyProduct.resolved_external_url,
           approval_status: 'approved',

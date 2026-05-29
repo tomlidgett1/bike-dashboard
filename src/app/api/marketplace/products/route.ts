@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { MarketplaceProduct, MarketplaceProductsResponse } from '@/lib/types/marketplace';
 import { resolveProductImage } from '@/lib/services/image-resolver';
+import { buildHeroPublicId, HERO_PID_MARKER } from '@/lib/utils/cloudinary-transforms';
 
 // ============================================================
 // Marketplace Products API - Public Endpoint
@@ -293,9 +294,20 @@ export async function GET(request: NextRequest) {
     // Transform data to marketplace product format
     const products: MarketplaceProduct[] = uniqueData.map((product: any) => {
       const user = usersById.get(product.user_id);
+
+      // For studio-hero images, the 95%-height normalisation is encoded as a
+      // transform prefix on the public_id. Old heroes approved before this fix
+      // stored the raw model public_id — upgrade them on the fly so the card
+      // loader applies trim→fit→pad before the square crop.
+      const rawPublicId: string | null = product.resolved_cloudinary_public_id || null;
+      const isOldHero = product.resolved_image_source === 'openai_studio_hero'
+        && rawPublicId !== null
+        && !rawPublicId.startsWith(HERO_PID_MARKER);
+      const effectivePublicId = isOldHero ? buildHeroPublicId(rawPublicId) : rawPublicId;
+
       const resolved = resolveProductImage({
         id: product.resolved_image_id,
-        cloudinary_public_id: product.resolved_cloudinary_public_id,
+        cloudinary_public_id: effectivePublicId,
         cloudinary_url: product.resolved_cloudinary_url,
         external_url: product.resolved_external_url,
         approval_status: 'approved',
@@ -319,7 +331,7 @@ export async function GET(request: NextRequest) {
         image_variants: null, // Only needed on detail page
         all_images: allImages,
         images: null,
-        cloudinary_public_id: product.resolved_cloudinary_public_id || null,
+        cloudinary_public_id: effectivePublicId,
         card_url: primaryImageUrl,
         mobile_card_url: resolved?.mobile_card_url || primaryImageUrl,
         thumbnail_url: thumbnailUrl,

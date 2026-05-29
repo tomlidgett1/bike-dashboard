@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { buildHeroPublicId } from '@/lib/utils/cloudinary-transforms';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +58,14 @@ export async function POST(request: NextRequest) {
     const top = sortRows?.[0]?.sort_order;
     if (typeof top === 'number' && !Number.isNaN(top)) nextSort = top + 1;
 
+    // Encode the 95%-height normalisation rule directly into the public_id as a
+    // transform prefix (e.g. "e_trim:5/c_fit,h_973,w_973/c_pad,…/<rawId>").
+    // buildCloudinaryImageUrl and cloudinaryCardLoader detect this prefix and
+    // inject the normalisation BEFORE any slot crop, so every variant (card,
+    // thumbnail, hero) is correctly sized — no Cloudinary API credentials needed.
+    const finalPublicId = buildHeroPublicId(enhancedPublicId) || enhancedPublicId || null;
+    const finalUrl = enhancedUrl;
+
     // Clear existing primary flags for this product
     await supabase
       .from('product_images')
@@ -69,8 +78,8 @@ export async function POST(request: NextRequest) {
       .insert({
         canonical_product_id: canonicalProductId,
         external_url: sourceImageUrl || enhancedUrl,
-        cloudinary_url: enhancedUrl,
-        cloudinary_public_id: enhancedPublicId || null,
+        cloudinary_url: finalUrl,
+        cloudinary_public_id: finalPublicId,
         is_downloaded: true,
         approval_status: 'approved',
         is_primary: true,
