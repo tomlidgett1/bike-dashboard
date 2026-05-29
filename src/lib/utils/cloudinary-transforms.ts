@@ -45,7 +45,12 @@ export const CLOUDINARY_EAGER_TRANSFORMS = Object.values(CLOUDINARY_IMAGE_TRANSF
 // breathing room on both top and bottom.
 export const HERO_PRODUCT_HEIGHT_PCT = 0.85;
 const HERO_FIT_PX = Math.round(1024 * HERO_PRODUCT_HEIGHT_PCT); // 870
-export const HERO_NORMALIZE_TRANSFORM = `e_trim:5/c_fit,h_${HERO_FIT_PX},w_${HERO_FIT_PX}/c_pad,h_1024,w_1024,b_rgb:ffffff`;
+// c_lpad = "limited pad": centres the product on a white canvas WITHOUT
+// upscaling. c_pad (used previously) would scale-up portrait images so
+// their height hit 1024px, eliminating the intended top/bottom white gap.
+// c_lpad only adds padding, so every product stays at ≤HERO_FIT_PX on its
+// longest side with symmetric white breathing room on all four sides.
+export const HERO_NORMALIZE_TRANSFORM = `e_trim:5/c_fit,h_${HERO_FIT_PX},w_${HERO_FIT_PX}/c_lpad,h_1024,w_1024,b_rgb:ffffff`;
 
 // ── Compound public_id for hero images ─────────────────────────────────────────
 //
@@ -66,8 +71,12 @@ export const HERO_NORMALIZE_TRANSFORM = `e_trim:5/c_fit,h_${HERO_FIT_PX},w_${HER
 // is always applied — so all hero images share the same product height regardless
 // of when they were approved. Changing HERO_PRODUCT_HEIGHT_PCT instantly re-tunes
 // every hero image across the whole marketplace.
+// Matches compound PIDs created under any HERO_NORMALIZE_TRANSFORM version —
+// both the old c_pad (upscales portrait images) and the current c_lpad
+// (limited pad, no upscale). toCurrentHeroPublicId re-wraps old c_pad PIDs
+// with the current c_lpad transform automatically.
 const HERO_COMPOUND_RE =
-  /^(e_trim:\d+\/c_fit,h_\d+,w_\d+\/c_pad,h_\d+,w_\d+,b_rgb:[0-9a-fA-F]+)\/(.+)/;
+  /^(e_trim:\d+\/c_fit,h_\d+,w_\d+\/c_l?pad,h_\d+,w_\d+,b_rgb:[0-9a-fA-F]+)\/(.+)/;
 
 /** @internal Split a compound hero public_id into its transform prefix + raw id. */
 function parseHeroCompoundId(
