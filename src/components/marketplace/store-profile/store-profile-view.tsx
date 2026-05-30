@@ -624,7 +624,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
             {/* PRODUCTS */}
             {activeTab === "products" &&
               (allProducts.length > 0 ? (
-                <div className="space-y-8">
+                <div className="space-y-5">
                   {sortedCategories.map((cat, i) => {
                     if (cat.products.length === 0) return null;
                     const catSize = (compact ? 'compact' : (cat.carousel_size ?? 'normal')) as 'featured' | 'normal' | 'compact';
@@ -635,7 +635,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
                     return (
                       <section key={cat.id}>
-                        <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="flex items-center justify-between gap-2 mb-2">
                           <div className="flex items-center gap-2">
                             <h3 className="text-sm font-semibold text-gray-900">{cat.name}</h3>
                             <span className="text-xs text-gray-400 tabular-nums">({cat.products.length})</span>
