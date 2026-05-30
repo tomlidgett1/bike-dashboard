@@ -373,21 +373,23 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
               {/* Divider */}
               <div className="h-6 w-px bg-gray-200 shrink-0" aria-hidden="true" />
 
-              {store.logo_url ? (
-                <Image
-                  src={store.logo_url}
-                  alt={store.store_name}
-                  width={44}
-                  height={44}
-                  sizes="44px"
-                  className="h-9 w-9 sm:h-11 sm:w-11 rounded-full object-cover ring-1 ring-gray-200 flex-shrink-0"
-                  priority
-                />
-              ) : (
-                <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-full bg-gray-50 ring-1 ring-gray-200 flex-shrink-0 flex items-center justify-center">
-                  <Store className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" />
-                </div>
-              )}
+              <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-full ring-1 ring-gray-200 flex-shrink-0 overflow-hidden bg-white">
+                {store.logo_url ? (
+                  <Image
+                    src={store.logo_url}
+                    alt={store.store_name}
+                    width={44}
+                    height={44}
+                    sizes="44px"
+                    className="h-full w-full object-cover"
+                    priority
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center bg-gray-50">
+                    <Store className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" />
+                  </div>
+                )}
+              </div>
               <div className="min-w-0">
                 <h1 className="text-[15px] sm:text-lg font-bold tracking-tight text-gray-900 leading-tight truncate">
                   {store.store_name}
