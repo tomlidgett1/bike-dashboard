@@ -15,6 +15,7 @@ import {
   Star,
   Wand2,
   X,
+  ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -93,6 +94,14 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
   const [loadingQueue, setLoadingQueue] = React.useState(false);
   const [running, setRunning] = React.useState(false);
   const [queue, setQueue] = React.useState<AutoItem[]>([]);
+
+  // ── Lightbox ──────────────────────────────────────────────────────────────
+  const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setLightboxUrl(null); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // ── Enhancement queue (serial — gpt-image-2 takes 60–120 s per image) ──────
   // We keep the pending jobs in a ref so the async processor never sees stale
@@ -711,16 +720,23 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                         const displaySrc = item.enhancedUrls?.[url]
                           ? item.enhancedUrls[url]
                           : candidate?.thumbnailUrl ?? url;
+                        const fullSrc = item.enhancedUrls?.[url] ?? url;
                         const primary = url === item.primaryUrl;
                         const editable = item.status === "ready";
                         const isEnhancing = (item.enhancingUrls ?? []).includes(url);
                         const isEnhanced = !!(item.enhancedUrls?.[url]);
                         void resolvedUrl; // used via displaySrc
                         return (
+                          // Clicking the container opens the lightbox; inner buttons stop propagation.
                           <div
                             key={url}
+                            role="button"
+                            tabIndex={0}
+                            aria-label="View full image"
+                            onClick={() => setLightboxUrl(fullSrc)}
+                            onKeyDown={(e) => e.key === "Enter" && setLightboxUrl(fullSrc)}
                             className={cn(
-                              "group relative aspect-square overflow-hidden rounded-md border bg-gray-100",
+                              "group relative aspect-square cursor-zoom-in overflow-hidden rounded-md border bg-gray-100",
                               primary ? "border-gray-900 ring-2 ring-gray-900 ring-offset-1" : "border-gray-200",
                             )}
                           >
@@ -757,7 +773,7 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                                     type="button"
                                     aria-label="Remove image"
                                     title="Remove image"
-                                    onClick={() => removeImage(index, url)}
+                                    onClick={(e) => { e.stopPropagation(); removeImage(index, url); }}
                                     className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/90 text-gray-600 shadow-sm transition hover:bg-white hover:text-gray-900"
                                   >
                                     <X className="h-3.5 w-3.5" />
@@ -769,7 +785,7 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                                     type="button"
                                     aria-label="Remove background"
                                     title="Remove background & add white backdrop"
-                                    onClick={() => void enhanceImage(item, index, url)}
+                                    onClick={(e) => { e.stopPropagation(); void enhanceImage(item, index, url); }}
                                     className="absolute left-1.5 bottom-1.5 inline-flex items-center gap-1 rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-medium text-gray-700 opacity-0 shadow-sm transition hover:bg-white hover:text-gray-900 group-hover:opacity-100"
                                   >
                                     <Wand2 className="h-2.5 w-2.5" />
@@ -781,13 +797,19 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                                     type="button"
                                     aria-label="Set as primary"
                                     title="Set as primary"
-                                    onClick={() => setPrimary(index, url)}
+                                    onClick={(e) => { e.stopPropagation(); setPrimary(index, url); }}
                                     className="absolute bottom-1.5 right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/90 text-gray-700 opacity-0 shadow-sm transition hover:bg-white hover:text-gray-900 group-hover:opacity-100"
                                   >
                                     <Star className="h-3 w-3" />
                                   </button>
                                 )}
                               </>
+                            )}
+                            {/* Zoom hint — always visible on hover when not editing */}
+                            {!editable && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/20 group-hover:opacity-100">
+                                <ZoomIn className="h-5 w-5 text-white drop-shadow" />
+                              </div>
                             )}
                           </div>
                         );
@@ -831,19 +853,29 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                                     className="object-cover opacity-80"
                                   />
                                   {!atMax && (
-                                    <button
-                                      type="button"
-                                      aria-label="Add image"
-                                      title="Add to selection"
-                                      onClick={() => addCandidate(index, candidate)}
-                                      className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100"
-                                    >
-                                      <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-gray-800 shadow-sm">
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100">
+                                      <button
+                                        type="button"
+                                        aria-label="Add image"
+                                        title="Add to selection"
+                                        onClick={() => addCandidate(index, candidate)}
+                                        className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-gray-800 shadow-sm"
+                                      >
                                         <Plus className="h-3 w-3" />
                                         Add
-                                      </span>
-                                    </button>
+                                      </button>
+                                    </div>
                                   )}
+                                  {/* Expand button — top-right corner */}
+                                  <button
+                                    type="button"
+                                    aria-label="View full image"
+                                    title="View full image"
+                                    onClick={() => setLightboxUrl(candidate.url)}
+                                    className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-md bg-white/80 text-gray-600 opacity-0 shadow-sm transition hover:bg-white hover:text-gray-900 group-hover:opacity-100"
+                                  >
+                                    <ZoomIn className="h-3 w-3" />
+                                  </button>
                                   {atMax && (
                                     <div className="absolute inset-x-0 bottom-0 bg-white/80 px-1.5 py-0.5 text-center text-[10px] text-gray-500">
                                       Max {MAX_SELECTED}
@@ -862,6 +894,30 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Lightbox ────────────────────────────────────────────────────── */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm"
+          onClick={() => setLightboxUrl(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxUrl}
+            alt="Full-size preview"
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setLightboxUrl(null)}
+            className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-700 shadow-lg transition hover:bg-white hover:text-gray-900"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
     </div>
