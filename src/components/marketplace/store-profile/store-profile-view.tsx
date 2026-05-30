@@ -15,7 +15,6 @@ import {
   Info,
   Star,
   Bookmark,
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Search,
@@ -348,35 +347,32 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     <div className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
       <div>
       {/* ══ STICKY STORE HEADER ════════════════════════════
-          The store IS the site: its logo + name own the top bar.
-          Yellow Jersey is demoted to a small "back" link above. */}
+          Single row: [← YJ back pill] [store logo] [store name]  |  [search] [Save] */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200">
-        {/* Demoted "Back to Yellow Jersey" */}
-        <div className="border-b border-gray-100">
-          <div className="px-5 sm:px-8 lg:px-10">
-            <a
-              href="/marketplace"
-              className="group inline-flex items-center gap-2.5 py-3 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4 text-gray-400 group-hover:text-gray-700 transition-all group-hover:-translate-x-0.5" />
-              <span className="text-gray-400 group-hover:text-gray-600">Back to</span>
-              <Image
-                src="/yj.svg"
-                alt="Yellow Jersey"
-                width={72}
-                height={14}
-                className="h-12 w-auto opacity-90 group-hover:opacity-100 transition-opacity"
-                unoptimized
-              />
-            </a>
-          </div>
-        </div>
-
-        {/* Dominant store brand row */}
         <div className="px-5 sm:px-8 lg:px-10">
           <div className="flex items-center justify-between gap-3 sm:gap-4 h-14 sm:h-16">
-            {/* Store identity */}
+            {/* Store identity + back button */}
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+
+              {/* Back to Yellow Jersey */}
+              <a
+                href="/marketplace"
+                aria-label="Back to Yellow Jersey marketplace"
+                className="group shrink-0 inline-flex items-center gap-1.5 py-1 px-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
+              >
+                <ChevronLeft className="h-3.5 w-3.5 flex-shrink-0 group-hover:-translate-x-0.5 transition-transform" />
+                <Image
+                  src="/yj.svg"
+                  alt="Yellow Jersey"
+                  width={72}
+                  height={14}
+                  className="hidden sm:block h-5 w-auto opacity-60 group-hover:opacity-100 transition-opacity"
+                  unoptimized
+                />
+              </a>
+              {/* Divider */}
+              <div className="h-6 w-px bg-gray-200 shrink-0" aria-hidden="true" />
+
               {store.logo_url ? (
                 <Image
                   src={store.logo_url}
