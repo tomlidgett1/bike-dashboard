@@ -228,7 +228,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: Category
       {/* Scroll track */}
       <div
         ref={scrollRef}
-        className="overflow-x-auto snap-x snap-mandatory sm:snap-none"
+        className="overflow-x-auto scrollbar-hide snap-x snap-mandatory sm:snap-none"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
       >
         {/* Single-row CSS grid: grid-auto-flow: column forces each product into
@@ -239,6 +239,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: Category
             display: 'grid',
             gridAutoFlow: 'column',
             gridAutoColumns: `${colPx}px`,
+            gridTemplateRows: '1fr',
             gap: `${gap}px`,
           }}
         >
