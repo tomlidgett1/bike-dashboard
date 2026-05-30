@@ -164,10 +164,14 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: Category
     el.scrollBy({ left: dir === 'left' ? -(el.clientWidth * 0.75) : el.clientWidth * 0.75, behavior: 'smooth' });
   };
 
-  const cardWidth =
-    catSize === 'featured'  ? 'w-[220px] sm:w-[260px] md:w-[300px]' :
-    catSize === 'compact'   ? 'w-[130px] sm:w-[150px] md:w-[165px]' :
-                              'w-[160px] sm:w-[190px] md:w-[210px] lg:w-[220px]';
+  // Column width (px) for the scroll grid — single value avoids responsive-class
+  // inconsistency that caused variable card heights in the flex approach.
+  const colPx =
+    catSize === 'featured' ? 260 :
+    catSize === 'compact'  ? 155 :
+    190;
+
+  const gap = catSize === 'compact' ? 8 : 10;
 
   // ── Grid (expanded) ───────────────────────────────────────────────────────
   if (isExpanded) {
@@ -197,6 +201,8 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: Category
   }
 
   // ── Horizontal scroll (default) ───────────────────────────────────────────
+  // Uses CSS grid (grid-auto-flow: column) so every cell in the row gets the
+  // same height — identical to how the old static grid worked.
   return (
     <div className="relative">
       {/* Left arrow – desktop only */}
@@ -225,12 +231,19 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: Category
         className="overflow-x-auto snap-x snap-mandatory sm:snap-none"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
       >
+        {/* Single-row CSS grid: grid-auto-flow: column forces each product into
+            its own column, and CSS grid equalises all cell heights in a row so
+            every card is exactly the same size — no more mismatched heights. */}
         <div
-          className={cn("flex", catSize === 'compact' ? "gap-2" : "gap-2.5 sm:gap-3")}
-          style={{ minWidth: 'min-content' }}
+          style={{
+            display: 'grid',
+            gridAutoFlow: 'column',
+            gridAutoColumns: `${colPx}px`,
+            gap: `${gap}px`,
+          }}
         >
           {products.map((product, j) => (
-            <div key={product.id} className={cn("flex-shrink-0 snap-start", cardWidth)}>
+            <div key={product.id} className="snap-start min-w-0">
               <ProductCard
                 product={product}
                 priority={rowIndex === 0 && j < 6}
@@ -241,7 +254,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: Category
             </div>
           ))}
           {/* End spacer so last card isn't flush against the edge on mobile */}
-          <div className="w-2 flex-shrink-0 sm:hidden" aria-hidden />
+          <div className="sm:hidden w-1" aria-hidden />
         </div>
       </div>
     </div>
