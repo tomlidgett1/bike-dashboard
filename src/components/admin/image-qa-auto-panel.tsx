@@ -11,6 +11,7 @@ import {
   Package,
   Plus,
   RefreshCw,
+  Search,
   Sparkles,
   Star,
   Wand2,
@@ -18,6 +19,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
@@ -94,6 +96,8 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
   const [loadingQueue, setLoadingQueue] = React.useState(false);
   const [running, setRunning] = React.useState(false);
   const [queue, setQueue] = React.useState<AutoItem[]>([]);
+  const [productSearch, setProductSearch] = React.useState("");
+  const [searchingProduct, setSearchingProduct] = React.useState(false);
 
   // ── Lightbox ──────────────────────────────────────────────────────────────
   const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
@@ -138,6 +142,17 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
     });
   }, []);
 
+  // Shared helper: map an API product row into a fresh queued AutoItem.
+  const toQueuedItem = (product: SpeedWorkbenchProduct): AutoItem => ({
+    product,
+    searchQuery: buildSpeedSearchQuery(product),
+    status: "queued",
+    candidates: [],
+    selectedCandidates: [],
+    selectedUrls: [],
+    primaryUrl: null,
+  });
+
   const loadQueue = async () => {
     setLoadingQueue(true);
     onSessionMessage?.(null);
@@ -146,6 +161,9 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
         page: "1",
         limit: String(count),
         status: "no_approved",
+        // Only include products that have at least one active listing — i.e. they
+        // ARE live on the marketplace but are missing approved photos.
+        live_only: "true",
       });
       if (category !== "all") params.set("ls_category_id", category);
 
@@ -155,26 +173,58 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
 
       const products = (result.data || []) as SpeedWorkbenchProduct[];
       if (products.length === 0) {
-        onSessionMessage?.("No products match these filters. Try a different category.");
+        onSessionMessage?.("No live products without photos match these filters. Try a different category.");
         setQueue([]);
         return;
       }
 
-      setQueue(
-        products.map((product) => ({
-          product,
-          searchQuery: buildSpeedSearchQuery(product),
-          status: "queued",
-          candidates: [],
-          selectedCandidates: [],
-          selectedUrls: [],
-          primaryUrl: null,
-        })),
-      );
+      setQueue(products.map(toQueuedItem));
     } catch (error) {
       onSessionMessage?.(error instanceof Error ? error.message : "Failed to load queue");
     } finally {
       setLoadingQueue(false);
+    }
+  };
+
+  // Add a specific product (or small batch) by name / UPC search.
+  const addProductBySearch = async () => {
+    const term = productSearch.trim();
+    if (!term) return;
+    setSearchingProduct(true);
+    onSessionMessage?.(null);
+    try {
+      const params = new URLSearchParams({
+        page: "1",
+        limit: "10",
+        status: "no_approved",
+        live_only: "true",
+        search: term,
+      });
+      const response = await fetch(`/api/admin/images/products?${params.toString()}`);
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || "Search failed");
+
+      const products = (result.data || []) as SpeedWorkbenchProduct[];
+      if (products.length === 0) {
+        onSessionMessage?.("No live products without photos match that search.");
+        return;
+      }
+
+      // Skip any product already in the queue.
+      const existingIds = new Set(queue.map((i) => i.product.id));
+      const fresh = products.filter((p) => !existingIds.has(p.id));
+      if (fresh.length === 0) {
+        onSessionMessage?.("All matching products are already in the queue.");
+        return;
+      }
+
+      setQueue((prev) => [...prev, ...fresh.map(toQueuedItem)]);
+      onSessionMessage?.(`Added ${fresh.length} product${fresh.length === 1 ? "" : "s"} to the queue.`);
+      setProductSearch("");
+    } catch (error) {
+      onSessionMessage?.(error instanceof Error ? error.message : "Search failed");
+    } finally {
+      setSearchingProduct(false);
     }
   };
 
@@ -480,9 +530,11 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
               <h2 className="text-sm font-medium text-gray-900">Auto-pilot</h2>
             </div>
             <p className="max-w-2xl text-xs text-gray-500">
-              Queue 1–5 products and let AI do the rest: it searches Serper, picks the best primary image plus a
-              few supporting shots, and approves them straight into the system. Built for quick testing.
+              Only shows <strong>live products with no approved photos</strong>. Queue by category or search for a
+              specific product. AI searches Serper, picks the best images, and queues them for your review.
             </p>
+
+            {/* ── Row 1: batch by category ── */}
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[12rem]">
                 <label className="mb-1 block text-xs text-gray-500">Category</label>
@@ -502,7 +554,7 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
               </div>
 
               <div className="w-32">
-                <label className="mb-1 block text-xs text-gray-500">Products (1–50)</label>
+                <label className="mb-1 block text-xs text-gray-500">Count (1–50)</label>
                 <Select value={String(count)} onValueChange={(v) => setCount(Number(v))}>
                   <SelectTrigger className="h-9 w-full rounded-md">
                     <SelectValue />
@@ -531,7 +583,39 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                 )}
                 Add {count} to queue
               </Button>
+            </div>
 
+            {/* ── Row 2: add a specific product by name / UPC ── */}
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[16rem] flex-1 max-w-sm">
+                <label className="mb-1 block text-xs text-gray-500">Search by product name or UPC</label>
+                <Input
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void addProductBySearch()}
+                  placeholder="e.g. Tifosi Sledge, 012345678901…"
+                  className="h-9 rounded-md text-sm"
+                  disabled={searchingProduct || running}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-md"
+                disabled={searchingProduct || running || !productSearch.trim()}
+                onClick={() => void addProductBySearch()}
+              >
+                {searchingProduct ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="mr-2 h-4 w-4" />
+                )}
+                Add product
+              </Button>
+            </div>
+
+            {/* ── Row 3: run + approve actions ── */}
+            <div className="flex flex-wrap items-center gap-3">
               <Button
                 type="button"
                 className="rounded-md"
