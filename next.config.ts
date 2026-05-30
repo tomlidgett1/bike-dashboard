@@ -66,6 +66,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'images.bike24.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
     // AVIF first for better compression (30% smaller than WebP)
     formats: ['image/avif', 'image/webp'],
