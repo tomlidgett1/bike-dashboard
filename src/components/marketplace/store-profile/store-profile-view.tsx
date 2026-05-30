@@ -15,6 +15,7 @@ import {
   Info,
   Star,
   Bookmark,
+  ChevronLeft,
   ChevronRight,
   Search,
   X,
@@ -122,6 +123,131 @@ function getCategoryIcon(name: string): typeof Package {
   return Package;
 }
 
+// ── Per-category horizontal-scroll row ─────────────────────────────────────
+interface CategoryScrollRowProps {
+  products: MarketplaceProduct[];
+  catSize: 'featured' | 'normal' | 'compact';
+  rowIndex: number;
+  isExpanded: boolean;
+}
+
+function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: CategoryScrollRowProps) {
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = React.useState(false);
+  const [canScrollRight, setCanScrollRight] = React.useState(false);
+
+  const checkScroll = React.useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 2);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
+  }, []);
+
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || isExpanded) return;
+    el.scrollLeft = 0;
+    // Slight delay so DOM has rendered card widths
+    const t = setTimeout(checkScroll, 60);
+    el.addEventListener('scroll', checkScroll, { passive: true });
+    window.addEventListener('resize', checkScroll);
+    return () => {
+      clearTimeout(t);
+      el.removeEventListener('scroll', checkScroll);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [checkScroll, isExpanded, products]);
+
+  const scroll = (dir: 'left' | 'right') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === 'left' ? -(el.clientWidth * 0.75) : el.clientWidth * 0.75, behavior: 'smooth' });
+  };
+
+  const cardWidth =
+    catSize === 'featured'  ? 'w-[220px] sm:w-[260px] md:w-[300px]' :
+    catSize === 'compact'   ? 'w-[130px] sm:w-[150px] md:w-[165px]' :
+                              'w-[160px] sm:w-[190px] md:w-[210px] lg:w-[220px]';
+
+  // ── Grid (expanded) ───────────────────────────────────────────────────────
+  if (isExpanded) {
+    const gridCls = cn(
+      "grid",
+      catSize === 'compact' && "gap-2",
+      catSize === 'featured' && "grid-cols-2 sm:grid-cols-4 gap-4",
+      catSize === 'normal' && "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3",
+    );
+    const gridStyle = catSize === 'compact'
+      ? { gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))" }
+      : undefined;
+    return (
+      <div className={gridCls} style={gridStyle}>
+        {products.map((product, j) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            priority={rowIndex === 0 && j < 6}
+            hideStoreMeta
+            compact={catSize === 'compact'}
+            featuredMobile={catSize === 'featured'}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // ── Horizontal scroll (default) ───────────────────────────────────────────
+  return (
+    <div className="relative">
+      {/* Left arrow – desktop only */}
+      {canScrollLeft && (
+        <button
+          onClick={() => scroll('left')}
+          className="hidden sm:flex absolute -left-4 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white shadow-md border border-gray-100 items-center justify-center hover:bg-gray-50 transition-colors"
+          aria-label="Scroll left"
+        >
+          <ChevronLeft className="h-4 w-4 text-gray-700" />
+        </button>
+      )}
+      {/* Right arrow – desktop only */}
+      {canScrollRight && (
+        <button
+          onClick={() => scroll('right')}
+          className="hidden sm:flex absolute -right-4 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white shadow-md border border-gray-100 items-center justify-center hover:bg-gray-50 transition-colors"
+          aria-label="Scroll right"
+        >
+          <ChevronRight className="h-4 w-4 text-gray-700" />
+        </button>
+      )}
+      {/* Scroll track */}
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto snap-x snap-mandatory sm:snap-none"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+      >
+        <div
+          className={cn("flex", catSize === 'compact' ? "gap-2" : "gap-2.5 sm:gap-3")}
+          style={{ minWidth: 'min-content' }}
+        >
+          {products.map((product, j) => (
+            <div key={product.id} className={cn("flex-shrink-0 snap-start", cardWidth)}>
+              <ProductCard
+                product={product}
+                priority={rowIndex === 0 && j < 6}
+                hideStoreMeta
+                compact={catSize === 'compact'}
+                featuredMobile={catSize === 'featured'}
+              />
+            </div>
+          ))}
+          {/* End spacer so last card isn't flush against the edge on mobile */}
+          <div className="w-2 flex-shrink-0 sm:hidden" aria-hidden />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfileViewProps) {
   const [activeTab, setActiveTab] = React.useState<StoreTab>("products");
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
@@ -130,12 +256,6 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   const [isSaved, setIsSaved] = React.useState(false);
   const [expandedCategories, setExpandedCategories] = React.useState<Set<string>>(new Set());
   const [compact, setCompact] = React.useState(false);
-
-  // Row cap per carousel size (global compact overrides per-category)
-  const getCategoryRowMax = (carouselSize?: string) => {
-    if (compact) return 16;
-    return { featured: 4, normal: 6, compact: 8 }[carouselSize ?? 'normal'] ?? 6;
-  };
 
   const openStatus = getOpenStatus(store.opening_hours);
 
@@ -490,21 +610,11 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 <div className="space-y-8">
                   {sortedCategories.map((cat, i) => {
                     if (cat.products.length === 0) return null;
-                    const catSize = compact ? 'compact' : (cat.carousel_size ?? 'normal');
-                    const rowMax = getCategoryRowMax(cat.carousel_size);
+                    const catSize = (compact ? 'compact' : (cat.carousel_size ?? 'normal')) as 'featured' | 'normal' | 'compact';
                     const isExpanded = expandedCategories.has(cat.id);
-                    const visible = isExpanded ? cat.products : cat.products.slice(0, rowMax);
-                    const hasMore = cat.products.length > rowMax;
-
-                    const gridClassName = cn(
-                      "grid",
-                      catSize === 'compact' && "gap-2",
-                      catSize === 'featured' && "grid-cols-2 sm:grid-cols-4 gap-4",
-                      catSize === 'normal' && "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3",
-                    );
-                    const gridStyle = catSize === 'compact'
-                      ? { gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }
-                      : undefined;
+                    // "See all" switches to grid view; only shown when there's a meaningful
+                    // number of products to warrant the full-grid overview.
+                    const hasMore = cat.products.length > 8;
 
                     return (
                       <section key={cat.id}>
@@ -527,18 +637,12 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                             </button>
                           )}
                         </div>
-                        <div className={gridClassName} style={gridStyle}>
-                          {visible.map((product, j) => (
-                            <ProductCard
-                              key={product.id}
-                              product={product}
-                              priority={i === 0 && j < 6}
-                              hideStoreMeta
-                              compact={catSize === 'compact'}
-                              featuredMobile={catSize === 'featured'}
-                            />
-                          ))}
-                        </div>
+                        <CategoryScrollRow
+                          products={cat.products}
+                          catSize={catSize}
+                          rowIndex={i}
+                          isExpanded={isExpanded}
+                        />
                       </section>
                     );
                   })}
