@@ -4,6 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import {
   AlertCircle,
+  Ban,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -11,6 +12,7 @@ import {
   Package,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Sparkles,
   Star,
@@ -77,6 +79,15 @@ interface AiSelectResponse {
   error?: string;
 }
 
+interface ExcludedEntry {
+  id: string;
+  name: string;
+  manufacturer: string | null;
+  upc: string | null;
+}
+
+const EXCLUDED_KEY = "image_qa_autopilot_excluded";
+
 const STATUS_LABEL: Record<AutoStatus, string> = {
   queued: "Queued",
   searching: "Searching Serper…",
@@ -102,6 +113,32 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
   const searchContainerRef = React.useRef<HTMLDivElement>(null);
 
+  // ── Exclusion list (persisted to localStorage) ────────────────────────────
+  const [excluded, setExcluded] = React.useState<ExcludedEntry[]>(() => {
+    if (typeof window === "undefined") return [];
+    try { return JSON.parse(localStorage.getItem(EXCLUDED_KEY) || "[]"); } catch { return []; }
+  });
+  const [showExcluded, setShowExcluded] = React.useState(false);
+  const excludedIds = React.useMemo(() => new Set(excluded.map((e) => e.id)), [excluded]);
+
+  React.useEffect(() => {
+    localStorage.setItem(EXCLUDED_KEY, JSON.stringify(excluded));
+  }, [excluded]);
+
+  const excludeItem = React.useCallback((item: AutoItem) => {
+    const p = item.product;
+    setExcluded((prev) => [
+      { id: p.id, name: p.display_name || p.normalized_name, manufacturer: p.manufacturer, upc: p.upc },
+      ...prev.filter((e) => e.id !== p.id),
+    ]);
+    setQueue((prev) => prev.filter((i) => i.product.id !== p.id));
+    onSessionMessage?.(`${p.display_name || p.normalized_name} added to exclusion list.`);
+  }, [onSessionMessage]);
+
+  const unexcludeEntry = React.useCallback((id: string) => {
+    setExcluded((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
   // ── Lightbox ──────────────────────────────────────────────────────────────
   const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
   React.useEffect(() => {
@@ -122,7 +159,11 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
         const params = new URLSearchParams({ page: "1", limit: "15", live_only: "true", search: term });
         const res = await fetch(`/api/admin/images/products?${params}`);
         const result = await res.json();
-        setDropdownResults(res.ok && result.success ? (result.data as SpeedWorkbenchProduct[]) : []);
+        setDropdownResults(
+          res.ok && result.success
+            ? (result.data as SpeedWorkbenchProduct[]).filter((p) => !excludedIds.has(p.id))
+            : [],
+        );
       } catch { setDropdownResults([]); }
       finally { setDropdownLoading(false); }
     }, 300);
@@ -217,7 +258,9 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error || "Failed to load products");
 
-      const products = (result.data || []) as SpeedWorkbenchProduct[];
+      const products = ((result.data || []) as SpeedWorkbenchProduct[]).filter(
+        (p) => !excludedIds.has(p.id),
+      );
       if (products.length === 0) {
         onSessionMessage?.("No live products without photos match these filters. Try a different category.");
         setQueue([]);
@@ -805,6 +848,16 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
                         Approve{item.selectedUrls.length > 0 ? ` (${item.selectedUrls.length})` : ""}
                       </Button>
                     )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 rounded-md text-gray-500 hover:border-red-200 hover:text-red-600"
+                      title="Exclude this product"
+                      onClick={() => excludeItem(item)}
+                    >
+                      <Ban className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
 
@@ -1032,6 +1085,65 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Exclusion list ──────────────────────────────────────────────── */}
+      {excluded.length > 0 && (
+        <div className="rounded-md border border-gray-200 bg-white shadow-sm">
+          <button
+            type="button"
+            onClick={() => setShowExcluded((v) => !v)}
+            className="flex w-full items-center justify-between px-4 py-3 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <Ban className="h-3.5 w-3.5 text-gray-400" />
+              <span className="text-sm font-medium text-gray-700">
+                Exclusion list
+              </span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                {excluded.length}
+              </span>
+            </div>
+            {showExcluded ? (
+              <ChevronUp className="h-4 w-4 text-gray-400" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-gray-400" />
+            )}
+          </button>
+
+          {showExcluded && (
+            <div className="border-t border-gray-100 p-4">
+              <p className="mb-3 text-xs text-gray-500">
+                These products are hidden from auto-pilot batches and searches. Click Include to restore them.
+              </p>
+              <div className="space-y-1.5">
+                {excluded.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center justify-between gap-3 rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-gray-800">{entry.name}</p>
+                      <p className="truncate text-[10px] text-gray-500">
+                        {entry.manufacturer || "Unknown brand"}{entry.upc ? ` · ${entry.upc}` : ""}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 shrink-0 rounded-md text-xs"
+                      onClick={() => unexcludeEntry(entry.id)}
+                    >
+                      <RotateCcw className="mr-1.5 h-3 w-3" />
+                      Include
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
