@@ -130,7 +130,12 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   const [isSaved, setIsSaved] = React.useState(false);
   const [expandedCategories, setExpandedCategories] = React.useState<Set<string>>(new Set());
   const [compact, setCompact] = React.useState(false);
-  const CATEGORY_ROW_MAX = compact ? 16 : 12;
+
+  // Row cap per carousel size (global compact overrides per-category)
+  const getCategoryRowMax = (carouselSize?: string) => {
+    if (compact) return 16;
+    return { featured: 4, normal: 6, compact: 8 }[carouselSize ?? 'normal'] ?? 6;
+  };
 
   const openStatus = getOpenStatus(store.opening_hours);
 
@@ -205,11 +210,10 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   );
 
   return (
-    <div className={cn("min-h-screen", immersive ? "bg-white" : "bg-gray-50")}>
-      <div className={immersive ? "pt-14" : "px-3 sm:px-4 py-3 sm:py-4"}>
-        <div className={immersive ? "" : "bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"}>
+    <div className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
+      <div>
       {/* ══ HERO ══════════════════════════════════════════ */}
-      <section className="bg-white">
+      <section className="bg-gray-50">
         {store.cover_image_url && (
           <div className="relative h-40 sm:h-56 overflow-hidden">
             <Image src={store.cover_image_url} alt="" fill className="object-cover" priority />
@@ -239,7 +243,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
               {/* Identity */}
               <div className="min-w-0 pt-0.5">
-                <h1 className="text-[25px] sm:text-[31px] font-bold tracking-tight text-gray-900 leading-[1.15]">
+                <h1 className="text-[18px] sm:text-[21px] font-bold tracking-tight text-gray-900 leading-[1.15]">
                   {store.store_name}
                 </h1>
 
@@ -352,7 +356,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
       {/* ── Underline tab bar ────────────────────────────── */}
       <div className={cn(
-        "border-b border-gray-200",
+        "bg-gray-50 border-b border-gray-200",
         immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
       )}>
         <div className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto scrollbar-hide">
@@ -388,7 +392,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
       {/* ── Products filter bar ─────────────────────────── */}
       {activeTab === "products" && allProducts.length > 0 && (
-        <div className="bg-white">
+        <div className="bg-gray-50">
           <div className={cn(
             "pt-3 pb-2",
             immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
@@ -486,9 +490,22 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 <div className="space-y-8">
                   {sortedCategories.map((cat, i) => {
                     if (cat.products.length === 0) return null;
+                    const catSize = compact ? 'compact' : (cat.carousel_size ?? 'normal');
+                    const rowMax = getCategoryRowMax(cat.carousel_size);
                     const isExpanded = expandedCategories.has(cat.id);
-                    const visible = isExpanded ? cat.products : cat.products.slice(0, CATEGORY_ROW_MAX);
-                    const hasMore = cat.products.length > CATEGORY_ROW_MAX;
+                    const visible = isExpanded ? cat.products : cat.products.slice(0, rowMax);
+                    const hasMore = cat.products.length > rowMax;
+
+                    const gridClassName = cn(
+                      "grid",
+                      catSize === 'compact' && "gap-2",
+                      catSize === 'featured' && "grid-cols-2 sm:grid-cols-4 gap-4",
+                      catSize === 'normal' && "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3",
+                    );
+                    const gridStyle = catSize === 'compact'
+                      ? { gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }
+                      : undefined;
+
                     return (
                       <section key={cat.id}>
                         <div className="flex items-center justify-between gap-2 mb-3">
@@ -510,12 +527,16 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                             </button>
                           )}
                         </div>
-                        <div
-                          className={cn("grid", compact ? "gap-2" : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3")}
-                          style={compact ? { gridTemplateColumns: "repeat(8, minmax(0, 1fr))" } : undefined}
-                        >
+                        <div className={gridClassName} style={gridStyle}>
                           {visible.map((product, j) => (
-                            <ProductCard key={product.id} product={product} priority={i === 0 && j < 6} hideStoreMeta compact={compact} />
+                            <ProductCard
+                              key={product.id}
+                              product={product}
+                              priority={i === 0 && j < 6}
+                              hideStoreMeta
+                              compact={catSize === 'compact'}
+                              featuredMobile={catSize === 'featured'}
+                            />
                           ))}
                         </div>
                       </section>
@@ -592,7 +613,6 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
           </motion.div>
         </AnimatePresence>
       </div>
-        </div>
       </div>
 
     </div>

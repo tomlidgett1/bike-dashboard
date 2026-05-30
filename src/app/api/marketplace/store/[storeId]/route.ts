@@ -114,6 +114,7 @@ export async function GET(
         marketplace_category,
         marketplace_subcategory,
         category_name,
+        manufacturer_name,
         qoh,
         model_year,
         created_at,
@@ -203,7 +204,7 @@ export async function GET(
     // Fetch active store-defined categories (excludes display_override renaming entries)
     const { data: customCategories } = await supabase
       .from('store_categories')
-      .select('id, name, source, lightspeed_category_id, product_ids, display_order')
+      .select('id, name, source, lightspeed_category_id, brand_name, product_ids, display_order, carousel_size')
       .eq('user_id', storeId)
       .eq('is_active', true)
       .neq('source', 'display_override')
@@ -211,9 +212,9 @@ export async function GET(
 
     if (customCategories && customCategories.length > 0 && sortedProducts.length > 0) {
       // ── Mode A: use store-defined categories ──────────────────────────────
-      // Lightspeed categories match dynamically by lightspeed_category_id so new
-      // synced products appear automatically without a re-scan.
-      // Custom categories match by the explicit product_ids array.
+      // Lightspeed categories: match dynamically by lightspeed_category_id
+      // Brand categories: match dynamically by manufacturer_name (case-insensitive)
+      // Custom categories: match by explicit product_ids array
       const productById = new Map<string, any>(sortedProducts.map((p) => [p.id, p]));
       const matchedIds = new Set<string>();
 
@@ -223,6 +224,11 @@ export async function GET(
         if (cat.source === 'lightspeed' && cat.lightspeed_category_id) {
           catRawProducts = sortedProducts.filter(
             (p) => p.lightspeed_category_id === cat.lightspeed_category_id
+          );
+        } else if (cat.source === 'brand' && cat.brand_name) {
+          const brandLower = cat.brand_name.toLowerCase();
+          catRawProducts = sortedProducts.filter(
+            (p) => (p.manufacturer_name ?? '').toLowerCase() === brandLower
           );
         } else {
           // custom: explicit product list
@@ -245,6 +251,7 @@ export async function GET(
             id: cat.id,
             name: displayName,
             display_order: cat.display_order,
+            carousel_size: cat.carousel_size ?? 'normal',
             products: marketplaceProducts,
             product_count: marketplaceProducts.length,
           });

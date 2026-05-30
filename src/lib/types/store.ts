@@ -21,15 +21,19 @@ export interface DayHours {
   closed: boolean;
 }
 
+export type CarouselSize = 'featured' | 'normal' | 'compact';
+
 export interface StoreCategory {
   id: string;
   user_id: string;
   name: string;
   display_order: number;
-  source: 'lightspeed' | 'custom';
+  source: 'lightspeed' | 'custom' | 'brand';
   lightspeed_category_id?: string;
+  brand_name?: string;
   product_ids: string[];
   is_active: boolean;
+  carousel_size?: CarouselSize;
   created_at?: string;
   updated_at?: string;
 }
@@ -80,6 +84,7 @@ export interface StoreCategoryWithProducts {
   display_order: number;
   products: MarketplaceProduct[];
   product_count: number;
+  carousel_size?: CarouselSize;
 }
 
 export interface LightspeedCategoryOption {
@@ -90,8 +95,9 @@ export interface LightspeedCategoryOption {
 
 export interface CreateCategoryRequest {
   name: string;
-  source: 'lightspeed' | 'custom';
+  source: 'lightspeed' | 'custom' | 'brand';
   lightspeed_category_id?: string;
+  brand_name?: string;
   product_ids?: string[];
   display_order?: number;
 }
@@ -99,9 +105,11 @@ export interface CreateCategoryRequest {
 export interface UpdateCategoryRequest {
   id: string;
   name?: string;
+  brand_name?: string;
   product_ids?: string[];
   display_order?: number;
   is_active?: boolean;
+  carousel_size?: CarouselSize;
 }
 
 export interface CreateServiceRequest {

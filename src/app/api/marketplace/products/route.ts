@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
 
     const useEstimatedCount = page > 1; // Only use exact count on first page
-    const countType = useEstimatedCount ? 'planned' : 'exact';
+    const countType = useEstimatedCount ? 'estimated' : 'exact';
 
     const fastFields = `
         id,

@@ -12,6 +12,9 @@ import {
   Check,
   Package,
   RotateCcw,
+  Tag,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,8 +40,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import type { StoreCategory, LightspeedCategoryOption } from "@/lib/types/store";
+import type { StoreCategory, LightspeedCategoryOption, CarouselSize } from "@/lib/types/store";
+
+interface BrandOption {
+  name: string;
+  product_count: number;
+}
 
 // ============================================================
 // Store Categories Manager
@@ -74,6 +81,14 @@ export function StoreCategoriesManager() {
     name: '',
     productIds: [],
   });
+
+  // Brand carousel state
+  const [isBrandDialogOpen, setIsBrandDialogOpen] = React.useState(false);
+  const [brandOptions, setBrandOptions] = React.useState<BrandOption[]>([]);
+  const [brandScanning, setBrandScanning] = React.useState(false);
+  const [selectedBrand, setSelectedBrand] = React.useState<string>('');
+  const [brandDisplayName, setBrandDisplayName] = React.useState<string>('');
+  const [brandListExpanded, setBrandListExpanded] = React.useState(false);
 
   // Fetch categories and auto-generated category names
   const fetchData = React.useCallback(async () => {
@@ -134,7 +149,18 @@ export function StoreCategoriesManager() {
 
       if (response.ok) {
         const data = await response.json();
-        setLightspeedCategories(data.categories || []);
+
+        // Filter out categories already added to avoid duplicates
+        const existingLightspeedIds = new Set(
+          categories
+            .filter((c) => c.source === 'lightspeed' && c.lightspeed_category_id)
+            .map((c) => c.lightspeed_category_id!)
+        );
+        const newCategories = (data.categories || []).filter(
+          (c: LightspeedCategoryOption) => !existingLightspeedIds.has(c.id)
+        );
+
+        setLightspeedCategories(newCategories);
         setSelectedLightspeedCategories(new Set());
         setIsScanDialogOpen(true);
       } else {
@@ -353,6 +379,18 @@ export function StoreCategoriesManager() {
     }
   };
 
+  // Update carousel size (optimistic)
+  const handleCarouselSizeChange = async (category: StoreCategory, size: CarouselSize) => {
+    setCategories((prev) =>
+      prev.map((c) => (c.id === category.id ? { ...c, carousel_size: size } : c))
+    );
+    await fetch('/api/store/categories', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: category.id, carousel_size: size }),
+    });
+  };
+
   // Handle reorder
   const handleReorder = async (newOrder: StoreCategory[]) => {
     setCategories(newOrder);
@@ -373,6 +411,65 @@ export function StoreCategoriesManager() {
     } catch (error) {
       console.error('Error updating order:', error);
       fetchData();
+    }
+  };
+
+  // Open brand carousel dialog — scans store's product brands on first open
+  const handleAddBrandCarousel = async () => {
+    setSelectedBrand('');
+    setBrandDisplayName('');
+    setBrandListExpanded(false);
+    setIsBrandDialogOpen(true);
+
+    if (brandOptions.length === 0) {
+      try {
+        setBrandScanning(true);
+        const res = await fetch('/api/store/brands-scan');
+        if (res.ok) {
+          const data = await res.json();
+          setBrandOptions(data.brands || []);
+        }
+      } catch (err) {
+        console.error('Error scanning brands:', err);
+      } finally {
+        setBrandScanning(false);
+      }
+    }
+  };
+
+  // Select a brand from the list
+  const handleSelectBrand = (brandName: string) => {
+    setSelectedBrand(brandName);
+    // Auto-fill display name only if user hasn't typed one yet
+    setBrandDisplayName((prev) => (prev.trim() === '' || prev === selectedBrand ? brandName : prev));
+  };
+
+  // Save brand carousel
+  const handleSaveBrandCarousel = async () => {
+    if (!selectedBrand.trim()) return;
+    const displayName = brandDisplayName.trim() || selectedBrand;
+
+    try {
+      setSaving(true);
+      const response = await fetch('/api/store/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: displayName,
+          source: 'brand',
+          brand_name: selectedBrand,
+          product_ids: [],
+        }),
+      });
+
+      if (response.ok) {
+        await fetchData();
+        setIsBrandDialogOpen(false);
+      }
+    } catch (err) {
+      console.error('Error saving brand carousel:', err);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -397,7 +494,7 @@ export function StoreCategoriesManager() {
   return (
     <div className="space-y-4">
       {/* Action Buttons */}
-      <div className="flex gap-2 justify-end">
+      <div className="flex gap-2 justify-end flex-wrap">
         <Button
           onClick={handleScanLightspeed}
           variant="outline"
@@ -415,6 +512,10 @@ export function StoreCategoriesManager() {
               Scan Lightspeed
             </>
           )}
+        </Button>
+        <Button onClick={handleAddBrandCarousel} variant="outline" className="rounded-md">
+          <Tag className="h-4 w-4 mr-2" />
+          Add Brand Carousel
         </Button>
         <Button onClick={handleAddCustom} className="rounded-md">
           <Plus className="h-4 w-4 mr-2" />
@@ -448,13 +549,50 @@ export function StoreCategoriesManager() {
                     <h4 className="text-sm font-medium text-gray-900 truncate">
                       {category.name}
                     </h4>
-                    <Badge variant="outline" className="text-xs flex-shrink-0">
-                      {category.source}
+                    <Badge
+                      variant="outline"
+                      className={`text-xs flex-shrink-0 ${
+                        category.source === 'brand'
+                          ? 'border-violet-300 text-violet-700 bg-violet-50'
+                          : category.source === 'lightspeed'
+                          ? 'border-blue-300 text-blue-700 bg-blue-50'
+                          : ''
+                      }`}
+                    >
+                      {category.source === 'brand' ? `Brand: ${category.brand_name}` : category.source}
                     </Badge>
                   </div>
                   <p className="text-xs text-gray-600 mt-0.5">
-                    {category.product_ids.length} products assigned
+                    {category.source === 'brand'
+                      ? 'Matches products by brand automatically'
+                      : `${category.product_ids.length} products assigned`}
                   </p>
+                </div>
+
+                {/* Carousel size toggle */}
+                <div className="flex items-center rounded-md border border-gray-200 overflow-hidden flex-shrink-0 text-xs font-medium">
+                  {(
+                    [
+                      { value: 'featured', label: 'Featured', count: 4 },
+                      { value: 'normal',   label: 'Normal',   count: 6 },
+                      { value: 'compact',  label: 'Compact',  count: 8 },
+                    ] as { value: CarouselSize; label: string; count: number }[]
+                  ).map(({ value, label, count }) => {
+                    const active = (category.carousel_size ?? 'normal') === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => handleCarouselSizeChange(category, value)}
+                        title={`${label} — shows ${count} products`}
+                        className={`px-2.5 py-1.5 cursor-pointer transition-colors border-r border-gray-200 last:border-r-0 ${
+                          active ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                        }`}
+                      >
+                        {label} <span className="opacity-60">({count})</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -521,40 +659,36 @@ export function StoreCategoriesManager() {
             </div>
           )}
 
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <ScrollArea className="h-full">
-              <div className="pr-4">
-                {lightspeedCategories.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-gray-600">
-                    No new categories available
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {lightspeedCategories.map((lsCategory) => (
-                      <div
-                        key={lsCategory.id}
-                        className="flex items-center gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer"
-                        onClick={() => toggleLightspeedCategory(lsCategory.id)}
-                      >
-                        <Checkbox
-                          checked={selectedLightspeedCategories.has(lsCategory.id)}
-                          onCheckedChange={() => toggleLightspeedCategory(lsCategory.id)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-medium text-gray-900 truncate">
-                            {lsCategory.name}
-                          </h4>
-                          <p className="text-xs text-gray-600">
-                            {lsCategory.product_count} products will be added
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+          <div className="overflow-y-auto max-h-[45vh]">
+            {lightspeedCategories.length === 0 ? (
+              <div className="py-8 text-center text-sm text-gray-600">
+                No new categories available
               </div>
-            </ScrollArea>
+            ) : (
+              <div className="space-y-2 pr-1">
+                {lightspeedCategories.map((lsCategory) => (
+                  <div
+                    key={lsCategory.id}
+                    className="flex items-center gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer"
+                    onClick={() => toggleLightspeedCategory(lsCategory.id)}
+                  >
+                    <Checkbox
+                      checked={selectedLightspeedCategories.has(lsCategory.id)}
+                      onCheckedChange={() => toggleLightspeedCategory(lsCategory.id)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-medium text-gray-900 truncate">
+                        {lsCategory.name}
+                      </h4>
+                      <p className="text-xs text-gray-600">
+                        {lsCategory.product_count} products will be added
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <DialogFooter className="flex-shrink-0">
@@ -593,7 +727,7 @@ export function StoreCategoriesManager() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 overflow-hidden flex-1 flex flex-col min-h-0">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="category-name">Category Name *</Label>
               <Input
@@ -604,40 +738,40 @@ export function StoreCategoriesManager() {
               />
             </div>
 
-            <div className="space-y-2 flex-1 flex flex-col min-h-0">
+            <div className="space-y-2">
               <Label>Select Products ({formData.productIds.length} selected)</Label>
-              <div className="border rounded-md flex-1 min-h-0 overflow-hidden">
-                <ScrollArea className="h-full">
-                  <div className="p-4">
-                    {products.length === 0 ? (
-                      <p className="text-sm text-gray-600 text-center py-8">
-                        No products available
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        {products.map((product) => (
-                          <div
-                            key={product.id}
-                            className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-md"
-                          >
-                            <Checkbox
-                              checked={formData.productIds.includes(product.id)}
-                              onCheckedChange={() => toggleProduct(product.id)}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate">
-                                {(product as any).display_name || product.description}
-                              </p>
-                              <p className="text-xs text-gray-600">
-                                ${product.price} • Stock: {product.qoh}
-                              </p>
-                            </div>
+              <div className="border rounded-md overflow-y-auto max-h-[42vh]">
+                <div className="p-3">
+                  {products.length === 0 ? (
+                    <p className="text-sm text-gray-600 text-center py-8">
+                      No products available
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {products.map((product) => (
+                        <div
+                          key={product.id}
+                          className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer"
+                          onClick={() => toggleProduct(product.id)}
+                        >
+                          <Checkbox
+                            checked={formData.productIds.includes(product.id)}
+                            onCheckedChange={() => toggleProduct(product.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {(product as any).display_name || product.description}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              ${product.price} • Stock: {product.qoh}
+                            </p>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -677,7 +811,7 @@ export function StoreCategoriesManager() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 overflow-hidden flex-1 flex flex-col">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="edit-category-name">Category Name *</Label>
               <Input
@@ -687,40 +821,40 @@ export function StoreCategoriesManager() {
               />
             </div>
 
-            <div className="space-y-2 flex-1 flex flex-col min-h-0">
+            <div className="space-y-2">
               <Label>Select Products ({formData.productIds.length} selected)</Label>
-              <div className="border rounded-md flex-1 min-h-0 overflow-hidden">
-                <ScrollArea className="h-full">
-                  <div className="p-4">
-                    {products.length === 0 ? (
-                      <p className="text-sm text-gray-600 text-center py-8">
-                        No products available
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        {products.map((product) => (
-                          <div
-                            key={product.id}
-                            className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-md"
-                          >
-                            <Checkbox
-                              checked={formData.productIds.includes(product.id)}
-                              onCheckedChange={() => toggleProduct(product.id)}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate">
-                                {(product as any).display_name || product.description}
-                              </p>
-                              <p className="text-xs text-gray-600">
-                                ${product.price} • Stock: {product.qoh}
-                              </p>
-                            </div>
+              <div className="border rounded-md overflow-y-auto max-h-[42vh]">
+                <div className="p-3">
+                  {products.length === 0 ? (
+                    <p className="text-sm text-gray-600 text-center py-8">
+                      No products available
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {products.map((product) => (
+                        <div
+                          key={product.id}
+                          className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer"
+                          onClick={() => toggleProduct(product.id)}
+                        >
+                          <Checkbox
+                            checked={formData.productIds.includes(product.id)}
+                            onCheckedChange={() => toggleProduct(product.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {(product as any).display_name || product.description}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              ${product.price} • Stock: {product.qoh}
+                            </p>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -744,6 +878,116 @@ export function StoreCategoriesManager() {
                 </>
               ) : (
                 'Update'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Brand Carousel Dialog */}
+      <Dialog open={isBrandDialogOpen} onOpenChange={setIsBrandDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add Brand Carousel</DialogTitle>
+            <DialogDescription>
+              Choose a brand — the carousel will automatically show all in-stock products from that brand.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Brand picker */}
+            <div className="space-y-2">
+              <Label>Brand</Label>
+              {brandScanning ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500 py-3">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Scanning your products...
+                </div>
+              ) : brandOptions.length > 0 ? (
+                <>
+                  {/* Show top brands inline, rest behind expand */}
+                  <div className="border rounded-md overflow-hidden">
+                    {(brandListExpanded ? brandOptions : brandOptions.slice(0, 6)).map((b) => (
+                      <button
+                        key={b.name}
+                        type="button"
+                        onClick={() => handleSelectBrand(b.name)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 text-sm border-b last:border-b-0 transition-colors text-left ${
+                          selectedBrand === b.name
+                            ? 'bg-gray-900 text-white'
+                            : 'hover:bg-gray-50 text-gray-900'
+                        }`}
+                      >
+                        <span className="font-medium">{b.name}</span>
+                        <span className={`text-xs ${selectedBrand === b.name ? 'text-gray-300' : 'text-gray-400'}`}>
+                          {b.product_count} product{b.product_count !== 1 ? 's' : ''}
+                        </span>
+                      </button>
+                    ))}
+                    {brandOptions.length > 6 && (
+                      <button
+                        type="button"
+                        onClick={() => setBrandListExpanded((v) => !v)}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-gray-500 hover:bg-gray-50 border-t transition-colors"
+                      >
+                        {brandListExpanded ? (
+                          <><ChevronUp className="h-3 w-3" /> Show less</>
+                        ) : (
+                          <><ChevronDown className="h-3 w-3" /> Show {brandOptions.length - 6} more brands</>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  {/* Free-text fallback */}
+                  <p className="text-xs text-gray-500">Or type a brand name:</p>
+                  <Input
+                    value={selectedBrand}
+                    onChange={(e) => {
+                      setSelectedBrand(e.target.value);
+                      setBrandDisplayName((prev) => prev === selectedBrand ? e.target.value : prev);
+                    }}
+                    placeholder="e.g. Wahoo"
+                  />
+                </>
+              ) : (
+                <Input
+                  value={selectedBrand}
+                  onChange={(e) => {
+                    setSelectedBrand(e.target.value);
+                    setBrandDisplayName((prev) => prev === selectedBrand ? e.target.value : prev);
+                  }}
+                  placeholder="e.g. Wahoo"
+                />
+              )}
+            </div>
+
+            {/* Display name */}
+            <div className="space-y-2">
+              <Label htmlFor="brand-display-name">
+                Carousel title <span className="text-gray-400 font-normal">(optional)</span>
+              </Label>
+              <Input
+                id="brand-display-name"
+                value={brandDisplayName}
+                onChange={(e) => setBrandDisplayName(e.target.value)}
+                placeholder={selectedBrand || 'e.g. Wahoo Products'}
+              />
+              <p className="text-xs text-gray-500">Leave blank to use the brand name as the title.</p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBrandDialogOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveBrandCarousel}
+              disabled={!selectedBrand.trim() || saving}
+            >
+              {saving ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+              ) : (
+                'Add Carousel'
               )}
             </Button>
           </DialogFooter>

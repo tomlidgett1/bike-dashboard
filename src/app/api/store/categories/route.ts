@@ -104,9 +104,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!['lightspeed', 'custom'].includes(body.source)) {
+    if (!['lightspeed', 'custom', 'brand'].includes(body.source)) {
       return NextResponse.json(
-        { error: 'Source must be either "lightspeed" or "custom"' },
+        { error: 'Source must be "lightspeed", "custom", or "brand"' },
+        { status: 400 }
+      );
+    }
+
+    if (body.source === 'brand' && !body.brand_name?.trim()) {
+      return NextResponse.json(
+        { error: 'brand_name is required for brand carousels' },
         { status: 400 }
       );
     }
@@ -133,6 +140,7 @@ export async function POST(request: NextRequest) {
         name: body.name,
         source: body.source,
         lightspeed_category_id: body.lightspeed_category_id,
+        brand_name: body.brand_name ?? null,
         product_ids: body.product_ids || [],
         display_order: displayOrder,
         is_active: true,
@@ -200,9 +208,11 @@ export async function PUT(request: NextRequest) {
     // Build update object
     const updateData: any = {};
     if (body.name !== undefined) updateData.name = body.name;
+    if (body.brand_name !== undefined) updateData.brand_name = body.brand_name;
     if (body.product_ids !== undefined) updateData.product_ids = body.product_ids;
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
     if (body.is_active !== undefined) updateData.is_active = body.is_active;
+    if (body.carousel_size !== undefined) updateData.carousel_size = body.carousel_size;
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
