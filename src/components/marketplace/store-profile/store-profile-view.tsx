@@ -15,6 +15,7 @@ import {
   Info,
   Star,
   Bookmark,
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Search,
@@ -346,101 +347,99 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   return (
     <div className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
       <div>
-      {/* ══ HERO ══════════════════════════════════════════ */}
-      <section className="bg-gray-50">
-        {store.cover_image_url && (
-          <div className="relative h-40 sm:h-56 overflow-hidden">
-            <Image src={store.cover_image_url} alt="" fill className="object-cover" priority />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/15 to-transparent" />
+      {/* ══ STICKY STORE HEADER ════════════════════════════
+          The store IS the site: its logo + name own the top bar.
+          Yellow Jersey is demoted to a small "back" link above. */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200">
+        {/* Demoted "Back to Yellow Jersey" */}
+        <div className="border-b border-gray-100">
+          <div className="px-5 sm:px-8 lg:px-10">
+            <a
+              href="/marketplace"
+              className="group inline-flex items-center gap-2.5 py-3 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4 text-gray-400 group-hover:text-gray-700 transition-all group-hover:-translate-x-0.5" />
+              <span className="text-gray-400 group-hover:text-gray-600">Back to</span>
+              <Image
+                src="/yj.svg"
+                alt="Yellow Jersey"
+                width={72}
+                height={14}
+                className="h-12 w-auto opacity-90 group-hover:opacity-100 transition-opacity"
+                unoptimized
+              />
+            </a>
           </div>
-        )}
+        </div>
 
-        <div className="px-5 sm:px-8 lg:px-10 pt-6 pb-5">
-          <div className="flex items-start justify-between gap-4">
-            {/* Logo + identity */}
-            <div className="flex items-start gap-4 sm:gap-5 min-w-0">
-              {/* Logo */}
-              <div
-                className={cn(
-                  "relative h-16 w-16 sm:h-[72px] sm:w-[72px] rounded-full overflow-hidden bg-white ring-1 ring-gray-200 flex-shrink-0",
-                  store.cover_image_url && "ring-4 ring-white shadow-sm -mt-12 sm:-mt-14"
-                )}
-              >
-                {store.logo_url ? (
-                  <Image src={store.logo_url} alt={store.store_name} fill className="object-cover" priority />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gray-50">
-                    <Store className="h-7 w-7 text-gray-400" />
-                  </div>
-                )}
-              </div>
-
-              {/* Identity */}
-              <div className="min-w-0 pt-0.5">
-                <h1 className="text-[18px] sm:text-[21px] font-bold tracking-tight text-gray-900 leading-[1.15]">
+        {/* Dominant store brand row */}
+        <div className="px-5 sm:px-8 lg:px-10">
+          <div className="flex items-center justify-between gap-3 sm:gap-4 h-14 sm:h-16">
+            {/* Store identity */}
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              {store.logo_url ? (
+                <Image
+                  src={store.logo_url}
+                  alt={store.store_name}
+                  width={44}
+                  height={44}
+                  sizes="44px"
+                  className="h-9 w-9 sm:h-11 sm:w-11 rounded-full object-cover ring-1 ring-gray-200 flex-shrink-0"
+                  priority
+                />
+              ) : (
+                <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-full bg-gray-50 ring-1 ring-gray-200 flex-shrink-0 flex items-center justify-center">
+                  <Store className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <h1 className="text-[15px] sm:text-lg font-bold tracking-tight text-gray-900 leading-tight truncate">
                   {store.store_name}
                 </h1>
-
-                {/* Rating */}
-                {store.rating != null && (
-                  <div className="inline-flex items-center gap-1 mt-2 text-sm">
-                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                    <span className="font-semibold text-gray-900">{store.rating.toFixed(1)}</span>
-                    {store.review_count != null && (
-                      <span className="text-gray-400">({store.review_count})</span>
+                {(store.rating != null || store.address) && (
+                  <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-gray-500 min-w-0 mt-0.5">
+                    {store.rating != null && (
+                      <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+                        <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                        <span className="font-semibold text-gray-700">{store.rating.toFixed(1)}</span>
+                        {store.review_count != null && (
+                          <span className="text-gray-400">({store.review_count})</span>
+                        )}
+                      </span>
                     )}
-                  </div>
-                )}
-
-                {/* Address | Phone */}
-                {(store.address || store.phone) && (
-                  <div className="flex items-center gap-2 mt-2 text-sm text-gray-500 min-w-0">
+                    {store.rating != null && store.address && (
+                      <span className="text-gray-300 flex-shrink-0">·</span>
+                    )}
                     {store.address && (
                       directionsUrl ? (
                         <a
                           href={directionsUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="group inline-flex items-center gap-1.5 hover:text-gray-900 transition-colors min-w-0"
+                          className="truncate hidden sm:inline hover:text-gray-900 transition-colors"
                         >
-                          <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-gray-400 group-hover:text-gray-500" />
-                          <span className="truncate underline-offset-2 group-hover:underline">{store.address}</span>
+                          {store.address}
                         </a>
                       ) : (
-                        <div className="inline-flex items-center gap-1.5 min-w-0">
-                          <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
-                          <span className="truncate">{store.address}</span>
-                        </div>
+                        <span className="truncate hidden sm:inline">{store.address}</span>
                       )
-                    )}
-                    {store.address && store.phone && (
-                      <span className="text-gray-300 flex-shrink-0 select-none">|</span>
-                    )}
-                    {store.phone && (
-                      <a
-                        href={`tel:${store.phone}`}
-                        className="inline-flex items-center gap-1.5 flex-shrink-0 hover:text-gray-900 transition-colors"
-                      >
-                        <Phone className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
-                        <span>{store.phone}</span>
-                      </a>
                     )}
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Top-right: search (products) + actions */}
-            <div className="hidden sm:flex items-center gap-2.5 flex-shrink-0">
+            {/* Actions: search (products) + Save/Edit */}
+            <div className="flex items-center gap-2 flex-shrink-0">
               {activeTab === "products" && allProducts.length > 0 && (
-                <div className="relative">
+                <div className="relative hidden md:block">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                   <input
                     type="text"
                     value={storeSearch}
                     onChange={(e) => setStoreSearch(e.target.value)}
                     placeholder="Search products…"
-                    className="h-9 w-48 lg:w-56 rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
+                    className="h-9 w-44 lg:w-56 rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
                   />
                   {storeSearch && (
                     <button
@@ -456,37 +455,41 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
               {actionButtons}
             </div>
           </div>
+        </div>
+      </header>
 
-          {/* Actions + search (mobile) */}
-          <div className="sm:hidden mt-4 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {actionButtons}
-            </div>
-            {activeTab === "products" && allProducts.length > 0 && (
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={storeSearch}
-                  onChange={(e) => setStoreSearch(e.target.value)}
-                  placeholder="Search products…"
-                  className="h-9 w-full rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
-                />
-                {storeSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setStoreSearch("")}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
+      {/* Cover banner (optional) — scrolls beneath the sticky header */}
+      {store.cover_image_url && (
+        <div className="relative h-32 sm:h-44 lg:h-52 w-full overflow-hidden bg-gray-100">
+          <Image src={store.cover_image_url} alt="" fill sizes="100vw" className="object-cover" priority />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
+        </div>
+      )}
+
+      {/* Mobile product search (the header hides it < md) */}
+      {activeTab === "products" && allProducts.length > 0 && (
+        <div className="md:hidden bg-gray-50 px-5 sm:px-8 pt-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={storeSearch}
+              onChange={(e) => setStoreSearch(e.target.value)}
+              placeholder="Search products…"
+              className="h-9 w-full rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
+            />
+            {storeSearch && (
+              <button
+                type="button"
+                onClick={() => setStoreSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             )}
           </div>
-
         </div>
-      </section>
+      )}
 
       {/* ── Underline tab bar ────────────────────────────── */}
       <div className={cn(

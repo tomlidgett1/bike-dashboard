@@ -206,16 +206,13 @@ export default function StoreProfilePage() {
     }
 
     // ── Standard mode ─────────────────────────────────
+    // No MarketplaceHeader: StoreProfileView renders its own sticky,
+    // store-branded header (with a demoted "Back to Yellow Jersey" link),
+    // so the page reads as the store's own site.
     return (
-      <>
-        <MarketplaceHeader />
-        <MarketplaceLayout showFooter={false}>
-          <div className="pt-14 sm:pt-16">
-            <StoreProfileView store={store} isOwnProfile={isOwnProfile} />
-          </div>
-        </MarketplaceLayout>
-
-      </>
+      <MarketplaceLayout showFooter={false}>
+        <StoreProfileView store={store} isOwnProfile={isOwnProfile} />
+      </MarketplaceLayout>
     );
   }
 
