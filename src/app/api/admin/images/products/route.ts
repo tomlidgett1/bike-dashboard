@@ -166,6 +166,9 @@ export async function GET(request: NextRequest) {
         ...product,
         primary_image_url: primary?.card_url || primary?.original_url || null,
         primary_thumbnail_url: primary?.thumbnail_url || null,
+        // Full-resolution uncropped URL for background-removal AI — the zoom
+        // slot (w_2000,c_limit) never crops, so gpt-image-2 sees the whole product.
+        primary_image_zoom_url: primary?.detail_url || primary?.gallery_url || primary?.original_url || null,
         // Only defined when bg_filter was requested (heroSet computed).
         bg_removed: heroSet ? heroSet.has(product.id) : undefined,
         readiness_status: product.primary_image_id

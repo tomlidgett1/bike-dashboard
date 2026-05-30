@@ -44,6 +44,9 @@ interface HeroProduct {
   manufacturer: string | null;
   marketplace_category: string | null;
   primary_image_url: string | null;
+  /** Uncropped full-res URL (zoom slot) — used for background removal so the
+   *  AI sees the whole product, not just the square centre-crop. */
+  primary_image_zoom_url?: string | null;
   primary_image_id: string | null;
   bg_removed?: boolean; // true when the current primary is a studio hero
 }
@@ -222,7 +225,9 @@ export function HeroBackgroundPanel({ onSessionMessage }: HeroBackgroundPanelPro
     async (index: number) => {
       // Read directly from the ref — safe even inside an async queue callback.
       const item = itemsRef.current[index];
-      const imageUrl = item?.product.primary_image_url ?? null;
+      // Prefer the full-resolution uncropped zoom URL so gpt-image-2 sees the
+      // entire product. Fall back to the card URL only if zoom isn't available.
+      const imageUrl = item?.product.primary_image_zoom_url || item?.product.primary_image_url || null;
       const productId = item?.product.id;
 
       if (!imageUrl) {
