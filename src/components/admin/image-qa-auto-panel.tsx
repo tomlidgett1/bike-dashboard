@@ -97,7 +97,10 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
   const [running, setRunning] = React.useState(false);
   const [queue, setQueue] = React.useState<AutoItem[]>([]);
   const [productSearch, setProductSearch] = React.useState("");
-  const [searchingProduct, setSearchingProduct] = React.useState(false);
+  const [dropdownResults, setDropdownResults] = React.useState<SpeedWorkbenchProduct[]>([]);
+  const [dropdownLoading, setDropdownLoading] = React.useState(false);
+  const [dropdownOpen, setDropdownOpen] = React.useState(false);
+  const searchContainerRef = React.useRef<HTMLDivElement>(null);
 
   // ── Lightbox ──────────────────────────────────────────────────────────────
   const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
@@ -106,6 +109,49 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // ── Product search dropdown ────────────────────────────────────────────────
+  // Debounced: fires 300 ms after the user stops typing.
+  React.useEffect(() => {
+    const term = productSearch.trim();
+    if (!term) { setDropdownResults([]); setDropdownOpen(false); return; }
+    const timer = setTimeout(async () => {
+      setDropdownLoading(true);
+      setDropdownOpen(true);
+      try {
+        const params = new URLSearchParams({ page: "1", limit: "15", live_only: "true", search: term });
+        const res = await fetch(`/api/admin/images/products?${params}`);
+        const result = await res.json();
+        setDropdownResults(res.ok && result.success ? (result.data as SpeedWorkbenchProduct[]) : []);
+      } catch { setDropdownResults([]); }
+      finally { setDropdownLoading(false); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [productSearch]);
+
+  // Close dropdown when clicking outside.
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const addDropdownProduct = (product: SpeedWorkbenchProduct) => {
+    const existingIds = new Set(queue.map((i) => i.product.id));
+    if (existingIds.has(product.id)) {
+      onSessionMessage?.(`${product.display_name || product.normalized_name} is already in the queue.`);
+    } else {
+      setQueue((prev) => [...prev, toQueuedItem(product)]);
+      onSessionMessage?.(`Added ${product.display_name || product.normalized_name} to the queue.`);
+    }
+    setProductSearch("");
+    setDropdownResults([]);
+    setDropdownOpen(false);
+  };
 
   // ── Enhancement queue (serial — gpt-image-2 takes 60–120 s per image) ──────
   // We keep the pending jobs in a ref so the async processor never sees stale
@@ -186,47 +232,6 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
     }
   };
 
-  // Add a specific product (or small batch) by name / UPC search.
-  const addProductBySearch = async () => {
-    const term = productSearch.trim();
-    if (!term) return;
-    setSearchingProduct(true);
-    onSessionMessage?.(null);
-    try {
-      const params = new URLSearchParams({
-        page: "1",
-        limit: "10",
-        status: "no_approved",
-        live_only: "true",
-        search: term,
-      });
-      const response = await fetch(`/api/admin/images/products?${params.toString()}`);
-      const result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.error || "Search failed");
-
-      const products = (result.data || []) as SpeedWorkbenchProduct[];
-      if (products.length === 0) {
-        onSessionMessage?.("No live products without photos match that search.");
-        return;
-      }
-
-      // Skip any product already in the queue.
-      const existingIds = new Set(queue.map((i) => i.product.id));
-      const fresh = products.filter((p) => !existingIds.has(p.id));
-      if (fresh.length === 0) {
-        onSessionMessage?.("All matching products are already in the queue.");
-        return;
-      }
-
-      setQueue((prev) => [...prev, ...fresh.map(toQueuedItem)]);
-      onSessionMessage?.(`Added ${fresh.length} product${fresh.length === 1 ? "" : "s"} to the queue.`);
-      setProductSearch("");
-    } catch (error) {
-      onSessionMessage?.(error instanceof Error ? error.message : "Search failed");
-    } finally {
-      setSearchingProduct(false);
-    }
-  };
 
   const processItem = React.useCallback(
     async (item: AutoItem, index: number) => {
@@ -585,33 +590,82 @@ export function ImageQaAutoPanel({ onSessionMessage }: ImageQaAutoPanelProps) {
               </Button>
             </div>
 
-            {/* ── Row 2: add a specific product by name / UPC ── */}
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="min-w-[16rem] flex-1 max-w-sm">
-                <label className="mb-1 block text-xs text-gray-500">Search by product name or UPC</label>
+            {/* ── Row 2: search for a specific product ── */}
+            <div ref={searchContainerRef} className="relative max-w-sm">
+              <label className="mb-1 block text-xs text-gray-500">Add a specific product</label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                 <Input
                   value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && void addProductBySearch()}
-                  placeholder="e.g. Tifosi Sledge, 012345678901…"
-                  className="h-9 rounded-md text-sm"
-                  disabled={searchingProduct || running}
+                  onChange={(e) => { setProductSearch(e.target.value); }}
+                  onFocus={() => { if (dropdownResults.length > 0) setDropdownOpen(true); }}
+                  onKeyDown={(e) => { if (e.key === "Escape") { setDropdownOpen(false); setProductSearch(""); } }}
+                  placeholder="Product name or UPC…"
+                  className="h-9 rounded-md pl-8 text-sm"
+                  disabled={running}
                 />
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded-md"
-                disabled={searchingProduct || running || !productSearch.trim()}
-                onClick={() => void addProductBySearch()}
-              >
-                {searchingProduct ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Search className="mr-2 h-4 w-4" />
+                {dropdownLoading && (
+                  <Loader2 className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-gray-400" />
                 )}
-                Add product
-              </Button>
+              </div>
+
+              {/* Dropdown */}
+              {dropdownOpen && (
+                <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                  {dropdownLoading && dropdownResults.length === 0 ? (
+                    <div className="flex items-center gap-2 px-3 py-3 text-xs text-gray-500">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
+                    </div>
+                  ) : dropdownResults.length === 0 ? (
+                    <div className="px-3 py-3 text-xs text-gray-500">No live products without photos found.</div>
+                  ) : (
+                    dropdownResults.map((product) => {
+                      const inQueue = queue.some((i) => i.product.id === product.id);
+                      const label = product.display_name || product.normalized_name;
+                      return (
+                        <button
+                          key={product.id}
+                          type="button"
+                          disabled={inQueue}
+                          onClick={() => addDropdownProduct(product)}
+                          className={cn(
+                            "flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors",
+                            inQueue
+                              ? "cursor-default opacity-40"
+                              : "hover:bg-gray-50",
+                          )}
+                        >
+                          {product.primary_image_url ? (
+                            <Image
+                              src={product.primary_image_url}
+                              alt=""
+                              width={32}
+                              height={32}
+                              unoptimized
+                              className="h-8 w-8 shrink-0 rounded-md object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-100">
+                              <Package className="h-4 w-4 text-gray-400" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs font-medium text-gray-900">{label}</p>
+                            <p className="truncate text-[10px] text-gray-400">
+                              {product.manufacturer || "—"}{product.upc ? ` · ${product.upc}` : ""}
+                            </p>
+                          </div>
+                          {inQueue ? (
+                            <span className="shrink-0 text-[10px] text-gray-400">In queue</span>
+                          ) : (
+                            <Plus className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ── Row 3: run + approve actions ── */}
