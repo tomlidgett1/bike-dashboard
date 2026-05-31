@@ -132,9 +132,10 @@ interface CategoryScrollRowProps {
   catSize: 'featured' | 'normal' | 'compact';
   rowIndex: number;
   isExpanded: boolean;
+  storeId: string;
 }
 
-function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: CategoryScrollRowProps) {
+function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId }: CategoryScrollRowProps) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = React.useState(false);
   const [canScrollRight, setCanScrollRight] = React.useState(false);
@@ -197,6 +198,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: Category
             hideStoreMeta
             compact={catSize === 'compact'}
             featuredMobile={catSize === 'featured'}
+            storeId={storeId}
           />
         ))}
       </div>
@@ -254,6 +256,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: Category
                 hideStoreMeta
                 compact={catSize === 'compact'}
                 featuredMobile={catSize === 'featured'}
+                storeId={storeId}
               />
             </div>
           ))}
@@ -325,8 +328,8 @@ function CarouselRow({
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-3">
           {logoUrl ? (
-            <div className="group relative h-8 w-24 flex-shrink-0 flex items-center">
-              <img src={logoUrl} alt={cat.name} className="max-h-full max-w-full object-contain" />
+            <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
+              <img src={logoUrl} alt={cat.name} className="h-full w-auto max-w-[96px] object-contain" />
               {isOwnProfile && (
                 <button
                   type="button"
@@ -381,6 +384,7 @@ function CarouselRow({
         catSize={catSize}
         rowIndex={rowIndex}
         isExpanded={isExpanded}
+        storeId={storeId ?? ''}
       />
     </section>
   );
