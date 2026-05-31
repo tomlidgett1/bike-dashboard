@@ -45,6 +45,10 @@ export interface StoreService {
   user_id: string;
   name: string;
   description?: string;
+  price?: number | null;
+  price_from?: boolean;
+  duration_minutes?: number | null;
+  highlight?: boolean;
   display_order: number;
   is_active: boolean;
   created_at?: string;
@@ -156,6 +160,10 @@ export interface UpdateSectionRequest {
 export interface CreateServiceRequest {
   name: string;
   description?: string;
+  price?: number | null;
+  price_from?: boolean;
+  duration_minutes?: number | null;
+  highlight?: boolean;
   display_order?: number;
 }
 
@@ -163,6 +171,10 @@ export interface UpdateServiceRequest {
   id: string;
   name?: string;
   description?: string;
+  price?: number | null;
+  price_from?: boolean;
+  duration_minutes?: number | null;
+  highlight?: boolean;
   display_order?: number;
   is_active?: boolean;
 }

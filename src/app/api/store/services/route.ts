@@ -125,6 +125,10 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         name: body.name,
         description: body.description || null,
+        price: body.price ?? null,
+        price_from: body.price_from ?? false,
+        duration_minutes: body.duration_minutes ?? null,
+        highlight: body.highlight ?? false,
         display_order: displayOrder,
         is_active: true,
       })
@@ -192,6 +196,10 @@ export async function PUT(request: NextRequest) {
     const updateData: any = {};
     if (body.name !== undefined) updateData.name = body.name;
     if (body.description !== undefined) updateData.description = body.description;
+    if ('price' in body) updateData.price = body.price ?? null;
+    if (body.price_from !== undefined) updateData.price_from = body.price_from;
+    if ('duration_minutes' in body) updateData.duration_minutes = body.duration_minutes ?? null;
+    if (body.highlight !== undefined) updateData.highlight = body.highlight;
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
     if (body.is_active !== undefined) updateData.is_active = body.is_active;
 
