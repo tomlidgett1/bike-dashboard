@@ -54,6 +54,9 @@ function DialogContent({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  mobileBottomSheet?: boolean
+  fullScreenMobile?: boolean
+  overlayClassName?: string
 }) {
   return (
     <DialogPortal>
