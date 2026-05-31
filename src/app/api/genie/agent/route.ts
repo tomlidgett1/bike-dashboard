@@ -20,6 +20,7 @@ import type {
   CarouselRenameProposal,
   DiscountApplyProposal,
   DiscountRemoveProposal,
+  PriceUpdateProposal,
 } from '@/lib/types/genie-agent'
 import { NEW_CAROUSEL_SLOT } from '@/lib/types/genie-agent'
 
@@ -39,14 +40,20 @@ WHAT YOU CAN DO
    • Rename an existing carousel.
    • Reorder them, show/hide them, and set a size (featured | normal | compact). The FIRST carousel is the featured collection.
 2. Discounts — apply a percentage discount to one or more products (e.g. "50% off all Clif bars"), optionally with an end date after which it lapses.
+3. Pricing — view cost prices and adjust retail prices. You can:
+   • Answer questions about cost, margin, or markup for any products.
+   • Set retail prices to achieve a target markup % on cost (e.g. "set all Clif bars to 40% markup").
+   • Set specific retail prices for named products.
+   • Identify products with low margins or where cost exceeds/equals retail.
 
 HOW TO WORK
-- Read first: call get_store_carousels / search_store_products / list_active_discounts to ground yourself in the store's ACTUAL data before proposing anything.
+- Read first: call get_store_carousels / search_store_products / get_product_costs / list_active_discounts to ground yourself in the store's ACTUAL data before proposing anything.
 - Then propose: call exactly one propose_* tool to stage the change. You never apply changes yourself — the store reviews a preview and clicks Apply.
 - Creating a carousel: choose a clear name (use the store's own words if they gave one), and pass "match" to fill it by description ("all Clif bars" → match:"Clif"); use product_ids only for specific picks. To place it, pass position (1 = top/featured slot); omit to add it at the end.
 - Renaming: use get_store_carousels to find the carousel id, then propose_rename_carousel with the new name.
 - For discounts by description ("all Clif bars"), pass the keyword as "match" and let the system find the products. Only pass product_ids if the store picked specific items.
 - Expiry: if the store gives a deadline ("until Sunday"), compute the ISO date from today (${today}) and pass it as ends_at. No deadline → omit it.
+- For pricing: call get_product_costs first to see cost data, then propose_price_update with either markup_percent (applied to cost) or explicit new_prices (id→price map). Prices are always rounded to 2 decimal places. Never propose a price below cost.
 
 STYLE
 - Concise and confident. One or two sentences. No preamble, no "let me…".
@@ -142,6 +149,48 @@ async function listActiveDiscounts(supabase: Supa, userId: string) {
     sale_price: p.sale_price != null ? Number(p.sale_price) : null,
     ends_at: p.discount_ends_at ?? null,
   }))
+}
+
+async function getProductCosts(supabase: Supa, userId: string, query?: string) {
+  let q = supabase
+    .from('products')
+    .select('id, display_name, description, price, default_cost, avg_cost, category_name, manufacturer_name')
+    .eq('user_id', userId)
+    .limit(100)
+
+  if (query && sanitizeMatch(query)) {
+    const like = `%${sanitizeMatch(query)}%`
+    q = q.or(
+      [
+        `display_name.ilike.${like}`,
+        `description.ilike.${like}`,
+        `category_name.ilike.${like}`,
+        `manufacturer_name.ilike.${like}`,
+        `full_category_path.ilike.${like}`,
+      ].join(','),
+    )
+  }
+
+  const { data } = await q
+  return (data ?? []).map((p: any) => {
+    const price = Number(p.price) || 0
+    // Prefer avg_cost when non-zero (more accurate), fall back to default_cost
+    const cost =
+      p.avg_cost != null && Number(p.avg_cost) > 0
+        ? Number(p.avg_cost)
+        : p.default_cost != null && Number(p.default_cost) > 0
+          ? Number(p.default_cost)
+          : null
+    const margin_percent =
+      cost != null && price > 0 ? Math.round(((price - cost) / price) * 100 * 10) / 10 : null
+    return {
+      id: p.id as string,
+      name: (p.display_name || p.description) as string,
+      price,
+      cost,
+      margin_percent,
+    }
+  })
 }
 
 // ── Proposal builders ─────────────────────────────────────────────────────────
@@ -319,6 +368,109 @@ async function buildRenameCarouselProposal(
   return {
     proposal,
     output: { status: 'proposed', kind: 'carousel_rename', from: target.name, to: newName },
+  }
+}
+
+async function buildPriceUpdateProposal(
+  supabase: Supa,
+  userId: string,
+  args: {
+    summary?: string
+    match?: string
+    product_ids?: string[]
+    markup_percent?: number
+    new_prices?: Record<string, number>
+  },
+): Promise<{ proposal?: PriceUpdateProposal; output: object }> {
+  // Fetch cost data for the targets
+  const costData = await getProductCosts(supabase, userId, args.match)
+  let targets = costData
+
+  if (args.product_ids && args.product_ids.length > 0) {
+    const idSet = new Set(args.product_ids)
+    targets = costData.filter(p => idSet.has(p.id))
+    // Also fetch any explicitly listed ids that the match query missed
+    if (targets.length < args.product_ids.length) {
+      const missing = args.product_ids.filter(id => !targets.some(t => t.id === id))
+      if (missing.length > 0) {
+        const extra = await getProductCosts(supabase, userId, undefined)
+        const extraFiltered = extra.filter(p => missing.includes(p.id))
+        targets = [...targets, ...extraFiltered]
+      }
+    }
+  } else if (!args.match && !args.new_prices) {
+    return { output: { error: 'Provide a keyword (match), specific product_ids, or new_prices to target products.' } }
+  }
+
+  if (targets.length === 0) {
+    return { output: { error: `No products found${args.match ? ` matching "${args.match}"` : ''}.` } }
+  }
+
+  const round2 = (n: number) => Math.round(n * 100) / 100
+
+  // Compute new prices
+  const new_prices: Record<string, number> = {}
+
+  if (args.new_prices && Object.keys(args.new_prices).length > 0) {
+    // Explicit price map — apply as-is (validate against cost)
+    for (const [id, price] of Object.entries(args.new_prices)) {
+      const t = targets.find(p => p.id === id)
+      if (!t) continue
+      if (t.cost != null && price < t.cost) {
+        return { output: { error: `Cannot set "${t.name}" below its cost price ($${t.cost.toFixed(2)}). Minimum price is $${t.cost.toFixed(2)}.` } }
+      }
+      new_prices[id] = round2(price)
+    }
+  } else if (Number.isFinite(args.markup_percent) && (args.markup_percent as number) > 0) {
+    // markup_percent: retail = cost × (1 + markup/100)
+    const markup = args.markup_percent as number
+    for (const t of targets) {
+      if (t.cost == null || t.cost === 0) continue // skip products without cost
+      const retail = t.cost * (1 + markup / 100)
+      new_prices[t.id] = round2(retail)
+    }
+    if (Object.keys(new_prices).length === 0) {
+      return { output: { error: 'None of the matched products have a cost price on file, so markup cannot be calculated. Check cost prices in your Lightspeed catalogue first.' } }
+    }
+  } else {
+    return { output: { error: 'Provide either markup_percent (e.g. 40 for 40% above cost) or an explicit new_prices map.' } }
+  }
+
+  const products_preview = targets
+    .filter(t => t.id in new_prices)
+    .slice(0, 12)
+    .map(t => {
+      const newPrice = new_prices[t.id]
+      const margin =
+        t.cost != null && newPrice > 0
+          ? Math.round(((newPrice - t.cost) / newPrice) * 100 * 10) / 10
+          : null
+      return {
+        id: t.id,
+        name: t.name,
+        current_price: t.price,
+        new_price: newPrice,
+        cost: t.cost,
+        margin_percent: margin,
+      }
+    })
+
+  const affected = Object.keys(new_prices).length
+  const match_label = args.product_ids?.length
+    ? `${affected} selected product${affected === 1 ? '' : 's'}`
+    : `${affected} product${affected === 1 ? '' : 's'}${args.match ? ` matching "${args.match}"` : ''}`
+
+  const proposal: PriceUpdateProposal = {
+    kind: 'price_update',
+    summary: args.summary?.trim() || (args.markup_percent != null ? `Set ${args.markup_percent}% markup` : 'Update retail prices'),
+    match_label,
+    product_ids: Object.keys(new_prices),
+    new_prices,
+    products_preview,
+  }
+  return {
+    proposal,
+    output: { status: 'proposed', kind: 'price_update', product_count: affected },
   }
 }
 
@@ -564,6 +716,36 @@ const TOOLS: any[] = [
       required: ['summary'],
     },
   },
+  {
+    type: 'function', name: 'get_product_costs', strict: null,
+    description: 'Fetch cost price, retail price, and gross margin % for the store\'s products. Use before answering any cost/margin question or proposing a price update. Optional query narrows results by keyword.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Optional keyword to filter (name, brand, category). Omit to get all products (up to 100).' },
+      },
+      required: [],
+    },
+  },
+  {
+    type: 'function', name: 'propose_price_update', strict: null,
+    description: 'Stage retail price changes for review. Use markup_percent to price from cost (e.g. 40 = cost × 1.4). Or pass new_prices as an explicit {product_id: price} map. Call get_product_costs first to see cost data.',
+    parameters: {
+      type: 'object',
+      properties: {
+        summary: { type: 'string', description: 'One concise sentence describing the price change.' },
+        match: { type: 'string', description: 'Keyword to match products by (name/brand/category). Use with markup_percent.' },
+        product_ids: { type: 'array', items: { type: 'string' }, description: 'Specific product ids to target.' },
+        markup_percent: { type: 'number', description: 'Gross markup above cost, e.g. 40 sets retail = cost × 1.40.' },
+        new_prices: {
+          type: 'object',
+          description: 'Explicit price overrides: {product_id: new_retail_price}. Use when setting exact prices rather than a markup.',
+          additionalProperties: { type: 'number' },
+        },
+      },
+      required: ['summary'],
+    },
+  },
 ]
 
 export async function POST(request: NextRequest) {
@@ -633,6 +815,7 @@ export async function POST(request: NextRequest) {
                     item.name === 'get_store_carousels' ? 'Reading your carousels...' :
                     item.name === 'search_store_products' ? 'Finding products...' :
                     item.name === 'list_active_discounts' ? 'Checking active discounts...' :
+                    item.name === 'get_product_costs' ? 'Looking up cost prices...' :
                     item.name.startsWith('propose_') ? 'Preparing changes...' : 'Working...'
                   emit({ event: 'status', phase: 'tool', text: label })
                 }
@@ -687,6 +870,12 @@ export async function POST(request: NextRequest) {
                     break
                   case 'propose_remove_discount':
                     result = await buildRemoveDiscountProposal(supabase, user.id, args)
+                    break
+                  case 'get_product_costs':
+                    result = { output: { products: await getProductCosts(supabase, user.id, args.query) } }
+                    break
+                  case 'propose_price_update':
+                    result = await buildPriceUpdateProposal(supabase, user.id, args)
                     break
                 }
               } catch (e) {

@@ -7,7 +7,7 @@ import {
   X, Send, Bike, Loader2, AlertCircle, Globe, Maximize2, Minimize2,
   Clock, Trash2, ArrowLeft, MessageSquarePlus,
   Store, Sparkles, Tag, LayoutGrid, ArrowRight, Check, CheckCircle2, Eye, EyeOff,
-  FolderPlus, Pencil,
+  FolderPlus, Pencil, DollarSign,
 } from 'lucide-react';
 import { useGenie } from '@/components/providers/genie-provider';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -22,6 +22,7 @@ import type {
   CarouselRenameProposal,
   DiscountApplyProposal,
   DiscountRemoveProposal,
+  PriceUpdateProposal,
   ApplyResult,
   CarouselSizeOption,
 } from '@/lib/types/genie-agent';
@@ -410,6 +411,35 @@ function DiscountRemoveDiff({ proposal }: { proposal: DiscountRemoveProposal }) 
   );
 }
 
+function PriceUpdateDiff({ proposal }: { proposal: PriceUpdateProposal }) {
+  const preview = proposal.products_preview.slice(0, 8);
+  const extra = proposal.products_preview.length - preview.length;
+  const fmt = (v: number) => `$${v.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">{proposal.match_label}</p>
+      {preview.length > 0 && (
+        <div className="rounded-lg bg-muted/50 p-2.5 space-y-1.5">
+          {preview.map(p => (
+            <div key={p.id} className="flex items-center gap-2">
+              <span className="text-xs text-foreground truncate flex-1 min-w-0">{p.name}</span>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <span className="text-[10px] text-muted-foreground line-through">{fmt(p.current_price)}</span>
+                <ArrowRight className="h-2.5 w-2.5 text-muted-foreground" />
+                <span className="text-[10px] font-semibold text-foreground">{fmt(p.new_price)}</span>
+                {p.margin_percent !== null && (
+                  <span className="text-[9px] text-emerald-600 font-medium ml-0.5">{p.margin_percent}%</span>
+                )}
+              </div>
+            </div>
+          ))}
+          {extra > 0 && <p className="text-[10px] text-muted-foreground pt-0.5">+{extra} more product{extra === 1 ? '' : 's'}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProposalCard({ proposal }: { proposal: GenieProposal }) {
   const [status, setStatus] = useState<'idle' | 'applying' | 'applied' | 'error'>('idle');
   const [resultMsg, setResultMsg] = useState('');
@@ -446,6 +476,8 @@ function ProposalCard({ proposal }: { proposal: GenieProposal }) {
       ? { Icon: Pencil, title: 'Rename carousel', cta: 'Apply rename' }
       : proposal.kind === 'discount_apply'
       ? { Icon: Tag, title: 'Apply discount', cta: `Apply ${Math.round(proposal.discount_percent)}% discount` }
+      : proposal.kind === 'price_update'
+      ? { Icon: DollarSign, title: 'Price update', cta: `Update ${proposal.product_ids.length} price${proposal.product_ids.length === 1 ? '' : 's'}` }
       : { Icon: Tag, title: 'Remove discount', cta: 'Remove discount' };
   const { Icon } = meta;
 
@@ -468,6 +500,7 @@ function ProposalCard({ proposal }: { proposal: GenieProposal }) {
         {proposal.kind === 'carousel_rename' && <CarouselRenameDiff proposal={proposal} />}
         {proposal.kind === 'discount_apply' && <DiscountApplyDiff proposal={proposal} />}
         {proposal.kind === 'discount_remove' && <DiscountRemoveDiff proposal={proposal} />}
+        {proposal.kind === 'price_update' && <PriceUpdateDiff proposal={proposal} />}
 
         {/* Action / result */}
         {status === 'applied' ? (

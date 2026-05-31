@@ -276,6 +276,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result)
     }
 
+    // ── Price update ─────────────────────────────────────────────────────
+    if (proposal.kind === 'price_update') {
+      const newPrices = proposal.new_prices
+      if (!newPrices || typeof newPrices !== 'object' || Object.keys(newPrices).length === 0) {
+        return NextResponse.json({ error: 'No price changes to apply.' }, { status: 400 })
+      }
+
+      let affected = 0
+      for (const [id, price] of Object.entries(newPrices)) {
+        const rounded = Math.round(Number(price) * 100) / 100
+        if (!id || !Number.isFinite(rounded) || rounded < 0) continue
+
+        const { error } = await supabase
+          .from('products')
+          .update({ price: rounded })
+          .eq('id', id)
+          .eq('user_id', user.id) // ownership scope
+        if (error) {
+          console.error('Apply price_update error:', error)
+          return NextResponse.json({ error: `Failed to update price for product ${id}.` }, { status: 500 })
+        }
+        affected++
+      }
+
+      const result: ApplyResult = {
+        ok: true,
+        kind: 'price_update',
+        affected,
+        message: `Updated retail price for ${affected} product${affected === 1 ? '' : 's'}.`,
+      }
+      return NextResponse.json(result)
+    }
+
     return NextResponse.json({ error: 'Unsupported proposal kind.' }, { status: 400 })
   } catch (error) {
     console.error('Error in POST /api/genie/agent/apply:', error)

@@ -101,12 +101,36 @@ export interface DiscountRemoveProposal {
   products_preview: Array<{ id: string; name: string }>;
 }
 
+export interface PriceUpdateProductPreview {
+  id: string;
+  name: string;
+  current_price: number;
+  new_price: number;
+  /** Cost used to compute the margin, if available. */
+  cost: number | null;
+  /** Gross margin % = (new_price - cost) / new_price * 100, or null if no cost. */
+  margin_percent: number | null;
+}
+
+/** Propose retail price adjustments computed from cost / markup. */
+export interface PriceUpdateProposal {
+  kind: 'price_update';
+  summary: string;
+  /** Human label for the products matched. */
+  match_label: string;
+  product_ids: string[];
+  /** Map of product_id → new retail price (rounded to 2dp). */
+  new_prices: Record<string, number>;
+  products_preview: PriceUpdateProductPreview[];
+}
+
 export type GenieProposal =
   | CarouselLayoutProposal
   | CarouselCreateProposal
   | CarouselRenameProposal
   | DiscountApplyProposal
-  | DiscountRemoveProposal;
+  | DiscountRemoveProposal
+  | PriceUpdateProposal;
 
 /** Result returned by /api/genie/agent/apply after a successful mutation. */
 export interface ApplyResult {
