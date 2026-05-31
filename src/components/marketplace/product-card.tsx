@@ -308,20 +308,13 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </div>
           )}
 
-          {/* Sale Badge — bottom-left of photo, always clear of the condition badge (top-left)
-              and the Uber Express badge (bottom-right). Shows whenever a live discount is active. */}
-          {live.onSale && live.percentOff && (
+          {/* Sale Badge — bottom-left of photo. Discreet pill matching the condition-badge
+              style. Clear of condition badge (top-left) and Uber badge (bottom-right). */}
+          {live.onSale && (
             <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
-              <div className="overflow-hidden rounded-lg shadow-lg shadow-black/30">
-                <div className="bg-gradient-to-br from-red-500 to-red-700 px-2 py-1.5">
-                  <p className="text-center text-[8px] font-bold uppercase tracking-[0.12em] text-red-100 leading-none">
-                    SALE
-                  </p>
-                  <p className="text-center text-[13px] font-black text-white leading-tight">
-                    -{live.percentOff}%
-                  </p>
-                </div>
-              </div>
+              <span className="inline-block rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 shadow-sm backdrop-blur-sm tracking-wide">
+                Sale
+              </span>
             </div>
           )}
 
