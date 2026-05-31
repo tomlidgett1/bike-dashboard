@@ -1159,43 +1159,33 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   </div>
                 )}
 
-                {/* Featured Stores — shown when browsing all stores (no specific store selected) */}
+                {/* Featured Stores — same identity-strip design as a selected store (no store selected) */}
                 {!selectedStoreId && featuredStore && (
-                  <div className="space-y-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center rounded-full bg-[#f0cf45]/20 px-2.5 py-0.5 text-xs font-semibold text-gray-900">
-                        Featured stores
-                      </span>
-                    </div>
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm font-semibold text-gray-900">Featured stores</h3>
                     <button
                       type="button"
                       onClick={() => router.push(`/marketplace/store/${featuredStore.id}`)}
-                      className="group flex w-full items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-all hover:border-gray-300 hover:shadow-md sm:max-w-md"
+                      className="flex items-center gap-2.5 min-w-0 group hover:opacity-80 transition-opacity cursor-pointer"
                     >
                       {featuredStore.logo_url ? (
-                        <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full border border-gray-200 bg-gray-50">
+                        <div className="relative h-8 w-8 rounded-full overflow-hidden border border-gray-200 flex-shrink-0 shadow-sm">
                           <Image
                             src={featuredStore.logo_url}
                             alt={featuredStore.store_name}
                             fill
                             className="object-cover"
-                            sizes="64px"
                           />
                         </div>
                       ) : (
-                        <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100">
-                          <StoreIcon className="h-8 w-8 text-gray-400" />
+                        <div className="h-8 w-8 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center flex-shrink-0">
+                          <StoreIcon className="h-4 w-4 text-gray-400" />
                         </div>
                       )}
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-base font-semibold text-gray-900 group-hover:underline">
-                          {featuredStore.store_name}
-                        </p>
-                        <p className="truncate text-sm text-gray-500">{featuredStore.store_type}</p>
+                      <div className="min-w-0 text-left">
+                        <p className="text-sm font-semibold text-gray-900 truncate group-hover:underline">{featuredStore.store_name}</p>
                         {featuredStore.product_count > 0 && (
-                          <p className="mt-0.5 text-xs text-gray-400">
-                            {featuredStore.product_count.toLocaleString()} products
-                          </p>
+                          <p className="text-xs text-gray-500">{featuredStore.product_count.toLocaleString()} products</p>
                         )}
                       </div>
                     </button>
