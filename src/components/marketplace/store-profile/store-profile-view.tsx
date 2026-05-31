@@ -639,7 +639,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 <h1 className="text-[15px] sm:text-lg font-bold tracking-tight text-gray-900 leading-tight truncate">
                   {store.store_name}
                 </h1>
-                {(store.rating != null || store.address) && (
+                {(store.rating != null || store.address || store.phone) && (
                   <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-gray-500 min-w-0 mt-0.5">
                     {store.rating != null && (
                       <span className="inline-flex items-center gap-0.5 flex-shrink-0">
@@ -666,6 +666,17 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                       ) : (
                         <span className="truncate hidden sm:inline">{store.address}</span>
                       )
+                    )}
+                    {store.address && store.phone && (
+                      <span className="text-gray-300 hidden sm:inline flex-shrink-0">·</span>
+                    )}
+                    {store.phone && (
+                      <a
+                        href={`tel:${store.phone}`}
+                        className="hidden sm:inline flex-shrink-0 hover:text-gray-900 transition-colors"
+                      >
+                        {store.phone}
+                      </a>
                     )}
                   </div>
                 )}
