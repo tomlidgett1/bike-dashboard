@@ -15,6 +15,8 @@ import { GeniePanel } from "@/components/genie/genie-panel";
 import { GenieButton } from "@/components/genie/genie-button";
 import { MessagesProvider } from "@/components/providers/messages-provider";
 import { MessagesPanel } from "@/components/messages/messages-panel";
+import { CartProvider } from "@/components/providers/cart-provider";
+import { CartDrawer } from "@/components/marketplace/cart-drawer";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
 import "./globals.css";
@@ -87,12 +89,15 @@ export default async function RootLayout({
                       <MobileNavProvider>
                         <MessagesProvider>
                           <GenieProvider>
-                            <ConditionalLayout>{children}</ConditionalLayout>
-                            <FloatingUploadBar />
-                            <WebVitalsReporter />
-                            <MessagesPanel />
-                            <GeniePanel />
-                            <GenieButton />
+                            <CartProvider>
+                              <ConditionalLayout>{children}</ConditionalLayout>
+                              <FloatingUploadBar />
+                              <WebVitalsReporter />
+                              <MessagesPanel />
+                              <GeniePanel />
+                              <GenieButton />
+                              <CartDrawer />
+                            </CartProvider>
                           </GenieProvider>
                         </MessagesProvider>
                       </MobileNavProvider>

@@ -152,6 +152,7 @@ export function StoreProductDescriptionsManager() {
   const [genStates, setGenStates] = React.useState<Record<string, GenState>>({});
   const [expandedIds, setExpandedIds] = React.useState<Set<string>>(new Set());
   const abortRef = React.useRef<AbortController | null>(null);
+  const backfillRan = React.useRef(false);
 
   const fetchProducts = React.useCallback(async () => {
     try {
@@ -159,16 +160,35 @@ export function StoreProductDescriptionsManager() {
       const res = await fetch('/api/products?pageSize=500&status=active');
       if (res.ok) {
         const data = await res.json();
-        setProducts((data.products ?? []).filter((p: DescriptionProduct) => p.is_active));
+        return (data.products ?? []).filter((p: DescriptionProduct) => p.is_active) as DescriptionProduct[];
       }
     } catch (err) {
       console.error('Failed to fetch products:', err);
     } finally {
       setLoading(false);
     }
+    return [];
   }, []);
 
-  React.useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  React.useEffect(() => {
+    (async () => {
+      const loaded = await fetchProducts();
+      setProducts(loaded);
+
+      // Auto-backfill manufacturer names if any products are missing brands
+      if (!backfillRan.current && loaded.some(p => !p.brand)) {
+        backfillRan.current = true;
+        try {
+          await fetch('/api/lightspeed/backfill-manufacturer-names', { method: 'POST' });
+          // Reload after backfill to show updated brands
+          const refreshed = await fetchProducts();
+          setProducts(refreshed);
+        } catch (e) {
+          console.error('Backfill failed:', e);
+        }
+      }
+    })();
+  }, [fetchProducts]);
 
   const stats = React.useMemo(() => {
     const total = products.length;
@@ -272,7 +292,8 @@ export function StoreProductDescriptionsManager() {
     } finally {
       setIsGenerating(false);
       abortRef.current = null;
-      await fetchProducts();
+      const refreshed = await fetchProducts();
+      setProducts(refreshed);
     }
   };
 

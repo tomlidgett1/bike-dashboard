@@ -8,6 +8,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
 import { DesktopHeaderPill } from "./desktop-header-pill";
+import { CartButton } from "./cart-button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
@@ -501,6 +502,7 @@ export function MarketplaceHeader({
                   </button>
                 </>
               )}
+              <CartButton />
               <button
                 onClick={() => setMobileMenuOpen(true)}
                 className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
@@ -512,6 +514,10 @@ export function MarketplaceHeader({
 
             {/* Desktop nav + sell */}
             <div className="hidden lg:flex items-center gap-1 flex-shrink-0">
+              <CartButton />
+
+              <div className="w-px h-5 bg-gray-200 mx-1 flex-shrink-0" />
+
               <DesktopHeaderPill />
 
               <div className="w-px h-5 bg-gray-200 mx-1 flex-shrink-0" />

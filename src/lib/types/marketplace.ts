@@ -70,6 +70,9 @@ export interface MarketplaceProduct {
   first_name?: string | null;
   last_name?: string | null;
   
+  // Brand — from Lightspeed manufacturer_name or manually entered during upload
+  brand?: string | null;
+
   // Extended fields for private listings
   listing_type?: 'store_inventory' | 'private_listing';
   listing_source?: 'lightspeed' | 'manual';

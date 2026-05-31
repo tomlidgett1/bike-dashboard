@@ -110,6 +110,19 @@ export async function POST(request: NextRequest) {
       fullPath: cat.fullPathName,
     }]))
 
+    // Fetch manufacturers for brand names
+    console.log(`🏷️ Fetching manufacturers...`)
+    const manufacturerMap = new Map<string, string>()
+    try {
+      const manufacturers = await client.getAllManufacturers()
+      manufacturers.forEach((m) => {
+        if (m.manufacturerID && m.name) manufacturerMap.set(String(m.manufacturerID), m.name)
+      })
+      console.log(`✅ Loaded ${manufacturerMap.size} manufacturers`)
+    } catch (e) {
+      console.error('⚠️ Could not fetch manufacturers:', e)
+    }
+
     console.log(`✅ Loaded ${categories.length} categories`)
 
     // Filter items with positive stock and prepare for database
@@ -161,6 +174,7 @@ export async function POST(request: NextRequest) {
         model_year: item.modelYear || null,
         upc: item.upc || null,
         manufacturer_id: item.manufacturerID || null,
+        manufacturer_name: item.manufacturerID ? (manufacturerMap.get(String(item.manufacturerID)) || null) : null,
         images: images,
         primary_image_url: images[0]?.url || null,
         lightspeed_updated_at: item.timeStamp,

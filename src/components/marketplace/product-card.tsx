@@ -72,6 +72,8 @@ function CartOverlayButton({ product }: { product: ProductCardData }) {
       price: product.price,
       sellerId: product.user_id,
       sellerName: product.store_name || "Store",
+      quantity: 1,
+      maxQuantity: product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1),
     });
     if (result === "added" || result === "exists") openCart();
   };

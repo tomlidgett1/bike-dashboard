@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
+import { useCart } from "@/components/providers/cart-provider";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
@@ -152,6 +153,8 @@ interface PurchaseDetails {
   order_number: string;
   total_amount: number;
   item_price: number;
+  /** Units purchased on this row. Optional — absent if read before the migration. */
+  quantity?: number;
   shipping_cost: number;
   product: ProductDetails | ProductDetails[] | null;
   seller: SellerDetails | SellerDetails[] | null;
@@ -212,16 +215,21 @@ function CheckoutSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
+  const { clear: clearCart } = useCart();
+
   // Support both session_id (Stripe Checkout) and payment_intent (Embedded Checkout)
   const sessionId = searchParams.get("session_id");
   const paymentIntentId = searchParams.get("payment_intent");
   const phoneFromUrl = searchParams.get("phone"); // Phone passed from checkout
+  const isCart = searchParams.get("cart") === "1"; // Multi-item cart order
 
   const [loading, setLoading] = React.useState(true);
   const [purchase, setPurchase] = React.useState<PurchaseDetails | null>(null);
+  const [purchases, setPurchases] = React.useState<PurchaseDetails[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [showConfetti, setShowConfetti] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const cartCleared = React.useRef(false);
 
   // Track if SMS has been sent to avoid duplicates
   const [smsSent, setSmsSent] = React.useState(false);
@@ -268,7 +276,36 @@ function CheckoutSuccessContent() {
     }
   }, [paymentIntentId, sessionId, phoneFromUrl, smsSent]);
 
+  // Clear the cart once we reach the success page (payment already succeeded)
   React.useEffect(() => {
+    if (isCart && !cartCleared.current) {
+      cartCleared.current = true;
+      clearCart();
+    }
+  }, [isCart, clearCart]);
+
+  React.useEffect(() => {
+    // Cart order — fetch all purchase rows for the session
+    if (isCart && sessionId) {
+      const fetchCartPurchases = async () => {
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const response = await fetch(`/api/stripe/session/${sessionId}?multi=1`);
+          if (response.ok) {
+            const data = await response.json();
+            setPurchases(Array.isArray(data.purchases) ? data.purchases : []);
+          }
+        } catch (err) {
+          console.error("Error fetching cart purchases:", err);
+        } finally {
+          setLoading(false);
+          setShowConfetti(true);
+        }
+      };
+      fetchCartPurchases();
+      return;
+    }
+
     // If we have a payment_intent, fetch purchase by payment intent
     if (paymentIntentId) {
       const fetchPurchaseByPaymentIntent = async () => {
@@ -320,23 +357,48 @@ function CheckoutSuccessContent() {
     };
 
     fetchPurchase();
-  }, [sessionId, paymentIntentId]);
-
-  const copyOrderNumber = () => {
-    if (purchase?.order_number) {
-      navigator.clipboard.writeText(purchase.order_number);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
+  }, [sessionId, paymentIntentId, isCart]);
 
   // Extract product and seller (handle both array and object from Supabase)
   const product = extractFirst(purchase?.product);
   const seller = extractFirst(purchase?.seller);
-  
+
   const productName = product?.display_name || product?.description || "Your item";
   const productImage = product?.primary_image_url;
   const sellerName = seller?.business_name || seller?.name || "Seller";
+
+  // Cart (multi-item) derived values
+  const cartItems = purchases.map((p) => {
+    const prod = extractFirst(p.product);
+    return {
+      id: p.id,
+      name: prod?.display_name || prod?.description || "Item",
+      image: prod?.primary_image_url || null,
+      price: p.item_price,
+      quantity: p.quantity ?? 1,
+    };
+  });
+  // Total units across the order (sum of quantities), vs cartItems.length = lines.
+  const cartUnits = cartItems.reduce((sum, it) => sum + it.quantity, 0);
+  const cartItemsSubtotal = purchases.reduce(
+    (sum, p) => sum + (p.item_price || 0) * (p.quantity ?? 1),
+    0
+  );
+  const cartShipping = purchases.reduce((sum, p) => sum + (p.shipping_cost || 0), 0);
+  const cartTotal = purchases.reduce((sum, p) => sum + (p.total_amount || 0), 0);
+  // Cart rows share an order reference with a per-item "-N" suffix; strip it.
+  const cartOrderNumber = purchases[0]?.order_number?.replace(/-\d+$/, "") || "";
+
+  const displayOrderNumber = isCart ? cartOrderNumber : purchase?.order_number;
+  const hasOrder = isCart ? purchases.length > 0 : !!purchase;
+
+  const copyOrderNumber = () => {
+    if (displayOrderNumber) {
+      navigator.clipboard.writeText(displayOrderNumber);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white">
@@ -398,8 +460,54 @@ function CheckoutSuccessContent() {
             </motion.p>
           </motion.div>
 
-          {/* Product Hero Card */}
-          {purchase && (
+          {/* Cart (multi-item) list card */}
+          {isCart && hasOrder && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25, duration: 0.5 }}
+              className="bg-white rounded-md border border-gray-200 overflow-hidden mb-4"
+            >
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+                <h2 className="text-sm font-medium text-gray-900">
+                  {cartUnits} {cartUnits === 1 ? "item" : "items"}
+                </h2>
+                <div className="flex items-center gap-1.5 text-gray-500 text-xs">
+                  <Store className="h-3.5 w-3.5" />
+                  <span>{sellerName}</span>
+                </div>
+              </div>
+              <ul className="divide-y divide-gray-100">
+                {cartItems.map((it) => (
+                  <li key={it.id} className="flex items-center gap-3 px-5 py-3">
+                    <div className="relative h-12 w-12 flex-shrink-0 rounded-md bg-gray-50 overflow-hidden">
+                      {it.image ? (
+                        <Image src={it.image} alt={it.name} fill className="object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <Package className="h-5 w-5 text-gray-300" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-900 line-clamp-2">{it.name}</p>
+                      {it.quantity > 1 && (
+                        <p className="mt-0.5 text-xs text-gray-400">
+                          {it.quantity} × ${it.price.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                    <span className="text-sm text-gray-700">
+                      ${(it.price * it.quantity).toFixed(2)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          )}
+
+          {/* Product Hero Card (single item) */}
+          {!isCart && purchase && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -428,7 +536,7 @@ function CheckoutSuccessContent() {
                 <h2 className="text-lg font-semibold text-gray-900 mb-1.5 line-clamp-2">
                   {productName}
                 </h2>
-                
+
                 <div className="flex items-center gap-1.5 text-gray-500 text-sm">
                   <Store className="h-3.5 w-3.5" />
                   <span>{sellerName}</span>
@@ -438,7 +546,7 @@ function CheckoutSuccessContent() {
           )}
 
           {/* Order Details Card */}
-          {purchase && (
+          {hasOrder && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -454,7 +562,7 @@ function CheckoutSuccessContent() {
                   <div>
                     <p className="text-xs text-gray-500">Order number</p>
                     <p className="text-sm font-mono font-medium text-gray-900">
-                      {purchase.order_number}
+                      {displayOrderNumber}
                     </p>
                   </div>
                 </div>
@@ -479,19 +587,25 @@ function CheckoutSuccessContent() {
               {/* Price Breakdown */}
               <div className="pt-4 space-y-2.5">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Item price</span>
-                  <span className="text-gray-900">${purchase.item_price.toFixed(2)}</span>
+                  <span className="text-gray-500">
+                    {isCart ? `Items (${cartUnits})` : "Item price"}
+                  </span>
+                  <span className="text-gray-900">
+                    ${(isCart ? cartItemsSubtotal : purchase?.item_price ?? 0).toFixed(2)}
+                  </span>
                 </div>
-                {purchase.shipping_cost > 0 && (
+                {(isCart ? cartShipping : purchase?.shipping_cost ?? 0) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Shipping</span>
-                    <span className="text-gray-900">${purchase.shipping_cost.toFixed(2)}</span>
+                    <span className="text-gray-900">
+                      ${(isCart ? cartShipping : purchase?.shipping_cost ?? 0).toFixed(2)}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between pt-2.5 border-t border-gray-100">
                   <span className="text-sm font-medium text-gray-900">Total paid</span>
                   <span className="text-base font-semibold text-gray-900">
-                    ${purchase.total_amount.toFixed(2)}
+                    ${(isCart ? cartTotal : purchase?.total_amount ?? 0).toFixed(2)}
                   </span>
                 </div>
               </div>

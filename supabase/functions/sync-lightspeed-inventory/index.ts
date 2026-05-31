@@ -500,10 +500,29 @@ Deno.serve(async (req) => {
     const categories = Array.isArray(categoriesData.Category) ? categoriesData.Category : []
     const categoryMap = new Map(categories.map((c: any) => [c.categoryID, { name: c.name, fullPath: c.fullPathName }]))
 
-    await sendProgress({ 
-      phase: 'prepare', 
-      message: `Preparing ${itemsToSync.length} products for sync...`, 
-      progress: 65 
+    // Fetch manufacturers for brand names
+    const manufacturerMap = new Map<string, string>()
+    try {
+      let mfgUrl: string | null = `https://api.lightspeedapp.com/API/V3/Account/${accountId}/Manufacturer.json?limit=100`
+      while (mfgUrl) {
+        const mfgRes = await fetch(mfgUrl, {
+          headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' },
+        })
+        if (!mfgRes.ok) break
+        const mfgData = await mfgRes.json()
+        const mfgs = Array.isArray(mfgData.Manufacturer) ? mfgData.Manufacturer : mfgData.Manufacturer ? [mfgData.Manufacturer] : []
+        mfgs.forEach((m: any) => { if (m.manufacturerID && m.name) manufacturerMap.set(String(m.manufacturerID), m.name) })
+        mfgUrl = mfgData['@attributes']?.next || null
+      }
+      console.log(`✅ Loaded ${manufacturerMap.size} manufacturers`)
+    } catch (e) {
+      console.error('⚠️ Could not fetch manufacturers:', e)
+    }
+
+    await sendProgress({
+      phase: 'prepare',
+      message: `Preparing ${itemsToSync.length} products for sync...`,
+      progress: 65
     })
 
     // Prepare products
@@ -536,6 +555,7 @@ Deno.serve(async (req) => {
         model_year: item.modelYear || null,
         upc: item.upc || null,
         manufacturer_id: item.manufacturerID || null,
+        manufacturer_name: item.manufacturerID ? (manufacturerMap.get(String(item.manufacturerID)) || null) : null,
         images: images,
         primary_image_url: images[0]?.url || null,
         lightspeed_updated_at: item.timeStamp,

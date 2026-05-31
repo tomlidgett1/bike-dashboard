@@ -14,6 +14,9 @@ import {
   Sheet,
   SheetContent,
 } from "@/components/ui/sheet";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { QrUploadSection } from "./qr-upload-section";
 import { useUpload } from "@/components/providers/upload-provider";
@@ -482,132 +485,110 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
         <div className="mt-2">
           {/* Upload Stage */}
           {stage === "upload" && (
-            <div className="space-y-3">
-              {/* Tab Switcher */}
-              <div className="flex bg-gray-100 p-0.5 rounded-md">
-                <button
-                  onClick={() => setActiveTab("computer")}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-sm font-medium rounded-md transition-colors",
-                    activeTab === "computer"
-                      ? "bg-white text-gray-800 shadow-sm"
-                      : "text-gray-600 hover:bg-gray-200/70"
-                  )}
-                >
+            <Tabs
+              value={activeTab}
+              onValueChange={(v) => setActiveTab(v as UploadTab)}
+              className="gap-3"
+            >
+              <TabsList className="w-full">
+                <TabsTrigger value="computer">
                   <Monitor className="h-3.5 w-3.5" />
                   Computer
-                </button>
-                <button
-                  onClick={() => setActiveTab("phone")}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-sm font-medium rounded-md transition-colors",
-                    activeTab === "phone"
-                      ? "bg-white text-gray-800 shadow-sm"
-                      : "text-gray-600 hover:bg-gray-200/70"
-                  )}
-                >
+                </TabsTrigger>
+                <TabsTrigger value="phone">
                   <Smartphone className="h-3.5 w-3.5" />
                   Phone
-                </button>
-              </div>
+                </TabsTrigger>
+              </TabsList>
 
               {/* Computer Upload Tab */}
-              {activeTab === "computer" && (
-                <div className="space-y-3">
-                  {/* Desktop: Drop Zone */}
-                  <div
-                    onDrop={handleDrop}
-                    onDragOver={(e) => e.preventDefault()}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border border-dashed border-gray-300 rounded-md p-5 text-center cursor-pointer hover:bg-gray-50 transition-colors"
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
-                    <Upload className="text-gray-400 mx-auto mb-2 h-6 w-6" />
-                    <p className="text-sm text-gray-600">
-                      Drop photos or click to upload
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Up to 10 photos
-                    </p>
-                  </div>
-
-                  {/* Photo Previews */}
-                  {photos.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs text-gray-500">Click a photo to set as cover image</p>
-                      <div className="grid grid-cols-5 gap-1.5">
-                        {photos.map((photo, index) => (
-                          <button
-                            key={photo.id}
-                            onClick={() => setPrimaryPhoto(index)}
-                            className="relative aspect-square rounded-md overflow-hidden border border-gray-200 group hover:scale-105 transition-transform"
-                          >
-                            <img
-                              src={photo.preview}
-                              alt={`Photo ${index + 1}`}
-                              className={cn(
-                                "w-full h-full object-cover",
-                                index === 0 && "ring-2 ring-[#FFC72C] ring-inset"
-                              )}
-                            />
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removePhoto(index);
-                              }}
-                              className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                            >
-                              <X className="h-3 w-3 text-white" />
-                            </button>
-                            {index === 0 && (
-                              <div className="absolute bottom-0.5 left-0.5 bg-[#FFC72C] px-1.5 py-0.5 rounded text-[9px] text-gray-900 font-bold">
-                                COVER
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex gap-2 pt-1 justify-end">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={onClose}
-                      className="text-gray-500"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleProceedToOptions}
-                      disabled={photos.length === 0}
-                      size="sm"
-                      className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
-                    >
-                      Continue
-                    </Button>
-                  </div>
+              <TabsContent value="computer" className="space-y-3">
+                {/* Drop Zone */}
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={(e) => e.preventDefault()}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border border-dashed border-input rounded-lg p-6 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  <Upload className="text-muted-foreground mx-auto mb-2 h-6 w-6" />
+                  <p className="text-sm text-foreground">
+                    Drop photos or click to upload
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Up to 10 photos
+                  </p>
                 </div>
-              )}
+
+                {/* Photo Previews */}
+                {photos.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Click a photo to set as cover image</p>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {photos.map((photo, index) => (
+                        <button
+                          key={photo.id}
+                          onClick={() => setPrimaryPhoto(index)}
+                          className="relative aspect-square rounded-md overflow-hidden border border-border group hover:scale-105 transition-transform"
+                        >
+                          <img
+                            src={photo.preview}
+                            alt={`Photo ${index + 1}`}
+                            className={cn(
+                              "w-full h-full object-cover",
+                              index === 0 && "ring-2 ring-[#FFC72C] ring-inset"
+                            )}
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removePhoto(index);
+                            }}
+                            className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                          >
+                            <X className="h-3 w-3 text-white" />
+                          </button>
+                          {index === 0 && (
+                            <div className="absolute bottom-0.5 left-0.5 bg-[#FFC72C] px-1.5 py-0.5 rounded text-[9px] text-gray-900 font-bold">
+                              COVER
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-2 pt-1 justify-end">
+                  <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleProceedToOptions}
+                    disabled={photos.length === 0}
+                    size="sm"
+                  >
+                    Continue
+                  </Button>
+                </div>
+              </TabsContent>
 
               {/* Phone QR Upload Tab */}
-              {activeTab === "phone" && (
+              <TabsContent value="phone">
                 <QrUploadSection
                   onPhotosReady={handleQrPhotosReady}
                   onCancel={() => setActiveTab("computer")}
                 />
-              )}
-            </div>
+              </TabsContent>
+            </Tabs>
           )}
 
           {/* Enhance Options Stage - Desktop */}
@@ -615,19 +596,19 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
             <div className="space-y-4">
               {/* Back button and header */}
               <div className="flex items-center gap-2">
-                <button 
+                <button
                   onClick={handleBackToUpload}
-                  className="p-1 rounded-md hover:bg-gray-100 transition-colors"
+                  className="p-1 rounded-md hover:bg-muted transition-colors"
                 >
-                  <ChevronLeft className="h-4 w-4 text-gray-600" />
+                  <ChevronLeft className="h-4 w-4 text-muted-foreground" />
                 </button>
-                <span className="text-sm font-medium text-gray-700">Enhance Cover</span>
+                <span className="text-sm font-medium text-foreground">Enhance Cover</span>
               </div>
 
               {/* Cover Preview with Enhancement Toggle */}
               <div className="flex gap-4">
                 {/* Cover Preview */}
-                <div className="relative w-28 h-28 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                <div className="relative w-28 h-28 rounded-lg overflow-hidden bg-muted flex-shrink-0">
                   <img
                     src={photos[0]?.preview}
                     alt="Cover photo"
@@ -640,54 +621,28 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
 
                 {/* Enhancement Toggle */}
                 <div className="flex-1 flex flex-col justify-center">
-                  <button
-                    onClick={() => setRemoveBackground(!removeBackground)}
-                    className={cn(
-                      "flex items-center justify-between p-3 rounded-lg border-2 transition-all duration-200",
-                      removeBackground 
-                        ? "border-gray-900 bg-gray-900" 
-                        : "border-gray-200 bg-white hover:border-gray-300"
-                    )}
+                  <Label
+                    htmlFor="remove-background"
+                    className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-2.5">
-                      <div className={cn(
-                        "h-8 w-8 rounded-md flex items-center justify-center transition-colors duration-200",
-                        removeBackground ? "bg-white/10" : "bg-gray-100"
-                      )}>
-                        <Wand2 className={cn(
-                          "h-4 w-4 transition-colors duration-200",
-                          removeBackground ? "text-white" : "text-gray-600"
-                        )} />
+                      <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
+                        <Wand2 className="h-4 w-4 text-muted-foreground" />
                       </div>
                       <div className="text-left">
-                        <p className={cn(
-                          "text-sm font-medium transition-colors duration-200",
-                          removeBackground ? "text-white" : "text-gray-900"
-                        )}>
-                          Remove Background
-                        </p>
-                        <p className={cn(
-                          "text-xs transition-colors duration-200",
-                          removeBackground ? "text-gray-400" : "text-gray-500"
-                        )}>
-                          Studio-quality white backdrop
-                        </p>
+                        <p className="text-sm font-medium text-foreground">Remove Background</p>
+                        <p className="text-xs text-muted-foreground">Studio-quality white backdrop</p>
                       </div>
                     </div>
-                    <div className={cn(
-                      "h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all duration-200",
-                      removeBackground 
-                        ? "border-white bg-white" 
-                        : "border-gray-300 bg-white"
-                    )}>
-                      {removeBackground && (
-                        <CheckCircle2 className="h-4 w-4 text-gray-900" />
-                      )}
-                    </div>
-                  </button>
-                  
+                    <Switch
+                      id="remove-background"
+                      checked={removeBackground}
+                      onCheckedChange={setRemoveBackground}
+                    />
+                  </Label>
+
                   {photos.length > 1 && (
-                    <p className="text-xs text-gray-400 mt-2">
+                    <p className="text-xs text-muted-foreground mt-2">
                       +{photos.length - 1} more photo{photos.length > 2 ? 's' : ''} will be uploaded
                     </p>
                   )}
@@ -696,21 +651,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
 
               {/* Actions */}
               <div className="flex gap-2 pt-1 justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleBackToUpload}
-                  className="text-gray-500"
-                >
+                <Button type="button" variant="ghost" size="sm" onClick={handleBackToUpload}>
                   Back
                 </Button>
-                <Button
-                  onClick={handleStartUpload}
-                  disabled={isUploading}
-                  size="sm"
-                  className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
-                >
+                <Button onClick={handleStartUpload} disabled={isUploading} size="sm">
                   {removeBackground ? 'Enhance & Upload' : 'Upload'}
                 </Button>
               </div>

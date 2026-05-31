@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getStripe } from '@/lib/stripe';
+import { getStripe, calculatePlatformFee, calculateSellerPayout } from '@/lib/stripe';
 import Stripe from 'stripe';
 
 // Use service role client for webhook operations (bypasses RLS)
@@ -202,6 +202,13 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   
   if (!metadata) {
     console.error('[Stripe Webhook] No metadata in session - ABORTING');
+    return;
+  }
+
+  // Cart checkout — one payment split into one purchase row per product.
+  // Handled separately because there is no single product_id in the metadata.
+  if (metadata.cart === '1') {
+    await handleCartCheckoutComplete(session, metadata, supabase);
     return;
   }
 
@@ -505,6 +512,290 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
 
   console.log(`[Stripe Webhook] Funds held until: ${fundsReleaseAt.toISOString()}`);
   console.log('[Stripe Webhook] ====== CHECKOUT COMPLETE SUCCESS ======');
+}
+
+// ============================================================
+// Handle Successful Cart Checkout
+// ============================================================
+// One Stripe payment → one purchase row per product, all sharing the same
+// stripe_session_id. Per-item platform_fee/seller_payout are derived from each
+// item's price (matching the single-item flow). Delivery, buyer fee and any
+// voucher discount are attributed to the FIRST row so the row totals sum to the
+// charged amount. Idempotent per (session, product): a retry skips products
+// that already have a row.
+
+async function handleCartCheckoutComplete(
+  session: Stripe.Checkout.Session,
+  metadata: Stripe.Metadata,
+  supabase: ReturnType<typeof getServiceClient>
+) {
+  console.log('[Stripe Webhook] ====== CART CHECKOUT COMPLETE START ======');
+  console.log('[Stripe Webhook] Session ID:', session.id);
+
+  const {
+    buyer_id,
+    seller_id,
+    product_ids,
+    item_prices,
+    quantities,
+    delivery_method,
+    delivery_cost,
+    delivery_description,
+    buyer_fee,
+    voucher_id,
+    voucher_discount,
+  } = metadata;
+
+  if (!buyer_id || !seller_id || !product_ids || !item_prices) {
+    console.error('[Stripe Webhook] Cart: missing required metadata - ABORTING:', metadata);
+    return;
+  }
+
+  const productIds = product_ids.split(',').map((s) => s.trim()).filter(Boolean);
+  const itemPrices = item_prices.split(',').map((s) => parseFloat(s.trim()));
+  // Per-product unit counts. Sessions created before quantity support have no
+  // `quantities` metadata — every line defaults to 1.
+  const itemQuantities = (quantities || '').split(',').map((s) => parseInt(s.trim(), 10));
+
+  if (productIds.length === 0 || productIds.length !== itemPrices.length) {
+    console.error('[Stripe Webhook] Cart: product/price count mismatch - ABORTING', {
+      products: productIds.length,
+      prices: itemPrices.length,
+    });
+    return;
+  }
+
+  const deliveryCost = parseFloat(delivery_cost || '0');
+  const buyerFee = parseFloat(buyer_fee || '0');
+  const voucherDiscount = parseFloat(voucher_discount || '0');
+
+  // Idempotency — find which products already have a row for this session so a
+  // webhook retry resumes instead of duplicating.
+  const { data: existingRows } = await supabase
+    .from('purchases')
+    .select('id, product_id')
+    .eq('stripe_session_id', session.id);
+
+  const alreadyInserted = new Set((existingRows || []).map((r) => r.product_id));
+  if (alreadyInserted.size >= productIds.length) {
+    console.log('[Stripe Webhook] Cart: all purchases already exist for session:', session.id);
+    return;
+  }
+  if (alreadyInserted.size > 0) {
+    console.log('[Stripe Webhook] Cart: resuming — already have', alreadyInserted.size, 'of', productIds.length, 'rows');
+  }
+
+  // Shipping address applies to the whole order (single seller, single shipment)
+  const sessionAny = session as any;
+  const shippingDetails = sessionAny.shipping_details || sessionAny.collected_information?.shipping_details;
+  const customerDetails = session.customer_details;
+  const shippingAddress = shippingDetails?.address
+    ? {
+        name: shippingDetails.name || customerDetails?.name || '',
+        phone: customerDetails?.phone || '',
+        line1: shippingDetails.address.line1 || '',
+        line2: shippingDetails.address.line2 || '',
+        city: shippingDetails.address.city || '',
+        state: shippingDetails.address.state || '',
+        postal_code: shippingDetails.address.postal_code || '',
+        country: shippingDetails.address.country || '',
+      }
+    : null;
+
+  const paymentIntentId =
+    typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : session.payment_intent?.id || null;
+
+  const fundsReleaseAt = new Date();
+  fundsReleaseAt.setDate(fundsReleaseAt.getDate() + 7);
+
+  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const orderBase = `ORD-${datePart}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+
+  // Live stock per product, to decide whether each purchase depletes the listing.
+  // Unique listings (private_listing) are one-off; shop inventory (store_inventory)
+  // stays active until the purchased qty meets stock. We never decrement qoh —
+  // Lightspeed POS owns that number; a later sync reconciles counts.
+  const stockById = new Map<string, { listingType: string | null; qoh: number | null }>();
+  {
+    const { data: stockRows } = await supabase
+      .from('products')
+      .select('id, listing_type, qoh')
+      .in('id', productIds);
+    for (const r of stockRows || []) {
+      stockById.set(r.id, {
+        listingType: (r as any).listing_type ?? null,
+        qoh: typeof (r as any).qoh === 'number' ? (r as any).qoh : null,
+      });
+    }
+  }
+
+  let firstPurchaseId: string | null = null;
+  let createdCount = 0;
+
+  for (let i = 0; i < productIds.length; i++) {
+    const productId = productIds[i];
+    const itemPrice = itemPrices[i];
+
+    if (alreadyInserted.has(productId)) {
+      console.log('[Stripe Webhook] Cart: skipping already-inserted product:', productId);
+      continue;
+    }
+    if (!Number.isFinite(itemPrice)) {
+      console.error('[Stripe Webhook] Cart: invalid item price, skipping product:', productId);
+      continue;
+    }
+
+    const rawQty = itemQuantities[i];
+    const qty = Number.isFinite(rawQty) && rawQty >= 1 ? rawQty : 1;
+    const lineSubtotal = itemPrice * qty; // item_price stays the UNIT price
+
+    const isFirst = i === 0;
+    const rowShipping = isFirst ? deliveryCost : 0;
+    const rowBuyerFee = isFirst ? buyerFee : 0;
+    const rowVoucherDiscount = isFirst ? voucherDiscount : 0;
+    // Row total is the line subtotal (unit × qty) plus the first row's
+    // order-level extras. Fees and payout are computed on the line subtotal.
+    const rowTotal = Math.max(0, lineSubtotal + rowShipping + rowBuyerFee - rowVoucherDiscount);
+    const orderNumber = `${orderBase}-${i + 1}`;
+
+    const purchaseData: Record<string, any> = {
+      buyer_id,
+      seller_id,
+      product_id: productId,
+      order_number: orderNumber,
+      item_price: itemPrice,
+      quantity: qty,
+      shipping_cost: rowShipping,
+      total_amount: rowTotal,
+      platform_fee: calculatePlatformFee(lineSubtotal),
+      seller_payout_amount: calculateSellerPayout(lineSubtotal),
+      stripe_session_id: session.id,
+      stripe_payment_intent_id: paymentIntentId,
+      status: 'paid',
+      payment_status: 'paid',
+      payment_method: 'stripe',
+      payment_date: new Date().toISOString(),
+      payout_status: 'pending',
+      funds_status: 'held',
+      funds_release_at: fundsReleaseAt.toISOString(),
+    };
+
+    if (shippingAddress) purchaseData.shipping_address = shippingAddress;
+    if (customerDetails?.phone) purchaseData.buyer_phone = customerDetails.phone;
+    if (customerDetails?.email) purchaseData.buyer_email = customerDetails.email;
+    if (rowBuyerFee > 0) purchaseData.buyer_fee = rowBuyerFee;
+    if (delivery_method && isFirst) {
+      purchaseData.delivery_method = delivery_method;
+      purchaseData.delivery_description = delivery_description;
+    }
+    if (voucher_id && isFirst) {
+      purchaseData.voucher_id = voucher_id;
+      purchaseData.voucher_discount = rowVoucherDiscount;
+    }
+
+    // Resilient insert: full row first, then core fields if optional columns
+    // (buyer_fee/delivery_*/voucher_*/shipping_address) don't exist yet.
+    let purchase: any;
+    const result1 = await supabase.from('purchases').insert(purchaseData).select().single();
+    if (result1.error) {
+      console.log('[Stripe Webhook] Cart: full insert failed, retrying core fields:', result1.error.message);
+      // Core fallback omits `quantity` (column may not exist pre-migration), but
+      // total_amount and fees already reflect the line subtotal, so the money is
+      // correct; only the explicit per-unit count is dropped until the migration runs.
+      const coreData = {
+        buyer_id,
+        seller_id,
+        product_id: productId,
+        order_number: orderNumber,
+        item_price: itemPrice,
+        shipping_cost: rowShipping,
+        total_amount: rowTotal,
+        platform_fee: calculatePlatformFee(lineSubtotal),
+        seller_payout_amount: calculateSellerPayout(lineSubtotal),
+        stripe_session_id: session.id,
+        stripe_payment_intent_id: paymentIntentId,
+        status: 'paid',
+        payment_status: 'paid',
+        payment_method: 'stripe',
+        payment_date: new Date().toISOString(),
+        payout_status: 'pending',
+        funds_status: 'held',
+        funds_release_at: fundsReleaseAt.toISOString(),
+      };
+      const result2 = await supabase.from('purchases').insert(coreData).select().single();
+      if (result2.error) {
+        console.error('[Stripe Webhook] Cart: core insert also failed for product:', productId, result2.error.message);
+        continue; // Skip marking sold; leave for manual reconciliation
+      }
+      purchase = result2.data;
+    } else {
+      purchase = result1.data;
+    }
+
+    createdCount++;
+    if (!firstPurchaseId) firstPurchaseId = purchase.id;
+    console.log('[Stripe Webhook] Cart: ✓ purchase created:', purchase.id, orderNumber, 'product:', productId);
+
+    // Mark sold only when this purchase depletes the listing. Unique listings are
+    // one-off; shop inventory sells out only when qty meets stock. qoh is left
+    // untouched (POS-owned) — a later sync reconciles the real count.
+    const stock = stockById.get(productId);
+    const available =
+      stock?.listingType === 'private_listing'
+        ? 1
+        : typeof stock?.qoh === 'number' && stock.qoh > 0
+          ? stock.qoh
+          : 1;
+
+    if (qty >= available) {
+      const { error: updateError } = await supabase
+        .from('products')
+        .update({
+          sold_at: new Date().toISOString(),
+          is_active: false,
+          listing_status: 'sold',
+        })
+        .eq('id', productId)
+        .is('sold_at', null);
+
+      if (updateError) {
+        console.error('[Stripe Webhook] Cart: failed to mark product sold:', productId, updateError.message);
+      } else {
+        console.log('[Stripe Webhook] Cart: product marked sold:', productId);
+      }
+    } else {
+      console.log(
+        '[Stripe Webhook] Cart: stock remains, leaving listing active:',
+        productId,
+        `(bought ${qty} of ${available})`
+      );
+    }
+  }
+
+  // Mark voucher used once for the whole order (linked to the first row)
+  if (voucher_id && firstPurchaseId) {
+    const { error: voucherUpdateError } = await supabase
+      .from('vouchers')
+      .update({
+        status: 'used',
+        used_at: new Date().toISOString(),
+        used_on_purchase_id: firstPurchaseId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', voucher_id)
+      .eq('status', 'active'); // Idempotent — only if still active
+
+    if (voucherUpdateError) {
+      console.error('[Stripe Webhook] Cart: failed to mark voucher used:', voucherUpdateError.message);
+    } else {
+      console.log('[Stripe Webhook] Cart: ✓ voucher marked used:', voucher_id);
+    }
+  }
+
+  console.log('[Stripe Webhook] Cart: created', createdCount, 'purchase rows. Funds held until', fundsReleaseAt.toISOString());
+  console.log('[Stripe Webhook] ====== CART CHECKOUT COMPLETE SUCCESS ======');
 }
 
 // ============================================================

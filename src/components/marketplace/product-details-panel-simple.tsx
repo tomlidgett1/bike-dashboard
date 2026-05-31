@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
 import { BuyNowButton } from "./buy-now-button";
+import { AddToCartButton } from "./add-to-cart-button";
 import { ProductLearnPanel } from "./product-learn-panel";
 import { EditProductDrawer } from "./edit-product-drawer";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -219,7 +220,9 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               productName={(product as any).display_name || product.description}
               productPrice={resolveLivePrice(product).price}
               sellerId={product.user_id}
+              sellerName={product.store_name}
               productImage={product.all_images?.[0] || null}
+              maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
               shippingAvailable={(product as any).shipping_available || false}
               shippingCost={(product as any).shipping_cost || 0}
               pickupLocation={(product as any).pickup_location || null}
@@ -229,6 +232,19 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               fullWidth
               className="h-11"
               showStripeBranding={true}
+            />
+            <AddToCartButton
+              productId={product.id}
+              productName={(product as any).display_name || product.description}
+              productPrice={resolveLivePrice(product).price}
+              sellerId={product.user_id}
+              sellerName={product.store_name}
+              productImage={product.all_images?.[0] || product.primary_image_url || null}
+              maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
+              variant="outline"
+              size="lg"
+              fullWidth
+              className="h-11 bg-white"
             />
             <div className="flex gap-2">
               <div className="flex-1">

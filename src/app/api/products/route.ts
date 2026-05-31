@@ -208,6 +208,8 @@ export async function GET(request: NextRequest) {
         ...product,
         resolved_image_url: resolvedImageUrl,
         marketplace_readiness,
+        brand: product.manufacturer_name || null,
+        marketplace_category: product.category_name || (product.canonical_products as any)?.marketplace_category || null,
       };
     });
 

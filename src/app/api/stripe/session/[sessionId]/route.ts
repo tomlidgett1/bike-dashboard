@@ -15,6 +15,9 @@ export async function GET(
     const { sessionId } = await params;
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get('type');
+    // Cart orders create one purchase row per product under a single session;
+    // multi=1 returns the whole set instead of a single row.
+    const multi = searchParams.get('multi') === '1';
 
     // Check authentication
     const {
@@ -29,13 +32,12 @@ export async function GET(
       );
     }
 
-    // Build query based on type
-    let query = supabase
-      .from('purchases')
-      .select(`
+    // `quantity` was added later; build the select with or without it so the
+    // success page keeps working if the migration hasn't been applied yet.
+    const buildSelect = (withQuantity: boolean) => `
         id,
         order_number,
-        item_price,
+        item_price,${withQuantity ? '\n        quantity,' : ''}
         shipping_cost,
         total_amount,
         status,
@@ -49,17 +51,52 @@ export async function GET(
           primary_image_url
         ),
         seller_id
-      `)
-      .eq('buyer_id', user.id); // Security: only allow viewing own purchases
+      `;
 
-    // Lookup by payment_intent or session_id
-    if (type === 'payment_intent') {
-      query = query.eq('stripe_payment_intent_id', sessionId);
-    } else {
-      query = query.eq('stripe_session_id', sessionId);
+    // True only when the failure is specifically the missing `quantity` column,
+    // so we retry without it rather than masking unrelated errors.
+    const isMissingQuantity = (err: { code?: string; message?: string } | null) =>
+      !!err && (err.code === '42703' || /quantity/i.test(err.message || ''));
+
+    // Multi-item (cart) lookup — always keyed by session id
+    if (multi) {
+      const runMulti = (sel: string) =>
+        supabase
+          .from('purchases')
+          .select(sel)
+          .eq('buyer_id', user.id) // Security: only allow viewing own purchases
+          .eq('stripe_session_id', sessionId)
+          .order('purchase_date', { ascending: true });
+
+      let { data: purchases, error: purchasesError } = await runMulti(buildSelect(true));
+      if (isMissingQuantity(purchasesError)) {
+        ({ data: purchases, error: purchasesError } = await runMulti(buildSelect(false)));
+      }
+
+      if (purchasesError) {
+        console.log('[Session API] Cart purchases lookup failed:', { sessionId, error: purchasesError.message });
+        return NextResponse.json({ error: 'Purchase not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({ purchases: purchases || [] });
     }
 
-    const { data: purchase, error: purchaseError } = await query.single();
+    const runSingle = (sel: string) => {
+      let query = supabase
+        .from('purchases')
+        .select(sel)
+        .eq('buyer_id', user.id); // Security: only allow viewing own purchases
+      query =
+        type === 'payment_intent'
+          ? query.eq('stripe_payment_intent_id', sessionId)
+          : query.eq('stripe_session_id', sessionId);
+      return query.single();
+    };
+
+    let { data: purchase, error: purchaseError } = await runSingle(buildSelect(true));
+    if (isMissingQuantity(purchaseError)) {
+      ({ data: purchase, error: purchaseError } = await runSingle(buildSelect(false)));
+    }
 
     if (purchaseError || !purchase) {
       console.log('[Session API] Purchase not found:', { sessionId, type, error: purchaseError?.message });

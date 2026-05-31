@@ -90,6 +90,7 @@ interface Product {
   description: string;
   category_name: string | null;
   full_category_path: string | null;
+  manufacturer_name: string | null;
   price: number;
   default_cost: number;
   qoh: number;
@@ -319,6 +320,15 @@ const ProductTableHeader = React.memo(({
           >
             Category
             <SortIcon column="category_name" />
+          </button>
+        </TableHead>
+        <TableHead className="h-10 px-4 font-semibold">
+          <button
+            onClick={() => onSort('manufacturer_name')}
+            className="flex items-center gap-1.5 text-xs uppercase tracking-wider hover:text-foreground transition-colors"
+          >
+            Brand
+            <SortIcon column="manufacturer_name" />
           </button>
         </TableHead>
         <TableHead className="h-10 px-4 text-right font-semibold">
@@ -597,6 +607,18 @@ export default function ProductsPage() {
   React.useEffect(() => {
     fetchProducts(1, loading);
   }, [debouncedSearch, categoryFilter, stockFilter, statusFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts, loading]);
+
+  // Auto-backfill brand/category names from Lightspeed if any are missing
+  const backfillRan = React.useRef(false);
+  React.useEffect(() => {
+    if (backfillRan.current || products.length === 0) return;
+    if (products.some(p => !p.category_name || !p.manufacturer_name)) {
+      backfillRan.current = true;
+      fetch('/api/lightspeed/backfill-manufacturer-names', { method: 'POST' })
+        .then(() => fetchProducts(pagination.page))
+        .catch(() => {});
+    }
+  }, [products, fetchProducts, pagination.page]);
 
   const handlePageSizeChange = React.useCallback((newPageSize: string) => {
     setPagination(prev => ({ ...prev, pageSize: parseInt(newPageSize), page: 1 }));
@@ -1016,6 +1038,15 @@ export default function ProductsPage() {
                           <Badge variant="secondary" className="rounded-md text-xs font-medium">
                             {product.category_name}
                           </Badge>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+
+                      {/* Brand Column */}
+                      <TableCell className="py-2.5 px-4">
+                        {product.manufacturer_name ? (
+                          <span className="text-sm text-foreground/80">{product.manufacturer_name}</span>
                         ) : (
                           <span className="text-sm text-muted-foreground">-</span>
                         )}

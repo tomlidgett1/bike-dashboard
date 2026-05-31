@@ -11,11 +11,11 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
+import { useCart } from '@/components/providers/cart-provider';
 import { Button } from '@/components/ui/button';
 import { ShoppingBag, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
-import { CheckoutSheet } from './checkout-sheet';
 import { MobileDeliverySheet, type DeliveryMethod } from './mobile-delivery-sheet';
 
 // ============================================================
@@ -27,7 +27,10 @@ interface BuyNowButtonProps {
   productName: string;
   productPrice: number;
   sellerId: string;
+  sellerName?: string;
   productImage?: string | null;
+  /** Max purchasable units (stock on hand). 1 for unique listings; qoh for shop inventory. */
+  maxQuantity?: number;
   shippingAvailable?: boolean;
   shippingCost?: number;
   pickupLocation?: string | null;
@@ -48,7 +51,9 @@ export function BuyNowButton({
   productName,
   productPrice,
   sellerId,
+  sellerName,
   productImage,
+  maxQuantity = 1,
   shippingAvailable = false,
   shippingCost = 0,
   pickupLocation,
@@ -61,7 +66,7 @@ export function BuyNowButton({
 }: BuyNowButtonProps) {
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const { startBuyNow } = useCart();
   const [isMobileDeliveryOpen, setIsMobileDeliveryOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,8 +104,17 @@ export function BuyNowButton({
       return;
     }
 
-    // On desktop, open checkout sheet
-    setIsCheckoutOpen(true);
+    // On desktop, route through the cart drawer in single-item "Buy Now" mode.
+    startBuyNow({
+      productId,
+      name: productName,
+      image: productImage ?? null,
+      price: productPrice,
+      sellerId,
+      sellerName: sellerName ?? '',
+      quantity: 1,
+      maxQuantity,
+    });
   };
 
   // Handle mobile checkout after delivery selection
@@ -138,11 +152,6 @@ export function BuyNowButton({
       setIsLoading(false);
       setIsMobileDeliveryOpen(false);
     }
-  };
-
-  const handleSuccess = () => {
-    // The checkout sheet handles navigation to success page
-    console.log('[BuyNow] Payment successful');
   };
 
   return (
@@ -200,18 +209,6 @@ export function BuyNowButton({
           </motion.p>
         )}
       </div>
-
-      {/* Desktop: Checkout Sheet */}
-      <CheckoutSheet
-        isOpen={isCheckoutOpen}
-        onClose={() => setIsCheckoutOpen(false)}
-        productId={productId}
-        productName={productName}
-        productPrice={productPrice}
-        productImage={productImage}
-        sellerId={sellerId}
-        onSuccess={handleSuccess}
-      />
 
       {/* Mobile: Delivery Selection Sheet */}
       <MobileDeliverySheet

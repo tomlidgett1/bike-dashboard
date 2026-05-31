@@ -329,6 +329,31 @@ export class LightspeedClient {
   }
 
   // ============================================================
+  // Manufacturer Methods
+  // ============================================================
+
+  /**
+   * Get all manufacturers (brands) with pagination
+   */
+  async getAllManufacturers(): Promise<Array<{ manufacturerID: string; name: string }>> {
+    const allManufacturers: Array<{ manufacturerID: string; name: string }> = []
+    const accountId = await this.getAccountId()
+    const limit = 100
+    let nextUrl: string = `/Account/${accountId}/Manufacturer.json?limit=${limit}`
+
+    for (let page = 0; page < 50; page++) {
+      const response = await this.request<{ Manufacturer: any; '@attributes'?: { next?: string } }>(nextUrl)
+      const page_data = this.ensureArray(response.Manufacturer)
+      allManufacturers.push(...page_data)
+      const next = response['@attributes']?.next
+      if (!next || page_data.length < limit) break
+      nextUrl = next
+    }
+
+    return allManufacturers
+  }
+
+  // ============================================================
   // Sales/Order Methods
   // ============================================================
 

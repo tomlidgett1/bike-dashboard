@@ -12,14 +12,19 @@ import { cn } from "@/lib/utils";
 import { useCart } from "@/components/providers/cart-provider";
 
 export function CartButton({ className }: { className?: string }) {
-  const { count, openCart, hydrated } = useCart();
-  const showBadge = hydrated && count > 0;
+  // Badge reflects total units (sum of quantities), not distinct lines.
+  const { totalQuantity, openCart, hydrated } = useCart();
+  const showBadge = hydrated && totalQuantity > 0;
 
   return (
     <button
       type="button"
       onClick={openCart}
-      aria-label={count > 0 ? `Cart, ${count} item${count === 1 ? "" : "s"}` : "Cart"}
+      aria-label={
+        totalQuantity > 0
+          ? `Cart, ${totalQuantity} item${totalQuantity === 1 ? "" : "s"}`
+          : "Cart"
+      }
       className={cn(
         "relative h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center overflow-visible cursor-pointer",
         className
@@ -28,7 +33,7 @@ export function CartButton({ className }: { className?: string }) {
       <ShoppingCart className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
       {showBadge && (
         <span className="absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[11px] flex items-center justify-center font-bold shadow-sm z-10">
-          {count > 99 ? "99+" : count}
+          {totalQuantity > 99 ? "99+" : totalQuantity}
         </span>
       )}
     </button>

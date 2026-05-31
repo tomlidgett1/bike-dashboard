@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import Image from "next/image";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Package } from "lucide-react";
+import { ChevronLeft, Package, Store } from "lucide-react";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
 import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
@@ -33,17 +34,62 @@ interface ProductPageClientProps {
   similarProducts: MarketplaceProduct[];
   sellerProducts: MarketplaceProduct[];
   sellerInfo: SellerInfo | null;
+  brandProducts: MarketplaceProduct[];
+  brandName: string | null;
   showUploadBanner?: boolean;
 }
 
-export function ProductPageClient({ 
-  product, 
-  similarProducts, 
-  sellerProducts, 
+// ── Store context header (shown when arriving from a store page) ────────────
+function StoreContextHeader({ storeId, storeName, storeLogo }: { storeId: string; storeName: string; storeLogo: string | null }) {
+  return (
+    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200">
+      <div className="max-w-[1400px] mx-auto px-5 sm:px-8 lg:px-10">
+        <div className="flex items-center justify-between h-14 sm:h-16">
+          {/* Back to store */}
+          <a
+            href={`/marketplace/store/${storeId}`}
+            className="flex items-center gap-2.5 min-w-0 group"
+          >
+            <ChevronLeft className="h-4 w-4 text-gray-400 flex-shrink-0 group-hover:text-gray-700 transition-colors" />
+            <div className="h-9 w-9 rounded-full ring-1 ring-gray-200 overflow-hidden bg-white flex-shrink-0 flex items-center justify-center">
+              {storeLogo ? (
+                <Image src={storeLogo} alt={storeName} width={36} height={36} className="h-full w-full object-cover" />
+              ) : (
+                <Store className="h-4 w-4 text-gray-400" />
+              )}
+            </div>
+            <span className="text-[15px] sm:text-base font-bold tracking-tight text-gray-900 truncate group-hover:text-gray-600 transition-colors">
+              {storeName}
+            </span>
+          </a>
+
+          {/* YJ back link */}
+          <a
+            href="/marketplace"
+            aria-label="Back to Yellow Jersey marketplace"
+            className="hidden sm:inline-flex items-center gap-2 flex-shrink-0 rounded-full border border-gray-200 bg-white hover:bg-gray-50 px-3 py-1.5 transition-colors"
+          >
+            <ChevronLeft className="h-3 w-3 text-gray-400" />
+            <Image src="/yj.svg" alt="Yellow Jersey" width={72} height={14} className="h-[26px] w-auto" unoptimized />
+          </a>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export function ProductPageClient({
+  product,
+  similarProducts,
+  sellerProducts,
   sellerInfo,
+  brandProducts,
+  brandName,
   showUploadBanner = false
 }: ProductPageClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromStoreId = searchParams.get('store');
   const { user } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
   const [isLiked, setIsLiked] = React.useState(false);
@@ -128,9 +174,20 @@ export function ProductPageClient({
     ? `/marketplace/${sellerInfo.account_type === 'bicycle_store' ? 'store' : 'seller'}/${sellerInfo.id}`
     : undefined;
 
+  // Show store header when the user arrived from a store page
+  const showStoreHeader = !!fromStoreId && !!sellerInfo && sellerInfo.id === fromStoreId;
+
   return (
     <>
-      <MarketplaceHeader compactSearchOnMobile showFloatingButton={false} />
+      {showStoreHeader ? (
+        <StoreContextHeader
+          storeId={fromStoreId}
+          storeName={sellerInfo!.name}
+          storeLogo={sellerInfo!.logo_url}
+        />
+      ) : (
+        <MarketplaceHeader compactSearchOnMobile showFloatingButton={false} />
+      )}
       
       {/* Main Content */}
       <div className="min-h-screen bg-white sm:bg-gray-50 pt-14 sm:pt-16 pb-24 sm:pb-8">
@@ -207,6 +264,18 @@ export function ProductPageClient({
               seeAllHref={sellerSeeAllHref}
               seeAllLabel="View All Listings"
             />
+
+            {/* More from Brand Carousel */}
+            {brandName && (
+              <RecommendationCarousel
+                title={`More from ${brandName}`}
+                products={brandProducts}
+                isLoading={false}
+                icon="sparkles"
+                seeAllHref={`/marketplace?brand=${encodeURIComponent(brandName)}`}
+                seeAllLabel={`All ${brandName}`}
+              />
+            )}
           </div>
         </motion.div>
       </div>
