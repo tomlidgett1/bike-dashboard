@@ -599,10 +599,10 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
       {/* ══ STICKY STORE HEADER ════════════════════════════
           Single row: [store logo] [store name]  |  [search] [Save] [← YJ back pill] */}
       <header className={cn(
-        "sticky top-0 z-40 transition-colors duration-200",
+        "sticky top-0 z-40 bg-white/95 backdrop-blur-md transition-all duration-200",
         scrolled
-          ? "bg-[#fffde8] border-b border-yellow-200"
-          : "bg-white border-b border-gray-200"
+          ? "border-b-2 border-[#ffde59]"
+          : "border-b border-gray-200"
       )}>
         <div className="px-5 sm:px-8 lg:px-10">
           <div className="flex items-center justify-between gap-3 sm:gap-4 h-14 sm:h-16">
