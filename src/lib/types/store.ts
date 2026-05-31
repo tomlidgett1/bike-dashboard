@@ -90,6 +90,7 @@ export interface StoreCategoryWithProducts {
   carousel_size?: CarouselSize;
   section_id?: string | null;
   logo_url?: string | null;
+  hide_title?: boolean;
 }
 
 export interface StoreSection {
