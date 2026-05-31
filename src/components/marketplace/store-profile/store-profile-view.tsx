@@ -329,7 +329,7 @@ function CarouselRow({
         <div className="flex items-center gap-3">
           {logoUrl ? (
             <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
-              <img src={logoUrl} alt={cat.name} className="h-full w-auto max-w-[96px] object-contain rounded-md" />
+              <img src={logoUrl} alt={cat.name} className="h-full w-auto max-w-[96px] object-contain rounded-sm" />
               {isOwnProfile && (
                 <button
                   type="button"
