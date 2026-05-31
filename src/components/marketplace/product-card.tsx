@@ -9,6 +9,7 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
 import { cloudinaryCardLoader, extractCloudinaryPublicId } from "@/lib/utils/cloudinary-transforms";
+import { resolveLivePrice, formatPriceAUD } from "@/lib/marketplace/pricing";
 import { cn } from "@/lib/utils";
 
 // 1x1 light-grey SVG used as the blur-up placeholder for card images
@@ -346,17 +347,36 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             {productData.display_name || product.description}
           </h3>
 
-          {/* Price - Below title, size between title and location */}
-          <p
-            className={cn(
-              "font-semibold text-gray-900 mb-0 leading-tight",
+          {/* Price - Below title, size between title and location.
+              Shows discounted price + struck-through original + % badge when on sale. */}
+          {(() => {
+            const live = resolveLivePrice(product);
+            const priceSizeClass = cn(
+              "font-semibold leading-tight",
               isList && "text-sm",
-              !isList &&
-                (featuredMobile ? "text-sm" : "text-xs")
-            )}
-          >
-            ${product.price.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-          </p>
+              !isList && (featuredMobile ? "text-sm" : "text-xs")
+            );
+            if (live.onSale) {
+              return (
+                <div className="flex items-center gap-1.5 flex-wrap mb-0">
+                  <p className={cn(priceSizeClass, "text-red-600 mb-0")}>
+                    {formatPriceAUD(live.price)}
+                  </p>
+                  <p className={cn(priceSizeClass, "text-gray-400 font-normal line-through mb-0")}>
+                    {formatPriceAUD(live.originalPrice as number)}
+                  </p>
+                  <span className="inline-flex items-center rounded-md bg-red-600 px-1 py-0.5 text-[10px] font-semibold leading-none text-white">
+                    -{live.percentOff}%
+                  </span>
+                </div>
+              );
+            }
+            return (
+              <p className={cn(priceSizeClass, "text-gray-900 mb-0")}>
+                {formatPriceAUD(live.price)}
+              </p>
+            );
+          })()}
 
           {/* Seller info - Better organized layout */}
           <div className={cn("flex items-center gap-0.5 flex-wrap", isList ? "mt-1" : "mt-0.5")}>
@@ -408,9 +428,15 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     </Link>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison function for React.memo
-  // Only re-render if product id or priority changes
+  // Custom comparison function for React.memo.
+  // Re-render on id/priority/layout change, AND on any discount-pricing change
+  // (otherwise a newly applied/removed discount would not repaint the card).
   return prevProps.product.id === nextProps.product.id &&
+         prevProps.product.price === nextProps.product.price &&
+         prevProps.product.sale_price === nextProps.product.sale_price &&
+         prevProps.product.discount_active === nextProps.product.discount_active &&
+         prevProps.product.discount_percent === nextProps.product.discount_percent &&
+         prevProps.product.discount_ends_at === nextProps.product.discount_ends_at &&
          prevProps.priority === nextProps.priority &&
          prevProps.featuredMobile === nextProps.featuredMobile &&
          prevProps.layout === nextProps.layout;

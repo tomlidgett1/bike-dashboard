@@ -41,6 +41,10 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         product_specs,
         display_name,
         price,
+        discount_percent,
+        discount_active,
+        discount_ends_at,
+        sale_price,
         marketplace_category,
         marketplace_subcategory,
         marketplace_level_3_category,
@@ -240,7 +244,7 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
     const { data: products } = await supabase
       .from('marketplace_ready_products')
       .select(`
-        id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
+        id, description, display_name, price, discount_percent, discount_active, discount_ends_at, sale_price, qoh, model_year, marketplace_category, marketplace_subcategory,
         marketplace_level_3_category, created_at, user_id,
         resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
@@ -269,6 +273,10 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
         description: p.description,
         display_name: p.display_name,
         price: p.price,
+        discount_percent: p.discount_percent,
+        discount_active: p.discount_active,
+        discount_ends_at: p.discount_ends_at,
+        sale_price: p.sale_price,
         marketplace_category: p.marketplace_category,
         marketplace_subcategory: p.marketplace_subcategory,
         marketplace_level_3_category: p.marketplace_level_3_category,
@@ -317,7 +325,7 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
     const { data: products } = await supabase
       .from('marketplace_ready_products')
       .select(`
-        id, description, display_name, price, qoh, model_year, marketplace_category, marketplace_subcategory,
+        id, description, display_name, price, discount_percent, discount_active, discount_ends_at, sale_price, qoh, model_year, marketplace_category, marketplace_subcategory,
         created_at, user_id,
         resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
@@ -354,6 +362,10 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
         description: p.description,
         display_name: p.display_name,
         price: p.price,
+        discount_percent: p.discount_percent,
+        discount_active: p.discount_active,
+        discount_ends_at: p.discount_ends_at,
+        sale_price: p.sale_price,
         marketplace_category: p.marketplace_category,
         marketplace_subcategory: p.marketplace_subcategory,
         qoh: p.qoh || 1,

@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
 import { getStripe, calculatePlatformFee, calculateSellerPayout, calculateBuyerFee } from '@/lib/stripe';
+import { resolveLivePrice } from '@/lib/marketplace/pricing';
 
 // Delivery fees (same as payment-intent)
 const UBER_EXPRESS_FEE = 15;
@@ -51,6 +52,10 @@ export async function POST(request: NextRequest) {
         description,
         display_name,
         price,
+        discount_percent,
+        discount_active,
+        discount_ends_at,
+        sale_price,
         shipping_available,
         shipping_cost,
         images,
@@ -134,8 +139,16 @@ export async function POST(request: NextRequest) {
         break;
     }
 
-    // Calculate base totals
-    const itemPrice = product.price;
+    // Calculate base totals.
+    // Honour any live discount: the customer is charged the SAME sale price
+    // shown on the card / detail page (advertised price = charged price —
+    // misleading otherwise). resolveLivePrice re-checks active/expiry/saving
+    // server-side, so a stale or tampered client cannot fabricate a discount.
+    // Everything downstream (buyer fee, voucher eligibility, platform fee,
+    // seller payout, totals) derives from itemPrice, so the discount flows
+    // through consistently and the seller who set it bears the reduction.
+    const livePrice = resolveLivePrice(product);
+    const itemPrice = livePrice.price;
     const itemPriceCents = Math.round(itemPrice * 100);
     const buyerFee = calculateBuyerFee(itemPrice); // 0.5% buyer service fee
 
@@ -262,7 +275,7 @@ export async function POST(request: NextRequest) {
       product_id: product.id,
       buyer_id: user.id,
       seller_id: product.user_id,
-      item_price: itemPrice.toString(), // Original item price
+      item_price: itemPrice.toString(), // Charged item price (sale price when on sale)
       delivery_method: deliveryMethod,
       delivery_cost: deliveryCost.toString(),
       delivery_description: deliveryDescription,
@@ -271,6 +284,12 @@ export async function POST(request: NextRequest) {
       platform_fee: calculatePlatformFee(itemPrice).toString(),
       seller_payout: calculateSellerPayout(itemPrice).toString(),
     };
+
+    // Record the discount for the order trail when the item is on sale
+    if (livePrice.onSale) {
+      metadata.original_price = Number(product.price).toString();
+      metadata.discount_percent = String(livePrice.percentOff);
+    }
 
     // Add voucher info to metadata if applicable
     if (applicableVoucher) {

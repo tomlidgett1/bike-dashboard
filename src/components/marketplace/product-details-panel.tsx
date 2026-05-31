@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
 import { ProductLearnPanel } from "./product-learn-panel";
+import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import { OverviewCard } from "./product-detail/overview-card";
 import {
   ConditionSection,
@@ -85,17 +86,35 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
             {(product as any).display_name || product.description}
           </h1>
 
-          {/* Price - Large and Prominent */}
-          <div className="flex items-baseline gap-3">
-            <p className="text-4xl sm:text-5xl font-bold text-gray-900">
-              ${product.price.toLocaleString("en-AU")}
-            </p>
-            {product.is_negotiable && (
-              <span className="text-sm text-gray-500 font-medium">
-                or best offer
-              </span>
-            )}
-          </div>
+          {/* Price - Large and Prominent. Shows sale price + struck original + % off when discounted. */}
+          {(() => {
+            const live = resolveLivePrice(product);
+            const fmt = (v: number) => `$${v.toLocaleString("en-AU")}`;
+            return (
+              <div className="flex items-baseline gap-3 flex-wrap">
+                <p
+                  className={`text-4xl sm:text-5xl font-bold ${live.onSale ? "text-red-600" : "text-gray-900"}`}
+                >
+                  {fmt(live.price)}
+                </p>
+                {live.onSale && (
+                  <>
+                    <p className="text-2xl sm:text-3xl font-medium text-gray-400 line-through">
+                      {fmt(live.originalPrice as number)}
+                    </p>
+                    <span className="inline-flex items-center rounded-md bg-red-600 px-2 py-1 text-sm font-semibold text-white">
+                      -{live.percentOff}% off
+                    </span>
+                  </>
+                )}
+                {product.is_negotiable && (
+                  <span className="text-sm text-gray-500 font-medium">
+                    or best offer
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Quick Stats - Minimal Pills */}
           {(product.frame_size || product.size || product.condition_rating || product.bike_type || product.model_year) && (

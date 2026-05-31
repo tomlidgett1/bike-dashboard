@@ -36,6 +36,14 @@ export interface MarketplaceProduct {
   product_specs?: string | null; // AI-generated comprehensive spec sheet
   display_name?: string; // AI-cleaned product name for display
   price: number;
+  // Discount pricing (store-managed, percentage-based, optional expiry).
+  // sale_price is a DB-computed column (discounted price, or null when no %).
+  // Whether the discount is *currently live* is a render-time decision —
+  // see resolveLivePrice(): discount_active && (!discount_ends_at || ends_at > now).
+  discount_percent?: number | null;
+  discount_active?: boolean | null;
+  discount_ends_at?: string | null;
+  sale_price?: number | null;
   marketplace_category: string;
   marketplace_subcategory: string;
   marketplace_level_3_category?: string | null; // Third level categorization (e.g., XC, Trail, Enduro)

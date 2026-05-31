@@ -18,6 +18,7 @@ import { EditProductDrawer } from "./edit-product-drawer";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import { cn } from "@/lib/utils";
 
 // Adaptive spec row: short values inline (label ↔ value), long values stacked
@@ -152,9 +153,27 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
           {(product as any).display_name || product.description}
         </h1>
         <div className="flex items-center justify-between mt-2">
-          <p className="text-2xl font-bold text-gray-900">
-            ${product.price.toLocaleString("en-AU")}
-          </p>
+          {(() => {
+            const live = resolveLivePrice(product);
+            const fmt = (v: number) => `$${v.toLocaleString("en-AU")}`;
+            return (
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <p className={`text-2xl font-bold ${live.onSale ? "text-red-600" : "text-gray-900"}`}>
+                  {fmt(live.price)}
+                </p>
+                {live.onSale && (
+                  <>
+                    <p className="text-lg font-medium text-gray-400 line-through">
+                      {fmt(live.originalPrice as number)}
+                    </p>
+                    <span className="inline-flex items-center rounded-md bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white">
+                      -{live.percentOff}%
+                    </span>
+                  </>
+                )}
+              </div>
+            );
+          })()}
           {/* Uber Delivery - Discreet inline badge (only for Ashburton Cycles) */}
           {MARKETPLACE_PROMO_BANNERS_ENABLED &&
             !isSold &&
@@ -198,7 +217,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
             <BuyNowButton
               productId={product.id}
               productName={(product as any).display_name || product.description}
-              productPrice={product.price}
+              productPrice={resolveLivePrice(product).price}
               sellerId={product.user_id}
               productImage={product.all_images?.[0] || null}
               shippingAvailable={(product as any).shipping_available || false}

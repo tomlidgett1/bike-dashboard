@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getStripe, calculatePlatformFee, calculateSellerPayout, calculateBuyerFee } from '@/lib/stripe';
+import { resolveLivePrice } from '@/lib/marketplace/pricing';
 
 // Delivery fees
 const UBER_EXPRESS_FEE = 15;
@@ -186,6 +187,10 @@ export async function POST(request: NextRequest) {
         description,
         display_name,
         price,
+        discount_percent,
+        discount_active,
+        discount_ends_at,
+        sale_price,
         shipping_available,
         shipping_cost,
         pickup_location,
@@ -279,8 +284,12 @@ export async function POST(request: NextRequest) {
         break;
     }
 
-    // Calculate base totals
-    const itemPrice = product.price;
+    // Calculate base totals.
+    // Honour any live discount so the embedded checkout charges the same sale
+    // price shown on the listing. resolveLivePrice re-validates active/expiry/
+    // saving server-side; all downstream math derives from itemPrice.
+    const livePrice = resolveLivePrice(product);
+    const itemPrice = livePrice.price;
     const itemPriceCents = Math.round(itemPrice * 100);
     const buyerFee = calculateBuyerFee(itemPrice); // 0.5% buyer service fee
 
@@ -366,6 +375,12 @@ export async function POST(request: NextRequest) {
       platform_fee: calculatePlatformFee(itemPrice).toString(),
       seller_payout: calculateSellerPayout(itemPrice).toString(),
     };
+
+    // Record the discount for the order trail when the item is on sale
+    if (livePrice.onSale) {
+      metadata.original_price = Number(product.price).toString();
+      metadata.discount_percent = String(livePrice.percentOff);
+    }
 
     // Add voucher info to metadata if applicable
     if (applicableVoucher) {
@@ -481,7 +496,7 @@ export async function PATCH(request: NextRequest) {
     // Fetch product for recalculation
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('id, price, shipping_available, shipping_cost, pickup_location, display_name, description, user_id')
+      .select('id, price, discount_percent, discount_active, discount_ends_at, sale_price, shipping_available, shipping_cost, pickup_location, display_name, description, user_id')
       .eq('id', productId)
       .single();
 
@@ -515,8 +530,9 @@ export async function PATCH(request: NextRequest) {
         break;
     }
 
-    // Recalculate base totals
-    const itemPrice = product.price;
+    // Recalculate base totals (honour any live discount, same as POST)
+    const livePrice = resolveLivePrice(product);
+    const itemPrice = livePrice.price;
     const itemPriceCents = Math.round(itemPrice * 100);
     const buyerFee = calculateBuyerFee(itemPrice);
 
@@ -569,6 +585,11 @@ export async function PATCH(request: NextRequest) {
       platform_fee: calculatePlatformFee(itemPrice).toString(),
       seller_payout: calculateSellerPayout(itemPrice).toString(),
     };
+
+    if (livePrice.onSale) {
+      metadata.original_price = Number(product.price).toString();
+      metadata.discount_percent = String(livePrice.percentOff);
+    }
 
     if (applicableVoucher) {
       metadata.voucher_id = applicableVoucher.id;
