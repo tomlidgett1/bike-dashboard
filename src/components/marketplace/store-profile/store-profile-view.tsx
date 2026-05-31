@@ -48,6 +48,7 @@ import { RentalsSection } from "@/components/marketplace/store-profile/rentals-s
 import { CartButton } from "@/components/marketplace/cart-button";
 import type { StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import { resolveLivePrice } from "@/lib/marketplace/pricing";
 
 // ============================================================
 // Store Profile View
@@ -514,6 +515,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   const [expandedCategories, setExpandedCategories] = React.useState<Set<string>>(new Set());
   const [compact, setCompact] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
+  const [showSaleOnly, setShowSaleOnly] = React.useState(false);
 
   React.useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -538,6 +540,12 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     return out;
   }, [store.categories]);
 
+  // Sale product IDs — resolved with expiry awareness
+  const saleProductIds = React.useMemo(
+    () => new Set(allProducts.filter((p) => resolveLivePrice(p).onSale).map((p) => p.id)),
+    [allProducts]
+  );
+
   const sortedCategories = React.useMemo(() => {
     const cats = selectedCategory
       ? store.categories.filter((c) => c.name === selectedCategory)
@@ -545,6 +553,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     const q = storeSearch.trim().toLowerCase();
     return cats.map((cat) => {
       let products = [...cat.products];
+      if (showSaleOnly) products = products.filter((p) => saleProductIds.has(p.id));
       if (q) {
         products = products.filter(
           (p) =>
@@ -559,7 +568,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
       }
       return { ...cat, products, logo_url: (cat as any).logo_url ?? null };
     });
-  }, [selectedCategory, sort, store.categories, storeSearch]);
+  }, [selectedCategory, showSaleOnly, saleProductIds, sort, store.categories, storeSearch]);
 
   const directionsUrl = store.address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`
@@ -811,6 +820,28 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
             <div className="flex items-center gap-2 sm:gap-3">
               {/* Category pills (scrollable) */}
               <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide flex-1 min-w-0">
+                {/* Sale pill — only when discounted products exist */}
+                {saleProductIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSaleOnly((v) => !v)}
+                    className={cn(
+                      "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap border",
+                      showSaleOnly
+                        ? "bg-red-600 text-white border-red-600"
+                        : "bg-white text-red-600 border-red-200 hover:bg-red-50"
+                    )}
+                  >
+                    <Tag className="h-3.5 w-3.5 flex-shrink-0" />
+                    Sale
+                    <span className={cn(
+                      "text-[11px] font-semibold rounded-full px-1.5 py-0 leading-5",
+                      showSaleOnly ? "bg-white/20 text-white" : "bg-red-100 text-red-600"
+                    )}>
+                      {saleProductIds.size}
+                    </span>
+                  </button>
+                )}
                 {store.categories.map((cat) => {
                   const CatIcon = getCategoryIcon(cat.name);
                   return (
