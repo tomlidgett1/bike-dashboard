@@ -89,7 +89,7 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
           {/* Price - Large and Prominent. Shows sale price + struck original + % off when discounted. */}
           {(() => {
             const live = resolveLivePrice(product);
-            const fmt = (v: number) => `$${v.toLocaleString("en-AU")}`;
+            const fmt = (v: number) => `$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             return (
               <div className="flex items-baseline gap-3 flex-wrap">
                 <p

@@ -57,3 +57,12 @@ export function resolveLivePrice(product: DiscountInput, now: Date = new Date())
 export function formatPriceAUD(value: number): string {
   return `$${value.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
+
+/**
+ * Format a number as an AUD price string always showing exactly two decimal
+ * places, e.g. 1235 -> "$1,235.00", 617.5 -> "$617.50".
+ * Use this for sale and strikethrough prices so both values align.
+ */
+export function formatPriceAUDFull(value: number): string {
+  return `$${value.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
