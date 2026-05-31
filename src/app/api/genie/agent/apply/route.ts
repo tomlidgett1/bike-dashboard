@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { GenieProposal, ApplyResult, CarouselSizeOption } from '@/lib/types/genie-agent'
+import { NEW_CAROUSEL_SLOT } from '@/lib/types/genie-agent'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,6 +76,124 @@ export async function POST(request: NextRequest) {
         kind: 'carousel_layout',
         affected,
         message: `Updated ${affected} carousel${affected === 1 ? '' : 's'}.`,
+      }
+      return NextResponse.json(result)
+    }
+
+    // ── Create carousel ──────────────────────────────────────────────────
+    if (proposal.kind === 'carousel_create') {
+      const name = (proposal.name ?? '').trim()
+      if (!name) {
+        return NextResponse.json({ error: 'A carousel name is required.' }, { status: 400 })
+      }
+      const productIds = Array.isArray(proposal.product_ids) ? proposal.product_ids.filter(Boolean) : []
+      const size: CarouselSizeOption = SIZE_VALUES.includes(proposal.carousel_size) ? proposal.carousel_size : 'normal'
+
+      // Insert at the end first, so a partial failure still leaves a usable row.
+      const { data: maxRow } = await supabase
+        .from('store_categories')
+        .select('display_order')
+        .eq('user_id', user.id)
+        .order('display_order', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const endOrder = (maxRow?.display_order ?? -1) + 1
+
+      const { data: created, error: insertErr } = await supabase
+        .from('store_categories')
+        .insert({
+          user_id: user.id,
+          name,
+          source: 'custom',
+          product_ids: productIds,
+          display_order: endOrder,
+          is_active: true,
+          carousel_size: size,
+        })
+        .select('id')
+        .single()
+
+      if (insertErr || !created) {
+        console.error('Apply carousel_create insert error:', insertErr)
+        return NextResponse.json({ error: 'Failed to create the carousel.' }, { status: 500 })
+      }
+      const newId = created.id as string
+
+      // Re-sequence display_order to honour the proposed position. Best-effort:
+      // the row already exists at the end if any of this fails.
+      const proposedOrder = Array.isArray(proposal.ordered_ids) ? proposal.ordered_ids : []
+      const { data: owned } = await supabase
+        .from('store_categories')
+        .select('id, display_order')
+        .eq('user_id', user.id)
+
+      if (owned && owned.length > 0) {
+        const ownedIds = new Set(owned.map((c: any) => c.id as string))
+        const curOrder = new Map(owned.map((c: any) => [c.id as string, c.display_order as number]))
+
+        // Map sentinel → real id, keep only ids the store still owns, dedupe.
+        const seen = new Set<string>()
+        const finalOrder: string[] = []
+        for (const id of proposedOrder) {
+          const real = id === NEW_CAROUSEL_SLOT ? newId : id
+          if (ownedIds.has(real) && !seen.has(real)) { seen.add(real); finalOrder.push(real) }
+        }
+        // Append any owned carousels the proposal didn't mention (e.g. added since).
+        for (const c of owned) {
+          const id = c.id as string
+          if (!seen.has(id)) { seen.add(id); finalOrder.push(id) }
+        }
+
+        for (let i = 0; i < finalOrder.length; i++) {
+          if (curOrder.get(finalOrder[i]) === i) continue // already correct
+          const { error: reErr } = await supabase
+            .from('store_categories')
+            .update({ display_order: i })
+            .eq('id', finalOrder[i])
+            .eq('user_id', user.id)
+          if (reErr) {
+            console.error('Apply carousel_create reorder error:', reErr)
+            break // row exists; ordering is self-healing on the next layout change
+          }
+        }
+      }
+
+      const result: ApplyResult = {
+        ok: true,
+        kind: 'carousel_create',
+        affected: productIds.length,
+        message: `Created "${name}" with ${productIds.length} product${productIds.length === 1 ? '' : 's'}.`,
+      }
+      return NextResponse.json(result)
+    }
+
+    // ── Rename carousel ──────────────────────────────────────────────────
+    if (proposal.kind === 'carousel_rename') {
+      const name = (proposal.name ?? '').trim()
+      if (!proposal.id || !name) {
+        return NextResponse.json({ error: 'Carousel id and a new name are required.' }, { status: 400 })
+      }
+
+      const { data, error } = await supabase
+        .from('store_categories')
+        .update({ name })
+        .eq('id', proposal.id)
+        .eq('user_id', user.id) // ownership scope
+        .select('id')
+
+      if (error) {
+        console.error('Apply carousel_rename error:', error)
+        return NextResponse.json({ error: 'Failed to rename the carousel.' }, { status: 500 })
+      }
+      if (!data || data.length === 0) {
+        return NextResponse.json({ error: 'Carousel not found.' }, { status: 404 })
+      }
+
+      const result: ApplyResult = {
+        ok: true,
+        kind: 'carousel_rename',
+        affected: 1,
+        message: `Renamed to "${name}".`,
       }
       return NextResponse.json(result)
     }

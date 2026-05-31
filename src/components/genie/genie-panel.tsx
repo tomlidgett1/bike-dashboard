@@ -7,6 +7,7 @@ import {
   X, Send, Bike, Loader2, AlertCircle, Globe, Maximize2, Minimize2,
   Clock, Trash2, ArrowLeft, MessageSquarePlus,
   Store, Sparkles, Tag, LayoutGrid, ArrowRight, Check, CheckCircle2, Eye, EyeOff,
+  FolderPlus, Pencil,
 } from 'lucide-react';
 import { useGenie } from '@/components/providers/genie-provider';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -17,6 +18,8 @@ import { cn } from '@/lib/utils';
 import type {
   GenieProposal,
   CarouselLayoutProposal,
+  CarouselCreateProposal,
+  CarouselRenameProposal,
   DiscountApplyProposal,
   DiscountRemoveProposal,
   ApplyResult,
@@ -305,6 +308,58 @@ function CarouselDiff({ proposal }: { proposal: CarouselLayoutProposal }) {
   );
 }
 
+function CarouselCreateDiff({ proposal }: { proposal: CarouselCreateProposal }) {
+  const preview = proposal.products_preview.slice(0, 6);
+  const extra = proposal.product_ids.length - preview.length;
+  return (
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="inline-flex items-center gap-1 rounded-md bg-yellow-400/20 px-1.5 py-0.5 text-[11px] font-semibold text-yellow-700 dark:text-yellow-300">
+          {proposal.name}
+        </span>
+        <span className="text-[10px] text-muted-foreground">{SIZE_LABEL[proposal.carousel_size]}</span>
+        <span className="text-xs text-muted-foreground">· {proposal.match_label}</span>
+      </div>
+
+      {preview.length > 0 && (
+        <div className="rounded-lg bg-muted/50 p-2.5 space-y-1">
+          {preview.map(p => (
+            <div key={p.id} className="text-xs font-medium text-foreground truncate">{p.name}</div>
+          ))}
+          {extra > 0 && <p className="text-[10px] text-muted-foreground pt-0.5">+{extra} more product{extra === 1 ? '' : 's'}</p>}
+        </div>
+      )}
+
+      {proposal.order_preview.length > 0 && (
+        <div className="rounded-lg bg-muted/50 p-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Your page will show</p>
+          <ol className="space-y-0.5">
+            {proposal.order_preview.map((row, i) => (
+              <li key={i} className={cn('flex items-center gap-2 text-xs', !row.is_active && 'opacity-50')}>
+                <span className="text-muted-foreground tabular-nums w-4 text-right">{i + 1}.</span>
+                <span className={cn('font-medium text-foreground', row.is_new && 'text-yellow-700 dark:text-yellow-300')}>{row.name}</span>
+                <span className="text-[10px] text-muted-foreground">{SIZE_LABEL[row.carousel_size]}</span>
+                {row.is_new && <span className="rounded-full bg-yellow-400/20 px-1.5 py-0.5 text-[9px] font-semibold text-yellow-700 dark:text-yellow-300">New</span>}
+                {!row.is_active && <EyeOff className="h-3 w-3 text-muted-foreground" />}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CarouselRenameDiff({ proposal }: { proposal: CarouselRenameProposal }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs font-medium text-muted-foreground line-through">{proposal.prev_name}</span>
+      <ArrowRight className="h-3 w-3 text-muted-foreground" />
+      <span className="text-xs font-semibold text-foreground">{proposal.name}</span>
+    </div>
+  );
+}
+
 function DiscountApplyDiff({ proposal }: { proposal: DiscountApplyProposal }) {
   const preview = proposal.products_preview.slice(0, 6);
   const extra = proposal.products_preview.length - preview.length;
@@ -385,6 +440,10 @@ function ProposalCard({ proposal }: { proposal: GenieProposal }) {
   const meta =
     proposal.kind === 'carousel_layout'
       ? { Icon: LayoutGrid, title: 'Carousel layout', cta: 'Apply layout' }
+      : proposal.kind === 'carousel_create'
+      ? { Icon: FolderPlus, title: 'New carousel', cta: `Create "${proposal.name}"` }
+      : proposal.kind === 'carousel_rename'
+      ? { Icon: Pencil, title: 'Rename carousel', cta: 'Apply rename' }
       : proposal.kind === 'discount_apply'
       ? { Icon: Tag, title: 'Apply discount', cta: `Apply ${Math.round(proposal.discount_percent)}% discount` }
       : { Icon: Tag, title: 'Remove discount', cta: 'Remove discount' };
@@ -405,6 +464,8 @@ function ProposalCard({ proposal }: { proposal: GenieProposal }) {
         {proposal.summary && <p className="text-xs text-muted-foreground leading-snug">{proposal.summary}</p>}
 
         {proposal.kind === 'carousel_layout' && <CarouselDiff proposal={proposal} />}
+        {proposal.kind === 'carousel_create' && <CarouselCreateDiff proposal={proposal} />}
+        {proposal.kind === 'carousel_rename' && <CarouselRenameDiff proposal={proposal} />}
         {proposal.kind === 'discount_apply' && <DiscountApplyDiff proposal={proposal} />}
         {proposal.kind === 'discount_remove' && <DiscountRemoveDiff proposal={proposal} />}
 

@@ -16,9 +16,12 @@ import type {
   CarouselSizeOption,
   GenieProposal,
   CarouselLayoutProposal,
+  CarouselCreateProposal,
+  CarouselRenameProposal,
   DiscountApplyProposal,
   DiscountRemoveProposal,
 } from '@/lib/types/genie-agent'
+import { NEW_CAROUSEL_SLOT } from '@/lib/types/genie-agent'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -31,12 +34,17 @@ function buildSystemPrompt(storeName: string): string {
   return `You are the Yellow Jersey Store Agent — a sharp, efficient assistant that helps "${storeName}" manage their storefront on Yellow Jersey. Today is ${today}.
 
 WHAT YOU CAN DO
-1. Carousels — the rows of products on the store's public page. You can reorder them, show/hide them, and set a size (featured | normal | compact). The FIRST carousel is the featured collection.
+1. Carousels — the rows of products on the store's public page. You can:
+   • Create a new carousel of products from a description (e.g. "make a 'Summer Sale' row of all Clif bars"). Give it a name and, optionally, where it sits.
+   • Rename an existing carousel.
+   • Reorder them, show/hide them, and set a size (featured | normal | compact). The FIRST carousel is the featured collection.
 2. Discounts — apply a percentage discount to one or more products (e.g. "50% off all Clif bars"), optionally with an end date after which it lapses.
 
 HOW TO WORK
 - Read first: call get_store_carousels / search_store_products / list_active_discounts to ground yourself in the store's ACTUAL data before proposing anything.
 - Then propose: call exactly one propose_* tool to stage the change. You never apply changes yourself — the store reviews a preview and clicks Apply.
+- Creating a carousel: choose a clear name (use the store's own words if they gave one), and pass "match" to fill it by description ("all Clif bars" → match:"Clif"); use product_ids only for specific picks. To place it, pass position (1 = top/featured slot); omit to add it at the end.
+- Renaming: use get_store_carousels to find the carousel id, then propose_rename_carousel with the new name.
 - For discounts by description ("all Clif bars"), pass the keyword as "match" and let the system find the products. Only pass product_ids if the store picked specific items.
 - Expiry: if the store gives a deadline ("until Sunday"), compute the ISO date from today (${today}) and pass it as ends_at. No deadline → omit it.
 
@@ -205,7 +213,116 @@ async function buildCarouselProposal(
   }
 }
 
-async function resolveDiscountTargets(
+async function buildCreateCarouselProposal(
+  supabase: Supa,
+  userId: string,
+  args: { summary?: string; name?: string; match?: string; product_ids?: string[]; position?: number; carousel_size?: string },
+): Promise<{ proposal?: CarouselCreateProposal; output: object }> {
+  const name = (args.name ?? '').trim()
+  if (!name) {
+    return { output: { error: 'A name is required to create a carousel.' } }
+  }
+
+  const current = await getStoreCarousels(supabase, userId)
+  if (current.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+    return { output: { error: `A carousel named "${name}" already exists. Pick a different name or rename the existing one.` } }
+  }
+
+  const targets = await resolveProductTargets(supabase, userId, args.match, args.product_ids)
+  if (targets.length === 0) {
+    return {
+      output: {
+        error: args.match || args.product_ids?.length
+          ? `No products found${args.match ? ` matching "${args.match}"` : ''} — nothing to put in the carousel.`
+          : 'Tell me which products to include (a keyword like "Clif", or specific items).',
+      },
+    }
+  }
+
+  const size = normalizeSize(args.carousel_size)
+
+  // Where the new carousel sits. position is 1-based; clamp to [0, length].
+  // Omitted → append at the end.
+  const len = current.length
+  let insertAt = len
+  if (Number.isFinite(args.position)) {
+    insertAt = Math.max(0, Math.min(len, Math.round(Number(args.position)) - 1))
+  }
+
+  const ordered_ids: string[] = current.map(c => c.id)
+  ordered_ids.splice(insertAt, 0, NEW_CAROUSEL_SLOT)
+
+  const order_preview = ordered_ids.map(id => {
+    if (id === NEW_CAROUSEL_SLOT) {
+      return { name, is_active: true, carousel_size: size, is_new: true }
+    }
+    const c = current.find(x => x.id === id)!
+    return { name: c.name, is_active: c.is_active, carousel_size: c.carousel_size, is_new: false }
+  })
+
+  const match_label = args.product_ids?.length
+    ? `${targets.length} selected product${targets.length === 1 ? '' : 's'}`
+    : `${targets.length} product${targets.length === 1 ? '' : 's'}${args.match ? ` matching "${args.match}"` : ''}`
+
+  const proposal: CarouselCreateProposal = {
+    kind: 'carousel_create',
+    summary: args.summary?.trim() || `Create "${name}" carousel`,
+    name,
+    carousel_size: size,
+    match_label,
+    product_ids: targets.map(t => t.id),
+    products_preview: targets.slice(0, 12).map(t => ({ id: t.id, name: t.name })),
+    ordered_ids,
+    order_preview,
+  }
+  return {
+    proposal,
+    output: {
+      status: 'proposed',
+      kind: 'carousel_create',
+      name,
+      product_count: targets.length,
+      position: insertAt + 1,
+    },
+  }
+}
+
+async function buildRenameCarouselProposal(
+  supabase: Supa,
+  userId: string,
+  args: { summary?: string; id?: string; name?: string },
+): Promise<{ proposal?: CarouselRenameProposal; output: object }> {
+  const newName = (args.name ?? '').trim()
+  if (!args.id || !newName) {
+    return { output: { error: 'Both the carousel id and a new name are required.' } }
+  }
+
+  const current = await getStoreCarousels(supabase, userId)
+  const target = current.find(c => c.id === args.id)
+  if (!target) {
+    return { output: { error: 'That carousel was not found. Call get_store_carousels for valid ids.' } }
+  }
+  if (target.name === newName) {
+    return { output: { status: 'no_change', message: `The carousel is already named "${newName}".` } }
+  }
+  if (current.some(c => c.id !== target.id && c.name.toLowerCase() === newName.toLowerCase())) {
+    return { output: { error: `Another carousel is already named "${newName}".` } }
+  }
+
+  const proposal: CarouselRenameProposal = {
+    kind: 'carousel_rename',
+    summary: args.summary?.trim() || `Rename "${target.name}" to "${newName}"`,
+    id: target.id,
+    prev_name: target.name,
+    name: newName,
+  }
+  return {
+    proposal,
+    output: { status: 'proposed', kind: 'carousel_rename', from: target.name, to: newName },
+  }
+}
+
+async function resolveProductTargets(
   supabase: Supa,
   userId: string,
   match: string | undefined,
@@ -260,7 +377,7 @@ async function buildDiscountProposal(
     endsAt = d.toISOString()
   }
 
-  const targets = await resolveDiscountTargets(supabase, userId, args.match, args.product_ids)
+  const targets = await resolveProductTargets(supabase, userId, args.match, args.product_ids)
   if (targets.length === 0) {
     return { output: { error: `No products found${args.match ? ` matching "${args.match}"` : ''}.` } }
   }
@@ -388,6 +505,35 @@ const TOOLS: any[] = [
         },
       },
       required: ['summary', 'layout'],
+    },
+  },
+  {
+    type: 'function', name: 'propose_create_carousel', strict: null,
+    description: 'Stage creation of a NEW carousel of products for review. Give it a name and fill it via "match" (description, e.g. "Clif") or product_ids (specific picks). Optionally set position (1 = top) and size.',
+    parameters: {
+      type: 'object',
+      properties: {
+        summary: { type: 'string', description: 'One concise sentence describing the new carousel.' },
+        name: { type: 'string', description: 'Display name for the carousel, e.g. "Summer Sale".' },
+        match: { type: 'string', description: 'Keyword to fill the carousel by (name/brand/category), e.g. "Clif".' },
+        product_ids: { type: 'array', items: { type: 'string' }, description: 'Specific product ids, if the store picked items.' },
+        position: { type: 'number', description: '1-based slot where it should appear (1 = top/featured). Omit to add at the end.' },
+        carousel_size: { type: 'string', enum: ['featured', 'normal', 'compact'], description: 'Row size. Defaults to normal.' },
+      },
+      required: ['summary', 'name'],
+    },
+  },
+  {
+    type: 'function', name: 'propose_rename_carousel', strict: null,
+    description: 'Stage renaming of an existing carousel for review. Get the id from get_store_carousels first.',
+    parameters: {
+      type: 'object',
+      properties: {
+        summary: { type: 'string', description: 'One concise sentence describing the rename.' },
+        id: { type: 'string', description: 'Carousel id from get_store_carousels.' },
+        name: { type: 'string', description: 'The new name.' },
+      },
+      required: ['summary', 'id', 'name'],
     },
   },
   {
@@ -529,6 +675,12 @@ export async function POST(request: NextRequest) {
                     break
                   case 'propose_carousel_layout':
                     result = await buildCarouselProposal(supabase, user.id, args)
+                    break
+                  case 'propose_create_carousel':
+                    result = await buildCreateCarouselProposal(supabase, user.id, args)
+                    break
+                  case 'propose_rename_carousel':
+                    result = await buildRenameCarouselProposal(supabase, user.id, args)
                     break
                   case 'propose_discount':
                     result = await buildDiscountProposal(supabase, user.id, args)

@@ -33,6 +33,47 @@ export interface CarouselLayoutProposal {
   order_preview: Array<{ name: string; is_active: boolean; carousel_size: CarouselSizeOption }>;
 }
 
+/**
+ * Sentinel id that marks where the about-to-be-created carousel sits inside
+ * `CarouselCreateProposal.ordered_ids`. The real (DB-assigned) id replaces it
+ * on Apply, after the row is inserted.
+ */
+export const NEW_CAROUSEL_SLOT = '__new_carousel__';
+
+export interface CarouselProductRef {
+  id: string;
+  name: string;
+}
+
+/** Create a brand-new custom carousel of products, named and positioned. */
+export interface CarouselCreateProposal {
+  kind: 'carousel_create';
+  summary: string;
+  /** The new carousel's display name. */
+  name: string;
+  carousel_size: CarouselSizeOption;
+  /** Human label for the products matched, e.g. "12 products matching \"Clif\"". */
+  match_label: string;
+  product_ids: string[];
+  products_preview: CarouselProductRef[];
+  /**
+   * Final display order of carousel ids after insertion. Exactly one entry is
+   * the NEW_CAROUSEL_SLOT sentinel marking the new carousel's slot.
+   */
+  ordered_ids: string[];
+  /** Readable resulting order for the preview UI; is_new flags the new row. */
+  order_preview: Array<{ name: string; is_active: boolean; carousel_size: CarouselSizeOption; is_new: boolean }>;
+}
+
+/** Rename an existing carousel. */
+export interface CarouselRenameProposal {
+  kind: 'carousel_rename';
+  summary: string;
+  id: string;
+  prev_name: string;
+  name: string;
+}
+
 export interface DiscountProductPreview {
   id: string;
   name: string;
@@ -62,6 +103,8 @@ export interface DiscountRemoveProposal {
 
 export type GenieProposal =
   | CarouselLayoutProposal
+  | CarouselCreateProposal
+  | CarouselRenameProposal
   | DiscountApplyProposal
   | DiscountRemoveProposal;
 
