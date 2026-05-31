@@ -6,12 +6,22 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Send, Bike, Loader2, AlertCircle, Globe, Maximize2, Minimize2,
   Clock, Trash2, ArrowLeft, MessageSquarePlus,
+  Store, Sparkles, Tag, LayoutGrid, ArrowRight, Check, CheckCircle2, Eye, EyeOff,
 } from 'lucide-react';
 import { useGenie } from '@/components/providers/genie-provider';
 import { useAuth } from '@/components/providers/auth-provider';
+import { useUserProfile } from '@/components/providers/profile-provider';
 import AIMotionOrb from './ai-motion-orb';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import type {
+  GenieProposal,
+  CarouselLayoutProposal,
+  DiscountApplyProposal,
+  DiscountRemoveProposal,
+  ApplyResult,
+  CarouselSizeOption,
+} from '@/lib/types/genie-agent';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +31,7 @@ type StatusPhase =
   | 'web_search'
   | 'web_search_done'
   | 'product_search'
+  | 'tool'
   | 'responding';
 
 interface StatusStep { phase: StatusPhase; text: string }
@@ -45,6 +56,7 @@ interface ChatMessage {
   currentStatus?: StatusStep;
   products?: GenieProduct[];
   sources?: Citation[];
+  proposals?: GenieProposal[];
   isStreaming?: boolean;
   error?: string;
 }
@@ -133,7 +145,7 @@ function GenieLogo({ className }: { className?: string }) {
 
 // ─── Shimmer Status ───────────────────────────────────────────────────────────
 
-const PHASE_LABELS: Record<StatusPhase, string> = {
+const PHASE_LABELS: Partial<Record<StatusPhase, string>> = {
   planning: 'Thinking...',
   thinking: 'Thinking...',
   web_search: 'Searching the web...',
@@ -142,16 +154,18 @@ const PHASE_LABELS: Record<StatusPhase, string> = {
   responding: 'Composing answer...',
 };
 
-function ShimmerStatus({ phase }: { phase: StatusPhase }) {
+function ShimmerStatus({ step }: { step: StatusStep }) {
+  // Known phases get a friendly label; agent tool phases carry their own text.
+  const label = PHASE_LABELS[step.phase] ?? step.text ?? 'Working...';
   return (
-    <motion.div key={phase} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+    <motion.div key={`${step.phase}:${label}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.25 }} className="flex items-center gap-2 py-1">
       <span className="relative flex h-2 w-2 flex-shrink-0">
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-60" />
         <span className="relative inline-flex h-2 w-2 rounded-full bg-yellow-500" />
       </span>
       <span className="relative overflow-hidden text-xs font-medium text-muted-foreground">
-        {PHASE_LABELS[phase]}
+        {label}
         <span className="absolute inset-0 -translate-x-full animate-[shimmer_1.8s_ease-in-out_infinite]"
           style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(250,204,21,0.5) 50%, transparent 100%)' }} />
       </span>
@@ -205,6 +219,230 @@ function ProductCard({ product }: { product: GenieProduct }) {
   );
 }
 
+// ─── Proposal Card (Store Agent — preview then confirm) ─────────────────────────
+
+const SIZE_LABEL: Record<CarouselSizeOption, string> = {
+  featured: 'Featured',
+  normal: 'Normal',
+  compact: 'Compact',
+};
+
+function money(v: number): string {
+  const hasCents = Math.round(v * 100) % 100 !== 0;
+  return `$${v.toLocaleString('en-AU', { minimumFractionDigits: hasCents ? 2 : 0, maximumFractionDigits: 2 })}`;
+}
+
+function fmtDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return iso;
+  }
+}
+
+/** Small "before → after" chip used in the carousel diff. */
+function DiffChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+function CarouselDiff({ proposal }: { proposal: CarouselLayoutProposal }) {
+  return (
+    <div className="space-y-2.5">
+      {proposal.changes.length > 0 && (
+        <div className="space-y-1.5">
+          {proposal.changes.map(ch => {
+            const orderChanged = ch.prev_display_order !== ch.display_order;
+            const activeChanged = ch.prev_is_active !== ch.is_active;
+            const sizeChanged = ch.prev_carousel_size !== ch.carousel_size;
+            return (
+              <div key={ch.id} className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-medium text-foreground">{ch.name}</span>
+                {orderChanged && (
+                  <DiffChip>
+                    #{ch.prev_display_order} <ArrowRight className="h-2.5 w-2.5" /> #{ch.display_order}
+                  </DiffChip>
+                )}
+                {activeChanged && (
+                  <DiffChip>
+                    {ch.prev_is_active ? <Eye className="h-2.5 w-2.5" /> : <EyeOff className="h-2.5 w-2.5" />}
+                    <ArrowRight className="h-2.5 w-2.5" />
+                    {ch.is_active
+                      ? <span className="text-green-600 dark:text-green-400">Shown</span>
+                      : <span className="text-muted-foreground">Hidden</span>}
+                  </DiffChip>
+                )}
+                {sizeChanged && (
+                  <DiffChip>
+                    {SIZE_LABEL[ch.prev_carousel_size]} <ArrowRight className="h-2.5 w-2.5" /> {SIZE_LABEL[ch.carousel_size]}
+                  </DiffChip>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {proposal.order_preview.length > 0 && (
+        <div className="rounded-lg bg-muted/50 p-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Your page will show</p>
+          <ol className="space-y-0.5">
+            {proposal.order_preview.map((row, i) => (
+              <li key={i} className={cn('flex items-center gap-2 text-xs', !row.is_active && 'opacity-50')}>
+                <span className="text-muted-foreground tabular-nums w-4 text-right">{i + 1}.</span>
+                <span className="font-medium text-foreground">{row.name}</span>
+                <span className="text-[10px] text-muted-foreground">{SIZE_LABEL[row.carousel_size]}</span>
+                {!row.is_active && <EyeOff className="h-3 w-3 text-muted-foreground" />}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiscountApplyDiff({ proposal }: { proposal: DiscountApplyProposal }) {
+  const preview = proposal.products_preview.slice(0, 6);
+  const extra = proposal.products_preview.length - preview.length;
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="inline-flex items-center rounded-md bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+          -{Math.round(proposal.discount_percent)}%
+        </span>
+        <span className="text-xs text-muted-foreground">{proposal.match_label}</span>
+        {proposal.ends_at && (
+          <span className="text-[10px] text-muted-foreground">· ends {fmtDate(proposal.ends_at)}</span>
+        )}
+      </div>
+      {preview.length > 0 && (
+        <div className="rounded-lg bg-muted/50 p-2.5 space-y-1">
+          {preview.map(p => (
+            <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
+              <span className="font-medium text-foreground truncate">{p.name}</span>
+              <span className="flex-shrink-0 whitespace-nowrap">
+                <span className="text-muted-foreground line-through">{money(p.price)}</span>
+                <span className="ml-1.5 font-semibold text-red-600 dark:text-red-400">{money(p.sale_price)}</span>
+              </span>
+            </div>
+          ))}
+          {extra > 0 && <p className="text-[10px] text-muted-foreground pt-0.5">+{extra} more product{extra === 1 ? '' : 's'}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiscountRemoveDiff({ proposal }: { proposal: DiscountRemoveProposal }) {
+  const preview = proposal.products_preview.slice(0, 6);
+  const extra = proposal.products_preview.length - preview.length;
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">{proposal.match_label}</p>
+      {preview.length > 0 && (
+        <div className="rounded-lg bg-muted/50 p-2.5 space-y-1">
+          {preview.map(p => (
+            <div key={p.id} className="text-xs font-medium text-foreground truncate">{p.name}</div>
+          ))}
+          {extra > 0 && <p className="text-[10px] text-muted-foreground pt-0.5">+{extra} more product{extra === 1 ? '' : 's'}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProposalCard({ proposal }: { proposal: GenieProposal }) {
+  const [status, setStatus] = useState<'idle' | 'applying' | 'applied' | 'error'>('idle');
+  const [resultMsg, setResultMsg] = useState('');
+
+  const apply = async () => {
+    setStatus('applying');
+    setResultMsg('');
+    try {
+      const res = await fetch('/api/genie/agent/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposal }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setStatus('error');
+        setResultMsg(data?.error || 'Could not apply the change. Please try again.');
+        return;
+      }
+      setStatus('applied');
+      setResultMsg((data as ApplyResult).message);
+    } catch {
+      setStatus('error');
+      setResultMsg('Connection error. Please try again.');
+    }
+  };
+
+  const meta =
+    proposal.kind === 'carousel_layout'
+      ? { Icon: LayoutGrid, title: 'Carousel layout', cta: 'Apply layout' }
+      : proposal.kind === 'discount_apply'
+      ? { Icon: Tag, title: 'Apply discount', cta: `Apply ${Math.round(proposal.discount_percent)}% discount` }
+      : { Icon: Tag, title: 'Remove discount', cta: 'Remove discount' };
+  const { Icon } = meta;
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-yellow-400/40 bg-yellow-50/40 dark:bg-yellow-400/[0.04] overflow-hidden">
+      <div className="flex items-center gap-2 px-3.5 pt-3 pb-2">
+        <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-yellow-400/20 text-yellow-600 dark:text-yellow-400">
+          <Icon className="h-3.5 w-3.5" />
+        </div>
+        <p className="text-xs font-semibold text-foreground flex-1">{meta.title}</p>
+        <span className="rounded-full bg-yellow-400/20 px-2 py-0.5 text-[10px] font-medium text-yellow-700 dark:text-yellow-300">Preview</span>
+      </div>
+
+      <div className="px-3.5 pb-3 space-y-2.5">
+        {proposal.summary && <p className="text-xs text-muted-foreground leading-snug">{proposal.summary}</p>}
+
+        {proposal.kind === 'carousel_layout' && <CarouselDiff proposal={proposal} />}
+        {proposal.kind === 'discount_apply' && <DiscountApplyDiff proposal={proposal} />}
+        {proposal.kind === 'discount_remove' && <DiscountRemoveDiff proposal={proposal} />}
+
+        {/* Action / result */}
+        {status === 'applied' ? (
+          <div className="flex items-center gap-2 rounded-xl bg-green-50 dark:bg-green-900/20 px-3 py-2.5 text-xs font-medium text-green-700 dark:text-green-400">
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+            {resultMsg || 'Done.'}
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <button
+              onClick={apply}
+              disabled={status === 'applying'}
+              className={cn(
+                'w-full flex items-center justify-center gap-2 rounded-xl h-10 text-sm font-semibold transition-all',
+                status === 'applying'
+                  ? 'bg-muted text-muted-foreground cursor-wait'
+                  : 'bg-yellow-400 text-yellow-950 hover:bg-yellow-500 shadow-sm shadow-yellow-400/25',
+              )}
+            >
+              {status === 'applying'
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Applying…</>
+                : <><Check className="h-4 w-4" /> {meta.cta}</>}
+            </button>
+            {status === 'error' && (
+              <div className="flex items-center gap-1.5 text-[11px] text-red-600 dark:text-red-400 px-1">
+                <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                {resultMsg}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── Message Bubble ────────────────────────────────────────────────────────────
 
 function MessageBubble({ message }: { message: ChatMessage }) {
@@ -220,15 +458,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     );
   }
 
-  const showShimmer = message.isStreaming && message.currentStatus && !message.content && (!message.products || message.products.length === 0);
-  const showSpinner = message.isStreaming && !message.content && !message.currentStatus && (!message.products || message.products.length === 0);
+  const noProposals = !message.proposals || message.proposals.length === 0;
+  const showShimmer = message.isStreaming && message.currentStatus && !message.content && (!message.products || message.products.length === 0) && noProposals;
+  const showSpinner = message.isStreaming && !message.content && !message.currentStatus && (!message.products || message.products.length === 0) && noProposals;
 
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-2">
 
       {/* 1. Shimmer / spinner — shown while waiting for first content */}
       <AnimatePresence mode="wait">
-        {showShimmer && message.currentStatus && <ShimmerStatus key={message.currentStatus.phase} phase={message.currentStatus.phase} />}
+        {showShimmer && message.currentStatus && <ShimmerStatus key={message.currentStatus.phase} step={message.currentStatus} />}
         {showSpinner && (
           <motion.div key="spinner" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
@@ -280,6 +519,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       </AnimatePresence>
 
+      {/* 3b. Proposals — Store Agent action cards (preview → confirm) */}
+      {message.proposals && message.proposals.length > 0 && (
+        <div className="space-y-2">
+          {message.proposals.map((p, i) => <ProposalCard key={i} proposal={p} />)}
+        </div>
+      )}
+
       {/* 4. Error */}
       {message.error && (
         <div className="flex items-center gap-2 rounded-xl bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-600 dark:text-red-400">
@@ -310,6 +556,13 @@ const SUGGESTIONS = [
   "How often should I service my bike?",
 ];
 
+const AGENT_SUGGESTIONS = [
+  "Show my carousels",
+  "Put Road Bikes first and feature it",
+  "50% off all Clif bars",
+  "Show my active discounts",
+];
+
 function SuggestionPill({ text, onClick }: { text: string; onClick: () => void }) {
   return (
     <button onClick={onClick}
@@ -324,6 +577,12 @@ function SuggestionPill({ text, onClick }: { text: string; onClick: () => void }
 export function GeniePanel() {
   const { isOpen, isExpanded, close, toggleExpand } = useGenie();
   const { user } = useAuth();
+  const { profile } = useUserProfile();
+
+  // Store Agent mode is only offered to verified bicycle stores.
+  const isStore = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
+  const [mode, setMode] = useState<'advisor' | 'agent'>('advisor');
+  const agentActive = isStore && mode === 'agent';
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -384,6 +643,17 @@ export function GeniePanel() {
 
   const startNewChat = () => { setMessages([]); setConversationId(null); setLastMsgMinHeight(undefined); setView('chat'); };
 
+  // Advisor and Store Agent are separate response threads — switching starts a fresh chat.
+  const switchMode = (m: 'advisor' | 'agent') => {
+    if (m === mode) return;
+    abortRef.current?.abort();
+    setMode(m);
+    setMessages([]);
+    setConversationId(null);
+    setLastMsgMinHeight(undefined);
+    setView('chat');
+  };
+
   const saveConversation = useCallback(async (msgs: ChatMessage[], currentId: string | null) => {
     if (!user) return null;
     try {
@@ -402,6 +672,11 @@ export function GeniePanel() {
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
+
+    // Store Agent mode talks to the authenticated agent endpoint (read + propose);
+    // advisor mode uses the public Genie endpoint. They are separate threads.
+    const agentMode = isStore && mode === 'agent';
+    const endpoint = agentMode ? '/api/genie/agent' : '/api/genie';
 
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text.trim() };
     const assistantId = crypto.randomUUID();
@@ -446,7 +721,7 @@ export function GeniePanel() {
 
     try {
       const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
-      const res = await fetch('/api/genie', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: history }),
@@ -483,6 +758,11 @@ export function GeniePanel() {
             if (parsed.event === 'products') {
               setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, products: parsed.products } : m));
             }
+            if (parsed.event === 'proposal' && parsed.proposal) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId ? { ...m, proposals: [...(m.proposals ?? []), parsed.proposal as GenieProposal] } : m
+              ));
+            }
             if (parsed.event === 'sources') {
               setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, sources: parsed.sources } : m));
             }
@@ -492,9 +772,11 @@ export function GeniePanel() {
                 const updated = prev.map(m =>
                   m.id === assistantId ? { ...m, isStreaming: false, currentStatus: undefined } : m
                 );
-                saveConversation(updated, conversationId).then(newId => {
-                  if (newId && !conversationId) setConversationId(newId);
-                });
+                if (!agentMode) {
+                  saveConversation(updated, conversationId).then(newId => {
+                    if (newId && !conversationId) setConversationId(newId);
+                  });
+                }
                 return updated;
               });
             }
@@ -529,7 +811,7 @@ export function GeniePanel() {
       setIsLoading(false);
       abortRef.current = null;
     }
-  }, [isLoading, messages, conversationId, saveConversation]);
+  }, [isLoading, messages, conversationId, saveConversation, isStore, mode]);
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); sendMessage(input); };
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -581,13 +863,13 @@ export function GeniePanel() {
                       ? <motion.p key="l" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                           className="text-[11px] text-yellow-600 dark:text-yellow-400 mt-0.5">Thinking...</motion.p>
                       : <motion.p key="i" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                          className="text-[11px] text-muted-foreground mt-0.5">Elite cycling advisor</motion.p>}
+                          className="text-[11px] text-muted-foreground mt-0.5">{agentActive ? 'Store agent · acts on your store' : 'Elite cycling advisor'}</motion.p>}
                   </AnimatePresence>
                 </div>
               </div>
 
               <div className="flex items-center gap-1 flex-shrink-0">
-                {user && view === 'chat' && (
+                {user && view === 'chat' && !agentActive && (
                   <button onClick={() => setView('history')} title="History"
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                     <Clock className="h-4 w-4" />
@@ -609,6 +891,28 @@ export function GeniePanel() {
                 </button>
               </div>
             </div>
+
+            {/* ── Mode Toggle — verified bicycle stores only ──── */}
+            {isStore && view === 'chat' && (
+              <div className="flex-shrink-0 px-4 pt-2.5">
+                <div className="flex gap-1 rounded-xl bg-muted/60 p-1">
+                  <button onClick={() => switchMode('advisor')}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-all',
+                      !agentActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                    )}>
+                    <Sparkles className="h-3.5 w-3.5" /> Advisor
+                  </button>
+                  <button onClick={() => switchMode('agent')}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-all',
+                      agentActive ? 'bg-yellow-400 text-yellow-950 shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                    )}>
+                    <Store className="h-3.5 w-3.5" /> Store Agent
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* ── History View ──────────────────────────────── */}
             {view === 'history' && (
@@ -664,12 +968,14 @@ export function GeniePanel() {
                       <div className="mb-5">
                         <AIMotionOrb size={72} />
                       </div>
-                      <h3 className="text-base font-bold text-foreground mb-1.5">Yellow Jersey Genius</h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-[260px]">
-                        Expert cycling advice, real-time web search, and live stock lookup — all in one.
+                      <h3 className="text-base font-bold text-foreground mb-1.5">{agentActive ? 'Store Agent' : 'Yellow Jersey Genius'}</h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-[270px]">
+                        {agentActive
+                          ? 'Reorder your store carousels and run discounts just by asking. I’ll show a preview before anything changes.'
+                          : 'Expert cycling advice, real-time web search, and live stock lookup — all in one.'}
                       </p>
                       <div className="flex flex-wrap justify-center gap-2">
-                        {SUGGESTIONS.map((s, i) => <SuggestionPill key={i} text={s} onClick={() => sendMessage(s)} />)}
+                        {(agentActive ? AGENT_SUGGESTIONS : SUGGESTIONS).map((s, i) => <SuggestionPill key={i} text={s} onClick={() => sendMessage(s)} />)}
                       </div>
                     </motion.div>
                   ) : (
@@ -694,7 +1000,7 @@ export function GeniePanel() {
 
                 {!isEmpty && !isLoading && (
                   <div className="flex-shrink-0 flex gap-2 px-4 pb-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-                    {SUGGESTIONS.slice(0, 2).map((s, i) => <SuggestionPill key={i} text={s} onClick={() => sendMessage(s)} />)}
+                    {(agentActive ? AGENT_SUGGESTIONS : SUGGESTIONS).slice(0, 2).map((s, i) => <SuggestionPill key={i} text={s} onClick={() => sendMessage(s)} />)}
                   </div>
                 )}
 
@@ -708,7 +1014,7 @@ export function GeniePanel() {
                           e.target.style.height = Math.min(e.target.scrollHeight, 180) + 'px';
                         }}
                         onKeyDown={handleKeyDown}
-                        placeholder="Ask anything about bikes..."
+                        placeholder={agentActive ? 'Tell the agent what to change…' : 'Ask anything about bikes...'}
                         rows={2} disabled={isLoading}
                         className={cn(
                           'w-full resize-none rounded-2xl border border-border bg-muted/50',
@@ -729,7 +1035,7 @@ export function GeniePanel() {
                     </div>
                   </form>
                   <p className="mt-1.5 text-center text-[10px] text-muted-foreground/50">
-                    Yellow Jersey Genius · Real-time cycling advice
+                    {agentActive ? 'Store Agent · previews every change before applying' : 'Yellow Jersey Genius · Real-time cycling advice'}
                   </p>
                 </div>
               </>
