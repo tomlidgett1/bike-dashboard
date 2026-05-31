@@ -275,7 +275,7 @@ function CarouselRow({
   isOwnProfile,
   storeId,
 }: {
-  cat: { id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; logo_url?: string | null };
+  cat: { id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; logo_url?: string | null; hide_title?: boolean };
   rowIndex: number;
   expandedCategories: Set<string>;
   setExpandedCategories: React.Dispatch<React.SetStateAction<Set<string>>>;
