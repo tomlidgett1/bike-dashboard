@@ -250,8 +250,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const [isMobile, setIsMobile] = React.useState(false);
   const categoryPillsRef = React.useRef<HTMLDivElement | null>(null);
   const [productGridLayout, setProductGridLayout] = React.useState<
-    "grid" | "list"
-  >("grid");
+    "grid4" | "grid6" | "grid8"
+  >("grid6");
   const sentinelRef = React.useRef<HTMLDivElement>(null); // Sentinel for tracking scroll
 
   // Track if we're on mobile
@@ -1049,7 +1049,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         {/* Sentinel div for scroll tracking - invisible marker */}
         <div ref={sentinelRef} className="sm:hidden h-px" aria-hidden="true" />
 
-        <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-4 sm:pt-20 pb-24 sm:pb-8">
+        <div className="px-3 sm:px-6 py-4 sm:py-8 pt-4 sm:pt-20 pb-24 sm:pb-8">
           <div className="space-y-4">
             {/* Promo Banners - Marketplace and Bike Stores (hidden while searching) */}
             {MARKETPLACE_PROMO_BANNERS_ENABLED &&
@@ -1327,32 +1327,37 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                         )}
                         <div
                           className={
-                            productGridLayout === "list"
-                              ? "flex flex-col gap-3"
-                              : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4"
+                            productGridLayout === "grid8"
+                              ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
+                              : productGridLayout === "grid4"
+                              ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
+                              : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 sm:gap-3"
                           }
                         >
                           {Array.from({
                             length: isStoresView ? 12 : 36,
                           }).map((_, i) => (
-                            <ProductCardSkeleton key={i} layout={productGridLayout} />
+                            <ProductCardSkeleton key={i} layout="grid" />
                           ))}
                         </div>
                       </div>
                     ) : (
                       <div
                         className={cn(
-                          productGridLayout === "list"
-                            ? "flex flex-col gap-3"
-                            : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-4",
+                          productGridLayout === "grid8"
+                            ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
+                            : productGridLayout === "grid4"
+                            ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
+                            : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3",
                         )}
                       >
                         {displayProducts.map((product, index) => (
                           <React.Fragment key={product.id}>
-                            <ProductCard 
+                            <ProductCard
                               product={product}
                               priority={index < 18}
-                              layout={productGridLayout}
+                              layout="grid"
+                              compact={productGridLayout === "grid8"}
                               isAdmin={isAdmin}
                               onNavigate={() => setIsNavigating(true)}
                               onImageDiscoveryClick={(productId) => {
@@ -1367,9 +1372,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                             {MARKETPLACE_PROMO_BANNERS_ENABLED &&
                               index === 11 &&
                               isMarketplaceView && (
-                              <div
-                                className={productGridLayout === "list" ? "w-full" : undefined}
-                              >
+                              <div>
                                 <ListItemBanner className="sm:hidden" />
                               </div>
                             )}
@@ -1470,12 +1473,14 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   {/* Skeleton cards while next page loads */}
                   {!searchQuery && isPaginating && displayProducts.length > 0 && (
                     <div className={
-                      productGridLayout === "list"
-                        ? "flex flex-col gap-3"
-                        : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-4"
+                      productGridLayout === "grid8"
+                        ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
+                        : productGridLayout === "grid4"
+                        ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
+                        : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3"
                     }>
                       {Array.from({ length: 6 }).map((_, i) => (
-                        <ProductCardSkeleton key={i} layout={productGridLayout} />
+                        <ProductCardSkeleton key={i} layout="grid" />
                       ))}
                     </div>
                   )}

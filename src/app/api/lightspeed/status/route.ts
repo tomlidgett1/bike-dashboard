@@ -1,15 +1,27 @@
 /**
  * Lightspeed Connection Status Endpoint
- * 
+ *
  * GET /api/lightspeed/status
- * 
- * Returns the current Lightspeed connection status and sync settings
- * for the authenticated user.
+ *
+ * IMPORTANT – do NOT call testConnection() (which hits the Lightspeed API) here.
+ * The hook polls this endpoint every 30 seconds.  If we call testConnection() on
+ * every poll, we end up with concurrent callers all triggering refreshAccessToken()
+ * at the same time.  Lightspeed uses *rotating* refresh tokens: the second caller
+ * sends the already-consumed RT and gets invalid_grant, which our error handler
+ * turns into status='expired', permanently breaking the connection.
+ *
+ * Instead we check token freshness from the DB:
+ *  • Token still valid  → return isConnected:true immediately (no Lightspeed call).
+ *  • Token expired/near-expiry → attempt a single refresh, return result.
  */
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getConnection, createLightspeedClient } from '@/lib/services/lightspeed'
+import {
+  getConnection,
+  tokenNeedsRefresh,
+  refreshAccessToken,
+} from '@/lib/services/lightspeed'
 import type { LightspeedConnection, LightspeedSyncSettings } from '@/lib/services/lightspeed'
 
 export interface LightspeedStatusResponse {
@@ -24,7 +36,6 @@ export interface LightspeedStatusResponse {
 
 export async function GET() {
   try {
-    // Get authenticated user
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
@@ -35,7 +46,6 @@ export async function GET() {
       )
     }
 
-    // Get connection status
     const connection = await getConnection(user.id)
 
     if (!connection) {
@@ -47,29 +57,41 @@ export async function GET() {
       })
     }
 
-    // Get sync settings
     const { data: syncSettings } = await supabase
       .from('lightspeed_sync_settings')
       .select('*')
       .eq('user_id', user.id)
       .single()
 
-    // Check if token is valid by testing connection
-    let isTokenValid = false
+    // ----------------------------------------------------------------
+    // Determine connectivity WITHOUT hitting the Lightspeed API.
+    // ----------------------------------------------------------------
+    let isConnected = false
+
     if (connection.status === 'connected' && connection.access_token_encrypted) {
-      try {
-        const client = createLightspeedClient(user.id)
-        isTokenValid = await client.testConnection()
-      } catch {
-        isTokenValid = false
+      if (!connection.token_expires_at) {
+        // No expiry stored — treat as connected (token will self-heal on next use)
+        isConnected = true
+      } else {
+        const expiresAt = new Date(connection.token_expires_at)
+
+        if (!tokenNeedsRefresh(expiresAt)) {
+          // Token is fresh — no API call needed
+          isConnected = true
+        } else {
+          // Token is expired or within the buffer window — refresh it now.
+          // refreshAccessToken handles its own race-condition guard.
+          const refreshed = await refreshAccessToken(user.id)
+          isConnected = refreshed !== null
+        }
       }
     }
+    // Any other status ('disconnected', 'expired', 'error') → isConnected stays false
 
-    // Remove sensitive data from connection
     const safeConnection = {
       id: connection.id,
       user_id: connection.user_id,
-      status: isTokenValid ? connection.status : 'expired',
+      status: isConnected ? 'connected' : connection.status,
       account_id: connection.account_id,
       account_name: connection.account_name,
       token_expires_at: connection.token_expires_at,
@@ -86,8 +108,6 @@ export async function GET() {
       oauth_state_expires_at: connection.oauth_state_expires_at,
     }
 
-    const isConnected = connection.status === 'connected' && isTokenValid
-
     return NextResponse.json<LightspeedStatusResponse>({
       isConnected,
       connection: safeConnection,
@@ -98,25 +118,9 @@ export async function GET() {
     })
   } catch (error) {
     console.error('Error fetching Lightspeed status:', error)
-    
     return NextResponse.json(
       { error: 'Failed to fetch connection status' },
       { status: 500 }
     )
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

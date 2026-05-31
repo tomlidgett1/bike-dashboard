@@ -178,7 +178,7 @@ export function StoreServicesManager() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+        <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
       </div>
     );
   }
@@ -197,7 +197,7 @@ export function StoreServicesManager() {
       {services.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-sm text-gray-600">No services added yet</p>
+            <p className="text-sm text-muted-foreground">No services added yet</p>
           </CardContent>
         </Card>
       ) : (
@@ -209,19 +209,19 @@ export function StoreServicesManager() {
         >
           {services.map((service) => (
             <Reorder.Item key={service.id} value={service}>
-              <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-md hover:shadow-sm transition-shadow cursor-move bg-white">
+              <div className="flex items-center gap-3 p-3 border border-border rounded-md hover:bg-accent/40 transition-colors cursor-move bg-card">
                 {/* Drag Handle */}
                 <div className="flex-shrink-0 cursor-grab active:cursor-grabbing">
-                  <GripVertical className="h-4 w-4 text-gray-400" />
+                  <GripVertical className="h-4 w-4 text-muted-foreground/60" />
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 truncate">
+                  <h4 className="text-sm font-medium text-foreground truncate">
                     {service.name}
                   </h4>
                   {service.description && (
-                    <p className="text-xs text-gray-600 line-clamp-1 mt-0.5">
+                    <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                       {service.description}
                     </p>
                   )}
@@ -241,7 +241,7 @@ export function StoreServicesManager() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setDeleteConfirmId(service.id)}
-                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -333,7 +333,7 @@ export function StoreServicesManager() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
             </AlertDialogAction>

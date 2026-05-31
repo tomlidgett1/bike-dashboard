@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { MapPin, LayoutGrid, List } from "lucide-react";
+import { MapPin, Grid2x2, Grid3x2, Grid3X3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 import {
@@ -86,7 +86,7 @@ function PillDivider() {
   return <div className="w-px bg-gray-100 my-2 flex-shrink-0" aria-hidden />;
 }
 
-export type ProductGridLayout = "grid" | "list";
+export type ProductGridLayout = "grid4" | "grid6" | "grid8";
 
 export interface BrowseFiltersToolbarProps {
   selectedLevel1: string | null;
@@ -187,14 +187,19 @@ export function BrowseFiltersToolbar({
             </SelectContent>
           </Select>
           <div className="flex h-10 items-stretch rounded-full border border-gray-200 bg-white overflow-hidden">
-            <button type="button" aria-label="Grid layout" onClick={() => onGridLayoutChange("grid")}
-              className={cn("flex flex-1 items-center justify-center transition-colors", gridLayout === "grid" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600")}>
-              <LayoutGrid className="h-4 w-4" />
+            <button type="button" aria-label="4 per row" onClick={() => onGridLayoutChange("grid4")}
+              className={cn("flex flex-1 items-center justify-center transition-colors", gridLayout === "grid4" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600")}>
+              <Grid2x2 className="h-4 w-4" />
             </button>
             <div className="w-px bg-gray-100 my-2" />
-            <button type="button" aria-label="List layout" onClick={() => onGridLayoutChange("list")}
-              className={cn("flex flex-1 items-center justify-center transition-colors", gridLayout === "list" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600")}>
-              <List className="h-4 w-4" />
+            <button type="button" aria-label="6 per row" onClick={() => onGridLayoutChange("grid6")}
+              className={cn("flex flex-1 items-center justify-center transition-colors", gridLayout === "grid6" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600")}>
+              <Grid3x2 className="h-4 w-4" />
+            </button>
+            <div className="w-px bg-gray-100 my-2" />
+            <button type="button" aria-label="8 per row" onClick={() => onGridLayoutChange("grid8")}
+              className={cn("flex flex-1 items-center justify-center transition-colors", gridLayout === "grid8" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600")}>
+              <Grid3X3 className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -346,19 +351,26 @@ export function BrowseFiltersToolbar({
 
           {/* Layout toggle */}
           <div className="flex items-center px-1.5 gap-0.5">
-            <button type="button" aria-label="Grid layout" onClick={() => onGridLayoutChange("grid")}
+            <button type="button" aria-label="4 per row" onClick={() => onGridLayoutChange("grid4")}
               className={cn(
                 "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                gridLayout === "grid" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600"
+                gridLayout === "grid4" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600"
               )}>
-              <LayoutGrid className="h-4 w-4" />
+              <Grid2x2 className="h-4 w-4" />
             </button>
-            <button type="button" aria-label="List layout" onClick={() => onGridLayoutChange("list")}
+            <button type="button" aria-label="6 per row" onClick={() => onGridLayoutChange("grid6")}
               className={cn(
                 "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                gridLayout === "list" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600"
+                gridLayout === "grid6" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600"
               )}>
-              <List className="h-4 w-4" />
+              <Grid3x2 className="h-4 w-4" />
+            </button>
+            <button type="button" aria-label="8 per row" onClick={() => onGridLayoutChange("grid8")}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                gridLayout === "grid8" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600"
+              )}>
+              <Grid3X3 className="h-4 w-4" />
             </button>
           </div>
 

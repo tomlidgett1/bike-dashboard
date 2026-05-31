@@ -47,13 +47,15 @@ export async function PATCH(
       )
     }
 
+    // Build update payload — only include fields that were provided
+    const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (body.is_active !== undefined) updatePayload.is_active = body.is_active
+    if ('display_name' in body) updatePayload.display_name = body.display_name || null
+
     // Update the product
     const { data: updatedProduct, error: updateError } = await supabase
       .from('products')
-      .update({
-        is_active: body.is_active,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', productId)
       .select()
       .single()

@@ -29,7 +29,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <main
         className={cn(
           "min-h-screen",
-          "ml-0 lg:ml-[260px]",
+          "ml-0 lg:ml-[248px]",
           "pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0"
         )}
       >

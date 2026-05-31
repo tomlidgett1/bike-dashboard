@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Store, Wrench, Tag, FileText, Star } from "lucide-react";
+import { Loader2, Store, Wrench, Tag, FileText, Star, Type } from "lucide-react";
 import { Header } from "@/components/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,6 +12,7 @@ import { StoreCategoriesManager } from "@/components/settings/store-categories-m
 import { StoreServicesManager } from "@/components/settings/store-services-manager";
 import { StoreBrandsManager } from "@/components/settings/store-brands-manager";
 import { StoreProductDescriptionsManager } from "@/components/settings/store-product-descriptions-manager";
+import { StoreProductTitlesManager } from "@/components/settings/store-product-titles-manager";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 
@@ -47,7 +48,7 @@ export default function StoreSettingsPage() {
           description="Manage your store profile, categories, and services"
         />
         <div className="flex items-center justify-center min-h-[60vh]">
-          <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+          <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
         </div>
       </>
     );
@@ -80,21 +81,25 @@ export default function StoreSettingsPage() {
                 <FileText className="h-4 w-4" />
                 Products
               </TabsTrigger>
+              <TabsTrigger value="titles" className="flex-none gap-2">
+                <Type className="h-4 w-4" />
+                Titles
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="categories">
               {/* Featured collection callout */}
-              <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-                <Star className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="mb-4 flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
+                <Star className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-amber-900">Featured Collection</p>
-                  <p className="text-xs text-amber-700 mt-0.5">
+                  <p className="text-sm font-medium text-foreground">Featured Collection</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     The <strong>first category</strong> in your list below is shown as the featured collection tile on your public store profile. Drag categories to reorder and choose which one is featured.
                   </p>
                 </div>
               </div>
 
-              <Card className="bg-white dark:bg-card rounded-md border-border">
+              <Card className="rounded-md border-border">
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
@@ -117,7 +122,7 @@ export default function StoreSettingsPage() {
             </TabsContent>
 
             <TabsContent value="services">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
+              <Card className="rounded-md border-border">
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
@@ -140,7 +145,7 @@ export default function StoreSettingsPage() {
             </TabsContent>
 
             <TabsContent value="brands">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
+              <Card className="rounded-md border-border">
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
@@ -162,7 +167,7 @@ export default function StoreSettingsPage() {
               </Card>
             </TabsContent>
             <TabsContent value="products">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
+              <Card className="rounded-md border-border">
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
@@ -180,6 +185,28 @@ export default function StoreSettingsPage() {
                 </CardHeader>
                 <CardContent>
                   <StoreProductDescriptionsManager />
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="titles">
+              <Card className="rounded-md border-border">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
+                      <Type className="h-5 w-5 text-foreground" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-semibold">
+                        Product Titles
+                      </CardTitle>
+                      <CardDescription className="text-sm">
+                        Clean up Lightspeed product names into ecommerce-ready titles shown on the marketplace.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <StoreProductTitlesManager />
                 </CardContent>
               </Card>
             </TabsContent>

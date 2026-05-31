@@ -247,7 +247,7 @@ export default function StoreProfilePage() {
             {/* For Sale / Sold tabs */}
             {isMobile ? (
               <div className="bg-white border-b border-gray-100 sticky top-16 z-30">
-                <div className="max-w-[1920px] mx-auto px-3">
+                <div className="px-3">
                   <div className="py-3">
                     <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
                       <button
@@ -286,7 +286,7 @@ export default function StoreProfilePage() {
             )}
 
             {/* Products */}
-            <div className="max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+            <div className="px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
               {hasProducts ? (
                 isMobile ? (
                   <div className="grid grid-cols-2 gap-3">

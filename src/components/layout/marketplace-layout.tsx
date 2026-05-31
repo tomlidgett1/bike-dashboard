@@ -60,7 +60,7 @@ function MarketplaceLayoutContent({
         >
           {/* Call to Action for Bike Stores */}
           <div className="bg-white border-t border-gray-200 py-4">
-            <div className="max-w-[1920px] mx-auto px-6">
+            <div className="px-6">
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="flex items-center gap-3">
                   <div className="flex items-center justify-center w-10 h-10 rounded-md bg-gray-100">
@@ -87,7 +87,7 @@ function MarketplaceLayoutContent({
 
           {/* Simple Copyright Footer */}
           <footer className="w-full bg-gray-50 border-t border-gray-200 py-3">
-            <div className="max-w-[1920px] mx-auto px-6">
+            <div className="px-6">
               <p className="text-center text-xs text-gray-600">
                 &copy; 2025 Yellow Jersey. All Rights Reserved.
               </p>
@@ -99,7 +99,7 @@ function MarketplaceLayoutContent({
       {/* Full Footer for Other Pages */}
       {showFooter && !showStoreCTA && (
         <footer className="w-full border-t border-gray-200 bg-white mt-12">
-          <div className="max-w-[1920px] mx-auto px-6 py-8">
+          <div className="px-6 py-8">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
               {/* Company */}
               <div>

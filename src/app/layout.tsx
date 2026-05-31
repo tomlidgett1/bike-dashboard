@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Open_Sans, JetBrains_Mono } from "next/font/google";
+import { JetBrains_Mono, Inter } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { ProfileProvider } from "@/components/providers/profile-provider";
@@ -18,16 +18,13 @@ import { MessagesPanel } from "@/components/messages/messages-panel";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
 import "./globals.css";
+import { cn } from "@/lib/utils";
 
 // Note: Layout is already dynamic due to getUserProfile() reading auth cookies
 // Removed 'force-dynamic' to allow page-level ISR caching to work properly
 // Individual pages can set their own caching with `revalidate` export
 
-const openSans = Open_Sans({
-  variable: "--font-sans",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800"],
-});
+const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-geist-mono",
@@ -64,7 +61,7 @@ export default async function RootLayout({
   const serverProfile = await getUserProfile();
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={cn("font-sans", inter.variable)}>
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -72,7 +69,7 @@ export default async function RootLayout({
         <meta name="format-detection" content="telephone=no" />
       </head>
       <body
-        className={`${openSans.variable} ${jetbrainsMono.variable} font-sans antialiased touch-manipulation`}
+        className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased touch-manipulation`}
         style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as any}
       >
         <ThemeProvider

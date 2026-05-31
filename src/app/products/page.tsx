@@ -178,7 +178,7 @@ const FiltersBar = React.memo(({
   totalPages: number;
 }) => {
   return (
-    <div className="flex-shrink-0 px-6 py-4 border-b border-border bg-white dark:bg-gray-950">
+    <div className="flex-shrink-0 px-6 py-4 border-b border-border bg-card">
       <motion.div
         variants={containerVariants}
         initial="hidden"
@@ -292,7 +292,7 @@ const ProductTableHeader = React.memo(({
   };
 
   return (
-    <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-border">
+    <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm border-b border-border">
       <TableRow className="hover:bg-transparent">
         <TableHead className="h-10 px-6 font-semibold" style={{ maxWidth: '8cm' }}>
           <button
@@ -392,7 +392,7 @@ const PaginationFooter = React.memo(({
   onPageChange: (page: number) => void;
 }) => {
   return (
-    <div className="flex-shrink-0 px-6 py-3 border-t border-border bg-white dark:bg-gray-950">
+    <div className="flex-shrink-0 px-6 py-3 border-t border-border bg-card">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         {/* Page Size Selector */}
         <div className="flex items-center gap-2">
@@ -457,12 +457,7 @@ const PaginationFooter = React.memo(({
                     size="icon"
                     onClick={() => onPageChange(pageNum)}
                     disabled={loading}
-                    className={cn(
-                      "rounded-md h-8 w-8 text-xs font-medium",
-                      pagination.page === pageNum
-                        ? "bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200"
-                        : "hover:bg-gray-100 dark:hover:bg-gray-800"
-                    )}
+                    className="rounded-md h-8 w-8 text-xs font-medium"
                   >
                     {pageNum}
                   </Button>
@@ -921,7 +916,7 @@ export default function ProductsPage() {
         />
 
         {/* Table Container - Full width, scrollable */}
-        <div className="flex-1 overflow-auto bg-white dark:bg-gray-950">
+        <div className="flex-1 overflow-auto bg-card">
           {loading && !refreshing ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -952,7 +947,7 @@ export default function ProductsPage() {
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.15 }}
-                      className="group border-b border-border/50 hover:bg-gray-50/50 dark:hover:bg-gray-900/30 transition-colors"
+                      className="group border-b border-border/50 hover:bg-muted/50 transition-colors"
                     >
                       {/* Product Column */}
                       <TableCell className="py-2.5 px-6" style={{ maxWidth: '8cm' }}>
@@ -961,9 +956,9 @@ export default function ProductsPage() {
                             onClick={() => product.resolved_image_url || product.primary_image_url ? null : handleDiscoverImages(product)}
                             disabled={!!product.resolved_image_url || !!product.primary_image_url}
                             className={cn(
-                              "flex-shrink-0 h-10 w-10 rounded-md overflow-hidden ring-1 ring-gray-200 dark:ring-gray-700 transition-all",
-                              (!product.resolved_image_url && !product.primary_image_url) && "cursor-pointer hover:ring-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950",
-                              (product.resolved_image_url || product.primary_image_url) && "bg-gray-100 dark:bg-gray-800"
+                              "flex-shrink-0 h-10 w-10 rounded-md overflow-hidden ring-1 ring-border transition-all",
+                              (!product.resolved_image_url && !product.primary_image_url) && "cursor-pointer hover:ring-primary hover:bg-primary/10",
+                              (product.resolved_image_url || product.primary_image_url) && "bg-muted"
                             )}
                             title={(!product.resolved_image_url && !product.primary_image_url) ? "Click to discover images with AI" : ""}
                           >
@@ -985,11 +980,11 @@ export default function ProductsPage() {
                                   // Fallback to placeholder on error
                                   const target = e.target as HTMLImageElement;
                                   target.style.display = 'none';
-                                  target.parentElement!.innerHTML = '<div class="h-full w-full flex items-center justify-center"><svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>';
+                                  target.parentElement!.innerHTML = '<div class="h-full w-full flex items-center justify-center"><svg class="h-5 w-5 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>';
                                 }}
                               />
                             ) : (
-                              <div className="h-full w-full flex items-center justify-center group-hover:text-blue-500">
+                              <div className="h-full w-full flex items-center justify-center group-hover:text-primary">
                                 <Sparkles className="h-5 w-5 text-muted-foreground transition-colors" />
                               </div>
                             )}
@@ -1072,7 +1067,7 @@ export default function ProductsPage() {
                         <TableCell className="py-2.5 px-4">
                           {product.listing_source === "lightspeed" ? (
                             <div className="flex items-center gap-1.5">
-                              <div className="flex-shrink-0 h-4 w-4 rounded bg-white dark:bg-gray-800 ring-1 ring-gray-200 dark:ring-gray-700 overflow-hidden">
+                              <div className="flex-shrink-0 h-4 w-4 rounded bg-card ring-1 ring-border overflow-hidden">
                                 <Image
                                   src="/ls.png"
                                   alt="Lightspeed"
@@ -1191,14 +1186,14 @@ export default function ProductsPage() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] as [number, number, number, number] }}
-              className="fixed inset-4 md:inset-auto md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[90vw] md:max-w-4xl md:h-[80vh] bg-white dark:bg-gray-950 rounded-md shadow-2xl z-50 flex flex-col overflow-hidden"
+              className="fixed inset-4 md:inset-auto md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[90vw] md:max-w-4xl md:h-[80vh] bg-card rounded-md shadow-2xl z-50 flex flex-col overflow-hidden"
             >
               {/* Header */}
-              <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-800">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <div className="flex-shrink-0 px-6 py-4 border-b border-border">
+                <h2 className="text-lg font-semibold text-foreground">
                   Discover Images with AI
                 </h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
+                <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
                   {discoveringProduct?.description}
                 </p>
               </div>
@@ -1207,28 +1202,28 @@ export default function ProductsPage() {
               <div className="flex-1 overflow-y-auto p-6">
                 {discovering ? (
                   <div className="flex flex-col items-center justify-center h-full">
-                    <Loader2 className="h-12 w-12 animate-spin text-blue-600 mb-4" />
-                    <p className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+                    <p className="text-lg font-medium text-foreground mb-2">
                       Discovering images...
                     </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <p className="text-sm text-muted-foreground">
                       This may take 15-25 seconds. Searching for "cycling {discoveringProduct?.description}"
                     </p>
                   </div>
                 ) : discoveredImages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full">
-                    <AlertCircle className="h-12 w-12 text-gray-400 mb-4" />
-                    <p className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                    <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
+                    <p className="text-lg font-medium text-foreground mb-2">
                       No images found
                     </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <p className="text-sm text-muted-foreground">
                       Try a different product or check the product name
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3">
-                      <p className="text-sm text-blue-900 dark:text-blue-100 font-medium">
+                    <div className="bg-primary/10 border border-primary/20 rounded-md p-3">
+                      <p className="text-sm text-foreground font-medium">
                         Click images to approve/reject • Click ⭐ to set primary image
                       </p>
                     </div>
@@ -1242,7 +1237,7 @@ export default function ProductsPage() {
                               'relative aspect-square rounded-md overflow-hidden transition-all group w-full',
                               'hover:scale-105 hover:shadow-lg',
                               image.approval_status === 'approved' && 'ring-4 ring-green-500',
-                              image.approval_status === 'pending' && 'ring-2 ring-gray-300 hover:ring-blue-400',
+                              image.approval_status === 'pending' && 'ring-2 ring-border hover:ring-primary',
                               image.approval_status === 'rejected' && 'ring-4 ring-red-500 opacity-60'
                             )}
                           >
@@ -1259,7 +1254,7 @@ export default function ProductsPage() {
                               ) : image.approval_status === 'rejected' ? (
                                 <XCircle className="h-6 w-6 text-red-500 drop-shadow-lg bg-white rounded-full" />
                               ) : (
-                                <div className="h-6 w-6 rounded-full bg-white/80 border-2 border-gray-300" />
+                                <div className="h-6 w-6 rounded-full bg-background/80 border-2 border-border" />
                               )}
                             </div>
 
@@ -1282,17 +1277,17 @@ export default function ProductsPage() {
                               className={cn(
                                 'absolute -bottom-3 left-1/2 -translate-x-1/2 z-10',
                                 'p-1.5 rounded-full transition-all shadow-lg',
-                                image.is_primary 
-                                  ? 'bg-yellow-400 hover:bg-yellow-500' 
-                                  : 'bg-white hover:bg-gray-100 border-2 border-gray-300'
+                                image.is_primary
+                                  ? 'bg-primary hover:bg-primary/90'
+                                  : 'bg-background hover:bg-muted border-2 border-border'
                               )}
                               title={image.is_primary ? 'Primary image' : 'Set as primary'}
                             >
-                              <Star 
+                              <Star
                                 className={cn(
                                   'h-4 w-4',
-                                  image.is_primary ? 'text-yellow-900 fill-yellow-900' : 'text-gray-600'
-                                )} 
+                                  image.is_primary ? 'text-primary-foreground fill-primary-foreground' : 'text-muted-foreground'
+                                )}
                               />
                             </button>
                           )}
@@ -1305,8 +1300,8 @@ export default function ProductsPage() {
 
               {/* Footer */}
               {!discovering && discoveredImages.length > 0 && (
-                <div className="flex-shrink-0 px-6 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between">
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                <div className="flex-shrink-0 px-6 py-4 border-t border-border flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
                     {discoveredImages.filter(img => img.approval_status === 'approved').length} approved • 
                     {discoveredImages.filter(img => img.approval_status === 'pending').length} pending • 
                     {discoveredImages.filter(img => img.approval_status === 'rejected').length} rejected

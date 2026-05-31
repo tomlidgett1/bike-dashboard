@@ -95,7 +95,7 @@ export default function ForYouPage() {
       <MarketplaceHeader />
 
       <MarketplaceLayout showFooter={false}>
-        <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20">
+        <div className="px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

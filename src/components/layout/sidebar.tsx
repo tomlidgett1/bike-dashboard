@@ -16,11 +16,14 @@ import {
   Tag,
   HelpCircle,
   CalendarClock,
+  ExternalLink,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Sheet,
   SheetContent,
@@ -37,11 +40,10 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
   requiresStore?: boolean;
   isAdmin?: boolean;
-  /** Shown but not navigable (e.g. coming soon) */
   disabled?: boolean;
 }
 
-const navItems: NavItem[] = [
+const mainNavItems: NavItem[] = [
   {
     title: "Products",
     href: "/products",
@@ -51,6 +53,12 @@ const navItems: NavItem[] = [
     title: "Store Settings",
     href: "/settings/store",
     icon: Store,
+    requiresStore: true,
+  },
+  {
+    title: "Optimize",
+    href: "/optimize",
+    icon: Sparkles,
     requiresStore: true,
   },
   {
@@ -64,12 +72,6 @@ const navItems: NavItem[] = [
     icon: Zap,
   },
 ];
-
-const settingsNavItem: NavItem = {
-  title: "Settings",
-  href: "/settings",
-  icon: Settings,
-};
 
 const adminItems: NavItem[] = [
   {
@@ -94,33 +96,35 @@ const adminItems: NavItem[] = [
   },
 ];
 
-function StoreSidebarLink({
+function NavLink({
   item,
   pathname,
   onNavigate,
-  mobile,
+  compact,
 }: {
   item: NavItem;
   pathname: string | null;
   onNavigate?: () => void;
-  mobile?: boolean;
+  compact?: boolean;
 }) {
   const isActive = pathname === item.href;
   const Icon = item.icon;
-  const py = mobile ? "py-2.5" : "py-2";
 
   if (item.disabled) {
     return (
       <div
         className={cn(
-          "flex cursor-not-allowed select-none items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/40",
-          py
+          "flex cursor-not-allowed select-none items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm",
+          "text-muted-foreground/40"
         )}
         aria-disabled="true"
         title="Coming soon"
       >
-        <Icon className="h-[18px] w-[18px] shrink-0 text-sidebar-foreground/40" />
-        <span className="overflow-hidden whitespace-nowrap">{item.title}</span>
+        <Icon className="h-4 w-4 shrink-0" />
+        <span className="truncate">{item.title}</span>
+        <span className="ml-auto text-[10px] font-medium tracking-wide text-muted-foreground/30">
+          SOON
+        </span>
       </div>
     );
   }
@@ -130,23 +134,103 @@ function StoreSidebarLink({
       href={item.href}
       onClick={onNavigate}
       className={cn(
-        "group flex items-center gap-3 rounded-md px-3 text-sm font-medium transition-all duration-150",
-        py,
-        isActive
-          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+        "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent",
+        isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
       )}
     >
       <Icon
         className={cn(
-          "h-[18px] w-[18px] shrink-0 transition-colors",
-          isActive
-            ? "text-sidebar-foreground"
-            : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+          "h-4 w-4 shrink-0 transition-colors",
+          isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
         )}
       />
-      <span className="overflow-hidden whitespace-nowrap">{item.title}</span>
+      <span className="truncate">{item.title}</span>
     </Link>
+  );
+}
+
+function NavSection({
+  label,
+  children,
+}: {
+  label?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-0.5">
+      {label && (
+        <p className="mb-1.5 px-2.5 text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+          {label}
+        </p>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function SidebarFooter({
+  profile,
+  pathname,
+  onNavigate,
+}: {
+  profile: ReturnType<typeof useUserProfile>["profile"];
+  pathname: string | null;
+  onNavigate?: () => void;
+}) {
+  const initials = profile
+    ? `${profile.first_name?.[0] ?? ""}${profile.last_name?.[0] ?? ""}`.toUpperCase() || "?"
+    : "?";
+
+  return (
+    <div className="shrink-0 border-t border-border/60 px-3 py-3 space-y-0.5">
+      <Link
+        href="/marketplace"
+        onClick={onNavigate}
+        className="group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <Store className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground transition-colors" />
+        <span>Marketplace</span>
+        <ExternalLink className="ml-auto h-3 w-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+      </Link>
+
+      <Link
+        href="/marketplace/help"
+        onClick={onNavigate}
+        className="group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <HelpCircle className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground transition-colors" />
+        <span>Help & Support</span>
+      </Link>
+
+      <Separator className="my-2 bg-border/60" />
+
+      <Link
+        href="/settings"
+        onClick={onNavigate}
+        className={cn(
+          "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent",
+          pathname === "/settings" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+        )}
+      >
+        <Avatar className="h-5 w-5 shrink-0">
+          {profile?.logo_url ? (
+            <AvatarImage src={profile.logo_url} alt={profile.business_name} />
+          ) : null}
+          <AvatarFallback className="text-[9px] font-bold bg-primary/20 text-primary">
+            {initials}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate text-[13px] font-medium leading-none text-foreground">
+            {profile?.first_name || profile?.name || "Account"}
+          </span>
+          <span className="truncate text-[11px] text-muted-foreground/70">
+            {profile?.email}
+          </span>
+        </div>
+        <Settings className="ml-auto h-3.5 w-3.5 shrink-0 opacity-0 group-hover:opacity-50 transition-opacity" />
+      </Link>
+    </div>
   );
 }
 
@@ -154,127 +238,80 @@ export function Sidebar() {
   const pathname = usePathname();
   const { profile } = useUserProfile();
 
-  // Check if user is verified bicycle store
   const isVerifiedStore =
-    profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
+    profile?.account_type === "bicycle_store" && profile?.bicycle_store === true;
 
-  // Filter nav items based on user type
-  const filteredNavItems = navItems.filter(
+  const filteredNavItems = mainNavItems.filter(
     (item) => !item.requiresStore || isVerifiedStore
   );
 
   return (
-    <aside
-      className={cn(
-        "fixed left-0 top-0 z-40 hidden h-screen w-[260px] flex-col border-r border-sidebar-border bg-sidebar lg:flex"
-      )}
-    >
-      {/* Logo */}
-      <div className="flex h-14 items-center px-3">
+    <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[248px] flex-col border-r border-border/60 bg-sidebar lg:flex">
+      {/* Logo / Brand */}
+      <div className="flex h-14 shrink-0 items-center px-4">
         <Link
-          href="/settings"
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-sidebar-accent"
+          href="/products"
+          className="group flex items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors hover:bg-accent"
         >
           {profile?.logo_url ? (
-            <div className="relative h-8 w-8 rounded-md overflow-hidden">
+            <div className="relative h-7 w-7 overflow-hidden rounded-md ring-1 ring-border/50">
               <Image
                 src={profile.logo_url}
                 alt={profile.business_name || "Logo"}
                 fill
                 className="object-cover"
                 priority
-                sizes="32px"
+                sizes="28px"
               />
             </div>
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-              <Bike className="h-5 w-5 text-primary-foreground" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/90 ring-1 ring-primary/20">
+              <Bike className="h-4 w-4 text-primary-foreground" />
             </div>
           )}
-          <span className="font-semibold text-sidebar-foreground">
+          <span className="text-[14px] font-semibold text-foreground">
             {profile?.business_name || "Bike Dashboard"}
           </span>
         </Link>
       </div>
 
-      <Separator className="bg-sidebar-border" />
+      <Separator className="bg-border/60" />
 
       {/* Navigation */}
       <ScrollArea className="min-h-0 flex-1 px-3 py-4">
-        <nav className="flex flex-col gap-1">
-          {filteredNavItems.map((item) => (
-            <StoreSidebarLink
-              key={item.href}
-              item={item}
-              pathname={pathname}
-            />
-          ))}
-
-          {/* Admin Section */}
-          <div className="mt-4 border-t border-sidebar-border pt-4">
-            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
-              Admin
-            </p>
-            {adminItems.map((item) => (
-              <StoreSidebarLink
-                key={item.href}
-                item={item}
-                pathname={pathname}
-              />
+        <div className="flex flex-col gap-5">
+          <NavSection>
+            {filteredNavItems.map((item) => (
+              <NavLink key={item.href} item={item} pathname={pathname} />
             ))}
-          </div>
+          </NavSection>
 
-          {/* Go to Marketplace Button */}
-          <div className="mt-4 border-t border-sidebar-border pt-4">
-            <Link
-              href="/marketplace"
-              className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/80 transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            >
-              <Store
-                className="h-[18px] w-[18px] shrink-0 text-sidebar-foreground/60 transition-colors group-hover:text-sidebar-foreground"
-              />
-              <span className="overflow-hidden whitespace-nowrap">
-                Go to Marketplace
-              </span>
-            </Link>
-          </div>
-
-          {/* Help & Support Button */}
-          <div className="mt-1">
-            <Link
-              href="/marketplace/help"
-              className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/80 transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            >
-              <HelpCircle
-                className="h-[18px] w-[18px] shrink-0 text-sidebar-foreground/60 transition-colors group-hover:text-sidebar-foreground"
-              />
-              <span className="overflow-hidden whitespace-nowrap">
-                Help & Support
-              </span>
-            </Link>
-          </div>
-        </nav>
+          <NavSection label="Admin">
+            {adminItems.map((item) => (
+              <NavLink key={item.href} item={item} pathname={pathname} />
+            ))}
+          </NavSection>
+        </div>
       </ScrollArea>
 
-      <div className="shrink-0 border-t border-sidebar-border px-3 py-3">
-        <StoreSidebarLink item={settingsNavItem} pathname={pathname} />
-      </div>
+      {/* Footer */}
+      <SidebarFooter profile={profile} pathname={pathname} />
     </aside>
   );
 }
 
-// Mobile Sidebar using Sheet
+// ─── Mobile Sidebar ───────────────────────────────────────────────────────────
+
 export function MobileSidebar() {
   const pathname = usePathname();
   const { profile } = useUserProfile();
   const [open, setOpen] = React.useState(false);
+  const close = () => setOpen(false);
 
-  // Check if user is verified bicycle store
   const isVerifiedStore =
-    profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
+    profile?.account_type === "bicycle_store" && profile?.bicycle_store === true;
 
-  // Filter nav items based on user type
-  const filteredNavItems = navItems.filter(
+  const filteredNavItems = mainNavItems.filter(
     (item) => !item.requiresStore || isVerifiedStore
   );
 
@@ -292,112 +329,74 @@ export function MobileSidebar() {
       </SheetTrigger>
       <SheetContent
         side="left"
-        className="flex h-full w-[280px] flex-col bg-sidebar p-0"
+        className="flex h-full w-[272px] flex-col bg-sidebar p-0"
       >
-        <SheetHeader className="border-b border-sidebar-border px-4 py-3">
-          <SheetTitle className="flex items-center gap-2 text-left">
+        <SheetHeader className="h-14 shrink-0 flex-row items-center border-b border-border/60 px-4 py-0 space-y-0">
+          <SheetTitle className="flex items-center gap-2.5">
             {profile?.logo_url ? (
-              <div className="relative h-8 w-8 rounded-md overflow-hidden">
+              <div className="relative h-7 w-7 overflow-hidden rounded-md ring-1 ring-border/50">
                 <Image
                   src={profile.logo_url}
                   alt={profile.business_name || "Logo"}
                   fill
                   className="object-cover"
                   priority
-                  sizes="32px"
+                  sizes="28px"
                 />
               </div>
             ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-                <Bike className="h-5 w-5 text-primary-foreground" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/90 ring-1 ring-primary/20">
+                <Bike className="h-4 w-4 text-primary-foreground" />
               </div>
             )}
-            <span className="font-semibold text-sidebar-foreground">
+            <span className="text-[14px] font-semibold text-foreground">
               {profile?.business_name || "Bike Dashboard"}
             </span>
           </SheetTitle>
         </SheetHeader>
 
-        {/* Sell Item Button */}
-        <div className="px-3 py-3 border-b border-sidebar-border">
+        {/* Sell CTA */}
+        <div className="shrink-0 px-3 pt-3 pb-2">
           <Link
             href="/marketplace/sell"
-            onClick={() => setOpen(false)}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-[#FFC72C] hover:bg-[#E6B328] px-4 py-2.5 text-sm font-medium text-gray-900 transition-colors"
+            onClick={close}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
           >
             <Tag className="h-4 w-4" />
             Sell Item
           </Link>
         </div>
 
-        <ScrollArea className="min-h-0 flex-1 px-3 py-4">
-          <nav className="flex flex-col gap-1">
-            {filteredNavItems.map((item) => (
-              <StoreSidebarLink
-                key={item.href}
-                item={item}
-                pathname={pathname}
-                mobile
-                onNavigate={() => setOpen(false)}
-              />
-            ))}
+        <Separator className="bg-border/60" />
 
-            {/* Admin Section */}
-            <div className="mt-4 border-t border-sidebar-border pt-4">
-              <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
-                Admin
-              </p>
-              {adminItems.map((item) => (
-                <StoreSidebarLink
+        <ScrollArea className="min-h-0 flex-1 px-3 py-4">
+          <div className="flex flex-col gap-5">
+            <NavSection>
+              {filteredNavItems.map((item) => (
+                <NavLink
                   key={item.href}
                   item={item}
                   pathname={pathname}
-                  mobile
-                  onNavigate={() => setOpen(false)}
+                  onNavigate={close}
                 />
               ))}
-            </div>
+            </NavSection>
 
-            {/* Go to Marketplace Button */}
-            <div className="mt-4 border-t border-sidebar-border pt-4">
-              <Link
-                href="/marketplace"
-                onClick={() => setOpen(false)}
-                className="group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sidebar-foreground/80 transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-              >
-                <Store
-                  className="h-[18px] w-[18px] shrink-0 text-sidebar-foreground/60 transition-colors group-hover:text-sidebar-foreground"
+            <NavSection label="Admin">
+              {adminItems.map((item) => (
+                <NavLink
+                  key={item.href}
+                  item={item}
+                  pathname={pathname}
+                  onNavigate={close}
                 />
-                <span>Go to Marketplace</span>
-              </Link>
-            </div>
-
-            {/* Help & Support Button */}
-            <div className="mt-1">
-              <Link
-                href="/marketplace/help"
-                onClick={() => setOpen(false)}
-                className="group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sidebar-foreground/80 transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-              >
-                <HelpCircle
-                  className="h-[18px] w-[18px] shrink-0 text-sidebar-foreground/60 transition-colors group-hover:text-sidebar-foreground"
-                />
-                <span>Help & Support</span>
-              </Link>
-            </div>
-          </nav>
+              ))}
+            </NavSection>
+          </div>
         </ScrollArea>
 
-        <div className="shrink-0 border-t border-sidebar-border px-3 py-3">
-          <StoreSidebarLink
-            item={settingsNavItem}
-            pathname={pathname}
-            mobile
-            onNavigate={() => setOpen(false)}
-          />
-        </div>
+        <SidebarFooter profile={profile} pathname={pathname} onNavigate={close} />
       </SheetContent>
     </Sheet>
   );
 }
-

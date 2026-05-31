@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'last_synced_at'
     const sortOrder = searchParams.get('sortOrder') || 'desc'
     const categoryFilter = searchParams.get('category') || ''
+    const lsCategoryId = searchParams.get('ls_category_id') || ''
     const stockFilter = searchParams.get('stock') || 'all' // all, in-stock, low-stock
     const statusFilter = searchParams.get('status') || 'all' // all, active, inactive
 
@@ -84,7 +85,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply category filter
-    if (categoryFilter) {
+    if (lsCategoryId) {
+      query = query.eq('lightspeed_category_id', lsCategoryId)
+    } else if (categoryFilter) {
       query = query.eq('category_name', categoryFilter)
     }
 

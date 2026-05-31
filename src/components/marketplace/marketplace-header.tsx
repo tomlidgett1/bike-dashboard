@@ -440,7 +440,7 @@ export function MarketplaceHeader({
             </motion.div>
           )}
         </AnimatePresence>
-        <div className="max-w-[1920px] mx-auto px-4 sm:px-5">
+        <div className="px-4 sm:px-5">
           <div className="flex h-12 sm:h-14 items-center min-w-0">
             {/* Left: Logo */}
             <button
@@ -452,7 +452,7 @@ export function MarketplaceHeader({
                 alt="Yellow Jersey"
                 width={220}
                 height={36}
-                className="h-26 w-auto sm:h-32"
+                className="h-20 w-auto sm:h-24"
                 priority
                 unoptimized
               />
@@ -524,6 +524,7 @@ export function MarketplaceHeader({
                     <Button
                       className="rounded-full bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-semibold h-9 px-4 text-sm"
                     >
+                      <Plus className="mr-1 h-3.5 w-3.5" />
                       Sell Item
                       <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
                     </Button>

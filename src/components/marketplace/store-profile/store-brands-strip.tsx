@@ -13,7 +13,7 @@ export function StoreBrandsStrip({ brands }: StoreBrandsStripProps) {
 
   return (
     <div className="bg-white border-b border-gray-100 py-4 sm:py-5">
-      <div className="max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8">
+      <div className="px-3 sm:px-6 lg:px-8">
         <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
           Brands We Stock
         </p>

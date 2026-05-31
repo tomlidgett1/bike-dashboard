@@ -486,7 +486,7 @@ export function StoreCategoriesManager() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+        <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
       </div>
     );
   }
@@ -527,7 +527,7 @@ export function StoreCategoriesManager() {
       {categories.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-sm text-gray-600">No categories added yet</p>
+            <p className="text-sm text-muted-foreground">No categories added yet</p>
           </CardContent>
         </Card>
       ) : (
@@ -539,30 +539,21 @@ export function StoreCategoriesManager() {
         >
           {categories.map((category) => (
             <Reorder.Item key={category.id} value={category}>
-              <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-md hover:shadow-sm transition-shadow cursor-move bg-white">
-                <div className="flex-shrink-0 cursor-grab active:cursor-grabbing">
-                  <GripVertical className="h-4 w-4 text-gray-400" />
+              <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-foreground/20 hover:bg-accent/40 cursor-move">
+                <div className="flex-shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing">
+                  <GripVertical className="h-4 w-4" />
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-medium text-gray-900 truncate">
+                    <h4 className="text-sm font-medium text-foreground truncate">
                       {category.name}
                     </h4>
-                    <Badge
-                      variant="outline"
-                      className={`text-xs flex-shrink-0 ${
-                        category.source === 'brand'
-                          ? 'border-violet-300 text-violet-700 bg-violet-50'
-                          : category.source === 'lightspeed'
-                          ? 'border-blue-300 text-blue-700 bg-blue-50'
-                          : ''
-                      }`}
-                    >
+                    <Badge variant="secondary" className="text-xs flex-shrink-0 font-normal">
                       {category.source === 'brand' ? `Brand: ${category.brand_name}` : category.source}
                     </Badge>
                   </div>
-                  <p className="text-xs text-gray-600 mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {category.source === 'brand'
                       ? 'Matches products by brand automatically'
                       : `${category.product_ids.length} products assigned`}
@@ -570,7 +561,7 @@ export function StoreCategoriesManager() {
                 </div>
 
                 {/* Carousel size toggle */}
-                <div className="flex items-center rounded-md border border-gray-200 overflow-hidden flex-shrink-0 text-xs font-medium">
+                <div className="flex items-center rounded-md bg-muted p-0.5 overflow-hidden flex-shrink-0 text-xs font-medium">
                   {(
                     [
                       { value: 'featured', label: 'Featured', count: 4 },
@@ -585,8 +576,10 @@ export function StoreCategoriesManager() {
                         type="button"
                         onClick={() => handleCarouselSizeChange(category, value)}
                         title={`${label} — shows ${count} products`}
-                        className={`px-2.5 py-1.5 cursor-pointer transition-colors border-r border-gray-200 last:border-r-0 ${
-                          active ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                        className={`rounded-[5px] px-2.5 py-1 cursor-pointer transition-colors ${
+                          active
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
                         {label} <span className="opacity-60">({count})</span>
@@ -619,7 +612,7 @@ export function StoreCategoriesManager() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setDeleteConfirmId(category.id)}
-                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -653,7 +646,7 @@ export function StoreCategoriesManager() {
                   ? 'Deselect All'
                   : 'Select All'}
               </Button>
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-muted-foreground">
                 {selectedLightspeedCategories.size} of {lightspeedCategories.length} selected
               </span>
             </div>
@@ -661,7 +654,7 @@ export function StoreCategoriesManager() {
 
           <div className="overflow-y-auto max-h-[45vh]">
             {lightspeedCategories.length === 0 ? (
-              <div className="py-8 text-center text-sm text-gray-600">
+              <div className="py-8 text-center text-sm text-muted-foreground">
                 No new categories available
               </div>
             ) : (
@@ -669,7 +662,7 @@ export function StoreCategoriesManager() {
                 {lightspeedCategories.map((lsCategory) => (
                   <div
                     key={lsCategory.id}
-                    className="flex items-center gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer"
+                    className="flex items-center gap-3 p-3 border border-border rounded-md hover:bg-accent cursor-pointer"
                     onClick={() => toggleLightspeedCategory(lsCategory.id)}
                   >
                     <Checkbox
@@ -678,10 +671,10 @@ export function StoreCategoriesManager() {
                       onClick={(e) => e.stopPropagation()}
                     />
                     <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-medium text-gray-900 truncate">
+                      <h4 className="text-sm font-medium text-foreground truncate">
                         {lsCategory.name}
                       </h4>
-                      <p className="text-xs text-gray-600">
+                      <p className="text-xs text-muted-foreground">
                         {lsCategory.product_count} products will be added
                       </p>
                     </div>
@@ -743,7 +736,7 @@ export function StoreCategoriesManager() {
               <div className="border rounded-md overflow-y-auto max-h-[42vh]">
                 <div className="p-3">
                   {products.length === 0 ? (
-                    <p className="text-sm text-gray-600 text-center py-8">
+                    <p className="text-sm text-muted-foreground text-center py-8">
                       No products available
                     </p>
                   ) : (
@@ -751,7 +744,7 @@ export function StoreCategoriesManager() {
                       {products.map((product) => (
                         <div
                           key={product.id}
-                          className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer"
+                          className="flex items-center gap-3 p-2 hover:bg-accent rounded-md cursor-pointer"
                           onClick={() => toggleProduct(product.id)}
                         >
                           <Checkbox
@@ -760,10 +753,10 @@ export function StoreCategoriesManager() {
                             onClick={(e) => e.stopPropagation()}
                           />
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
+                            <p className="text-sm font-medium text-foreground truncate">
                               {(product as any).display_name || product.description}
                             </p>
-                            <p className="text-xs text-gray-600">
+                            <p className="text-xs text-muted-foreground">
                               ${product.price} • Stock: {product.qoh}
                             </p>
                           </div>
@@ -826,7 +819,7 @@ export function StoreCategoriesManager() {
               <div className="border rounded-md overflow-y-auto max-h-[42vh]">
                 <div className="p-3">
                   {products.length === 0 ? (
-                    <p className="text-sm text-gray-600 text-center py-8">
+                    <p className="text-sm text-muted-foreground text-center py-8">
                       No products available
                     </p>
                   ) : (
@@ -834,7 +827,7 @@ export function StoreCategoriesManager() {
                       {products.map((product) => (
                         <div
                           key={product.id}
-                          className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer"
+                          className="flex items-center gap-3 p-2 hover:bg-accent rounded-md cursor-pointer"
                           onClick={() => toggleProduct(product.id)}
                         >
                           <Checkbox
@@ -843,10 +836,10 @@ export function StoreCategoriesManager() {
                             onClick={(e) => e.stopPropagation()}
                           />
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
+                            <p className="text-sm font-medium text-foreground truncate">
                               {(product as any).display_name || product.description}
                             </p>
-                            <p className="text-xs text-gray-600">
+                            <p className="text-xs text-muted-foreground">
                               ${product.price} • Stock: {product.qoh}
                             </p>
                           </div>
@@ -899,7 +892,7 @@ export function StoreCategoriesManager() {
             <div className="space-y-2">
               <Label>Brand</Label>
               {brandScanning ? (
-                <div className="flex items-center gap-2 text-sm text-gray-500 py-3">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Scanning your products...
                 </div>
@@ -914,12 +907,12 @@ export function StoreCategoriesManager() {
                         onClick={() => handleSelectBrand(b.name)}
                         className={`w-full flex items-center justify-between px-3 py-2.5 text-sm border-b last:border-b-0 transition-colors text-left ${
                           selectedBrand === b.name
-                            ? 'bg-gray-900 text-white'
-                            : 'hover:bg-gray-50 text-gray-900'
+                            ? 'bg-accent text-accent-foreground'
+                            : 'hover:bg-accent/50 text-foreground'
                         }`}
                       >
                         <span className="font-medium">{b.name}</span>
-                        <span className={`text-xs ${selectedBrand === b.name ? 'text-gray-300' : 'text-gray-400'}`}>
+                        <span className={`text-xs ${selectedBrand === b.name ? 'text-accent-foreground/70' : 'text-muted-foreground'}`}>
                           {b.product_count} product{b.product_count !== 1 ? 's' : ''}
                         </span>
                       </button>
@@ -928,7 +921,7 @@ export function StoreCategoriesManager() {
                       <button
                         type="button"
                         onClick={() => setBrandListExpanded((v) => !v)}
-                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-gray-500 hover:bg-gray-50 border-t transition-colors"
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 border-t transition-colors"
                       >
                         {brandListExpanded ? (
                           <><ChevronUp className="h-3 w-3" /> Show less</>
@@ -939,7 +932,7 @@ export function StoreCategoriesManager() {
                     )}
                   </div>
                   {/* Free-text fallback */}
-                  <p className="text-xs text-gray-500">Or type a brand name:</p>
+                  <p className="text-xs text-muted-foreground">Or type a brand name:</p>
                   <Input
                     value={selectedBrand}
                     onChange={(e) => {
@@ -964,7 +957,7 @@ export function StoreCategoriesManager() {
             {/* Display name */}
             <div className="space-y-2">
               <Label htmlFor="brand-display-name">
-                Carousel title <span className="text-gray-400 font-normal">(optional)</span>
+                Carousel title <span className="text-muted-foreground font-normal">(optional)</span>
               </Label>
               <Input
                 id="brand-display-name"
@@ -972,7 +965,7 @@ export function StoreCategoriesManager() {
                 onChange={(e) => setBrandDisplayName(e.target.value)}
                 placeholder={selectedBrand || 'e.g. Wahoo Products'}
               />
-              <p className="text-xs text-gray-500">Leave blank to use the brand name as the title.</p>
+              <p className="text-xs text-muted-foreground">Leave blank to use the brand name as the title.</p>
             </div>
           </div>
 
@@ -1011,7 +1004,7 @@ export function StoreCategoriesManager() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
             </AlertDialogAction>

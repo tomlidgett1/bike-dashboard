@@ -58,7 +58,7 @@ function InlineText({ text }: { text: string }) {
     <>
       {parts.map((part, i) =>
         i % 2 === 1
-          ? <strong key={i} className="font-semibold text-gray-800">{part}</strong>
+          ? <strong key={i} className="font-semibold text-foreground">{part}</strong>
           : part || null
       )}
     </>
@@ -74,7 +74,7 @@ function ContentPreview({ text }: { text: string }) {
         const lines = block.trim().split('\n').map(l => l.trim()).filter(Boolean);
         if (lines.length === 1 && /^#{1,3}\s/.test(lines[0])) {
           return (
-            <h4 key={bi} className="text-xs font-semibold text-gray-800">
+            <h4 key={bi} className="text-xs font-semibold text-foreground">
               <InlineText text={lines[0].replace(/^#+\s/, '')} />
             </h4>
           );
@@ -88,14 +88,14 @@ function ContentPreview({ text }: { text: string }) {
           return (
             <div key={bi} className="space-y-1">
               {header && (
-                <p className="text-xs font-semibold text-gray-800">
+                <p className="text-xs font-semibold text-foreground">
                   <InlineText text={header} />
                 </p>
               )}
               <ul className="space-y-0.5">
                 {bulletLines.map((line, li) => (
-                  <li key={li} className="flex gap-1.5 text-xs text-gray-600 leading-relaxed">
-                    <span className="text-gray-400 mt-[2px] flex-shrink-0 select-none">•</span>
+                  <li key={li} className="flex gap-1.5 text-xs text-muted-foreground leading-relaxed">
+                    <span className="text-muted-foreground mt-[2px] flex-shrink-0 select-none">•</span>
                     <span><InlineText text={line.replace(/^[•\-\*]\s/, '')} /></span>
                   </li>
                 ))}
@@ -104,7 +104,7 @@ function ContentPreview({ text }: { text: string }) {
           );
         }
         return (
-          <p key={bi} className="text-xs text-gray-600 leading-relaxed">
+          <p key={bi} className="text-xs text-muted-foreground leading-relaxed">
             <InlineText text={lines.join(' ')} />
           </p>
         );
@@ -135,7 +135,7 @@ const STATUS_ICON: Record<GenStatus, React.ReactNode> = {
 type GenerateMode = 'both' | 'description' | 'specs'
 
 const MODE_CONFIG: Record<GenerateMode, { label: string; icon: React.ReactNode; color: string }> = {
-  both:        { label: 'Description & Specs', icon: <Sparkles className="h-3 w-3" />,  color: 'text-gray-700' },
+  both:        { label: 'Description & Specs', icon: <Sparkles className="h-3 w-3" />,  color: "text-foreground" },
   description: { label: 'Description only',   icon: <PenLine className="h-3 w-3" />,    color: 'text-emerald-700' },
   specs:       { label: 'Specs only',          icon: <ListChecks className="h-3 w-3" />, color: 'text-blue-700' },
 }
@@ -330,7 +330,7 @@ export function StoreProductDescriptionsManager() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
+        <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
       </div>
     );
   }
@@ -338,9 +338,9 @@ export function StoreProductDescriptionsManager() {
   if (products.length === 0) {
     return (
       <div className="py-16 text-center">
-        <Package className="h-8 w-8 text-gray-300 mx-auto mb-3" />
-        <p className="text-sm font-medium text-gray-500">No active products found</p>
-        <p className="text-xs text-gray-400 mt-1">Sync your inventory to get started</p>
+        <Package className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
+        <p className="text-sm font-medium text-muted-foreground">No active products found</p>
+        <p className="text-xs text-muted-foreground mt-1">Sync your inventory to get started</p>
       </div>
     );
   }
@@ -353,9 +353,9 @@ export function StoreProductDescriptionsManager() {
     <div className="space-y-5">
       {/* Stats row */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-center">
-          <p className="text-xl font-bold text-gray-900">{stats.total}</p>
-          <p className="text-xs text-gray-500 mt-0.5">Total Products</p>
+        <div className="rounded-md border border-border bg-muted p-3 text-center">
+          <p className="text-xl font-bold text-foreground">{stats.total}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Total Products</p>
         </div>
         <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-center">
           <p className="text-xl font-bold text-emerald-700">{stats.withBoth}</p>
@@ -368,13 +368,13 @@ export function StoreProductDescriptionsManager() {
       </div>
 
       {/* Sub-stats for desc vs specs */}
-      <div className="flex gap-4 text-xs text-gray-500">
+      <div className="flex gap-4 text-xs text-muted-foreground">
         <span>
-          <span className="font-medium text-gray-700">{stats.total - stats.missingDesc}</span> with description
+          <span className="font-medium text-foreground">{stats.total - stats.missingDesc}</span> with description
         </span>
-        <span className="text-gray-300">·</span>
+        <span className="text-muted-foreground/40">·</span>
         <span>
-          <span className="font-medium text-gray-700">{stats.total - stats.missingSpecs}</span> with specs
+          <span className="font-medium text-foreground">{stats.total - stats.missingSpecs}</span> with specs
         </span>
       </div>
 
@@ -382,10 +382,10 @@ export function StoreProductDescriptionsManager() {
       {stats.total > 0 && (
         <div>
           <div className="flex justify-between mb-1">
-            <span className="text-xs text-gray-500">Full AI coverage</span>
-            <span className="text-xs font-medium text-gray-700">{coveragePct}%</span>
+            <span className="text-xs text-muted-foreground">Full AI coverage</span>
+            <span className="text-xs font-medium text-foreground">{coveragePct}%</span>
           </div>
-          <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
             <motion.div
               className="h-full rounded-full bg-emerald-500"
               initial={{ width: 0 }}
@@ -398,8 +398,8 @@ export function StoreProductDescriptionsManager() {
 
       {/* Mode selector */}
       <div>
-        <p className="text-xs text-gray-500 mb-2">Generate</p>
-        <div className="flex gap-0.5 p-1 bg-gray-100 rounded-md w-fit text-xs">
+        <p className="text-xs text-muted-foreground mb-2">Generate</p>
+        <div className="flex gap-0.5 p-1 bg-muted rounded-md w-fit text-xs">
           {(Object.keys(MODE_CONFIG) as GenerateMode[]).map(m => (
             <button
               key={m}
@@ -408,8 +408,8 @@ export function StoreProductDescriptionsManager() {
               className={cn(
                 "flex items-center gap-1.5 px-2.5 py-1.5 rounded font-medium transition-all",
                 mode === m
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground disabled:opacity-50"
               )}
             >
               {MODE_CONFIG[m].icon}
@@ -422,7 +422,7 @@ export function StoreProductDescriptionsManager() {
       {/* Toolbar */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search products..."
             value={search}
@@ -434,7 +434,7 @@ export function StoreProductDescriptionsManager() {
           <Button
             onClick={() => generateDescriptions(needsContentIds)}
             size="sm"
-            className="gap-1.5 bg-gray-900 hover:bg-gray-800 text-white h-8 text-xs whitespace-nowrap"
+            className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs whitespace-nowrap"
           >
             <Zap className="h-3 w-3" />
             Generate All ({needsContentIds.length})
@@ -443,14 +443,14 @@ export function StoreProductDescriptionsManager() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-0.5 p-1 bg-gray-100 rounded-md w-fit text-xs">
+      <div className="flex gap-0.5 p-1 bg-muted rounded-md w-fit text-xs">
         {(['all', 'needs', 'has'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={cn(
               "px-2.5 py-1 rounded font-medium transition-all",
-              filter === f ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             )}
           >
             {f === 'all' && `All (${stats.total})`}
@@ -469,19 +469,19 @@ export function StoreProductDescriptionsManager() {
             exit={{ opacity: 0, y: -8, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="flex items-center gap-3 px-3 py-2 bg-gray-900 text-white rounded-md">
+            <div className="flex items-center gap-3 px-3 py-2 bg-foreground text-background rounded-md">
               <span className="text-xs font-medium">{selected.size} selected</span>
               <Button
                 size="sm"
                 onClick={() => generateDescriptions(Array.from(selected))}
-                className="h-6 gap-1 bg-white text-gray-900 hover:bg-gray-100 text-xs px-2"
+                className="h-6 gap-1 bg-background text-foreground hover:bg-background/90 text-xs px-2"
               >
                 <Sparkles className="h-3 w-3" />
                 Generate selected ({MODE_CONFIG[mode].label.toLowerCase()})
               </Button>
               <button
                 onClick={() => setSelected(new Set())}
-                className="ml-auto text-gray-400 hover:text-white transition-colors"
+                className="ml-auto text-background/60 hover:text-background transition-colors"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -519,8 +519,8 @@ export function StoreProductDescriptionsManager() {
       <div className="space-y-2">
         {filtered.length === 0 ? (
           <div className="py-12 text-center">
-            <Package className="h-7 w-7 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-500">No products match your filter</p>
+            <Package className="h-7 w-7 text-muted-foreground/40 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No products match your filter</p>
           </div>
         ) : (
           filtered.map(product => {
@@ -544,8 +544,8 @@ export function StoreProductDescriptionsManager() {
                   isActive && genState.status === 'done' ? "border-emerald-200 bg-emerald-50/40" :
                   isActive && genState.status === 'error' ? "border-red-200 bg-red-50/30" :
                   isActive ? "border-blue-200 bg-blue-50/30" :
-                  selected.has(product.id) ? "border-gray-400 bg-gray-50" :
-                  "border-gray-200 bg-white hover:border-gray-300"
+                  selected.has(product.id) ? "border-foreground/30 bg-accent" :
+                  "border-border bg-card hover:border-foreground/20"
                 )}
               >
                 <div className="flex items-center gap-3 px-3 py-2.5">
@@ -555,24 +555,24 @@ export function StoreProductDescriptionsManager() {
                     checked={selected.has(product.id)}
                     onChange={() => toggleSelect(product.id)}
                     disabled={isGenerating}
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-gray-900 cursor-pointer flex-shrink-0"
+                    className="h-3.5 w-3.5 rounded border-border text-foreground cursor-pointer flex-shrink-0"
                   />
 
                   {/* Image */}
-                  <div className="h-9 w-9 rounded bg-gray-100 flex-shrink-0 overflow-hidden">
+                  <div className="h-9 w-9 rounded bg-muted flex-shrink-0 overflow-hidden">
                     {imageUrl ? (
                       <Image src={imageUrl} alt={name} width={36} height={36} className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center">
-                        <Package className="h-3.5 w-3.5 text-gray-400" />
+                        <Package className="h-3.5 w-3.5 text-muted-foreground" />
                       </div>
                     )}
                   </div>
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate leading-tight">{name}</p>
-                    <p className="text-xs text-gray-500 truncate mt-0.5">
+                    <p className="text-sm font-medium text-foreground truncate leading-tight">{name}</p>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">
                       {[product.brand, product.marketplace_category].filter(Boolean).join(' · ')}
                       {product.price ? ` · $${product.price.toLocaleString('en-AU')}` : ''}
                     </p>
@@ -597,7 +597,7 @@ export function StoreProductDescriptionsManager() {
                           "text-xs border-0 gap-1 py-0 h-5",
                           hasDesc
                             ? "bg-emerald-100 text-emerald-700"
-                            : "bg-gray-100 text-gray-500"
+                            : "bg-muted text-muted-foreground"
                         )}>
                           {hasDesc ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Dot className="h-3 w-3 -mx-0.5" />}
                           Desc
@@ -607,7 +607,7 @@ export function StoreProductDescriptionsManager() {
                           "text-xs border-0 gap-1 py-0 h-5",
                           hasSpecs
                             ? "bg-blue-100 text-blue-700"
-                            : "bg-gray-100 text-gray-500"
+                            : "bg-muted text-muted-foreground"
                         )}>
                           {hasSpecs ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Dot className="h-3 w-3 -mx-0.5" />}
                           Specs
@@ -622,7 +622,7 @@ export function StoreProductDescriptionsManager() {
                       <button
                         onClick={() => generateDescriptions([product.id])}
                         title={`Generate ${MODE_CONFIG[mode].label.toLowerCase()}`}
-                        className="flex h-7 w-7 items-center justify-center rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+                        className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
                       >
                         {(mode === 'description' ? hasDesc : mode === 'specs' ? hasSpecs : hasBoth)
                           ? <RotateCcw className="h-3.5 w-3.5" />
@@ -632,7 +632,7 @@ export function StoreProductDescriptionsManager() {
                     {(previewDesc || previewSpecs) && (
                       <button
                         onClick={() => toggleExpand(product.id)}
-                        className="flex h-7 w-7 items-center justify-center rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                        className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
                       >
                         {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                       </button>
@@ -650,12 +650,12 @@ export function StoreProductDescriptionsManager() {
                       transition={{ duration: 0.2 }}
                       className="overflow-hidden"
                     >
-                      <div className="mx-3 mb-3 rounded bg-gray-50 border border-gray-100 divide-y divide-gray-100">
+                      <div className="mx-3 mb-3 rounded bg-muted border border-border divide-y divide-border">
                         {previewDesc && (
                           <div className="p-3">
                             <div className="flex items-center gap-1.5 mb-2">
                               <Sparkles className="h-3 w-3 text-emerald-500" />
-                              <span className="text-xs font-medium text-gray-600">Description</span>
+                              <span className="text-xs font-medium text-muted-foreground">Description</span>
                             </div>
                             <ContentPreview text={previewDesc} />
                           </div>
@@ -664,7 +664,7 @@ export function StoreProductDescriptionsManager() {
                           <div className="p-3">
                             <div className="flex items-center gap-1.5 mb-2">
                               <ListChecks className="h-3 w-3 text-blue-500" />
-                              <span className="text-xs font-medium text-gray-600">Specifications</span>
+                              <span className="text-xs font-medium text-muted-foreground">Specifications</span>
                             </div>
                             <ContentPreview text={previewSpecs} />
                           </div>

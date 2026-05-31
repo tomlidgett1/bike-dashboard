@@ -178,7 +178,7 @@ export function StoreBrandsManager() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+        <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
       </div>
     );
   }
@@ -195,9 +195,9 @@ export function StoreBrandsManager() {
       {brands.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <Tag className="h-8 w-8 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-600">No brands added yet</p>
-            <p className="text-xs text-gray-400 mt-1">
+            <Tag className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">No brands added yet</p>
+            <p className="text-xs text-muted-foreground mt-1">
               Add the brands you stock to showcase them on your store page
             </p>
           </CardContent>
@@ -211,13 +211,13 @@ export function StoreBrandsManager() {
         >
           {brands.map((brand) => (
             <Reorder.Item key={brand.id} value={brand}>
-              <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-md hover:shadow-sm transition-shadow cursor-move bg-white">
+              <div className="flex items-center gap-3 p-3 border border-border rounded-md hover:bg-accent/40 transition-colors cursor-move bg-card">
                 <div className="flex-shrink-0 cursor-grab active:cursor-grabbing">
-                  <GripVertical className="h-4 w-4 text-gray-400" />
+                  <GripVertical className="h-4 w-4 text-muted-foreground/60" />
                 </div>
 
                 {/* Logo preview */}
-                <div className="flex-shrink-0 h-10 w-10 rounded-md bg-gray-50 border border-gray-100 overflow-hidden flex items-center justify-center">
+                <div className="flex-shrink-0 h-10 w-10 rounded-md bg-muted border border-border overflow-hidden flex items-center justify-center">
                   {brand.logo_url ? (
                     <Image
                       src={brand.logo_url}
@@ -227,14 +227,14 @@ export function StoreBrandsManager() {
                       className="object-contain w-full h-full p-0.5"
                     />
                   ) : (
-                    <Tag className="h-4 w-4 text-gray-300" />
+                    <Tag className="h-4 w-4 text-muted-foreground/40" />
                   )}
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 truncate">{brand.name}</h4>
+                  <h4 className="text-sm font-medium text-foreground truncate">{brand.name}</h4>
                   {!brand.logo_url && (
-                    <p className="text-xs text-gray-400 mt-0.5">No logo uploaded</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">No logo uploaded</p>
                   )}
                 </div>
 
@@ -251,7 +251,7 @@ export function StoreBrandsManager() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setDeleteConfirmId(brand.id)}
-                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -278,7 +278,7 @@ export function StoreBrandsManager() {
               <Label>Brand Logo</Label>
               <div className="flex items-center gap-4">
                 {/* Preview */}
-                <div className="h-20 w-20 flex-shrink-0 rounded-md border-2 border-dashed border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center relative">
+                <div className="h-20 w-20 flex-shrink-0 rounded-md border-2 border-dashed border-border bg-muted overflow-hidden flex items-center justify-center relative">
                   {formData.logoUrl ? (
                     <>
                       <Image
@@ -290,15 +290,15 @@ export function StoreBrandsManager() {
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, logoUrl: '' }))}
-                        className="absolute top-0.5 right-0.5 rounded-full bg-white border border-gray-200 p-0.5 hover:bg-gray-50"
+                        className="absolute top-0.5 right-0.5 rounded-full bg-background border border-border p-0.5 hover:bg-accent"
                       >
-                        <X className="h-3 w-3 text-gray-500" />
+                        <X className="h-3 w-3 text-muted-foreground" />
                       </button>
                     </>
                   ) : uploading ? (
-                    <Loader2 className="h-6 w-6 text-gray-400 animate-spin" />
+                    <Loader2 className="h-6 w-6 text-muted-foreground animate-spin" />
                   ) : (
-                    <Tag className="h-6 w-6 text-gray-300" />
+                    <Tag className="h-6 w-6 text-muted-foreground/40" />
                   )}
                 </div>
 
@@ -330,7 +330,7 @@ export function StoreBrandsManager() {
                       </>
                     )}
                   </Button>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-muted-foreground">
                     JPEG, PNG, WebP, or SVG — max 5MB
                   </p>
                 </div>
@@ -350,7 +350,7 @@ export function StoreBrandsManager() {
           </div>
 
           {saveError && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
               {saveError}
             </p>
           )}
@@ -389,7 +389,7 @@ export function StoreBrandsManager() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Remove
             </AlertDialogAction>

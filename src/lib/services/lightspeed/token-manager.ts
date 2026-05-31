@@ -235,9 +235,23 @@ export async function refreshAccessToken(userId: string): Promise<{
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
       console.error('Token refresh failed:', errorData)
-      
-      // Mark connection as expired
-      await updateConnectionStatus(userId, 'expired', 'Token refresh failed')
+
+      // Before marking as expired, check whether a concurrent caller already
+      // refreshed the token successfully (rotating refresh token race condition).
+      // If the DB now holds a fresh token, return it instead of poisoning the status.
+      const latest = await getDecryptedTokens(userId)
+      if (latest && !tokenNeedsRefresh(latest.expiresAt)) {
+        console.log('[Lightspeed] Refresh lost race but concurrent refresh succeeded — using fresh token')
+        return { accessToken: latest.accessToken, expiresAt: latest.expiresAt }
+      }
+
+      // Genuine failure — mark expired only for invalid_grant (truly revoked token).
+      // For transient errors (5xx, network) just return null so the caller can retry.
+      if (errorData.error === 'invalid_grant') {
+        await updateConnectionStatus(userId, 'expired', 'Refresh token invalid or revoked. Please reconnect.')
+      } else {
+        console.warn('[Lightspeed] Transient refresh error, not marking as expired:', errorData)
+      }
       return null
     }
     

@@ -118,7 +118,7 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
 
   return (
     <div className="bg-white border-b border-gray-200">
-      <div className="max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+      <div className="px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
         <div className="flex flex-col gap-4">
           {/* Top Row: Profile Photo + Name/Location + Action Buttons on Desktop */}
           <div className="flex items-start gap-3 sm:gap-4">
