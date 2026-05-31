@@ -312,7 +312,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
               style. Clear of condition badge (top-left) and Uber badge (bottom-right). */}
           {live.onSale && (
             <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
-              <span className="inline-block rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 shadow-sm backdrop-blur-sm tracking-wide">
+              <span className="inline-block rounded-md bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm tracking-wide">
                 Sale
               </span>
             </div>
