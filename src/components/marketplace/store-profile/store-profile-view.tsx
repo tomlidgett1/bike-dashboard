@@ -45,6 +45,7 @@ import { ProductCard } from "@/components/marketplace/product-card";
 import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
 import { ServicesSection } from "@/components/marketplace/store-profile/services-section";
 import { RentalsSection } from "@/components/marketplace/store-profile/rentals-section";
+import { CartButton } from "@/components/marketplace/cart-button";
 import type { StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 
@@ -674,6 +675,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 </div>
               )}
               {actionButtons}
+              <CartButton />
               {/* Back to Yellow Jersey — far-right pill */}
               <div className="hidden sm:block h-6 w-px bg-gray-200 flex-shrink-0 ml-1" aria-hidden="true" />
               <a
