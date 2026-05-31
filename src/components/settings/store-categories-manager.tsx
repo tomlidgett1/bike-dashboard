@@ -15,7 +15,10 @@ import {
   Tag,
   ChevronDown,
   ChevronUp,
+  ImagePlus,
+  X,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -81,6 +84,72 @@ export function StoreCategoriesManager() {
     name: '',
     productIds: [],
   });
+
+  // Logo upload state
+  const [uploadingLogoId, setUploadingLogoId] = React.useState<string | null>(null);
+  const logoInputRef = React.useRef<HTMLInputElement>(null);
+  const logoTargetIdRef = React.useRef<string | null>(null);
+
+  const handleLogoClick = (categoryId: string) => {
+    logoTargetIdRef.current = categoryId;
+    logoInputRef.current?.click();
+  };
+
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const categoryId = logoTargetIdRef.current;
+    if (!file || !categoryId) return;
+
+    setUploadingLogoId(categoryId);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const ext = file.name.split('.').pop();
+      // Must be under user's own folder to satisfy RLS policy
+      const path = `${user.id}/category-${categoryId}-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('logo')
+        .upload(path, file, { cacheControl: '31536000', upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage.from('logo').getPublicUrl(path);
+
+      // Persist via store categories API
+      await fetch('/api/store/categories', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: categoryId, logo_url: publicUrl }),
+      });
+
+      setCategories((prev) =>
+        prev.map((c) => (c.id === categoryId ? { ...c, logo_url: publicUrl } : c))
+      );
+    } catch (err) {
+      console.error('Logo upload failed:', err);
+    } finally {
+      setUploadingLogoId(null);
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveLogo = async (categoryId: string) => {
+    setUploadingLogoId(categoryId);
+    try {
+      await fetch('/api/store/categories', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: categoryId, logo_url: null }),
+      });
+      setCategories((prev) =>
+        prev.map((c) => (c.id === categoryId ? { ...c, logo_url: null } : c))
+      );
+    } catch (err) {
+      console.error('Logo remove failed:', err);
+    } finally {
+      setUploadingLogoId(null);
+    }
+  };
 
   // Brand carousel state
   const [isBrandDialogOpen, setIsBrandDialogOpen] = React.useState(false);
@@ -560,6 +629,70 @@ export function StoreCategoriesManager() {
                   </p>
                 </div>
 
+                {/* Logo upload + title toggle */}
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {uploadingLogoId === category.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : category.logo_url ? (
+                    <>
+                      <div className="group relative h-8 w-20 flex items-center justify-center border border-border rounded-md bg-white overflow-hidden">
+                        <img src={category.logo_url} alt="" className="max-h-full max-w-full object-contain p-0.5" />
+                        <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => handleLogoClick(category.id)}
+                            className="text-white hover:text-gray-200 cursor-pointer"
+                            title="Replace logo"
+                          >
+                            <ImagePlus className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLogo(category.id)}
+                            className="text-white hover:text-red-300 cursor-pointer"
+                            title="Remove logo"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                      {/* Show/hide title toggle — only meaningful when a logo exists */}
+                      <button
+                        type="button"
+                        title={category.hide_title ? 'Title hidden — click to show' : 'Title visible — click to hide'}
+                        onClick={async () => {
+                          const next = !category.hide_title;
+                          setCategories((prev) =>
+                            prev.map((c) => (c.id === category.id ? { ...c, hide_title: next } : c))
+                          );
+                          await fetch('/api/store/categories', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: category.id, hide_title: next }),
+                          });
+                        }}
+                        className={`text-xs px-2 py-1 rounded-md border transition-colors cursor-pointer ${
+                          category.hide_title
+                            ? 'border-dashed border-border text-muted-foreground hover:text-foreground'
+                            : 'border-border bg-muted text-foreground hover:bg-muted/70'
+                        }`}
+                      >
+                        {category.hide_title ? 'Title off' : 'Title on'}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleLogoClick(category.id)}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border rounded-md px-2 py-1 transition-colors cursor-pointer"
+                      title="Add carousel logo"
+                    >
+                      <ImagePlus className="h-3.5 w-3.5" />
+                      Logo
+                    </button>
+                  )}
+                </div>
+
                 {/* Carousel size toggle */}
                 <div className="flex items-center rounded-md bg-muted p-0.5 overflow-hidden flex-shrink-0 text-xs font-medium">
                   {(
@@ -622,6 +755,15 @@ export function StoreCategoriesManager() {
           ))}
         </Reorder.Group>
       )}
+
+      {/* Shared hidden file input for logo uploads */}
+      <input
+        ref={logoInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={handleLogoChange}
+      />
 
       {/* Lightspeed Scan Dialog */}
       <Dialog open={isScanDialogOpen} onOpenChange={setIsScanDialogOpen}>

@@ -34,6 +34,8 @@ export interface StoreCategory {
   product_ids: string[];
   is_active: boolean;
   carousel_size?: CarouselSize;
+  logo_url?: string | null;
+  hide_title?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -69,6 +71,7 @@ export interface StoreProfile {
   phone: string;
   opening_hours: OpeningHours;
   categories: StoreCategoryWithProducts[];
+  sections: StoreSectionWithCategories[];
   services: StoreService[];
   brands: StoreBrand[];
   /** Optional storefront enrichments — rendered only when present */
@@ -85,6 +88,27 @@ export interface StoreCategoryWithProducts {
   products: MarketplaceProduct[];
   product_count: number;
   carousel_size?: CarouselSize;
+  section_id?: string | null;
+  logo_url?: string | null;
+}
+
+export interface StoreSection {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string | null;
+  display_order: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StoreSectionWithCategories {
+  id: string;
+  name: string;
+  description?: string | null;
+  display_order: number;
+  categories: StoreCategoryWithProducts[];
 }
 
 export interface LightspeedCategoryOption {
@@ -110,6 +134,22 @@ export interface UpdateCategoryRequest {
   display_order?: number;
   is_active?: boolean;
   carousel_size?: CarouselSize;
+  section_id?: string | null;
+  logo_url?: string | null;
+}
+
+export interface CreateSectionRequest {
+  name: string;
+  description?: string;
+  display_order?: number;
+}
+
+export interface UpdateSectionRequest {
+  id: string;
+  name?: string;
+  description?: string;
+  display_order?: number;
+  is_active?: boolean;
 }
 
 export interface CreateServiceRequest {

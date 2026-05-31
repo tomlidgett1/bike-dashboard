@@ -27,6 +27,7 @@ export async function middleware(request: NextRequest) {
   // Check if this is a public route that doesn't require authentication
   const isPublicRoute =
     request.nextUrl.pathname.startsWith('/auth') ||
+    request.nextUrl.pathname === '/login' ||
     // Lightspeed must reach the route handler: it validates session and redirects with a clear error.
     // If we blocked here, users get sent to /marketplace with ?code= still attached (broken flow).
     request.nextUrl.pathname === '/api/lightspeed/auth/callback' ||

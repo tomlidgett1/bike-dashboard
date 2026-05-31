@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import type { StoreProfile, StoreCategoryWithProducts } from '@/lib/types/store';
+import type { StoreProfile, StoreCategoryWithProducts, StoreSectionWithCategories } from '@/lib/types/store';
 import { resolveProductImage } from '@/lib/services/image-resolver';
 import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms';
 
@@ -209,14 +209,41 @@ export async function GET(
       console.log('[STORE SEARCH] Products sorted by relevance');
     }
 
-    // Fetch active store-defined categories (excludes display_override renaming entries)
-    const { data: customCategories } = await supabase
-      .from('store_categories')
-      .select('id, name, source, lightspeed_category_id, brand_name, product_ids, display_order, carousel_size')
-      .eq('user_id', storeId)
-      .eq('is_active', true)
-      .neq('source', 'display_override')
-      .order('display_order', { ascending: true });
+    // Fetch active store-defined categories (excludes display_override renaming entries).
+    // Try with section_id first; if the column doesn't exist yet (migration pending),
+    // fall back to the same query without it so existing carousels stay visible.
+    const [categoriesResult, sectionsResult] = await Promise.all([
+      supabase
+        .from('store_categories')
+        .select('id, name, source, lightspeed_category_id, brand_name, product_ids, display_order, carousel_size, section_id, logo_url, hide_title')
+        .eq('user_id', storeId)
+        .eq('is_active', true)
+        .neq('source', 'display_override')
+        .order('display_order', { ascending: true }),
+      supabase
+        .from('store_sections')
+        .select('id, name, description, display_order')
+        .eq('user_id', storeId)
+        .eq('is_active', true)
+        .order('display_order', { ascending: true }),
+    ]);
+
+    // Graceful fallback: if section_id column doesn't exist yet, retry without it
+    let customCategories = categoriesResult.data;
+    if (categoriesResult.error) {
+      console.warn('[Store API] categories query error (section_id column may not exist yet):', categoriesResult.error.message);
+      const fallback = await supabase
+        .from('store_categories')
+        .select('id, name, source, lightspeed_category_id, brand_name, product_ids, display_order, carousel_size, logo_url, hide_title')
+        .eq('user_id', storeId)
+        .eq('is_active', true)
+        .neq('source', 'display_override')
+        .order('display_order', { ascending: true });
+      customCategories = fallback.data ? fallback.data.map((c) => ({ ...c, section_id: null })) : null;
+    }
+
+    // Sections are only available after migration — ignore errors silently
+    const storeSections = sectionsResult.error ? null : sectionsResult.data;
 
     if (customCategories && customCategories.length > 0 && sortedProducts.length > 0) {
       // ── Mode A: use store-defined categories ──────────────────────────────
@@ -260,6 +287,9 @@ export async function GET(
             name: displayName,
             display_order: cat.display_order,
             carousel_size: cat.carousel_size ?? 'normal',
+            section_id: cat.section_id ?? null,
+            logo_url: cat.logo_url ?? null,
+            hide_title: cat.hide_title ?? false,
             products: marketplaceProducts,
             product_count: marketplaceProducts.length,
           });
@@ -311,6 +341,15 @@ export async function GET(
         });
     }
 
+    // Build sections with their categories
+    const sectionsWithCategories: StoreSectionWithCategories[] = (storeSections ?? []).map((sec) => ({
+      id: sec.id,
+      name: sec.name,
+      description: sec.description ?? null,
+      display_order: sec.display_order,
+      categories: categoriesWithProducts.filter((c) => c.section_id === sec.id),
+    })).filter((sec) => sec.categories.length > 0);
+
     // Build store profile response
     const storeProfile: StoreProfile = {
       id: storeId,
@@ -329,6 +368,7 @@ export async function GET(
         sunday: { open: '10:00', close: '16:00', closed: true },
       },
       categories: categoriesWithProducts,
+      sections: sectionsWithCategories,
       services: services || [],
       brands: brands || [],
     };
@@ -340,6 +380,43 @@ export async function GET(
       { error: 'Internal server error' },
       { status: 500 }
     );
+  }
+}
+
+// PATCH /api/marketplace/store/[storeId]
+// Update a category's logo_url (authenticated owner only)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ storeId: string }> }
+) {
+  try {
+    const supabase = await createClient();
+    const { storeId } = await params;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || user.id !== storeId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { categoryId, logo_url } = body;
+
+    if (!categoryId) {
+      return NextResponse.json({ error: 'categoryId is required' }, { status: 400 });
+    }
+
+    const { error } = await supabase
+      .from('store_categories')
+      .update({ logo_url: logo_url ?? null })
+      .eq('id', categoryId)
+      .eq('user_id', storeId);
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error in PATCH /api/marketplace/store/[storeId]:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 

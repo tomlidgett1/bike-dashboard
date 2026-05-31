@@ -482,6 +482,12 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     [selectedStoreId, stores]
   );
 
+  // Featured store for the Bike Stores tab (shown when browsing all stores)
+  const featuredStore = React.useMemo(
+    () => stores.find(s => s.store_name?.toLowerCase().includes('ashburton')) ?? null,
+    [stores]
+  );
+
   // Derive store categories from fetched products (zero API calls - instant)
   const storeCategories = React.useMemo(() => {
     if (!selectedStoreId || !products?.length) return [];
@@ -1149,6 +1155,49 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       className="text-xs text-gray-500 hover:text-gray-700 underline flex-shrink-0"
                     >
                       All stores
+                    </button>
+                  </div>
+                )}
+
+                {/* Featured Stores — shown when browsing all stores (no specific store selected) */}
+                {!selectedStoreId && featuredStore && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full bg-[#f0cf45]/20 px-2.5 py-0.5 text-xs font-semibold text-gray-900">
+                        Featured stores
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/marketplace/store/${featuredStore.id}`)}
+                      className="group flex w-full items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-all hover:border-gray-300 hover:shadow-md sm:max-w-md"
+                    >
+                      {featuredStore.logo_url ? (
+                        <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full border border-gray-200 bg-gray-50">
+                          <Image
+                            src={featuredStore.logo_url}
+                            alt={featuredStore.store_name}
+                            fill
+                            className="object-cover"
+                            sizes="64px"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100">
+                          <StoreIcon className="h-8 w-8 text-gray-400" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-base font-semibold text-gray-900 group-hover:underline">
+                          {featuredStore.store_name}
+                        </p>
+                        <p className="truncate text-sm text-gray-500">{featuredStore.store_type}</p>
+                        {featuredStore.product_count > 0 && (
+                          <p className="mt-0.5 text-xs text-gray-400">
+                            {featuredStore.product_count.toLocaleString()} products
+                          </p>
+                        )}
+                      </div>
                     </button>
                   </div>
                 )}

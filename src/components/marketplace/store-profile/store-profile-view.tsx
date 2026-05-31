@@ -3,6 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
+import { createClient } from "@/lib/supabase/client";
 import {
   Store,
   Phone,
@@ -28,6 +29,8 @@ import {
   Shirt,
   CircleDot,
   Leaf,
+  ImagePlus,
+  Loader2 as SpinnerIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,7 +45,7 @@ import { ProductCard } from "@/components/marketplace/product-card";
 import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
 import { ServicesSection } from "@/components/marketplace/store-profile/services-section";
 import { RentalsSection } from "@/components/marketplace/store-profile/rentals-section";
-import type { StoreProfile, OpeningHours } from "@/lib/types/store";
+import type { StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 
 // ============================================================
@@ -229,7 +232,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: Category
       <div
         ref={scrollRef}
         className="overflow-x-auto scrollbar-hide snap-x snap-mandatory sm:snap-none"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch', overflowY: 'hidden' } as React.CSSProperties}
       >
         {/* Single-row CSS grid: grid-auto-flow: column forces each product into
             its own column, and CSS grid equalises all cell heights in a row so
@@ -258,6 +261,241 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded }: Category
           <div className="sm:hidden w-1" aria-hidden />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Single carousel row within a section or standalone ─────────────────────
+function CarouselRow({
+  cat,
+  rowIndex,
+  expandedCategories,
+  setExpandedCategories,
+  compact,
+  isOwnProfile,
+  storeId,
+}: {
+  cat: { id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; logo_url?: string | null };
+  rowIndex: number;
+  expandedCategories: Set<string>;
+  setExpandedCategories: React.Dispatch<React.SetStateAction<Set<string>>>;
+  compact: boolean;
+  isOwnProfile?: boolean;
+  storeId?: string;
+}) {
+  const [logoUrl, setLogoUrl] = React.useState<string | null>(cat.logo_url ?? null);
+  const [uploading, setUploading] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !storeId) return;
+    setUploading(true);
+    try {
+      const supabase = createClient();
+      const ext = file.name.split('.').pop();
+      // Path must be under the authenticated user's folder to satisfy bucket RLS
+      const path = `${storeId}/category-${cat.id}-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('logo')
+        .upload(path, file, { cacheControl: '31536000', upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage.from('logo').getPublicUrl(path);
+      await fetch(`/api/marketplace/store/${storeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categoryId: cat.id, logo_url: publicUrl }),
+      });
+      setLogoUrl(publicUrl);
+    } catch (err) {
+      console.error('Category logo upload failed:', err);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  if (cat.products.length === 0) return null;
+  const catSize = (compact ? 'compact' : (cat.carousel_size ?? 'normal')) as 'featured' | 'normal' | 'compact';
+  const isExpanded = expandedCategories.has(cat.id);
+  const hasMore = cat.products.length > 8;
+
+  return (
+    <section key={cat.id}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-3">
+          {logoUrl ? (
+            <div className="group relative h-8 w-24 flex-shrink-0 flex items-center">
+              <img src={logoUrl} alt={cat.name} className="max-h-full max-w-full object-contain" />
+              {isOwnProfile && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute inset-0 flex items-center justify-center bg-white/70 opacity-0 group-hover:opacity-100 transition-opacity rounded cursor-pointer"
+                  title="Change logo"
+                >
+                  {uploading ? <SpinnerIcon className="h-3.5 w-3.5 animate-spin text-gray-600" /> : <ImagePlus className="h-3.5 w-3.5 text-gray-600" />}
+                </button>
+              )}
+            </div>
+          ) : isOwnProfile ? (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors cursor-pointer disabled:opacity-50"
+              title="Add logo"
+            >
+              {uploading ? <SpinnerIcon className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+              <span>Add logo</span>
+            </button>
+          ) : null}
+          {isOwnProfile && (
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={handleLogoUpload}
+            />
+          )}
+          {!cat.hide_title && <h3 className="text-sm font-semibold text-gray-900">{cat.name}</h3>}
+          <span className="text-xs text-gray-400 tabular-nums">({cat.products.length})</span>
+        </div>
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => setExpandedCategories((prev) => {
+              const next = new Set(prev);
+              isExpanded ? next.delete(cat.id) : next.add(cat.id);
+              return next;
+            })}
+            className="text-xs text-gray-500 hover:text-gray-900 cursor-pointer transition-colors flex-shrink-0"
+          >
+            {isExpanded ? "Show less" : `See all ${cat.products.length}`}
+          </button>
+        )}
+      </div>
+      <CategoryScrollRow
+        products={cat.products}
+        catSize={catSize}
+        rowIndex={rowIndex}
+        isExpanded={isExpanded}
+      />
+    </section>
+  );
+}
+
+// ── Products tab — sections + standalone carousels ──────────────────────────
+function ProductsTab({
+  sortedCategories,
+  sections,
+  expandedCategories,
+  setExpandedCategories,
+  compact,
+  isOwnProfile,
+  storeId,
+}: {
+  sortedCategories: Array<{ id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; section_id?: string | null; logo_url?: string | null }>;
+  sections: StoreSectionWithCategories[];
+  expandedCategories: Set<string>;
+  setExpandedCategories: React.Dispatch<React.SetStateAction<Set<string>>>;
+  compact: boolean;
+  isOwnProfile?: boolean;
+  storeId?: string;
+}) {
+  // Categories that belong to sections use the filtered+sorted products from sortedCategories
+  const productsByCatId = new Map(sortedCategories.map((c) => [c.id, c.products]));
+
+  // Sections that have at least one visible carousel (after search/filter)
+  const visibleSections = sections
+    .map((sec) => ({
+      ...sec,
+      categories: sec.categories
+        .map((c) => ({ ...c, products: productsByCatId.get(c.id) ?? c.products }))
+        .filter((c) => c.products.length > 0),
+    }))
+    .filter((sec) => sec.categories.length > 0);
+
+  // Standalone carousels (not in any section, or section not present)
+  const sectionedIds = new Set(sections.flatMap((s) => s.categories.map((c) => c.id)));
+  const standalone = sortedCategories.filter(
+    (c) => !c.section_id && !sectionedIds.has(c.id) && c.products.length > 0
+  );
+  // Also include section categories whose section has no visible items (shouldn't happen but safe)
+  const allSectionedIds = new Set(visibleSections.flatMap((s) => s.categories.map((c) => c.id)));
+  const orphaned = sortedCategories.filter(
+    (c) => c.section_id && !allSectionedIds.has(c.id) && c.products.length > 0
+  );
+
+  const standalonePlusSectionless = [...standalone, ...orphaned];
+
+  let rowIndex = 0;
+
+  return (
+    <div className="space-y-0">
+      {/* Sections */}
+      {visibleSections.map((section, secIdx) => (
+        <div key={section.id}>
+          {secIdx > 0 && <div className="my-6" />}
+
+          {/* Section gray band — title + carousels together */}
+          <div className="bg-gray-100 border-y border-gray-300 -mx-5 sm:-mx-8 lg:-mx-10 px-5 sm:px-8 lg:px-10 pt-4 pb-5 space-y-5">
+            {/* Section title inside the band */}
+            <div>
+              <h2 className="text-base font-semibold tracking-tight text-gray-900 leading-snug">
+                {section.name}
+              </h2>
+              {section.description && (
+                <p className="mt-0.5 text-sm text-gray-500 leading-snug">{section.description}</p>
+              )}
+            </div>
+
+            {section.categories.map((cat) => {
+              const r = rowIndex++;
+              const enriched = { ...cat, logo_url: (cat as any).logo_url ?? null };
+              return (
+                <CarouselRow
+                  key={cat.id}
+                  cat={enriched}
+                  rowIndex={r}
+                  expandedCategories={expandedCategories}
+                  setExpandedCategories={setExpandedCategories}
+                  compact={compact}
+                  isOwnProfile={isOwnProfile}
+                  storeId={storeId}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {/* Standalone carousels (no section) */}
+      {standalonePlusSectionless.length > 0 && (
+        <div className={cn("space-y-5", visibleSections.length > 0 && "mt-8")}>
+          {visibleSections.length > 0 && (
+            <span className="text-[11px] font-medium text-gray-400 uppercase tracking-widest">
+              More Products
+            </span>
+          )}
+          {standalonePlusSectionless.map((cat) => {
+            const r = rowIndex++;
+            return (
+              <CarouselRow
+                key={cat.id}
+                cat={cat}
+                rowIndex={r}
+                expandedCategories={expandedCategories}
+                setExpandedCategories={setExpandedCategories}
+                compact={compact}
+                isOwnProfile={isOwnProfile}
+                storeId={storeId}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -307,7 +545,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
         case "price-desc": products.sort((a, b) => (b.price ?? 0) - (a.price ?? 0)); break;
         case "newest": products.sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()); break;
       }
-      return { ...cat, products };
+      return { ...cat, products, logo_url: (cat as any).logo_url ?? null };
     });
   }, [selectedCategory, sort, store.categories, storeSearch]);
 
@@ -347,31 +585,12 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     <div className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
       <div>
       {/* ══ STICKY STORE HEADER ════════════════════════════
-          Single row: [← YJ back pill] [store logo] [store name]  |  [search] [Save] */}
+          Single row: [store logo] [store name]  |  [search] [Save] [← YJ back pill] */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200">
         <div className="px-5 sm:px-8 lg:px-10">
           <div className="flex items-center justify-between gap-3 sm:gap-4 h-14 sm:h-16">
-            {/* Store identity + back button */}
+            {/* Store identity */}
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-
-              {/* Back to Yellow Jersey */}
-              <a
-                href="/marketplace"
-                aria-label="Back to Yellow Jersey marketplace"
-                className="group shrink-0 inline-flex items-center gap-1.5 py-1 px-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
-              >
-                <ChevronLeft className="h-3.5 w-3.5 flex-shrink-0 group-hover:-translate-x-0.5 transition-transform" />
-                <Image
-                  src="/yj.svg"
-                  alt="Yellow Jersey"
-                  width={72}
-                  height={14}
-                  className="hidden sm:block h-5 w-auto opacity-60 group-hover:opacity-100 transition-opacity"
-                  unoptimized
-                />
-              </a>
-              {/* Divider */}
-              <div className="h-6 w-px bg-gray-200 shrink-0" aria-hidden="true" />
 
               <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-full ring-1 ring-gray-200 flex-shrink-0 overflow-hidden bg-white">
                 {store.logo_url ? (
@@ -427,7 +646,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
               </div>
             </div>
 
-            {/* Actions: search (products) + Save/Edit */}
+            {/* Actions: search (products) + Save/Edit + back to YJ */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {activeTab === "products" && allProducts.length > 0 && (
                 <div className="relative hidden md:block">
@@ -451,6 +670,23 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 </div>
               )}
               {actionButtons}
+              {/* Back to Yellow Jersey — far-right pill */}
+              <div className="hidden sm:block h-6 w-px bg-gray-200 flex-shrink-0 ml-1" aria-hidden="true" />
+              <a
+                href="/marketplace"
+                aria-label="Back to Yellow Jersey marketplace"
+                className="hidden sm:inline-flex items-center gap-2 flex-shrink-0 rounded-full border border-gray-200 bg-white hover:bg-gray-50 px-3 py-1.5 transition-colors"
+              >
+                <ChevronLeft className="h-3 w-3 text-gray-400" />
+                <Image
+                  src="/yjlogo.svg"
+                  alt="Yellow Jersey"
+                  width={72}
+                  height={26}
+                  className="h-[22px] w-auto translate-y-[1px]"
+                  unoptimized
+                />
+              </a>
             </div>
           </div>
         </div>
@@ -494,34 +730,56 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
         "bg-gray-50 border-b border-gray-200",
         immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
       )}>
-        <div className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto scrollbar-hide">
-          {tabs.map(({ key, label, icon: Icon }) => {
-            const active = activeTab === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => {
-                  setActiveTab(key);
-                  setSelectedCategory(null);
-                }}
-                className={cn(
-                  "relative flex cursor-pointer items-center gap-1.5 px-3 sm:px-3.5 py-3.5 text-sm font-medium whitespace-nowrap transition-colors focus:outline-none",
-                  active ? "text-gray-900" : "text-gray-500 hover:text-gray-900"
-                )}
-              >
-                <Icon className={cn("h-3.5 w-3.5 flex-shrink-0", active ? "text-gray-900" : "text-gray-400")} />
-                {label}
-                {active && (
-                  <motion.span
-                    layoutId="storeTabUnderline"
-                    className="absolute inset-x-1.5 -bottom-px h-[2px] rounded-full bg-gray-900"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                  />
-                )}
-              </button>
-            );
-          })}
+        <div className="flex items-center">
+          {/* Tabs — scrollable */}
+          <div className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto scrollbar-hide flex-1 min-w-0">
+            {tabs.map(({ key, label, icon: Icon }) => {
+              const active = activeTab === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(key);
+                    setSelectedCategory(null);
+                  }}
+                  className={cn(
+                    "relative flex cursor-pointer items-center gap-1.5 px-3 sm:px-3.5 py-3.5 text-sm font-medium whitespace-nowrap transition-colors focus:outline-none",
+                    active ? "text-gray-900" : "text-gray-500 hover:text-gray-900"
+                  )}
+                >
+                  <Icon className={cn("h-3.5 w-3.5 flex-shrink-0", active ? "text-gray-900" : "text-gray-400")} />
+                  {label}
+                  {active && (
+                    <motion.span
+                      layoutId="storeTabUnderline"
+                      className="absolute inset-x-1.5 -bottom-px h-[2px] rounded-full bg-gray-900"
+                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Brand logos — pinned far right, desktop only */}
+          {store.brands.filter(b => b.is_active && b.logo_url).length > 0 && (
+            <div className="hidden sm:flex items-center gap-3 flex-shrink-0 pl-4 ml-2 border-l border-gray-200 py-2">
+              {store.brands
+                .filter(b => b.is_active && b.logo_url)
+                .sort((a, b) => a.display_order - b.display_order)
+                .slice(0, 6)
+                .map(brand => (
+                  <div key={brand.id} className="h-7 w-16 flex items-center justify-center flex-shrink-0" title={brand.name}>
+                    <img
+                      src={brand.logo_url!}
+                      alt={brand.name}
+                      className="max-h-full max-w-full object-contain opacity-60 hover:opacity-100 transition-opacity"
+                    />
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -529,7 +787,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
       {activeTab === "products" && allProducts.length > 0 && (
         <div className="bg-gray-50">
           <div className={cn(
-            "pt-3 pb-2",
+            "pt-3 pb-1",
             immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
           )}>
             <div className="flex items-center gap-2 sm:gap-3">
@@ -606,7 +864,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
       {/* ══ TAB CONTENT ═══════════════════════════════════ */}
       <div className={cn(
-        "pt-3 pb-5 sm:pt-4 sm:pb-7",
+        "pt-2 pb-5 sm:pt-3 sm:pb-7",
         immersive
           ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12"
           : "px-5 sm:px-8 lg:px-10"
@@ -622,46 +880,15 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
             {/* PRODUCTS */}
             {activeTab === "products" &&
               (allProducts.length > 0 ? (
-                <div className="space-y-5">
-                  {sortedCategories.map((cat, i) => {
-                    if (cat.products.length === 0) return null;
-                    const catSize = (compact ? 'compact' : (cat.carousel_size ?? 'normal')) as 'featured' | 'normal' | 'compact';
-                    const isExpanded = expandedCategories.has(cat.id);
-                    // "See all" switches to grid view; only shown when there's a meaningful
-                    // number of products to warrant the full-grid overview.
-                    const hasMore = cat.products.length > 8;
-
-                    return (
-                      <section key={cat.id}>
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-semibold text-gray-900">{cat.name}</h3>
-                            <span className="text-xs text-gray-400 tabular-nums">({cat.products.length})</span>
-                          </div>
-                          {hasMore && (
-                            <button
-                              type="button"
-                              onClick={() => setExpandedCategories((prev) => {
-                                const next = new Set(prev);
-                                isExpanded ? next.delete(cat.id) : next.add(cat.id);
-                                return next;
-                              })}
-                              className="text-xs text-gray-500 hover:text-gray-900 cursor-pointer transition-colors flex-shrink-0"
-                            >
-                              {isExpanded ? "Show less" : `See all ${cat.products.length}`}
-                            </button>
-                          )}
-                        </div>
-                        <CategoryScrollRow
-                          products={cat.products}
-                          catSize={catSize}
-                          rowIndex={i}
-                          isExpanded={isExpanded}
-                        />
-                      </section>
-                    );
-                  })}
-                </div>
+                <ProductsTab
+                  sortedCategories={sortedCategories}
+                  sections={store.sections ?? []}
+                  expandedCategories={expandedCategories}
+                  setExpandedCategories={setExpandedCategories}
+                  compact={compact}
+                  isOwnProfile={isOwnProfile}
+                  storeId={store.id}
+                />
               ) : (
                 <EmptyState
                   icon={Package}

@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Store, Wrench, Tag, FileText, Star, Type } from "lucide-react";
+import { Loader2, Store, Wrench, Tag, FileText, Star, Type, Layers } from "lucide-react";
 import { Header } from "@/components/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,6 +13,7 @@ import { StoreServicesManager } from "@/components/settings/store-services-manag
 import { StoreBrandsManager } from "@/components/settings/store-brands-manager";
 import { StoreProductDescriptionsManager } from "@/components/settings/store-product-descriptions-manager";
 import { StoreProductTitlesManager } from "@/components/settings/store-product-titles-manager";
+import { StoreSectionsManager } from "@/components/settings/store-sections-manager";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 
@@ -64,10 +65,14 @@ export default function StoreSettingsPage() {
       <div className="p-4 lg:p-6">
         <div className="mx-auto max-w-3xl">
           <Tabs defaultValue="categories">
-            <TabsList className="w-full justify-start mb-6">
+            <TabsList className="w-full justify-start mb-6 flex-wrap h-auto gap-1">
               <TabsTrigger value="categories" className="flex-none gap-2">
                 <Store className="h-4 w-4" />
                 Categories
+              </TabsTrigger>
+              <TabsTrigger value="sections" className="flex-none gap-2">
+                <Layers className="h-4 w-4" />
+                Sections
               </TabsTrigger>
               <TabsTrigger value="services" className="flex-none gap-2">
                 <Wrench className="h-4 w-4" />
@@ -117,6 +122,29 @@ export default function StoreSettingsPage() {
                 </CardHeader>
                 <CardContent>
                   <StoreCategoriesManager />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="sections">
+              <Card className="rounded-md border-border">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
+                      <Layers className="h-5 w-5 text-foreground" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-semibold">
+                        Store Sections
+                      </CardTitle>
+                      <CardDescription className="text-sm">
+                        Group your carousels into named sections — e.g. "Nutrition" containing Clif, GU, and Specials carousels.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <StoreSectionsManager />
                 </CardContent>
               </Card>
             </TabsContent>

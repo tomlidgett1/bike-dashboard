@@ -154,6 +154,7 @@ export function ProductCarousel({
                 scrollbarWidth: 'none',
                 msOverflowStyle: 'none',
                 WebkitOverflowScrolling: 'touch',
+                overflowY: 'hidden',
               }}
             >
               <div className="flex gap-2.5 sm:gap-3 md:gap-4" style={{ minWidth: 'min-content' }}>

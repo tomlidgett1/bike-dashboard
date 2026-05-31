@@ -11,7 +11,6 @@ import { DesktopHeaderPill } from "./desktop-header-pill";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
-import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { useSellModal } from "@/components/providers/sell-modal-provider";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
@@ -182,7 +181,6 @@ export function MarketplaceHeader({
       : null;
   const { user } = useAuth();
   const { profile, loading } = useUserProfile();
-  const { openAuthModal } = useAuthModal();
   const { registerHandler } = useSellModal();
   const supabase = createClient();
   
@@ -678,10 +676,10 @@ export function MarketplaceHeader({
         >
               {/* Header */}
               <div className="flex items-center justify-between pl-0 pr-4 h-14 border-b border-gray-200 flex-shrink-0">
-                <Image 
-                  src="/yj.svg" 
-                  alt="Yellow Jersey" 
-                  width={280} 
+                <Image
+                  src="/yj.svg"
+                  alt="Yellow Jersey"
+                  width={280}
                   height={56}
                   className="h-24 w-auto ml-4"
                   priority
@@ -863,7 +861,7 @@ export function MarketplaceHeader({
                   <Button
                     onClick={() => {
                       setMobileMenuOpen(false);
-                      openAuthModal();
+                      router.push("/login");
                     }}
                     className="w-full rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
                   >
@@ -940,7 +938,7 @@ export function MarketplaceHeader({
               variant="outline"
               onClick={() => {
                 setSellRequirementModalOpen(false);
-                openAuthModal();
+                router.push("/login");
               }}
               className="w-full rounded-md border-gray-300 hover:bg-gray-50"
             >

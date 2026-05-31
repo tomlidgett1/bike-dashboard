@@ -19,7 +19,6 @@ import { UserAvatar } from "@/components/ui/user-avatar";
 import { NotificationsDropdown } from "@/components/layout/notifications-dropdown";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
-import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { createClient } from "@/lib/supabase/client";
 import { useCombinedUnreadCount } from "@/lib/hooks/use-combined-unread-count";
 import { useMessages } from "@/components/providers/messages-provider";
@@ -42,7 +41,6 @@ function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
   const router = useRouter();
   const { user } = useAuth();
   const { profile } = useUserProfile();
-  const { openAuthModal } = useAuthModal();
   const supabase = createClient();
 
   const [mounted, setMounted] = React.useState(false);
@@ -241,7 +239,7 @@ function DesktopHeaderPillContent(_props: DesktopHeaderPillProps) {
           mounted && (
             <Button
               variant="ghost"
-              onClick={openAuthModal}
+              onClick={() => router.push("/login")}
               className="rounded-full text-sm font-medium hover:bg-gray-100 h-9 px-4"
             >
               Sign In

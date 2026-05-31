@@ -14,6 +14,7 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useProductView } from "@/lib/tracking/interaction-tracker";
+import { ProductOptimizeDrawer } from "@/components/marketplace/product-optimize-drawer";
 
 // ============================================================
 // Product Page Client Component
@@ -47,6 +48,9 @@ export function ProductPageClient({
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
   const [isLiked, setIsLiked] = React.useState(false);
   const [showBanner, setShowBanner] = React.useState(showUploadBanner);
+  const [localProduct, setLocalProduct] = React.useState(product);
+
+  const isOwner = !!user && user.id === product.user_id;
 
   // Track product view with dwell time
   useProductView(product.id, user?.id);
@@ -169,7 +173,15 @@ export function ProductPageClient({
 
               {/* Right Column - Floating card (all breakpoints; below hero on mobile) */}
               <div className="mx-3 mt-4 mb-2 sm:mx-5 sm:mt-6 sm:mb-4 lg:mx-0 lg:mt-2 lg:mb-2 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:self-start rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-200/60 ring-1 ring-black/5 overflow-hidden">
-                <ProductDetailsPanelSimple product={product} />
+                <ProductDetailsPanelSimple product={localProduct} />
+                {isOwner && (
+                  <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
+                    <ProductOptimizeDrawer
+                      product={localProduct}
+                      onProductUpdate={(updates) => setLocalProduct((prev) => ({ ...prev, ...updates }))}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>

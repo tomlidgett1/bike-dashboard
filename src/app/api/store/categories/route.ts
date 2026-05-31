@@ -213,6 +213,9 @@ export async function PUT(request: NextRequest) {
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
     if (body.is_active !== undefined) updateData.is_active = body.is_active;
     if (body.carousel_size !== undefined) updateData.carousel_size = body.carousel_size;
+    if ('section_id' in body) updateData.section_id = body.section_id ?? null;
+    if ('logo_url' in body) updateData.logo_url = body.logo_url ?? null;
+    if ('hide_title' in body) updateData.hide_title = !!body.hide_title;
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(

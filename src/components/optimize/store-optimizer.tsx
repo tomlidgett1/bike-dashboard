@@ -49,6 +49,16 @@ import {
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
+interface CanonicalImage {
+  id: string;
+  cloudinary_public_id: string | null;
+  cloudinary_url: string | null;
+  external_url: string | null;
+  is_primary: boolean | null;
+  approval_status: string | null;
+  sort_order: number | null;
+}
+
 interface OptimizerProduct {
   id: string;
   canonical_product_id: string | null;
@@ -63,6 +73,7 @@ interface OptimizerProduct {
   qoh: number;
   resolved_image_url: string | null;
   primary_image_url: string | null;
+  canonical_images: CanonicalImage[];
   canonical_products?: {
     id: string;
     upc: string | null;
@@ -247,6 +258,7 @@ function pillState(
     if (img.phase === "ready") return "review";
     if (IMG_BUSY.includes(img.phase)) return "working";
     if (img.phase === "error" || img.phase === "no_results") return "error";
+    if (redo?.image) return "picked";
     if (img.phase === "done" || hasImage(p)) return "done";
     return pk?.image ? "picked" : "off";
   }
@@ -712,6 +724,9 @@ export function StoreOptimizer() {
   const [running, setRunning] = React.useState(false);
   const [lightbox, setLightbox] = React.useState<string | null>(null);
   const [showCompleted, setShowCompleted] = React.useState(false);
+  // Canonical image edit state (keyed by product id)
+  const [ciEnhancing, setCiEnhancing] = React.useState<Record<string, string[]>>({});  // productId → imageIds
+  const [ciRemoving, setCiRemoving] = React.useState<Record<string, string[]>>({});    // productId → imageIds
 
   const [focus, setFocus] = React.useState<Focus>({
     image: true,
@@ -794,7 +809,12 @@ export function StoreOptimizer() {
         if (cat && cat !== "all") params.set("ls_category_id", cat);
         const res = await fetch(`/api/products?${params.toString()}`);
         const data = await res.json();
-        const list: OptimizerProduct[] = data.products ?? [];
+        const list: OptimizerProduct[] = (data.products ?? []).map((p: any) => ({
+          ...p,
+          canonical_images: (p.canonical_products?.product_images ?? []).filter(
+            (img: any) => img.approval_status === "approved" || img.approval_status === null,
+          ),
+        }));
         setProducts(list);
         const nextPicks: Record<string, Picks> = {};
         for (const p of list) nextPicks[p.id] = defaultPicks(p, focus);
@@ -1129,8 +1149,28 @@ export function StoreOptimizer() {
           phase: "done",
           savedCount: (json.savedImageIds || img.selectedUrls).length,
         });
+        setRedos((prev) => ({ ...prev, [id]: { ...(prev[id] ?? emptyPicks()), image: false } }));
         setProducts((prev) =>
-          prev.map((p) => (p.id === id ? { ...p, resolved_image_url: primaryUrl } : p)),
+          prev.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  resolved_image_url: primaryUrl,
+                  // add newly approved images to the canonical_images array so they show inline
+                  canonical_images: [
+                    ...img.selectedCandidates.map((c, i) => ({
+                      id: `new-${i}`,
+                      cloudinary_public_id: null,
+                      cloudinary_url: null,
+                      external_url: c.url,
+                      is_primary: c.url === primaryUrl,
+                      approval_status: "approved",
+                      sort_order: i,
+                    })),
+                  ],
+                }
+              : p,
+          ),
         );
       } catch (err) {
         patchImg(id, {
@@ -1149,6 +1189,124 @@ export function StoreOptimizer() {
     const tasks = ids.map((id) => () => approveImages(id));
     await runWithConcurrency(tasks, IMAGE_CONCURRENCY);
   };
+
+  // Run image search for a single product immediately (used by "Search for more" button)
+  const runSingleImage = React.useCallback(
+    async (p: OptimizerProduct) => {
+      if (running) return;
+      setRunning(true);
+      cancelledRef.current = false;
+      abortRef.current = new AbortController();
+      try {
+        await runImageForProduct(p);
+      } finally {
+        setRunning(false);
+        abortRef.current = null;
+      }
+    },
+    [running, runImageForProduct],
+  );
+
+  // ── Canonical image edits (existing approved photos) ────────────────────────
+
+  const removeCanonicalImage = React.useCallback(async (productId: string, imageId: string) => {
+    const product = productsRef.current.find((p) => p.id === productId);
+    if (!product?.canonical_product_id) return;
+    setCiRemoving((prev) => ({ ...prev, [productId]: [...(prev[productId] ?? []), imageId] }));
+    // Optimistic removal
+    setProducts((prev) =>
+      prev.map((p) =>
+        p.id === productId
+          ? { ...p, canonical_images: p.canonical_images.filter((ci) => ci.id !== imageId) }
+          : p,
+      ),
+    );
+    try {
+      const res = await fetch("/api/admin/images/remove-approved", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ canonicalProductId: product.canonical_product_id, imageId }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Failed");
+    } catch {
+      // Revert: reload products for this category
+      void loadProducts(category);
+    } finally {
+      setCiRemoving((prev) => ({ ...prev, [productId]: (prev[productId] ?? []).filter((id) => id !== imageId) }));
+    }
+  }, [category, loadProducts]);
+
+  const setCanonicalPrimary = React.useCallback(async (productId: string, imageId: string) => {
+    const product = productsRef.current.find((p) => p.id === productId);
+    if (!product?.canonical_product_id) return;
+    // Optimistic update
+    setProducts((prev) =>
+      prev.map((p) =>
+        p.id === productId
+          ? { ...p, canonical_images: p.canonical_images.map((ci) => ({ ...ci, is_primary: ci.id === imageId })) }
+          : p,
+      ),
+    );
+    try {
+      const res = await fetch("/api/admin/images/set-primary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ canonicalProductId: product.canonical_product_id, imageId }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Failed");
+    } catch {
+      void loadProducts(category);
+    }
+  }, [category, loadProducts]);
+
+  const enhanceCanonicalImage = React.useCallback(async (productId: string, imageId: string, url: string) => {
+    const product = productsRef.current.find((p) => p.id === productId);
+    if (!product?.canonical_product_id) return;
+    setCiEnhancing((prev) => ({ ...prev, [productId]: [...(prev[productId] ?? []), imageId] }));
+    try {
+      const res = await fetch("/api/admin/images/enhance-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: url, canonicalProductId: product.canonical_product_id }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success || !json.url) throw new Error(json.error || "Enhancement failed");
+      const enhancedUrl: string = json.url;
+      const publicId: string | undefined = json.publicId;
+      // Save back to DB
+      await fetch("/api/admin/images/update-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageId,
+          canonicalProductId: product.canonical_product_id,
+          cloudinaryUrl: enhancedUrl,
+          cloudinaryPublicId: publicId ?? null,
+        }),
+      });
+      // Update local state
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === productId
+            ? {
+                ...p,
+                canonical_images: p.canonical_images.map((ci) =>
+                  ci.id === imageId
+                    ? { ...ci, cloudinary_url: enhancedUrl, external_url: null }
+                    : ci,
+                ),
+              }
+            : p,
+        ),
+      );
+    } catch {
+      // silently fail — image unchanged
+    } finally {
+      setCiEnhancing((prev) => ({ ...prev, [productId]: (prev[productId] ?? []).filter((id) => id !== imageId) }));
+    }
+  }, []);
 
   // ── Per-image review edits ───────────────────────────────────────────────────
   const setPrimary = (id: string, url: string) =>
@@ -1392,9 +1550,9 @@ export function StoreOptimizer() {
             <Checkbox
               checked={showCompleted}
               onCheckedChange={() => setShowCompleted((v) => !v)}
-              aria-label="Show completed products"
+              aria-label="Show all products"
             />
-            Show completed
+            Show all products
           </label>
 
           <div className="relative ml-auto w-48">
@@ -1511,7 +1669,7 @@ export function StoreOptimizer() {
                               dim={dim}
                               state={pillState(p, dim, run, pk, redos[p.id])}
                               disabled={running}
-                              canRedo={dim !== "image"}
+                              canRedo
                               onToggle={() => togglePick(p.id, dim)}
                             />
                           ))}
@@ -1528,6 +1686,116 @@ export function StoreOptimizer() {
                         {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </button>
                     </div>
+
+                    {/* Existing approved images — shown when product already has photos and no active image run */}
+                    {p.canonical_images.length > 0 && img.phase === "idle" && (
+                      <div className="border-t border-border/50 bg-muted/20 px-4 py-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-muted-foreground">
+                            {p.canonical_images.length} approved photo{p.canonical_images.length === 1 ? "" : "s"}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={running}
+                            onClick={() => void runSingleImage(p)}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-accent disabled:opacity-50"
+                          >
+                            <Search className="h-3 w-3" />
+                            Search for different photos
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-6 gap-2">
+                          {p.canonical_images.map((ci) => {
+                            const url = ci.cloudinary_url || ci.external_url;
+                            if (!url) return null;
+                            const isEnhancing = (ciEnhancing[p.id] ?? []).includes(ci.id);
+                            const isRemoving = (ciRemoving[p.id] ?? []).includes(ci.id);
+                            return (
+                              <div
+                                key={ci.id}
+                                className={cn(
+                                  "group relative aspect-square overflow-hidden rounded-md border bg-muted",
+                                  ci.is_primary
+                                    ? "border-primary ring-2 ring-primary ring-offset-1 ring-offset-background"
+                                    : "border-border",
+                                  isRemoving && "opacity-40",
+                                )}
+                              >
+                                {/* Clickable image area */}
+                                <div
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label="View full image"
+                                  onClick={() => !isEnhancing && !isRemoving && setLightbox(url)}
+                                  onKeyDown={(e) => e.key === "Enter" && !isEnhancing && !isRemoving && setLightbox(url)}
+                                  className="absolute inset-0 cursor-zoom-in"
+                                >
+                                  <Image src={url} alt="" fill unoptimized className="object-cover" />
+                                </div>
+
+                                {ci.is_primary && (
+                                  <span className="absolute left-1 top-1 inline-flex items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground shadow-sm">
+                                    <Star className="h-2.5 w-2.5 fill-current" />
+                                    Primary
+                                  </span>
+                                )}
+
+                                {/* Enhancing spinner */}
+                                {isEnhancing && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+                                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                  </div>
+                                )}
+
+                                {!isEnhancing && !isRemoving && (
+                                  <>
+                                    {/* Remove (X) — top-right, hidden until hover, only if >1 image */}
+                                    {p.canonical_images.length > 1 && (
+                                      <button
+                                        type="button"
+                                        aria-label="Remove photo"
+                                        title="Remove photo"
+                                        onClick={(e) => { e.stopPropagation(); void removeCanonicalImage(p.id, ci.id); }}
+                                        className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-md bg-background/90 text-muted-foreground shadow-sm opacity-0 transition hover:bg-background hover:text-foreground group-hover:opacity-100"
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+
+                                    {/* Remove background (Wand) — bottom-left */}
+                                    {p.canonical_product_id && (
+                                      <button
+                                        type="button"
+                                        aria-label="Remove background"
+                                        title="Remove background & white backdrop"
+                                        onClick={(e) => { e.stopPropagation(); void enhanceCanonicalImage(p.id, ci.id, url); }}
+                                        className="absolute bottom-1 left-1 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-1 text-[10px] font-medium text-foreground opacity-0 shadow-sm transition hover:bg-background group-hover:opacity-100"
+                                      >
+                                        <Wand2 className="h-2.5 w-2.5" />
+                                        BG
+                                      </button>
+                                    )}
+
+                                    {/* Set primary (Star) — bottom-right, only for non-primary */}
+                                    {!ci.is_primary && (
+                                      <button
+                                        type="button"
+                                        aria-label="Set as primary"
+                                        title="Set as primary"
+                                        onClick={(e) => { e.stopPropagation(); void setCanonicalPrimary(p.id, ci.id); }}
+                                        className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-md bg-background/90 text-foreground opacity-0 shadow-sm transition hover:bg-background group-hover:opacity-100"
+                                      >
+                                        <Star className="h-3 w-3" />
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Image review — full width, shown inline */}
                     {showImageReview && (
