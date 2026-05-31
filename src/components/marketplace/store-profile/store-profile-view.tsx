@@ -591,13 +591,13 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
       <div>
       {/* ══ STICKY STORE HEADER ════════════════════════════
           Single row: [store logo] [store name]  |  [search] [Save] [← YJ back pill] */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200">
+      <header className="sticky top-0 z-40 bg-[#ffde59] border-b border-yellow-400/50">
         <div className="px-5 sm:px-8 lg:px-10">
           <div className="flex items-center justify-between gap-3 sm:gap-4 h-14 sm:h-16">
             {/* Store identity */}
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
 
-              <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-full ring-1 ring-gray-200 flex-shrink-0 overflow-hidden bg-white">
+              <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-full ring-1 ring-black/10 flex-shrink-0 overflow-hidden bg-white">
                 {store.logo_url ? (
                   <Image
                     src={store.logo_url}
@@ -609,8 +609,8 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                     priority
                   />
                 ) : (
-                  <div className="h-full w-full flex items-center justify-center bg-gray-50">
-                    <Store className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" />
+                  <div className="h-full w-full flex items-center justify-center bg-yellow-50">
+                    <Store className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500" />
                   </div>
                 )}
               </div>
@@ -619,18 +619,18 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                   {store.store_name}
                 </h1>
                 {(store.rating != null || store.address) && (
-                  <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-gray-500 min-w-0 mt-0.5">
+                  <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-gray-700 min-w-0 mt-0.5">
                     {store.rating != null && (
                       <span className="inline-flex items-center gap-0.5 flex-shrink-0">
-                        <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                        <span className="font-semibold text-gray-700">{store.rating.toFixed(1)}</span>
+                        <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                        <span className="font-semibold text-gray-900">{store.rating.toFixed(1)}</span>
                         {store.review_count != null && (
-                          <span className="text-gray-400">({store.review_count})</span>
+                          <span className="text-gray-600">({store.review_count})</span>
                         )}
                       </span>
                     )}
                     {store.rating != null && store.address && (
-                      <span className="text-gray-300 flex-shrink-0">·</span>
+                      <span className="text-gray-500 flex-shrink-0">·</span>
                     )}
                     {store.address && (
                       directionsUrl ? (
@@ -661,13 +661,13 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                     value={storeSearch}
                     onChange={(e) => setStoreSearch(e.target.value)}
                     placeholder="Search products…"
-                    className="h-9 w-44 lg:w-56 rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
+                    className="h-9 w-44 lg:w-56 rounded-md border border-yellow-400/40 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-yellow-500/50 transition-colors"
                   />
                   {storeSearch && (
                     <button
                       type="button"
                       onClick={() => setStoreSearch("")}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 cursor-pointer"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -675,15 +675,15 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 </div>
               )}
               {actionButtons}
-              <CartButton />
+              <CartButton className="hover:bg-black/10" />
               {/* Back to Yellow Jersey — far-right pill */}
-              <div className="hidden sm:block h-6 w-px bg-gray-200 flex-shrink-0 ml-1" aria-hidden="true" />
+              <div className="hidden sm:block h-6 w-px bg-black/15 flex-shrink-0 ml-1" aria-hidden="true" />
               <a
                 href="/marketplace"
                 aria-label="Back to Yellow Jersey marketplace"
-                className="hidden sm:inline-flex items-center gap-2 flex-shrink-0 rounded-full border border-gray-200 bg-white hover:bg-gray-50 px-3 py-1.5 transition-colors"
+                className="hidden sm:inline-flex items-center gap-2 flex-shrink-0 rounded-full border border-black/10 bg-white/80 hover:bg-white px-3 py-1.5 transition-colors"
               >
-                <ChevronLeft className="h-3 w-3 text-gray-400" />
+                <ChevronLeft className="h-3 w-3 text-gray-500" />
                 <Image
                   src="/yjlogo.svg"
                   alt="Yellow Jersey"
@@ -988,8 +988,8 @@ function HeroAction({
   const cls = cn(
     "inline-flex items-center gap-1.5 rounded-md px-2.5 h-8 text-sm font-medium cursor-pointer transition-colors",
     active
-      ? "bg-gray-100 text-gray-900"
-      : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+      ? "bg-black/15 text-gray-900"
+      : "text-gray-700 hover:text-gray-900 hover:bg-black/10"
   );
   if (href) {
     return (
