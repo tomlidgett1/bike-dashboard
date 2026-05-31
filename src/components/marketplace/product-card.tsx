@@ -4,9 +4,10 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Package, Heart, Sparkles, Store, BadgeCheck } from "lucide-react";
+import { Package, Plus, Check, Sparkles, Store, BadgeCheck } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
+import { useCart } from "@/components/providers/cart-provider";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
 import { cloudinaryCardLoader, extractCloudinaryPublicId } from "@/lib/utils/cloudinary-transforms";
 import { resolveLivePrice, formatPriceAUD, formatPriceAUDFull } from "@/lib/marketplace/pricing";
@@ -36,6 +37,8 @@ interface ProductCardProps {
   compact?: boolean;
   onNavigate?: () => void;
   onImageDiscoveryClick?: (productId: string) => void;
+  /** When set, appends ?store={storeId} to the product URL for store-context header */
+  storeId?: string;
 }
 
 type ListingImage = {
@@ -51,6 +54,46 @@ type ProductCardData = MarketplaceProduct & {
   images?: ListingImage[] | null;
 };
 
+// ── Add-to-cart overlay button ──────────────────────────────
+// Kept outside the memoized ProductCard so cart-state changes (in/out of
+// cart) cause this tiny component to re-render without busting the whole card.
+function CartOverlayButton({ product }: { product: ProductCardData }) {
+  const { has, addItem, openCart } = useCart();
+  const inCart = has(product.id);
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (inCart) { openCart(); return; }
+    const result = addItem({
+      productId: product.id,
+      name: (product as any).display_name || product.description || "",
+      image: product.card_url || product.primary_image_url || null,
+      price: product.price,
+      sellerId: product.user_id,
+      sellerName: product.store_name || "Store",
+    });
+    if (result === "added" || result === "exists") openCart();
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-label={inCart ? "View cart" : "Add to cart"}
+      className={cn(
+        "absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-white shadow-md flex items-center justify-center transition-all duration-200 cursor-pointer hover:scale-110",
+        inCart ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+      )}
+    >
+      {inCart
+        ? <Check className="h-3.5 w-3.5 text-green-600" />
+        : <Plus className="h-3.5 w-3.5 text-gray-700" />
+      }
+    </button>
+  );
+}
+
 // Memoized product card to prevent unnecessary re-renders
 export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   product,
@@ -61,12 +104,12 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   hideStoreMeta = false,
   compact = false,
   onNavigate,
-  onImageDiscoveryClick
+  onImageDiscoveryClick,
+  storeId,
 }) {
   const router = useRouter();
   const [imageError, setImageError] = React.useState(false);
   const [isVisible, setIsVisible] = React.useState(priority);
-  const [isLiked, setIsLiked] = React.useState(false);
   const imageRef = React.useRef<HTMLDivElement>(null);
   const productData = product as ProductCardData;
 
@@ -176,20 +219,11 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     });
 
     // Navigate to product page
-    router.push(`/marketplace/product/${product.id}`);
-  }, [product.id, product.marketplace_category, product.price, router, onNavigate]);
-
-  // Memoize like/unlike handler
-  const handleLikeToggle = React.useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const newLikedState = !isLiked;
-    setIsLiked(newLikedState);
-    trackInteraction(newLikedState ? 'like' : 'unlike', {
-      productId: product.id,
-      metadata: { source: 'product_card' }
-    });
-  }, [isLiked, product.id]);
+    const productUrl = storeId
+      ? `/marketplace/product/${product.id}?store=${storeId}`
+      : `/marketplace/product/${product.id}`;
+    router.push(productUrl);
+  }, [product.id, product.marketplace_category, product.price, router, onNavigate, storeId]);
 
   const isList = layout === "list";
   // Resolve live price once so both the photo badge and the price row can use it.
@@ -197,7 +231,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 
   return (
     <Link
-      href={`/marketplace/product/${product.id}`}
+      href={storeId ? `/marketplace/product/${product.id}?store=${storeId}` : `/marketplace/product/${product.id}`}
       onClick={handleClick}
       className={cn(
         "product-card-root block",
@@ -280,24 +314,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </div>
           )}
 
-          {/* Wishlist Button */}
-          <button
-            onClick={handleLikeToggle}
-            className={`absolute top-2.5 right-2.5 transition-all duration-200 ${
-              isLiked 
-                ? "opacity-100" 
-                : "opacity-0 group-hover:opacity-100"
-            }`}
-          >
-            <Heart
-              className={`h-5 w-5 transition-colors duration-200 ${
-                isLiked 
-                  ? "fill-red-500 stroke-red-500" 
-                  : "stroke-white"
-              }`}
-              style={{ filter: isLiked ? 'none' : 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}
-            />
-          </button>
+          {/* Add to cart overlay */}
+          <CartOverlayButton product={productData} />
 
           {/* Condition Badge - Only for private listings with condition */}
           {productData.listing_type === 'private_listing' && productData.condition_rating && (
