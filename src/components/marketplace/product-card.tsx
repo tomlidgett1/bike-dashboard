@@ -377,9 +377,6 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
                   <p className={cn(priceSizeClass, "text-gray-400 font-normal line-through mb-0")}>
                     {formatPriceAUDFull(live.originalPrice as number)}
                   </p>
-                  <span className="inline-flex items-center rounded-md bg-red-600 px-1 py-0.5 text-[10px] font-semibold leading-none text-white">
-                    -{live.percentOff}%
-                  </span>
                 </div>
               );
             }
