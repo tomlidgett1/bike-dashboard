@@ -169,7 +169,11 @@ function hasImage(p: OptimizerProduct) {
   return !!(p.resolved_image_url || p.primary_image_url);
 }
 function hasTitle(p: OptimizerProduct) {
-  return !!p.display_name;
+  if (!p.display_name) return false;
+  // A title counts as "cleaned" only when display_name differs from the raw
+  // Lightspeed description. If they're identical the title was never curated —
+  // the sync or recovery migration just echo'd the raw value into display_name.
+  return p.display_name.trim().toLowerCase() !== (p.description ?? "").trim().toLowerCase();
 }
 function hasDesc(p: OptimizerProduct) {
   return !!p.product_description;
