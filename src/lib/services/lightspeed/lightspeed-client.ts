@@ -23,6 +23,8 @@ import type {
   LightspeedSale,
   LightspeedCustomer,
   LightspeedShop,
+  LightspeedRegister,
+  LightspeedEmployee,
 } from './types'
 
 // ============================================================
@@ -376,6 +378,84 @@ export class LightspeedClient {
     const accountId = await this.getAccountId()
     const response = await this.request<{ Sale: LightspeedSale }>(
       `/Account/${accountId}/Sale/${saleId}.json`
+    )
+    return response.Sale
+  }
+
+  /**
+   * Create a sale in Quote (not-completed) status for a Lightspeed product.
+   *
+   * Automatically resolves the first active shop, register, and employee for
+   * the account so callers only need item-level data. The sale is posted with
+   * `completed: "false"`, meaning it appears in the store's system as an open
+   * quote the staff can review and complete at their discretion.
+   *
+   * @param params.itemID         - Lightspeed item ID (lightspeed_item_id on our products table)
+   * @param params.unitQuantity   - Number of units sold
+   * @param params.unitPrice      - Unit price in dollars (e.g. 250.00)
+   * @param params.referenceNumber - Optional cross-reference (e.g. our order number)
+   */
+  async createQuoteSale(params: {
+    itemID: string
+    unitQuantity: number
+    unitPrice: number
+    referenceNumber?: string
+  }): Promise<LightspeedSale> {
+    const accountId = await this.getAccountId()
+
+    // Resolve the first active shop -----------------------------------------
+    const shops = await this.getShops({ archived: 'false' })
+    const shop = shops[0]
+    if (!shop) throw new Error('[Lightspeed] No active shop found — cannot create quote sale')
+
+    // Resolve the first register for that shop --------------------------------
+    const regsResponse = await this.getRegisters({ shopID: shop.shopID })
+    const registers: LightspeedRegister[] = Array.isArray(regsResponse.Register)
+      ? regsResponse.Register
+      : regsResponse.Register
+        ? [regsResponse.Register]
+        : []
+    const register = registers[0]
+    if (!register) {
+      throw new Error(`[Lightspeed] No register found for shop ${shop.shopID}`)
+    }
+
+    // Resolve the first active, non-locked employee ---------------------------
+    const empsResponse = await this.getEmployees({ archived: 'false', lockOut: 'false' })
+    const employees: LightspeedEmployee[] = Array.isArray(empsResponse.Employee)
+      ? empsResponse.Employee
+      : empsResponse.Employee
+        ? [empsResponse.Employee]
+        : []
+    const employee = employees[0]
+    if (!employee) {
+      throw new Error('[Lightspeed] No active employee found — cannot create quote sale')
+    }
+
+    // Build the sale payload --------------------------------------------------
+    const saleBody: Record<string, unknown> = {
+      completed: 'false',
+      shopID: shop.shopID,
+      registerID: register.registerID,
+      employeeID: employee.employeeID,
+      SaleLines: {
+        SaleLine: {
+          itemID: params.itemID,
+          unitQuantity: String(params.unitQuantity),
+          unitPrice: params.unitPrice.toFixed(2),
+          taxClassID: '0',
+          shopID: shop.shopID,
+          employeeID: employee.employeeID,
+        },
+      },
+    }
+    if (params.referenceNumber) {
+      saleBody.referenceNumber = params.referenceNumber
+    }
+
+    const response = await this.request<{ Sale: LightspeedSale }>(
+      `/Account/${accountId}/Sale.json`,
+      { method: 'POST', body: JSON.stringify(saleBody) }
     )
     return response.Sale
   }

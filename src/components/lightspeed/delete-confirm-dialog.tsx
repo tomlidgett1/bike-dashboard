@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -28,59 +28,58 @@ export function DeleteConfirmDialog({
   onClose,
   onConfirm,
   isDeleting,
-  title = 'Confirm Deletion',
+  title = 'Confirm deletion',
   description,
   itemCount = 0,
   itemType = 'products',
 }: DeleteConfirmDialogProps) {
-  const defaultDescription = `Are you sure you want to delete ${itemCount} ${itemType}? This action will mark them as inactive and remove them from your marketplace listings.`;
+  const defaultDescription = `Delete ${itemCount} ${itemType}? They will be marked inactive and removed from your marketplace listings.`;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md rounded-md">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="max-w-sm p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-4 pt-4 pb-3">
+          <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
             {description || defaultDescription}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-md bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900 p-3">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-            <div className="flex-1 text-xs text-amber-900 dark:text-amber-400">
-              <strong>Note:</strong> Items will be marked as inactive. You can reactivate them later if needed.
-            </div>
-          </div>
+        <Separator />
+
+        <div className="px-4 py-3">
+          <p className="text-xs text-muted-foreground">
+            Items can be reactivated later if needed.
+          </p>
         </div>
 
-        <DialogFooter className="flex gap-2 sm:gap-2">
+        <Separator />
+
+        <div className="px-4 py-3 flex justify-end gap-2">
           <Button
             variant="outline"
+            size="sm"
             onClick={onClose}
             disabled={isDeleting}
-            className="rounded-md flex-1"
+            className="h-8 text-xs"
           >
             Cancel
           </Button>
           <Button
             variant="destructive"
+            size="sm"
             onClick={onConfirm}
             disabled={isDeleting}
-            className="rounded-md flex-1"
+            className="h-8 text-xs"
           >
             {isDeleting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Deleting...
-              </>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               'Delete'
             )}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
-

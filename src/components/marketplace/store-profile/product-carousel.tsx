@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductCard } from "@/components/marketplace/product-card";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -17,6 +17,8 @@ interface ProductCarouselProps {
   products: MarketplaceProduct[];
   initialVisibleCount?: number;
   isFeatured?: boolean;
+  /** When provided: replaces the inline "See All" expand with a navigation button below the carousel */
+  onViewAll?: () => void;
 }
 
 export function ProductCarousel({
@@ -24,6 +26,7 @@ export function ProductCarousel({
   products,
   initialVisibleCount = 10,
   isFeatured = false,
+  onViewAll,
 }: ProductCarouselProps) {
   const [isExpanded, setIsExpanded] = React.useState(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -86,7 +89,8 @@ export function ProductCarousel({
             </span>
           )}
         </div>
-        {hasMore && (
+        {/* Only show inline See All when not using external navigation */}
+        {hasMore && !onViewAll && (
           <Button
             variant="ghost"
             size="sm"
@@ -173,6 +177,20 @@ export function ProductCarousel({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* View all — shown when external navigation is wired up */}
+      {onViewAll && (
+        <div className="mt-5 flex justify-center">
+          <button
+            type="button"
+            onClick={onViewAll}
+            className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-colors"
+          >
+            View all {categoryName} products
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </section>
   );
 }

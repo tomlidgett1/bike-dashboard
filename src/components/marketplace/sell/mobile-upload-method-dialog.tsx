@@ -1,18 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Upload, ChevronRight, Sparkles } from "lucide-react";
+import { Upload, Sparkles } from "lucide-react";
 import Image from "next/image";
+import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
 } from "@/components/ui/sheet";
-
-// ============================================================
-// Mobile Upload Method Dialog
-// Native bottom sheet design optimised for mobile
-// Uses Radix Sheet for smooth, hardware-accelerated animations
-// ============================================================
 
 interface MobileUploadMethodDialogProps {
   isOpen: boolean;
@@ -20,6 +15,30 @@ interface MobileUploadMethodDialogProps {
   onSelectQuick: () => void;
   onSelectFacebook: () => void;
   onSelectBulk: () => void;
+}
+
+interface MethodRowProps {
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+  onClick: () => void;
+}
+
+function MethodRow({ icon, label, description, onClick }: MethodRowProps) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 active:bg-muted transition-colors text-left"
+    >
+      <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+      </div>
+    </button>
+  );
 }
 
 export function MobileUploadMethodDialog({
@@ -31,111 +50,49 @@ export function MobileUploadMethodDialog({
 }: MobileUploadMethodDialogProps) {
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent 
-        side="bottom" 
+      <SheetContent
+        side="bottom"
         className="rounded-t-2xl p-0 overflow-hidden gap-0"
         showCloseButton={false}
       >
-        {/* Handle Bar */}
         <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+          <div className="w-8 h-1 bg-muted-foreground/20 rounded-full" />
         </div>
-        
-        {/* Header */}
-        <div className="px-5 pb-3">
-          <h2 className="text-xl font-semibold text-gray-900">
-            List Your Item
-          </h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Choose how you'd like to create your listing
-          </p>
-        </div>
-        
-        {/* Options */}
-        <div className="px-4 pb-8 space-y-2">
-          {/* Recommended: Quick Upload */}
-          <button
-            onClick={() => {
-              onClose();
-              onSelectQuick();
-            }}
-            className="w-full active:scale-[0.98] transition-transform"
-          >
-            <div className="bg-white border border-gray-300 rounded-xl p-4">
-              <div className="flex items-center gap-4">
-                <div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-                  <Sparkles className="h-6 w-6 text-gray-600" />
-                </div>
-                <div className="flex-1 min-w-0 text-left">
-                  <h3 className="text-base font-semibold text-gray-900">
-                    Quick Upload
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    AI fills in details from your photos
-                  </p>
-                </div>
-                <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
-              </div>
-            </div>
-          </button>
 
-          {/* Facebook Import */}
-          <button
-            onClick={() => {
-              onClose();
-              onSelectFacebook();
-            }}
-            className="w-full active:scale-[0.98] transition-transform"
-          >
-            <div className="bg-white border border-gray-200 rounded-xl p-4 active:bg-gray-50">
-              <div className="flex items-center gap-4">
-                <div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-                  <Image src="/facebook.png" alt="Facebook" width={24} height={24} />
-                </div>
-                <div className="flex-1 min-w-0 text-left">
-                  <h3 className="text-base font-semibold text-gray-900">
-                    Import from Facebook
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Paste a Marketplace link
-                  </p>
-                </div>
-                <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
-              </div>
-            </div>
-          </button>
-
-          {/* Bulk Upload */}
-          <button
-            onClick={() => {
-              onClose();
-              onSelectBulk();
-            }}
-            className="w-full active:scale-[0.98] transition-transform"
-          >
-            <div className="bg-white border border-gray-200 rounded-xl p-4 active:bg-gray-50">
-              <div className="flex items-center gap-4">
-                <div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-                  <Upload className="h-6 w-6 text-gray-600" />
-                </div>
-                <div className="flex-1 min-w-0 text-left">
-                  <h3 className="text-base font-semibold text-gray-900">
-                    Bulk Upload
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    List multiple items at once
-                  </p>
-                </div>
-                <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
-              </div>
-            </div>
-          </button>
+        <div className="px-4 pb-3 pt-1">
+          <p className="text-sm font-semibold text-foreground">List your item</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Choose how to create your listing</p>
         </div>
-        
-        {/* Safe area padding for iOS */}
-        <div className="h-safe-area-inset-bottom" />
+
+        <Separator />
+
+        <MethodRow
+          icon={<Sparkles className="h-4 w-4 text-muted-foreground" />}
+          label="Quick upload"
+          description="AI fills in details from your photos"
+          onClick={() => { onClose(); onSelectQuick(); }}
+        />
+
+        <Separator />
+
+        <MethodRow
+          icon={<Image src="/facebook.png" alt="Facebook" width={16} height={16} />}
+          label="Import from Facebook"
+          description="Paste a Marketplace link"
+          onClick={() => { onClose(); onSelectFacebook(); }}
+        />
+
+        <Separator />
+
+        <MethodRow
+          icon={<Upload className="h-4 w-4 text-muted-foreground" />}
+          label="Bulk upload"
+          description="List multiple items at once"
+          onClick={() => { onClose(); onSelectBulk(); }}
+        />
+
+        <div className="h-safe-area-inset-bottom pb-4" />
       </SheetContent>
     </Sheet>
   );
 }
-

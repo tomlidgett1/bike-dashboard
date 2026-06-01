@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { X, MapPin, Truck, Loader2, Check, Shield, ChevronLeft, ChevronRight, Package, AlertCircle } from "lucide-react";
+import { X, MapPin, Truck, Loader2, Check, CheckCircle2, Shield, ChevronLeft, ChevronRight, Package, AlertCircle } from "lucide-react";
 import { PaymentElement, AddressElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import type { StripeAddressElementChangeEvent } from "@stripe/stripe-js";
 import { Button } from "@/components/ui/button";
@@ -350,13 +350,13 @@ export function CheckoutSheet({
         <div className="flex-1 overflow-y-auto">
           {error ? (
             <div className="p-4">
-              <div className="p-4 bg-red-50 border border-red-200 rounded-md text-center">
-                <p className="text-sm text-red-600">{error}</p>
+              <div className="p-4 text-center">
+                <p className="text-xs text-destructive">{error}</p>
                 <Button
                   onClick={() => createPaymentIntent()}
                   variant="outline"
                   size="sm"
-                  className="mt-3"
+                  className="mt-3 h-8 text-xs"
                 >
                   Try Again
                 </Button>
@@ -572,12 +572,12 @@ function CheckoutSteps({
 
   if (isComplete) {
     return (
-      <div className="py-16 text-center px-4">
-        <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4 animate-in zoom-in-50 duration-300">
-          <Check className="h-8 w-8 text-green-600" />
+      <div className="py-12 text-center px-4 flex flex-col items-center gap-3">
+        <CheckCircle2 className="h-8 w-8 text-green-600" />
+        <div>
+          <p className="text-sm font-semibold text-foreground">Payment successful</p>
+          <p className="text-xs text-muted-foreground mt-1">Redirecting...</p>
         </div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Payment Successful!</h3>
-        <p className="text-sm text-gray-500">Redirecting...</p>
       </div>
     );
   }
@@ -590,7 +590,7 @@ function CheckoutSteps({
       <div className="flex flex-col h-full">
         <div className="flex-1 px-4 py-4">
           {/* Product Summary - Compact */}
-          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md mb-4">
+          <div className="flex items-center gap-3 p-3 border rounded-md mb-4">
             {productImage && (
               <div className="relative h-12 w-12 rounded-md overflow-hidden bg-gray-200 flex-shrink-0">
                 <Image src={productImage} alt={productName} fill className="object-cover" />
@@ -631,32 +631,17 @@ function CheckoutSteps({
 
           {/* Eligibility result */}
           {addressComplete && !uberEligibility.checking && uberEligibility.distance !== null && (
-            <div className={cn(
-              "mt-4 p-3 rounded-md flex items-start gap-2",
-              uberEligibility.eligible 
-                ? "bg-green-50 border border-green-200" 
-                : "bg-amber-50 border border-amber-200"
-            )}>
+            <div className="mt-3 flex items-start gap-2">
               {uberEligibility.eligible ? (
-                <Check className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <Check className="h-3.5 w-3.5 text-green-600 mt-0.5 flex-shrink-0" />
               ) : (
-                <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <AlertCircle className="h-3.5 w-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
               )}
               <div>
-                <p className={cn(
-                  "text-sm font-medium",
-                  uberEligibility.eligible ? "text-green-800" : "text-amber-800"
-                )}>
-                  {uberEligibility.eligible 
-                    ? "Uber Express Available!" 
-                    : "Uber Express Unavailable"}
+                <p className="text-xs font-medium text-foreground">
+                  {uberEligibility.eligible ? "Uber Express available" : "Uber Express unavailable"}
                 </p>
-                <p className={cn(
-                  "text-xs mt-0.5",
-                  uberEligibility.eligible ? "text-green-600" : "text-amber-600"
-                )}>
-                  {uberEligibility.message}
-                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">{uberEligibility.message}</p>
               </div>
             </div>
           )}
@@ -824,15 +809,15 @@ function CheckoutSteps({
 
           {/* Ineligibility notice */}
           {!uberEligibility.eligible && uberEligibility.distance !== null && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+            <div className="p-3">
               <div className="flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <AlertCircle className="h-3.5 w-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-amber-800">
+                  <p className="text-xs font-medium text-foreground">
                     You&apos;re {uberEligibility.distance}km from Ashburton Cycles
                   </p>
-                  <p className="text-xs text-amber-600 mt-0.5">
-                    Uber Express is only available for addresses within 10km. 
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Uber Express is only available for addresses within 10km.
                     Australia Post shipping is available Australia-wide.
                   </p>
                 </div>
@@ -900,52 +885,44 @@ function CheckoutSteps({
       <div className="flex-1 px-4 py-4 space-y-4">
         {/* Voucher Applied Banner */}
         {voucher && (
-          <div className="bg-green-50 border border-green-200 rounded-md p-3 flex items-start gap-2">
-            <div className="flex items-center justify-center w-5 h-5 bg-green-500 rounded-full flex-shrink-0 mt-0.5">
-              <Check className="h-3 w-3 text-white" />
-            </div>
+          <div className="flex items-center gap-2 py-1.5">
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-green-800">
+              <p className="text-xs font-medium text-green-600">
                 ${voucher.discount.toFixed(2)} discount applied
               </p>
-              <p className="text-xs text-green-700 mt-0.5">
-                {voucher.description}
-              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">{voucher.description}</p>
             </div>
           </div>
         )}
         
         {/* Order Summary */}
-        <div className="p-3 bg-gray-50 rounded-md space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Item</span>
-            <span className="text-gray-900">${breakdown?.itemPrice.toLocaleString("en-AU")}</span>
+        <div className="space-y-1.5">
+          <div className="flex justify-between">
+            <span className="text-xs text-muted-foreground">Item</span>
+            <span className="text-xs text-foreground">${breakdown?.itemPrice.toLocaleString("en-AU")}</span>
           </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Delivery</span>
-            <span className="text-gray-900">
+          <div className="flex justify-between">
+            <span className="text-xs text-muted-foreground">Delivery</span>
+            <span className="text-xs text-foreground">
               {breakdown?.deliveryCost === 0 ? "Free" : `$${breakdown?.deliveryCost.toLocaleString("en-AU")}`}
             </span>
           </div>
           {breakdown && breakdown.buyerFee > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Service fee</span>
-              <span className="text-gray-900">${breakdown.buyerFee.toFixed(2)}</span>
+            <div className="flex justify-between">
+              <span className="text-xs text-muted-foreground">Service fee</span>
+              <span className="text-xs text-foreground">${breakdown.buyerFee.toFixed(2)}</span>
             </div>
           )}
-          {/* Voucher Discount */}
           {voucher && (
-            <div className="flex justify-between text-sm">
-              <span className="text-green-600 flex items-center gap-1">
-                <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
-                Yellow Jersey discount
-              </span>
-              <span className="text-green-600 font-medium">-${voucher.discount.toFixed(2)}</span>
+            <div className="flex justify-between">
+              <span className="text-xs text-green-600">Yellow Jersey discount</span>
+              <span className="text-xs text-green-600 font-medium">-${voucher.discount.toFixed(2)}</span>
             </div>
           )}
-          <div className="pt-2 border-t border-gray-200 flex justify-between">
-            <span className="text-sm font-semibold text-gray-900">Total</span>
-            <span className="text-lg font-bold text-gray-900">
+          <div className="pt-1.5 border-t flex justify-between">
+            <span className="text-xs font-semibold text-foreground">Total</span>
+            <span className="text-sm font-bold text-foreground">
               ${breakdown?.totalAmount.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
             </span>
           </div>
@@ -955,11 +932,7 @@ function CheckoutSteps({
         <PaymentElement options={{ layout: "tabs" }} />
 
         {/* Error */}
-        {paymentError && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-sm text-red-600">{paymentError}</p>
-          </div>
-        )}
+        {paymentError && <p className="text-xs text-destructive">{paymentError}</p>}
       </div>
 
       {/* Footer */}

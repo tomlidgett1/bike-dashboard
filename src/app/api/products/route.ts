@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
     const lsCategoryId = searchParams.get('ls_category_id') || ''
     const stockFilter = searchParams.get('stock') || 'all' // all, in-stock, low-stock
     const statusFilter = searchParams.get('status') || 'all' // all, active, inactive
+    const listingTypeFilter = searchParams.get('listing_type') || '' // e.g. private_listing
 
     // Calculate offset
     const from = (page - 1) * pageSize
@@ -96,6 +97,11 @@ export async function GET(request: NextRequest) {
       query = query.gt('qoh', 0)
     } else if (stockFilter === 'low-stock') {
       query = query.gt('qoh', 0).lte('qoh', 'reorder_point')
+    }
+
+    // Apply listing type filter
+    if (listingTypeFilter) {
+      query = query.eq('listing_type', listingTypeFilter)
     }
 
     // Apply sorting

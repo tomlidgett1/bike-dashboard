@@ -338,19 +338,17 @@ export function OrderHelpWizard({
           className="sm:max-w-md rounded-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-300"
           fullScreenMobile
         >
-          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-              <CheckCircle2 className="h-8 w-8 text-green-600" />
+          <div className="flex flex-col items-center justify-center py-8 px-4 text-center gap-3">
+            <CheckCircle2 className="h-7 w-7 text-green-600" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Ticket submitted</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                We&apos;ll respond within 24–48 hours.
+              </p>
             </div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
-              Ticket Created Successfully
-            </h2>
-            <p className="text-gray-500 mb-4">
-              Your support ticket has been submitted. We'll respond within 24-48 hours.
-            </p>
-            <div className="bg-gray-100 rounded-md px-4 py-2 mb-6">
-              <p className="text-sm text-gray-500">Ticket Number</p>
-              <p className="font-mono font-bold text-lg">{createdTicket}</p>
+            <div className="border rounded-md px-4 py-2">
+              <p className="text-[11px] text-muted-foreground">Ticket number</p>
+              <p className="font-mono font-bold text-sm">{createdTicket}</p>
             </div>
             <Button onClick={onClose} className="w-full rounded-md">
               Done

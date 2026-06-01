@@ -234,8 +234,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
           <div className="h-1.5 w-10 rounded-full bg-gray-300" />
         </div>
         {/* Header */}
-        <DialogHeader className="px-6 sm:px-8 pt-4 sm:pt-8 pb-4 flex-shrink-0">
-          <DialogTitle className="text-center text-2xl sm:text-3xl font-bold text-gray-900">
+        <DialogHeader className="px-6 sm:px-8 pt-5 sm:pt-7 pb-4 flex-shrink-0">
+          <DialogTitle className="text-center text-lg font-semibold text-foreground">
             {mode === "login" ? "Welcome back" : "Create your account"}
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -410,11 +410,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
             )}
 
             {/* Error Message */}
-            {error && (
-              <div className="bg-white border border-red-200 rounded-md p-3">
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
-            )}
+            {error && <p className="text-xs text-destructive">{error}</p>}
 
             {/* Submit Button */}
             <Button

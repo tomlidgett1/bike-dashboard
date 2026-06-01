@@ -1,20 +1,15 @@
-// ============================================================
-// OFFER CONFIRMATION DIALOG
-// ============================================================
-// Professional confirmation dialog for offer actions
-
 'use client';
 
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, CheckCircle, XCircle, Ban } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { Loader2 } from 'lucide-react';
 import type { EnrichedOffer } from '@/lib/types/offer';
 import { calculateSavings } from '@/lib/types/offer';
 
@@ -28,6 +23,62 @@ interface OfferConfirmationDialogProps {
   role?: 'buyer' | 'seller';
 }
 
+function getConfig(
+  action: 'accept' | 'reject' | 'cancel',
+  role: 'buyer' | 'seller',
+  isBuyerCountered: boolean,
+) {
+  if (action === 'accept') {
+    if (isBuyerCountered) {
+      return {
+        title: 'Accept counter offer',
+        description: "You agree to purchase at the seller's proposed price.",
+        confirmText: 'Accept',
+        confirmVariant: 'default' as const,
+        details: ['You will be redirected to complete payment', 'The item will be reserved for you'],
+      };
+    }
+    return {
+      title: role === 'seller' ? 'Accept offer' : 'Accept offer',
+      description:
+        role === 'seller'
+          ? 'All other offers on this listing will be declined.'
+          : 'You agree to purchase at this price.',
+      confirmText: 'Accept',
+      confirmVariant: 'default' as const,
+      details:
+        role === 'seller'
+          ? ['This listing will be marked as pending', 'The buyer will be notified to pay']
+          : ['You will be redirected to complete payment'],
+    };
+  }
+  if (action === 'reject') {
+    if (isBuyerCountered) {
+      return {
+        title: 'Decline counter offer',
+        description: 'This negotiation will end.',
+        confirmText: 'Decline',
+        confirmVariant: 'destructive' as const,
+        details: ['The seller will be notified', 'You can make a new offer anytime'],
+      };
+    }
+    return {
+      title: 'Decline offer',
+      description: 'The buyer will be notified.',
+      confirmText: 'Decline',
+      confirmVariant: 'destructive' as const,
+      details: ['This offer will be permanently declined', 'This action cannot be undone'],
+    };
+  }
+  return {
+    title: 'Cancel offer',
+    description: 'Your offer will be withdrawn.',
+    confirmText: 'Cancel offer',
+    confirmVariant: 'destructive' as const,
+    details: ['The seller will be notified', 'This action cannot be undone'],
+  };
+}
+
 export function OfferConfirmationDialog({
   isOpen,
   onClose,
@@ -38,192 +89,110 @@ export function OfferConfirmationDialog({
   role = 'seller',
 }: OfferConfirmationDialogProps) {
   const savings = calculateSavings(offer.original_price, offer.offer_amount);
-  const savingsPercentage = offer.offer_percentage || ((savings / offer.original_price) * 100);
-  const productName = offer.product?.display_name || offer.product?.description || 'Product';
-  
-  // Check if buyer is accepting a counter-offer
-  const isBuyerAcceptingCounterOffer = role === 'buyer' && offer.status === 'countered';
-  const isBuyerDecliningCounterOffer = role === 'buyer' && offer.status === 'countered' && action === 'reject';
-
-  const getActionConfig = () => {
-    switch (action) {
-      case 'accept':
-        // Different messaging for buyer accepting counter-offer vs seller accepting offer
-        if (isBuyerAcceptingCounterOffer) {
-          return {
-            title: 'Accept Counter-Offer',
-            icon: <CheckCircle className="h-12 w-12 text-green-600" />,
-            description: 'Are you sure you want to accept the seller\'s counter-offer?',
-            confirmText: 'Accept Counter-Offer',
-            confirmVariant: 'default' as const,
-            details: [
-              'You agree to purchase at this price',
-              'You will be redirected to complete payment',
-              'The item will be reserved for you',
-            ],
-          };
-        }
-        return {
-          title: 'Accept Offer',
-          icon: <CheckCircle className="h-12 w-12 text-green-600" />,
-          description: 'Are you sure you want to accept this offer?',
-          confirmText: 'Accept Offer',
-          confirmVariant: 'default' as const,
-          details: [
-            'This product will be marked as pending',
-            'All other offers on this product will be rejected',
-            'The buyer will be notified to complete payment',
-          ],
-        };
-      case 'reject':
-        // Different messaging for buyer declining counter-offer
-        if (isBuyerDecliningCounterOffer) {
-          return {
-            title: 'Decline Counter-Offer',
-            icon: <XCircle className="h-12 w-12 text-red-600" />,
-            description: 'Are you sure you want to decline the seller\'s counter-offer?',
-            confirmText: 'Decline Counter-Offer',
-            confirmVariant: 'destructive' as const,
-            details: [
-              'This negotiation will end',
-              'The seller will be notified',
-              'You can make a new offer if you change your mind',
-            ],
-          };
-        }
-        return {
-          title: 'Reject Offer',
-          icon: <XCircle className="h-12 w-12 text-red-600" />,
-          description: 'Are you sure you want to reject this offer?',
-          confirmText: 'Reject Offer',
-          confirmVariant: 'destructive' as const,
-          details: [
-            'This offer will be permanently rejected',
-            'The buyer will be notified of your rejection',
-            'This action cannot be undone',
-          ],
-        };
-      case 'cancel':
-        return {
-          title: 'Cancel Offer',
-          icon: <Ban className="h-12 w-12 text-gray-600" />,
-          description: 'Are you sure you want to cancel this offer?',
-          confirmText: 'Cancel Offer',
-          confirmVariant: 'destructive' as const,
-          details: [
-            'This offer will be cancelled',
-            'The seller will be notified',
-            'This action cannot be undone',
-          ],
-        };
-    }
-  };
-
-  const config = getActionConfig();
+  const savingsPercentage =
+    offer.offer_percentage || (savings / offer.original_price) * 100;
+  const productName =
+    offer.product?.display_name || offer.product?.description || 'Product';
+  const isBuyerCountered = role === 'buyer' && offer.status === 'countered';
+  const config = getConfig(action, role, isBuyerCountered);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md rounded-md">
-        <DialogHeader>
-          <div className="flex flex-col items-center text-center mb-4">
-            <div className="mb-4">{config.icon}</div>
-            <DialogTitle className="text-xl">{config.title}</DialogTitle>
-            <DialogDescription className="text-sm mt-2">
-              {config.description}
-            </DialogDescription>
-          </div>
+      <DialogContent className="max-w-sm p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-4 pt-4 pb-3">
+          <DialogTitle className="text-sm font-semibold">{config.title}</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            {config.description}
+          </DialogDescription>
         </DialogHeader>
 
-        {/* Offer Summary */}
-        <div className="bg-white border border-gray-200 rounded-md p-4 space-y-3">
-          <div>
-            <p className="text-xs text-gray-600 mb-1">Product</p>
-            <p className="text-sm font-semibold text-gray-900">{productName}</p>
-          </div>
+        <Separator />
 
-          <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-200">
-            <div>
-              <p className="text-xs text-gray-600 mb-1">Original Price</p>
-              <p className="text-sm text-gray-900 line-through">
-                ${offer.original_price.toLocaleString('en-AU')}
-              </p>
+        {/* Offer summary */}
+        <div className="px-4 py-3">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
+            Offer summary
+          </p>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Product</span>
+              <span className="text-xs font-medium text-foreground max-w-[180px] truncate text-right">
+                {productName}
+              </span>
             </div>
-            <div>
-              <p className="text-xs text-gray-600 mb-1">Offer Amount</p>
-              <p className="text-sm font-bold text-gray-900">
-                ${offer.offer_amount.toLocaleString('en-AU')}
-              </p>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Listed price</span>
+              <span className="text-xs text-muted-foreground line-through">
+                ${offer.original_price.toLocaleString('en-AU', { minimumFractionDigits: 0 })}
+              </span>
             </div>
-          </div>
-
-          <div className="bg-green-50 border border-green-200 rounded-md p-2.5">
-            <p className="text-xs text-green-700 font-medium">
-              {action === 'accept' 
-                ? (role === 'seller' ? 'You will receive' : 'You will pay')
-                : 'Discount'}
-            </p>
-            <p className="text-lg font-bold text-green-700">
-              {action === 'accept' ? (
-                `$${offer.offer_amount.toLocaleString('en-AU')}`
-              ) : (
-                `$${savings.toLocaleString('en-AU')} (${savingsPercentage.toFixed(0)}% off)`
-              )}
-            </p>
-            {action === 'accept' && role === 'buyer' && (
-              <p className="text-xs text-green-600 mt-1">
-                You save ${savings.toLocaleString('en-AU')} ({savingsPercentage.toFixed(0)}% off)
-              </p>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Offer amount</span>
+              <span className="text-xs font-semibold text-foreground">
+                ${offer.offer_amount.toLocaleString('en-AU', { minimumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Saving</span>
+              <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                ${savings.toLocaleString('en-AU', { minimumFractionDigits: 0 })} · {savingsPercentage.toFixed(0)}% off
+              </span>
+            </div>
+            {offer.message && (
+              <div className="flex items-start justify-between gap-4 pt-1.5">
+                <span className="text-xs text-muted-foreground flex-shrink-0">Message</span>
+                <span className="text-xs text-foreground text-right italic max-w-[180px] line-clamp-2">
+                  "{offer.message}"
+                </span>
+              </div>
             )}
           </div>
-
-          {offer.message && (
-            <div className="pt-3 border-t border-gray-200">
-              <p className="text-xs text-gray-600 mb-1">Message</p>
-              <p className="text-xs text-gray-900 italic">"{offer.message}"</p>
-            </div>
-          )}
         </div>
 
-        {/* Action Details */}
-        <div className="bg-gray-50 border border-gray-200 rounded-md p-4">
-          <p className="text-xs font-semibold text-gray-700 mb-2">What happens next:</p>
-          <ul className="space-y-1.5">
-            {config.details.map((detail, index) => (
-              <li key={index} className="text-xs text-gray-600 flex items-start gap-2">
-                <span className="text-gray-400 mt-0.5">•</span>
-                <span>{detail}</span>
+        <Separator />
+
+        {/* What happens */}
+        <div className="px-4 py-3">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">
+            What happens next
+          </p>
+          <ul className="space-y-1">
+            {config.details.map((detail, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                <span className="mt-1.5 h-1 w-1 rounded-full bg-muted-foreground/40 flex-shrink-0" />
+                {detail}
               </li>
             ))}
           </ul>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-2">
+        <Separator />
+
+        <div className="px-4 py-3 flex justify-end gap-2">
           <Button
             variant="outline"
+            size="sm"
             onClick={onClose}
             disabled={loading}
-            className="rounded-md"
+            className="h-8 text-xs"
           >
-            Cancel
+            Go back
           </Button>
           <Button
             variant={config.confirmVariant}
+            size="sm"
             onClick={onConfirm}
             disabled={loading}
-            className="rounded-md"
+            className="h-8 text-xs"
           >
             {loading ? (
-              <>
-                <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                Processing...
-              </>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               config.confirmText
             )}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
-

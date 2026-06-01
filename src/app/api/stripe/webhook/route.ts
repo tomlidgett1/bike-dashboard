@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getStripe, calculatePlatformFee, calculateSellerPayout } from '@/lib/stripe';
 import Stripe from 'stripe';
+import { LightspeedClient } from '@/lib/services/lightspeed/lightspeed-client';
 
 // Use service role client for webhook operations (bypasses RLS)
 function getServiceClient() {
@@ -262,10 +263,12 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     return;
   }
 
-  // Verify product is still available (race condition protection)
+  // Verify product is still available (race condition protection).
+  // Also fetch lightspeed_item_id to create a quote sale in the seller's
+  // Lightspeed account for Lightspeed-sourced products.
   const { data: product, error: productError } = await supabase
     .from('products')
-    .select('id, is_active, sold_at')
+    .select('id, is_active, sold_at, lightspeed_item_id, listing_source')
     .eq('id', product_id)
     .single();
 
@@ -443,6 +446,30 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   }
 
   // ============================================================
+  // Create Lightspeed Quote Sale (if Lightspeed product)
+  // ============================================================
+  // Non-fatal: LS errors are logged but never bubble up to Stripe.
+  if (product?.lightspeed_item_id) {
+    const lsSaleId = await createLightspeedQuoteSale({
+      sellerId: seller_id,
+      lightspeedItemId: product.lightspeed_item_id,
+      quantity: 1,
+      unitPrice: parseFloat(item_price),
+      orderNumber,
+    });
+    // Persist the LS sale ID for cross-reference if the column exists.
+    if (lsSaleId) {
+      await supabase
+        .from('purchases')
+        .update({ lightspeed_sale_id: lsSaleId })
+        .eq('id', purchase.id)
+        .then(({ error }) => {
+          if (error) console.warn('[Stripe Webhook] Could not store lightspeed_sale_id (pre-migration?):', error.message);
+        });
+    }
+  }
+
+  // ============================================================
   // Handle Offer Payment - Update offer status
   // ============================================================
   if (offer_id) {
@@ -512,6 +539,37 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
 
   console.log(`[Stripe Webhook] Funds held until: ${fundsReleaseAt.toISOString()}`);
   console.log('[Stripe Webhook] ====== CHECKOUT COMPLETE SUCCESS ======');
+}
+
+// ============================================================
+// Lightspeed Quote Sale Creation
+// ============================================================
+// Creates a not-completed (Quote) sale in the seller's Lightspeed account
+// whenever a Lightspeed-sourced product is purchased. Non-fatal — if LS is
+// unreachable or the seller has no connection, we log and move on so the
+// Stripe webhook always returns 200 and the purchase record is preserved.
+
+async function createLightspeedQuoteSale(args: {
+  sellerId: string
+  lightspeedItemId: string
+  quantity: number
+  unitPrice: number
+  orderNumber: string
+}): Promise<string | null> {
+  try {
+    const client = new LightspeedClient(args.sellerId)
+    const sale = await client.createQuoteSale({
+      itemID: args.lightspeedItemId,
+      unitQuantity: args.quantity,
+      unitPrice: args.unitPrice,
+      referenceNumber: args.orderNumber,
+    })
+    console.log('[Stripe Webhook] ✓ Lightspeed quote sale created:', sale.saleID, 'for order:', args.orderNumber)
+    return sale.saleID
+  } catch (err) {
+    console.error('[Stripe Webhook] Lightspeed quote sale failed (non-fatal):', err)
+    return null
+  }
 }
 
 // ============================================================
@@ -617,16 +675,17 @@ async function handleCartCheckoutComplete(
   // Unique listings (private_listing) are one-off; shop inventory (store_inventory)
   // stays active until the purchased qty meets stock. We never decrement qoh —
   // Lightspeed POS owns that number; a later sync reconciles counts.
-  const stockById = new Map<string, { listingType: string | null; qoh: number | null }>();
+  const stockById = new Map<string, { listingType: string | null; qoh: number | null; lightspeedItemId: string | null }>();
   {
     const { data: stockRows } = await supabase
       .from('products')
-      .select('id, listing_type, qoh')
+      .select('id, listing_type, qoh, lightspeed_item_id, listing_source')
       .in('id', productIds);
     for (const r of stockRows || []) {
       stockById.set(r.id, {
         listingType: (r as any).listing_type ?? null,
         qoh: typeof (r as any).qoh === 'number' ? (r as any).qoh : null,
+        lightspeedItemId: (r as any).lightspeed_item_id ?? null,
       });
     }
   }
@@ -737,6 +796,29 @@ async function handleCartCheckoutComplete(
     createdCount++;
     if (!firstPurchaseId) firstPurchaseId = purchase.id;
     console.log('[Stripe Webhook] Cart: ✓ purchase created:', purchase.id, orderNumber, 'product:', productId);
+
+    // --------------------------------------------------------
+    // Create Lightspeed Quote Sale (if Lightspeed product)
+    // --------------------------------------------------------
+    const lsItemId = stockById.get(productId)?.lightspeedItemId ?? null;
+    if (lsItemId) {
+      const lsSaleId = await createLightspeedQuoteSale({
+        sellerId: seller_id,
+        lightspeedItemId: lsItemId,
+        quantity: qty,
+        unitPrice: itemPrice,
+        orderNumber,
+      });
+      if (lsSaleId) {
+        await supabase
+          .from('purchases')
+          .update({ lightspeed_sale_id: lsSaleId })
+          .eq('id', purchase.id)
+          .then(({ error }) => {
+            if (error) console.warn('[Stripe Webhook] Cart: could not store lightspeed_sale_id (pre-migration?):', error.message);
+          });
+      }
+    }
 
     // Mark sold only when this purchase depletes the listing. Unique listings are
     // one-off; shop inventory sells out only when qty meets stock. qoh is left
@@ -862,10 +944,11 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
     return;
   }
 
-  // Verify product is still available (race condition protection)
+  // Verify product is still available (race condition protection).
+  // Also fetch lightspeed_item_id to create a quote sale for Lightspeed products.
   const { data: product, error: productError } = await supabase
     .from('products')
-    .select('id, is_active, sold_at')
+    .select('id, is_active, sold_at, lightspeed_item_id, listing_source')
     .eq('id', product_id)
     .single();
 

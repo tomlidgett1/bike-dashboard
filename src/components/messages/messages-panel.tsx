@@ -51,7 +51,7 @@ export function MessagesPanel() {
   const [showArchived, setShowArchived] = useState(false);
 
   const [activeOfferId, setActiveOfferId] = useState<string | null>(null);
-  const [offerRole, setOfferRole] = useState<OfferRole>('buyer');
+  const [offerRole, setOfferRole] = useState<OfferRole | 'all'>('all');
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [offerStatusFilter] = useState<OfferStatus | undefined>();
   const [counterOfferModalOpen, setCounterOfferModalOpen] = useState(false);
@@ -345,15 +345,15 @@ export function MessagesPanel() {
                 </div>
               ) : (
                 <div className="flex items-center bg-muted/60 p-0.5 rounded-md">
-                  {(['buyer', 'seller'] as const).map((role) => {
-                    const label = role === 'buyer' ? 'Sent' : 'Received';
+                  {(['all', 'buyer', 'seller'] as const).map((r) => {
+                    const label = r === 'all' ? 'All' : r === 'buyer' ? 'Sent' : 'Received';
                     return (
                       <button
-                        key={role}
-                        onClick={() => setOfferRole(role)}
+                        key={r}
+                        onClick={() => setOfferRole(r)}
                         className={cn(
                           'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
-                          offerRole === role
+                          offerRole === r
                             ? 'bg-background text-foreground shadow-sm'
                             : 'text-muted-foreground hover:text-foreground',
                         )}
@@ -409,7 +409,7 @@ export function MessagesPanel() {
                 )
               ) : (
                 <OffersList
-                  role={offerRole}
+                  role={offerRole === 'all' ? undefined : offerRole}
                   statusFilter={offerStatusFilter}
                   onOfferClick={(id) => setActiveOfferId(id)}
                   onAccept={handleAcceptOfferClick}
@@ -521,7 +521,7 @@ export function MessagesPanel() {
                 ) : (
                   <OfferDetailCard
                     offer={activeOffer}
-                    role={offerRole}
+                    role={activeOffer.buyer_id === user?.id ? 'buyer' : 'seller'}
                     onAccept={() => {
                       setOfferToConfirm(activeOffer);
                       setConfirmationAction('accept');
@@ -600,7 +600,7 @@ export function MessagesPanel() {
           offer={offerToConfirm}
           action={confirmationAction}
           loading={loadingOfferId === offerToConfirm.id}
-          role={offerRole}
+          role={offerToConfirm.buyer_id === user?.id ? 'buyer' : 'seller'}
         />
       )}
     </>

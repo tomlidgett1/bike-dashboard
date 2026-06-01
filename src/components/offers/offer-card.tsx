@@ -1,143 +1,107 @@
-// ============================================================
-// OFFER CARD COMPONENT
-// ============================================================
-// Clean, Apple-inspired design for offer cards
-// Mobile-first: minimal, elegant, tap for details
-
 'use client';
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { ChevronRight, Package } from 'lucide-react';
+import { Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { OfferCardProps } from '@/lib/types/offer';
 import { calculateSavings } from '@/lib/types/offer';
 
-// Simple status text without badges
-function getStatusDisplay(status: string, role: 'buyer' | 'seller'): { text: string; color: string } {
+function getStatusDisplay(
+  status: string,
+  role: 'buyer' | 'seller',
+  paymentStatus?: string,
+): { text: string; highlight: boolean } {
+  if (status === 'accepted' && paymentStatus === 'pending' && role === 'buyer') {
+    return { text: 'Pay now', highlight: true };
+  }
   switch (status) {
     case 'pending':
-      return { 
-        text: role === 'buyer' ? 'Awaiting response' : 'New offer', 
-        color: 'text-gray-500' 
-      };
+      return role === 'seller'
+        ? { text: 'Respond', highlight: true }
+        : { text: 'Awaiting response', highlight: false };
     case 'countered':
-      return { 
-        text: role === 'buyer' ? 'Counter-offer received' : 'You countered', 
-        color: 'text-blue-600' 
-      };
+      return role === 'buyer'
+        ? { text: 'Counter received', highlight: true }
+        : { text: 'Countered', highlight: false };
     case 'accepted':
-      return { text: 'Accepted', color: 'text-green-600' };
+      return { text: 'Accepted', highlight: false };
     case 'rejected':
-      return { text: 'Declined', color: 'text-gray-400' };
+      return { text: 'Declined', highlight: false };
     case 'expired':
-      return { text: 'Expired', color: 'text-gray-400' };
+      return { text: 'Expired', highlight: false };
     case 'cancelled':
-      return { text: 'Cancelled', color: 'text-gray-400' };
+      return { text: 'Cancelled', highlight: false };
     default:
-      return { text: status, color: 'text-gray-500' };
+      return { text: status, highlight: false };
   }
 }
 
-export function OfferCard({
-  offer,
-  role,
-  onViewDetails,
-  compact = false,
-}: OfferCardProps) {
+export function OfferCard({ offer, role, onViewDetails }: OfferCardProps) {
   const [imageError, setImageError] = useState(false);
 
   const savings = calculateSavings(offer.original_price, offer.offer_amount);
-  const savingsPercentage = offer.offer_percentage || ((savings / offer.original_price) * 100);
+  const savingsPercentage =
+    offer.offer_percentage || (savings / offer.original_price) * 100;
 
-  const productName = offer.product?.display_name || offer.product?.description || 'Product';
+  const productName =
+    offer.product?.display_name || offer.product?.description || 'Product';
   const productImage = offer.product?.primary_image_url;
-
   const otherParty = role === 'buyer' ? offer.seller : offer.buyer;
-  const otherPartyName = otherParty?.business_name || otherParty?.name || 'User';
-
-  const statusDisplay = getStatusDisplay(offer.status, role);
-  
-  // Check if action needed
-  const needsAction = (role === 'buyer' && offer.status === 'countered') || 
-                      (role === 'seller' && offer.status === 'pending') ||
-                      (role === 'buyer' && offer.status === 'accepted' && offer.payment_status === 'pending');
+  const otherPartyName =
+    otherParty?.business_name || otherParty?.name || 'User';
+  const status = getStatusDisplay(offer.status, role, offer.payment_status);
 
   return (
     <button
-      className={cn(
-        'w-full text-left bg-white rounded-xl transition-all',
-        'active:scale-[0.98] active:bg-gray-50',
-        'border border-gray-100',
-        compact ? 'p-3' : 'p-4'
-      )}
+      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 rounded-lg transition-colors text-left"
       onClick={() => onViewDetails?.(offer.id)}
     >
-      <div className="flex gap-3">
-        {/* Product Image */}
-        <div className={cn(
-          'relative rounded-lg overflow-hidden bg-gray-50 flex-shrink-0',
-          compact ? 'h-14 w-14' : 'h-16 w-16'
-        )}>
-          {productImage && !imageError ? (
-            <Image
-              src={productImage}
-              alt={productName}
-              fill
-              className="object-cover"
-              onError={() => setImageError(true)}
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center">
-              <Package className="h-6 w-6 text-gray-300" />
-            </div>
-          )}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center">
-          {/* Product Name */}
-          <h3 className={cn(
-            'font-semibold text-gray-900 truncate',
-            compact ? 'text-sm' : 'text-[15px]'
-          )}>
-            {productName}
-          </h3>
-
-          {/* Seller/Buyer */}
-          <p className="text-[13px] text-gray-500 mt-0.5">
-            {otherPartyName}
-          </p>
-
-          {/* Status */}
-          <p className={cn('text-[13px] font-medium mt-1', statusDisplay.color)}>
-            {statusDisplay.text}
-            {needsAction && offer.status !== 'accepted' && (
-              <span className="ml-1">·</span>
-            )}
-            {needsAction && offer.status !== 'accepted' && (
-              <span className="text-gray-900"> Respond</span>
-            )}
-            {offer.status === 'accepted' && offer.payment_status === 'pending' && role === 'buyer' && (
-              <>
-                <span className="ml-1">·</span>
-                <span className="text-gray-900"> Pay now</span>
-              </>
-            )}
-          </p>
-        </div>
-
-        {/* Right side: Price + Chevron */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="text-right">
-            <p className="text-[15px] font-semibold text-gray-900">
-              ${offer.offer_amount.toLocaleString('en-AU', { minimumFractionDigits: 0 })}
-            </p>
-            <p className="text-[12px] text-gray-400">
-              {savingsPercentage.toFixed(0)}% off
-            </p>
+      <div className="relative h-9 w-9 rounded-md overflow-hidden bg-muted flex-shrink-0">
+        {productImage && !imageError ? (
+          <Image
+            src={productImage}
+            alt={productName}
+            fill
+            className="object-cover"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <Package className="h-4 w-4 text-muted-foreground" />
           </div>
-          <ChevronRight className="h-5 w-5 text-gray-300" />
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-[13px] font-medium text-foreground truncate">
+            {productName}
+          </p>
+          <p className="text-[13px] font-semibold text-foreground flex-shrink-0">
+            ${offer.offer_amount.toLocaleString('en-AU', { minimumFractionDigits: 0 })}
+          </p>
+        </div>
+        <div className="flex items-center justify-between gap-2 mt-0.5">
+          <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+            <span className="text-xs text-muted-foreground truncate">
+              {otherPartyName}
+            </span>
+            <span className="text-muted-foreground/40 flex-shrink-0 text-xs">·</span>
+            <span
+              className={cn(
+                'text-xs flex-shrink-0',
+                status.highlight
+                  ? 'text-foreground font-medium'
+                  : 'text-muted-foreground',
+              )}
+            >
+              {status.text}
+            </span>
+          </div>
+          <span className="text-[11px] text-muted-foreground flex-shrink-0">
+            {savingsPercentage.toFixed(0)}% off
+          </span>
         </div>
       </div>
     </button>

@@ -6,6 +6,7 @@ import * as React from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { Loader2, User, Package, ArrowLeft, X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard } from "@/components/marketplace/product-card";
@@ -77,6 +78,10 @@ export default function StoreProfilePage() {
 
   const isOwnProfile = user?.id === storeId;
 
+  type SplashPhase = 'visible' | 'exiting' | 'done';
+  const [splashPhase, setSplashPhase] = React.useState<SplashPhase>('visible');
+  const splashTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   React.useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 640);
     checkMobile();
@@ -124,20 +129,24 @@ export default function StoreProfilePage() {
     }
   }, [storeId]);
 
-  // Loading state
+  // Drive the splash: once store data lands, hold briefly then slide away
+  React.useEffect(() => {
+    if (loading) return;
+    if (profileType === 'store' && store) {
+      splashTimerRef.current = setTimeout(() => setSplashPhase('exiting'), 800);
+    } else {
+      // Seller or error — no branded splash needed
+      setSplashPhase('done');
+    }
+    return () => { if (splashTimerRef.current) clearTimeout(splashTimerRef.current); };
+  }, [loading, profileType, store]);
+
+  // Loading state — plain white keeps the visual transition seamless with the store splash
   if (loading) {
     return (
-      <>
-        <MarketplaceHeader />
-        <MarketplaceLayout showFooter={false}>
-          <div className="flex items-center justify-center min-h-[60vh] pt-20">
-            <div className="text-center">
-              <Loader2 className="h-12 w-12 text-gray-400 animate-spin mx-auto mb-4" />
-              <p className="text-sm text-gray-600">Loading profile...</p>
-            </div>
-          </div>
-        </MarketplaceLayout>
-      </>
+      <div className="fixed inset-0 bg-white flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-200" />
+      </div>
     );
   }
 
@@ -170,49 +179,97 @@ export default function StoreProfilePage() {
 
   // ── Bicycle store ──────────────────────────────────────
   if (profileType === 'store' && store) {
-    // ── Immersive / full-screen mode ──────────────────
-    if (immersive) {
-      return (
-        <div className="relative">
-          {/* Minimal floating bar */}
-          <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none">
-            {/* Grouped: YJ logo + back */}
-            <button
-              onClick={() => router.push('/marketplace')}
-              className="pointer-events-auto inline-flex items-center gap-0 bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm rounded-full overflow-hidden cursor-pointer hover:bg-white transition-colors"
-            >
-              <span className="px-3 py-1.5 border-r border-gray-200">
-                <Image src="/yj.svg" alt="Yellow Jersey" width={72} height={14} className="h-[14px] w-auto block" unoptimized />
-              </span>
-              <span className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-600">
-                <ArrowLeft className="h-3 w-3" />
-                Back
-              </span>
-            </button>
-
-            {/* Exit immersive (testing) */}
-            <button
-              onClick={() => setImmersive(false)}
-              className="pointer-events-auto inline-flex items-center justify-center h-8 w-8 bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm rounded-full text-gray-400 hover:text-gray-700 hover:bg-white transition-colors cursor-pointer"
-              title="Exit immersive mode"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-
-          <StoreProfileView store={store} isOwnProfile={isOwnProfile} immersive />
+    const storeContent = immersive ? (
+      <div className="relative">
+        {/* Minimal floating bar */}
+        <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none">
+          <button
+            onClick={() => router.push('/marketplace')}
+            className="pointer-events-auto inline-flex items-center gap-0 bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm rounded-full overflow-hidden cursor-pointer hover:bg-white transition-colors"
+          >
+            <span className="px-3 py-1.5 border-r border-gray-200">
+              <Image src="/yj.svg" alt="Yellow Jersey" width={72} height={14} className="h-[14px] w-auto block" unoptimized />
+            </span>
+            <span className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-600">
+              <ArrowLeft className="h-3 w-3" />
+              Back
+            </span>
+          </button>
+          <button
+            onClick={() => setImmersive(false)}
+            className="pointer-events-auto inline-flex items-center justify-center h-8 w-8 bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm rounded-full text-gray-400 hover:text-gray-700 hover:bg-white transition-colors cursor-pointer"
+            title="Exit immersive mode"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
-      );
-    }
-
-    // ── Standard mode ─────────────────────────────────
-    // No MarketplaceHeader: StoreProfileView renders its own sticky,
-    // store-branded header (with a demoted "Back to Yellow Jersey" link),
-    // so the page reads as the store's own site.
-    return (
+        <StoreProfileView store={store} isOwnProfile={isOwnProfile} immersive />
+      </div>
+    ) : (
       <MarketplaceLayout showFooter={false}>
         <StoreProfileView store={store} isOwnProfile={isOwnProfile} />
       </MarketplaceLayout>
+    );
+
+    return (
+      <>
+        {storeContent}
+
+        {/* ── Store splash screen ── */}
+        {splashPhase !== 'done' && (
+          <motion.div
+            className="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center"
+            initial={{ y: 0 }}
+            animate={{ y: splashPhase === 'exiting' ? '-100%' : 0 }}
+            transition={
+              splashPhase === 'exiting'
+                ? { duration: 0.55, ease: [0.55, 0, 0.45, 1] }
+                : { duration: 0 }
+            }
+            onAnimationComplete={() => {
+              if (splashPhase === 'exiting') setSplashPhase('done');
+            }}
+          >
+            <AnimatePresence mode="wait">
+              {store.logo_url ? (
+                <motion.img
+                  key="logo"
+                  src={store.logo_url}
+                  alt={store.store_name}
+                  className="max-h-28 max-w-[300px] w-auto object-contain rounded-2xl"
+                  initial={{ opacity: 0, scale: 0.88, y: 14 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+                />
+              ) : (
+                <motion.div
+                  key="name"
+                  className="flex flex-col items-center gap-4 px-10 text-center"
+                  initial={{ opacity: 0, scale: 0.88, y: 14 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <div className="h-20 w-20 rounded-3xl bg-gray-100 flex items-center justify-center text-2xl font-bold text-gray-400 select-none">
+                    {store.store_name[0]}
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 tracking-tight">{store.store_name}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Yellow Jersey attribution */}
+            <motion.div
+              className="absolute bottom-8 flex items-center gap-2"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.35 }}
+              transition={{ delay: 0.25, duration: 0.3 }}
+            >
+              <span className="text-[11px] text-gray-400 tracking-wide uppercase font-medium">Powered by</span>
+              <Image src="/yj.svg" alt="Yellow Jersey" width={60} height={12} className="h-3 w-auto" unoptimized />
+            </motion.div>
+          </motion.div>
+        )}
+      </>
     );
   }
 

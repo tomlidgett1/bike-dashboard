@@ -34,14 +34,33 @@ export async function GET(
       );
     }
 
-    // Fetch store profile - filter for verified bicycle stores in query for faster 404
-    const { data: storeUser, error: storeError } = await supabase
+    // Fetch store profile - filter for verified bicycle stores in query for faster 404.
+    // `homepage_config` is newest; if its migration hasn't run yet the query
+    // errors, so we fall back to the base column set and treat it as null.
+    const STORE_COLUMNS_FULL =
+      'user_id, business_name, logo_url, store_type, address, phone, opening_hours, homepage_config, cover_image_url, bio, website, social_links';
+    const STORE_COLUMNS_BASE =
+      'user_id, business_name, logo_url, store_type, address, phone, opening_hours, cover_image_url, bio, website, social_links';
+
+    let { data: storeUser, error: storeError } = await supabase
       .from('users')
-      .select('user_id, business_name, logo_url, store_type, address, phone, opening_hours')
+      .select(STORE_COLUMNS_FULL)
       .eq('user_id', storeId)
       .eq('account_type', 'bicycle_store')
       .eq('bicycle_store', true)
       .single();
+
+    if (storeError) {
+      const fallback = await supabase
+        .from('users')
+        .select(STORE_COLUMNS_BASE)
+        .eq('user_id', storeId)
+        .eq('account_type', 'bicycle_store')
+        .eq('bicycle_store', true)
+        .single();
+      storeUser = fallback.data ? { ...fallback.data, homepage_config: null } : null;
+      storeError = fallback.error;
+    }
 
     if (storeError || !storeUser) {
       return NextResponse.json(
@@ -371,6 +390,11 @@ export async function GET(
       sections: sectionsWithCategories,
       services: services || [],
       brands: brands || [],
+      cover_image_url: (storeUser as any).cover_image_url || null,
+      description: (storeUser as any).bio || null,
+      website: (storeUser as any).website || null,
+      social_links: (storeUser as any).social_links || null,
+      homepage_config: (storeUser as any).homepage_config || null,
     };
 
     return NextResponse.json({ store: storeProfile });

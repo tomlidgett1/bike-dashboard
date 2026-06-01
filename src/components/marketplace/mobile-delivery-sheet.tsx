@@ -597,18 +597,16 @@ export function MobileDeliverySheet({
 
               {/* Ineligibility notice */}
               {!uberEligibility.eligible && uberEligibility.distance !== null && !uberEligibility.checking && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-amber-800">
-                        You&apos;re {uberEligibility.distance}km from Ashburton Cycles
-                      </p>
-                      <p className="text-xs text-amber-600 mt-0.5">
-                        Uber Express is only available within 10km. 
-                        Australia Post is available Australia-wide.
-                      </p>
-                    </div>
+                <div className="flex items-start gap-2 pt-1">
+                  <AlertCircle className="h-3.5 w-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs font-medium text-foreground">
+                      You&apos;re {uberEligibility.distance}km from Ashburton Cycles
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Uber Express is only available within 10km.
+                      Australia Post is available Australia-wide.
+                    </p>
                   </div>
                 </div>
               )}

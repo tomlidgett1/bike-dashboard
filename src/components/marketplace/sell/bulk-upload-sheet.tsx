@@ -1195,11 +1195,7 @@ export function BulkUploadSheet({
               )}
 
               {/* Error Message */}
-              {error && (
-                <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-3">
-                  <p className="text-sm text-red-700">{error}</p>
-                </div>
-              )}
+              {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
             </div>
 
             {/* Bottom Actions */}
@@ -2258,11 +2254,7 @@ export function BulkUploadSheet({
               </div>
 
               {/* Error Message */}
-              {error && (
-                <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-3">
-                  <p className="text-sm text-red-700">{error}</p>
-                </div>
-              )}
+              {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
             </div>
 
             {/* Bottom Actions */}

@@ -17,6 +17,7 @@ import {
   ChevronUp,
   ImagePlus,
   X,
+  Search,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,10 @@ export function StoreCategoriesManager() {
     name: '',
     productIds: [],
   });
+
+  // Product picker filter state
+  const [productSearch, setProductSearch] = React.useState('');
+  const [productSourceFilter, setProductSourceFilter] = React.useState<'all' | 'lightspeed' | 'private'>('all');
 
   // Logo upload state
   const [uploadingLogoId, setUploadingLogoId] = React.useState<string | null>(null);
@@ -164,10 +169,11 @@ export function StoreCategoriesManager() {
     try {
       setLoading(true);
 
-      const [categoriesRes, productsRes, categoryNamesRes] = await Promise.all([
+      const [categoriesRes, productsRes, privateListingsRes, categoryNamesRes] = await Promise.all([
         fetch('/api/store/categories'),
-        fetch('/api/products?pageSize=1000&status=active&stock=in-stock'),
-        fetch('/api/store/category-names'), // Get auto-generated category names
+        fetch('/api/products?pageSize=2000&status=active&stock=in-stock'),
+        fetch('/api/products?pageSize=500&status=active&listing_type=private_listing'),
+        fetch('/api/store/category-names'),
       ]);
 
       if (categoriesRes.ok) {
@@ -176,8 +182,18 @@ export function StoreCategoriesManager() {
       }
 
       if (productsRes.ok) {
-        const data = await productsRes.json();
-        setProducts(data.products || []);
+        const lsData = await productsRes.json();
+        const lsProducts: any[] = lsData.products || [];
+        const lsIds = new Set(lsProducts.map((p: any) => p.id));
+
+        let privateProducts: any[] = [];
+        if (privateListingsRes.ok) {
+          const privateData = await privateListingsRes.json();
+          // Deduplicate — private listings with qoh>0 may already appear in lsProducts
+          privateProducts = (privateData.products || []).filter((p: any) => !lsIds.has(p.id));
+        }
+
+        setProducts([...lsProducts, ...privateProducts]);
       }
 
       if (categoryNamesRes.ok) {
@@ -362,6 +378,8 @@ export function StoreCategoriesManager() {
   // Open add custom category dialog
   const handleAddCustom = () => {
     setFormData({ name: '', productIds: [] });
+    setProductSearch('');
+    setProductSourceFilter('all');
     setIsAddDialogOpen(true);
   };
 
@@ -400,6 +418,8 @@ export function StoreCategoriesManager() {
       name: category.name,
       productIds: category.product_ids,
     });
+    setProductSearch('');
+    setProductSourceFilter('all');
     setIsEditDialogOpen(true);
   };
 
@@ -551,6 +571,20 @@ export function StoreCategoriesManager() {
         : [...prev.productIds, productId],
     }));
   };
+
+  const lightspeedCount = products.filter(p => p.listing_type !== 'private_listing').length;
+  const privateCount = products.filter(p => p.listing_type === 'private_listing').length;
+
+  const filteredProducts = products.filter(p => {
+    const isPrivate = p.listing_type === 'private_listing';
+    if (productSourceFilter === 'lightspeed' && isPrivate) return false;
+    if (productSourceFilter === 'private' && !isPrivate) return false;
+    if (productSearch) {
+      const q = productSearch.toLowerCase();
+      if (!(p.display_name || p.description || '').toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
 
   if (loading) {
     return (
@@ -875,35 +909,86 @@ export function StoreCategoriesManager() {
 
             <div className="space-y-2">
               <Label>Select Products ({formData.productIds.length} selected)</Label>
-              <div className="border rounded-md overflow-y-auto max-h-[42vh]">
-                <div className="p-3">
-                  {products.length === 0 ? (
+              {/* Search + source filter */}
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Search products..."
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+                <div className="flex gap-1">
+                  {([
+                    { key: 'all', label: `All (${products.length})` },
+                    { key: 'lightspeed', label: `Lightspeed (${lightspeedCount})` },
+                    { key: 'private', label: `Private (${privateCount})` },
+                  ] as const).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setProductSourceFilter(key)}
+                      className={`rounded-md px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                        productSourceFilter === key
+                          ? 'bg-foreground text-background'
+                          : 'bg-muted text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="border rounded-md overflow-y-auto max-h-[35vh]">
+                <div className="p-2">
+                  {filteredProducts.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
-                      No products available
+                      {productSourceFilter === 'private'
+                        ? 'No private listings yet. Add secondhand items via your Listings page.'
+                        : 'No products found'}
                     </p>
                   ) : (
-                    <div className="space-y-1">
-                      {products.map((product) => (
-                        <div
-                          key={product.id}
-                          className="flex items-center gap-3 p-2 hover:bg-accent rounded-md cursor-pointer"
-                          onClick={() => toggleProduct(product.id)}
-                        >
-                          <Checkbox
-                            checked={formData.productIds.includes(product.id)}
-                            onCheckedChange={() => toggleProduct(product.id)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">
-                              {(product as any).display_name || product.description}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              ${product.price} • Stock: {product.qoh}
-                            </p>
+                    <div className="space-y-0.5">
+                      {filteredProducts.map((product) => {
+                        const isPrivate = product.listing_type === 'private_listing';
+                        return (
+                          <div
+                            key={product.id}
+                            className="flex items-center gap-2.5 p-2 hover:bg-accent rounded-md cursor-pointer"
+                            onClick={() => toggleProduct(product.id)}
+                          >
+                            <Checkbox
+                              checked={formData.productIds.includes(product.id)}
+                              onCheckedChange={() => toggleProduct(product.id)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <div className="flex-shrink-0 h-9 w-9 rounded overflow-hidden bg-muted flex items-center justify-center">
+                              {product.resolved_image_url ? (
+                                <img src={product.resolved_image_url} alt="" className="h-full w-full object-cover" />
+                              ) : (
+                                <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {product.display_name || product.description}
+                                </p>
+                                {isPrivate ? (
+                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-amber-300 text-amber-700 bg-amber-50">Private</span>
+                                ) : (
+                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-blue-300 text-blue-700 bg-blue-50">Lightspeed</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                ${product.price}{!isPrivate && ` • Stock: ${product.qoh}`}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -958,35 +1043,86 @@ export function StoreCategoriesManager() {
 
             <div className="space-y-2">
               <Label>Select Products ({formData.productIds.length} selected)</Label>
-              <div className="border rounded-md overflow-y-auto max-h-[42vh]">
-                <div className="p-3">
-                  {products.length === 0 ? (
+              {/* Search + source filter */}
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Search products..."
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+                <div className="flex gap-1">
+                  {([
+                    { key: 'all', label: `All (${products.length})` },
+                    { key: 'lightspeed', label: `Lightspeed (${lightspeedCount})` },
+                    { key: 'private', label: `Private (${privateCount})` },
+                  ] as const).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setProductSourceFilter(key)}
+                      className={`rounded-md px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                        productSourceFilter === key
+                          ? 'bg-foreground text-background'
+                          : 'bg-muted text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="border rounded-md overflow-y-auto max-h-[35vh]">
+                <div className="p-2">
+                  {filteredProducts.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
-                      No products available
+                      {productSourceFilter === 'private'
+                        ? 'No private listings yet. Add secondhand items via your Listings page.'
+                        : 'No products found'}
                     </p>
                   ) : (
-                    <div className="space-y-1">
-                      {products.map((product) => (
-                        <div
-                          key={product.id}
-                          className="flex items-center gap-3 p-2 hover:bg-accent rounded-md cursor-pointer"
-                          onClick={() => toggleProduct(product.id)}
-                        >
-                          <Checkbox
-                            checked={formData.productIds.includes(product.id)}
-                            onCheckedChange={() => toggleProduct(product.id)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">
-                              {(product as any).display_name || product.description}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              ${product.price} • Stock: {product.qoh}
-                            </p>
+                    <div className="space-y-0.5">
+                      {filteredProducts.map((product) => {
+                        const isPrivate = product.listing_type === 'private_listing';
+                        return (
+                          <div
+                            key={product.id}
+                            className="flex items-center gap-2.5 p-2 hover:bg-accent rounded-md cursor-pointer"
+                            onClick={() => toggleProduct(product.id)}
+                          >
+                            <Checkbox
+                              checked={formData.productIds.includes(product.id)}
+                              onCheckedChange={() => toggleProduct(product.id)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <div className="flex-shrink-0 h-9 w-9 rounded overflow-hidden bg-muted flex items-center justify-center">
+                              {product.resolved_image_url ? (
+                                <img src={product.resolved_image_url} alt="" className="h-full w-full object-cover" />
+                              ) : (
+                                <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {product.display_name || product.description}
+                                </p>
+                                {isPrivate ? (
+                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-amber-300 text-amber-700 bg-amber-50">Private</span>
+                                ) : (
+                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-blue-300 text-blue-700 bg-blue-50">Lightspeed</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                ${product.price}{!isPrivate && ` • Stock: ${product.qoh}`}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

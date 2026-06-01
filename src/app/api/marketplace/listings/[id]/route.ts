@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 
 // ============================================================
 // GET /api/marketplace/listings/[id]
@@ -203,8 +203,10 @@ export async function PUT(
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
-    // Perform the update
-    const { data: listing, error } = await supabase
+    // Perform the update using service role to bypass RLS
+    // (auth + ownership already verified above)
+    const adminClient = createServiceRoleClient();
+    const { data: listing, error } = await adminClient
       .from("products")
       .update(updateData)
       .eq("id", id)
@@ -247,7 +249,7 @@ export async function PUT(
 
       // Insert change logs if there are any
       if (changeLogs.length > 0) {
-        const { error: logError } = await supabase
+        const { error: logError } = await adminClient
           .from("listing_edit_logs")
           .insert(changeLogs);
 

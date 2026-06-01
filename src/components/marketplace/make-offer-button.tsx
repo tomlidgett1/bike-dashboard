@@ -1,10 +1,3 @@
-// ============================================================
-// MAKE OFFER BUTTON COMPONENT
-// ============================================================
-// Button and modal for making offers on products
-// Mobile: Native bottom sheet with spring animations
-// Desktop: Centered dialog modal
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -15,6 +8,7 @@ import { useCreateOffer } from '@/lib/hooks/use-offers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
   DialogContent,
@@ -26,7 +20,7 @@ import {
   Sheet,
   SheetContent,
 } from '@/components/ui/sheet';
-import { Tag, Send, Check, ChevronDown } from 'lucide-react';
+import { Tag, Send, Check, CheckCircle2, ChevronDown, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OFFER_PRESETS, calculateOfferPercentage } from '@/lib/types/offer';
 import type { MakeOfferButtonProps } from '@/lib/types/offer';
@@ -80,259 +74,211 @@ function MobileOfferSheet({
 }: MobileOfferSheetProps) {
   const [showMessage, setShowMessage] = useState(false);
 
-  // Prevent body scroll when sheet is open
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = '';
-      };
+      return () => { document.body.style.overflow = ''; };
     }
   }, [isOpen]);
 
-  // Reset message visibility when closing
   useEffect(() => {
-    if (!isOpen) {
-      setShowMessage(false);
-    }
+    if (!isOpen) setShowMessage(false);
   }, [isOpen]);
 
   return (
     <Sheet open={isOpen} onOpenChange={!creating && !success ? onClose : undefined}>
-      <SheetContent 
-        side="bottom" 
+      <SheetContent
+        side="bottom"
         className="rounded-t-2xl p-0 max-h-[90vh] overflow-hidden flex flex-col gap-0"
         showCloseButton={false}
       >
-            {!success ? (
-              <>
-                {/* Handle Bar */}
-                <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
-                  <div className="w-10 h-1 bg-gray-300 rounded-full" />
+        {!success ? (
+          <>
+            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+              <div className="w-8 h-1 bg-muted-foreground/20 rounded-full" />
+            </div>
+
+            <div className="px-4 pb-3 pt-1 flex-shrink-0">
+              <p className="text-sm font-semibold text-foreground">Make an offer</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Negotiate a price with the seller</p>
+            </div>
+
+            <Separator className="flex-shrink-0" />
+
+            <div className="flex-1 overflow-y-auto">
+              {/* Product row */}
+              <div className="px-4 py-3 flex items-center gap-3">
+                {productImage && (
+                  <div className="relative h-12 w-12 rounded-md overflow-hidden bg-muted flex-shrink-0">
+                    <Image src={productImage} alt={productName} fill className="object-cover" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-foreground leading-snug line-clamp-2">{productName}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">${productPrice.toLocaleString('en-AU')} listed</p>
                 </div>
+              </div>
 
-                {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto px-5 pb-safe">
-                  {/* Header */}
-                  <div className="pb-4">
-                    <h2 className="text-xl font-bold text-gray-900">
-                      Make an Offer
-                    </h2>
-                  </div>
+              <Separator />
 
-                  {/* Product Card */}
-                  <div className="bg-gray-50 rounded-xl p-4 mb-5">
-                    <div className="flex gap-4">
-                      {productImage && (
-                        <div className="relative h-20 w-20 rounded-xl overflow-hidden bg-gray-200 flex-shrink-0">
-                          <Image
-                            src={productImage}
-                            alt={productName}
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 line-clamp-2 leading-snug">
-                          {productName}
-                        </p>
-                        <div className="mt-2">
-                          <span className="text-xs text-gray-500">Listed at</span>
-                          <p className="text-xl font-bold text-gray-900">
-                            ${productPrice.toLocaleString('en-AU')}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Quick Offer Section */}
-                  <div className="mb-5">
-                    <p className="text-sm font-medium text-gray-700 mb-3">
-                      Choose your offer
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {OFFER_PRESETS.map((preset, index) => {
-                        const amount = preset.calculateAmount(productPrice);
-                        const isSelected = selectedPreset === index;
-                        return (
-                          <button
-                            key={index}
-                            type="button"
-                            onClick={() => onPresetClick(index)}
-                            disabled={creating}
-                            className={cn(
-                              "relative py-4 px-4 rounded-xl border-2 transition-all text-left active:scale-[0.97]",
-                              isSelected
-                                ? "border-gray-900 bg-gray-900"
-                                : "border-gray-200 bg-white active:bg-gray-50"
-                            )}
-                          >
-                            <div className={cn(
-                              "text-2xl font-bold",
-                              isSelected ? "text-white" : "text-gray-900"
-                            )}>
-                              ${amount.toLocaleString('en-AU')}
-                            </div>
-                            <div className={cn(
-                              "text-sm mt-0.5",
-                              isSelected ? "text-gray-300" : "text-gray-500"
-                            )}>
-                              {preset.percentage}% off
-                            </div>
-                            {isSelected && (
-                              <div className="absolute top-3 right-3 h-5 w-5 bg-white rounded-full flex items-center justify-center">
-                                <Check className="h-3 w-3 text-gray-900" />
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Custom Amount */}
-                  <div className="mb-5">
-                    <p className="text-sm font-medium text-gray-700 mb-2">
-                      Or enter a custom amount
-                    </p>
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-lg font-medium">
-                        $
-                      </span>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        step="0.01"
-                        min="0"
-                        max={productPrice}
-                        value={customAmount}
-                        onChange={(e) => onCustomAmountChange(e.target.value)}
-                        placeholder="0.00"
-                        className="h-14 pl-8 text-lg font-medium rounded-xl border-gray-200 focus:border-gray-900 focus:ring-gray-900"
+              {/* Preset offers */}
+              <div className="px-4 py-3">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">Quick offers</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {OFFER_PRESETS.map((preset, index) => {
+                    const amount = preset.calculateAmount(productPrice);
+                    const isSelected = selectedPreset === index;
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => onPresetClick(index)}
                         disabled={creating}
-                      />
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1.5">
-                      Minimum offer: ${(productPrice * 0.5).toLocaleString('en-AU')} (50% of listing)
-                    </p>
-                  </div>
-
-                  {/* Offer Summary */}
-                  {offerAmount && savings !== null && savings > 0 && (
-                    <div className="mb-5">
-                      <div className="bg-green-50 border border-green-100 rounded-xl p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm text-green-800 font-medium">Your savings</p>
-                            <p className="text-2xl font-bold text-green-700">
-                              ${savings.toLocaleString('en-AU')}
-                            </p>
-                          </div>
-                          <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
-                            <span className="text-lg font-bold text-green-700">
-                              {offerPercentage?.toFixed(0)}%
-                            </span>
-                          </div>
+                        className={cn(
+                          "relative py-3 px-3 rounded-md border transition-all text-left active:scale-[0.97]",
+                          isSelected
+                            ? "border-foreground bg-foreground"
+                            : "border-border bg-background hover:bg-muted/50"
+                        )}
+                      >
+                        <div className={cn(
+                          "text-lg font-semibold",
+                          isSelected ? "text-background" : "text-foreground"
+                        )}>
+                          ${amount.toLocaleString('en-AU')}
                         </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Optional Message Toggle */}
-                  <div className="mb-5">
-                    <button
-                      type="button"
-                      onClick={() => setShowMessage(!showMessage)}
-                      className="flex items-center gap-2 text-sm text-gray-600 font-medium"
-                    >
-                      <span>Add a message (optional)</span>
-                      <ChevronDown className={cn(
-                        "h-4 w-4 transition-transform duration-200",
-                        showMessage && "rotate-180"
-                      )} />
-                    </button>
-                    {showMessage && (
-                      <Textarea
-                        value={message}
-                        onChange={(e) => onMessageChange(e.target.value)}
-                        placeholder="Write a message to the seller..."
-                        rows={3}
-                        className="mt-3 rounded-xl border-gray-200 text-sm"
-                        disabled={creating}
-                      />
-                    )}
-                  </div>
-
-                  {/* Error Message */}
-                  {error && (
-                    <div className="mb-5">
-                      <div className="p-4 bg-white border border-red-200 rounded-xl text-sm text-red-600">
-                        {error}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Submit Button */}
-                  <div className="pb-8">
-                    <button
-                      type="button"
-                      onClick={onSubmit}
-                      disabled={creating || !offerAmount}
-                      className={cn(
-                        "w-full h-14 rounded-xl font-semibold text-base transition-all flex items-center justify-center gap-2 active:scale-[0.98]",
-                        offerAmount
-                          ? "bg-gray-900 text-white active:bg-gray-800"
-                          : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                      )}
-                    >
-                      {creating ? (
-                        <>
-                          <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          <span>Sending offer...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Send className="h-5 w-5" />
-                          <span>
-                            {offerAmount 
-                              ? `Send Offer · $${offerAmount.toLocaleString('en-AU')}`
-                              : 'Select an amount'
-                            }
-                          </span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+                        <div className={cn(
+                          "text-xs mt-0.5",
+                          isSelected ? "text-background/70" : "text-muted-foreground"
+                        )}>
+                          {preset.percentage}% off
+                        </div>
+                        {isSelected && (
+                          <div className="absolute top-2 right-2 h-4 w-4 bg-background rounded-full flex items-center justify-center">
+                            <Check className="h-2.5 w-2.5 text-foreground" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
+              </div>
 
-                {/* Safe area padding for iOS */}
-                <div className="h-safe-area-inset-bottom" />
-              </>
-            ) : (
-              /* Success State */
-              <div className="py-12 px-6 text-center animate-in fade-in duration-300">
-                {/* Checkmark */}
-                <div className="mb-6 flex justify-center">
-                  <div className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center animate-in zoom-in duration-300">
-                    <Check className="h-10 w-10 text-green-600" strokeWidth={3} />
-                  </div>
+              <Separator />
+
+              {/* Custom amount */}
+              <div className="px-4 py-3">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Custom amount</p>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    max={productPrice}
+                    value={customAmount}
+                    onChange={(e) => onCustomAmountChange(e.target.value)}
+                    placeholder="0.00"
+                    className="h-9 pl-7 text-sm"
+                    disabled={creating}
+                  />
                 </div>
-
-                <h3 className="text-xl font-bold text-gray-900 mb-2">
-                  Offer Sent!
-                </h3>
-
-                <p className="text-gray-600 mb-2">
-                  Your offer of <span className="font-semibold">${offerAmount?.toLocaleString('en-AU')}</span> has been sent.
-                </p>
-
-                <p className="text-sm text-gray-400">
-                  The seller will respond soon...
+                <p className="text-[11px] text-muted-foreground mt-1.5">
+                  Minimum ${(productPrice * 0.5).toLocaleString('en-AU')} (50% of listing)
                 </p>
               </div>
-            )}
+
+              {/* Savings row — only shown when there are savings */}
+              {offerAmount && savings !== null && savings > 0 && (
+                <>
+                  <Separator />
+                  <div className="px-4 py-3 flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Your savings</span>
+                    <span className="text-xs font-medium text-green-600">
+                      ${savings.toLocaleString('en-AU')} ({offerPercentage?.toFixed(0)}% off)
+                    </span>
+                  </div>
+                </>
+              )}
+
+              <Separator />
+
+              {/* Optional message */}
+              <div className="px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => setShowMessage(!showMessage)}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                >
+                  <span>Add a message (optional)</span>
+                  <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", showMessage && "rotate-180")} />
+                </button>
+                {showMessage && (
+                  <Textarea
+                    value={message}
+                    onChange={(e) => onMessageChange(e.target.value)}
+                    placeholder="Write a message to the seller..."
+                    rows={3}
+                    className="mt-2 text-sm"
+                    disabled={creating}
+                  />
+                )}
+              </div>
+
+              {error && (
+                <>
+                  <Separator />
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-destructive">{error}</p>
+                  </div>
+                </>
+              )}
+
+              <Separator />
+
+              {/* Submit */}
+              <div className="px-4 py-3 pb-8">
+                <Button
+                  type="button"
+                  onClick={onSubmit}
+                  disabled={creating || !offerAmount}
+                  className="w-full h-10"
+                  size="sm"
+                >
+                  {creating ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span className="ml-1.5 text-xs">Sending offer...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-3.5 w-3.5" />
+                      <span className="ml-1.5 text-xs">
+                        {offerAmount
+                          ? `Send offer · $${offerAmount.toLocaleString('en-AU')}`
+                          : 'Select an amount'}
+                      </span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="h-safe-area-inset-bottom" />
+          </>
+        ) : (
+          /* Success State */
+          <div className="py-10 px-6 flex flex-col items-center gap-3">
+            <CheckCircle2 className="h-8 w-8 text-green-600" />
+            <div className="text-center">
+              <p className="text-sm font-semibold text-foreground">Offer sent</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                ${offerAmount?.toLocaleString('en-AU')} offer sent to the seller
+              </p>
+            </div>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );
@@ -385,199 +331,175 @@ function DesktopOfferDialog({
 }: DesktopOfferDialogProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-[calc(100%-2rem)] max-w-[500px] rounded-md">
+      <DialogContent className="max-w-sm p-0 gap-0 overflow-hidden">
         {!success ? (
           <>
-            <DialogHeader>
-              <DialogTitle className="text-lg">Make an Offer</DialogTitle>
-              <DialogDescription className="text-sm">
+            <DialogHeader className="px-4 pt-4 pb-3">
+              <DialogTitle className="text-sm font-semibold">Make an offer</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
                 Negotiate a price with the seller
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 mt-4">
-              {/* Product Summary */}
-              <div className="bg-gray-50 rounded-md p-4">
-                <div className="flex gap-4">
-                  {productImage && (
-                    <div className="relative h-20 w-20 rounded-md overflow-hidden bg-gray-200 flex-shrink-0">
-                      <Image
-                        src={productImage}
-                        alt={productName}
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 line-clamp-2">
-                      {productName}
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 mt-1">
-                      ${productPrice.toLocaleString('en-AU')}
-                    </p>
-                  </div>
-                </div>
-              </div>
+            <Separator />
 
-              {/* Preset Offers */}
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">
-                  Quick Offers
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  {OFFER_PRESETS.map((preset, index) => {
-                    const amount = preset.calculateAmount(productPrice);
-                    const isSelected = selectedPreset === index;
-                    return (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => onPresetClick(index)}
-                        disabled={creating}
-                        className={cn(
-                          "relative py-3 px-4 rounded-md border-2 transition-all text-left",
-                          isSelected
-                            ? "border-gray-900 bg-gray-900"
-                            : "border-gray-200 bg-white hover:border-gray-300"
-                        )}
-                      >
-                        <div className={cn(
-                          "text-xl font-bold",
-                          isSelected ? "text-white" : "text-gray-900"
-                        )}>
-                          ${amount.toLocaleString('en-AU')}
-                        </div>
-                        <div className={cn(
-                          "text-sm",
-                          isSelected ? "text-gray-300" : "text-gray-500"
-                        )}>
-                          {preset.percentage}% off
-                        </div>
-                        {isSelected && (
-                          <div className="absolute top-2 right-2 h-5 w-5 bg-white rounded-full flex items-center justify-center">
-                            <Check className="h-3 w-3 text-gray-900" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Custom Amount */}
-              <div>
-                <label htmlFor="customAmount" className="text-sm font-medium text-gray-700 mb-1 block">
-                  Or Enter Custom Amount
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                    $
-                  </span>
-                  <Input
-                    id="customAmount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={productPrice}
-                    value={customAmount}
-                    onChange={(e) => onCustomAmountChange(e.target.value)}
-                    placeholder="0.00"
-                    className="pl-7 rounded-md text-sm"
-                    disabled={creating}
-                  />
-                </div>
-              </div>
-
-              {/* Offer Summary */}
-              {offerAmount && savings !== null && savings > 0 && (
-                <div className="bg-green-50 border border-green-100 rounded-md p-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-green-800 font-medium">Your savings</p>
-                      <p className="text-xl font-bold text-green-700">
-                        ${savings.toLocaleString('en-AU')}
-                      </p>
-                    </div>
-                    <div className="h-10 w-10 bg-green-100 rounded-full flex items-center justify-center">
-                      <span className="text-sm font-bold text-green-700">
-                        {offerPercentage?.toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
+            {/* Product row */}
+            <div className="px-4 py-3 flex items-center gap-3">
+              {productImage && (
+                <div className="relative h-10 w-10 rounded-md overflow-hidden bg-muted flex-shrink-0">
+                  <Image src={productImage} alt={productName} fill className="object-cover" />
                 </div>
               )}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-foreground line-clamp-1">{productName}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">${productPrice.toLocaleString('en-AU')} listed</p>
+              </div>
+            </div>
 
-              {/* Optional Message */}
-              <div>
-                <label htmlFor="message" className="text-sm font-medium text-gray-700 mb-1 block">
-                  Message to Seller (Optional)
-                </label>
-                <Textarea
-                  id="message"
-                  value={message}
-                  onChange={(e) => onMessageChange(e.target.value)}
-                  placeholder="Add a message to your offer..."
-                  rows={2}
-                  className="rounded-md text-sm"
+            <Separator />
+
+            {/* Preset offers */}
+            <div className="px-4 py-3">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">Quick offers</p>
+              <div className="grid grid-cols-2 gap-2">
+                {OFFER_PRESETS.map((preset, index) => {
+                  const amount = preset.calculateAmount(productPrice);
+                  const isSelected = selectedPreset === index;
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => onPresetClick(index)}
+                      disabled={creating}
+                      className={cn(
+                        "relative py-2.5 px-3 rounded-md border transition-all text-left",
+                        isSelected
+                          ? "border-foreground bg-foreground"
+                          : "border-border bg-background hover:bg-muted/50"
+                      )}
+                    >
+                      <div className={cn(
+                        "text-sm font-semibold",
+                        isSelected ? "text-background" : "text-foreground"
+                      )}>
+                        ${amount.toLocaleString('en-AU')}
+                      </div>
+                      <div className={cn(
+                        "text-xs mt-0.5",
+                        isSelected ? "text-background/70" : "text-muted-foreground"
+                      )}>
+                        {preset.percentage}% off
+                      </div>
+                      {isSelected && (
+                        <div className="absolute top-2 right-2 h-4 w-4 bg-background rounded-full flex items-center justify-center">
+                          <Check className="h-2.5 w-2.5 text-foreground" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Custom amount */}
+            <div className="px-4 py-3">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Custom amount</p>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                <Input
+                  id="customAmount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max={productPrice}
+                  value={customAmount}
+                  onChange={(e) => onCustomAmountChange(e.target.value)}
+                  placeholder="0.00"
+                  className="h-8 pl-7 text-xs"
                   disabled={creating}
                 />
               </div>
+            </div>
 
-              {/* Error Message */}
-              {error && (
-                <div className="p-3 bg-white border border-red-200 rounded-md text-sm text-red-600">
-                  {error}
+            {/* Savings row */}
+            {offerAmount && savings !== null && savings > 0 && (
+              <>
+                <Separator />
+                <div className="px-4 py-3 flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Your savings</span>
+                  <span className="text-xs font-medium text-green-600">
+                    ${savings.toLocaleString('en-AU')} ({offerPercentage?.toFixed(0)}% off)
+                  </span>
                 </div>
-              )}
+              </>
+            )}
 
-              {/* Action Buttons */}
-              <div className="flex gap-2 justify-end pt-2">
-                <Button
-                  variant="outline"
-                  onClick={onClose}
-                  disabled={creating}
-                  className="rounded-md"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={onSubmit}
-                  disabled={creating || !offerAmount}
-                  className="rounded-md"
-                >
-                  {creating ? (
-                    <>
-                      <div className="h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-4 w-4 mr-2" />
-                      Send Offer
-                    </>
-                  )}
-                </Button>
-              </div>
+            <Separator />
+
+            {/* Message */}
+            <div className="px-4 py-3">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Message (optional)</p>
+              <Textarea
+                id="message"
+                value={message}
+                onChange={(e) => onMessageChange(e.target.value)}
+                placeholder="Add a message to your offer..."
+                rows={2}
+                className="text-xs"
+                disabled={creating}
+              />
+            </div>
+
+            {error && (
+              <>
+                <Separator />
+                <div className="px-4 py-2">
+                  <p className="text-xs text-destructive">{error}</p>
+                </div>
+              </>
+            )}
+
+            <Separator />
+
+            <div className="px-4 py-3 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onClose}
+                disabled={creating}
+                className="h-8 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={onSubmit}
+                disabled={creating || !offerAmount}
+                className="h-8 text-xs gap-1.5"
+              >
+                {creating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="h-3.5 w-3.5" />
+                    Send offer
+                  </>
+                )}
+              </Button>
             </div>
           </>
         ) : (
           /* Success State */
-          <div className="py-8 text-center animate-in fade-in duration-300">
-            <div className="mb-4">
-              <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center animate-in zoom-in duration-300">
-                <Check className="h-8 w-8 text-green-600" strokeWidth={3} />
-              </div>
+          <div className="px-4 py-8 flex flex-col items-center gap-3">
+            <CheckCircle2 className="h-7 w-7 text-green-600" />
+            <div className="text-center">
+              <p className="text-sm font-semibold text-foreground">Offer sent</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                ${offerAmount?.toLocaleString('en-AU')} offer sent to the seller
+              </p>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Offer Sent!
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Your offer of ${offerAmount?.toLocaleString('en-AU')} has been sent to the seller.
-            </p>
-            <p className="text-xs text-gray-500">
-              Redirecting to your offers...
-            </p>
           </div>
         )}
       </DialogContent>
@@ -613,18 +535,13 @@ export function MakeOfferButton({
   const [success, setSuccess] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Detect mobile on mount and resize
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 640);
-    };
-    
+    const checkMobile = () => setIsMobile(window.innerWidth < 640);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Calculate offer amount based on selection
   const getOfferAmount = (): number | null => {
     if (selectedPreset !== null) {
       const preset = OFFER_PRESETS[selectedPreset];
@@ -638,9 +555,7 @@ export function MakeOfferButton({
   };
 
   const offerAmount = getOfferAmount();
-  const offerPercentage = offerAmount
-    ? calculateOfferPercentage(productPrice, offerAmount)
-    : null;
+  const offerPercentage = offerAmount ? calculateOfferPercentage(productPrice, offerAmount) : null;
   const savings = offerAmount ? productPrice - offerAmount : null;
 
   const handleClick = () => {
@@ -648,13 +563,10 @@ export function MakeOfferButton({
       openAuthModal();
       return;
     }
-
-    // Check if user is trying to offer on their own product
     if (user.id === sellerId) {
       alert('You cannot make an offer on your own product');
       return;
     }
-
     setIsDialogOpen(true);
     setMessage(`Hi, I'd like to make an offer on ${productName}.`);
   };
@@ -672,18 +584,10 @@ export function MakeOfferButton({
   };
 
   const validateOffer = (): string | null => {
-    if (!offerAmount) {
-      return 'Please select a preset or enter a custom amount';
-    }
-    if (offerAmount <= 0) {
-      return 'Offer amount must be greater than $0';
-    }
-    if (offerAmount >= productPrice) {
-      return 'Offer amount must be less than the listing price';
-    }
-    if (offerAmount < productPrice * 0.5) {
-      return 'Offer amount is too low (minimum 50% of listing price)';
-    }
+    if (!offerAmount) return 'Please select a preset or enter a custom amount';
+    if (offerAmount <= 0) return 'Offer amount must be greater than $0';
+    if (offerAmount >= productPrice) return 'Offer amount must be less than the listing price';
+    if (offerAmount < productPrice * 0.5) return 'Offer amount is too low (minimum 50% of listing price)';
     return null;
   };
 
@@ -693,20 +597,15 @@ export function MakeOfferButton({
       setError(validationError);
       return;
     }
-
     try {
       setError(null);
-
       await createOffer({
         productId,
         offerAmount: offerAmount!,
         offerPercentage: offerPercentage || undefined,
         message: message || undefined,
       });
-
       setSuccess(true);
-
-      // Close modal and redirect to offers page after 1.5 seconds
       setTimeout(() => {
         setIsDialogOpen(false);
         router.push('/messages?tab=offers');
@@ -718,7 +617,7 @@ export function MakeOfferButton({
   };
 
   const handleCloseDialog = () => {
-    if (creating || success) return; // Prevent closing during submission
+    if (creating || success) return;
     setIsDialogOpen(false);
     setSelectedPreset(null);
     setCustomAmount('');
@@ -727,7 +626,6 @@ export function MakeOfferButton({
     setSuccess(false);
   };
 
-  // Shared props for both mobile and desktop
   const sharedProps = {
     isOpen: isDialogOpen,
     onClose: handleCloseDialog,
@@ -763,7 +661,6 @@ export function MakeOfferButton({
         Make an Offer
       </Button>
 
-      {/* Render mobile or desktop based on screen size */}
       {isMobile ? (
         <MobileOfferSheet {...sharedProps} />
       ) : (

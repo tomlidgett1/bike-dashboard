@@ -10,7 +10,6 @@ import {
   Type,
   FileText,
   ListChecks,
-  Check,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
@@ -20,6 +19,8 @@ import {
   ZoomIn,
   ChevronDown,
   ChevronUp,
+  Pencil,
+  Save,
 } from "lucide-react";
 import {
   Sheet,
@@ -484,18 +485,51 @@ function TextSection({
   current,
   status,
   onRun,
+  onSave,
   running,
+  multiline = false,
 }: {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   current: string | null | undefined;
   status: TextStatus;
   onRun: () => void;
+  onSave: (value: string) => Promise<void>;
   running: boolean;
+  multiline?: boolean;
 }) {
   const [expanded, setExpanded] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
+  const [editValue, setEditValue] = React.useState(current ?? "");
+  const [saving, setSaving] = React.useState(false);
   const hasCurrent = !!current;
   const isDone = status === "done" || (hasCurrent && status === "idle");
+
+  // Sync edit value if content changes externally (e.g. after generation)
+  React.useEffect(() => {
+    if (!editing) setEditValue(current ?? "");
+  }, [current, editing]);
+
+  const startEdit = () => {
+    setEditValue(current ?? "");
+    setEditing(true);
+    setExpanded(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setEditValue(current ?? "");
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      await onSave(editValue);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-2">
@@ -512,44 +546,94 @@ function TextSection({
           )}
           {label}
         </div>
-        <Button
-          variant={isDone ? "outline" : "default"}
-          size="sm"
-          className="h-7 text-xs"
-          disabled={running || status === "running"}
-          onClick={onRun}
-        >
-          {status === "running" ? (
-            <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Working…</>
-          ) : isDone ? (
-            <><RefreshCw className="mr-1 h-3 w-3" /> Regenerate</>
-          ) : (
-            <><Sparkles className="mr-1 h-3 w-3" /> Generate</>
+        <div className="flex items-center gap-1.5">
+          {hasCurrent && !editing && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={running || status === "running"}
+              onClick={startEdit}
+            >
+              <Pencil className="mr-1 h-3 w-3" /> Edit
+            </Button>
           )}
-        </Button>
+          <Button
+            variant={isDone ? "outline" : "default"}
+            size="sm"
+            className="h-7 text-xs"
+            disabled={running || status === "running" || editing}
+            onClick={onRun}
+          >
+            {status === "running" ? (
+              <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Working…</>
+            ) : isDone ? (
+              <><RefreshCw className="mr-1 h-3 w-3" /> Regenerate</>
+            ) : (
+              <><Sparkles className="mr-1 h-3 w-3" /> Generate</>
+            )}
+          </Button>
+        </div>
       </div>
 
-      {hasCurrent && (
-        <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          <p className={cn("whitespace-pre-wrap", !expanded && "line-clamp-3")}>{current}</p>
-          {(current?.length ?? 0) > 200 && (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="mt-1 flex items-center gap-0.5 text-[11px] text-primary hover:underline"
-            >
-              {expanded ? <><ChevronUp className="h-3 w-3" /> Show less</> : <><ChevronDown className="h-3 w-3" /> Show more</>}
-            </button>
+      {editing ? (
+        <div className="space-y-2">
+          {multiline ? (
+            <textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              rows={6}
+              className="w-full rounded-md border border-primary bg-background px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              autoFocus
+            />
+          ) : (
+            <input
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="w-full rounded-md border border-primary bg-background px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void saveEdit();
+                if (e.key === "Escape") cancelEdit();
+              }}
+            />
           )}
+          <div className="flex items-center gap-1.5">
+            <Button size="sm" className="h-7 text-xs" disabled={saving} onClick={() => void saveEdit()}>
+              {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Save className="mr-1 h-3 w-3" />}
+              Save
+            </Button>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={saving} onClick={cancelEdit}>
+              Cancel
+            </Button>
+          </div>
         </div>
-      )}
+      ) : (
+        <>
+          {hasCurrent && (
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <p className={cn("whitespace-pre-wrap", !expanded && "line-clamp-3")}>{current}</p>
+              {(current?.length ?? 0) > 200 && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  className="mt-1 flex items-center gap-0.5 text-[11px] text-primary hover:underline"
+                >
+                  {expanded ? <><ChevronUp className="h-3 w-3" /> Show less</> : <><ChevronDown className="h-3 w-3" /> Show more</>}
+                </button>
+              )}
+            </div>
+          )}
 
-      {!hasCurrent && status === "idle" && (
-        <p className="text-xs text-muted-foreground">Not yet generated — click Generate to create with AI.</p>
-      )}
+          {!hasCurrent && status === "idle" && (
+            <p className="text-xs text-muted-foreground">Not yet generated — click Generate to create with AI.</p>
+          )}
 
-      {status === "error" && (
-        <p className="text-xs text-destructive">Generation failed. Try again.</p>
+          {status === "error" && (
+            <p className="text-xs text-destructive">Generation failed. Try again.</p>
+          )}
+        </>
       )}
     </div>
   );
@@ -580,6 +664,7 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
   const [canonicalImages, setCanonicalImages] = React.useState<CanonicalImageRecord[]>([]);
   const [loadingImages, setLoadingImages] = React.useState(false);
   const [ciRemovingIds, setCiRemovingIds] = React.useState<string[]>([]);
+  const [ciEnhancingIds, setCiEnhancingIds] = React.useState<string[]>([]);
 
   // Fetch canonical images when drawer opens
   React.useEffect(() => {
@@ -633,6 +718,43 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
       const res = await fetch(`/api/admin/images/approved?canonicalProductId=${product.canonical_product_id}`);
       const json = await res.json();
       if (json.success) setCanonicalImages(json.data ?? []);
+    }
+  };
+
+  const enhanceCanonicalImage = async (imageId: string, url: string) => {
+    if (!product.canonical_product_id) return;
+    setCiEnhancingIds((prev) => [...prev, imageId]);
+    try {
+      const res = await fetch("/api/admin/images/enhance-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: url, canonicalProductId: product.canonical_product_id }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success || !json.url) throw new Error(json.error || "Enhancement failed");
+      const enhancedUrl: string = json.url;
+      const publicId: string | undefined = json.publicId;
+      await fetch("/api/admin/images/update-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageId,
+          canonicalProductId: product.canonical_product_id,
+          cloudinaryUrl: enhancedUrl,
+          cloudinaryPublicId: publicId ?? null,
+        }),
+      });
+      setCanonicalImages((prev) =>
+        prev.map((ci) =>
+          ci.id === imageId
+            ? { ...ci, cloudinary_url: enhancedUrl, display_url: enhancedUrl, external_url: null }
+            : ci,
+        ),
+      );
+    } catch {
+      // silently fail — image unchanged
+    } finally {
+      setCiEnhancingIds((prev) => prev.filter((id) => id !== imageId));
     }
   };
 
@@ -735,6 +857,16 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
     setRunning(false);
   };
 
+  const saveField = async (field: "display_name" | "product_description" | "product_specs", value: string) => {
+    const res = await fetch(`/api/products/${local.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    });
+    if (!res.ok) throw new Error("Failed to save");
+    patchLocal({ [field]: value });
+  };
+
   const productName = local.display_name || local.description;
 
   return (
@@ -829,8 +961,8 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
                                 role="button"
                                 tabIndex={0}
                                 aria-label="View full image"
-                                onClick={() => !isRemoving && setLightbox(url)}
-                                onKeyDown={(e) => e.key === "Enter" && !isRemoving && setLightbox(url)}
+                                onClick={() => !isRemoving && !ciEnhancingIds.includes(ci.id) && setLightbox(url)}
+                                onKeyDown={(e) => e.key === "Enter" && !isRemoving && !ciEnhancingIds.includes(ci.id) && setLightbox(url)}
                                 className="absolute inset-0 cursor-zoom-in"
                               >
                                 <Image src={url} alt="" fill unoptimized className="object-cover" />
@@ -843,7 +975,14 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
                                 </span>
                               )}
 
-                              {!isRemoving && (
+                              {/* Enhancing spinner */}
+                              {ciEnhancingIds.includes(ci.id) && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+                                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                </div>
+                              )}
+
+                              {!isRemoving && !ciEnhancingIds.includes(ci.id) && (
                                 <>
                                   {/* Remove (X) — top-right, only when >1 photo */}
                                   {canonicalImages.length > 1 && (
@@ -855,6 +994,19 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
                                       className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center rounded-md bg-background/90 text-muted-foreground shadow opacity-0 transition hover:bg-background hover:text-foreground group-hover:opacity-100"
                                     >
                                       <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+
+                                  {/* Remove background (Wand) — bottom-left */}
+                                  {product.canonical_product_id && (
+                                    <button
+                                      type="button"
+                                      aria-label="Remove background"
+                                      title="Remove background & add white backdrop"
+                                      onClick={(e) => { e.stopPropagation(); void enhanceCanonicalImage(ci.id, url); }}
+                                      className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-1 text-[10px] font-medium text-foreground shadow opacity-0 transition hover:bg-background group-hover:opacity-100"
+                                    >
+                                      <Wand2 className="h-3 w-3" /> BG
                                     </button>
                                   )}
 
@@ -903,6 +1055,7 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
                 current={local.display_name || null}
                 status={titleStatus}
                 onRun={() => void runTitle()}
+                onSave={(v) => saveField("display_name", v)}
                 running={running}
               />
             </section>
@@ -915,7 +1068,9 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
                 current={local.product_description ?? null}
                 status={descStatus}
                 onRun={() => void runDescriptions("description")}
+                onSave={(v) => saveField("product_description", v)}
                 running={running}
+                multiline
               />
             </section>
 
@@ -927,7 +1082,9 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
                 current={local.product_specs ?? null}
                 status={specsStatus}
                 onRun={() => void runDescriptions("specs")}
+                onSave={(v) => saveField("product_specs", v)}
                 running={running}
+                multiline
               />
             </section>
 

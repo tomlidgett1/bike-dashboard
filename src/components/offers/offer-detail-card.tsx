@@ -1,42 +1,103 @@
-// ============================================================
-// OFFER DETAIL CARD COMPONENT
-// ============================================================
-// Detailed view of a single offer with history
-// Mobile-optimised with larger touch targets and sticky actions
-
 'use client';
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { OfferStatusBadge } from './offer-status-badge';
 import { PayOfferButton } from './pay-offer-button';
 import { Button } from '@/components/ui/button';
-import { 
-  Check, 
-  X, 
-  Reply, 
-  Ban, 
-  MessageCircle, 
-  User,
+import { Separator } from '@/components/ui/separator';
+import {
+  Check,
+  X as XIcon,
+  Reply,
+  Ban,
   Package,
   Loader2,
-  Clock,
-  CheckCircle,
-  CreditCard
+  CheckCircle2,
+  CreditCard,
+  User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { OfferDetailCardProps } from '@/lib/types/offer';
-import { 
-  canAcceptOffer, 
-  canRejectOffer, 
-  canCounterOffer, 
+import {
+  canAcceptOffer,
+  canRejectOffer,
+  canCounterOffer,
   canCancelOffer,
   canPayOffer,
   isOfferPaid,
   isOfferAwaitingPayment,
-  calculateSavings 
+  calculateSavings,
 } from '@/lib/types/offer';
 import { useAuth } from '@/components/providers/auth-provider';
+
+function formatDate(dateString: string) {
+  return new Date(dateString).toLocaleDateString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function StatusPill({
+  status,
+  paymentStatus,
+}: {
+  status: string;
+  paymentStatus?: string;
+}) {
+  type PillConfig = { label: string; className: string };
+  const configs: Record<string, PillConfig> = {
+    pending: { label: 'Pending', className: 'bg-muted text-muted-foreground' },
+    countered: {
+      label: 'Counter offer',
+      className:
+        'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
+    },
+    accepted: {
+      label: 'Accepted',
+      className:
+        'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300',
+    },
+    rejected: { label: 'Declined', className: 'bg-muted text-muted-foreground' },
+    expired: { label: 'Expired', className: 'bg-muted text-muted-foreground' },
+    cancelled: { label: 'Cancelled', className: 'bg-muted text-muted-foreground' },
+  };
+
+  let config: PillConfig = configs[status] ?? {
+    label: status,
+    className: 'bg-muted text-muted-foreground',
+  };
+
+  if (status === 'accepted' && paymentStatus === 'paid') {
+    config = {
+      label: 'Paid',
+      className:
+        'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300',
+    };
+  } else if (status === 'accepted' && paymentStatus === 'pending') {
+    config = {
+      label: 'Awaiting payment',
+      className:
+        'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+    };
+  } else if (status === 'accepted' && paymentStatus === 'failed') {
+    config = {
+      label: 'Payment failed',
+      className: 'bg-destructive/10 text-destructive',
+    };
+  }
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium',
+        config.className,
+      )}
+    >
+      {config.label}
+    </span>
+  );
+}
 
 export function OfferDetailCard({
   offer,
@@ -45,7 +106,6 @@ export function OfferDetailCard({
   onReject,
   onCounter,
   onCancel,
-  onMessage,
   accepting,
   rejecting,
   countering,
@@ -55,211 +115,182 @@ export function OfferDetailCard({
   const [imageError, setImageError] = useState(false);
 
   const savings = calculateSavings(offer.original_price, offer.offer_amount);
-  const savingsPercentage = offer.offer_percentage || ((savings / offer.original_price) * 100);
+  const savingsPercentage =
+    offer.offer_percentage || (savings / offer.original_price) * 100;
 
-  const productName = offer.product?.display_name || offer.product?.description || 'Product';
+  const productName =
+    offer.product?.display_name || offer.product?.description || 'Product';
   const productImage = offer.product?.primary_image_url;
 
   const otherParty = role === 'buyer' ? offer.seller : offer.buyer;
-  const otherPartyName = otherParty?.business_name || otherParty?.name || 'User';
+  const otherPartyName =
+    otherParty?.business_name || otherParty?.name || 'User';
   const otherPartyLogo = otherParty?.logo_url;
 
   const showAccept = user && canAcceptOffer(offer, user.id);
   const showReject = user && canRejectOffer(offer, user.id);
   const showCounter = user && canCounterOffer(offer, user.id);
   const showCancel = user && canCancelOffer(offer, user.id);
-  
-  // Payment actions (for buyer when offer is accepted)
   const showPayNow = user && canPayOffer(offer, user.id);
   const isPaid = isOfferPaid(offer);
   const isAwaitingPayment = isOfferAwaitingPayment(offer);
-  
-  const hasActions = showAccept || showReject || showCounter || showCancel || showPayNow;
+  const hasActions =
+    showAccept || showReject || showCounter || showCancel || showPayNow;
 
-  // Determine if this is a counter-offer the buyer needs to respond to
-  const isCounterOfferForBuyer = offer.status === 'countered' && role === 'buyer';
-  // Determine if buyer is waiting for seller response
-  const isWaitingForSeller = offer.status === 'pending' && role === 'buyer';
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
+  const isCounterForBuyer = offer.status === 'countered' && role === 'buyer';
   const isAnyLoading = accepting || rejecting || countering || cancelling;
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-50 min-h-0">
-      {/* Scrollable Content */}
-      <div className={cn(
-        "flex-1 overflow-y-auto",
-        hasActions ? "pb-4" : "pb-[calc(1rem+env(safe-area-inset-bottom))]"
-      )}>
-        {/* Hero Section: Product + Price */}
-        <div className="bg-white border-b border-gray-200">
-          <div className="p-4">
-            <div className="flex gap-4">
-              {/* Product Image - Larger on mobile */}
-              {productImage && !imageError ? (
-                <div className="relative h-20 w-20 md:h-24 md:w-24 rounded-md overflow-hidden bg-gray-100 flex-shrink-0">
-                  <Image
-                    src={productImage}
-                    alt={productName}
-                    fill
-                    className="object-cover"
-                    onError={() => setImageError(true)}
-                  />
-                </div>
-              ) : (
-                <div className="relative h-20 w-20 md:h-24 md:w-24 rounded-md overflow-hidden bg-gray-100 flex-shrink-0 flex items-center justify-center">
-                  <Package className="h-8 w-8 text-gray-400" />
-                </div>
-              )}
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className={cn('flex-1 overflow-y-auto', hasActions ? 'pb-2' : 'pb-4')}>
 
-              <div className="flex-1 min-w-0">
-                <h3 className="text-base font-semibold text-gray-900 mb-2 leading-tight">
-                  {productName}
-                </h3>
-                <OfferStatusBadge 
-                  status={offer.status} 
-                  paymentStatus={offer.payment_status}
-                  expiresAt={offer.expires_at} 
-                  paymentDeadline={offer.payment_deadline}
-                />
-              </div>
-            </div>
-
-            {/* Counter-Offer Alert Banner (for buyers) */}
-            {isCounterOfferForBuyer && (
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <div className="flex items-start gap-3">
-                  <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <Reply className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-blue-800">Seller Counter-Offer</p>
-                    <p className="text-xs text-blue-700 mt-0.5">
-                      The seller has proposed a new price. You can accept, decline, or counter.
-                    </p>
-                  </div>
-                </div>
+        {/* Product */}
+        <div className="px-4 py-3 flex items-start gap-3">
+          <div className="relative h-12 w-12 rounded-lg overflow-hidden bg-muted flex-shrink-0">
+            {productImage && !imageError ? (
+              <Image
+                src={productImage}
+                alt={productName}
+                fill
+                className="object-cover"
+                onError={() => setImageError(true)}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <Package className="h-5 w-5 text-muted-foreground" />
               </div>
             )}
-
-            {/* Waiting for Seller Banner (for buyers) */}
-            {isWaitingForSeller && (
-              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
-                <div className="flex items-center gap-3">
-                  <Clock className="h-5 w-5 text-gray-400" />
-                  <p className="text-sm text-gray-600">
-                    Waiting for seller to respond to your offer
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Prominent Price Display */}
-            <div className="mt-4 p-4 bg-gray-50 rounded-md">
-              <div className="flex items-end justify-between mb-3">
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Your Offer</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    ${offer.offer_amount.toLocaleString('en-AU')}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-gray-500 mb-1">Original</p>
-                  <p className="text-base text-gray-500 line-through">
-                    ${offer.original_price.toLocaleString('en-AU')}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-3 border-t border-gray-200">
-                <span className="text-sm text-green-700 font-medium">Total Savings</span>
-                <span className="text-sm font-bold text-green-700">
-                  ${savings.toLocaleString('en-AU')} ({savingsPercentage.toFixed(0)}% off)
-                </span>
-              </div>
+          </div>
+          <div className="flex-1 min-w-0 pt-0.5">
+            <p className="text-sm font-medium text-foreground leading-snug">
+              {productName}
+            </p>
+            <div className="mt-1.5">
+              <StatusPill
+                status={offer.status}
+                paymentStatus={offer.payment_status}
+              />
             </div>
           </div>
         </div>
 
-        {/* Content Sections */}
-        <div className="p-4 space-y-4">
-          {/* Other Party Info */}
-          <div className="bg-white rounded-md p-4">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">
-              {role === 'buyer' ? 'Seller' : 'Buyer'}
-            </h4>
-            <div className="flex items-center gap-3">
-              {otherPartyLogo ? (
-                <div className="relative h-12 w-12 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
-                  <Image
-                    src={otherPartyLogo}
-                    alt={otherPartyName}
-                    fill
-                    className="object-cover"
-                  />
-                </div>
-              ) : (
-                <div className="h-12 w-12 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
-                  <User className="h-6 w-6 text-gray-500" />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-900 truncate text-base">{otherPartyName}</p>
-                {onMessage && (
-                  <button
-                    onClick={onMessage}
-                    className="text-sm text-blue-600 hover:text-blue-700 active:text-blue-800 font-medium flex items-center gap-1.5 mt-1"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    Send message
-                  </button>
-                )}
-              </div>
+        <Separator />
+
+        {/* Pricing */}
+        <div className="px-4 py-3">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
+            Pricing
+          </p>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Offer amount</span>
+              <span className="text-sm font-semibold text-foreground">
+                ${offer.offer_amount.toLocaleString('en-AU', { minimumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Listed price</span>
+              <span className="text-xs text-muted-foreground line-through">
+                ${offer.original_price.toLocaleString('en-AU', { minimumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Saving</span>
+              <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                ${savings.toLocaleString('en-AU', { minimumFractionDigits: 0 })} · {savingsPercentage.toFixed(0)}% off
+              </span>
             </div>
           </div>
+        </div>
 
-          {/* Message */}
-          {offer.message && (
-            <div className="bg-white rounded-md p-4">
-              <h4 className="text-sm font-semibold text-gray-900 mb-2">Message</h4>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{offer.message}</p>
+        <Separator />
+
+        {/* Counterparty */}
+        <div className="px-4 py-3">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
+            {role === 'buyer' ? 'Seller' : 'Buyer'}
+          </p>
+          <div className="flex items-center gap-2.5">
+            {otherPartyLogo ? (
+              <div className="relative h-7 w-7 rounded-full overflow-hidden bg-muted flex-shrink-0">
+                <Image
+                  src={otherPartyLogo}
+                  alt={otherPartyName}
+                  fill
+                  className="object-cover"
+                />
+              </div>
+            ) : (
+              <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+              </div>
+            )}
+            <span className="text-sm text-foreground">{otherPartyName}</span>
+          </div>
+        </div>
+
+        {/* Counter note for buyers */}
+        {isCounterForBuyer && (
+          <>
+            <Separator />
+            <div className="px-4 py-3">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                The seller has proposed{' '}
+                <span className="font-semibold text-foreground">
+                  ${offer.offer_amount.toLocaleString('en-AU', { minimumFractionDigits: 0 })}
+                </span>
+                . Accept, decline, or send a counter.
+              </p>
             </div>
-          )}
+          </>
+        )}
 
-          {/* Offer History */}
-          {offer.history && offer.history.length > 1 && (
-            <div className="bg-white rounded-md p-4">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">History</h4>
-              <div className="space-y-0">
+        {/* Message */}
+        {offer.message && (
+          <>
+            <Separator />
+            <div className="px-4 py-3">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                Message
+              </p>
+              <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
+                {offer.message}
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* History */}
+        {offer.history && offer.history.length > 1 && (
+          <>
+            <Separator />
+            <div className="px-4 py-3">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
+                History
+              </p>
+              <div className="space-y-2">
                 {offer.history.map((event, index) => (
-                  <div key={event.id} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className={cn(
-                        'h-2.5 w-2.5 rounded-full mt-1',
-                        index === offer.history!.length - 1 ? 'bg-blue-500' : 'bg-gray-300'
-                      )} />
-                      {index < offer.history!.length - 1 && (
-                        <div className="w-px flex-1 bg-gray-200 my-1" />
+                  <div key={event.id} className="flex items-start gap-2.5">
+                    <div
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full mt-1.5 flex-shrink-0',
+                        index === offer.history!.length - 1
+                          ? 'bg-foreground'
+                          : 'bg-muted-foreground/30',
                       )}
-                    </div>
-                    <div className="flex-1 pb-4">
-                      <p className="text-sm font-medium text-gray-900 capitalize">
-                        {event.action_type.replace('_', ' ')}
-                      </p>
-                      {event.new_amount && (
-                        <p className="text-sm text-gray-600 mt-0.5">
-                          ${event.new_amount.toLocaleString('en-AU')}
-                        </p>
-                      )}
-                      <p className="text-xs text-gray-500 mt-1">
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-foreground capitalize">
+                          {event.action_type.replace('_', ' ')}
+                        </span>
+                        {event.new_amount && (
+                          <span className="text-xs font-medium text-foreground">
+                            ${event.new_amount.toLocaleString('en-AU', { minimumFractionDigits: 0 })}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
                         {formatDate(event.created_at)}
                       </p>
                     </div>
@@ -267,182 +298,170 @@ export function OfferDetailCard({
                 ))}
               </div>
             </div>
-          )}
+          </>
+        )}
 
-          {/* Timestamps */}
-          <div className="bg-white rounded-md p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock className="h-4 w-4 text-gray-400" />
-              <h4 className="text-sm font-semibold text-gray-900">Timeline</h4>
+        {/* Timeline */}
+        <Separator />
+        <div className="px-4 py-3">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
+            Timeline
+          </p>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Submitted</span>
+              <span className="text-xs text-foreground">
+                {formatDate(offer.created_at)}
+              </span>
             </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Created</span>
-                <span className="text-gray-900">{formatDate(offer.created_at)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Expires</span>
-                <span className="text-gray-900">{formatDate(offer.expires_at)}</span>
-              </div>
-              {offer.payment_deadline && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Payment Deadline</span>
-                  <span className={cn(
-                    "text-gray-900",
-                    new Date(offer.payment_deadline) < new Date() && "text-red-600"
-                  )}>
-                    {formatDate(offer.payment_deadline)}
-                  </span>
-                </div>
-              )}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Expires</span>
+              <span className="text-xs text-foreground">
+                {formatDate(offer.expires_at)}
+              </span>
             </div>
+            {offer.payment_deadline && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Payment by</span>
+                <span
+                  className={cn(
+                    'text-xs',
+                    new Date(offer.payment_deadline) < new Date()
+                      ? 'text-destructive'
+                      : 'text-foreground',
+                  )}
+                >
+                  {formatDate(offer.payment_deadline)}
+                </span>
+              </div>
+            )}
           </div>
-
-          {/* Payment Complete Message (for buyers) */}
-          {isPaid && role === 'buyer' && (
-            <div className="bg-green-50 border border-green-200 rounded-md p-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-green-800">Payment Complete</p>
-                  <p className="text-xs text-green-700 mt-0.5">
-                    The seller has been notified. Check your purchases for delivery updates.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Payment Awaiting Message (for sellers) */}
-          {isAwaitingPayment && role === 'seller' && (
-            <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                  <CreditCard className="h-5 w-5 text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-amber-800">Awaiting Payment</p>
-                  <p className="text-xs text-amber-700 mt-0.5">
-                    The buyer has been notified to complete payment.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Payment complete */}
+        {isPaid && role === 'buyer' && (
+          <>
+            <Separator />
+            <div className="px-4 py-3 flex items-center gap-2.5">
+              <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+              <p className="text-xs text-foreground">
+                Payment complete. Check your purchases for updates.
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* Awaiting payment (seller) */}
+        {isAwaitingPayment && role === 'seller' && (
+          <>
+            <Separator />
+            <div className="px-4 py-3 flex items-center gap-2.5">
+              <CreditCard className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <p className="text-xs text-muted-foreground">
+                Awaiting payment from the buyer.
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Sticky Action Buttons - Fixed at bottom with safe area */}
+      {/* Actions */}
       {hasActions && (
-        <div className="flex-shrink-0 bg-white border-t border-gray-200 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          <div className="space-y-3">
-            {/* Primary Action: Pay Now (for buyers with accepted offers) */}
-            {showPayNow && (
-              <PayOfferButton
-                offerId={offer.id}
-                offerAmount={offer.offer_amount}
-                originalPrice={offer.original_price}
-                productName={productName}
-                productId={offer.product_id}
-                paymentDeadline={offer.payment_deadline}
-                fullWidth
-                size="lg"
-                className="h-12 text-base"
-                showStripeBranding={true}
-              />
-            )}
+        <div className="flex-shrink-0 border-t border-border/50 px-4 py-3 bg-background space-y-2">
+          {showPayNow && (
+            <PayOfferButton
+              offerId={offer.id}
+              offerAmount={offer.offer_amount}
+              originalPrice={offer.original_price}
+              productName={productName}
+              productId={offer.product_id}
+              paymentDeadline={offer.payment_deadline}
+              fullWidth
+              size="sm"
+              className="h-9 text-sm"
+              showStripeBranding={false}
+            />
+          )}
 
-            {/* Primary Action: Accept (for sellers OR buyers accepting counter-offer) */}
-            {showAccept && (
-              <Button
-                onClick={onAccept}
-                className="w-full rounded-md h-12 text-base font-medium"
-                disabled={isAnyLoading}
-              >
-                {accepting ? (
-                  <>
-                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                    Accepting...
-                  </>
-                ) : (
-                  <>
-                    <Check className="h-5 w-5 mr-2" />
-                    {isCounterOfferForBuyer ? 'Accept Counter-Offer' : 'Accept Offer'}
-                  </>
-                )}
-              </Button>
-            )}
-            
-            {/* Secondary Actions Row */}
-            {(showReject || showCounter || showCancel) && (
-              <div className="flex gap-3">
-                {showReject && (
-                  <Button
-                    onClick={onReject}
-                    variant="outline"
-                    className="flex-1 rounded-md h-12 text-base font-medium"
-                    disabled={isAnyLoading}
-                  >
-                    {rejecting ? (
-                      <>
-                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                        <span className="hidden xs:inline">
-                          {isCounterOfferForBuyer ? 'Declining...' : 'Rejecting...'}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <X className="h-5 w-5 mr-2" />
-                        {isCounterOfferForBuyer ? 'Decline' : 'Reject'}
-                      </>
-                    )}
-                  </Button>
-                )}
-                {showCounter && (
-                  <Button
-                    onClick={onCounter}
-                    variant="outline"
-                    className="flex-1 rounded-md h-12 text-base font-medium"
-                    disabled={isAnyLoading}
-                  >
-                    {countering ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <>
-                        <Reply className="h-5 w-5 mr-2" />
-                        Counter
-                      </>
-                    )}
-                  </Button>
-                )}
-                {showCancel && (
-                  <Button
-                    onClick={onCancel}
-                    variant="outline"
-                    className={cn(
-                      "rounded-md h-12 text-base font-medium",
-                      !showReject && !showCounter ? "w-full" : "flex-1"
-                    )}
-                    disabled={isAnyLoading}
-                  >
-                    {cancelling ? (
-                      <>
-                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                        <span className="hidden xs:inline">Cancelling...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Ban className="h-5 w-5 mr-2" />
-                        Cancel
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
+          {showAccept && (
+            <Button
+              onClick={onAccept}
+              size="sm"
+              className="w-full h-9"
+              disabled={isAnyLoading}
+            >
+              {accepting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <>
+                  <Check className="h-3.5 w-3.5 mr-1.5" />
+                  {isCounterForBuyer ? 'Accept counter offer' : 'Accept offer'}
+                </>
+              )}
+            </Button>
+          )}
+
+          {(showReject || showCounter || showCancel) && (
+            <div className="flex gap-2">
+              {showReject && (
+                <Button
+                  onClick={onReject}
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-9"
+                  disabled={isAnyLoading}
+                >
+                  {rejecting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <XIcon className="h-3.5 w-3.5 mr-1.5" />
+                      Decline
+                    </>
+                  )}
+                </Button>
+              )}
+              {showCounter && (
+                <Button
+                  onClick={onCounter}
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-9"
+                  disabled={isAnyLoading}
+                >
+                  {countering ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <Reply className="h-3.5 w-3.5 mr-1.5" />
+                      Counter
+                    </>
+                  )}
+                </Button>
+              )}
+              {showCancel && (
+                <Button
+                  onClick={onCancel}
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    'h-9',
+                    !showReject && !showCounter ? 'w-full' : 'flex-1',
+                  )}
+                  disabled={isAnyLoading}
+                >
+                  {cancelling ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <Ban className="h-3.5 w-3.5 mr-1.5" />
+                      Cancel
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

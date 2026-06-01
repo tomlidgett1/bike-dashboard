@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import {
   Store,
+  Home,
   Phone,
   MapPin,
   Clock,
@@ -45,6 +46,7 @@ import { ProductCard } from "@/components/marketplace/product-card";
 import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
 import { ServicesSection } from "@/components/marketplace/store-profile/services-section";
 import { RentalsSection } from "@/components/marketplace/store-profile/rentals-section";
+import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-tab";
 import { CartButton } from "@/components/marketplace/cart-button";
 import type { StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -58,7 +60,7 @@ import { resolveLivePrice } from "@/lib/marketplace/pricing";
 
 const BRAND_YELLOW = "#ffde59";
 
-type StoreTab = "products" | "rentals" | "service" | "about" | "reviews";
+type StoreTab = "home" | "products" | "rentals" | "service" | "about" | "reviews";
 type SortKey = "featured" | "price-asc" | "price-desc" | "newest";
 
 interface StoreProfileViewProps {
@@ -507,7 +509,10 @@ function ProductsTab({
 }
 
 export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfileViewProps) {
-  const [activeTab, setActiveTab] = React.useState<StoreTab>("products");
+  // Home is the storefront landing page; it's the default tab unless the owner
+  // has explicitly switched it off (homepage_config.enabled === false).
+  const homeEnabled = store.homepage_config?.enabled !== false;
+  const [activeTab, setActiveTab] = React.useState<StoreTab>(homeEnabled ? "home" : "products");
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [sort, setSort] = React.useState<SortKey>("featured");
   const [storeSearch, setStoreSearch] = React.useState("");
@@ -574,7 +579,41 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`
     : null;
 
+  // Home-tab CTA dispatcher: tab key → switch tab; 'call'/'directions'/URL → act.
+  const handleHomeNavigate = React.useCallback(
+    (href: string) => {
+      if (!href) return;
+      if (href === "call") {
+        if (store.phone) window.location.href = `tel:${store.phone}`;
+        return;
+      }
+      if (href === "directions") {
+        if (directionsUrl) window.open(directionsUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (/^https?:\/\//i.test(href)) {
+        window.open(href, "_blank", "noopener,noreferrer");
+        return;
+      }
+      const tabKeys: StoreTab[] = ["home", "products", "rentals", "service", "about", "reviews"];
+      if (tabKeys.includes(href as StoreTab)) {
+        setActiveTab(href as StoreTab);
+        setSelectedCategory(null);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    },
+    [store.phone, directionsUrl],
+  );
+
+  // Open the Products tab pre-filtered to a category (from a Home collection tile).
+  const handleOpenCollection = React.useCallback((categoryName: string) => {
+    setActiveTab("products");
+    setSelectedCategory(categoryName);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
   const tabs: { key: StoreTab; label: string; icon: typeof Package }[] = [
+    ...(homeEnabled ? [{ key: "home" as StoreTab, label: "Home", icon: Home }] : []),
     { key: "products", label: "Products", icon: Package },
     { key: "rentals", label: "Rentals", icon: Bike },
     { key: "service", label: "Service", icon: Wrench },
@@ -641,7 +680,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 </h1>
                 {(store.rating != null || store.address || store.phone) && (
                   <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-gray-500 min-w-0 mt-0.5">
-                    {store.rating != null && (
+                    {store.rating != null && store.homepage_config?.badges?.show_rating !== false && (
                       <span className="inline-flex items-center gap-0.5 flex-shrink-0">
                         <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
                         <span className="font-semibold text-gray-700">{store.rating.toFixed(1)}</span>
@@ -650,7 +689,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                         )}
                       </span>
                     )}
-                    {store.rating != null && store.address && (
+                    {store.rating != null && store.homepage_config?.badges?.show_rating !== false && store.address && (
                       <span className="text-gray-300 flex-shrink-0">·</span>
                     )}
                     {store.address && (
@@ -730,8 +769,9 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
         </div>
       </header>
 
-      {/* Cover banner (optional) — scrolls beneath the sticky header */}
-      {store.cover_image_url && (
+      {/* Cover banner (optional) — scrolls beneath the sticky header.
+          Hidden on Home, where the hero owns the cover imagery. */}
+      {store.cover_image_url && activeTab !== "home" && (
         <div className="relative h-32 sm:h-44 lg:h-52 w-full overflow-hidden bg-gray-100">
           <Image src={store.cover_image_url} alt="" fill sizes="100vw" className="object-cover" priority />
           <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
@@ -922,12 +962,18 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
         </div>
       )}
 
-      {/* ══ TAB CONTENT ═══════════════════════════════════ */}
+      {/* ══ TAB CONTENT ═══════════════════════════════════
+          Home is full-bleed (it manages its own width + spacing); every other
+          tab keeps the standard padded container. */}
       <div className={cn(
-        "pt-2 pb-5 sm:pt-3 sm:pb-7",
-        immersive
-          ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12"
-          : "px-5 sm:px-8 lg:px-10"
+        activeTab === "home"
+          ? "" // full-bleed; inherits the page's gray-50 so white cards pop
+          : cn(
+              "pt-2 pb-5 sm:pt-3 sm:pb-7",
+              immersive
+                ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12"
+                : "px-5 sm:px-8 lg:px-10",
+            )
       )}>
         <AnimatePresence mode="wait">
           <motion.div
@@ -937,6 +983,16 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.18 }}
           >
+            {/* HOME — storefront landing page */}
+            {activeTab === "home" && (
+              <StoreHomeTab
+                store={store}
+                isOwnProfile={isOwnProfile}
+                onNavigate={handleHomeNavigate}
+                onOpenCollection={handleOpenCollection}
+              />
+            )}
+
             {/* PRODUCTS */}
             {activeTab === "products" &&
               (allProducts.length > 0 ? (
@@ -1119,7 +1175,7 @@ function AboutTab({
             <Clock className="h-4 w-4 text-gray-400" />
             Opening hours
           </h3>
-          {openStatus && (
+          {openStatus && store.homepage_config?.badges?.show_open_status !== false && (
             <span
               className={cn(
                 "text-xs font-medium px-2 py-0.5 rounded-full",

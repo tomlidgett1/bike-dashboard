@@ -83,6 +83,146 @@ export interface StoreProfile {
   description?: string | null;
   rating?: number | null;
   review_count?: number | null;
+  website?: string | null;
+  social_links?: SocialLinks | null;
+  /** Raw landing-page configuration (Home tab). Empty/undefined → defaults. */
+  homepage_config?: StoreHomepageConfig | null;
+}
+
+export interface SocialLinks {
+  instagram?: string;
+  facebook?: string;
+  strava?: string;
+  twitter?: string;
+  website?: string;
+}
+
+// ============================================================
+// Store Homepage (Landing Page) configuration
+// Persisted as users.homepage_config (JSONB). All fields optional
+// on the wire — `resolveHomepageConfig` fills defaults from the
+// store profile so an unconfigured store still renders beautifully.
+// ============================================================
+
+/**
+ * A call-to-action target. `href` is one of:
+ *  - a store tab key: 'products' | 'service' | 'rentals' | 'about'
+ *  - 'call' (uses the store phone via tel:)
+ *  - 'directions' (opens maps for the store address)
+ *  - an absolute URL ('https://…') for anything external
+ */
+export interface HomeCta {
+  label: string;
+  href: string;
+}
+
+export interface HomeHighlight {
+  id: string;
+  /** Key into the shared icon registry (see homepage-icons.tsx) */
+  icon: string;
+  title: string;
+  description: string;
+}
+
+export interface HomeCollection {
+  id: string;
+  label: string;
+  /** Optional override image; when null the renderer pulls a product image */
+  image_url: string | null;
+  /** Category name to deep-link into the Products tab */
+  href: string;
+}
+
+export interface HomeGalleryImage {
+  id: string;
+  url: string;
+  caption?: string;
+}
+
+export type HomeSectionKey =
+  | 'highlights'
+  | 'collections'
+  | 'carousels'
+  | 'story'
+  | 'gallery'
+  | 'services'
+  | 'visit';
+
+export type HeroVariant = 'spotlight' | 'split' | 'minimal';
+
+export interface StoreHomepageConfig {
+  /** Master switch for the Home tab. When false the tab is hidden. */
+  enabled: boolean;
+  theme: {
+    /** Accent colour used for CTAs and highlights (hex). */
+    accent: string;
+  };
+  announcement: {
+    enabled: boolean;
+    text: string;
+  };
+  hero: {
+    variant: HeroVariant;
+    eyebrow: string;
+    headline: string;
+    subheadline: string;
+    image_url: string | null;
+    /** Dark overlay strength over the hero image, 0–80. */
+    overlay: number;
+    align: 'left' | 'center';
+    primary_cta: HomeCta;
+    secondary_cta: HomeCta | null;
+  };
+  highlights: {
+    enabled: boolean;
+    items: HomeHighlight[];
+  };
+  collections: {
+    enabled: boolean;
+    title: string;
+    subtitle: string;
+    /** When true, auto-build tiles from the store's top categories. */
+    auto: boolean;
+    items: HomeCollection[];
+  };
+  story: {
+    enabled: boolean;
+    title: string;
+    body: string;
+    image_url: string | null;
+    layout: 'image-left' | 'image-right';
+  };
+  gallery: {
+    enabled: boolean;
+    title: string;
+    images: HomeGalleryImage[];
+  };
+  services: {
+    enabled: boolean;
+    title: string;
+    subtitle: string;
+  };
+  visit: {
+    enabled: boolean;
+    title: string;
+  };
+  featured_carousels: {
+    enabled: boolean;
+    /** category_id of the first featured carousel, or null */
+    slot1: string | null;
+    /** category_id of the second featured carousel, or null */
+    slot2: string | null;
+    /** Initial visible product count per carousel (controls density) */
+    per_row: 6 | 8;
+  };
+  /** Order of the sections that render beneath the hero. */
+  section_order: HomeSectionKey[];
+  badges: {
+    /** Show the live Open/Closed pill next to opening hours (Visit section + About tab). */
+    show_open_status: boolean;
+    /** Show the star rating in the sticky store header. */
+    show_rating: boolean;
+  };
 }
 
 export interface StoreCategoryWithProducts {

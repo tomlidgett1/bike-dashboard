@@ -125,10 +125,10 @@ export function PayOfferButton({
         <motion.div
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-center gap-2 mb-2 py-2 px-3 bg-green-50 border border-green-200 rounded-md"
+          className="flex items-center justify-center gap-1.5 mb-2 py-1.5 px-3"
         >
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <span className="text-sm font-medium text-green-700">
+          <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+          <span className="text-xs font-medium text-green-600">
             You save ${savings.toLocaleString('en-AU')} ({savingsPercentage}% off)
           </span>
         </motion.div>

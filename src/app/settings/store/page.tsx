@@ -3,11 +3,12 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
-import { Loader2, Store, Wrench, Tag, FileText, Star, Type, Layers } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Loader2, Store, Wrench, Tag, FileText, Star, Type, Layers, Home } from "lucide-react";
 import { Header } from "@/components/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StoreHomepageManager } from "@/components/settings/store-homepage-manager";
 import { StoreCategoriesManager } from "@/components/settings/store-categories-manager";
 import { StoreServicesManager } from "@/components/settings/store-services-manager";
 import { StoreBrandsManager } from "@/components/settings/store-brands-manager";
@@ -17,10 +18,17 @@ import { StoreSectionsManager } from "@/components/settings/store-sections-manag
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 
-export default function StoreSettingsPage() {
+const VALID_TABS = ["home", "categories", "sections", "services", "brands", "products", "titles"];
+
+function StoreSettingsContent() {
   const { user } = useAuth();
   const { profile, loading } = useUserProfile();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialTab = (() => {
+    const t = searchParams.get("tab");
+    return t && VALID_TABS.includes(t) ? t : "home";
+  })();
   const [isAuthorized, setIsAuthorized] = React.useState<boolean | null>(null);
 
   React.useEffect(() => {
@@ -64,8 +72,12 @@ export default function StoreSettingsPage() {
 
       <div className="p-4 lg:p-6">
         <div className="mx-auto max-w-3xl">
-          <Tabs defaultValue="categories">
+          <Tabs defaultValue={initialTab}>
             <TabsList className="w-full justify-start mb-6 flex-wrap h-auto gap-1">
+              <TabsTrigger value="home" className="flex-none gap-2">
+                <Home className="h-4 w-4" />
+                Home page
+              </TabsTrigger>
               <TabsTrigger value="categories" className="flex-none gap-2">
                 <Store className="h-4 w-4" />
                 Categories
@@ -91,6 +103,19 @@ export default function StoreSettingsPage() {
                 Titles
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="home">
+              <div className="mb-4 flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
+                <Home className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">Your storefront landing page</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Design the <strong>Home</strong> tab customers see first. Everything updates in the live preview — don&apos;t forget to <strong>Save</strong>.
+                  </p>
+                </div>
+              </div>
+              <StoreHomepageManager />
+            </TabsContent>
 
             <TabsContent value="categories">
               {/* Featured collection callout */}
@@ -242,5 +267,25 @@ export default function StoreSettingsPage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function StoreSettingsPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <>
+          <Header
+            title="Store Settings"
+            description="Manage your store profile, categories, and services"
+          />
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
+          </div>
+        </>
+      }
+    >
+      <StoreSettingsContent />
+    </React.Suspense>
   );
 }

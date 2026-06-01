@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, X, CheckCircle2 } from "lucide-react";
+import { Loader2, X, CheckCircle2, XCircle } from "lucide-react";
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -188,103 +189,63 @@ export function FacebookImportModal({ isOpen, onClose, onComplete }: FacebookImp
           className="rounded-t-2xl p-0 overflow-hidden gap-0 max-h-[85vh] flex flex-col"
           showCloseButton={false}
         >
-          {/* Handle Bar */}
-          <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
-            <div className="w-10 h-1 bg-gray-300 rounded-full" />
+          <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+            <div className="w-8 h-1 bg-muted-foreground/20 rounded-full" />
           </div>
+
+          <div className="px-4 pb-3 pt-1 flex-shrink-0 flex items-center gap-2">
+            <Image src="/facebook.png" alt="Facebook" width={14} height={14} className="flex-shrink-0" />
+            <p className="text-sm font-semibold text-foreground">Import from Facebook</p>
+          </div>
+
+          <Separator className="flex-shrink-0" />
 
           {/* Input Stage */}
           {stage === "input" && (
-            <form
-              onSubmit={handleSubmit}
-              className="flex flex-col flex-1 overflow-hidden"
-            >
-              {/* Header */}
-              <div className="px-5 pb-4 flex-shrink-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center">
-                    <Image src="/facebook.png" alt="Facebook" width={20} height={20} />
-                  </div>
-                  <h2 className="text-lg font-semibold text-gray-900">Import from Facebook</h2>
-                </div>
-                <p className="text-xs text-gray-500 ml-10">Paste a Marketplace link to auto-fill details</p>
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="px-4 py-3 flex-1 overflow-y-auto">
+                <p className="text-xs text-muted-foreground mb-2">Paste a Marketplace link to auto-fill details</p>
+                <Input
+                  type="url"
+                  placeholder="facebook.com/marketplace/item/123456789"
+                  value={facebookUrl}
+                  onChange={(e) => { setFacebookUrl(e.target.value); setError(null); }}
+                  className="h-9 text-sm"
+                  autoFocus
+                />
+                {error && <p className="text-xs text-destructive mt-2">{error}</p>}
               </div>
 
-              {/* Content */}
-              <div className="px-5 flex-1 overflow-y-auto">
-                <div className="space-y-2">
-                  <Input
-                    type="url"
-                    placeholder="facebook.com/marketplace/item/123456789"
-                    value={facebookUrl}
-                    onChange={(e) => {
-                      setFacebookUrl(e.target.value);
-                      setError(null);
-                    }}
-                    className="rounded-xl h-12 text-base border-gray-200 focus-visible:ring-0 focus-visible:outline-none focus:outline-none"
-                    autoFocus
-                  />
-                  {error && (
-                    <p className="text-xs text-red-500">{error}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Bottom Actions */}
-              <div className="px-4 pb-8 pt-3 border-t border-gray-100 flex-shrink-0 bg-white">
-                <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={onClose}
-                    className="flex-1 h-12 rounded-xl border-gray-200"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={!facebookUrl}
-                    className="flex-1 h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
-                  >
-                    Import
-                  </Button>
-                </div>
+              <Separator className="flex-shrink-0" />
+              <div className="px-4 py-3 pb-8 flex-shrink-0 flex gap-2 justify-end">
+                <Button type="button" variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={!facebookUrl} className="h-8 text-xs">
+                  Import
+                </Button>
               </div>
             </form>
           )}
 
           {/* Processing States */}
           {(stage === "scraping" || stage === "processing-images") && (
-            <div className="px-5 py-12 flex flex-col items-center">
-              {/* Animated progress indicator */}
-              <div className="relative mb-6">
-                <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Image 
-                    src="/facebook.png" 
-                    alt="Processing" 
-                    width={28} 
-                    height={28}
-                  />
-                </div>
-                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-gray-900 animate-spin" />
-              </div>
-              
-              <p className="text-base font-medium text-gray-900 mb-1">
-                {stage === "scraping" && "Fetching listing..."}
-                {stage === "processing-images" && "Processing images..."}
-              </p>
-              <p className="text-sm text-gray-500">
+            <div className="px-4 py-10 flex flex-col items-center gap-3">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <div className="text-center">
+                <p className="text-xs font-medium text-foreground">
+                  {stage === "scraping" ? "Fetching listing..." : "Processing images..."}
+                </p>
                 {stage === "processing-images" && imageProgress.total > 0 && (
-                  `${imageProgress.current} of ${imageProgress.total}`
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {imageProgress.current} of {imageProgress.total}
+                  </p>
                 )}
-                {stage === "scraping" && "This won't take long"}
-              </p>
-              
-              {/* Progress bar for image processing */}
+              </div>
               {stage === "processing-images" && imageProgress.total > 0 && (
-                <div className="w-48 h-1.5 bg-gray-200 rounded-full mt-4 overflow-hidden">
+                <div className="w-40 h-1 bg-muted rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-[#FFC72C] rounded-full transition-all duration-300"
+                    className="h-full bg-foreground rounded-full transition-all duration-300"
                     style={{ width: `${(imageProgress.current / imageProgress.total) * 100}%` }}
                   />
                 </div>
@@ -294,39 +255,29 @@ export function FacebookImportModal({ isOpen, onClose, onComplete }: FacebookImp
 
           {/* Success Stage */}
           {stage === "success" && (
-            <div className="px-5 py-12 flex flex-col items-center">
-              <div className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-                <CheckCircle2 className="h-8 w-8 text-green-600" />
+            <div className="px-4 py-10 flex flex-col items-center gap-3">
+              <CheckCircle2 className="h-7 w-7 text-green-600" />
+              <div className="text-center">
+                <p className="text-xs font-medium text-foreground">All done!</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Preparing your listing...</p>
               </div>
-              <p className="text-base font-medium text-gray-900">All done!</p>
-              <p className="text-sm text-gray-500 mt-1">Preparing your listing...</p>
             </div>
           )}
 
           {/* Error Stage */}
           {stage === "error" && (
-            <div className="px-5 py-8 flex flex-col items-center">
-              <div className="h-16 w-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
-                <X className="h-8 w-8 text-red-600" />
+            <div className="px-4 py-8 flex flex-col items-center gap-3">
+              <XCircle className="h-7 w-7 text-destructive" />
+              <div className="text-center">
+                <p className="text-xs font-medium text-foreground mb-0.5">Import failed</p>
+                <p className="text-xs text-muted-foreground max-w-[240px]">{error}</p>
               </div>
-              <p className="text-base font-medium text-gray-900 mb-1">Import failed</p>
-              <p className="text-sm text-gray-500 text-center mb-6 max-w-[240px]">{error}</p>
-              
-              <div className="flex gap-3 w-full max-w-xs">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onClose}
-                  className="flex-1 h-12 rounded-xl"
-                >
+              <div className="flex gap-2 mt-1">
+                <Button type="button" variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">
                   Cancel
                 </Button>
-                <Button
-                  type="button"
-                  onClick={handleRetry}
-                  className="flex-1 h-12 rounded-xl bg-gray-900 hover:bg-gray-800"
-                >
-                  Try Again
+                <Button type="button" size="sm" onClick={handleRetry} className="h-8 text-xs">
+                  Try again
                 </Button>
               </div>
             </div>
@@ -342,120 +293,82 @@ export function FacebookImportModal({ isOpen, onClose, onComplete }: FacebookImp
   // Desktop Dialog Render
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[480px] rounded-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base font-medium">
-            <Image src="/facebook.png" alt="Facebook" width={18} height={18} />
+      <DialogContent className="max-w-sm p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-4 pt-4 pb-3">
+          <DialogTitle className="text-sm font-semibold flex items-center gap-2">
+            <Image src="/facebook.png" alt="Facebook" width={14} height={14} />
             Import from Facebook
           </DialogTitle>
-          <DialogDescription className="text-sm">
+          <DialogDescription className="text-xs text-muted-foreground">
             Paste a Marketplace link to auto-fill details
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-2">
-          {/* Input Stage */}
-          {stage === "input" && (
-            <form
-              onSubmit={handleSubmit}
-              className="space-y-3"
-            >
-              <div className="space-y-2">
-                <Input
-                  type="url"
-                  placeholder="facebook.com/marketplace/item/123456789"
-                  value={facebookUrl}
-                  onChange={(e) => {
-                    setFacebookUrl(e.target.value);
-                    setError(null);
-                  }}
-                  className="rounded-md text-sm"
-                  autoFocus
-                />
-                {error && (
-                  <p className="text-xs text-red-500">{error}</p>
-                )}
-              </div>
+        <Separator />
 
-              <div className="flex justify-end gap-2 pt-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onClose}
-                  className="text-gray-500"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={!facebookUrl}
-                  className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
-                >
-                  Import
-                </Button>
-              </div>
-            </form>
-          )}
-
-          {/* Scraping Stage */}
-          {stage === "scraping" && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
-              <p className="text-gray-600 text-sm">Fetching listing...</p>
+        {/* Input Stage */}
+        {stage === "input" && (
+          <form onSubmit={handleSubmit}>
+            <div className="px-4 py-3">
+              <Input
+                type="url"
+                placeholder="facebook.com/marketplace/item/123456789"
+                value={facebookUrl}
+                onChange={(e) => { setFacebookUrl(e.target.value); setError(null); }}
+                className="h-8 text-xs"
+                autoFocus
+              />
+              {error && <p className="text-xs text-destructive mt-2">{error}</p>}
             </div>
-          )}
+            <Separator />
+            <div className="px-4 py-3 flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={!facebookUrl} className="h-8 text-xs">
+                Import
+              </Button>
+            </div>
+          </form>
+        )}
 
-          {/* Processing Images Stage */}
-          {stage === "processing-images" && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400 mb-3" />
-              <p className="text-gray-600 text-sm">
-                {imageProgress.total > 0 
+        {/* Scraping / Processing Images Stage */}
+        {(stage === "scraping" || stage === "processing-images") && (
+          <div className="px-4 py-8 flex flex-col items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">
+              {stage === "scraping" ? "Fetching listing..." :
+                imageProgress.total > 0
                   ? `Uploading ${imageProgress.current}/${imageProgress.total}...`
-                  : "Processing images..."
-                }
-              </p>
-            </div>
-          )}
+                  : "Processing images..."}
+            </p>
+          </div>
+        )}
 
-          {/* Success Stage */}
-          {stage === "success" && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <CheckCircle2 className="h-6 w-6 text-green-500 mb-3" />
-              <p className="text-gray-600 text-sm">Done!</p>
-            </div>
-          )}
+        {/* Success Stage */}
+        {stage === "success" && (
+          <div className="px-4 py-8 flex flex-col items-center gap-2">
+            <CheckCircle2 className="h-6 w-6 text-green-600" />
+            <p className="text-xs text-muted-foreground">Done!</p>
+          </div>
+        )}
 
-          {/* Error Stage */}
-          {stage === "error" && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <X className="h-6 w-6 text-red-500 mb-3" />
-              <p className="text-gray-600 text-sm mb-1">Import failed</p>
-              <p className="text-gray-400 text-xs mb-4 text-center max-w-[280px]">{error}</p>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onClose}
-                  className="text-gray-500"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleRetry}
-                  className="rounded-md"
-                >
-                  Retry
-                </Button>
-              </div>
+        {/* Error Stage */}
+        {stage === "error" && (
+          <div className="px-4 py-6 flex flex-col items-center gap-2">
+            <XCircle className="h-6 w-6 text-destructive" />
+            <p className="text-xs font-medium text-foreground">Import failed</p>
+            <p className="text-xs text-muted-foreground text-center max-w-[240px]">{error}</p>
+            <div className="flex gap-2 mt-2">
+              <Button type="button" variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">
+                Cancel
+              </Button>
+              <Button type="button" size="sm" onClick={handleRetry} className="h-8 text-xs">
+                Retry
+              </Button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { User, MapPin, Camera, FileText, Upload, Loader2, X } from "lucide-react";
+import { User, Upload, Loader2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -171,7 +171,7 @@ export function EditProfileSheet({
         {/* Name Row */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
-            <Label htmlFor="firstName" className="text-sm font-medium text-gray-700">
+            <Label htmlFor="firstName" className="text-xs font-medium text-muted-foreground">
               First Name
             </Label>
             <div className="relative">
@@ -186,7 +186,7 @@ export function EditProfileSheet({
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="lastName" className="text-sm font-medium text-gray-700">
+            <Label htmlFor="lastName" className="text-xs font-medium text-muted-foreground">
               Last Name
             </Label>
             <Input
@@ -201,7 +201,7 @@ export function EditProfileSheet({
 
         {/* Display Name */}
         <div className="space-y-2">
-          <Label htmlFor="displayName" className="text-sm font-medium text-gray-700">
+          <Label htmlFor="displayName" className="text-xs font-medium text-muted-foreground">
             Display Name
           </Label>
           <Input
@@ -211,19 +211,14 @@ export function EditProfileSheet({
             className="rounded-md h-11"
             placeholder="e.g. MTB Enthusiast, John's Bikes"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             Optional custom name shown on your seller profile
           </p>
         </div>
 
         {/* Bio */}
         <div className="space-y-2">
-          <Label htmlFor="bio" className="text-sm font-medium text-gray-700">
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-gray-400" />
-              Bio
-            </div>
-          </Label>
+          <Label htmlFor="bio" className="text-xs font-medium text-muted-foreground">Bio</Label>
           <Textarea
             id="bio"
             value={localData.bio}
@@ -239,12 +234,7 @@ export function EditProfileSheet({
 
         {/* Location */}
         <div className="space-y-2">
-          <Label htmlFor="location" className="text-sm font-medium text-gray-700">
-            <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-gray-400" />
-              Location
-            </div>
-          </Label>
+          <Label htmlFor="location" className="text-xs font-medium text-muted-foreground">Location</Label>
           <Input
             id="location"
             value={localData.location}
@@ -256,12 +246,7 @@ export function EditProfileSheet({
 
         {/* Profile Photo */}
         <div className="space-y-3">
-          <Label className="text-sm font-medium text-gray-700">
-            <div className="flex items-center gap-2">
-              <Camera className="h-4 w-4 text-gray-400" />
-              Profile Photo
-            </div>
-          </Label>
+          <Label className="text-xs font-medium text-muted-foreground">Profile Photo</Label>
 
           {/* Photo Preview and Upload */}
           <div className="flex items-center gap-4">
@@ -288,7 +273,7 @@ export function EditProfileSheet({
                 <button
                   type="button"
                   onClick={handleRemovePhoto}
-                  className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 active:bg-red-700 transition-colors shadow-sm"
+                  className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-muted-foreground/70 text-background flex items-center justify-center hover:bg-muted-foreground transition-colors shadow-sm"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -325,7 +310,7 @@ export function EditProfileSheet({
                   </>
                 )}
               </Button>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 JPG, PNG or WebP, max 5MB
               </p>
             </div>
@@ -333,7 +318,7 @@ export function EditProfileSheet({
 
           {/* Error message */}
           {uploadError && (
-            <p className="text-xs text-red-600">{uploadError}</p>
+            <p className="text-xs text-destructive">{uploadError}</p>
           )}
 
           {/* OR paste URL */}
@@ -342,7 +327,7 @@ export function EditProfileSheet({
               <span className="w-full border-t border-gray-200" />
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="bg-white px-2 text-gray-500">or paste URL</span>
+              <span className="bg-background px-2 text-muted-foreground">or paste URL</span>
             </div>
           </div>
 

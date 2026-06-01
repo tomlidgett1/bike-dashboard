@@ -3,6 +3,8 @@
 import * as React from "react";
 import { Loader2, CheckCircle2, XCircle, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Progress } from "@/components/ui/progress";
 import Link from "next/link";
 
 interface SyncProgressModalProps {
@@ -40,102 +41,89 @@ export function SyncProgressModal({
 }: SyncProgressModalProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md rounded-md">
-        <DialogHeader>
-          <DialogTitle>
-            {status === 'syncing' && 'Syncing Inventory'}
-            {status === 'success' && 'Sync Complete'}
-            {status === 'error' && 'Sync Failed'}
+      <DialogContent className="max-w-sm p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-4 pt-4 pb-3">
+          <DialogTitle className="text-sm font-semibold">
+            {status === 'syncing' && 'Syncing inventory'}
+            {status === 'success' && 'Sync complete'}
+            {status === 'error' && 'Sync failed'}
           </DialogTitle>
-          <DialogDescription>
-            {status === 'syncing' && 'Please wait while we sync your products to the marketplace'}
-            {status === 'success' && 'Your products have been successfully synced'}
-            {status === 'error' && 'An error occurred during the sync process'}
+          <DialogDescription className="text-xs text-muted-foreground">
+            {status === 'syncing' && 'Syncing your products to the marketplace'}
+            {status === 'success' && 'Your products have been synced successfully'}
+            {status === 'error' && 'An error occurred during the sync'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Syncing State */}
+        <Separator />
+
+        <div className="px-4 py-3">
           {status === 'syncing' && (
-            <>
-              <div className="flex items-center gap-3">
-                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{phase}</div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2.5">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-foreground truncate">{phase}</p>
                   {message && (
-                    <div className="text-xs text-muted-foreground mt-0.5">{message}</div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{message}</p>
                   )}
                 </div>
+                <span className="text-[11px] text-muted-foreground flex-shrink-0">{progress}%</span>
               </div>
-              
-              <Progress value={progress} className="h-2" />
-              
-              <div className="text-xs text-center text-muted-foreground">
-                {progress}%
-              </div>
-            </>
+              <Progress value={progress} className="h-1" />
+            </div>
           )}
 
-          {/* Success State */}
           {status === 'success' && result && (
-            <>
-              <div className="flex items-center gap-3 p-4 rounded-md bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-900">
-                <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-green-900 dark:text-green-400">
-                    Successfully synced {result.itemsSynced} products
-                  </div>
-                  <div className="text-xs text-green-700 dark:text-green-400 mt-1">
-                    {result.itemsWithStock} items had stock • {result.totalItems} total items processed
-                  </div>
-                </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />
+                <p className="text-xs font-medium text-foreground">
+                  {result.itemsSynced} products synced
+                </p>
               </div>
-
-              <div className="flex gap-2">
-                <Link href="/marketplace" className="flex-1">
-                  <Button variant="default" className="w-full rounded-md">
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    View on Marketplace
-                  </Button>
-                </Link>
-                <Button
-                  variant="outline"
-                  onClick={onClose}
-                  className="rounded-md"
-                >
-                  Close
-                </Button>
+              <div className="flex items-center justify-between pl-6">
+                <span className="text-[11px] text-muted-foreground">With stock</span>
+                <span className="text-[11px] text-foreground">{result.itemsWithStock}</span>
               </div>
-            </>
+              <div className="flex items-center justify-between pl-6">
+                <span className="text-[11px] text-muted-foreground">Total processed</span>
+                <span className="text-[11px] text-foreground">{result.totalItems}</span>
+              </div>
+            </div>
           )}
 
-          {/* Error State */}
           {status === 'error' && (
-            <>
-              <div className="flex items-start gap-3 p-4 rounded-md bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900">
-                <XCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-red-900 dark:text-red-400">
-                    Sync Failed
-                  </div>
-                  <div className="text-xs text-red-700 dark:text-red-400 mt-1">
-                    {error || 'An unknown error occurred'}
-                  </div>
-                </div>
-              </div>
-
-              <Button
-                variant="outline"
-                onClick={onClose}
-                className="w-full rounded-md"
-              >
-                Close
-              </Button>
-            </>
+            <div className="flex items-start gap-2.5">
+              <XCircle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {error || 'An unknown error occurred'}
+              </p>
+            </div>
           )}
+        </div>
+
+        <Separator />
+
+        <div className="px-4 py-3 flex justify-end gap-2">
+          {status === 'success' && result && (
+            <Link href="/marketplace">
+              <Button size="sm" className="h-8 text-xs gap-1.5">
+                <ExternalLink className="h-3.5 w-3.5" />
+                View marketplace
+              </Button>
+            </Link>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            className="h-8 text-xs"
+          >
+            Close
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
-

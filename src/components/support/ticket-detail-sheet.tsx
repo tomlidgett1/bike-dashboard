@@ -201,7 +201,7 @@ export function TicketDetailSheet({
               <SheetDescription>Please wait while we load the ticket information</SheetDescription>
             </VisuallyHidden>
             <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           </div>
         ) : !ticket ? (
@@ -211,7 +211,7 @@ export function TicketDetailSheet({
               <SheetDescription>The requested ticket could not be found</SheetDescription>
             </VisuallyHidden>
             <div className="flex-1 flex items-center justify-center">
-              <p className="text-gray-500">Ticket not found</p>
+              <p className="text-xs text-muted-foreground">Ticket not found</p>
             </div>
           </div>
         ) : (
@@ -231,10 +231,10 @@ export function TicketDetailSheet({
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
                 <div className="flex-1 min-w-0">
-                  <SheetTitle className="text-base line-clamp-1">
+                  <SheetTitle className="text-sm font-semibold line-clamp-1">
                     {ticket.subject as string}
                   </SheetTitle>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {ticket.ticket_number as string}
                   </p>
                 </div>
@@ -243,31 +243,27 @@ export function TicketDetailSheet({
             </SheetHeader>
 
             {/* Product Card */}
-            <div className="px-4 py-3 bg-gray-50 border-b">
-              <div className="flex gap-3">
-                <div className="relative h-12 w-12 rounded-md overflow-hidden bg-gray-200 flex-shrink-0">
-                  {productImage ? (
-                    <Image
-                      src={productImage as string}
-                      alt={productName}
-                      fill
-                      className="object-cover"
-                      sizes="48px"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <Package className="h-5 w-5 text-gray-400" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm text-gray-900 line-clamp-1">
-                    {productName}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {getCategoryLabel(ticket.category as string)} · {formatDate(ticket.created_at as string)}
-                  </p>
-                </div>
+            <div className="px-4 py-3 border-b flex items-center gap-3">
+              <div className="relative h-10 w-10 rounded-md overflow-hidden bg-muted flex-shrink-0">
+                {productImage ? (
+                  <Image
+                    src={productImage as string}
+                    alt={productName}
+                    fill
+                    className="object-cover"
+                    sizes="40px"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-foreground line-clamp-1">{productName}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {getCategoryLabel(ticket.category as string)} · {formatDate(ticket.created_at as string)}
+                </p>
               </div>
             </div>
 
@@ -279,7 +275,7 @@ export function TicketDetailSheet({
                   "flex-1 py-2.5 text-sm font-medium transition-colors",
                   activeTab === "messages"
                     ? "text-primary border-b-2 border-primary"
-                    : "text-gray-500 hover:text-gray-700"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Messages ({messages.length})
@@ -290,7 +286,7 @@ export function TicketDetailSheet({
                   "flex-1 py-2.5 text-sm font-medium transition-colors",
                   activeTab === "timeline"
                     ? "text-primary border-b-2 border-primary"
-                    : "text-gray-500 hover:text-gray-700"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Timeline
@@ -322,7 +318,7 @@ export function TicketDetailSheet({
                             <AvatarImage src={msg.sender.logo_url} />
                           )}
                           <AvatarFallback className={cn(
-                            isSupport && "bg-amber-100 text-amber-700"
+                            isSupport && "bg-muted text-muted-foreground"
                           )}>
                             {isSupport ? "YJ" : <User className="h-4 w-4" />}
                           </AvatarFallback>
@@ -334,10 +330,10 @@ export function TicketDetailSheet({
                           )}
                         >
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-medium text-gray-900">
+                            <span className="text-xs font-medium text-foreground">
                               {senderName}
                             </span>
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-muted-foreground">
                               {formatTime(msg.created_at)}
                             </span>
                           </div>
@@ -346,7 +342,7 @@ export function TicketDetailSheet({
                               "rounded-md px-3 py-2 text-sm",
                               msg.sender_type === "buyer"
                                 ? "bg-primary text-primary-foreground"
-                                : "bg-gray-100 text-gray-900"
+                                : "bg-muted text-foreground"
                             )}
                           >
                             {msg.message}
@@ -366,15 +362,15 @@ export function TicketDetailSheet({
                           <div
                             className={cn(
                               "h-2.5 w-2.5 rounded-full mt-1.5",
-                              index === 0 ? "bg-primary" : "bg-gray-300"
+                              index === 0 ? "bg-primary" : "bg-muted-foreground/30"
                             )}
                           />
                           {index < history.length - 1 && (
-                            <div className="w-px flex-1 bg-gray-200 my-1" />
+                            <div className="w-px flex-1 bg-border my-1" />
                           )}
                         </div>
                         <div className="flex-1 pb-4">
-                          <p className="text-sm font-medium text-gray-900">
+                          <p className="text-xs font-medium text-foreground">
                             {getActionLabel(item.action)}
                           </p>
                           {typeof item.new_value?.status === 'string' && item.new_value.status && (
@@ -383,7 +379,7 @@ export function TicketDetailSheet({
                               className="mt-1"
                             />
                           )}
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             {formatDateTime(item.created_at)}
                           </p>
                         </div>
@@ -396,7 +392,7 @@ export function TicketDetailSheet({
 
             {/* Reply Box */}
             {canReply && activeTab === "messages" && (
-              <div className="border-t bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+              <div className="border-t p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                 <div className="flex gap-2">
                   <Textarea
                     value={replyMessage}
@@ -429,13 +425,13 @@ export function TicketDetailSheet({
 
             {/* Resolved Actions */}
             {ticket.status === "resolved" && (
-              <div className="border-t bg-green-50 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-                <div className="flex items-center gap-3 mb-3">
-                  <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  <p className="font-medium text-green-900">This ticket has been resolved</p>
+              <div className="border-t p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <div className="flex items-center gap-2.5 mb-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                  <p className="text-xs font-medium text-foreground">This ticket has been resolved</p>
                 </div>
                 {typeof ticket.resolution === 'string' && ticket.resolution && (
-                  <p className="text-sm text-green-700 mb-3">
+                  <p className="text-xs text-muted-foreground">
                     Resolution: {ticket.resolution}
                   </p>
                 )}

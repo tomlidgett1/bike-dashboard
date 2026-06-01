@@ -27,6 +27,8 @@ import {
   Eye,
   Square,
   CheckSquare,
+  Ban,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -130,6 +132,17 @@ interface CategoryOption {
   name: string;         // human-readable name from Lightspeed API
   count: number;        // total active products in category
   missingImages: number; // products with no approved image
+}
+
+interface RejectedDetail {
+  id: string;
+  product_id: string;
+  description: string;
+  display_name: string | null;
+  brand: string | null;
+  category_name: string | null;
+  price: number;
+  qoh: number;
 }
 
 const IMAGE_CONCURRENCY = 2;
@@ -727,6 +740,10 @@ export function StoreOptimizer() {
   // Canonical image edit state (keyed by product id)
   const [ciEnhancing, setCiEnhancing] = React.useState<Record<string, string[]>>({});  // productId → imageIds
   const [ciRemoving, setCiRemoving] = React.useState<Record<string, string[]>>({});    // productId → imageIds
+  // Rejected products
+  const [rejectedIds, setRejectedIds] = React.useState<Set<string>>(new Set());
+  const [rejectedDetails, setRejectedDetails] = React.useState<RejectedDetail[]>([]);
+  const [showRejected, setShowRejected] = React.useState(false);
 
   const [focus, setFocus] = React.useState<Focus>({
     image: true,
@@ -834,25 +851,90 @@ export function StoreOptimizer() {
     void loadProducts(cat);
   };
 
+  // ── Rejected products ────────────────────────────────────────────────────────
+  const loadRejected = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/products/reject");
+      const data = await res.json();
+      const list: RejectedDetail[] = data.rejected ?? [];
+      setRejectedDetails(list);
+      setRejectedIds(new Set(list.map((r) => r.product_id)));
+    } catch {
+      // non-fatal — rejected list just won't be populated
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void loadRejected();
+  }, [loadRejected]);
+
+  const rejectProduct = React.useCallback(async (productId: string) => {
+    const product = productsRef.current.find((p) => p.id === productId);
+    if (!product) return;
+    try {
+      await fetch("/api/products/reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ product_id: productId }),
+      });
+      setRejectedIds((prev) => new Set([...prev, productId]));
+      setRejectedDetails((prev) => [
+        {
+          id: crypto.randomUUID(),
+          product_id: productId,
+          description: product.description,
+          display_name: product.display_name,
+          brand: product.brand,
+          category_name: product.category_name,
+          price: product.price,
+          qoh: product.qoh,
+        },
+        ...prev,
+      ]);
+    } catch {
+      // ignore — product stays visible
+    }
+  }, []);
+
+  const restoreProduct = React.useCallback(async (productId: string) => {
+    try {
+      await fetch("/api/products/reject", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ product_id: productId }),
+      });
+      setRejectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(productId);
+        return next;
+      });
+      setRejectedDetails((prev) => prev.filter((r) => r.product_id !== productId));
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // ── Derived ────────────────────────────────────────────────────────────────
   const filtered = React.useMemo(() => {
-    if (!search.trim()) return products;
-    const q = search.toLowerCase();
-    return products.filter(
-      (p) =>
+    const q = search.trim().toLowerCase();
+    return products.filter((p) => {
+      if (rejectedIds.has(p.id)) return false;
+      if (!q) return true;
+      return (
         (p.display_name || p.description).toLowerCase().includes(q) ||
-        (p.brand || "").toLowerCase().includes(q),
-    );
-  }, [products, search]);
+        (p.brand || "").toLowerCase().includes(q)
+      );
+    });
+  }, [products, search, rejectedIds]);
 
   const counts = React.useMemo(
     () => ({
-      image: products.filter((p) => !hasImage(p)).length,
-      title: products.filter((p) => !hasTitle(p)).length,
-      desc: products.filter((p) => !hasDesc(p)).length,
-      specs: products.filter((p) => !hasSpecs(p)).length,
+      image: products.filter((p) => !rejectedIds.has(p.id) && !hasImage(p)).length,
+      title: products.filter((p) => !rejectedIds.has(p.id) && !hasTitle(p)).length,
+      desc: products.filter((p) => !rejectedIds.has(p.id) && !hasDesc(p)).length,
+      specs: products.filter((p) => !rejectedIds.has(p.id) && !hasSpecs(p)).length,
     }),
-    [products],
+    [products, rejectedIds],
   );
 
   const readyImageCount = React.useMemo(
@@ -1555,6 +1637,22 @@ export function StoreOptimizer() {
             Show all products
           </label>
 
+          {rejectedIds.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowRejected((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+                showRejected
+                  ? "bg-destructive/10 text-destructive"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <Ban className="h-3 w-3" />
+              {rejectedIds.size} rejected
+            </button>
+          )}
+
           <div className="relative ml-auto w-48">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -1582,6 +1680,49 @@ export function StoreOptimizer() {
               <Sparkles className="mr-1.5 h-4 w-4" />
               Optimize {runCount > 0 ? `${runCount} product${runCount === 1 ? "" : "s"}` : ""}
             </Button>
+          )}
+        </div>
+      )}
+
+      {/* Rejected products panel */}
+      {showRejected && (
+        <div className="rounded-xl border border-destructive/20 bg-card">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Ban className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-semibold">Rejected products</span>
+              <span className="text-xs text-muted-foreground">({rejectedDetails.length})</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              These products are excluded from optimisation. Restore them to include them again.
+            </p>
+          </div>
+          {rejectedDetails.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">No rejected products</div>
+          ) : (
+            <div className="divide-y divide-border">
+              {rejectedDetails.map((r) => (
+                <div key={r.product_id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">
+                      {r.display_name || r.description}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {r.brand || "—"} · {r.category_name || "Unknown category"} · ${Number(r.price).toFixed(2)} · {r.qoh} in stock
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void restoreProduct(r.product_id)}
+                    className="shrink-0"
+                  >
+                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                    Restore
+                  </Button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -1675,6 +1816,18 @@ export function StoreOptimizer() {
                           ))}
                         </div>
                       </div>
+
+                      {/* Reject button */}
+                      <button
+                        type="button"
+                        title="Reject — hide this product from optimisation (not for sale online)"
+                        aria-label="Reject product"
+                        disabled={running}
+                        onClick={() => void rejectProduct(p.id)}
+                        className="mt-1 shrink-0 rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none"
+                      >
+                        <Ban className="h-4 w-4" />
+                      </button>
 
                       {/* Expand toggle */}
                       <button

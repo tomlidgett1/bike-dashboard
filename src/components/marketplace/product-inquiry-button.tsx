@@ -1,18 +1,12 @@
-// ============================================================
-// PRODUCT INQUIRY BUTTON COMPONENT
-// ============================================================
-// Button to initiate a conversation about a product
-// Features a world-class mobile bottom sheet experience
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
   DialogContent,
@@ -25,7 +19,7 @@ import {
   SheetContent,
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
-import { MessageCircle, Send, X, CheckCircle2, Package } from 'lucide-react';
+import { MessageCircle, Send, CheckCircle2, Package, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { CreateConversationRequest } from '@/lib/types/message';
 
@@ -43,7 +37,6 @@ interface ProductInquiryButtonProps {
   buttonLabel?: string;
 }
 
-// Quick reply suggestions
 const QUICK_REPLIES = [
   "Is this still available?",
   "What's the lowest you'll accept?",
@@ -77,7 +70,6 @@ export function ProductInquiryButton({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationIdRef = useRef<string | null>(null);
 
-  // Detect mobile
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 640);
     checkMobile();
@@ -85,7 +77,6 @@ export function ProductInquiryButton({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Focus textarea when opened
   useEffect(() => {
     if (isOpen && textareaRef.current && !isMobile) {
       setTimeout(() => textareaRef.current?.focus(), 100);
@@ -97,11 +88,7 @@ export function ProductInquiryButton({
       openAuthModal();
       return;
     }
-
-    if (user.id === sellerId) {
-      return;
-    }
-
+    if (user.id === sellerId) return;
     setIsOpen(true);
     setMessage('');
     setError(null);
@@ -119,12 +106,7 @@ export function ProductInquiryButton({
   };
 
   const handleQuickReply = (text: string) => {
-    setMessage(prev => {
-      if (prev.trim()) {
-        return prev + ' ' + text;
-      }
-      return text;
-    });
+    setMessage(prev => prev.trim() ? prev + ' ' + text : text);
     textareaRef.current?.focus();
   };
 
@@ -133,7 +115,6 @@ export function ProductInquiryButton({
       setError('Please enter a message');
       return;
     }
-
     try {
       setSending(true);
       setError(null);
@@ -146,9 +127,7 @@ export function ProductInquiryButton({
 
       const response = await fetch('/api/messages/conversations', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
@@ -164,13 +143,11 @@ export function ProductInquiryButton({
           }, 1200);
           return;
         }
-        
         throw new Error(data.error || 'Failed to send inquiry');
       }
 
       conversationIdRef.current = data.conversation.id;
       setSuccess(true);
-      
       setTimeout(() => {
         router.push(`/messages?conversation=${data.conversation.id}`);
         setIsOpen(false);
@@ -198,123 +175,102 @@ export function ProductInquiryButton({
           {buttonLabel}
         </Button>
 
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-          <DialogContent className="w-[calc(100%-2rem)] max-w-[500px] rounded-md p-0 overflow-hidden">
-            {/* Product Preview Header */}
-            <div className="bg-gray-50 border-b border-gray-100 p-4">
-              <div className="flex gap-3 items-center">
-                <div className="relative h-14 w-14 rounded-md overflow-hidden bg-gray-100 flex-shrink-0">
-                  {productImage ? (
-                    <Image
-                      src={productImage}
-                      alt={productName}
-                      fill
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <Package className="h-6 w-6 text-gray-400" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{productName}</p>
-                  {productPrice && (
-                    <p className="text-sm font-semibold text-gray-900">${productPrice.toLocaleString('en-AU')}</p>
-                  )}
-                </div>
+        <Dialog open={isOpen} onOpenChange={handleClose}>
+          <DialogContent className="max-w-sm p-0 gap-0 overflow-hidden">
+            <DialogHeader className="px-4 pt-4 pb-3">
+              <DialogTitle className="text-sm font-semibold">Send a message</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Ask the seller a question about this item
+              </DialogDescription>
+            </DialogHeader>
+
+            <Separator />
+
+            {/* Product row */}
+            <div className="px-4 py-3 flex items-center gap-3">
+              <div className="relative h-10 w-10 rounded-md overflow-hidden bg-muted flex-shrink-0">
+                {productImage ? (
+                  <Image src={productImage} alt={productName} fill className="object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-foreground truncate">{productName}</p>
+                {productPrice && (
+                  <p className="text-xs text-muted-foreground mt-0.5">${productPrice.toLocaleString('en-AU')}</p>
+                )}
               </div>
             </div>
-            
-            <div className="p-4">
-              <DialogHeader className="mb-4">
-                <DialogTitle className="text-base">Send a Message</DialogTitle>
-                <DialogDescription className="text-sm text-gray-500">
-                  Ask the seller a question about this item
-                </DialogDescription>
-              </DialogHeader>
 
-              <AnimatePresence mode="wait">
-                {success ? (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    className="py-8 flex flex-col items-center justify-center"
+            <Separator />
+
+            {success ? (
+              <div className="px-4 py-8 flex flex-col items-center gap-3">
+                <CheckCircle2 className="h-7 w-7 text-green-600" />
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-foreground">Message sent</p>
+                  <p className="text-xs text-muted-foreground mt-1">Redirecting to conversation...</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1.5 mb-2.5">
+                    {QUICK_REPLIES.slice(0, 3).map((reply) => (
+                      <button
+                        key={reply}
+                        onClick={() => handleQuickReply(reply)}
+                        className="px-2.5 py-1 text-[11px] text-muted-foreground bg-muted hover:bg-muted/80 rounded-full transition-colors"
+                      >
+                        {reply}
+                      </button>
+                    ))}
+                  </div>
+                  <Textarea
+                    ref={textareaRef}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Type your message..."
+                    rows={3}
+                    className="text-xs resize-none"
+                    disabled={sending}
+                  />
+                  {error && <p className="text-xs text-destructive mt-2">{error}</p>}
+                </div>
+
+                <Separator />
+
+                <div className="px-4 py-3 flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsOpen(false)}
+                    disabled={sending}
+                    className="h-8 text-xs"
                   >
-                    <div className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-                      <CheckCircle2 className="h-8 w-8 text-green-600" />
-                    </div>
-                    <p className="text-lg font-semibold text-gray-900">Message Sent!</p>
-                    <p className="text-sm text-gray-500 mt-1">Redirecting to conversation...</p>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="space-y-4"
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSendInquiry}
+                    disabled={sending || !message.trim()}
+                    className="h-8 text-xs gap-1.5"
                   >
-                    {/* Quick Replies */}
-                    <div className="flex flex-wrap gap-2">
-                      {QUICK_REPLIES.slice(0, 3).map((reply) => (
-                        <button
-                          key={reply}
-                          onClick={() => handleQuickReply(reply)}
-                          className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
-                        >
-                          {reply}
-                        </button>
-                      ))}
-                    </div>
-
-                    <Textarea
-                      ref={textareaRef}
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      placeholder="Type your message..."
-                      rows={4}
-                      className="rounded-md text-sm resize-none"
-                      disabled={sending}
-                    />
-
-                    {error && (
-                      <div className="p-3 bg-white border border-red-200 rounded-md text-sm text-red-600">
-                        {error}
-                      </div>
+                    {sending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <>
+                        <Send className="h-3.5 w-3.5" />
+                        Send
+                      </>
                     )}
-
-                    <div className="flex gap-2 justify-end pt-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => setIsOpen(false)}
-                        disabled={sending}
-                        className="rounded-md"
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={handleSendInquiry}
-                        disabled={sending || !message.trim()}
-                        className="rounded-md"
-                      >
-                        {sending ? (
-                          <>
-                            <div className="h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            Sending...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="h-4 w-4 mr-2" />
-                            Send Message
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+                  </Button>
+                </div>
+              </>
+            )}
           </DialogContent>
         </Dialog>
       </>
@@ -335,140 +291,118 @@ export function ProductInquiryButton({
         {buttonLabel}
       </Button>
 
-      <Sheet open={isOpen} onOpenChange={setIsOpen}>
-        <SheetContent 
-          side="bottom" 
+      <Sheet open={isOpen} onOpenChange={handleClose}>
+        <SheetContent
+          side="bottom"
           className="rounded-t-2xl p-0 max-h-[90vh] overflow-hidden flex flex-col gap-0"
           showCloseButton={false}
         >
-          {/* Handle Bar */}
-          <div className="flex justify-center pt-3 pb-1">
-            <div className="w-10 h-1 rounded-full bg-gray-300" />
+          <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+            <div className="w-8 h-1 bg-muted-foreground/20 rounded-full" />
           </div>
 
-          {/* Header with Close Button */}
-          <div className="flex items-center justify-between px-4 pb-3 border-b border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900">Send Message</h2>
-            <button
-              onClick={handleClose}
-              className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center"
-            >
-              <X className="h-4 w-4 text-gray-600" />
-            </button>
+          <div className="px-4 pb-3 pt-1 flex-shrink-0">
+            <p className="text-sm font-semibold text-foreground">Send a message</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Ask the seller a question</p>
           </div>
+
+          <Separator className="flex-shrink-0" />
 
           {success ? (
-            <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 animate-in fade-in zoom-in duration-300">
-              <div className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center mb-5">
-                <CheckCircle2 className="h-10 w-10 text-green-600" />
-              </div>
-              <p className="text-xl font-semibold text-gray-900">Message Sent!</p>
-              <p className="text-sm text-gray-500 mt-2 text-center">
-                Opening your conversation...
-              </p>
+            <div className="flex-1 flex flex-col items-center justify-center py-12 px-4">
+              <CheckCircle2 className="h-8 w-8 text-green-600 mb-3" />
+              <p className="text-sm font-semibold text-foreground">Message sent</p>
+              <p className="text-xs text-muted-foreground mt-1 text-center">Opening your conversation...</p>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
-                    {/* Product Preview Card */}
-                    <div className="px-4 py-4">
-                      <div className="flex gap-3 p-3 bg-gray-50 rounded-md">
-                        <div className="relative h-16 w-16 rounded-md overflow-hidden bg-gray-200 flex-shrink-0">
-                          {productImage ? (
-                            <Image
-                              src={productImage}
-                              alt={productName}
-                              fill
-                              className="object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center">
-                              <Package className="h-6 w-6 text-gray-400" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 line-clamp-2 leading-snug">
-                            {productName}
-                          </p>
-                          {productPrice && (
-                            <p className="text-base font-bold text-gray-900 mt-1">
-                              ${productPrice.toLocaleString('en-AU')}
-                            </p>
-                          )}
-                        </div>
-                      </div>
+              {/* Product row */}
+              <div className="px-4 py-3 flex items-center gap-3">
+                <div className="relative h-12 w-12 rounded-md overflow-hidden bg-muted flex-shrink-0">
+                  {productImage ? (
+                    <Image src={productImage} alt={productName} fill className="object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <Package className="h-5 w-5 text-muted-foreground" />
                     </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-foreground line-clamp-2 leading-snug">{productName}</p>
+                  {productPrice && (
+                    <p className="text-xs text-muted-foreground mt-0.5">${productPrice.toLocaleString('en-AU')}</p>
+                  )}
+                </div>
+              </div>
 
-                    {/* Quick Reply Chips */}
-                    <div className="px-4 pb-4">
-                      <p className="text-xs font-medium text-gray-500 mb-2">Quick replies</p>
-                      <div className="flex flex-wrap gap-2">
-                        {QUICK_REPLIES.map((reply) => (
-                          <button
-                            key={reply}
-                            onClick={() => handleQuickReply(reply)}
-                            className={cn(
-                              "px-3 py-2 text-sm font-medium rounded-full transition-all",
-                              message.includes(reply)
-                                ? "bg-gray-900 text-white"
-                                : "bg-gray-100 text-gray-700 active:bg-gray-200"
-                            )}
-                          >
-                            {reply}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+              <Separator />
 
-                    {/* Message Input */}
-                    <div className="px-4 pb-4">
-                      <Textarea
-                        ref={textareaRef}
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        placeholder="Write your message here..."
-                        rows={4}
-                        className="rounded-md text-base resize-none border-gray-200 focus:border-gray-300 focus:ring-gray-300"
-                        disabled={sending}
-                      />
-                    </div>
+              {/* Quick reply chips */}
+              <div className="px-4 py-3">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Quick replies</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {QUICK_REPLIES.map((reply) => (
+                    <button
+                      key={reply}
+                      onClick={() => handleQuickReply(reply)}
+                      className={cn(
+                        "px-2.5 py-1.5 text-xs rounded-full transition-colors",
+                        message.includes(reply)
+                          ? "bg-foreground text-background"
+                          : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      )}
+                    >
+                      {reply}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                    {/* Error Message */}
-                    {error && (
-                      <div className="px-4 pb-4">
-                        <div className="p-3 bg-white border border-red-200 rounded-md text-sm text-red-600">
-                          {error}
-                        </div>
-                      </div>
-                    )}
+              <Separator />
+
+              {/* Message input */}
+              <div className="px-4 py-3">
+                <Textarea
+                  ref={textareaRef}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Write your message here..."
+                  rows={4}
+                  className="text-sm resize-none"
+                  disabled={sending}
+                />
+                {error && <p className="text-xs text-destructive mt-2">{error}</p>}
+              </div>
             </div>
           )}
 
-          {/* Send Button - Fixed at Bottom */}
-              {!success && (
-                <div className="p-4 border-t border-gray-100 bg-white">
-                  <Button
-                    onClick={handleSendInquiry}
-                    disabled={sending || !message.trim()}
-                    className="w-full h-12 rounded-md text-base font-semibold"
-                  >
-                    {sending ? (
-                      <div className="flex items-center gap-2">
-                        <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Sending...</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <Send className="h-5 w-5" />
-                        <span>Send Message</span>
-                      </div>
-                    )}
-                  </Button>
-                </div>
-              )}
+          {!success && (
+            <>
+              <Separator className="flex-shrink-0" />
+              <div className="px-4 py-3 pb-safe flex-shrink-0">
+                <Button
+                  onClick={handleSendInquiry}
+                  disabled={sending || !message.trim()}
+                  className="w-full h-10"
+                  size="sm"
+                >
+                  {sending ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span className="ml-1.5 text-xs">Sending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-3.5 w-3.5" />
+                      <span className="ml-1.5 text-xs">Send message</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </>
+          )}
         </SheetContent>
       </Sheet>
     </>
   );
 }
-

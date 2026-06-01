@@ -51,6 +51,8 @@ export async function PATCH(
     const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() }
     if (body.is_active !== undefined) updatePayload.is_active = body.is_active
     if ('display_name' in body) updatePayload.display_name = body.display_name || null
+    if ('product_description' in body) updatePayload.product_description = body.product_description || null
+    if ('product_specs' in body) updatePayload.product_specs = body.product_specs || null
 
     // Update the product
     const { data: updatedProduct, error: updateError } = await supabase
