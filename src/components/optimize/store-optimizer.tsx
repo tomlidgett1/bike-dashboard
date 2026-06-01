@@ -996,6 +996,35 @@ export function StoreOptimizer() {
     });
   };
 
+  const anyDimPicked = React.useCallback(
+    (dim: DimKey) =>
+      visible.some((p) => pillState(p, dim, runs[p.id] ?? emptyRun(), picks[p.id], redos[p.id]) === "picked"),
+    [visible, runs, picks, redos],
+  );
+
+  const toggleDimAllPicks = React.useCallback(
+    (dim: DimKey) => {
+      if (running) return;
+      const hasSome = visible.some(
+        (p) => pillState(p, dim, runs[p.id] ?? emptyRun(), picks[p.id], redos[p.id]) === "picked",
+      );
+      setPicks((prev) => {
+        const next = { ...prev };
+        for (const p of visible) {
+          const pk = next[p.id] ?? emptyPicks();
+          const state = pillState(p, dim, runs[p.id] ?? emptyRun(), pk, redos[p.id]);
+          if (hasSome) {
+            next[p.id] = { ...pk, [dim]: false };
+          } else if (state === "off") {
+            next[p.id] = { ...pk, [dim]: true };
+          }
+        }
+        return next;
+      });
+    },
+    [running, visible, runs, picks, redos],
+  );
+
   const toggleFocus = (dim: DimKey) => {
     if (running) return;
     const nextFocus: Focus = { ...focus, [dim]: !focus[dim] };
@@ -1622,6 +1651,28 @@ export function StoreOptimizer() {
           >
             {anyVisiblePicked ? "Untick all" : "Tick everything"}
           </Button>
+
+          {(["title", "description", "specs", "image"] as DimKey[]).map((dim) => {
+            const labels: Record<DimKey, string> = {
+              title: "All titles",
+              description: "All descs",
+              specs: "All specs",
+              image: "All photos",
+            };
+            const hasPicked = anyDimPicked(dim);
+            return (
+              <Button
+                key={dim}
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={running || visible.length === 0}
+                onClick={() => toggleDimAllPicks(dim)}
+              >
+                {hasPicked ? `Untick ${labels[dim].toLowerCase()}` : labels[dim]}
+              </Button>
+            );
+          })}
 
           <span className="text-sm text-muted-foreground">
             <span className="font-medium text-foreground">{runCount}</span> product
