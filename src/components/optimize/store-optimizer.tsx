@@ -1013,11 +1013,24 @@ export function StoreOptimizer() {
         const next = { ...prev };
         for (const p of visible) {
           const pk = next[p.id] ?? emptyPicks();
-          const state = pillState(p, dim, runs[p.id] ?? emptyRun(), pk, redos[p.id]);
           if (hasSome) {
             next[p.id] = { ...pk, [dim]: false };
-          } else if (state === "off") {
-            next[p.id] = { ...pk, [dim]: true };
+          } else {
+            const state = pillState(p, dim, runs[p.id] ?? emptyRun(), pk, redos[p.id]);
+            if (state === "off") next[p.id] = { ...pk, [dim]: true };
+          }
+        }
+        return next;
+      });
+      setRedos((prev) => {
+        const next = { ...prev };
+        for (const p of visible) {
+          const rd = next[p.id] ?? emptyPicks();
+          if (hasSome) {
+            next[p.id] = { ...rd, [dim]: false };
+          } else {
+            const state = pillState(p, dim, runs[p.id] ?? emptyRun(), picks[p.id], rd);
+            if (state === "done") next[p.id] = { ...rd, [dim]: true };
           }
         }
         return next;
