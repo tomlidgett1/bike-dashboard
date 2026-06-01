@@ -745,6 +745,7 @@ export function StoreOptimizer() {
   const [rejectedDetails, setRejectedDetails] = React.useState<RejectedDetail[]>([]);
   const [showRejected, setShowRejected] = React.useState(false);
   const [runLimit, setRunLimit] = React.useState<number | null>(null);
+  const [missingFilter, setMissingFilter] = React.useState<DimKey | null>(null);
 
   const [focus, setFocus] = React.useState<Focus>({
     image: true,
@@ -849,6 +850,7 @@ export function StoreOptimizer() {
 
   const onCategoryChange = (cat: string) => {
     setCategory(cat);
+    setMissingFilter(null);
     void loadProducts(cat);
   };
 
@@ -948,12 +950,13 @@ export function StoreOptimizer() {
   // Sliced to runLimit so bulk-tick and run count both respect the batch cap.
   const visible = React.useMemo(() => {
     const all = filtered.filter((p) => {
+      if (missingFilter && !showCompleted && hasDim(p, missingFilter)) return false;
       if (showCompleted) return true;
       if (DIMS.some((d) => focus[d] && !hasDim(p, d))) return true;
       return isTouched(runs[p.id]);
     });
     return runLimit === null ? all : all.slice(0, runLimit);
-  }, [filtered, showCompleted, focus, runs, runLimit]);
+  }, [filtered, showCompleted, focus, runs, runLimit, missingFilter]);
 
   const productsToRun = React.useMemo(
     () => visible.filter((p) => pendingDims(p, runs[p.id] ?? emptyRun(), picks[p.id], redos[p.id]).length > 0),
@@ -1649,6 +1652,55 @@ export function StoreOptimizer() {
             <OpToggle icon={Type} label="Titles" active={focus.title} count={counts.title} disabled={running} onClick={() => toggleFocus("title")} />
             <OpToggle icon={FileText} label="Descriptions" active={focus.description} count={counts.desc} disabled={running} onClick={() => toggleFocus("description")} />
             <OpToggle icon={ListChecks} label="Specs" active={focus.specs} count={counts.specs} disabled={running} onClick={() => toggleFocus("specs")} />
+          </div>
+        )}
+
+        {/* Row 3: filter by gap — show only products missing a specific dimension */}
+        {products.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Show missing:</span>
+            {(
+              [
+                { dim: "title" as DimKey, label: "Titles", count: counts.title },
+                { dim: "description" as DimKey, label: "Descriptions", count: counts.desc },
+                { dim: "specs" as DimKey, label: "Specs", count: counts.specs },
+                { dim: "image" as DimKey, label: "Photos", count: counts.image },
+              ] as const
+            ).map(({ dim, label, count }) => (
+              <button
+                key={dim}
+                type="button"
+                disabled={running}
+                onClick={() => setMissingFilter(missingFilter === dim ? null : dim)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                  missingFilter === dim
+                    ? "bg-primary text-primary-foreground"
+                    : count === 0
+                      ? "bg-muted text-muted-foreground opacity-50"
+                      : "bg-muted text-foreground hover:bg-muted/80",
+                )}
+              >
+                {label}
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                    missingFilter === dim ? "bg-primary-foreground/20 text-primary-foreground" : "bg-background text-muted-foreground",
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            ))}
+            {missingFilter && (
+              <button
+                type="button"
+                onClick={() => setMissingFilter(null)}
+                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              >
+                Clear filter
+              </button>
+            )}
           </div>
         )}
       </div>
