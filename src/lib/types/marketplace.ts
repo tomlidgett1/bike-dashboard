@@ -46,7 +46,8 @@ export interface MarketplaceProduct {
   sale_price?: number | null;
   marketplace_category: string;
   marketplace_subcategory: string;
-  marketplace_level_3_category?: string | null; // Third level categorization (e.g., XC, Trail, Enduro)
+  marketplace_level_3_category?: string | null;
+  category_name?: string | null; // Lightspeed category name (store inventory only)
   primary_image_url: string | null;
   image_variants?: any;
   image_formats?: any;

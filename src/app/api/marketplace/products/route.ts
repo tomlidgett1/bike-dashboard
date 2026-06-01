@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
     const maxPrice = searchParams.get('maxPrice');
     const createdAfter = searchParams.get('createdAfter');
     const listingType = searchParams.get('listingType'); // Filter by listing type
+    const lsCategory = searchParams.get('lsCategory'); // Filter store inventory by Lightspeed category_name
     const condition = searchParams.get('condition'); // Filter by condition rating
     const brand = searchParams.get('brand'); // Filter by brand name
     const excludeBicycleStores = searchParams.get('excludeBicycleStores') === 'true';
@@ -69,6 +70,7 @@ export async function GET(request: NextRequest) {
         marketplace_category,
         marketplace_subcategory,
         marketplace_level_3_category,
+        category_name,
         qoh,
         created_at,
         user_id,
@@ -107,6 +109,11 @@ export async function GET(request: NextRequest) {
     if (level3) {
       console.log(`🔍 [FILTER] Applying level3 filter: "${level3}"`);
       query = query.eq('marketplace_level_3_category', level3);
+    }
+
+    // Lightspeed category filter (store inventory tab)
+    if (lsCategory) {
+      query = query.eq('category_name', lsCategory);
     }
 
     // Apply price range filters

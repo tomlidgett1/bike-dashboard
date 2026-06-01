@@ -397,26 +397,24 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   // Create stable params object - DON'T include page in SWR key for pagination
   const marketplaceParams = React.useMemo(() => ({
     viewMode,
-    page: 1, // Always fetch page 1 from SWR, handle pagination manually
+    page: 1,
     pageSize: MARKETPLACE_INITIAL_PAGE_SIZE,
-    level1: selectedLevel1,
+    // Stores tab uses category_name (Lightspeed); marketplace tab uses marketplace_category
+    level1: isStoresView ? null : selectedLevel1,
     level2: selectedLevel2,
     level3: selectedLevel3,
+    lsCategory: isStoresView ? selectedLevel1 : null,
     search: searchQuery,
-    // Add listing type filtering
-    listingType: listingTypeFilter === 'stores' ? 'store_inventory' as const : 
+    listingType: listingTypeFilter === 'stores' ? 'store_inventory' as const :
                  listingTypeFilter === 'individuals' ? 'private_listing' as const : undefined,
-    // Add store filter (for stores space)
     storeId: selectedStoreId,
-    // Add advanced filters
     minPrice: advancedFilters.minPrice || null,
     maxPrice: advancedFilters.maxPrice || null,
     condition: advancedFilters.condition !== 'all' ? advancedFilters.condition : null,
     sortBy: advancedFilters.sortBy,
     brand: advancedFilters.brand || null,
-    // Add recently added filter
     createdAfter: createdAfter,
-  }), [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, selectedStoreId, advancedFilters, createdAfter]);
+  }), [isStoresView, viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, selectedStoreId, advancedFilters, createdAfter]);
 
   // Use SWR for products data with intelligent caching
   const { 
@@ -490,7 +488,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
   // Derive marketplace category pills from the currently loaded products
   const marketplaceCategories = React.useMemo(() => {
-    if (!products?.length) return [];
+    if (isStoresView || !products?.length) return [];
     const categoryMap = new Map<string, number>();
     products.forEach(product => {
       const cat = product.marketplace_category;
@@ -499,7 +497,20 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     return Array.from(categoryMap.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([level1]) => ({ label: level1, level1 }));
-  }, [products]);
+  }, [isStoresView, products]);
+
+  // Derive Bike Stores tab category pills from Lightspeed category_name
+  const storesViewCategories = React.useMemo(() => {
+    if (!isStoresView || !products?.length) return [];
+    const categoryMap = new Map<string, number>();
+    products.forEach(product => {
+      const cat = product.category_name;
+      if (cat) categoryMap.set(cat, (categoryMap.get(cat) || 0) + 1);
+    });
+    return Array.from(categoryMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([level1]) => ({ label: level1, level1 }));
+  }, [isStoresView, products]);
 
   // Derive store categories from fetched products (zero API calls - instant)
   const storeCategories = React.useMemo(() => {
@@ -1049,7 +1060,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               onBrowseFiltersReset={handleAdvancedFiltersReset}
               productGridLayout={productGridLayout}
               onProductGridLayoutChange={setProductGridLayout}
-              dynamicCategories={marketplaceCategories}
+              dynamicCategories={isStoresView ? storesViewCategories : marketplaceCategories}
               categoriesLoading={loading}
               mobileBrowseSheetOpen={mobileBrowseSheetOpen}
               onMobileBrowseSheetOpenChange={setMobileBrowseSheetOpen}
@@ -1112,7 +1123,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     onBrowseFiltersReset={handleAdvancedFiltersReset}
                     productGridLayout={productGridLayout}
                     onProductGridLayoutChange={setProductGridLayout}
-                    dynamicCategories={marketplaceCategories}
+                    dynamicCategories={storesViewCategories}
                     categoriesLoading={loading}
                     additionalFilters={
                       <AdvancedFilters

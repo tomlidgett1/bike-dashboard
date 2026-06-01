@@ -19,6 +19,8 @@ interface MarketplaceDataParams {
   listingType?: 'store_inventory' | 'private_listing';
   // Store filter (for stores space)
   storeId?: string | null;
+  // Lightspeed category filter (store inventory tab, filters by category_name)
+  lsCategory?: string | null;
   // Advanced filters
   minPrice?: string | null;
   maxPrice?: string | null;
@@ -76,16 +78,17 @@ const fetcher = async (url: string): Promise<MarketplaceDataResponse> => {
 
 // Build API URL based on view mode and filters
 function buildApiUrl(params: MarketplaceDataParams): string {
-  const { 
-    viewMode, 
-    page = 1, 
+  const {
+    viewMode,
+    page = 1,
     pageSize = MARKETPLACE_INITIAL_PAGE_SIZE,
-    level1, 
-    level2, 
-    level3, 
-    search, 
+    level1,
+    level2,
+    level3,
+    search,
     listingType,
     storeId,
+    lsCategory,
     minPrice,
     maxPrice,
     condition,
@@ -125,11 +128,10 @@ function buildApiUrl(params: MarketplaceDataParams): string {
     if (level3) urlParams.set('level3', level3);
     endpoint = `/api/marketplace/products?${urlParams}`;
   } else if (listingType === 'store_inventory') {
-    // Shop inventory is not served by the trending feed (score-based); always use the products index.
+    // Shop inventory is not served by the trending feed; always use the products index.
+    // Filter by Lightspeed category_name (not marketplace_category, which is null for LS products).
     urlParams.set('pageSize', String(pageSize));
-    if (level1) urlParams.set('level1', level1);
-    if (level2) urlParams.set('level2', level2);
-    if (level3) urlParams.set('level3', level3);
+    if (lsCategory) urlParams.set('lsCategory', lsCategory);
     endpoint = `/api/marketplace/products?${urlParams}`;
   } else {
     // Handle different view modes (marketplace / private listings)
