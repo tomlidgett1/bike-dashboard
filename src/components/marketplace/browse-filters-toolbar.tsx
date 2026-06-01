@@ -19,13 +19,25 @@ import {
 import { preload } from "swr";
 import { BRAND_YELLOW } from "@/lib/constants/brand-colors";
 
-/** Top-level pills: display label → API `level1` category name */
-const QUICK_CATEGORIES = [
-  { label: "Bikes",   level1: "Bicycles" },
-  { label: "Frames",  level1: "Frames & Framesets" },
-  { label: "Wheels",  level1: "Wheels & Tyres" },
-  { label: "Apparel", level1: "Apparel" },
-] as const;
+/** A single top-level category pill entry. */
+export interface DynamicCategory { label: string; level1: string }
+
+// Skeleton pills — varied widths for a natural staggered look
+const SKELETON_WIDTHS = [88, 120, 100, 136, 96, 108];
+
+function CategoryPillsSkeleton() {
+  return (
+    <>
+      {SKELETON_WIDTHS.map((w, i) => (
+        <div
+          key={i}
+          className="h-10 flex-shrink-0 rounded-full bg-gray-200 animate-pulse"
+          style={{ width: w }}
+        />
+      ))}
+    </>
+  );
+}
 
 const LOCATION_OPTIONS = [{ value: "melbourne", label: "Melbourne" }] as const;
 
@@ -103,6 +115,10 @@ export interface BrowseFiltersToolbarProps {
   onGridLayoutChange: (layout: ProductGridLayout) => void;
   additionalFilters?: React.ReactNode;
   toolbarScrollRef?: React.RefObject<HTMLDivElement | null>;
+  /** Categories derived from the currently visible products. */
+  dynamicCategories?: DynamicCategory[];
+  /** True while the parent is still loading the first batch of products. */
+  categoriesLoading?: boolean;
   /** Mobile sheet: categories + location + layout only */
   sheetMode?: boolean;
   /** Mobile browse: only the quick category pill row */
@@ -126,10 +142,14 @@ export function BrowseFiltersToolbar({
   onGridLayoutChange,
   additionalFilters,
   toolbarScrollRef,
+  dynamicCategories = [],
+  categoriesLoading = false,
   sheetMode = false,
   categoryPillsRowOnly = false,
   hideCategoryPills = false,
 }: BrowseFiltersToolbarProps) {
+  const categories = dynamicCategories;
+
   const clearDrillDown = () => {
     onLevel2Change(null);
     onLevel3Change(null);
@@ -150,28 +170,32 @@ export function BrowseFiltersToolbar({
 
   const priceSelectValue = priceValueFromFilters(filters);
 
-  // ─── Mobile sheet mode (unchanged) ────────────────────────────────────────
+  // ─── Mobile sheet mode ────────────────────────────────────────────────────
   if (sheetMode) {
     return (
       <div ref={toolbarScrollRef as React.RefObject<HTMLDivElement>} className="flex flex-col gap-4">
         {!hideCategoryPills && (
           <div className="flex flex-wrap gap-2">
-            {QUICK_CATEGORIES.map(({ label, level1 }) => {
-              const icon = getCategoryIconName(level1);
-              const isActive = selectedLevel1 === level1 && !selectedLevel2 && !selectedLevel3;
-              return (
-                <button key={level1} type="button" onClick={() => handleCategoryClick(level1)}
-                  className={cn(
-                    "flex h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer",
-                    isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                  )}
-                  style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}
-                >
-                  <BikeIcon iconName={icon} size={20} className="opacity-90" />
-                  {label}
-                </button>
-              );
-            })}
+            {categoriesLoading ? (
+              <CategoryPillsSkeleton />
+            ) : (
+              categories.map(({ label, level1 }) => {
+                const icon = getCategoryIconName(level1);
+                const isActive = selectedLevel1 === level1 && !selectedLevel2 && !selectedLevel3;
+                return (
+                  <button key={level1} type="button" onClick={() => handleCategoryClick(level1)}
+                    className={cn(
+                      "flex h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer",
+                      isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    )}
+                    style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}
+                  >
+                    <BikeIcon iconName={icon} size={20} className="opacity-90" />
+                    {label}
+                  </button>
+                );
+              })
+            )}
           </div>
         )}
         <div className="flex flex-col gap-3">
@@ -207,28 +231,33 @@ export function BrowseFiltersToolbar({
     );
   }
 
-  // ─── Mobile category-pills-only row ───────────────────────────────────────
+  // ─── Mobile / desktop category-pills-only row ────────────────────────────
   if (categoryPillsRowOnly) {
     return (
+      // h-10 is fixed so the row height never shifts between skeleton and real pills
       <div ref={toolbarScrollRef as React.RefObject<HTMLDivElement>}
-        className="flex min-w-0 items-center gap-2 overflow-x-auto scrollbar-hide">
-        {QUICK_CATEGORIES.map(({ label, level1 }) => {
-          const icon = getCategoryIconName(level1);
-          const isActive = selectedLevel1 === level1 && !selectedLevel2 && !selectedLevel3;
-          return (
-            <button key={level1} type="button" onClick={() => handleCategoryClick(level1)}
-              onMouseEnter={() => prefetchProducts(level1)}
-              className={cn(
-                "box-border flex h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer",
-                isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-              )}
-              style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}
-            >
-              <BikeIcon iconName={icon} size={20} className="opacity-90" />
-              {label}
-            </button>
-          );
-        })}
+        className="flex h-10 min-w-0 items-center gap-2 overflow-x-auto scrollbar-hide">
+        {categoriesLoading ? (
+          <CategoryPillsSkeleton />
+        ) : (
+          categories.map(({ label, level1 }) => {
+            const icon = getCategoryIconName(level1);
+            const isActive = selectedLevel1 === level1 && !selectedLevel2 && !selectedLevel3;
+            return (
+              <button key={level1} type="button" onClick={() => handleCategoryClick(level1)}
+                onMouseEnter={() => prefetchProducts(level1)}
+                className={cn(
+                  "box-border flex h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer",
+                  isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                )}
+                style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}
+              >
+                <BikeIcon iconName={icon} size={20} className="opacity-90" />
+                {label}
+              </button>
+            );
+          })
+        )}
       </div>
     );
   }
@@ -238,27 +267,31 @@ export function BrowseFiltersToolbar({
     <div ref={toolbarScrollRef as React.RefObject<HTMLDivElement>}
       className="flex w-full items-center gap-3">
 
-      {/* Category pills — left, takes remaining space */}
+      {/* Category pills — left, takes remaining space; h-10 is fixed to prevent layout shift */}
       {!hideCategoryPills && (
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scrollbar-hide pb-0">
-          {QUICK_CATEGORIES.map(({ label, level1 }) => {
-            const icon = getCategoryIconName(level1);
-            const isActive = selectedLevel1 === level1 && !selectedLevel2 && !selectedLevel3;
-            return (
-              <button key={level1} type="button"
-                onClick={() => handleCategoryClick(level1)}
-                onMouseEnter={() => prefetchProducts(level1)}
-                className={cn(
-                  "box-border flex h-10 min-h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer",
-                  isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                )}
-                style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}
-              >
-                <BikeIcon iconName={icon} size={20} className="opacity-90" />
-                {label}
-              </button>
-            );
-          })}
+        <div className="flex h-10 min-w-0 flex-1 items-center gap-2 overflow-x-auto scrollbar-hide">
+          {categoriesLoading ? (
+            <CategoryPillsSkeleton />
+          ) : (
+            categories.map(({ label, level1 }) => {
+              const icon = getCategoryIconName(level1);
+              const isActive = selectedLevel1 === level1 && !selectedLevel2 && !selectedLevel3;
+              return (
+                <button key={level1} type="button"
+                  onClick={() => handleCategoryClick(level1)}
+                  onMouseEnter={() => prefetchProducts(level1)}
+                  className={cn(
+                    "box-border flex h-10 min-h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer",
+                    isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                  )}
+                  style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}
+                >
+                  <BikeIcon iconName={icon} size={20} className="opacity-90" />
+                  {label}
+                </button>
+              );
+            })
+          )}
         </div>
       )}
 

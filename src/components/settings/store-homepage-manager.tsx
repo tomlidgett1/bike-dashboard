@@ -726,6 +726,22 @@ export function StoreHomepageManager() {
           <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
             <div>
               <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-foreground">Hours on hero</p>
+                <span className={cn(
+                  "text-xs font-medium px-1.5 py-0.5 rounded-full transition-opacity",
+                  config.badges.show_hours_on_hero ? "bg-blue-50 text-blue-700" : "opacity-25 bg-gray-100 text-gray-500",
+                )}>Mon 9:00–17:00</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">Show today's opening hours overlaid on the hero image.</p>
+            </div>
+            <Switch
+              checked={config.badges.show_hours_on_hero}
+              onCheckedChange={(v) => patchBadges({ show_hours_on_hero: v })}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+            <div>
+              <div className="flex items-center gap-2">
                 <p className="text-sm font-medium text-foreground">Star rating</p>
                 <span className={cn(
                   "inline-flex items-center gap-0.5 text-xs font-semibold transition-opacity",

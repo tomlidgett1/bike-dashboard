@@ -488,6 +488,19 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     [stores]
   );
 
+  // Derive marketplace category pills from the currently loaded products
+  const marketplaceCategories = React.useMemo(() => {
+    if (!products?.length) return [];
+    const categoryMap = new Map<string, number>();
+    products.forEach(product => {
+      const cat = product.marketplace_category;
+      if (cat) categoryMap.set(cat, (categoryMap.get(cat) || 0) + 1);
+    });
+    return Array.from(categoryMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([level1]) => ({ label: level1, level1 }));
+  }, [products]);
+
   // Derive store categories from fetched products (zero API calls - instant)
   const storeCategories = React.useMemo(() => {
     if (!selectedStoreId || !products?.length) return [];
@@ -1036,6 +1049,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               onBrowseFiltersReset={handleAdvancedFiltersReset}
               productGridLayout={productGridLayout}
               onProductGridLayoutChange={setProductGridLayout}
+              dynamicCategories={marketplaceCategories}
+              categoriesLoading={loading}
               mobileBrowseSheetOpen={mobileBrowseSheetOpen}
               onMobileBrowseSheetOpenChange={setMobileBrowseSheetOpen}
             />
@@ -1097,6 +1112,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     onBrowseFiltersReset={handleAdvancedFiltersReset}
                     productGridLayout={productGridLayout}
                     onProductGridLayoutChange={setProductGridLayout}
+                    dynamicCategories={marketplaceCategories}
+                    categoriesLoading={loading}
                     additionalFilters={
                       <AdvancedFilters
                         filters={advancedFilters}
@@ -1235,6 +1252,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       onBrowseFiltersReset={handleAdvancedFiltersReset}
                       productGridLayout={productGridLayout}
                       onProductGridLayoutChange={setProductGridLayout}
+                      dynamicCategories={marketplaceCategories}
+                      categoriesLoading={loading}
                       additionalFilters={
                         <AdvancedFilters
                           filters={advancedFilters}

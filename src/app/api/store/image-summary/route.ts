@@ -89,8 +89,11 @@ export async function GET() {
       )
 
       if (!hasAnyImage) cur.missing++
-      // missing_serper = products that are Lightspeed but lack a serper_workbench image
-      if (isLightspeed && !hasSerperImage) cur.missing_serper++
+      // missing_serper = Lightspeed products that have at least one image but no
+      // serper_workbench image (i.e. they are blocked by the marketplace gate).
+      // Products with no image at all are already counted in missing_images and
+      // need the Optimize tab, not the Approve tab.
+      if (isLightspeed && hasAnyImage && !hasSerperImage) cur.missing_serper++
 
       summary.set(catId, cur)
     }

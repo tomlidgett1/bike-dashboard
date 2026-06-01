@@ -15,6 +15,8 @@ import {
   MessageCircle,
   HelpCircle,
   X,
+  Zap,
+  Upload,
   CheckCircle2,
   Truck,
   Copy,
@@ -83,9 +85,14 @@ import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
+import { Header } from "@/components/layout";
+import { useUserProfile } from "@/components/providers/profile-provider";
 import { EditProductDrawer } from "@/components/marketplace/edit-product-drawer";
 import { OrderHelpWizard, TicketCard, MobileTicketCard, TicketDetailSheet, TicketStatusBadge } from "@/components/support";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import { SmartUploadModal } from "@/components/marketplace/sell/smart-upload-modal";
+import { FacebookImportModal } from "@/components/marketplace/sell/facebook-import-modal";
+import { BulkUploadSheet } from "@/components/marketplace/sell/bulk-upload-sheet";
 
 // ============================================================
 // Types
@@ -1488,11 +1495,9 @@ function DesktopOrdersTable({
   if (orders.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="rounded-full bg-muted p-4 mb-4">
-          <ShoppingBag className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <p className="font-medium">No orders yet</p>
-        <p className="text-sm text-muted-foreground mt-1">
+        <ShoppingBag className="h-8 w-8 text-muted-foreground/40 mb-3" />
+        <p className="text-sm font-medium">No orders yet</p>
+        <p className="text-xs text-muted-foreground mt-1">
           {orderMode === 'buying' ? "Orders you've made will appear here" : "Orders you receive will appear here"}
         </p>
       </div>
@@ -1623,10 +1628,8 @@ function DesktopListingsTable({
   if (listings.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="rounded-full bg-muted p-4 mb-4">
-          <Tag className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <p className="font-medium">No listings yet</p>
+        <Tag className="h-8 w-8 text-muted-foreground/40 mb-3" />
+        <p className="text-sm font-medium">No listings yet</p>
         <p className="text-sm text-muted-foreground mt-1">Start selling by creating your first listing</p>
       </div>
     );
@@ -1752,11 +1755,9 @@ function GroupedOrdersView({
   if (groups.length === 0 && !hasPendingPayments && !hasSellerPending) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="rounded-full bg-muted p-4 mb-4">
-          <Package className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <p className="font-medium">No orders yet</p>
-        <p className="text-sm text-muted-foreground mt-1">Your buying and selling orders will appear here</p>
+        <Package className="h-8 w-8 text-muted-foreground/40 mb-3" />
+        <p className="text-sm font-medium">No orders yet</p>
+        <p className="text-xs text-muted-foreground mt-1">Your buying and selling orders will appear here</p>
       </div>
     );
   }
@@ -2140,11 +2141,9 @@ function DesktopDraftsTable({
   if (drafts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="rounded-full bg-muted p-4 mb-4">
-          <FileText className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <p className="font-medium">No drafts</p>
-        <p className="text-sm text-muted-foreground mt-1">Incomplete listings will appear here</p>
+        <FileText className="h-8 w-8 text-muted-foreground/40 mb-3" />
+        <p className="text-sm font-medium">No drafts</p>
+        <p className="text-xs text-muted-foreground mt-1">Incomplete listings will appear here</p>
       </div>
     );
   }
@@ -2226,11 +2225,27 @@ function DesktopDraftsTable({
 }
 
 // ============================================================
+// Outer layout wrapper — swaps between marketplace and dashboard shell
+function OrderManagementWrapper({ isStore, children }: { isStore: boolean; children: React.ReactNode }) {
+  if (isStore) {
+    return <div className="bg-background">{children}</div>;
+  }
+  return (
+    <MarketplaceLayout showSidebar={false} showFooter={false}>
+      <div className="min-h-screen bg-background pt-16 pb-20 sm:pb-8">
+        {children}
+      </div>
+    </MarketplaceLayout>
+  );
+}
+
 // Main Page Component
 // ============================================================
 
 export default function OrderManagementPage() {
   const router = useRouter();
+  const { profile } = useUserProfile();
+  const isVerifiedStore = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
 
   // State
   const [activeTab, setActiveTab] = React.useState<MainTab>('orders');
@@ -2289,6 +2304,11 @@ export default function OrderManagementPage() {
   
   // Listings toggle state
   const [togglingListingIds, setTogglingListingIds] = React.useState<Set<string>>(new Set());
+
+  // Upload modal state (New Listing dropdown)
+  const [smartUploadOpen, setSmartUploadOpen] = React.useState(false);
+  const [facebookImportOpen, setFacebookImportOpen] = React.useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = React.useState(false);
 
   // Offers tab state
   const [offersMode, setOffersMode] = React.useState<'buying' | 'selling'>('buying');
@@ -2869,107 +2889,76 @@ export default function OrderManagementPage() {
 
   return (
     <>
-      <MarketplaceHeader compactSearchOnMobile />
+      {isVerifiedStore ? (
+        <Header title="Order Management" description="Manage your orders, listings, and drafts" />
+      ) : (
+        <MarketplaceHeader compactSearchOnMobile />
+      )}
 
-      <MarketplaceLayout>
-        <div className="min-h-screen bg-background pt-16 pb-20 sm:pb-8">
+      <OrderManagementWrapper isStore={isVerifiedStore}>
           <div className="w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
             {/* Header */}
-            <div className="flex items-center justify-between mb-4 sm:mb-6">
+            <div className="flex items-center justify-between mb-0">
               <div>
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Order Management</h1>
-                <p className="text-sm text-muted-foreground hidden sm:block">Manage your orders, listings, and drafts</p>
+                <h1 className="text-sm font-semibold text-foreground">Order Management</h1>
+                <p className="text-xs text-muted-foreground mt-0.5">Manage your orders, listings, and drafts</p>
               </div>
-              <Button onClick={() => router.push('/marketplace/sell')} className="hidden sm:flex">
-                <Plus className="h-4 w-4 mr-2" />
-                New Listing
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className="h-8 text-xs hidden sm:flex gap-1.5">
+                    <Plus className="h-3.5 w-3.5" />
+                    New Listing
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onClick={() => setSmartUploadOpen(true)}>
+                    <Zap className="h-4 w-4 mr-2" />
+                    Quick upload
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFacebookImportOpen(true)}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import from Facebook
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setBulkUploadOpen(true)}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Bulk upload
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
             {/* Desktop Tabs */}
             <div className="hidden sm:block">
-              <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as MainTab)}>
-                <div className="flex items-center justify-between mb-4">
-                  {/* Custom styled tabs matching the All/Buying/Selling design */}
-                  <div className="flex items-center bg-muted p-0.5 rounded-md w-fit">
-                    <button
-                      onClick={() => setActiveTab('orders')}
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
-                        activeTab === 'orders'
-                          ? "text-foreground bg-background shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/70"
-                      )}
-                    >
-                      <ShoppingBag size={15} />
-                      Orders
-                      {activeOrderCount > 0 && (
-                        <span className="text-xs text-muted-foreground">({activeOrderCount})</span>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('listings')}
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
-                        activeTab === 'listings'
-                          ? "text-foreground bg-background shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/70"
-                      )}
-                    >
-                      <Tag size={15} />
-                      My Listings
-                      <span className="text-xs text-muted-foreground">({activeListingCount})</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('claims')}
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
-                        activeTab === 'claims'
-                          ? "text-foreground bg-background shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/70"
-                      )}
-                    >
-                      <LifeBuoy size={15} />
-                      Claims
-                      {activeClaimsCount > 0 && (
-                        <span className="text-xs text-amber-600 font-semibold">({activeClaimsCount})</span>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('drafts')}
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
-                        activeTab === 'drafts'
-                          ? "text-foreground bg-background shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/70"
-                      )}
-                    >
-                      <FileText size={15} />
-                      Drafts
-                      {drafts.length > 0 && (
-                        <span className="text-xs text-muted-foreground">({drafts.length})</span>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('offers')}
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
-                        activeTab === 'offers'
-                          ? "text-foreground bg-background shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/70"
-                      )}
-                    >
-                      <DollarSign size={15} />
-                      Offers
-                      {pendingOffersCount > 0 && (
-                        <span className="text-xs text-muted-foreground">({pendingOffersCount})</span>
-                      )}
-                    </button>
-                  </div>
-                </div>
+              {/* Underline tab nav */}
+              <div className="border-b flex gap-0 mt-4 mb-4">
+                {([
+                  { id: 'orders',   label: 'Orders',      badge: activeOrderCount },
+                  { id: 'listings', label: 'My Listings',  badge: activeListingCount },
+                  { id: 'offers',   label: 'Offers',       badge: pendingOffersCount },
+                  { id: 'claims',   label: 'Claims',       badge: activeClaimsCount },
+                  { id: 'drafts',   label: 'Drafts',       badge: drafts.length },
+                ] as { id: MainTab; label: string; badge: number }[]).map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      "py-3 px-3 mr-1 text-xs font-medium border-b-2 transition-colors -mb-px cursor-pointer",
+                      activeTab === tab.id
+                        ? "border-foreground text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {tab.label}
+                    {tab.badge > 0 && (
+                      <span className="ml-1.5 text-[10px] text-muted-foreground">({tab.badge})</span>
+                    )}
+                  </button>
+                ))}
+              </div>
 
                 {/* Orders Tab */}
-                <TabsContent value="orders">
+                {activeTab === 'orders' && (
                   <div className="bg-card rounded-md border">
                     {/* Toolbar */}
                     <div className="p-4 border-b flex flex-wrap gap-3 items-center">
@@ -3089,10 +3078,10 @@ export default function OrderManagementPage() {
                       />
                     )}
                   </div>
-                </TabsContent>
+                )}
 
                 {/* Listings Tab */}
-                <TabsContent value="listings">
+                {activeTab === 'listings' && (
                   <div className="bg-card rounded-md border">
                     <div className="p-4 border-b flex flex-wrap gap-3 items-center">
                       <div className="relative flex-1 max-w-xs">
@@ -3132,10 +3121,10 @@ export default function OrderManagementPage() {
                       loading={listingsLoading} 
                     />
                   </div>
-                </TabsContent>
+                )}
 
                 {/* Claims Tab */}
-                <TabsContent value="claims">
+                {activeTab === 'claims' && (
                   <div className="bg-card rounded-md border">
                     <div className="p-4 border-b flex flex-wrap gap-3 items-center">
                       <Select value={ticketsFilter} onValueChange={(v) => setTicketsFilter(v as any)}>
@@ -3163,11 +3152,9 @@ export default function OrderManagementPage() {
                       </div>
                     ) : tickets.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <div className="rounded-full bg-muted p-4 mb-4">
-                          <LifeBuoy className="h-8 w-8 text-muted-foreground" />
-                        </div>
-                        <p className="font-medium">No support tickets</p>
-                        <p className="text-sm text-muted-foreground mt-1">Support tickets for your orders will appear here</p>
+                        <LifeBuoy className="h-8 w-8 text-muted-foreground/40 mb-3" />
+                        <p className="text-sm font-medium">No support tickets</p>
+                        <p className="text-xs text-muted-foreground mt-1">Support tickets for your orders will appear here</p>
                       </div>
                     ) : (
                       <Table>
@@ -3238,10 +3225,10 @@ export default function OrderManagementPage() {
                       </Table>
                     )}
                   </div>
-                </TabsContent>
+                )}
 
                 {/* Drafts Tab */}
-                <TabsContent value="drafts">
+                {activeTab === 'drafts' && (
                   <div className="bg-card rounded-md border">
                     <div className="p-4 border-b flex gap-3 items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -3280,10 +3267,10 @@ export default function OrderManagementPage() {
                       onToggleSelectAll={handleToggleSelectAllDrafts}
                     />
                   </div>
-                </TabsContent>
+                )}
 
                 {/* Offers Tab */}
-                <TabsContent value="offers">
+                {activeTab === 'offers' && (
                   <div className="bg-card rounded-md border">
                     <div className="p-4 border-b flex flex-wrap gap-3 items-center">
                       <div className="flex items-center bg-muted p-0.5 rounded-md w-fit">
@@ -3339,8 +3326,7 @@ export default function OrderManagementPage() {
                       onOfferClick={(offer) => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
                     />
                   </div>
-                </TabsContent>
-              </Tabs>
+                )}
             </div>
 
             {/* Mobile Content */}
@@ -3756,19 +3742,20 @@ export default function OrderManagementPage() {
               )}
             </div>
           </div>
-        </div>
-      </MarketplaceLayout>
+      </OrderManagementWrapper>
 
-      {/* Mobile Bottom Navigation */}
-      <MobileBottomNav
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        orderCount={activeOrderCount}
-        listingCount={activeListingCount}
-        draftCount={drafts.length}
-        claimsCount={activeClaimsCount}
-        offersCount={pendingOffersCount}
-      />
+      {/* Mobile Bottom Navigation — only for non-store users; store owners get DashboardLayout's nav */}
+      {!isVerifiedStore && (
+        <MobileBottomNav
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          orderCount={activeOrderCount}
+          listingCount={activeListingCount}
+          draftCount={drafts.length}
+          claimsCount={activeClaimsCount}
+          offersCount={pendingOffersCount}
+        />
+      )}
 
       {/* Confirm Receipt Dialog */}
       <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
@@ -3901,6 +3888,23 @@ export default function OrderManagementPage() {
           setSelectedTicketId(null);
         }}
         ticketId={selectedTicketId}
+      />
+
+      {/* Upload Modals */}
+      <SmartUploadModal
+        isOpen={smartUploadOpen}
+        onClose={() => setSmartUploadOpen(false)}
+        onComplete={(_formData, _images) => { setSmartUploadOpen(false); fetchListings(); }}
+      />
+      <FacebookImportModal
+        isOpen={facebookImportOpen}
+        onClose={() => setFacebookImportOpen(false)}
+        onComplete={(_formData, _images) => { setFacebookImportOpen(false); fetchListings(); }}
+      />
+      <BulkUploadSheet
+        isOpen={bulkUploadOpen}
+        onClose={() => setBulkUploadOpen(false)}
+        onComplete={(_ids) => { setBulkUploadOpen(false); fetchListings(); }}
       />
     </>
   );

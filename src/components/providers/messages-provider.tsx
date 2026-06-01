@@ -12,6 +12,9 @@ interface MessagesContextValue {
   openConversation: (id: string) => void;
   requestedConversationId: string | null;
   clearRequestedConversation: () => void;
+  openTab: (tab: 'messages' | 'offers') => void;
+  requestedTab: 'messages' | 'offers' | null;
+  clearRequestedTab: () => void;
 }
 
 const MessagesContext = createContext<MessagesContextValue | null>(null);
@@ -20,6 +23,7 @@ export function MessagesProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [requestedConversationId, setRequestedConversationId] = useState<string | null>(null);
+  const [requestedTab, setRequestedTab] = useState<'messages' | 'offers' | null>(null);
 
   return (
     <MessagesContext.Provider value={{
@@ -35,6 +39,12 @@ export function MessagesProvider({ children }: { children: React.ReactNode }) {
       },
       requestedConversationId,
       clearRequestedConversation: () => setRequestedConversationId(null),
+      openTab: (tab: 'messages' | 'offers') => {
+        setRequestedTab(tab);
+        setIsOpen(true);
+      },
+      requestedTab,
+      clearRequestedTab: () => setRequestedTab(null),
     }}>
       {children}
     </MessagesContext.Provider>

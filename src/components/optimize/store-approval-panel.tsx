@@ -277,7 +277,7 @@ export function StoreApprovalPanel() {
                     <div
                       key={p.id}
                       className={cn(
-                        "flex items-center gap-3 px-4 py-3 transition-colors",
+                        "flex items-center gap-2 px-4 py-1.5 transition-colors",
                         isSelected && "bg-emerald-50/40 dark:bg-emerald-950/10",
                       )}
                     >
@@ -307,11 +307,11 @@ export function StoreApprovalPanel() {
                         )}
                       </div>
 
-                      {/* Info */}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground leading-snug truncate">{name}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {p.brand || "—"} · ${Number(p.price).toFixed(2)} · {p.qoh} in stock
+                      {/* Info — single line: name · brand · price · stock */}
+                      <div className="min-w-0 flex-1 flex items-center gap-1.5 overflow-hidden">
+                        <p className="text-sm font-medium text-foreground truncate shrink">{name}</p>
+                        <p className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                          {p.brand ? `· ${p.brand}` : ""} · ${Number(p.price).toFixed(2)} · {p.qoh} in stock
                         </p>
                       </div>
 

@@ -351,7 +351,7 @@ export default function ConnectLightspeedPage() {
       if (deleteTarget.type === 'categories') {
         body.categoryIds = deleteTarget.ids;
       } else {
-        body.itemIds = deleteTarget.ids;
+        body.productIds = deleteTarget.ids;
       }
 
       const response = await fetch('/api/products/bulk-delete', {
@@ -361,7 +361,8 @@ export default function ConnectLightspeedPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Delete failed');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Delete failed (${response.status})`);
       }
 
       await fetchInventoryData();

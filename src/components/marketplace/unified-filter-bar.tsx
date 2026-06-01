@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   BrowseFiltersToolbar,
   type ProductGridLayout,
+  type DynamicCategory,
 } from "@/components/marketplace/browse-filters-toolbar";
 import {
   MobileFilterContent,
@@ -58,6 +59,10 @@ interface UnifiedFilterBarProps {
   productGridLayout: ProductGridLayout;
   onProductGridLayoutChange: (layout: ProductGridLayout) => void;
 
+  /** Categories derived from the currently visible products. */
+  dynamicCategories?: DynamicCategory[];
+  /** True while the parent is loading the first batch of products. */
+  categoriesLoading?: boolean;
   /** Mobile Browse: filter sheet open state (FAB lives in MarketplaceHeader). */
   mobileBrowseSheetOpen?: boolean;
   onMobileBrowseSheetOpenChange?: (open: boolean) => void;
@@ -86,6 +91,8 @@ export function UnifiedFilterBar({
   onBrowseFiltersReset,
   productGridLayout,
   onProductGridLayoutChange,
+  dynamicCategories,
+  categoriesLoading,
   mobileBrowseSheetOpen,
   onMobileBrowseSheetOpenChange,
 }: UnifiedFilterBarProps) {
@@ -327,6 +334,8 @@ export function UnifiedFilterBar({
             gridLayout={productGridLayout}
             onGridLayoutChange={onProductGridLayoutChange}
             toolbarScrollRef={categoryPillsRef}
+            dynamicCategories={dynamicCategories}
+            categoriesLoading={categoriesLoading}
           />
         </div>
       )}
@@ -349,6 +358,8 @@ export function UnifiedFilterBar({
               gridLayout={productGridLayout}
               onGridLayoutChange={onProductGridLayoutChange}
               toolbarScrollRef={categoryPillsRef}
+              dynamicCategories={dynamicCategories}
+              categoriesLoading={categoriesLoading}
             />
           </div>
 

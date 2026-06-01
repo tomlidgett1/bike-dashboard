@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
+import { useMessages } from '@/components/providers/messages-provider';
 import { useCreateOffer } from '@/lib/hooks/use-offers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -522,9 +522,9 @@ export function MakeOfferButton({
   fullWidth = false,
   className,
 }: MakeOfferButtonProps) {
-  const router = useRouter();
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const { openTab } = useMessages();
   const { createOffer, creating } = useCreateOffer();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -608,7 +608,7 @@ export function MakeOfferButton({
       setSuccess(true);
       setTimeout(() => {
         setIsDialogOpen(false);
-        router.push('/messages?tab=offers');
+        openTab('offers');
       }, 1500);
     } catch (err) {
       console.error('Error submitting offer:', err);

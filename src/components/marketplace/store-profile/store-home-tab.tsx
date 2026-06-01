@@ -280,6 +280,11 @@ function Hero({
                 <span className="rounded-full border border-gray-200 hover:bg-gray-50">{SecondaryBtn}</span>
               )}
             </div>
+            {config.badges.show_hours_on_hero && (
+              <div className="mt-5">
+                <HeroHoursCard store={store} status={status} onDark={false} />
+              </div>
+            )}
           </motion.div>
           <motion.div
             initial={{ opacity: 0, scale: 0.96 }}
@@ -330,6 +335,11 @@ function Hero({
                 <span className="rounded-full border border-gray-200 hover:bg-gray-50">{SecondaryBtn}</span>
               )}
             </div>
+            {config.badges.show_hours_on_hero && (
+              <div className="mt-5 flex justify-center">
+                <HeroHoursCard store={store} status={status} onDark={false} />
+              </div>
+            )}
           </motion.div>
         </div>
       </section>
@@ -389,6 +399,16 @@ function Hero({
             </div>
           </motion.div>
         </div>
+
+        {/* Today's hours — bottom corner overlay */}
+        {config.badges.show_hours_on_hero && (
+          <div className={cn(
+            "absolute bottom-5 z-10",
+            alignCenter ? "left-1/2 -translate-x-1/2" : "left-5 sm:left-8 lg:left-10"
+          )}>
+            <HeroHoursCard store={store} status={status} onDark />
+          </div>
+        )}
       </div>
     </section>
   );
@@ -432,6 +452,56 @@ function HeroEyebrow({
           <span className={cn("h-1.5 w-1.5 rounded-full", status.open ? "bg-green-400" : "bg-gray-400")} />
           {status.label}
         </span>
+      )}
+    </div>
+  );
+}
+
+// ── Hero Hours Card ──────────────────────────────────────────
+// Compact today's hours badge shown overlaid on the hero image
+function HeroHoursCard({
+  store,
+  status,
+  onDark = false,
+}: {
+  store: StoreProfile;
+  status: { open: boolean; label: string } | null;
+  onDark?: boolean;
+}) {
+  const now = new Date();
+  const todayKey = DAY_KEYS[now.getDay()];
+  const todayHours = store.opening_hours?.[todayKey];
+  if (!store.opening_hours || !todayHours) return null;
+
+  const dayLabel = todayKey.charAt(0).toUpperCase() + todayKey.slice(1);
+  const hoursText = todayHours.closed ? 'Closed today' : `${todayHours.open} – ${todayHours.close}`;
+
+  return (
+    <div
+      className={cn(
+        "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs",
+        onDark
+          ? "bg-black/30 text-white backdrop-blur-md border border-white/10"
+          : "bg-white/90 text-gray-800 backdrop-blur-sm border border-gray-200/60 shadow-sm",
+      )}
+    >
+      <Clock className="h-3.5 w-3.5 flex-shrink-0 opacity-70" />
+      <span className="font-medium">{dayLabel}</span>
+      <span className="opacity-70">·</span>
+      <span>{hoursText}</span>
+      {status && (
+        <>
+          <span className="opacity-40">·</span>
+          <span className={cn(
+            "flex items-center gap-1",
+            onDark
+              ? status.open ? "text-green-300" : "text-white/60"
+              : status.open ? "text-green-600" : "text-gray-500",
+          )}>
+            <span className={cn("h-1.5 w-1.5 rounded-full flex-shrink-0", status.open ? "bg-green-400" : "bg-gray-400")} />
+            {status.open ? "Open now" : "Closed"}
+          </span>
+        </>
       )}
     </div>
   );

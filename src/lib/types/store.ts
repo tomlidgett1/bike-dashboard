@@ -224,6 +224,8 @@ export interface StoreHomepageConfig {
     show_open_status: boolean;
     /** Show the star rating in the sticky store header. */
     show_rating: boolean;
+    /** Show today's opening hours overlaid on the hero image. */
+    show_hours_on_hero: boolean;
   };
 }
 

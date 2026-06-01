@@ -42,6 +42,8 @@ export function MessagesPanel() {
     toggleExpand,
     requestedConversationId,
     clearRequestedConversation,
+    requestedTab,
+    clearRequestedTab,
   } = useMessages();
 
   const { counts: unreadCounts } = useCombinedUnreadCount(user ? 30000 : 0);
@@ -91,6 +93,16 @@ export function MessagesPanel() {
       clearRequestedConversation();
     }
   }, [requestedConversationId, isOpen, clearRequestedConversation]);
+
+  // Apply requested tab from provider (e.g. after sending an offer)
+  useEffect(() => {
+    if (requestedTab && isOpen) {
+      setActiveTab(requestedTab);
+      setActiveConversationId(null);
+      setActiveOfferId(null);
+      clearRequestedTab();
+    }
+  }, [requestedTab, isOpen, clearRequestedTab]);
 
   // Auto-select the most recent conversation when the panel opens with no
   // specific conversation requested and nothing already selected.
