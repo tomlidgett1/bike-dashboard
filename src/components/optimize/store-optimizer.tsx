@@ -744,6 +744,7 @@ export function StoreOptimizer() {
   const [rejectedIds, setRejectedIds] = React.useState<Set<string>>(new Set());
   const [rejectedDetails, setRejectedDetails] = React.useState<RejectedDetail[]>([]);
   const [showRejected, setShowRejected] = React.useState(false);
+  const [runLimit, setRunLimit] = React.useState<number | null>(null);
 
   const [focus, setFocus] = React.useState<Focus>({
     image: true,
@@ -944,15 +945,15 @@ export function StoreOptimizer() {
 
   // Products to show: those still missing a focused dimension, plus any we've
   // already touched this session (so processed rows don't vanish mid-run).
-  const visible = React.useMemo(
-    () =>
-      filtered.filter((p) => {
-        if (showCompleted) return true;
-        if (DIMS.some((d) => focus[d] && !hasDim(p, d))) return true;
-        return isTouched(runs[p.id]);
-      }),
-    [filtered, showCompleted, focus, runs],
-  );
+  // Sliced to runLimit so bulk-tick and run count both respect the batch cap.
+  const visible = React.useMemo(() => {
+    const all = filtered.filter((p) => {
+      if (showCompleted) return true;
+      if (DIMS.some((d) => focus[d] && !hasDim(p, d))) return true;
+      return isTouched(runs[p.id]);
+    });
+    return runLimit === null ? all : all.slice(0, runLimit);
+  }, [filtered, showCompleted, focus, runs, runLimit]);
 
   const productsToRun = React.useMemo(
     () => visible.filter((p) => pendingDims(p, runs[p.id] ?? emptyRun(), picks[p.id], redos[p.id]).length > 0),
@@ -1703,6 +1704,21 @@ export function StoreOptimizer() {
               {rejectedIds.size} rejected
             </button>
           )}
+
+          <Select
+            value={runLimit === null ? "all" : String(runLimit)}
+            onValueChange={(v) => setRunLimit(v === "all" ? null : Number(v))}
+          >
+            <SelectTrigger className="h-8 w-32 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All products</SelectItem>
+              <SelectItem value="10">Batch of 10</SelectItem>
+              <SelectItem value="20">Batch of 20</SelectItem>
+              <SelectItem value="50">Batch of 50</SelectItem>
+            </SelectContent>
+          </Select>
 
           <div className="relative ml-auto w-48">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
