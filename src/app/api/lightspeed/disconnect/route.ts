@@ -43,15 +43,18 @@ export async function POST() {
       .delete()
       .eq('user_id', user.id)
 
-    // Delete all products from products table (NOT canonical_products)
-    console.log('[Disconnect] Deleting products for user:', user.id)
+    // Deactivate products instead of deleting them so curated data
+    // (display_name, product_description, product_specs, canonical links)
+    // survives a disconnect → reconnect cycle. The sync upsert sets
+    // is_active: true on resync, so products reactivate automatically.
+    console.log('[Disconnect] Deactivating products for user:', user.id)
     const { error: deleteProductsError } = await supabase
       .from('products')
-      .delete()
+      .update({ is_active: false })
       .eq('user_id', user.id)
 
     if (deleteProductsError) {
-      console.error('[Disconnect] Error deleting products:', deleteProductsError)
+      console.error('[Disconnect] Error deactivating products:', deleteProductsError)
     }
 
     // Delete all products_all_ls entries
