@@ -191,7 +191,7 @@ export function StoreHomeTab({ store, isOwnProfile, onNavigate, onOpenCollection
       />
 
       {/* Ordered sections */}
-      <div className="space-y-16 sm:space-y-24 py-16 sm:py-24">
+      <div className="space-y-10 sm:space-y-14 py-8 sm:py-12">
         {config.section_order.map((key) => sectionRenderers[key]?.())}
       </div>
 
@@ -763,18 +763,18 @@ function FeaturedCarouselsSection({
       : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 
   return (
-    <section className={cn(SHELL, "space-y-12")}>
+    <section className={cn(SHELL, "space-y-8")}>
       {slots.map((cat) => (
         <Reveal key={cat!.id}>
           <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-gray-900">{cat!.name}</h3>
               <button
                 type="button"
                 onClick={() => onOpenCollection(cat!.name)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 py-1.5 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
               >
-                View all {cat!.products.length} products
+                View all {cat!.products.length}
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
