@@ -65,7 +65,10 @@ export async function GET() {
       return NextResponse.json({ categories: [] });
     }
 
-    // Get products from database to count by category
+    // Get products from database to count by category.
+    // Source of truth is the DB — the Lightspeed API is used only to enrich
+    // category names; categories that have been archived/removed from Lightspeed
+    // but still have live products in the DB should still appear.
     const { data: products } = await supabase
       .from('products')
       .select('lightspeed_category_id, category_name')
@@ -73,38 +76,72 @@ export async function GET() {
       .eq('is_active', true)
       .gt('qoh', 0);
 
-    // Count products per category
-    const categoryProductCounts = new Map<string, { name: string; count: number }>();
-    
+    // Count products per category — keyed by lightspeed_category_id when present,
+    // otherwise by category_name (prefixed with "name:") as a fallback key.
+    const categoryProductCounts = new Map<string, { name: string; count: number; isNameOnly: boolean }>();
+
     if (products) {
       products.forEach((product) => {
         if (product.lightspeed_category_id) {
-          const existing = categoryProductCounts.get(product.lightspeed_category_id);
+          const key = String(product.lightspeed_category_id);
+          const existing = categoryProductCounts.get(key);
           if (existing) {
             existing.count++;
           } else {
-            categoryProductCounts.set(product.lightspeed_category_id, {
+            categoryProductCounts.set(key, {
               name: product.category_name || 'Unknown',
               count: 1,
+              isNameOnly: false,
+            });
+          }
+        } else if (product.category_name) {
+          // No Lightspeed category ID — group by category_name
+          const key = `name:${product.category_name}`;
+          const existing = categoryProductCounts.get(key);
+          if (existing) {
+            existing.count++;
+          } else {
+            categoryProductCounts.set(key, {
+              name: product.category_name,
+              count: 1,
+              isNameOnly: true,
             });
           }
         }
       });
     }
 
-    // Build category options with product counts
+    // Build a lookup of Lightspeed API category names by ID
+    const lsNameById = new Map<string, string>(
+      lightspeedCategoriesResponse.map((c: { categoryID: string | number; name?: string }) => [
+        String(c.categoryID),
+        c.name || String(c.categoryID),
+      ])
+    );
+
+    // Build category options from ALL DB categories — DB-first, not API-first.
+    // This ensures categories that are archived in Lightspeed but still have
+    // active inventory still appear in the optimizer.
     const categoryOptions: LightspeedCategoryOption[] = [];
-    
-    for (const category of lightspeedCategoriesResponse) {
-      const categoryId = String(category.categoryID);
-      const productInfo = categoryProductCounts.get(categoryId);
-      
-      // Only include categories that have products with inventory
-      if (productInfo && productInfo.count > 0) {
+
+    for (const [key, info] of categoryProductCounts) {
+      if (info.count === 0) continue;
+      if (info.isNameOnly) {
+        // No LS ID — use the category_name as the id so the optimizer can still
+        // pass it as a filter (products route filters by category_name when
+        // ls_category_id isn't set).
         categoryOptions.push({
-          id: categoryId,
-          name: category.name || productInfo.name,
-          product_count: productInfo.count,
+          id: key, // "name:Bars" — the products route handles this format
+          name: info.name,
+          product_count: info.count,
+        });
+      } else {
+        // Use the Lightspeed API name if available, otherwise fall back to DB name
+        const apiName = lsNameById.get(key);
+        categoryOptions.push({
+          id: key,
+          name: apiName || info.name,
+          product_count: info.count,
         });
       }
     }

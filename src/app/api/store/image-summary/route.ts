@@ -24,6 +24,7 @@ export async function GET() {
       .from('products')
       .select(`
         lightspeed_category_id,
+        category_name,
         listing_source,
         canonical_products!canonical_product_id (
           product_images!canonical_product_id (
@@ -45,7 +46,6 @@ export async function GET() {
       .eq('user_id', user.id)
       .eq('is_active', true)
       .gt('qoh', 0)
-      .not('lightspeed_category_id', 'is', null)
 
     if (error) {
       console.error('[image-summary] Query error:', error)
@@ -55,7 +55,14 @@ export async function GET() {
     const summary = new Map<string, { total: number; missing: number; missing_serper: number }>()
 
     for (const row of rows || []) {
-      const catId = String(row.lightspeed_category_id)
+      // Use lightspeed_category_id when present; fall back to "name:<category_name>"
+      // so the count aligns with the same key used by the categories/scan route.
+      const catId = row.lightspeed_category_id
+        ? String(row.lightspeed_category_id)
+        : row.category_name
+          ? `name:${row.category_name}`
+          : null
+      if (!catId) continue // no category at all — skip
       const cur = summary.get(catId) ?? { total: 0, missing: 0, missing_serper: 0 }
       cur.total++
 

@@ -851,7 +851,14 @@ export function StoreOptimizer() {
       setExpanded(new Set());
       try {
         const params = new URLSearchParams({ pageSize: "1000", status: "active" });
-        if (cat && cat !== "all") params.set("ls_category_id", cat);
+        if (cat && cat !== "all") {
+          // Categories without a Lightspeed ID are keyed as "name:<category_name>"
+          if (cat.startsWith("name:")) {
+            params.set("category", cat.slice(5));
+          } else {
+            params.set("ls_category_id", cat);
+          }
+        }
         const res = await fetch(`/api/products?${params.toString()}`);
         const data = await res.json();
         const list: OptimizerProduct[] = (data.products ?? []).map((p: any) => ({
