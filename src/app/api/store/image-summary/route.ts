@@ -55,14 +55,9 @@ export async function GET() {
     const summary = new Map<string, { total: number; missing: number; missing_serper: number }>()
 
     for (const row of rows || []) {
-      // Use lightspeed_category_id when present; fall back to "name:<category_name>"
-      // so the count aligns with the same key used by the categories/scan route.
-      const catId = row.lightspeed_category_id
-        ? String(row.lightspeed_category_id)
-        : row.category_name
-          ? `name:${row.category_name}`
-          : null
-      if (!catId) continue // no category at all — skip
+      // Key by lightspeed_category_id — matches the IDs returned by categories/scan
+      const catId = row.lightspeed_category_id ? String(row.lightspeed_category_id) : null
+      if (!catId) continue // no LS category — skip
       const cur = summary.get(catId) ?? { total: 0, missing: 0, missing_serper: 0 }
       cur.total++
 

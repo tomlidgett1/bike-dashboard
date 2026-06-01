@@ -1,8 +1,9 @@
 /**
  * Lightspeed Categories Scan API
- * 
- * Scans Lightspeed account for active categories
- * Returns categories that have products with inventory > 0
+ *
+ * Returns categories sourced from products_all_ls (the raw Lightspeed cache)
+ * so the list exactly matches the Connect Lightspeed page.
+ * Category names are enriched from the Lightspeed API where possible.
  */
 
 import { NextResponse } from 'next/server';
@@ -12,7 +13,6 @@ import type { LightspeedCategoryOption } from '@/lib/types/store';
 
 /**
  * GET /api/lightspeed/categories/scan
- * Scan Lightspeed account for active categories with products
  */
 export async function GET() {
   try {
@@ -55,105 +55,79 @@ export async function GET() {
       );
     }
 
-    // Create Lightspeed client
-    const client = createLightspeedClient(user.id);
+    // ── Step 1: get all Lightspeed products from products_all_ls ─────────────
+    // This is the same source the Connect Lightspeed page uses, so the category
+    // list will always match what appears there.
+    let allLsProducts: Array<{ category_id: string | null; total_qoh?: number | null }> = [];
+    const pageSize = 1000;
+    let page = 0;
+    let hasMore = true;
 
-    // Fetch all categories from Lightspeed (same as categories-sync endpoint)
-    const lightspeedCategoriesResponse = await client.getAllCategories({ archived: 'false' });
-    
-    if (!lightspeedCategoriesResponse || !Array.isArray(lightspeedCategoriesResponse)) {
-      return NextResponse.json({ categories: [] });
-    }
+    while (hasMore) {
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
 
-    // Get products from database to count by category.
-    // Source of truth is the DB — the Lightspeed API is used only to enrich
-    // category names; categories that have been archived/removed from Lightspeed
-    // but still have live products in the DB should still appear.
-    const { data: products } = await supabase
-      .from('products')
-      .select('lightspeed_category_id, category_name')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .gt('qoh', 0);
+      const { data, error: lsErr } = await supabase
+        .from('products_all_ls')
+        .select('category_id, total_qoh')
+        .eq('user_id', user.id)
+        .range(from, to);
 
-    // Count products per category — keyed by lightspeed_category_id when present,
-    // otherwise by category_name (prefixed with "name:") as a fallback key.
-    const categoryProductCounts = new Map<string, { name: string; count: number; isNameOnly: boolean }>();
+      if (lsErr) {
+        console.error('[categories/scan] products_all_ls error:', lsErr);
+        break;
+      }
 
-    if (products) {
-      products.forEach((product) => {
-        if (product.lightspeed_category_id) {
-          const key = String(product.lightspeed_category_id);
-          const existing = categoryProductCounts.get(key);
-          if (existing) {
-            existing.count++;
-          } else {
-            categoryProductCounts.set(key, {
-              name: product.category_name || 'Unknown',
-              count: 1,
-              isNameOnly: false,
-            });
-          }
-        } else if (product.category_name) {
-          // No Lightspeed category ID — group by category_name
-          const key = `name:${product.category_name}`;
-          const existing = categoryProductCounts.get(key);
-          if (existing) {
-            existing.count++;
-          } else {
-            categoryProductCounts.set(key, {
-              name: product.category_name,
-              count: 1,
-              isNameOnly: true,
-            });
-          }
-        }
-      });
-    }
-
-    // Build a lookup of Lightspeed API category names by ID
-    const lsNameById = new Map<string, string>(
-      lightspeedCategoriesResponse.map((c: { categoryID: string | number; name?: string }) => [
-        String(c.categoryID),
-        c.name || String(c.categoryID),
-      ])
-    );
-
-    // Build category options from ALL DB categories — DB-first, not API-first.
-    // This ensures categories that are archived in Lightspeed but still have
-    // active inventory still appear in the optimizer.
-    const categoryOptions: LightspeedCategoryOption[] = [];
-
-    for (const [key, info] of categoryProductCounts) {
-      if (info.count === 0) continue;
-      if (info.isNameOnly) {
-        // No LS ID — use the category_name as the id so the optimizer can still
-        // pass it as a filter (products route filters by category_name when
-        // ls_category_id isn't set).
-        categoryOptions.push({
-          id: key, // "name:Bars" — the products route handles this format
-          name: info.name,
-          product_count: info.count,
-        });
+      if (data && data.length > 0) {
+        allLsProducts = allLsProducts.concat(data);
+        page++;
+        hasMore = data.length === pageSize;
       } else {
-        // Use the Lightspeed API name if available, otherwise fall back to DB name
-        const apiName = lsNameById.get(key);
-        categoryOptions.push({
-          id: key,
-          name: apiName || info.name,
-          product_count: info.count,
-        });
+        hasMore = false;
       }
     }
 
-    // Sort by product count (descending)
+    // ── Step 2: count products per category_id from products_all_ls ──────────
+    const lsCounts = new Map<string, number>();
+    for (const p of allLsProducts) {
+      const catId = p.category_id ? String(p.category_id) : 'uncategorized';
+      lsCounts.set(catId, (lsCounts.get(catId) ?? 0) + 1);
+    }
+
+    // ── Step 3: enrich with category names from Lightspeed API ───────────────
+    let lsNameById = new Map<string, string>();
+    try {
+      const client = createLightspeedClient(user.id);
+      const lsCategories = await client.getAllCategories({ archived: 'false' });
+      if (Array.isArray(lsCategories)) {
+        lsCategories.forEach((c: { categoryID: string | number; name?: string; fullPathName?: string }) => {
+          lsNameById.set(String(c.categoryID), c.fullPathName || c.name || String(c.categoryID));
+        });
+      }
+    } catch (err) {
+      console.warn('[categories/scan] Lightspeed API name lookup failed (non-fatal):', err);
+    }
+
+    // ── Step 4: build result — every category from products_all_ls ───────────
+    const categoryOptions: LightspeedCategoryOption[] = [];
+
+    for (const [catId, count] of lsCounts) {
+      if (catId === 'uncategorized') continue; // skip uncategorised
+      const name = lsNameById.get(catId) || `Category ${catId}`;
+      categoryOptions.push({
+        id: catId,
+        name,
+        product_count: count,
+      });
+    }
+
+    // Sort by product count descending
     categoryOptions.sort((a, b) => b.product_count - a.product_count);
 
     return NextResponse.json({ categories: categoryOptions });
   } catch (error) {
     console.error('Error in GET /api/lightspeed/categories/scan:', error);
-    
-    // Handle specific Lightspeed errors
+
     if (error instanceof Error) {
       if (error.message.includes('No valid access token')) {
         return NextResponse.json(
@@ -162,11 +136,10 @@ export async function GET() {
         );
       }
     }
-    
+
     return NextResponse.json(
       { error: 'Failed to scan Lightspeed categories' },
       { status: 500 }
     );
   }
 }
-
