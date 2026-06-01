@@ -398,6 +398,7 @@ function CarouselRow({
 function ProductsTab({
   sortedCategories,
   sections,
+  pageLayout,
   expandedCategories,
   setExpandedCategories,
   compact,
@@ -406,80 +407,128 @@ function ProductsTab({
 }: {
   sortedCategories: Array<{ id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; section_id?: string | null; logo_url?: string | null }>;
   sections: StoreSectionWithCategories[];
+  pageLayout?: Array<{ type: string; id: string }> | null;
   expandedCategories: Set<string>;
   setExpandedCategories: React.Dispatch<React.SetStateAction<Set<string>>>;
   compact: boolean;
   isOwnProfile?: boolean;
   storeId?: string;
 }) {
-  // Categories that belong to sections use the filtered+sorted products from sortedCategories
   const productsByCatId = new Map(sortedCategories.map((c) => [c.id, c.products]));
 
   // Sections that have at least one visible carousel (after search/filter)
-  const visibleSections = sections
-    .map((sec) => ({
-      ...sec,
-      categories: sec.categories
-        .map((c) => ({ ...c, products: productsByCatId.get(c.id) ?? c.products }))
-        .filter((c) => c.products.length > 0),
-    }))
-    .filter((sec) => sec.categories.length > 0);
+  const visibleSectionMap = new Map(
+    sections
+      .map((sec) => ({
+        ...sec,
+        categories: sec.categories
+          .map((c) => ({ ...c, products: productsByCatId.get(c.id) ?? c.products }))
+          .filter((c) => c.products.length > 0),
+      }))
+      .filter((sec) => sec.categories.length > 0)
+      .map((sec) => [sec.id, sec])
+  );
 
-  // Standalone carousels (not in any section, or section not present)
+  // Standalone carousels (not in any section)
   const sectionedIds = new Set(sections.flatMap((s) => s.categories.map((c) => c.id)));
-  const standalone = sortedCategories.filter(
-    (c) => !c.section_id && !sectionedIds.has(c.id) && c.products.length > 0
+  const allSectionedIds = new Set([...visibleSectionMap.values()].flatMap((s) => s.categories.map((c) => c.id)));
+  const standaloneById = new Map(
+    sortedCategories
+      .filter((c) => (!c.section_id && !sectionedIds.has(c.id) && c.products.length > 0)
+        || (c.section_id && !allSectionedIds.has(c.id) && c.products.length > 0))
+      .map((c) => [c.id, c])
   );
-  // Also include section categories whose section has no visible items (shouldn't happen but safe)
-  const allSectionedIds = new Set(visibleSections.flatMap((s) => s.categories.map((c) => c.id)));
-  const orphaned = sortedCategories.filter(
-    (c) => c.section_id && !allSectionedIds.has(c.id) && c.products.length > 0
-  );
-
-  const standalonePlusSectionless = [...standalone, ...orphaned];
 
   let rowIndex = 0;
 
+  // ── Render helpers ──────────────────────────────────────────
+  const renderSection = (section: (typeof sections)[number] & { categories: typeof sortedCategories }) => (
+    <div key={section.id} className="bg-gray-200/60 border-y border-gray-300 -mx-5 sm:-mx-8 lg:-mx-10 px-5 sm:px-8 lg:px-10 pt-4 pb-5 space-y-5">
+      <div>
+        <h2 className="text-base font-semibold tracking-tight text-gray-900 leading-snug">{section.name}</h2>
+        {section.description && (
+          <p className="mt-0.5 text-sm text-gray-500 leading-snug">{section.description}</p>
+        )}
+      </div>
+      {section.categories.map((cat) => {
+        const r = rowIndex++;
+        return (
+          <CarouselRow
+            key={cat.id}
+            cat={{ ...cat, logo_url: (cat as any).logo_url ?? null }}
+            rowIndex={r}
+            expandedCategories={expandedCategories}
+            setExpandedCategories={setExpandedCategories}
+            compact={compact}
+            isOwnProfile={isOwnProfile}
+            storeId={storeId}
+          />
+        );
+      })}
+    </div>
+  );
+
+  const renderCarousel = (cat: (typeof sortedCategories)[number]) => {
+    const r = rowIndex++;
+    return (
+      <CarouselRow
+        key={cat.id}
+        cat={cat}
+        rowIndex={r}
+        expandedCategories={expandedCategories}
+        setExpandedCategories={setExpandedCategories}
+        compact={compact}
+        isOwnProfile={isOwnProfile}
+        storeId={storeId}
+      />
+    );
+  };
+
+  // ── Layout-driven rendering (interleaved) ───────────────────
+  if (pageLayout && pageLayout.length > 0) {
+    const renderedIds = new Set<string>();
+    const ordered: React.ReactNode[] = [];
+
+    for (const entry of pageLayout) {
+      if (entry.type === 'section') {
+        const sec = visibleSectionMap.get(entry.id);
+        if (sec) { ordered.push(renderSection(sec as any)); renderedIds.add(entry.id); }
+      } else if (entry.type === 'carousel') {
+        const cat = standaloneById.get(entry.id);
+        if (cat) { ordered.push(renderCarousel(cat)); renderedIds.add(entry.id); }
+      }
+    }
+
+    // Append anything not yet in the saved layout (newly created items)
+    const extras: React.ReactNode[] = [];
+    for (const [id, sec] of visibleSectionMap) {
+      if (!renderedIds.has(id)) extras.push(renderSection(sec as any));
+    }
+    for (const [id, cat] of standaloneById) {
+      if (!renderedIds.has(id)) extras.push(renderCarousel(cat));
+    }
+
+    return (
+      <div className="space-y-6">
+        {ordered}
+        {extras.length > 0 && <div className="space-y-5">{extras}</div>}
+      </div>
+    );
+  }
+
+  // ── Fallback: sections first, then standalone ───────────────
+  const visibleSections = [...visibleSectionMap.values()];
+  const standalonePlusSectionless = [...standaloneById.values()];
+
   return (
     <div className="space-y-0">
-      {/* Sections */}
       {visibleSections.map((section, secIdx) => (
         <div key={section.id}>
           {secIdx > 0 && <div className="my-6" />}
-
-          {/* Section gray band — title + carousels together */}
-          <div className="bg-gray-100 border-y border-gray-300 -mx-5 sm:-mx-8 lg:-mx-10 px-5 sm:px-8 lg:px-10 pt-4 pb-5 space-y-5">
-            {/* Section title inside the band */}
-            <div>
-              <h2 className="text-base font-semibold tracking-tight text-gray-900 leading-snug">
-                {section.name}
-              </h2>
-              {section.description && (
-                <p className="mt-0.5 text-sm text-gray-500 leading-snug">{section.description}</p>
-              )}
-            </div>
-
-            {section.categories.map((cat) => {
-              const r = rowIndex++;
-              const enriched = { ...cat, logo_url: (cat as any).logo_url ?? null };
-              return (
-                <CarouselRow
-                  key={cat.id}
-                  cat={enriched}
-                  rowIndex={r}
-                  expandedCategories={expandedCategories}
-                  setExpandedCategories={setExpandedCategories}
-                  compact={compact}
-                  isOwnProfile={isOwnProfile}
-                  storeId={storeId}
-                />
-              );
-            })}
-          </div>
+          {renderSection(section as any)}
         </div>
       ))}
 
-      {/* Standalone carousels (no section) */}
       {standalonePlusSectionless.length > 0 && (
         <div className={cn("space-y-5", visibleSections.length > 0 && "mt-8")}>
           {visibleSections.length > 0 && (
@@ -487,21 +536,7 @@ function ProductsTab({
               More Products
             </span>
           )}
-          {standalonePlusSectionless.map((cat) => {
-            const r = rowIndex++;
-            return (
-              <CarouselRow
-                key={cat.id}
-                cat={cat}
-                rowIndex={r}
-                expandedCategories={expandedCategories}
-                setExpandedCategories={setExpandedCategories}
-                compact={compact}
-                isOwnProfile={isOwnProfile}
-                storeId={storeId}
-              />
-            );
-          })}
+          {standalonePlusSectionless.map((cat) => renderCarousel(cat))}
         </div>
       )}
     </div>
@@ -999,6 +1034,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 <ProductsTab
                   sortedCategories={sortedCategories}
                   sections={store.sections ?? []}
+                  pageLayout={store.homepage_config?.products_page_layout}
                   expandedCategories={expandedCategories}
                   setExpandedCategories={setExpandedCategories}
                   compact={compact}

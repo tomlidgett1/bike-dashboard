@@ -528,7 +528,7 @@ export default function ProductsPage() {
   const [categoryFilter, setCategoryFilter] = React.useState<string>('');
   const [stockFilter, setStockFilter] = React.useState<string>('all');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
-  const [sortBy, setSortBy] = React.useState<string>('last_synced_at');
+  const [sortBy, setSortBy] = React.useState<string>('created_at');
   const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('desc');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
   
@@ -1115,6 +1115,12 @@ export default function ProductsPage() {
                             <div className="flex items-center gap-1.5">
                               <span className="text-xs text-muted-foreground font-medium">
                                 Manual
+                              </span>
+                            </div>
+                          ) : product.listing_source === "online_catalog" ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                Online
                               </span>
                             </div>
                           ) : null}

@@ -4,7 +4,6 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
   Package,
@@ -211,7 +210,7 @@ interface SupportTicket {
   };
 }
 
-type MainTab = 'orders' | 'listings' | 'drafts' | 'claims';
+type MainTab = 'orders' | 'listings' | 'drafts' | 'claims' | 'offers';
 type OrderMode = 'all' | 'buying' | 'selling';
 
 // Extended purchase with order type for 'all' view
@@ -299,7 +298,7 @@ function getEventDisplay(event: OrderEvent): { icon: React.ComponentType<{ class
     created: { 
       icon: ShoppingBag, 
       label: 'Order Created', 
-      color: 'bg-gray-500' 
+      color: 'bg-muted-foreground/60'
     },
     status_changed: { 
       icon: (() => {
@@ -322,7 +321,7 @@ function getEventDisplay(event: OrderEvent): { icon: React.ComponentType<{ class
         if (event.new_status === 'shipped') return 'bg-blue-500';
         if (event.new_status === 'delivered') return 'bg-green-600';
         if (event.new_status === 'cancelled') return 'bg-red-500';
-        return 'bg-gray-500';
+        return 'bg-muted-foreground/60';
       })()
     },
     tracking_added: { 
@@ -349,7 +348,7 @@ function getEventDisplay(event: OrderEvent): { icon: React.ComponentType<{ class
   return { 
     icon: Clock, 
     label: event.event_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), 
-    color: 'bg-gray-500' 
+    color: 'bg-muted-foreground/60'
   };
 }
 
@@ -415,24 +414,27 @@ function StatusBadge({
 // Mobile Bottom Navigation
 // ============================================================
 
-function MobileBottomNav({ 
-  activeTab, 
+function MobileBottomNav({
+  activeTab,
   onTabChange,
   orderCount,
   listingCount,
   draftCount,
   claimsCount,
-}: { 
-  activeTab: MainTab; 
+  offersCount,
+}: {
+  activeTab: MainTab;
   onTabChange: (tab: MainTab) => void;
   orderCount: number;
   listingCount: number;
   draftCount: number;
   claimsCount: number;
+  offersCount: number;
 }) {
   const tabs = [
     { id: 'orders' as MainTab, label: 'Orders', icon: ShoppingBag, count: orderCount },
     { id: 'listings' as MainTab, label: 'Listings', icon: Tag, count: listingCount },
+    { id: 'offers' as MainTab, label: 'Offers', icon: DollarSign, count: offersCount },
     { id: 'claims' as MainTab, label: 'Claims', icon: LifeBuoy, count: claimsCount },
   ];
 
@@ -527,7 +529,7 @@ function MobileCombinedOrderCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <p className="font-medium text-sm line-clamp-1 flex-1">{productName}</p>
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 flex-shrink-0">
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground flex-shrink-0">
               {order.orderType === 'buying' ? 'Buying' : 'Selling'}
             </span>
           </div>
@@ -597,7 +599,7 @@ function PendingPaymentOfferCard({
             {sellerName} · {offerDate}
           </p>
           <div className="flex items-center justify-between mt-2">
-            <Badge variant="default" className="rounded-md bg-gray-900 hover:bg-gray-900 text-white gap-1">
+            <Badge variant="default" className="rounded-md bg-foreground hover:bg-foreground text-background gap-1">
               <CreditCard className="h-3 w-3" />
               Pay Now
             </Badge>
@@ -663,7 +665,7 @@ function DesktopPendingPaymentCard({
 
         {/* Status Badge */}
         <div className="w-32 flex justify-center">
-          <Badge variant="default" className="rounded-md bg-gray-900 hover:bg-gray-900 text-white gap-1">
+          <Badge variant="default" className="rounded-md bg-foreground hover:bg-foreground text-background gap-1">
             <CreditCard className="h-3 w-3" />
             Pay Now
           </Badge>
@@ -1203,24 +1205,24 @@ function OrderDetailContent({
           <Separator />
           <div className="space-y-2">
             <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Shipping Address</h4>
-            <div className="p-3 bg-white rounded-md border border-gray-200 text-sm space-y-1">
+            <div className="p-3 bg-muted/50 rounded-md border border-border text-sm space-y-1">
               {shippingAddress.name && (
-                <p className="font-medium text-gray-900">{shippingAddress.name}</p>
+                <p className="font-medium text-foreground">{shippingAddress.name}</p>
               )}
               {shippingAddress.phone && (
-                <p className="text-gray-600">{shippingAddress.phone}</p>
+                <p className="text-muted-foreground">{shippingAddress.phone}</p>
               )}
-              {shippingAddress.line1 && <p className="text-gray-700">{shippingAddress.line1}</p>}
-              {shippingAddress.line2 && <p className="text-gray-700">{shippingAddress.line2}</p>}
+              {shippingAddress.line1 && <p className="text-foreground">{shippingAddress.line1}</p>}
+              {shippingAddress.line2 && <p className="text-foreground">{shippingAddress.line2}</p>}
               {(shippingAddress.city || shippingAddress.state || shippingAddress.postal_code) && (
-                <p className="text-gray-700">
+                <p className="text-foreground">
                   {[shippingAddress.city, shippingAddress.state, shippingAddress.postal_code]
                     .filter(Boolean)
                     .join(', ')}
                 </p>
               )}
               {shippingAddress.country && (
-                <p className="text-gray-700">{shippingAddress.country}</p>
+                <p className="text-foreground">{shippingAddress.country}</p>
               )}
             </div>
             {purchase.buyer_email && (
@@ -1327,7 +1329,7 @@ function OrderDetailContent({
 
             {/* Tracking Number */}
             {purchase.tracking_number && (
-              <div className="p-3 bg-white rounded-md border border-gray-200">
+              <div className="p-3 bg-muted/50 rounded-md border border-border">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Tracking Number</p>
                 <div className="flex items-center justify-between">
                   <code className="text-sm font-medium">{purchase.tracking_number}</code>
@@ -1383,7 +1385,7 @@ function OrderDetailContent({
         ) : (
           <div className="relative">
             {/* Timeline line */}
-            <div className="absolute left-[7px] top-2 bottom-2 w-[2px] bg-gray-200" />
+            <div className="absolute left-[7px] top-2 bottom-2 w-[2px] bg-border" />
             
             <div className="space-y-4">
               {events.map((event, index) => {
@@ -1395,19 +1397,19 @@ function OrderDetailContent({
                     {/* Timeline dot */}
                     <div className={cn(
                       "relative z-10 flex h-4 w-4 items-center justify-center rounded-full",
-                      isLast ? color : "bg-gray-300"
+                      isLast ? color : "bg-muted-foreground/30"
                     )}>
                       <EventIcon className="h-2.5 w-2.5 text-white" />
                     </div>
                     
                     {/* Event content */}
                     <div className="flex-1 min-w-0 pb-1">
-                      <p className="text-sm font-medium text-gray-900">{label}</p>
+                      <p className="text-sm font-medium text-foreground">{label}</p>
                       <p className="text-xs text-muted-foreground">
                         {formatDateFull(event.created_at)}
                       </p>
                       {event.event_data?.tracking_number && (
-                        <p className="text-xs text-gray-600 mt-0.5">
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           Tracking: {event.event_data.tracking_number}
                         </p>
                       )}
@@ -1846,7 +1848,7 @@ function GroupedOrdersView({
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="font-medium text-sm truncate">{productName}</span>
                         {/* Order Type Badge - Subtle */}
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 flex-shrink-0">
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground flex-shrink-0">
                           {order.orderType === 'buying' ? 'Buying' : 'Selling'}
                         </span>
                       </div>
@@ -1903,6 +1905,206 @@ function GroupedOrdersView({
         );
       })}
     </div>
+  );
+}
+
+// ============================================================
+// Offer Status Badge
+// ============================================================
+
+function OfferStatusBadge({ status, paymentStatus }: { status: string; paymentStatus?: string }) {
+  if (status === 'accepted' && paymentStatus === 'pending') {
+    return (
+      <Badge variant="default" className="rounded-md bg-foreground hover:bg-foreground text-background gap-1 text-xs">
+        <CreditCard className="h-3 w-3" />
+        Pay Now
+      </Badge>
+    );
+  }
+  if (status === 'accepted' && paymentStatus === 'paid') {
+    return (
+      <Badge variant="default" className="rounded-md bg-green-600 hover:bg-green-600 text-white gap-1 text-xs">
+        <Check className="h-3 w-3" />
+        Paid
+      </Badge>
+    );
+  }
+  const config: Record<string, { label: string; className: string }> = {
+    pending:   { label: 'Pending',  className: 'rounded-md text-xs' },
+    accepted:  { label: 'Accepted', className: 'rounded-md bg-green-600 hover:bg-green-600 text-white text-xs' },
+    rejected:  { label: 'Rejected', className: 'rounded-md text-xs' },
+    countered: { label: 'Countered', className: 'rounded-md text-xs' },
+    expired:   { label: 'Expired',  className: 'rounded-md text-xs' },
+  };
+  const c = config[status] || { label: status, className: 'rounded-md text-xs' };
+  const variant = status === 'rejected' || status === 'expired' ? 'outline' : status === 'accepted' ? 'default' : 'secondary';
+  return <Badge variant={variant as any} className={c.className}>{c.label}</Badge>;
+}
+
+// ============================================================
+// Mobile Offer Card
+// ============================================================
+
+function MobileOfferCard({
+  offer,
+  mode,
+  onClick,
+}: {
+  offer: PendingPaymentOffer;
+  mode: 'buying' | 'selling';
+  onClick: () => void;
+}) {
+  const productImage = offer.product?.cached_image_url || offer.product?.primary_image_url;
+  const productName = offer.product?.display_name || offer.product?.description || 'Product';
+  const counterparty = mode === 'buying'
+    ? (offer.seller?.business_name || offer.seller?.name || 'Seller')
+    : ((offer as any).buyer?.name || 'Buyer');
+  const offerDate = formatDate(offer.updated_at || offer.created_at);
+  const savings = offer.original_price > 0
+    ? Math.round((1 - offer.offer_amount / offer.original_price) * 100)
+    : 0;
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors"
+    >
+      <div className="flex gap-3">
+        <div className="relative h-16 w-16 rounded-md overflow-hidden bg-muted flex-shrink-0">
+          {productImage ? (
+            <Image src={productImage} alt={productName} fill className="object-cover" sizes="64px" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Package className="h-6 w-6 text-muted-foreground" />
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm line-clamp-1">{productName}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{counterparty} · {offerDate}</p>
+          <div className="flex items-center justify-between mt-2">
+            <OfferStatusBadge status={offer.status} paymentStatus={offer.payment_status} />
+            <div className="text-right">
+              <span className="font-semibold text-sm">${offer.offer_amount.toFixed(2)}</span>
+              {savings > 0 && (
+                <span className="ml-1.5 text-xs text-muted-foreground line-through">${offer.original_price.toFixed(2)}</span>
+              )}
+            </div>
+          </div>
+        </div>
+        <ChevronRight className="h-5 w-5 text-muted-foreground self-center flex-shrink-0" />
+      </div>
+    </button>
+  );
+}
+
+// ============================================================
+// Desktop Offers Table
+// ============================================================
+
+function DesktopOffersTable({
+  offers,
+  mode,
+  filter,
+  loading,
+  onOfferClick,
+}: {
+  offers: PendingPaymentOffer[];
+  mode: 'buying' | 'selling';
+  filter: 'all' | 'pending' | 'accepted' | 'rejected';
+  loading: boolean;
+  onOfferClick: (offer: PendingPaymentOffer) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const filtered = filter === 'all' ? offers : offers.filter(o => o.status === filter);
+
+  if (filtered.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <DollarSign className="h-8 w-8 text-muted-foreground mb-3" />
+        <p className="text-sm font-medium">No offers</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          {mode === 'buying' ? 'Offers you\'ve sent will appear here' : 'Offers you\'ve received will appear here'}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-[40%]">Item</TableHead>
+          <TableHead>{mode === 'buying' ? 'Seller' : 'Buyer'}</TableHead>
+          <TableHead>Offer</TableHead>
+          <TableHead>Savings</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Date</TableHead>
+          <TableHead className="w-8"></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {filtered.map((offer) => {
+          const productImage = offer.product?.cached_image_url || offer.product?.primary_image_url;
+          const productName = offer.product?.display_name || offer.product?.description || 'Product';
+          const counterparty = mode === 'buying'
+            ? (offer.seller?.business_name || offer.seller?.name || 'Seller')
+            : ((offer as any).buyer?.name || 'Buyer');
+          const savings = offer.original_price > 0
+            ? Math.round((1 - offer.offer_amount / offer.original_price) * 100)
+            : 0;
+
+          return (
+            <TableRow
+              key={offer.id}
+              className="cursor-pointer"
+              onClick={() => onOfferClick(offer)}
+            >
+              <TableCell>
+                <div className="flex items-center gap-3">
+                  <div className="relative h-10 w-10 rounded-md overflow-hidden bg-muted flex-shrink-0">
+                    {productImage ? (
+                      <Image src={productImage} alt={productName} fill className="object-cover" sizes="40px" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center">
+                        <Package className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-xs font-medium truncate max-w-[200px]">{productName}</span>
+                </div>
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">{counterparty}</TableCell>
+              <TableCell>
+                <div>
+                  <span className="text-xs font-semibold">${offer.offer_amount.toFixed(2)}</span>
+                  {offer.original_price > 0 && (
+                    <span className="ml-1.5 text-xs text-muted-foreground line-through">${offer.original_price.toFixed(2)}</span>
+                  )}
+                </div>
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {savings > 0 ? `-${savings}%` : '—'}
+              </TableCell>
+              <TableCell>
+                <OfferStatusBadge status={offer.status} paymentStatus={offer.payment_status} />
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">{formatDate(offer.updated_at || offer.created_at)}</TableCell>
+              <TableCell>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -2088,6 +2290,13 @@ export default function OrderManagementPage() {
   // Listings toggle state
   const [togglingListingIds, setTogglingListingIds] = React.useState<Set<string>>(new Set());
 
+  // Offers tab state
+  const [offersMode, setOffersMode] = React.useState<'buying' | 'selling'>('buying');
+  const [allBuyerOffers, setAllBuyerOffers] = React.useState<PendingPaymentOffer[]>([]);
+  const [allSellerOffers, setAllSellerOffers] = React.useState<PendingPaymentOffer[]>([]);
+  const [offersLoading, setOffersLoading] = React.useState(false);
+  const [offersFilter, setOffersFilter] = React.useState<'all' | 'pending' | 'accepted' | 'rejected'>('all');
+
   // Fetch pending payment offers for buyers
   const fetchPendingPaymentOffers = React.useCallback(async () => {
     try {
@@ -2111,6 +2320,24 @@ export default function OrderManagementPage() {
       }
     } catch (e) {
       console.error('Error fetching seller pending offers:', e);
+    }
+  }, []);
+
+  // Fetch all offers (for the Offers tab)
+  const fetchAllOffers = React.useCallback(async () => {
+    setOffersLoading(true);
+    try {
+      const [buyerRes, sellerRes] = await Promise.all([
+        fetch('/api/offers?role=buyer'),
+        fetch('/api/offers?role=seller'),
+      ]);
+      const [buyerData, sellerData] = await Promise.all([buyerRes.json(), sellerRes.json()]);
+      setAllBuyerOffers(buyerData.offers || []);
+      setAllSellerOffers(sellerData.offers || []);
+    } catch (e) {
+      console.error('Error fetching offers:', e);
+    } finally {
+      setOffersLoading(false);
     }
   }, []);
 
@@ -2233,6 +2460,7 @@ export default function OrderManagementPage() {
     fetchListings();
     fetchDrafts();
     fetchTickets();
+    fetchAllOffers();
   }, []);
 
   // Refetch orders when mode/filter changes
@@ -2636,6 +2864,8 @@ export default function OrderManagementPage() {
   const activeOrderCount = orders.filter(o => ['pending', 'paid', 'shipped'].includes(o.status)).length;
   const activeListingCount = listings.filter(l => !l.sold_at && l.listing_status !== 'archived').length;
   const activeClaimsCount = tickets.filter(t => ['open', 'awaiting_response', 'in_review', 'escalated'].includes(t.status)).length;
+  const pendingOffersCount = allBuyerOffers.filter(o => o.status === 'pending').length +
+    allBuyerOffers.filter(o => o.status === 'accepted' && o.payment_status === 'pending').length;
 
   return (
     <>
@@ -2661,14 +2891,14 @@ export default function OrderManagementPage() {
               <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as MainTab)}>
                 <div className="flex items-center justify-between mb-4">
                   {/* Custom styled tabs matching the All/Buying/Selling design */}
-                  <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                  <div className="flex items-center bg-muted p-0.5 rounded-md w-fit">
                     <button
                       onClick={() => setActiveTab('orders')}
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                         activeTab === 'orders'
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
+                          ? "text-foreground bg-background shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/70"
                       )}
                     >
                       <ShoppingBag size={15} />
@@ -2682,8 +2912,8 @@ export default function OrderManagementPage() {
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                         activeTab === 'listings'
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
+                          ? "text-foreground bg-background shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/70"
                       )}
                     >
                       <Tag size={15} />
@@ -2695,8 +2925,8 @@ export default function OrderManagementPage() {
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                         activeTab === 'claims'
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
+                          ? "text-foreground bg-background shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/70"
                       )}
                     >
                       <LifeBuoy size={15} />
@@ -2710,14 +2940,29 @@ export default function OrderManagementPage() {
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                         activeTab === 'drafts'
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
+                          ? "text-foreground bg-background shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/70"
                       )}
                     >
                       <FileText size={15} />
                       Drafts
                       {drafts.length > 0 && (
                         <span className="text-xs text-muted-foreground">({drafts.length})</span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('offers')}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
+                        activeTab === 'offers'
+                          ? "text-foreground bg-background shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/70"
+                      )}
+                    >
+                      <DollarSign size={15} />
+                      Offers
+                      {pendingOffersCount > 0 && (
+                        <span className="text-xs text-muted-foreground">({pendingOffersCount})</span>
                       )}
                     </button>
                   </div>
@@ -2728,14 +2973,14 @@ export default function OrderManagementPage() {
                   <div className="bg-card rounded-md border">
                     {/* Toolbar */}
                     <div className="p-4 border-b flex flex-wrap gap-3 items-center">
-                      <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                      <div className="flex items-center bg-muted p-0.5 rounded-md w-fit">
                         <button
                           onClick={() => setOrderMode('all')}
                           className={cn(
                             "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                             orderMode === 'all'
-                              ? "text-gray-800 bg-white shadow-sm"
-                              : "text-gray-600 hover:bg-gray-200/70"
+                              ? "text-foreground bg-background shadow-sm"
+                              : "text-muted-foreground hover:bg-muted/70"
                           )}
                         >
                           <Package size={15} />
@@ -2746,8 +2991,8 @@ export default function OrderManagementPage() {
                           className={cn(
                             "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                             orderMode === 'buying'
-                              ? "text-gray-800 bg-white shadow-sm"
-                              : "text-gray-600 hover:bg-gray-200/70"
+                              ? "text-foreground bg-background shadow-sm"
+                              : "text-muted-foreground hover:bg-muted/70"
                           )}
                         >
                           <ShoppingBag size={15} />
@@ -2758,8 +3003,8 @@ export default function OrderManagementPage() {
                           className={cn(
                             "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                             orderMode === 'selling'
-                              ? "text-gray-800 bg-white shadow-sm"
-                              : "text-gray-600 hover:bg-gray-200/70"
+                              ? "text-foreground bg-background shadow-sm"
+                              : "text-muted-foreground hover:bg-muted/70"
                           )}
                         >
                           <Store size={15} />
@@ -3008,9 +3253,9 @@ export default function OrderManagementPage() {
                             <span className="text-sm font-medium text-foreground">
                               {selectedDraftIds.size} selected
                             </span>
-                            <Button 
-                              size="sm" 
-                              variant="destructive" 
+                            <Button
+                              size="sm"
+                              variant="destructive"
                               onClick={handleBulkDeleteDrafts}
                               className="h-8"
                             >
@@ -3025,14 +3270,73 @@ export default function OrderManagementPage() {
                       </Button>
                     </div>
 
-                    <DesktopDraftsTable 
-                      drafts={drafts} 
-                      onContinue={handleContinueDraft} 
-                      onDelete={handleDeleteDraft} 
+                    <DesktopDraftsTable
+                      drafts={drafts}
+                      onContinue={handleContinueDraft}
+                      onDelete={handleDeleteDraft}
                       loading={draftsLoading}
                       selectedDraftIds={selectedDraftIds}
                       onToggleSelect={handleToggleSelectDraft}
                       onToggleSelectAll={handleToggleSelectAllDrafts}
+                    />
+                  </div>
+                </TabsContent>
+
+                {/* Offers Tab */}
+                <TabsContent value="offers">
+                  <div className="bg-card rounded-md border">
+                    <div className="p-4 border-b flex flex-wrap gap-3 items-center">
+                      <div className="flex items-center bg-muted p-0.5 rounded-md w-fit">
+                        <button
+                          onClick={() => setOffersMode('buying')}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
+                            offersMode === 'buying'
+                              ? "text-foreground bg-background shadow-sm"
+                              : "text-muted-foreground hover:bg-muted/70"
+                          )}
+                        >
+                          <ShoppingBag size={15} />
+                          Sent
+                        </button>
+                        <button
+                          onClick={() => setOffersMode('selling')}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
+                            offersMode === 'selling'
+                              ? "text-foreground bg-background shadow-sm"
+                              : "text-muted-foreground hover:bg-muted/70"
+                          )}
+                        >
+                          <Store size={15} />
+                          Received
+                        </button>
+                      </div>
+
+                      <Select value={offersFilter} onValueChange={(v) => setOffersFilter(v as any)}>
+                        <SelectTrigger className="w-[140px]">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Offers</SelectItem>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="accepted">Accepted</SelectItem>
+                          <SelectItem value="rejected">Rejected</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <div className="flex-1" />
+                      <Button variant="outline" size="icon" onClick={fetchAllOffers}>
+                        <RefreshCw className={cn("h-4 w-4", offersLoading && "animate-spin")} />
+                      </Button>
+                    </div>
+
+                    <DesktopOffersTable
+                      offers={offersMode === 'buying' ? allBuyerOffers : allSellerOffers}
+                      mode={offersMode}
+                      filter={offersFilter}
+                      loading={offersLoading}
+                      onOfferClick={(offer) => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
                     />
                   </div>
                 </TabsContent>
@@ -3044,14 +3348,14 @@ export default function OrderManagementPage() {
               {/* Mobile Header for Orders */}
               {activeTab === 'orders' && (
                 <div className="space-y-3">
-                  <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-full">
+                  <div className="flex items-center bg-muted p-0.5 rounded-md w-full">
                     <button
                       onClick={() => setOrderMode('all')}
                       className={cn(
                         "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
                         orderMode === 'all'
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
+                          ? "text-foreground bg-background shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/70"
                       )}
                     >
                       <Package size={14} />
@@ -3062,8 +3366,8 @@ export default function OrderManagementPage() {
                       className={cn(
                         "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
                         orderMode === 'buying'
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
+                          ? "text-foreground bg-background shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/70"
                       )}
                     >
                       <ShoppingBag size={14} />
@@ -3074,8 +3378,8 @@ export default function OrderManagementPage() {
                       className={cn(
                         "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
                         orderMode === 'selling'
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
+                          ? "text-foreground bg-background shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/70"
                       )}
                     >
                       <Store size={14} />
@@ -3312,12 +3616,92 @@ export default function OrderManagementPage() {
                 </div>
               )}
 
+              {/* Mobile Offers */}
+              {activeTab === 'offers' && (
+                <div className="space-y-3">
+                  {/* Mode toggle */}
+                  <div className="flex items-center bg-muted p-0.5 rounded-md w-full">
+                    <button
+                      onClick={() => setOffersMode('buying')}
+                      className={cn(
+                        "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
+                        offersMode === 'buying'
+                          ? "text-foreground bg-background shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/70"
+                      )}
+                    >
+                      <ShoppingBag size={14} />
+                      Sent
+                    </button>
+                    <button
+                      onClick={() => setOffersMode('selling')}
+                      className={cn(
+                        "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
+                        offersMode === 'selling'
+                          ? "text-foreground bg-background shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/70"
+                      )}
+                    >
+                      <Store size={14} />
+                      Received
+                    </button>
+                  </div>
+
+                  {/* Filter chips */}
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {(['all', 'pending', 'accepted', 'rejected'] as const).map((f) => (
+                      <Button
+                        key={f}
+                        variant={offersFilter === f ? 'secondary' : 'outline'}
+                        size="sm"
+                        onClick={() => setOffersFilter(f)}
+                        className="flex-shrink-0 h-8 text-xs"
+                      >
+                        {f.charAt(0).toUpperCase() + f.slice(1)}
+                      </Button>
+                    ))}
+                  </div>
+
+                  {offersLoading ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (() => {
+                    const offers = offersMode === 'buying' ? allBuyerOffers : allSellerOffers;
+                    const filtered = offersFilter === 'all' ? offers : offers.filter(o => o.status === offersFilter);
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="text-center py-12">
+                          <DollarSign className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                          <p className="font-medium text-sm">No offers</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {offersMode === 'buying' ? 'Offers you\'ve sent will appear here' : 'Offers you\'ve received will appear here'}
+                          </p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="space-y-2">
+                        {filtered.map((offer) => (
+                          <MobileOfferCard
+                            key={offer.id}
+                            offer={offer}
+                            mode={offersMode}
+                            onClick={() => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {/* Mobile Drafts */}
               {activeTab === 'drafts' && (
                 <div className="space-y-3">
                   {/* Mobile Selection Actions */}
                   {drafts.length > 0 && !draftsLoading && (
-                    <div className="bg-white rounded-md border border-border p-3 flex items-center justify-between">
+                    <div className="bg-card rounded-md border border-border p-3 flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Checkbox
                           checked={drafts.length > 0 && drafts.every(draft => selectedDraftIds.has(draft.id))}
@@ -3383,6 +3767,7 @@ export default function OrderManagementPage() {
         listingCount={activeListingCount}
         draftCount={drafts.length}
         claimsCount={activeClaimsCount}
+        offersCount={pendingOffersCount}
       />
 
       {/* Confirm Receipt Dialog */}

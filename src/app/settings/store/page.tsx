@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Store, Wrench, Tag, FileText, Star, Type, Layers, Home } from "lucide-react";
+import { Loader2, Store, Wrench, Tag, FileText, Star, Type, Layers, Home, Globe } from "lucide-react";
 import { Header } from "@/components/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,10 +15,11 @@ import { StoreBrandsManager } from "@/components/settings/store-brands-manager";
 import { StoreProductDescriptionsManager } from "@/components/settings/store-product-descriptions-manager";
 import { StoreProductTitlesManager } from "@/components/settings/store-product-titles-manager";
 import { StoreSectionsManager } from "@/components/settings/store-sections-manager";
+import { StoreOnlineProductsManager } from "@/components/settings/store-online-products-manager";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 
-const VALID_TABS = ["home", "categories", "sections", "services", "brands", "products", "titles"];
+const VALID_TABS = ["home", "categories", "sections", "services", "brands", "products", "titles", "online"];
 
 function StoreSettingsContent() {
   const { user } = useAuth();
@@ -101,6 +102,10 @@ function StoreSettingsContent() {
               <TabsTrigger value="titles" className="flex-none gap-2">
                 <Type className="h-4 w-4" />
                 Titles
+              </TabsTrigger>
+              <TabsTrigger value="online" className="flex-none gap-2">
+                <Globe className="h-4 w-4" />
+                Online Products
               </TabsTrigger>
             </TabsList>
 
@@ -260,6 +265,29 @@ function StoreSettingsContent() {
                 </CardHeader>
                 <CardContent>
                   <StoreProductTitlesManager />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="online">
+              <Card className="rounded-md border-border">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
+                      <Globe className="h-5 w-5 text-foreground" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-semibold">
+                        Online Products
+                      </CardTitle>
+                      <CardDescription className="text-sm">
+                        Screenshot products from any online store — AI extracts the listings, sources images via SERP, and publishes them with an Online Only badge.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <StoreOnlineProductsManager />
                 </CardContent>
               </Card>
             </TabsContent>

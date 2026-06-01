@@ -130,7 +130,7 @@ Deno.serve(async (_req) => {
         .in('user_id', userIds),
       supabase
         .from('notification_preferences')
-        .select('user_id, email_enabled')
+        .select('user_id, email_enabled, offer_notifications_enabled, offer_received_enabled, offer_updates_enabled')
         .in('user_id', userIds),
     ]);
 
@@ -148,7 +148,7 @@ Deno.serve(async (_req) => {
 
     const { data: participantsData } = await supabase
       .from('users')
-      .select('user_id, name, business_name')
+      .select('user_id, name, business_name, logo_url')
       .in('user_id', Array.from(allParticipantIds));
 
     const participantMap = new Map(participantsData?.map((p: any) => [p.user_id, p]) || []);
@@ -183,12 +183,29 @@ Deno.serve(async (_req) => {
       if (user.email_notifications === false || preferences?.email_enabled === false) {
         await markNotificationAs(supabase, notification.id, 'skipped');
         results.skipped++;
-        results.details.push({
-          id: notification.id,
-          status: 'skipped',
-          reason: 'email_disabled',
-        });
+        results.details.push({ id: notification.id, status: 'skipped', reason: 'email_disabled' });
         continue;
+      }
+
+      // Check per-type offer preferences
+      if (notification.type === 'offer_received') {
+        // Use offer_received_enabled; fall back to legacy offer_notifications_enabled
+        const enabled = preferences?.offer_received_enabled ?? preferences?.offer_notifications_enabled ?? true;
+        if (enabled === false) {
+          await markNotificationAs(supabase, notification.id, 'skipped');
+          results.skipped++;
+          results.details.push({ id: notification.id, status: 'skipped', reason: 'offer_received_disabled' });
+          continue;
+        }
+      } else {
+        // offer_accepted / offer_rejected / offer_countered / offer_expired
+        const enabled = preferences?.offer_updates_enabled ?? preferences?.offer_notifications_enabled ?? true;
+        if (enabled === false) {
+          await markNotificationAs(supabase, notification.id, 'skipped');
+          results.skipped++;
+          results.details.push({ id: notification.id, status: 'skipped', reason: 'offer_updates_disabled' });
+          continue;
+        }
       }
 
       // Skip if already read in-app (user is aware)
@@ -207,7 +224,9 @@ Deno.serve(async (_req) => {
       const buyer = participantMap.get(offer.buyer_id);
       const seller = participantMap.get(offer.seller_id);
       const buyerName = buyer?.business_name || buyer?.name || 'A buyer';
+      const buyerLogoUrl = buyer?.logo_url || undefined;
       const sellerName = seller?.business_name || seller?.name || 'The seller';
+      const sellerLogoUrl = seller?.logo_url || undefined;
       const productName = offer.products?.display_name || offer.products?.description || 'Product';
 
       try {
@@ -218,6 +237,7 @@ Deno.serve(async (_req) => {
           emailContent = offerReceivedTemplate({
             recipientName: user.name || user.email.split('@')[0],
             buyerName,
+            buyerLogoUrl,
             productName,
             productImageUrl: offer.products?.primary_image_url || undefined,
             originalPrice: offer.original_price,
@@ -242,6 +262,7 @@ Deno.serve(async (_req) => {
           emailContent = offerStatusTemplate({
             recipientName: user.name || user.email.split('@')[0],
             sellerName,
+            sellerLogoUrl,
             productName,
             productImageUrl: offer.products?.primary_image_url || undefined,
             originalPrice: offer.original_price,

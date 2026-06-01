@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck } from "lucide-react";
+import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck, Globe } from "lucide-react";
 import { PickupLocationMap } from "./product-detail/pickup-location-map";
 import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
 import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
@@ -181,6 +181,14 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
             !isOwner &&
             product.store_name === "Ashburton Cycles" && <UberDeliveryInlineBadge />}
         </div>
+        {(product as any).listing_source === 'online_catalog' && (
+          <div className="mt-2">
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#ffde59] text-gray-900 text-xs font-medium rounded-md">
+              <Globe className="h-3 w-3" />
+              Online Only
+            </span>
+          </div>
+        )}
         {(product as any).pickup_location && (
           <div className="flex items-center gap-1.5 mt-1.5">
             <MapPin className="h-3.5 w-3.5 text-gray-400" />

@@ -328,13 +328,19 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </div>
           )}
 
-          {/* Sale Badge — bottom-left of photo. Discreet pill matching the condition-badge
-              style. Clear of condition badge (top-left) and Uber badge (bottom-right). */}
-          {live.onSale && (
-            <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
-              <span className="inline-block rounded-md bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm tracking-wide">
-                Sale
-              </span>
+          {/* Bottom-left badges: Online Only + Sale stacked */}
+          {(productData.listing_source === 'online_catalog' || live.onSale) && (
+            <div className="absolute bottom-2 left-2 z-10 pointer-events-none flex flex-col gap-1 items-start">
+              {productData.listing_source === 'online_catalog' && (
+                <span className="inline-block rounded-md bg-[#ffde59]/70 backdrop-blur-sm px-1.5 py-0.5 text-[10px] font-semibold text-gray-900 shadow-sm tracking-wide">
+                  Online Only
+                </span>
+              )}
+              {live.onSale && (
+                <span className="inline-block rounded-md bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm tracking-wide">
+                  Sale
+                </span>
+              )}
             </div>
           )}
 
@@ -409,8 +415,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 
           {/* Seller info - Better organized layout */}
           <div className={cn("flex items-center gap-0.5 flex-wrap", isList ? "mt-1" : "mt-0.5")}>
-            {/* Store badge for store inventory items */}
-            {!hideStoreMeta && productData.listing_type === 'store_inventory' && (
+            {/* Store badge for store inventory items (not online_catalog) */}
+            {!hideStoreMeta && productData.listing_type === 'store_inventory' && productData.listing_source !== 'online_catalog' && (
               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">
                 <Store className="h-2.5 w-2.5" />
                 Store

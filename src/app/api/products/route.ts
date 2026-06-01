@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const pageSize = parseInt(searchParams.get('pageSize') || '20')
     const search = searchParams.get('search') || ''
-    const sortBy = searchParams.get('sortBy') || 'last_synced_at'
+    const sortBy = searchParams.get('sortBy') || 'created_at'
     const sortOrder = searchParams.get('sortOrder') || 'desc'
     const categoryFilter = searchParams.get('category') || ''
     const lsCategoryId = searchParams.get('ls_category_id') || ''

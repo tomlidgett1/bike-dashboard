@@ -108,8 +108,11 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Use service role for all DB operations — RLS blocks inactive products from the anon client
+    const adminClient = createServiceRoleClient();
+
     // Fetch full existing product for change comparison
-    const { data: existing, error: fetchError } = await supabase
+    const { data: existing, error: fetchError } = await adminClient
       .from("products")
       .select("*")
       .eq("id", id)
@@ -203,9 +206,7 @@ export async function PUT(
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
-    // Perform the update using service role to bypass RLS
-    // (auth + ownership already verified above)
-    const adminClient = createServiceRoleClient();
+    // Perform the update (adminClient already created above)
     const { data: listing, error } = await adminClient
       .from("products")
       .update(updateData)

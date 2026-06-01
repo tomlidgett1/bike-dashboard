@@ -1,16 +1,11 @@
-// ============================================================
-// OFFER STATUS EMAIL TEMPLATE
-// ============================================================
-// Template for notifying buyers when offer status changes
-// (accepted, rejected, countered, expired)
-
-import { buildOfferLink, buildProductLink, buildSettingsLink, formatPrice, formatDate, getAppUrl } from '../resend-client.ts';
+import { buildOfferLink, buildSettingsLink, formatPrice, getAppUrl } from '../resend-client.ts';
 
 export type OfferStatusType = 'accepted' | 'rejected' | 'countered' | 'expired';
 
 export interface OfferStatusParams {
   recipientName: string;
   sellerName: string;
+  sellerLogoUrl?: string;
   productName: string;
   productImageUrl?: string;
   originalPrice: number;
@@ -23,38 +18,50 @@ export interface OfferStatusParams {
   expiresAt?: string;
 }
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<OfferStatusType, {
+  eyebrow: string;
+  headline: string;
+  barBg: string;
+  barTextColor: string;
+  ctaText: string;
+  ctaBg: string;
+  ctaColor: string;
+}> = {
   accepted: {
-    headerColor: '#059669',
-    headerText: 'Offer Accepted!',
-    emoji: '🎉',
-    message: (sellerName: string) => `Great news! <strong>${sellerName}</strong> has accepted your offer.`,
-    ctaText: 'View Details',
-    ctaColor: '#059669',
-  },
-  rejected: {
-    headerColor: '#dc2626',
-    headerText: 'Offer Declined',
-    emoji: '😔',
-    message: (sellerName: string) => `Unfortunately, <strong>${sellerName}</strong> has declined your offer.`,
-    ctaText: 'Browse Similar Items',
-    ctaColor: '#1f2937',
+    eyebrow: 'Great news',
+    headline: 'Your offer\nwas accepted.',
+    barBg: '#F5C518',
+    barTextColor: '#0a0a0a',
+    ctaText: 'Complete your purchase',
+    ctaBg: '#F5C518',
+    ctaColor: '#0a0a0a',
   },
   countered: {
-    headerColor: '#f59e0b',
-    headerText: 'Counter Offer Received',
-    emoji: '💰',
-    message: (sellerName: string) => `<strong>${sellerName}</strong> has made a counter offer.`,
-    ctaText: 'View Counter Offer',
-    ctaColor: '#f59e0b',
+    eyebrow: 'Counter offer',
+    headline: 'They made\na counter\noffer.',
+    barBg: '#F5C518',
+    barTextColor: '#0a0a0a',
+    ctaText: 'View counter offer',
+    ctaBg: '#F5C518',
+    ctaColor: '#0a0a0a',
+  },
+  rejected: {
+    eyebrow: 'Update',
+    headline: 'Offer\ndeclined.',
+    barBg: '#1f1f1f',
+    barTextColor: '#9ca3af',
+    ctaText: 'Browse similar listings',
+    ctaBg: '#ffffff',
+    ctaColor: '#0a0a0a',
   },
   expired: {
-    headerColor: '#6b7280',
-    headerText: 'Offer Expired',
-    emoji: '⏰',
-    message: (_sellerName: string) => `Your offer has expired without a response.`,
-    ctaText: 'Make New Offer',
-    ctaColor: '#1f2937',
+    eyebrow: 'Expired',
+    headline: 'Offer\nexpired.',
+    barBg: '#1f1f1f',
+    barTextColor: '#9ca3af',
+    ctaText: 'Make a new offer',
+    ctaBg: '#ffffff',
+    ctaColor: '#0a0a0a',
   },
 };
 
@@ -63,203 +70,125 @@ export function offerStatusTemplate(params: OfferStatusParams): {
   html: string;
   text: string;
 } {
-  const {
-    recipientName,
-    sellerName,
-    productName,
-    productImageUrl,
-    originalPrice,
-    offerAmount,
-    status,
-    counterAmount,
-    counterMessage,
-    offerId,
-    productId,
-    expiresAt,
-  } = params;
-
-  const config = STATUS_CONFIG[status];
+  const { sellerName, sellerLogoUrl, productName, originalPrice, offerAmount, status, counterAmount, counterMessage, offerId } = params;
+  const appUrl = getAppUrl();
   const offerLink = buildOfferLink(offerId);
-  const productLink = buildProductLink(productId);
   const settingsLink = buildSettingsLink();
+  const cfg = STATUS_CONFIG[status];
+  const initial = sellerName.charAt(0).toUpperCase();
+  const isActive = status === 'accepted' || status === 'countered';
 
-  const emailSubject = status === 'accepted'
-    ? `Your offer of ${formatPrice(offerAmount)} was accepted!`
+  const subject = status === 'accepted'
+    ? `Your offer on ${productName} was accepted!`
     : status === 'countered'
-    ? `Counter offer: ${formatPrice(counterAmount || offerAmount)} for ${productName}`
+    ? `Counter offer on ${productName}`
     : status === 'rejected'
-    ? `Your offer for ${productName} was declined`
-    : `Your offer for ${productName} has expired`;
+    ? `Your offer on ${productName} was declined`
+    : `Your offer on ${productName} has expired`;
 
-  const html = `
-<!DOCTYPE html>
+  const headlineHtml = cfg.headline
+    .split('\n')
+    .map(line => line)
+    .join('<br/>');
+
+  const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${emailSubject}</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 20px 0;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          
-          <!-- Header -->
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+      <!-- Hero -->
+      <tr><td style="background:#0a0a0a;padding:48px 40px 0;">
+        <img src="${appUrl}/yjlogo.png" alt="Yellow Jersey" height="44" style="display:block;margin-bottom:40px;" />
+        <p style="margin:0 0 12px;font-size:11px;color:${isActive ? '#F5C518' : '#6b7280'};letter-spacing:5px;text-transform:uppercase;font-weight:700;">${cfg.eyebrow}</p>
+        <h1 style="margin:0;font-size:64px;font-weight:900;color:#ffffff;line-height:0.92;letter-spacing:-3px;text-transform:uppercase;">${headlineHtml}</h1>
+      </td></tr>
+
+      <!-- Accent bar -->
+      <tr><td style="background:${cfg.barBg};padding:20px 40px;">
+        <table width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td valign="middle">
+            <p style="margin:0 0 2px;font-size:11px;color:${cfg.barTextColor === '#0a0a0a' ? '#3d3000' : '#6b7280'};font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">${productName}</p>
+            <table cellpadding="0" cellspacing="0" style="margin-top:6px;"><tr>
+              <td style="padding-right:8px;">
+                ${sellerLogoUrl
+                  ? `<img src="${sellerLogoUrl}" width="28" height="28" style="border-radius:50%;display:block;" />`
+                  : `<table cellpadding="0" cellspacing="0"><tr><td style="width:28px;height:28px;background:${isActive ? '#0a0a0a' : '#374151'};border-radius:50%;text-align:center;line-height:28px;font-size:11px;font-weight:900;color:${isActive ? '#F5C518' : '#9ca3af'};">${initial}</td></tr></table>`}
+              </td>
+              <td><p style="margin:0;font-size:13px;color:${cfg.barTextColor};font-weight:600;">${sellerName}</p></td>
+            </tr></table>
+          </td>
+          <td align="right" valign="middle">
+            ${status === 'countered' && counterAmount
+              ? `<p style="margin:0 0 2px;font-size:11px;color:${cfg.barTextColor === '#0a0a0a' ? '#3d3000' : '#6b7280'};text-align:right;text-decoration:line-through;">${formatPrice(offerAmount)}</p>
+                 <p style="margin:0;font-size:36px;font-weight:900;color:${cfg.barTextColor};letter-spacing:-1.5px;">${formatPrice(counterAmount)}</p>`
+              : `<p style="margin:0 0 2px;font-size:11px;color:${cfg.barTextColor === '#0a0a0a' ? '#3d3000' : '#6b7280'};text-align:right;">Your offer</p>
+                 <p style="margin:0;font-size:36px;font-weight:900;color:${cfg.barTextColor};letter-spacing:-1.5px;${!isActive ? 'text-decoration:line-through;' : ''}">${formatPrice(offerAmount)}</p>`}
+          </td>
+        </tr></table>
+      </td></tr>
+
+      <!-- White content -->
+      <tr><td style="background:#ffffff;padding:36px 40px;">
+
+        ${status === 'accepted' ? `
+        <p style="margin:0 0 28px;font-size:16px;color:#374151;line-height:1.7;">${sellerName} has accepted your offer of ${formatPrice(offerAmount)} for the ${productName}. Your payment is held securely in escrow until you confirm receipt.</p>
+        ` : status === 'countered' && counterAmount ? `
+        <p style="margin:0 0 20px;font-size:16px;color:#374151;line-height:1.7;">${sellerName} passed on ${formatPrice(offerAmount)} but wants to make a deal. Their counter: <strong>${formatPrice(counterAmount)}</strong> — that's ${formatPrice(Math.abs(counterAmount - offerAmount))} ${counterAmount > offerAmount ? 'more' : 'less'} than your offer.</p>
+        ${counterMessage ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;"><tr><td style="background:#f3f4f6;border-radius:0 12px 12px 12px;padding:18px 22px;border-left:4px solid #F5C518;"><p style="margin:0;font-size:15px;color:#374151;line-height:1.65;">${counterMessage}</p></td></tr></table>` : ''}
+        ` : status === 'rejected' ? `
+        <p style="margin:0 0 28px;font-size:16px;color:#374151;line-height:1.7;">${sellerName} has declined your offer of ${formatPrice(offerAmount)}. There are plenty more listings — keep browsing.</p>
+        ` : `
+        <p style="margin:0 0 28px;font-size:16px;color:#374151;line-height:1.7;">Your offer of ${formatPrice(offerAmount)} on ${productName} has expired. You can make a new offer if you're still interested.</p>
+        `}
+
+        <!-- Price summary for accepted/countered -->
+        ${isActive ? `
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
           <tr>
-            <td style="background-color: ${config.headerColor}; padding: 24px 32px; text-align: center;">
-              <img src="${getAppUrl()}/yjsmall.svg" alt="Yellow Jersey" width="120" height="auto" style="margin-bottom: 12px;" />
-              <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">
-                ${config.emoji} ${config.headerText}
-              </h1>
+            <td width="47%" style="text-align:center;padding:20px 12px;background:#f5f5f0;">
+              <p style="margin:0 0 5px;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;">Listed at</p>
+              <p style="margin:0;font-size:26px;font-weight:900;color:#9ca3af;letter-spacing:-1px;">${formatPrice(originalPrice)}</p>
+            </td>
+            <td width="6%" style="text-align:center;font-size:18px;color:#d1d5db;">&#8594;</td>
+            <td width="47%" style="text-align:center;padding:20px 12px;background:#0a0a0a;">
+              <p style="margin:0 0 5px;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;">${status === 'countered' && counterAmount ? 'Counter' : 'Your offer'}</p>
+              <p style="margin:0;font-size:26px;font-weight:900;color:#F5C518;letter-spacing:-1px;">${formatPrice(status === 'countered' && counterAmount ? counterAmount : offerAmount)}</p>
             </td>
           </tr>
-
-          <!-- Content -->
-          <tr>
-            <td style="padding: 32px;">
-              <p style="margin: 0 0 16px; font-size: 16px; color: #374151;">
-                Hi ${recipientName},
-              </p>
-              
-              <p style="margin: 0 0 24px; font-size: 16px; color: #374151;">
-                ${config.message(sellerName)}
-              </p>
-
-              <!-- Product & Offer Card -->
-              <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 24px; overflow: hidden;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  ${productImageUrl ? `
-                  <tr>
-                    <td style="padding: 0;">
-                      <img src="${productImageUrl}" alt="${productName}" width="100%" height="140" style="object-fit: cover; display: block;">
-                    </td>
-                  </tr>
-                  ` : ''}
-                  <tr>
-                    <td style="padding: 16px;">
-                      <p style="margin: 0 0 12px; font-size: 16px; color: #111827; font-weight: 600;">
-                        ${productName}
-                      </p>
-                      <table width="100%" cellpadding="0" cellspacing="0">
-                        <tr>
-                          <td width="50%">
-                            <p style="margin: 0; font-size: 12px; color: #6b7280;">Listed price</p>
-                            <p style="margin: 4px 0 0; font-size: 16px; color: #374151; font-weight: 600;">
-                              ${formatPrice(originalPrice)}
-                            </p>
-                          </td>
-                          <td width="50%">
-                            <p style="margin: 0; font-size: 12px; color: #6b7280;">Your offer</p>
-                            <p style="margin: 4px 0 0; font-size: 16px; color: ${status === 'accepted' ? '#059669' : status === 'rejected' ? '#dc2626' : '#374151'}; font-weight: 600; ${status === 'rejected' ? 'text-decoration: line-through;' : ''}">
-                              ${formatPrice(offerAmount)}
-                            </p>
-                          </td>
-                        </tr>
-                      </table>
-
-                      ${status === 'countered' && counterAmount ? `
-                      <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
-                        <p style="margin: 0; font-size: 12px; color: #6b7280;">Counter offer</p>
-                        <p style="margin: 4px 0 0; font-size: 24px; color: #f59e0b; font-weight: 700;">
-                          ${formatPrice(counterAmount)}
-                        </p>
-                        ${expiresAt ? `
-                        <p style="margin: 8px 0 0; font-size: 12px; color: #6b7280;">
-                          Expires: ${formatDate(expiresAt)}
-                        </p>
-                        ` : ''}
-                      </div>
-                      ` : ''}
-                    </td>
-                  </tr>
-                </table>
-              </div>
-
-              ${counterMessage ? `
-              <!-- Seller's Message -->
-              <div style="background-color: #f9fafb; border-left: 4px solid #f59e0b; padding: 16px 20px; margin-bottom: 24px; border-radius: 4px;">
-                <p style="margin: 0 0 4px; font-size: 12px; color: #6b7280; text-transform: uppercase; font-weight: 600;">
-                  Message from ${sellerName}
-                </p>
-                <p style="margin: 0; font-size: 14px; color: #4b5563; line-height: 1.6;">
-                  "${counterMessage}"
-                </p>
-              </div>
-              ` : ''}
-
-              ${status === 'accepted' ? `
-              <!-- Next Steps -->
-              <div style="background-color: #ecfdf5; border: 1px solid #059669; padding: 16px; margin-bottom: 24px; border-radius: 8px;">
-                <p style="margin: 0 0 8px; font-size: 14px; color: #065f46; font-weight: 600;">
-                  What's next?
-                </p>
-                <p style="margin: 0; font-size: 14px; color: #065f46;">
-                  The seller will reach out to arrange payment and collection/delivery.
-                </p>
-              </div>
-              ` : ''}
-
-              <!-- Call to Action Button -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
-                <tr>
-                  <td align="center">
-                    <a href="${status === 'rejected' ? productLink : offerLink}" style="display: inline-block; background-color: ${config.ctaColor}; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 600;">
-                      ${config.ctaText}
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f9fafb; padding: 24px 32px; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0 0 8px; font-size: 12px; color: #6b7280; text-align: center;">
-                You're receiving this email because you made an offer on this item.
-              </p>
-              <p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center;">
-                <a href="${settingsLink}" style="color: #3b82f6; text-decoration: none;">Manage notification preferences</a>
-              </p>
-            </td>
-          </tr>
-
         </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-`;
+        ` : ''}
 
-  const statusMessages = {
-    accepted: `Great news! ${sellerName} has accepted your offer of ${formatPrice(offerAmount)}.`,
-    rejected: `Unfortunately, ${sellerName} has declined your offer of ${formatPrice(offerAmount)}.`,
-    countered: `${sellerName} has made a counter offer of ${formatPrice(counterAmount || offerAmount)}.`,
-    expired: `Your offer of ${formatPrice(offerAmount)} has expired.`,
-  };
+        <!-- CTA -->
+        <table cellpadding="0" cellspacing="0"><tr>
+          <td style="background:${cfg.ctaBg};${cfg.ctaBg === '#ffffff' ? 'border:2px solid #0a0a0a;' : ''}">
+            <a href="${offerLink}" style="display:inline-block;color:${cfg.ctaColor};text-decoration:none;padding:15px 40px;font-size:14px;font-weight:900;letter-spacing:2px;text-transform:uppercase;">${cfg.ctaText} &#8594;</a>
+          </td>
+        </tr></table>
 
-  const text = `
-Hi ${recipientName},
+      </td></tr>
 
-${statusMessages[status]}
+      <!-- Footer -->
+      <tr><td style="background:#0a0a0a;padding:24px 40px;">
+        <p style="margin:0;font-size:11px;color:#3d3d3d;text-align:center;">YELLOW JERSEY &nbsp;&#183;&nbsp; <a href="${settingsLink}" style="color:#3d3d3d;text-decoration:none;">Manage preferences</a></p>
+      </td></tr>
 
-Product: ${productName}
-Listed price: ${formatPrice(originalPrice)}
-Your offer: ${formatPrice(offerAmount)}
-${status === 'countered' && counterAmount ? `Counter offer: ${formatPrice(counterAmount)}` : ''}
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
 
-${counterMessage ? `Message from ${sellerName}: "${counterMessage}"` : ''}
+  const text = `${subject}
 
-${status === 'accepted' ? 'The seller will reach out to arrange payment and collection/delivery.' : ''}
+${productName} — Your offer: ${formatPrice(offerAmount)}${counterAmount ? ` | Counter: ${formatPrice(counterAmount)}` : ''}
+${counterMessage ? `\nMessage: ${counterMessage}` : ''}
 
-${config.ctaText}: ${status === 'rejected' ? productLink : offerLink}
+${cfg.ctaText}: ${offerLink}
 
 ---
-To manage your notification preferences, visit: ${settingsLink}
-`;
+Manage preferences: ${settingsLink}`;
 
-  return { subject: emailSubject, html, text };
+  return { subject, html, text };
 }
-

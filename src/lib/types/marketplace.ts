@@ -75,7 +75,7 @@ export interface MarketplaceProduct {
 
   // Extended fields for private listings
   listing_type?: 'store_inventory' | 'private_listing';
-  listing_source?: 'lightspeed' | 'manual';
+  listing_source?: 'lightspeed' | 'manual' | 'online_catalog';
   
   // Bike-specific fields
   frame_size?: string;

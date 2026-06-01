@@ -534,8 +534,40 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     }
   }
 
-  // TODO: Send confirmation emails to buyer and seller
-  // TODO: Create notification for seller
+  // ============================================================
+  // Create purchase email notifications for buyer and seller
+  // ============================================================
+  if (purchase?.id) {
+    const notificationsToInsert = [
+      {
+        user_id: buyer_id,
+        type: 'purchase_complete',
+        notification_category: 'transaction',
+        priority: 'critical',
+        purchase_id: purchase.id,
+        email_delivery_status: 'pending',
+      },
+      {
+        user_id: seller_id,
+        type: 'listing_sold',
+        notification_category: 'transaction',
+        priority: 'high',
+        purchase_id: purchase.id,
+        email_delivery_status: 'pending',
+      },
+    ];
+
+    const { error: notifError } = await supabase
+      .from('notifications')
+      .insert(notificationsToInsert);
+
+    if (notifError) {
+      // Non-fatal: log but don't fail the webhook
+      console.error('[Stripe Webhook] Failed to create purchase notifications:', notifError.message);
+    } else {
+      console.log('[Stripe Webhook] ✓ Purchase notifications queued for buyer and seller');
+    }
+  }
 
   console.log(`[Stripe Webhook] Funds held until: ${fundsReleaseAt.toISOString()}`);
   console.log('[Stripe Webhook] ====== CHECKOUT COMPLETE SUCCESS ======');

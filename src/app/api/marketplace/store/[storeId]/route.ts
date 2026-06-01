@@ -143,6 +143,7 @@ export async function GET(
         created_at,
         user_id,
         listing_type,
+        listing_source,
         lightspeed_category_id,
         canonical_product_id,
         resolved_image_id,

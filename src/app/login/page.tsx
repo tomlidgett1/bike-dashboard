@@ -8,7 +8,8 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Mail, Lock, Loader2, ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import { Mail, Lock, Loader2, ArrowLeft, User, ChevronLeft } from "lucide-react";
 import { getBrowserOAuthBaseUrl } from "@/lib/auth/oauth-site-url";
 
 function getErrorMessage(error: unknown) {
@@ -34,7 +35,7 @@ function AppleIcon({ className }: { className?: string }) {
   );
 }
 
-function CollageBackground() {
+function CollageBackground({ onLoad }: { onLoad: () => void }) {
   return (
     <div aria-hidden className="absolute inset-0 overflow-hidden">
       <Image
@@ -44,9 +45,14 @@ function CollageBackground() {
         priority
         unoptimized
         className="object-cover"
+        onLoad={onLoad}
       />
-      {/* Wash so the card always reads clearly on top of the pattern */}
+      {/* Mid wash so the card always reads clearly */}
       <div className="absolute inset-0 bg-black/30" />
+      {/* Top gradient — keeps nav readable over any background colour */}
+      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/70 to-transparent" />
+      {/* Bottom gradient — keeps footer readable */}
+      <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black via-black/80 to-transparent" />
     </div>
   );
 }
@@ -54,16 +60,30 @@ function CollageBackground() {
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
+  const [bgLoaded, setBgLoaded] = useState(false);
 
   const [showEmail, setShowEmail] = useState(false);
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const busy = loading || googleLoading || appleLoading;
+
+  const resetEmail = () => {
+    setShowEmail(false);
+    setMode("signin");
+    setError(null);
+    setEmail("");
+    setPassword("");
+    setFirstName("");
+    setLastName("");
+  };
 
   const handleGoogleSignIn = async () => {
     try {
@@ -100,24 +120,42 @@ export default function LoginPage() {
     }
   };
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      if (data.user) {
-        const { data: profile } = await supabase
-          .from("users")
-          .select("bicycle_store, account_type")
-          .eq("user_id", data.user.id)
-          .single();
-        if (profile?.account_type === "bicycle_store" && profile?.bicycle_store === true) {
-          router.push("/settings");
-        } else {
-          router.push("/marketplace");
+      if (mode === "signin") {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        if (data.user) {
+          const { data: profile } = await supabase
+            .from("users")
+            .select("bicycle_store, account_type")
+            .eq("user_id", data.user.id)
+            .single();
+          if (profile?.account_type === "bicycle_store" && profile?.bicycle_store === true) {
+            router.push("/settings");
+          } else {
+            router.push("/marketplace");
+          }
+          router.refresh();
         }
+      } else {
+        // Sign up via server route — creates user with email pre-confirmed, no verification email
+        const res = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, firstName, lastName }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "Sign up failed");
+
+        // Sign in immediately with the new credentials
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw signInError;
+
+        router.push("/marketplace");
         router.refresh();
       }
     } catch (err: unknown) {
@@ -128,17 +166,52 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative min-h-screen w-full bg-gray-900">
-      <CollageBackground />
+    <div className="relative min-h-screen w-full bg-black">
+      <CollageBackground onLoad={() => setBgLoaded(true)} />
 
-      {/* Centered card */}
-      <div className="relative z-10 flex min-h-screen items-center justify-center p-5">
+      {/* Everything fades in once the background image has loaded */}
+      <div
+        className="relative z-10 flex min-h-screen flex-col transition-opacity duration-500"
+        style={{ opacity: bgLoaded ? 1 : 0 }}
+      >
+        {/* ── Top navigation bar ── */}
+        <nav className="flex items-center justify-between px-6 py-5 sm:px-10">
+          {/* Left: back to marketplace */}
+          <Link
+            href="/marketplace"
+            className="flex items-center gap-1.5 rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-white/20"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Marketplace
+          </Link>
+
+          {/* Right: about + create account */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              href="/marketplace"
+              className="rounded-full px-4 py-2 text-sm font-medium text-white/80 transition hover:text-white"
+            >
+              About
+            </Link>
+            <button
+              onClick={() => { setShowEmail(true); setMode("signup"); }}
+              className="rounded-full bg-[#FFC72C] px-4 py-2 text-sm font-semibold text-gray-900 transition hover:bg-[#E6B328]"
+            >
+              Create account
+            </button>
+          </div>
+        </nav>
+
+        {/* ── Centered card ── */}
+        <div className="flex flex-1 items-center justify-center px-5 py-6">
         <div className="w-full max-w-[420px] rounded-3xl bg-white p-7 shadow-2xl sm:p-9">
           <h1 className="text-2xl font-bold leading-tight text-gray-900 sm:text-3xl">
-            Log in or sign up in seconds
+            {showEmail && mode === "signup" ? "Create your account" : "Log in or sign up in seconds"}
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-gray-500">
-            Use your email or another service to continue with Yellow Jersey.
+            {showEmail && mode === "signup"
+              ? "Fill in your details to get started with Yellow Jersey."
+              : "Use your email or another service to continue with Yellow Jersey."}
           </p>
 
           {!showEmail ? (
@@ -180,11 +253,49 @@ export default function LoginPage() {
               )}
             </div>
           ) : (
-            <form onSubmit={handleEmailLogin} className="mt-6 space-y-4">
+            <form onSubmit={handleEmailSubmit} className="mt-6 space-y-4">
+              {/* Name fields — sign-up only */}
+              {mode === "signup" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstName" className="text-sm font-medium text-gray-700">First name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                      <Input
+                        id="firstName"
+                        type="text"
+                        placeholder="John"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        className="h-12 rounded-xl pl-10 text-base"
+                        required
+                        disabled={loading}
+                        autoComplete="given-name"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lastName" className="text-sm font-medium text-gray-700">Last name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                      <Input
+                        id="lastName"
+                        type="text"
+                        placeholder="Smith"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        className="h-12 rounded-xl pl-10 text-base"
+                        required
+                        disabled={loading}
+                        autoComplete="family-name"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium text-gray-700">
-                  Email address
-                </Label>
+                <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email address</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                   <Input
@@ -200,10 +311,9 @@ export default function LoginPage() {
                   />
                 </div>
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium text-gray-700">
-                  Password
-                </Label>
+                <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                   <Input
@@ -215,7 +325,7 @@ export default function LoginPage() {
                     className="h-12 rounded-xl pl-10 text-base"
                     required
                     disabled={loading}
-                    autoComplete="current-password"
+                    autoComplete={mode === "signin" ? "current-password" : "new-password"}
                   />
                 </div>
               </div>
@@ -231,12 +341,32 @@ export default function LoginPage() {
                 disabled={loading}
                 className="h-12 w-full rounded-full bg-[#FFC72C] text-base font-semibold text-gray-900 hover:bg-[#E6B328]"
               >
-                {loading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Signing in...</> : "Sign in"}
+                {loading ? (
+                  <><Loader2 className="mr-2 h-5 w-5 animate-spin" />{mode === "signin" ? "Signing in…" : "Creating account…"}</>
+                ) : (
+                  mode === "signin" ? "Sign in" : "Create account"
+                )}
               </Button>
+
+              {/* Toggle sign-in / sign-up */}
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(null); }}
+                  className="text-sm text-gray-500 transition hover:text-gray-900"
+                  disabled={loading}
+                >
+                  {mode === "signin" ? (
+                    <>Don&apos;t have an account? <span className="font-semibold text-gray-900">Sign up</span></>
+                  ) : (
+                    <>Already have an account? <span className="font-semibold text-gray-900">Sign in</span></>
+                  )}
+                </button>
+              </div>
 
               <button
                 type="button"
-                onClick={() => { setShowEmail(false); setError(null); }}
+                onClick={resetEmail}
                 className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-gray-500 transition hover:text-gray-900"
                 disabled={loading}
               >
@@ -250,6 +380,23 @@ export default function LoginPage() {
             By continuing, you agree to our Terms of Service and Privacy Policy.
           </p>
         </div>
+        </div>
+
+        {/* ── Bottom footer ── */}
+        <footer className="flex flex-col items-center gap-3 px-6 py-6 sm:flex-row sm:justify-between sm:px-10">
+          <p className="text-sm text-white/60">
+            © {new Date().getFullYear()} Yellow Jersey. All rights reserved.
+          </p>
+          <div className="flex items-center gap-1 text-sm text-white/90">
+            <Link href="/privacy" className="rounded px-2 py-1 transition hover:text-white hover:underline">Privacy Policy</Link>
+            <span className="text-white/40">·</span>
+            <Link href="/terms" className="rounded px-2 py-1 transition hover:text-white hover:underline">Terms of Service</Link>
+            <span className="text-white/40">·</span>
+            <Link href="/marketplace" className="rounded px-2 py-1 transition hover:text-white hover:underline">About</Link>
+            <span className="text-white/40">·</span>
+            <a href="mailto:hello@yellowjersey.store" className="rounded px-2 py-1 transition hover:text-white hover:underline">Contact</a>
+          </div>
+        </footer>
       </div>
     </div>
   );

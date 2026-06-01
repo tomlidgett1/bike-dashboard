@@ -217,6 +217,8 @@ export interface StoreHomepageConfig {
   };
   /** Order of the sections that render beneath the hero. */
   section_order: HomeSectionKey[];
+  /** Ordered page layout for the Products tab — interleaves sections and standalone carousels. */
+  products_page_layout?: Array<{ type: 'section' | 'carousel'; id: string }>;
   badges: {
     /** Show the live Open/Closed pill next to opening hours (Visit section + About tab). */
     show_open_status: boolean;

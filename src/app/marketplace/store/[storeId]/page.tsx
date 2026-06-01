@@ -78,8 +78,8 @@ export default function StoreProfilePage() {
 
   const isOwnProfile = user?.id === storeId;
 
-  type SplashPhase = 'visible' | 'exiting' | 'done';
-  const [splashPhase, setSplashPhase] = React.useState<SplashPhase>('visible');
+  type SplashPhase = 'loading' | 'visible' | 'exiting' | 'done';
+  const [splashPhase, setSplashPhase] = React.useState<SplashPhase>('loading');
   const splashTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
@@ -129,29 +129,21 @@ export default function StoreProfilePage() {
     }
   }, [storeId]);
 
-  // Drive the splash: once store data lands, hold briefly then slide away
+  // Drive the splash: once store data lands, swap spinner→logo then slide away
   React.useEffect(() => {
     if (loading) return;
     if (profileType === 'store' && store) {
+      setSplashPhase('visible');
       splashTimerRef.current = setTimeout(() => setSplashPhase('exiting'), 800);
     } else {
-      // Seller or error — no branded splash needed
+      // Seller or error — dismiss loading cover immediately
       setSplashPhase('done');
     }
     return () => { if (splashTimerRef.current) clearTimeout(splashTimerRef.current); };
   }, [loading, profileType, store]);
 
-  // Loading state — plain white keeps the visual transition seamless with the store splash
-  if (loading) {
-    return (
-      <div className="fixed inset-0 bg-white flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-200" />
-      </div>
-    );
-  }
-
   // Error state
-  if (error || (!store && !seller)) {
+  if (!loading && (error || (!store && !seller))) {
     return (
       <>
         <MarketplaceHeader />
@@ -178,8 +170,8 @@ export default function StoreProfilePage() {
   }
 
   // ── Bicycle store ──────────────────────────────────────
-  if (profileType === 'store' && store) {
-    const storeContent = immersive ? (
+  const storeContent: React.ReactNode = (profileType === 'store' && store) ? (
+    immersive ? (
       <div className="relative">
         {/* Minimal floating bar */}
         <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none">
@@ -209,69 +201,8 @@ export default function StoreProfilePage() {
       <MarketplaceLayout showFooter={false}>
         <StoreProfileView store={store} isOwnProfile={isOwnProfile} />
       </MarketplaceLayout>
-    );
-
-    return (
-      <>
-        {storeContent}
-
-        {/* ── Store splash screen ── */}
-        {splashPhase !== 'done' && (
-          <motion.div
-            className="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center"
-            initial={{ y: 0 }}
-            animate={{ y: splashPhase === 'exiting' ? '-100%' : 0 }}
-            transition={
-              splashPhase === 'exiting'
-                ? { duration: 0.55, ease: [0.55, 0, 0.45, 1] }
-                : { duration: 0 }
-            }
-            onAnimationComplete={() => {
-              if (splashPhase === 'exiting') setSplashPhase('done');
-            }}
-          >
-            <AnimatePresence mode="wait">
-              {store.logo_url ? (
-                <motion.img
-                  key="logo"
-                  src={store.logo_url}
-                  alt={store.store_name}
-                  className="max-h-28 max-w-[300px] w-auto object-contain rounded-2xl"
-                  initial={{ opacity: 0, scale: 0.88, y: 14 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-                />
-              ) : (
-                <motion.div
-                  key="name"
-                  className="flex flex-col items-center gap-4 px-10 text-center"
-                  initial={{ opacity: 0, scale: 0.88, y: 14 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  <div className="h-20 w-20 rounded-3xl bg-gray-100 flex items-center justify-center text-2xl font-bold text-gray-400 select-none">
-                    {store.store_name[0]}
-                  </div>
-                  <p className="text-2xl font-bold text-gray-900 tracking-tight">{store.store_name}</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Yellow Jersey attribution */}
-            <motion.div
-              className="absolute bottom-8 flex items-center gap-2"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.35 }}
-              transition={{ delay: 0.25, duration: 0.3 }}
-            >
-              <span className="text-[11px] text-gray-400 tracking-wide uppercase font-medium">Powered by</span>
-              <Image src="/yj.svg" alt="Yellow Jersey" width={60} height={12} className="h-3 w-auto" unoptimized />
-            </motion.div>
-          </motion.div>
-        )}
-      </>
-    );
-  }
+    )
+  ) : null;
 
   // ── Individual seller ──────────────────────────────────
   if (profileType === 'seller' && seller) {
@@ -392,5 +323,69 @@ export default function StoreProfilePage() {
     );
   }
 
-  return null;
+  // Store page + initial loading state — both use the single splash overlay
+  return (
+    <>
+      {storeContent}
+
+      {splashPhase !== 'done' && (
+        <motion.div
+          className="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center"
+          initial={{ y: 0 }}
+          animate={{ y: splashPhase === 'exiting' ? '-100%' : 0 }}
+          transition={
+            splashPhase === 'exiting'
+              ? { duration: 0.55, ease: [0.55, 0, 0.45, 1] }
+              : { duration: 0 }
+          }
+          onAnimationComplete={() => {
+            if (splashPhase === 'exiting') setSplashPhase('done');
+          }}
+        >
+          <AnimatePresence mode="wait">
+            {splashPhase === 'loading' ? (
+              <motion.div key="spinner">
+                <Loader2 className="h-8 w-8 animate-spin text-gray-200" />
+              </motion.div>
+            ) : store?.logo_url ? (
+              <motion.img
+                key="logo"
+                src={store.logo_url}
+                alt={store.store_name}
+                className="max-h-28 max-w-[300px] w-auto object-contain rounded-2xl"
+                initial={{ opacity: 0, scale: 0.88, y: 14 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+              />
+            ) : (
+              <motion.div
+                key="name"
+                className="flex flex-col items-center gap-4 px-10 text-center"
+                initial={{ opacity: 0, scale: 0.88, y: 14 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <div className="h-20 w-20 rounded-3xl bg-gray-100 flex items-center justify-center text-2xl font-bold text-gray-400 select-none">
+                  {store?.store_name[0]}
+                </div>
+                <p className="text-2xl font-bold text-gray-900 tracking-tight">{store?.store_name}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {splashPhase !== 'loading' && (
+            <motion.div
+              className="absolute bottom-8 flex items-center gap-2"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.35 }}
+              transition={{ delay: 0.25, duration: 0.3 }}
+            >
+              <span className="text-[11px] text-gray-400 tracking-wide uppercase font-medium">Powered by</span>
+              <Image src="/yj.svg" alt="Yellow Jersey" width={60} height={12} className="h-3 w-auto" unoptimized />
+            </motion.div>
+          )}
+        </motion.div>
+      )}
+    </>
+  );
 }

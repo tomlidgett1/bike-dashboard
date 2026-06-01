@@ -11,8 +11,7 @@ import { OrderNotificationsProvider } from "@/components/providers/order-notific
 import { FloatingUploadBar } from "@/components/marketplace/floating-upload-bar";
 import { ConditionalLayout } from "@/components/layout";
 import { GenieProvider } from "@/components/providers/genie-provider";
-import { GeniePanel } from "@/components/genie/genie-panel";
-import { GenieButton } from "@/components/genie/genie-button";
+import { GeniePortal } from "@/components/genie/genie-portal";
 import { MessagesProvider } from "@/components/providers/messages-provider";
 import { MessagesPanel } from "@/components/messages/messages-panel";
 import { CartProvider } from "@/components/providers/cart-provider";
@@ -94,8 +93,7 @@ export default async function RootLayout({
                               <FloatingUploadBar />
                               <WebVitalsReporter />
                               <MessagesPanel />
-                              <GeniePanel />
-                              <GenieButton />
+                              <GeniePortal />
                               <CartDrawer />
                             </CartProvider>
                           </GenieProvider>

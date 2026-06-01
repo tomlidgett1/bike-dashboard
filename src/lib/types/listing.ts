@@ -3,7 +3,7 @@
 // ============================================================
 
 export type ListingType = 'store_inventory' | 'private_listing';
-export type ListingSource = 'lightspeed' | 'manual' | 'facebook_import';
+export type ListingSource = 'lightspeed' | 'manual' | 'facebook_import' | 'online_catalog';
 export type ListingStatus = 'draft' | 'active' | 'sold' | 'expired' | 'removed';
 
 export type ItemType = 'bike' | 'part' | 'apparel';

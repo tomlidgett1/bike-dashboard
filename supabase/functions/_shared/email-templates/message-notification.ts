@@ -1,13 +1,9 @@
-// ============================================================
-// MESSAGE NOTIFICATION EMAIL TEMPLATE
-// ============================================================
-// Template for single message notifications
-
-import { buildConversationLink, buildSettingsLink, formatDate, getAppUrl } from '../resend-client.ts';
+import { buildConversationLink, buildSettingsLink, getAppUrl } from '../resend-client.ts';
 
 export interface MessageNotificationParams {
   recipientName: string;
   senderName: string;
+  senderLogoUrl?: string;
   messagePreview: string;
   productInfo?: {
     name: string;
@@ -24,150 +20,79 @@ export function messageNotificationTemplate(params: MessageNotificationParams): 
   html: string;
   text: string;
 } {
-  const {
-    recipientName,
-    senderName,
-    messagePreview,
-    productInfo,
-    conversationId,
-    subject,
-    sentAt,
-  } = params;
-
+  const { senderName, senderLogoUrl, messagePreview, productInfo, conversationId } = params;
+  const appUrl = getAppUrl();
   const conversationLink = buildConversationLink(conversationId);
   const settingsLink = buildSettingsLink();
-  const truncatedPreview = messagePreview.length > 200 
-    ? messagePreview.substring(0, 200) + '...' 
-    : messagePreview;
+  const preview = messagePreview.length > 300 ? messagePreview.substring(0, 300) + '...' : messagePreview;
+  const subject = `New message from ${senderName}`;
+  const initial = senderName.charAt(0).toUpperCase();
 
-  const emailSubject = `New message from ${senderName}`;
-
-  const html = `
-<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${emailSubject}</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 20px 0;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          
-          <!-- Header -->
-          <tr>
-            <td style="background-color: #1f2937; padding: 24px 32px; text-align: center;">
-              <img src="${getAppUrl()}/yj.svg" alt="Yellow Jersey" width="120" height="auto" style="margin-bottom: 12px;" />
-              <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">
-                New Message
-              </h1>
-            </td>
-          </tr>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
 
-          <!-- Content -->
-          <tr>
-            <td style="padding: 32px;">
-              <p style="margin: 0 0 16px; font-size: 16px; color: #374151;">
-                Hi ${recipientName},
-              </p>
-              
-              <p style="margin: 0 0 24px; font-size: 16px; color: #374151;">
-                <strong>${senderName}</strong> sent you a message:
-              </p>
+      <!-- Hero -->
+      <tr><td style="background:#0a0a0a;padding:48px 40px 0;">
+        <img src="${appUrl}/yjlogo.png" alt="Yellow Jersey" height="44" style="display:block;margin-bottom:40px;" />
+        <p style="margin:0 0 12px;font-size:11px;color:#F5C518;letter-spacing:5px;text-transform:uppercase;font-weight:700;">New message</p>
+        <h1 style="margin:0;font-size:64px;font-weight:900;color:#ffffff;line-height:0.92;letter-spacing:-3px;text-transform:uppercase;">You have<br/>a message.</h1>
+      </td></tr>
 
-              <!-- Message Preview Box -->
-              <div style="background-color: #f9fafb; border-left: 4px solid #3b82f6; padding: 16px 20px; margin-bottom: 24px; border-radius: 4px;">
-                <p style="margin: 0; font-size: 15px; color: #4b5563; line-height: 1.6;">
-                  "${truncatedPreview}"
-                </p>
-                <p style="margin: 8px 0 0; font-size: 12px; color: #9ca3af;">
-                  ${formatDate(sentAt)}
-                </p>
-              </div>
+      <!-- Yellow bar — sender context -->
+      <tr><td style="background:#F5C518;padding:20px 40px;">
+        <table width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td valign="middle">
+            ${senderLogoUrl
+              ? `<img src="${senderLogoUrl}" width="36" height="36" style="border-radius:50%;display:inline-block;vertical-align:middle;margin-right:10px;" />`
+              : `<table cellpadding="0" cellspacing="0" style="display:inline-table;vertical-align:middle;margin-right:10px;"><tr><td style="width:36px;height:36px;background:#0a0a0a;border-radius:50%;text-align:center;line-height:36px;font-size:14px;font-weight:900;color:#F5C518;">${initial}</td></tr></table>`}
+            <span style="font-size:15px;font-weight:800;color:#0a0a0a;vertical-align:middle;">${senderName}</span>
+          </td>
+          ${productInfo ? `<td align="right" valign="middle"><p style="margin:0;font-size:13px;color:#3d3000;font-weight:600;">${productInfo.name}</p></td>` : ''}
+        </tr></table>
+      </td></tr>
 
-              ${productInfo ? `
-              <!-- Product Info -->
-              <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 16px; margin-bottom: 24px; border-radius: 8px;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  <tr>
-                    ${productInfo.imageUrl ? `
-                    <td width="60" valign="top" style="padding-right: 12px;">
-                      <img src="${productInfo.imageUrl}" alt="" width="60" height="60" style="border-radius: 4px; object-fit: cover;">
-                    </td>
-                    ` : ''}
-                    <td valign="top">
-                      <p style="margin: 0 0 4px; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
-                        About
-                      </p>
-                      <p style="margin: 0 0 4px; font-size: 14px; color: #111827; font-weight: 600;">
-                        ${productInfo.name}
-                      </p>
-                      <p style="margin: 0; font-size: 16px; color: #3b82f6; font-weight: 700;">
-                        $${productInfo.price.toFixed(2)}
-                      </p>
-                    </td>
-                  </tr>
-                </table>
-              </div>
-              ` : ''}
+      <!-- White content -->
+      <tr><td style="background:#ffffff;padding:36px 40px;">
 
-              <!-- Call to Action Button -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
-                <tr>
-                  <td align="center">
-                    <a href="${conversationLink}" style="display: inline-block; background-color: #1f2937; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 600;">
-                      View & Reply
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <p style="margin: 0; font-size: 13px; color: #6b7280; line-height: 1.6;">
-                Or copy this link into your browser:<br>
-                <a href="${conversationLink}" style="color: #3b82f6; text-decoration: none; word-break: break-all;">
-                  ${conversationLink}
-                </a>
-              </p>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f9fafb; padding: 24px 32px; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0 0 8px; font-size: 12px; color: #6b7280; text-align: center;">
-                You're receiving this email because you have notifications enabled.
-              </p>
-              <p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center;">
-                <a href="${settingsLink}" style="color: #3b82f6; text-decoration: none;">Manage notification preferences</a>
-              </p>
-            </td>
-          </tr>
-
+        <!-- Message bubble -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+          <tr><td style="background:#f3f4f6;border-radius:0 12px 12px 12px;padding:20px 24px;border-left:4px solid #F5C518;">
+            <p style="margin:0;font-size:16px;color:#374151;line-height:1.7;">${preview}</p>
+          </td></tr>
         </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-`;
 
-  const text = `
-Hi ${recipientName},
+        <!-- CTA -->
+        <table cellpadding="0" cellspacing="0"><tr>
+          <td style="background:#F5C518;">
+            <a href="${conversationLink}" style="display:inline-block;color:#0a0a0a;text-decoration:none;padding:15px 40px;font-size:14px;font-weight:900;letter-spacing:2px;text-transform:uppercase;">Reply now &#8594;</a>
+          </td>
+        </tr></table>
 
-${senderName} sent you a message:
+      </td></tr>
 
-"${truncatedPreview}"
+      <!-- Footer -->
+      <tr><td style="background:#0a0a0a;padding:24px 40px;">
+        <p style="margin:0;font-size:11px;color:#3d3d3d;text-align:center;">YELLOW JERSEY &nbsp;&#183;&nbsp; <a href="${settingsLink}" style="color:#3d3d3d;text-decoration:none;">Manage preferences</a></p>
+      </td></tr>
 
-${productInfo ? `About: ${productInfo.name} - $${productInfo.price.toFixed(2)}` : ''}
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
 
-View & Reply: ${conversationLink}
+  const text = `New message from ${senderName}${productInfo ? ` (re: ${productInfo.name})` : ''}
+
+${preview}
+
+Reply: ${conversationLink}
 
 ---
-To manage your notification preferences, visit: ${settingsLink}
-`;
+Manage preferences: ${settingsLink}`;
 
-  return { subject: emailSubject, html, text };
+  return { subject, html, text };
 }
-

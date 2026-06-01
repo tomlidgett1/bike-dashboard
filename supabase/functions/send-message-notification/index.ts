@@ -57,6 +57,8 @@ interface UserPreferences {
   quiet_hours_enabled: boolean;
   quiet_hours_start: string;
   quiet_hours_end: string;
+  message_notifications_enabled: boolean;
+  message_frequency: 'every_message' | 'new_conversations_only' | 'smart';
 }
 
 interface EmailDecision {
@@ -155,11 +157,11 @@ Deno.serve(async (_req) => {
         .in('user_id', userIds),
       supabase
         .from('notification_preferences')
-        .select('user_id, email_enabled, email_frequency, quiet_hours_enabled, quiet_hours_start, quiet_hours_end')
+        .select('user_id, email_enabled, email_frequency, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, message_notifications_enabled, message_frequency')
         .in('user_id', userIds),
       supabase
         .from('users')
-        .select('user_id, name, business_name')
+        .select('user_id, name, business_name, logo_url')
         .in('user_id', senderIds),
     ]);
 
@@ -222,41 +224,58 @@ Deno.serve(async (_req) => {
       if (preferences && !preferences.email_enabled) {
         await markNotificationsAs(supabase, conversationNotifications.map(n => n.id), 'skipped');
         results.skipped += conversationNotifications.length;
-        results.details.push({
-          conversationId,
-          status: 'skipped',
-          reason: 'preferences_disabled',
-        });
+        results.details.push({ conversationId, status: 'skipped', reason: 'preferences_disabled' });
         continue;
       }
 
-      // Check if user is active (sent a message recently)
-      const isUserActive = await checkUserActivity(supabase, userId);
-      if (isUserActive) {
-        // Schedule for later instead of sending now
-        const scheduleFor = new Date(Date.now() + ACTIVITY_THRESHOLD_MINUTES * 60 * 1000);
-        await scheduleNotifications(supabase, conversationNotifications.map(n => n.id), scheduleFor);
-        results.scheduled += conversationNotifications.length;
-        results.details.push({
-          conversationId,
-          status: 'scheduled',
-          reason: 'user_active',
-          scheduleFor,
-        });
+      // Check per-type message toggle
+      if (preferences && preferences.message_notifications_enabled === false) {
+        await markNotificationsAs(supabase, conversationNotifications.map(n => n.id), 'skipped');
+        results.skipped += conversationNotifications.length;
+        results.details.push({ conversationId, status: 'skipped', reason: 'message_notifications_disabled' });
         continue;
       }
 
-      // Check quiet hours
+      const messageFrequency: 'every_message' | 'new_conversations_only' | 'smart' =
+        preferences?.message_frequency ?? 'smart';
+
+      // new_conversations_only: skip if we've already sent an email for this conversation
+      if (messageFrequency === 'new_conversations_only') {
+        const { data: priorSent } = await supabase
+          .from('notifications')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('conversation_id', conversationId)
+          .eq('notification_category', 'message')
+          .eq('email_delivery_status', 'sent')
+          .limit(1);
+
+        if (priorSent && priorSent.length > 0) {
+          await markNotificationsAs(supabase, conversationNotifications.map(n => n.id), 'skipped');
+          results.skipped += conversationNotifications.length;
+          results.details.push({ conversationId, status: 'skipped', reason: 'new_conversations_only_already_sent' });
+          continue;
+        }
+      }
+
+      // smart mode: skip/delay if user has been active recently
+      if (messageFrequency === 'smart') {
+        const isUserActive = await checkUserActivity(supabase, userId);
+        if (isUserActive) {
+          const scheduleFor = new Date(Date.now() + ACTIVITY_THRESHOLD_MINUTES * 60 * 1000);
+          await scheduleNotifications(supabase, conversationNotifications.map(n => n.id), scheduleFor);
+          results.scheduled += conversationNotifications.length;
+          results.details.push({ conversationId, status: 'scheduled', reason: 'user_active', scheduleFor });
+          continue;
+        }
+      }
+
+      // Check quiet hours (applies to all frequencies except... none — quiet hours always apply)
       if (preferences?.quiet_hours_enabled && isWithinQuietHours(preferences)) {
         const scheduleFor = getQuietHoursEnd(preferences);
         await scheduleNotifications(supabase, conversationNotifications.map(n => n.id), scheduleFor);
         results.scheduled += conversationNotifications.length;
-        results.details.push({
-          conversationId,
-          status: 'scheduled',
-          reason: 'quiet_hours',
-          scheduleFor,
-        });
+        results.details.push({ conversationId, status: 'scheduled', reason: 'quiet_hours', scheduleFor });
         continue;
       }
 
@@ -273,6 +292,7 @@ Deno.serve(async (_req) => {
           emailContent = messageNotificationTemplate({
             recipientName: user.name || user.email.split('@')[0],
             senderName,
+            senderLogoUrl: sender?.logo_url || undefined,
             messagePreview: notification.messages?.content || 'Sent you a message',
             productInfo: notification.conversations?.products ? {
               name: notification.conversations.products.display_name || notification.conversations.products.description,
@@ -289,10 +309,14 @@ Deno.serve(async (_req) => {
             const sender = senderMap.get(n.messages?.sender_id || '');
             return {
               senderName: sender?.business_name || sender?.name || 'Someone',
+              senderLogoUrl: sender?.logo_url || undefined,
               messagePreview: n.messages?.content || 'Sent you a message',
               sentAt: n.messages?.created_at || n.created_at,
             };
           });
+
+          const firstSenderId = firstNotification.messages?.sender_id;
+          const firstSender = firstSenderId ? senderMap.get(firstSenderId) : undefined;
 
           emailContent = messageDigestTemplate({
             recipientName: user.name || user.email.split('@')[0],
@@ -304,6 +328,8 @@ Deno.serve(async (_req) => {
               price: firstNotification.conversations.products.price,
               imageUrl: firstNotification.conversations.products.primary_image_url || undefined,
             } : null,
+            sellerLogoUrl: firstSender?.logo_url || undefined,
+            sellerName: firstSender?.business_name || firstSender?.name || undefined,
           });
         }
 

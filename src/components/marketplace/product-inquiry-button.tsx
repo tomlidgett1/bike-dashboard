@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
+import { useMessages } from '@/components/providers/messages-provider';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -58,9 +58,9 @@ export function ProductInquiryButton({
   className,
   buttonLabel = 'Send Message',
 }: ProductInquiryButtonProps) {
-  const router = useRouter();
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const { openConversation } = useMessages();
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -96,9 +96,6 @@ export function ProductInquiryButton({
   };
 
   const handleClose = () => {
-    if (success && conversationIdRef.current) {
-      router.push(`/messages?conversation=${conversationIdRef.current}`);
-    }
     setIsOpen(false);
     setSuccess(false);
     setMessage('');
@@ -138,7 +135,7 @@ export function ProductInquiryButton({
           conversationIdRef.current = data.conversationId;
           setSuccess(true);
           setTimeout(() => {
-            router.push(`/messages?conversation=${data.conversationId}`);
+            openConversation(data.conversationId);
             setIsOpen(false);
           }, 1200);
           return;
@@ -149,7 +146,7 @@ export function ProductInquiryButton({
       conversationIdRef.current = data.conversation.id;
       setSuccess(true);
       setTimeout(() => {
-        router.push(`/messages?conversation=${data.conversation.id}`);
+        openConversation(data.conversation.id);
         setIsOpen(false);
       }, 1200);
     } catch (err) {
@@ -212,7 +209,7 @@ export function ProductInquiryButton({
                 <CheckCircle2 className="h-7 w-7 text-green-600" />
                 <div className="text-center">
                   <p className="text-sm font-semibold text-foreground">Message sent</p>
-                  <p className="text-xs text-muted-foreground mt-1">Redirecting to conversation...</p>
+                  <p className="text-xs text-muted-foreground mt-1">Opening your conversation...</p>
                 </div>
               </div>
             ) : (

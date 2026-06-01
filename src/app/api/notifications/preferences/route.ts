@@ -21,6 +21,13 @@ interface NotificationPreferences {
   quiet_hours_enabled: boolean;
   quiet_hours_start: string;
   quiet_hours_end: string;
+  purchase_confirmations_enabled: boolean;
+  sale_notifications_enabled: boolean;
+  offer_notifications_enabled: boolean;
+  offer_received_enabled: boolean;
+  offer_updates_enabled: boolean;
+  message_notifications_enabled: boolean;
+  message_frequency: 'every_message' | 'new_conversations_only' | 'smart';
   created_at: string;
   updated_at: string;
 }
@@ -28,6 +35,13 @@ interface NotificationPreferences {
 interface UpdatePreferencesRequest {
   email_enabled?: boolean;
   email_frequency?: 'instant' | 'smart' | 'digest' | 'critical_only';
+  purchase_confirmations_enabled?: boolean;
+  sale_notifications_enabled?: boolean;
+  offer_notifications_enabled?: boolean;
+  offer_received_enabled?: boolean;
+  offer_updates_enabled?: boolean;
+  message_notifications_enabled?: boolean;
+  message_frequency?: 'every_message' | 'new_conversations_only' | 'smart';
   quiet_hours_enabled?: boolean;
   quiet_hours_start?: string;
   quiet_hours_end?: string;
@@ -132,6 +146,17 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // Validate message_frequency if provided
+    if (body.message_frequency) {
+      const validMessageFrequencies = ['every_message', 'new_conversations_only', 'smart'];
+      if (!validMessageFrequencies.includes(body.message_frequency)) {
+        return NextResponse.json(
+          { error: `Invalid message_frequency. Must be one of: ${validMessageFrequencies.join(', ')}` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Validate time format if provided
     const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
     if (body.quiet_hours_start && !timeRegex.test(body.quiet_hours_start)) {
@@ -163,6 +188,27 @@ export async function PATCH(request: NextRequest) {
     }
     if (body.quiet_hours_end) {
       updateData.quiet_hours_end = body.quiet_hours_end;
+    }
+    if (typeof body.purchase_confirmations_enabled === 'boolean') {
+      updateData.purchase_confirmations_enabled = body.purchase_confirmations_enabled;
+    }
+    if (typeof body.sale_notifications_enabled === 'boolean') {
+      updateData.sale_notifications_enabled = body.sale_notifications_enabled;
+    }
+    if (typeof body.offer_notifications_enabled === 'boolean') {
+      updateData.offer_notifications_enabled = body.offer_notifications_enabled;
+    }
+    if (typeof body.offer_received_enabled === 'boolean') {
+      updateData.offer_received_enabled = body.offer_received_enabled;
+    }
+    if (typeof body.offer_updates_enabled === 'boolean') {
+      updateData.offer_updates_enabled = body.offer_updates_enabled;
+    }
+    if (typeof body.message_notifications_enabled === 'boolean') {
+      updateData.message_notifications_enabled = body.message_notifications_enabled;
+    }
+    if (body.message_frequency) {
+      updateData.message_frequency = body.message_frequency;
     }
 
     // Check if there's anything to update

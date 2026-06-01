@@ -1,13 +1,9 @@
-// ============================================================
-// OFFER RECEIVED EMAIL TEMPLATE
-// ============================================================
-// Template for notifying sellers when they receive an offer
-
-import { buildOfferLink, buildProductLink, buildSettingsLink, formatPrice, formatDate, getAppUrl } from '../resend-client.ts';
+import { buildOfferLink, buildSettingsLink, formatPrice, getAppUrl } from '../resend-client.ts';
 
 export interface OfferReceivedParams {
   recipientName: string;
   buyerName: string;
+  buyerLogoUrl?: string;
   productName: string;
   productImageUrl?: string;
   originalPrice: number;
@@ -24,178 +20,120 @@ export function offerReceivedTemplate(params: OfferReceivedParams): {
   html: string;
   text: string;
 } {
-  const {
-    recipientName,
-    buyerName,
-    productName,
-    productImageUrl,
-    originalPrice,
-    offerAmount,
-    offerPercentage,
-    message,
-    offerId,
-    productId,
-    expiresAt,
-  } = params;
-
+  const { buyerName, buyerLogoUrl, productName, originalPrice, offerAmount, message, offerId, expiresAt } = params;
+  const appUrl = getAppUrl();
   const offerLink = buildOfferLink(offerId);
-  const productLink = buildProductLink(productId);
   const settingsLink = buildSettingsLink();
-  
-  const discount = offerPercentage || Math.round((1 - offerAmount / originalPrice) * 100);
-  const emailSubject = `New offer received: ${formatPrice(offerAmount)} for ${productName}`;
+  const subject = `New offer on your ${productName}`;
+  const initial = buyerName.charAt(0).toUpperCase();
+  const savings = originalPrice - offerAmount;
 
-  const html = `
-<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${emailSubject}</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 20px 0;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          
-          <!-- Header -->
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+      <!-- Hero -->
+      <tr><td style="background:#0a0a0a;padding:48px 40px 0;">
+        <img src="${appUrl}/yjlogo.png" alt="Yellow Jersey" height="44" style="display:block;margin-bottom:40px;" />
+        <p style="margin:0 0 12px;font-size:11px;color:#F5C518;letter-spacing:5px;text-transform:uppercase;font-weight:700;">New offer</p>
+        <h1 style="margin:0;font-size:60px;font-weight:900;color:#ffffff;line-height:0.92;letter-spacing:-2.5px;text-transform:uppercase;">Someone<br/>wants your<br/>bike.</h1>
+      </td></tr>
+
+      <!-- Yellow bar — offer amount -->
+      <tr><td style="background:#F5C518;padding:20px 40px;">
+        <table width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td valign="middle">
+            <p style="margin:0 0 3px;font-size:11px;color:#0a0a0a;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;">Offer from ${buyerName}</p>
+            <p style="margin:0;font-size:13px;color:#3d3000;">${productName}</p>
+          </td>
+          <td align="right" valign="middle">
+            <p style="margin:0;font-size:40px;font-weight:900;color:#0a0a0a;letter-spacing:-1.5px;">${formatPrice(offerAmount)}</p>
+          </td>
+        </tr></table>
+      </td></tr>
+
+      <!-- White content -->
+      <tr><td style="background:#ffffff;padding:36px 40px;">
+
+        <!-- Buyer identity -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
           <tr>
-            <td style="background-color: #059669; padding: 24px 32px; text-align: center;">
-              <img src="${getAppUrl()}/yj.svg" alt="Yellow Jersey" width="120" height="auto" style="margin-bottom: 12px;" />
-              <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">
-                New Offer Received
-              </h1>
+            <td width="48" valign="middle" style="padding-right:14px;">
+              ${buyerLogoUrl
+                ? `<img src="${buyerLogoUrl}" width="44" height="44" style="border-radius:50%;display:block;" />`
+                : `<table cellpadding="0" cellspacing="0"><tr><td style="width:44px;height:44px;background:#F5C518;border-radius:50%;text-align:center;line-height:44px;font-size:18px;font-weight:900;color:#0a0a0a;">${initial}</td></tr></table>`}
+            </td>
+            <td valign="middle">
+              <p style="margin:0 0 2px;font-size:15px;font-weight:700;color:#111827;">${buyerName}</p>
+              <p style="margin:0;font-size:13px;color:#9ca3af;">Expires ${new Date(expiresAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</p>
             </td>
           </tr>
-
-          <!-- Content -->
-          <tr>
-            <td style="padding: 32px;">
-              <p style="margin: 0 0 16px; font-size: 16px; color: #374151;">
-                Hi ${recipientName},
-              </p>
-              
-              <p style="margin: 0 0 24px; font-size: 16px; color: #374151;">
-                Great news! <strong>${buyerName}</strong> has made an offer on your listing.
-              </p>
-
-              <!-- Product & Offer Card -->
-              <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 24px; overflow: hidden;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  ${productImageUrl ? `
-                  <tr>
-                    <td style="padding: 0;">
-                      <img src="${productImageUrl}" alt="${productName}" width="100%" height="160" style="object-fit: cover; display: block;">
-                    </td>
-                  </tr>
-                  ` : ''}
-                  <tr>
-                    <td style="padding: 16px;">
-                      <p style="margin: 0 0 8px; font-size: 16px; color: #111827; font-weight: 600;">
-                        ${productName}
-                      </p>
-                      <table width="100%" cellpadding="0" cellspacing="0">
-                        <tr>
-                          <td>
-                            <p style="margin: 0; font-size: 14px; color: #6b7280;">
-                              Your price: <span style="text-decoration: line-through;">${formatPrice(originalPrice)}</span>
-                            </p>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td style="padding-top: 8px;">
-                            <p style="margin: 0; font-size: 24px; color: #059669; font-weight: 700;">
-                              ${formatPrice(offerAmount)}
-                            </p>
-                            <p style="margin: 4px 0 0; font-size: 13px; color: #6b7280;">
-                              ${discount}% below asking price
-                            </p>
-                          </td>
-                        </tr>
-                      </table>
-                    </td>
-                  </tr>
-                </table>
-              </div>
-
-              ${message ? `
-              <!-- Buyer's Message -->
-              <div style="background-color: #f9fafb; border-left: 4px solid #3b82f6; padding: 16px 20px; margin-bottom: 24px; border-radius: 4px;">
-                <p style="margin: 0 0 4px; font-size: 12px; color: #6b7280; text-transform: uppercase; font-weight: 600;">
-                  Message from ${buyerName}
-                </p>
-                <p style="margin: 0; font-size: 14px; color: #4b5563; line-height: 1.6;">
-                  "${message}"
-                </p>
-              </div>
-              ` : ''}
-
-              <!-- Expiry Notice -->
-              <div style="background-color: #fef3c7; border: 1px solid #f59e0b; padding: 12px 16px; margin-bottom: 24px; border-radius: 8px;">
-                <p style="margin: 0; font-size: 14px; color: #92400e;">
-                  ⏰ This offer expires on <strong>${formatDate(expiresAt)}</strong>
-                </p>
-              </div>
-
-              <!-- Call to Action Buttons -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
-                <tr>
-                  <td align="center">
-                    <a href="${offerLink}" style="display: inline-block; background-color: #059669; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 600;">
-                      View & Respond
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <p style="margin: 0; font-size: 13px; color: #6b7280; line-height: 1.6; text-align: center;">
-                <a href="${offerLink}" style="color: #3b82f6; text-decoration: none;">
-                  ${offerLink}
-                </a>
-              </p>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f9fafb; padding: 24px 32px; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0 0 8px; font-size: 12px; color: #6b7280; text-align: center;">
-                You're receiving this email because someone made an offer on your listing.
-              </p>
-              <p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center;">
-                <a href="${settingsLink}" style="color: #3b82f6; text-decoration: none;">Manage notification preferences</a>
-              </p>
-            </td>
-          </tr>
-
         </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-`;
 
-  const text = `
-Hi ${recipientName},
+        <!-- Price comparison -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
+          <tr>
+            <td width="47%" style="text-align:center;padding:22px 12px;background:#f5f5f0;">
+              <p style="margin:0 0 6px;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;">Listed at</p>
+              <p style="margin:0;font-size:28px;font-weight:900;color:#9ca3af;letter-spacing:-1px;text-decoration:line-through;">${formatPrice(originalPrice)}</p>
+            </td>
+            <td width="6%" style="text-align:center;font-size:18px;color:#d1d5db;">&#8594;</td>
+            <td width="47%" style="text-align:center;padding:22px 12px;background:#0a0a0a;">
+              <p style="margin:0 0 6px;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;">Their offer</p>
+              <p style="margin:0;font-size:28px;font-weight:900;color:#F5C518;letter-spacing:-1px;">${formatPrice(offerAmount)}</p>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:0 0 28px;font-size:13px;color:#9ca3af;text-align:center;">${formatPrice(savings)} below asking</p>
 
-Great news! ${buyerName} has made an offer on your listing.
+        ${message ? `
+        <!-- Buyer message -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+          <tr><td style="background:#f3f4f6;border-radius:12px;border-bottom-left-radius:3px;padding:16px 20px;">
+            <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;">${message}</p>
+          </td></tr>
+        </table>
+        ` : ''}
 
-Product: ${productName}
-Your price: ${formatPrice(originalPrice)}
-Offer: ${formatPrice(offerAmount)} (${discount}% below asking)
+        <!-- Action buttons -->
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td width="34%" style="padding-right:6px;">
+              <a href="${offerLink}" style="display:block;background:#F5C518;color:#0a0a0a;text-decoration:none;padding:14px 8px;text-align:center;font-size:13px;font-weight:900;letter-spacing:1px;text-transform:uppercase;">Accept</a>
+            </td>
+            <td width="34%" style="padding:0 3px;">
+              <a href="${offerLink}" style="display:block;background:#0a0a0a;color:#ffffff;text-decoration:none;padding:14px 8px;text-align:center;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Counter</a>
+            </td>
+            <td width="32%" style="padding-left:6px;">
+              <a href="${offerLink}" style="display:block;border:1.5px solid #e5e7eb;color:#9ca3af;text-decoration:none;padding:13px 8px;text-align:center;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Decline</a>
+            </td>
+          </tr>
+        </table>
 
-${message ? `Message from ${buyerName}: "${message}"` : ''}
+      </td></tr>
 
-This offer expires on ${formatDate(expiresAt)}.
+      <!-- Footer -->
+      <tr><td style="background:#0a0a0a;padding:24px 40px;">
+        <p style="margin:0;font-size:11px;color:#3d3d3d;text-align:center;">YELLOW JERSEY &nbsp;&#183;&nbsp; <a href="${settingsLink}" style="color:#3d3d3d;text-decoration:none;">Manage preferences</a></p>
+      </td></tr>
 
-View & Respond: ${offerLink}
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+
+  const text = `New offer on your ${productName}
+
+${buyerName} offered ${formatPrice(offerAmount)} (listed at ${formatPrice(originalPrice)})
+
+Accept, counter, or decline: ${offerLink}
 
 ---
-To manage your notification preferences, visit: ${settingsLink}
-`;
+Manage preferences: ${settingsLink}`;
 
-  return { subject: emailSubject, html, text };
+  return { subject, html, text };
 }
-
