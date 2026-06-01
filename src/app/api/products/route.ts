@@ -53,7 +53,8 @@ export async function GET(request: NextRequest) {
           external_url,
           is_primary,
           approval_status,
-          sort_order
+          sort_order,
+          source
         ),
         canonical_products!canonical_product_id (
           id,
@@ -66,7 +67,8 @@ export async function GET(request: NextRequest) {
             external_url,
             is_primary,
             approval_status,
-            sort_order
+            sort_order,
+            source
           )
         )
       `, { count: 'exact' })

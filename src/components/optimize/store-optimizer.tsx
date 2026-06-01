@@ -59,6 +59,7 @@ interface CanonicalImage {
   is_primary: boolean | null;
   approval_status: string | null;
   sort_order: number | null;
+  source?: string | null;
 }
 
 interface OptimizerProduct {
@@ -71,11 +72,14 @@ interface OptimizerProduct {
   brand: string | null;
   upc: string | null;
   category_name: string | null;
+  listing_source: string | null;
   price: number;
   qoh: number;
   resolved_image_url: string | null;
   primary_image_url: string | null;
   canonical_images: CanonicalImage[];
+  /** Raw product-level images (not canonical) — includes source field */
+  product_images?: Array<{ source?: string | null; approval_status?: string | null; cloudinary_public_id?: string | null; cloudinary_url?: string | null; external_url?: string | null }>;
   canonical_products?: {
     id: string;
     upc: string | null;
@@ -131,7 +135,8 @@ interface CategoryOption {
   id: string;           // lightspeed_category_id — used to filter products
   name: string;         // human-readable name from Lightspeed API
   count: number;        // total active products in category
-  missingImages: number; // products with no approved image
+  missingImages: number; // products with no approved image of any kind
+  missingSerperImages: number; // Lightspeed products without a serper_workbench image (= not on store)
 }
 
 interface RejectedDetail {
@@ -167,6 +172,22 @@ const emptyRun = (): RowRun => ({
 
 function hasImage(p: OptimizerProduct) {
   return !!(p.resolved_image_url || p.primary_image_url);
+}
+/** Returns true if this Lightspeed product has a serper_workbench-approved image.
+ *  Non-Lightspeed products always return true (gate doesn't apply to them). */
+function hasSerperImage(p: OptimizerProduct) {
+  const isLightspeed = !p.listing_source || p.listing_source === 'lightspeed';
+  if (!isLightspeed) return true;
+  const allImages = [
+    ...(p.canonical_images ?? []),
+    ...(p.product_images ?? []),
+  ];
+  return allImages.some(
+    (img) =>
+      img.source === 'serper_workbench' &&
+      (img.approval_status === 'approved' || img.approval_status === null) &&
+      (img.cloudinary_public_id || img.cloudinary_url || img.external_url),
+  );
 }
 function hasTitle(p: OptimizerProduct) {
   if (!p.display_name) return false;
@@ -794,10 +815,10 @@ export function StoreOptimizer() {
         const raw: Array<{ id?: string; name?: string; product_count?: number }> =
           scanData.categories ?? [];
 
-        const missingMap = new Map<string, number>(
+        const missingMap = new Map<string, { missing: number; missing_serper: number }>(
           (summaryData.summary ?? []).map(
-            (s: { ls_category_id: string; missing_images: number }) =>
-              [s.ls_category_id, s.missing_images] as [string, number],
+            (s: { ls_category_id: string; missing_images: number; missing_serper_images: number }) =>
+              [s.ls_category_id, { missing: s.missing_images, missing_serper: s.missing_serper_images ?? 0 }] as [string, { missing: number; missing_serper: number }],
           ),
         );
 
@@ -807,7 +828,8 @@ export function StoreOptimizer() {
             id: c.id!,
             name: c.name || c.id!,
             count: c.product_count ?? 0,
-            missingImages: missingMap.get(c.id!) ?? 0,
+            missingImages: missingMap.get(c.id!)?.missing ?? 0,
+            missingSerperImages: missingMap.get(c.id!)?.missing_serper ?? 0,
           }));
         if (!cancelled) setCategories(opts);
       } catch {
@@ -1619,11 +1641,17 @@ export function StoreOptimizer() {
                 <SelectItem key={c.id} value={c.id}>
                   <span className="flex items-center gap-2">
                     {c.name}
-                    <span className="text-xs text-muted-foreground">
-                      {c.missingImages > 0
-                        ? `${c.missingImages} of ${c.count} missing photos`
-                        : `${c.count} products`}
-                    </span>
+                    {c.missingSerperImages > 0 ? (
+                      <span className="text-xs font-medium text-orange-600">
+                        {c.missingSerperImages} not on store
+                      </span>
+                    ) : c.missingImages > 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        {c.missingImages} missing photos
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{c.count} products</span>
+                    )}
                   </span>
                 </SelectItem>
               ))}
@@ -1935,7 +1963,19 @@ export function StoreOptimizer() {
 
                       {/* Name + meta + pills */}
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-foreground leading-snug">{name}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-foreground leading-snug">{name}</p>
+                          {hasImage(p) && !hasSerperImage(p) && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-orange-100 text-orange-700 border border-orange-200 leading-none">
+                              Not on store — needs serper photo
+                            </span>
+                          )}
+                          {!hasImage(p) && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-red-100 text-red-700 border border-red-200 leading-none">
+                              No photo
+                            </span>
+                          )}
+                        </div>
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           {p.brand || "—"} · ${Number(p.price).toFixed(2)} · {p.qoh} in stock
                         </p>

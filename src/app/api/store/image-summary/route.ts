@@ -24,13 +24,22 @@ export async function GET() {
       .from('products')
       .select(`
         lightspeed_category_id,
+        listing_source,
         canonical_products!canonical_product_id (
           product_images!canonical_product_id (
             cloudinary_public_id,
             cloudinary_url,
             external_url,
-            approval_status
+            approval_status,
+            source
           )
+        ),
+        product_images!product_id (
+          cloudinary_public_id,
+          cloudinary_url,
+          external_url,
+          approval_status,
+          source
         )
       `)
       .eq('user_id', user.id)
@@ -43,34 +52,52 @@ export async function GET() {
       return NextResponse.json({ error: 'Query failed' }, { status: 500 })
     }
 
-    const summary = new Map<string, { total: number; missing: number }>()
+    const summary = new Map<string, { total: number; missing: number; missing_serper: number }>()
 
     for (const row of rows || []) {
       const catId = String(row.lightspeed_category_id)
-      const cur = summary.get(catId) ?? { total: 0, missing: 0 }
+      const cur = summary.get(catId) ?? { total: 0, missing: 0, missing_serper: 0 }
       cur.total++
 
-      const images: Array<{
+      // Combine canonical and product-level images
+      const canonicalImages: Array<{
         cloudinary_public_id?: string | null
         cloudinary_url?: string | null
         external_url?: string | null
         approval_status?: string | null
+        source?: string | null
       }> = (row as any).canonical_products?.product_images ?? []
 
-      const hasImage = images.some(
+      const productImages: typeof canonicalImages = (row as any).product_images ?? []
+      const allImages = [...canonicalImages, ...productImages]
+
+      const hasAnyImage = allImages.some(
         (img) =>
           (img.approval_status === 'approved' || img.approval_status === null) &&
           (img.cloudinary_public_id || img.cloudinary_url || img.external_url),
       )
 
-      if (!hasImage) cur.missing++
+      // A Lightspeed product is "marketplace ready" only if it has a serper_workbench image
+      const isLightspeed = !row.listing_source || row.listing_source === 'lightspeed'
+      const hasSerperImage = allImages.some(
+        (img) =>
+          img.source === 'serper_workbench' &&
+          (img.approval_status === 'approved' || img.approval_status === null) &&
+          (img.cloudinary_public_id || img.cloudinary_url || img.external_url),
+      )
+
+      if (!hasAnyImage) cur.missing++
+      // missing_serper = products that are Lightspeed but lack a serper_workbench image
+      if (isLightspeed && !hasSerperImage) cur.missing_serper++
+
       summary.set(catId, cur)
     }
 
-    const result = Array.from(summary.entries()).map(([ls_category_id, { total, missing }]) => ({
+    const result = Array.from(summary.entries()).map(([ls_category_id, { total, missing, missing_serper }]) => ({
       ls_category_id,
       total,
       missing_images: missing,
+      missing_serper_images: missing_serper,
     }))
 
     return NextResponse.json({ summary: result })
