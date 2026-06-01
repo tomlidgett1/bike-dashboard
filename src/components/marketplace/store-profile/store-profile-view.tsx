@@ -32,6 +32,8 @@ import {
   Leaf,
   ImagePlus,
   Loader2 as SpinnerIcon,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -366,7 +368,7 @@ function CarouselRow({
               onChange={handleLogoUpload}
             />
           )}
-          {!cat.hide_title && <h3 className="text-sm font-semibold text-gray-900">{cat.name}</h3>}
+          {!cat.hide_title && <h3 className="text-base font-semibold text-gray-900">{cat.name}</h3>}
           <span className="text-xs text-gray-400 tabular-nums">({cat.products.length})</span>
         </div>
         {hasMore && (
@@ -556,6 +558,11 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   const [compact, setCompact] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
   const [showSaleOnly, setShowSaleOnly] = React.useState(false);
+  const [previewMode, setPreviewMode] = React.useState(false);
+
+  // When previewMode is on, strip all owner-only UI so the store sees exactly
+  // what a customer sees (no logo-upload overlays, no owner-only empty states, etc.)
+  const viewAsOwner = isOwnProfile && !previewMode;
 
   React.useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -658,11 +665,19 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
   const actionButtons = (
     <>
-      {isOwnProfile && (
+      {isOwnProfile && !previewMode && (
         <HeroAction
           icon={Settings}
           label="Edit Store"
           onClick={() => (window.location.href = "/settings/store")}
+        />
+      )}
+      {isOwnProfile && (
+        <HeroAction
+          icon={previewMode ? EyeOff : Eye}
+          label={previewMode ? "Exit preview" : "Preview"}
+          active={previewMode}
+          onClick={() => setPreviewMode((v) => !v)}
         />
       )}
       {!isOwnProfile && (
@@ -1022,7 +1037,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
             {activeTab === "home" && (
               <StoreHomeTab
                 store={store}
-                isOwnProfile={isOwnProfile}
+                isOwnProfile={viewAsOwner}
                 onNavigate={handleHomeNavigate}
                 onOpenCollection={handleOpenCollection}
               />
@@ -1038,7 +1053,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                   expandedCategories={expandedCategories}
                   setExpandedCategories={setExpandedCategories}
                   compact={compact}
-                  isOwnProfile={isOwnProfile}
+                  isOwnProfile={viewAsOwner}
                   storeId={store.id}
                 />
               ) : (
@@ -1046,7 +1061,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                   icon={Package}
                   title="No products yet"
                   body={
-                    isOwnProfile
+                    viewAsOwner
                       ? "Sync your inventory or add products to start showcasing your range here."
                       : "This store hasn't listed any products yet."
                   }
@@ -1061,7 +1076,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
               (store.services.length > 0 ? (
                 <div className="space-y-6">
                   <ServicesSection services={store.services} />
-                  {!isOwnProfile && store.phone && (
+                  {!viewAsOwner && store.phone && (
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl bg-gray-900 text-white px-6 py-5">
                       <div>
                         <h3 className="text-base font-semibold">Need a service or repair?</h3>
@@ -1088,7 +1103,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                   icon={Wrench}
                   title="No services listed"
                   body={
-                    isOwnProfile
+                    viewAsOwner
                       ? "Add the services you offer so customers know what you can help with."
                       : "This store hasn't listed any services yet."
                   }
