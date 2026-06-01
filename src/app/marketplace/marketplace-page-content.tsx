@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useInteractionTracker } from "@/lib/tracking/interaction-tracker";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
-import { useMarketplaceData } from "@/lib/hooks/use-marketplace-data";
+import { useMarketplaceData, useLightspeedCategories } from "@/lib/hooks/use-marketplace-data";
 import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
 import { MARKETPLACE_INITIAL_PAGE_SIZE } from "@/lib/marketplace-constants";
 import type { InitialMarketplacePagination } from "@/lib/server/fetch-initial-marketplace-products";
@@ -499,18 +499,9 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       .map(([level1]) => ({ label: level1, level1 }));
   }, [isStoresView, products]);
 
-  // Derive Bike Stores tab category pills from Lightspeed category_name
-  const storesViewCategories = React.useMemo(() => {
-    if (!isStoresView || !products?.length) return [];
-    const categoryMap = new Map<string, number>();
-    products.forEach(product => {
-      const cat = product.category_name;
-      if (cat) categoryMap.set(cat, (categoryMap.get(cat) || 0) + 1);
-    });
-    return Array.from(categoryMap.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([level1]) => ({ label: level1, level1 }));
-  }, [isStoresView, products]);
+  // Bike Stores tab category pills — fetched from dedicated public API,
+  // same data source as the Lightspeed category_name field on products.
+  const { categories: storesViewCategories, isLoading: storesViewCategoriesLoading } = useLightspeedCategories();
 
   // Derive store categories from fetched products (zero API calls - instant)
   const storeCategories = React.useMemo(() => {
@@ -1061,7 +1052,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               productGridLayout={productGridLayout}
               onProductGridLayoutChange={setProductGridLayout}
               dynamicCategories={isStoresView ? storesViewCategories : marketplaceCategories}
-              categoriesLoading={loading}
+              categoriesLoading={isStoresView ? storesViewCategoriesLoading : loading}
               mobileBrowseSheetOpen={mobileBrowseSheetOpen}
               onMobileBrowseSheetOpenChange={setMobileBrowseSheetOpen}
             />
@@ -1124,7 +1115,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     productGridLayout={productGridLayout}
                     onProductGridLayoutChange={setProductGridLayout}
                     dynamicCategories={storesViewCategories}
-                    categoriesLoading={loading}
+                    categoriesLoading={storesViewCategoriesLoading}
                     additionalFilters={
                       <AdvancedFilters
                         filters={advancedFilters}

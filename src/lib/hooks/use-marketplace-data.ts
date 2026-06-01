@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from 'react';
 import useSWR from 'swr';
 import type { MarketplaceProduct } from '@/lib/types/marketplace';
 import { MARKETPLACE_INITIAL_PAGE_SIZE } from '@/lib/marketplace-constants';
@@ -223,6 +224,33 @@ const categoryCountsFetcher = async (url: string): Promise<{ counts: Record<stri
   }
   return response.json();
 };
+
+/**
+ * Hook for Lightspeed store categories (Bike Stores tab pills).
+ * Fetches distinct category_name values from all active store inventory.
+ */
+export function useLightspeedCategories(): {
+  categories: { label: string; level1: string }[];
+  isLoading: boolean;
+} {
+  const { data, error, isLoading } = useSWR<{ categories: { name: string; count: number }[] }>(
+    '/api/marketplace/store-categories',
+    (url: string) => fetch(url).then(r => r.json()),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: 60000,
+      refreshInterval: 5 * 60 * 1000,
+    }
+  );
+
+  const categories = React.useMemo(() => {
+    if (!data?.categories) return [];
+    return data.categories.map(c => ({ label: c.name, level1: c.name }));
+  }, [data]);
+
+  return { categories, isLoading: !data && !error && isLoading };
+}
 
 /**
  * Hook for category counts with aggressive caching
