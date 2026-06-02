@@ -327,6 +327,7 @@ function CarouselRow({
   const catSize = (compact ? 'compact' : (cat.carousel_size ?? 'normal')) as 'featured' | 'normal' | 'compact';
   const isExpanded = expandedCategories.has(cat.id);
   const hasMore = cat.products.length > 8;
+  const displayedProducts = isExpanded ? cat.products : cat.products.slice(0, 8);
 
   return (
     <section key={cat.id}>
@@ -387,7 +388,7 @@ function CarouselRow({
         )}
       </div>
       <CategoryScrollRow
-        products={cat.products}
+        products={displayedProducts}
         catSize={catSize}
         rowIndex={rowIndex}
         isExpanded={isExpanded}
