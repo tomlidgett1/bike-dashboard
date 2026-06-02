@@ -1,5 +1,13 @@
 import { buildSettingsLink, formatPrice, getAppUrl } from '../resend-client.ts';
 
+export interface SaleNotificationLineItem {
+  name: string;
+  imageUrl?: string;
+  itemPrice: number;
+  quantity?: number;
+  sellerPayout?: number;
+}
+
 export interface SaleNotificationParams {
   recipientName: string;
   orderNumber: string;
@@ -17,6 +25,8 @@ export interface SaleNotificationParams {
   paymentDate: string;
   purchaseId: string;
   buyerAddress?: string;
+  /** All products in this order. When >1, the email lists every item. */
+  items?: SaleNotificationLineItem[];
 }
 
 export function saleNotificationTemplate(params: SaleNotificationParams): {
@@ -31,8 +41,33 @@ export function saleNotificationTemplate(params: SaleNotificationParams): {
   const appUrl = getAppUrl();
   const settingsLink = buildSettingsLink();
   const saleLink = `${appUrl}/sales/${purchaseId}`;
-  const subject = `You made a sale — ${productName}`;
+
+  // One order may contain multiple products (cart checkout). Normalise to a
+  // line-item list so a single email lists everything the seller sold.
+  const items: SaleNotificationLineItem[] =
+    params.items && params.items.length > 0
+      ? params.items
+      : [{ name: productName, imageUrl: productImageUrl, itemPrice: params.itemPrice, quantity: 1, sellerPayout }];
+  const isMultiItem = items.length > 1;
+  const displayName = isMultiItem ? `${items.length} items` : productName;
+  const heroImageUrl = productImageUrl || items.find((it) => it.imageUrl)?.imageUrl;
+
+  const subject = isMultiItem
+    ? `You made a sale — ${items.length} items`
+    : `You made a sale — ${productName}`;
   const initial = buyerName.charAt(0).toUpperCase();
+
+  const itemsListBlock = isMultiItem ? `
+        <p style="margin:0 0 14px;font-size:11px;font-weight:800;color:#111827;text-transform:uppercase;letter-spacing:1.5px;">Items sold in this order</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+          ${items.map((it) => `
+          <tr><td style="padding:12px 0;border-top:1px solid #f3f4f6;">
+            <table width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td valign="middle"><p style="margin:0;font-size:14px;color:#374151;font-weight:600;">${it.name}${it.quantity && it.quantity > 1 ? ` &#215; ${it.quantity}` : ''}</p></td>
+              <td align="right" valign="middle"><p style="margin:0;font-size:14px;color:#111827;font-weight:700;">${formatPrice((it.sellerPayout ?? it.itemPrice) * (it.quantity || 1))}</p></td>
+            </tr></table>
+          </td></tr>`).join('')}
+        </table>` : '';
 
   const introText = isPickup
     ? `Hey ${recipientName} — ${buyerName} will arrange collection${pickupLocation ? ` from ${pickupLocation}` : ''}. Once they confirm they've picked it up, your payout is released.`
@@ -92,16 +127,16 @@ export function saleNotificationTemplate(params: SaleNotificationParams): {
       </td></tr>
 
       <!-- Product image -->
-      ${productImageUrl ? `
+      ${heroImageUrl ? `
       <tr><td style="background:#0a0a0a;padding:32px 40px 0;line-height:0;font-size:0;">
-        <img src="${productImageUrl}" width="520" style="display:block;width:100%;max-height:340px;object-fit:cover;border-radius:4px;" alt="${productName}" />
+        <img src="${heroImageUrl}" width="520" style="display:block;width:100%;max-height:340px;object-fit:cover;border-radius:4px;" alt="${displayName}" />
       </td></tr>` : ''}
 
       <!-- Yellow bar -->
       <tr><td style="background:#F5C518;padding:22px 40px;">
         <table width="100%" cellpadding="0" cellspacing="0"><tr>
           <td valign="middle">
-            <p style="margin:0 0 3px;font-size:11px;color:#0a0a0a;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;">${productName}</p>
+            <p style="margin:0 0 3px;font-size:11px;color:#0a0a0a;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;">${displayName}</p>
             <p style="margin:0;font-size:13px;color:#3d3000;">Bought by ${buyerName}</p>
           </td>
           <td align="right" valign="middle">
@@ -150,6 +185,9 @@ export function saleNotificationTemplate(params: SaleNotificationParams): {
         </table>
         ` : ''}
 
+        <!-- Items sold (multi-product orders only) -->
+        ${itemsListBlock}
+
         <!-- Steps -->
         ${stepsBlock}
 
@@ -172,11 +210,16 @@ export function saleNotificationTemplate(params: SaleNotificationParams): {
 </table>
 </body></html>`;
 
-  const text = `You made a sale — ${productName}
+  const itemsListText = isMultiItem
+    ? `\nItems sold:\n${items.map((it) => `- ${it.name}${it.quantity && it.quantity > 1 ? ` x ${it.quantity}` : ''} — ${formatPrice((it.sellerPayout ?? it.itemPrice) * (it.quantity || 1))}`).join('\n')}\n`
+    : '';
 
-${buyerName} purchased ${productName}
+  const text = `You made a sale — ${displayName}
+
+${buyerName} purchased ${displayName}
 Your payout: ${formatPrice(sellerPayout)}
 Order: ${orderNumber}
+${itemsListText}
 
 ${isPickup
   ? `Pickup${pickupLocation ? ` from ${pickupLocation}` : ''} — the buyer will contact you to arrange a time.`

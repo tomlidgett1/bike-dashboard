@@ -7,6 +7,7 @@
 
 import { LIGHTSPEED_CONFIG } from './config'
 import { getValidAccessToken, refreshAccessToken, updateLastSyncTime } from './token-manager'
+import { assembleYellowJerseyWorkorderRequest, YELLOW_JERSEY_CUSTOMER } from './workorder'
 import type {
   LightspeedAccountResponse,
   LightspeedItemsResponse,
@@ -25,6 +26,9 @@ import type {
   LightspeedShop,
   LightspeedRegister,
   LightspeedEmployee,
+  LightspeedWorkorder,
+  LightspeedWorkorderStatus,
+  LightspeedWorkorderStatusesResponse,
 } from './types'
 
 // ============================================================
@@ -382,82 +386,105 @@ export class LightspeedClient {
     return response.Sale
   }
 
+  // ============================================================
+  // Workorder Methods
+  // ============================================================
+
   /**
-   * Create a sale in Quote (not-completed) status for a Lightspeed product.
-   *
-   * Automatically resolves the first active shop, register, and employee for
-   * the account so callers only need item-level data. The sale is posted with
-   * `completed: "false"`, meaning it appears in the store's system as an open
-   * quote the staff can review and complete at their discretion.
-   *
-   * @param params.itemID         - Lightspeed item ID (lightspeed_item_id on our products table)
-   * @param params.unitQuantity   - Number of units sold
-   * @param params.unitPrice      - Unit price in dollars (e.g. 250.00)
-   * @param params.referenceNumber - Optional cross-reference (e.g. our order number)
+   * Get the workorder statuses configured for the account.
    */
-  async createQuoteSale(params: {
-    itemID: string
-    unitQuantity: number
-    unitPrice: number
-    referenceNumber?: string
-  }): Promise<LightspeedSale> {
+  async getWorkorderStatuses(params?: LightspeedQueryParams): Promise<LightspeedWorkorderStatus[]> {
+    const accountId = await this.getAccountId()
+    const queryString = this.buildQueryString(params)
+    const response = await this.request<LightspeedWorkorderStatusesResponse>(
+      `/Account/${accountId}/WorkorderStatus.json${queryString}`
+    )
+    return this.ensureArray(response.WorkorderStatus)
+  }
+
+  /**
+   * Create a "YELLOW JERSEY SALE" workorder for a Lightspeed product that was
+   * bought on the Yellow Jersey marketplace.
+   *
+   * Unlike a completed sale, a workorder does NOT deduct stock-on-hand — it is
+   * a task the store reviews and processes themselves. The note highlights all
+   * the order details (item, qty, price, buyer, shipping) and instructs staff
+   * that payment is already collected and they must adjust stock manually.
+   *
+   * Resolves the first active shop, employee, workorder status and (optionally)
+   * customer for the account, and best-effort fetches the item to enrich the
+   * note. Selection + payload assembly is delegated to the pure
+   * `assembleYellowJerseyWorkorderRequest` helper.
+   *
+   * @param params.items           - One entry per product purchased from this seller
+   *                                  in the order ({ itemID, unitQuantity, unitPrice })
+   * @param params.orderNumber     - Our marketplace order number (cross-reference)
+   * @param params.buyerName       - Optional buyer name for the note
+   * @param params.shippingAddress - Optional single-line shipping address for the note
+   */
+  async createYellowJerseySaleWorkorder(params: {
+    items: Array<{ itemID: string; unitQuantity: number; unitPrice: number }>
+    orderNumber: string
+    buyerName?: string | null
+    shippingAddress?: string | null
+  }): Promise<LightspeedWorkorder> {
     const accountId = await this.getAccountId()
 
-    // Resolve the first active shop -----------------------------------------
+    // Resolve required entities -------------------------------------------------
     const shops = await this.getShops({ archived: 'false' })
-    const shop = shops[0]
-    if (!shop) throw new Error('[Lightspeed] No active shop found — cannot create quote sale')
 
-    // Resolve the first register for that shop --------------------------------
-    const regsResponse = await this.getRegisters({ shopID: shop.shopID })
-    const registers: LightspeedRegister[] = Array.isArray(regsResponse.Register)
-      ? regsResponse.Register
-      : regsResponse.Register
-        ? [regsResponse.Register]
-        : []
-    const register = registers[0]
-    if (!register) {
-      throw new Error(`[Lightspeed] No register found for shop ${shop.shopID}`)
-    }
-
-    // Resolve the first active, non-locked employee ---------------------------
     const empsResponse = await this.getEmployees({ archived: 'false', lockOut: 'false' })
     const employees: LightspeedEmployee[] = Array.isArray(empsResponse.Employee)
       ? empsResponse.Employee
       : empsResponse.Employee
         ? [empsResponse.Employee]
         : []
-    const employee = employees[0]
-    if (!employee) {
-      throw new Error('[Lightspeed] No active employee found — cannot create quote sale')
+
+    const statuses = await this.getWorkorderStatuses()
+
+    // Attach the dedicated "YELLOW JERSEY" customer so the workorder is clearly
+    // a marketplace sale (the API requires customerID; falls back to "0" walk-in).
+    let customers: Array<{ customerID: string }> = []
+    try {
+      const yjCustomerId = await this.findOrCreateYellowJerseyCustomer()
+      if (yjCustomerId) customers = [{ customerID: yjCustomerId }]
+    } catch (err) {
+      console.warn('[Lightspeed] Could not resolve YELLOW JERSEY customer for workorder, using walk-in:', err)
     }
 
-    // Build the sale payload --------------------------------------------------
-    const saleBody: Record<string, unknown> = {
-      completed: 'false',
-      shopID: shop.shopID,
-      registerID: register.registerID,
-      employeeID: employee.employeeID,
-      SaleLines: {
-        SaleLine: {
-          itemID: params.itemID,
-          unitQuantity: String(params.unitQuantity),
-          unitPrice: params.unitPrice.toFixed(2),
-          taxClassID: '0',
-          shopID: shop.shopID,
-          employeeID: employee.employeeID,
-        },
-      },
-    }
-    if (params.referenceNumber) {
-      saleBody.referenceNumber = params.referenceNumber
-    }
-
-    const response = await this.request<{ Sale: LightspeedSale }>(
-      `/Account/${accountId}/Sale.json`,
-      { method: 'POST', body: JSON.stringify(saleBody) }
+    // Best-effort resolve each item to enrich the note with description + SKU.
+    const items = await Promise.all(
+      params.items.map(async (line) => {
+        let item: { description?: string; systemSku?: string; customSku?: string } | null = null
+        try {
+          const fetched = await this.getItem(line.itemID)
+          item = {
+            description: fetched?.description,
+            systemSku: fetched?.systemSku,
+            customSku: fetched?.customSku,
+          }
+        } catch (err) {
+          console.warn('[Lightspeed] Could not resolve item for workorder note (non-fatal):', err)
+        }
+        return { unitQuantity: line.unitQuantity, unitPrice: line.unitPrice, item }
+      })
     )
-    return response.Sale
+
+    const { endpoint, body } = assembleYellowJerseyWorkorderRequest(
+      { accountId, shops, employees, statuses, customers },
+      {
+        items,
+        orderNumber: params.orderNumber,
+        buyerName: params.buyerName,
+        shippingAddress: params.shippingAddress,
+      }
+    )
+
+    const response = await this.request<{ Workorder: LightspeedWorkorder }>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    return response.Workorder
   }
 
   /**
@@ -492,6 +519,34 @@ export class LightspeedClient {
       `/Account/${accountId}/Customer.json${queryString}`
     )
     return this.ensureArray(response.Customer)
+  }
+
+  /**
+   * Find (or create) the dedicated "YELLOW JERSEY" customer that every
+   * marketplace-sale workorder is attached to. This makes the workorder's
+   * Customer read "YELLOW JERSEY" so the store immediately knows the sale came
+   * from the online marketplace, instead of attaching an unrelated walk-in.
+   * Returns the customerID, or null if it could not be resolved/created.
+   */
+  async findOrCreateYellowJerseyCustomer(): Promise<string | null> {
+    const accountId = await this.getAccountId()
+
+    // Look for an existing one by company name first (idempotent across sales).
+    try {
+      const res = await this.request<LightspeedCustomersResponse>(
+        `/Account/${accountId}/Customer.json?company=${encodeURIComponent(YELLOW_JERSEY_CUSTOMER.company)}&limit=1`
+      )
+      const existing = this.ensureArray(res.Customer)[0]
+      if (existing?.customerID) return existing.customerID
+    } catch (err) {
+      console.warn('[Lightspeed] YELLOW JERSEY customer lookup failed (will try to create):', err)
+    }
+
+    const created = await this.request<{ Customer: LightspeedCustomer }>(
+      `/Account/${accountId}/Customer.json`,
+      { method: 'POST', body: JSON.stringify(YELLOW_JERSEY_CUSTOMER) }
+    )
+    return created.Customer?.customerID ?? null
   }
 
   /**

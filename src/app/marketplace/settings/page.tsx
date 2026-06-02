@@ -21,6 +21,7 @@ import {
   Facebook,
   ExternalLink,
   Eye,
+  Package,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -114,6 +115,15 @@ export default function MarketplaceSettingsPage() {
     socialFacebook: '',
     socialStrava: '',
     socialWebsite: '',
+    // Shipping address
+    shippingName: '',
+    shippingPhone: '',
+    shippingLine1: '',
+    shippingLine2: '',
+    shippingCity: '',
+    shippingState: '',
+    shippingPostalCode: '',
+    shippingCountry: 'AU',
   })
 
   // Fetch full profile on mount to ensure we have all fields (including seller_display_name, bio, etc.)
@@ -151,6 +161,15 @@ export default function MarketplaceSettingsPage() {
         socialFacebook: profile.social_links?.facebook || '',
         socialStrava: profile.social_links?.strava || '',
         socialWebsite: profile.social_links?.website || '',
+        // Shipping address
+        shippingName: profile.shipping_address?.name || '',
+        shippingPhone: profile.shipping_address?.phone || '',
+        shippingLine1: profile.shipping_address?.line1 || '',
+        shippingLine2: profile.shipping_address?.line2 || '',
+        shippingCity: profile.shipping_address?.city || '',
+        shippingState: profile.shipping_address?.state || '',
+        shippingPostalCode: profile.shipping_address?.postal_code || '',
+        shippingCountry: profile.shipping_address?.country || 'AU',
       })
       setFormReady(true)
     }
@@ -180,6 +199,17 @@ export default function MarketplaceSettingsPage() {
           strava: formData.socialStrava || undefined,
           website: formData.socialWebsite || undefined,
         },
+        // Shipping address — only save if a street address is present
+        shipping_address: formData.shippingLine1 ? {
+          name: formData.shippingName,
+          phone: formData.shippingPhone,
+          line1: formData.shippingLine1,
+          line2: formData.shippingLine2 || undefined,
+          city: formData.shippingCity,
+          state: formData.shippingState,
+          postal_code: formData.shippingPostalCode,
+          country: formData.shippingCountry || 'AU',
+        } : null,
       })
 
       // Refresh profile to get the latest data from server
@@ -208,7 +238,16 @@ export default function MarketplaceSettingsPage() {
     formData.socialInstagram !== (profile?.social_links?.instagram || '') ||
     formData.socialFacebook !== (profile?.social_links?.facebook || '') ||
     formData.socialStrava !== (profile?.social_links?.strava || '') ||
-    formData.socialWebsite !== (profile?.social_links?.website || '')
+    formData.socialWebsite !== (profile?.social_links?.website || '') ||
+    // Shipping address changes
+    formData.shippingName !== (profile?.shipping_address?.name || '') ||
+    formData.shippingPhone !== (profile?.shipping_address?.phone || '') ||
+    formData.shippingLine1 !== (profile?.shipping_address?.line1 || '') ||
+    formData.shippingLine2 !== (profile?.shipping_address?.line2 || '') ||
+    formData.shippingCity !== (profile?.shipping_address?.city || '') ||
+    formData.shippingState !== (profile?.shipping_address?.state || '') ||
+    formData.shippingPostalCode !== (profile?.shipping_address?.postal_code || '') ||
+    formData.shippingCountry !== (profile?.shipping_address?.country || 'AU')
 
   // Show loading until BOTH profile is loaded AND form data is populated
   if (profileLoading || !formReady) {
@@ -645,6 +684,112 @@ export default function MarketplaceSettingsPage() {
                               placeholder="Optional"
                               className="rounded-md"
                             />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Shipping Address Card */}
+                      <Card className="bg-white rounded-md shadow-sm">
+                        <CardHeader className="px-6 py-5">
+                          <CardTitle className="flex items-center gap-2 text-lg">
+                            <Package className="h-5 w-5" />
+                            Shipping Address
+                          </CardTitle>
+                          <CardDescription className="text-sm">
+                            Save your delivery address to speed up checkout. It will also be saved automatically after your first purchase.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="px-6 pb-6 space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <Label htmlFor="shippingName" className="text-sm">Full Name</Label>
+                              <Input
+                                id="shippingName"
+                                value={formData.shippingName}
+                                onChange={(e) =>
+                                  setFormData({ ...formData, shippingName: e.target.value })
+                                }
+                                placeholder="Name on parcel"
+                                className="rounded-md"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="shippingPhone" className="text-sm">Phone</Label>
+                              <Input
+                                id="shippingPhone"
+                                value={formData.shippingPhone}
+                                onChange={(e) =>
+                                  setFormData({ ...formData, shippingPhone: e.target.value })
+                                }
+                                placeholder="For delivery notifications"
+                                className="rounded-md"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="shippingLine1" className="text-sm">Street Address</Label>
+                            <Input
+                              id="shippingLine1"
+                              value={formData.shippingLine1}
+                              onChange={(e) =>
+                                setFormData({ ...formData, shippingLine1: e.target.value })
+                              }
+                              placeholder="123 Example St"
+                              className="rounded-md"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="shippingLine2" className="text-sm">Apartment / Unit <span className="text-gray-400 font-normal">(optional)</span></Label>
+                            <Input
+                              id="shippingLine2"
+                              value={formData.shippingLine2}
+                              onChange={(e) =>
+                                setFormData({ ...formData, shippingLine2: e.target.value })
+                              }
+                              placeholder="Apt 4B"
+                              className="rounded-md"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-4">
+                            <div className="space-y-1.5">
+                              <Label htmlFor="shippingCity" className="text-sm">City / Suburb</Label>
+                              <Input
+                                id="shippingCity"
+                                value={formData.shippingCity}
+                                onChange={(e) =>
+                                  setFormData({ ...formData, shippingCity: e.target.value })
+                                }
+                                placeholder="Melbourne"
+                                className="rounded-md"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="shippingState" className="text-sm">State</Label>
+                              <Input
+                                id="shippingState"
+                                value={formData.shippingState}
+                                onChange={(e) =>
+                                  setFormData({ ...formData, shippingState: e.target.value })
+                                }
+                                placeholder="VIC"
+                                className="rounded-md"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="shippingPostalCode" className="text-sm">Postcode</Label>
+                              <Input
+                                id="shippingPostalCode"
+                                value={formData.shippingPostalCode}
+                                onChange={(e) =>
+                                  setFormData({ ...formData, shippingPostalCode: e.target.value })
+                                }
+                                placeholder="3000"
+                                className="rounded-md"
+                              />
+                            </div>
                           </div>
                         </CardContent>
                       </Card>

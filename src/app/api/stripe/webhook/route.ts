@@ -295,17 +295,22 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   const sessionAny = session as any;
   const shippingDetails = sessionAny.shipping_details || sessionAny.collected_information?.shipping_details;
   const customerDetails = session.customer_details;
-  
+
+  // Shipping address ONLY — the address the buyer entered for delivery at
+  // checkout. No billing fallback: a pickup order has no shipping address, so
+  // shippingAddress stays null and the workorder note reads "Pickup".
+  const addr = shippingDetails?.address;
+
   // Format shipping address as JSON
-  const shippingAddress = shippingDetails?.address ? {
-    name: shippingDetails.name || customerDetails?.name || '',
+  const shippingAddress = addr ? {
+    name: shippingDetails?.name || customerDetails?.name || '',
     phone: customerDetails?.phone || '',
-    line1: shippingDetails.address.line1 || '',
-    line2: shippingDetails.address.line2 || '',
-    city: shippingDetails.address.city || '',
-    state: shippingDetails.address.state || '',
-    postal_code: shippingDetails.address.postal_code || '',
-    country: shippingDetails.address.country || '',
+    line1: addr.line1 || '',
+    line2: addr.line2 || '',
+    city: addr.city || '',
+    state: addr.state || '',
+    postal_code: addr.postal_code || '',
+    country: addr.country || '',
   } : null;
 
   console.log('[Stripe Webhook] Shipping address:', JSON.stringify(shippingAddress, null, 2));
@@ -446,25 +451,25 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   }
 
   // ============================================================
-  // Create Lightspeed Quote Sale (if Lightspeed product)
+  // Create Lightspeed YELLOW JERSEY SALE Workorder (if Lightspeed product)
   // ============================================================
   // Non-fatal: LS errors are logged but never bubble up to Stripe.
   if (product?.lightspeed_item_id) {
-    const lsSaleId = await createLightspeedQuoteSale({
+    const workorderId = await createLightspeedYellowJerseyWorkorder({
       sellerId: seller_id,
-      lightspeedItemId: product.lightspeed_item_id,
-      quantity: 1,
-      unitPrice: parseFloat(item_price),
+      items: [{ lightspeedItemId: product.lightspeed_item_id, quantity: 1, unitPrice: parseFloat(item_price) }],
       orderNumber,
+      buyerName: shippingAddress?.name || customerDetails?.name || null,
+      shippingAddress: formatShippingAddressLine(shippingAddress),
     });
-    // Persist the LS sale ID for cross-reference if the column exists.
-    if (lsSaleId) {
+    // Persist the LS workorder ID for cross-reference if the column exists.
+    if (workorderId) {
       await supabase
         .from('purchases')
-        .update({ lightspeed_sale_id: lsSaleId })
+        .update({ lightspeed_workorder_id: workorderId })
         .eq('id', purchase.id)
         .then(({ error }) => {
-          if (error) console.warn('[Stripe Webhook] Could not store lightspeed_sale_id (pre-migration?):', error.message);
+          if (error) console.warn('[Stripe Webhook] Could not store lightspeed_workorder_id (pre-migration?):', error.message);
         });
     }
   }
@@ -569,39 +574,90 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     }
   }
 
+  // Save shipping address to buyer profile if not already set
+  await maybeSaveShippingAddressToProfile(supabase, buyer_id, shippingAddress);
+
   console.log(`[Stripe Webhook] Funds held until: ${fundsReleaseAt.toISOString()}`);
   console.log('[Stripe Webhook] ====== CHECKOUT COMPLETE SUCCESS ======');
 }
 
 // ============================================================
-// Lightspeed Quote Sale Creation
+// Lightspeed YELLOW JERSEY SALE Workorder Creation
 // ============================================================
-// Creates a not-completed (Quote) sale in the seller's Lightspeed account
-// whenever a Lightspeed-sourced product is purchased. Non-fatal — if LS is
-// unreachable or the seller has no connection, we log and move on so the
-// Stripe webhook always returns 200 and the purchase record is preserved.
+// When a Lightspeed-sourced product is purchased we do NOT complete a sale or
+// deduct stock-on-hand in the seller's Lightspeed account. Instead we create a
+// Workorder titled "YELLOW JERSEY SALE" whose note highlights all the order
+// details. The store reviews the workorder and processes the sale (and the
+// stock adjustment) themselves. Non-fatal — if LS is unreachable or the seller
+// has no connection, we log and move on so the Stripe webhook always returns
+// 200 and the purchase record is preserved.
 
-async function createLightspeedQuoteSale(args: {
+async function createLightspeedYellowJerseyWorkorder(args: {
   sellerId: string
-  lightspeedItemId: string
-  quantity: number
-  unitPrice: number
+  items: Array<{ lightspeedItemId: string; quantity: number; unitPrice: number }>
   orderNumber: string
+  buyerName?: string | null
+  shippingAddress?: string | null
 }): Promise<string | null> {
   try {
     const client = new LightspeedClient(args.sellerId)
-    const sale = await client.createQuoteSale({
-      itemID: args.lightspeedItemId,
-      unitQuantity: args.quantity,
-      unitPrice: args.unitPrice,
-      referenceNumber: args.orderNumber,
+    const workorder = await client.createYellowJerseySaleWorkorder({
+      items: args.items.map((it) => ({
+        itemID: it.lightspeedItemId,
+        unitQuantity: it.quantity,
+        unitPrice: it.unitPrice,
+      })),
+      orderNumber: args.orderNumber,
+      buyerName: args.buyerName,
+      shippingAddress: args.shippingAddress,
     })
-    console.log('[Stripe Webhook] ✓ Lightspeed quote sale created:', sale.saleID, 'for order:', args.orderNumber)
-    return sale.saleID
+    console.log(
+      '[Stripe Webhook] ✓ Lightspeed YELLOW JERSEY SALE workorder created:',
+      workorder.workorderID,
+      'for order:',
+      args.orderNumber
+    )
+    return workorder.workorderID
   } catch (err) {
-    console.error('[Stripe Webhook] Lightspeed quote sale failed (non-fatal):', err)
+    console.error('[Stripe Webhook] Lightspeed workorder creation failed (non-fatal):', err)
     return null
   }
+}
+
+// Save shipping address to user profile if they don't already have one saved.
+// Non-fatal — runs after the purchase record is committed.
+async function maybeSaveShippingAddressToProfile(
+  supabase: ReturnType<typeof getServiceClient>,
+  buyerId: string,
+  shippingAddress: Record<string, any> | null
+): Promise<void> {
+  if (!shippingAddress || !shippingAddress.line1) return;
+
+  try {
+    const { data: user } = await supabase
+      .from('users')
+      .select('shipping_address')
+      .eq('user_id', buyerId)
+      .single();
+
+    if (!user || user.shipping_address) return;
+
+    await supabase
+      .from('users')
+      .update({ shipping_address: shippingAddress })
+      .eq('user_id', buyerId);
+
+    console.log('[Stripe Webhook] ✓ Shipping address saved to buyer profile:', buyerId);
+  } catch (err) {
+    console.error('[Stripe Webhook] Failed to save shipping address to profile (non-fatal):', err);
+  }
+}
+
+// Format a stored shipping_address object into a single line for the workorder note.
+function formatShippingAddressLine(addr: Record<string, any> | null | undefined): string | null {
+  if (!addr) return null
+  const parts = [addr.line1, addr.line2, addr.city, addr.state, addr.postal_code, addr.country].filter(Boolean)
+  return parts.length ? parts.join(', ') : null
 }
 
 // ============================================================
@@ -679,16 +735,19 @@ async function handleCartCheckoutComplete(
   const sessionAny = session as any;
   const shippingDetails = sessionAny.shipping_details || sessionAny.collected_information?.shipping_details;
   const customerDetails = session.customer_details;
-  const shippingAddress = shippingDetails?.address
+  // Shipping address ONLY — no billing fallback. A pickup order has no shipping
+  // address, so shippingAddress stays null and the workorder note reads "Pickup".
+  const addr = shippingDetails?.address;
+  const shippingAddress = addr
     ? {
-        name: shippingDetails.name || customerDetails?.name || '',
+        name: shippingDetails?.name || customerDetails?.name || '',
         phone: customerDetails?.phone || '',
-        line1: shippingDetails.address.line1 || '',
-        line2: shippingDetails.address.line2 || '',
-        city: shippingDetails.address.city || '',
-        state: shippingDetails.address.state || '',
-        postal_code: shippingDetails.address.postal_code || '',
-        country: shippingDetails.address.country || '',
+        line1: addr.line1 || '',
+        line2: addr.line2 || '',
+        city: addr.city || '',
+        state: addr.state || '',
+        postal_code: addr.postal_code || '',
+        country: addr.country || '',
       }
     : null;
 
@@ -724,6 +783,9 @@ async function handleCartCheckoutComplete(
 
   let firstPurchaseId: string | null = null;
   let createdCount = 0;
+  // Collect every Lightspeed line in the cart so we can create ONE consolidated
+  // YELLOW JERSEY SALE workorder (all products) after the loop, not one per item.
+  const lsWorkorderLines: Array<{ lightspeedItemId: string; quantity: number; unitPrice: number; purchaseId: string }> = [];
 
   for (let i = 0; i < productIds.length; i++) {
     const productId = productIds[i];
@@ -830,26 +892,11 @@ async function handleCartCheckoutComplete(
     console.log('[Stripe Webhook] Cart: ✓ purchase created:', purchase.id, orderNumber, 'product:', productId);
 
     // --------------------------------------------------------
-    // Create Lightspeed Quote Sale (if Lightspeed product)
+    // Collect Lightspeed line (one consolidated workorder is created after the loop)
     // --------------------------------------------------------
     const lsItemId = stockById.get(productId)?.lightspeedItemId ?? null;
     if (lsItemId) {
-      const lsSaleId = await createLightspeedQuoteSale({
-        sellerId: seller_id,
-        lightspeedItemId: lsItemId,
-        quantity: qty,
-        unitPrice: itemPrice,
-        orderNumber,
-      });
-      if (lsSaleId) {
-        await supabase
-          .from('purchases')
-          .update({ lightspeed_sale_id: lsSaleId })
-          .eq('id', purchase.id)
-          .then(({ error }) => {
-            if (error) console.warn('[Stripe Webhook] Cart: could not store lightspeed_sale_id (pre-migration?):', error.message);
-          });
-      }
+      lsWorkorderLines.push({ lightspeedItemId: lsItemId, quantity: qty, unitPrice: itemPrice, purchaseId: purchase.id });
     }
 
     // Mark sold only when this purchase depletes the listing. Unique listings are
@@ -888,6 +935,32 @@ async function handleCartCheckoutComplete(
     }
   }
 
+  // One consolidated YELLOW JERSEY SALE workorder for the whole cart (single
+  // seller, all Lightspeed products as line items). Stored on every LS row.
+  if (lsWorkorderLines.length > 0) {
+    const workorderId = await createLightspeedYellowJerseyWorkorder({
+      sellerId: seller_id,
+      items: lsWorkorderLines.map((l) => ({
+        lightspeedItemId: l.lightspeedItemId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+      })),
+      orderNumber: orderBase,
+      buyerName: shippingAddress?.name || customerDetails?.name || null,
+      shippingAddress: formatShippingAddressLine(shippingAddress),
+    });
+    if (workorderId) {
+      const purchaseIds = lsWorkorderLines.map((l) => l.purchaseId);
+      await supabase
+        .from('purchases')
+        .update({ lightspeed_workorder_id: workorderId })
+        .in('id', purchaseIds)
+        .then(({ error }) => {
+          if (error) console.warn('[Stripe Webhook] Cart: could not store lightspeed_workorder_id (pre-migration?):', error.message);
+        });
+    }
+  }
+
   // Mark voucher used once for the whole order (linked to the first row)
   if (voucher_id && firstPurchaseId) {
     const { error: voucherUpdateError } = await supabase
@@ -907,6 +980,9 @@ async function handleCartCheckoutComplete(
       console.log('[Stripe Webhook] Cart: ✓ voucher marked used:', voucher_id);
     }
   }
+
+  // Save shipping address to buyer profile if not already set
+  await maybeSaveShippingAddressToProfile(supabase, buyer_id, shippingAddress);
 
   console.log('[Stripe Webhook] Cart: created', createdCount, 'purchase rows. Funds held until', fundsReleaseAt.toISOString());
   console.log('[Stripe Webhook] ====== CART CHECKOUT COMPLETE SUCCESS ======');
@@ -1092,11 +1168,32 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
   }
 
   // ============================================================
+  // Create Lightspeed YELLOW JERSEY SALE Workorder (if Lightspeed product)
+  // ============================================================
+  // Non-fatal: LS errors are logged but never bubble up to Stripe.
+  if (product?.lightspeed_item_id) {
+    const workorderId = await createLightspeedYellowJerseyWorkorder({
+      sellerId: seller_id,
+      items: [{ lightspeedItemId: product.lightspeed_item_id, quantity: 1, unitPrice: parseFloat(item_price) }],
+      orderNumber,
+    });
+    if (workorderId && purchaseId) {
+      await supabase
+        .from('purchases')
+        .update({ lightspeed_workorder_id: workorderId })
+        .eq('id', purchaseId)
+        .then(({ error }) => {
+          if (error) console.warn('[Stripe Webhook] Could not store lightspeed_workorder_id (pre-migration?):', error.message);
+        });
+    }
+  }
+
+  // ============================================================
   // Handle Voucher Usage - Mark voucher as used
   // ============================================================
   if (voucher_id && purchaseId) {
     console.log('[Stripe Webhook] Marking voucher as used:', voucher_id);
-    
+
     const { error: voucherUpdateError } = await supabase
       .from('vouchers')
       .update({
@@ -1114,6 +1211,20 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
       console.log('[Stripe Webhook] ✓ Voucher marked as used:', voucher_id);
     }
   }
+
+  // Save shipping address to buyer profile if not already set
+  const piShipping = paymentIntent.shipping;
+  const piShippingAddress = piShipping?.address ? {
+    name: piShipping.name || '',
+    phone: piShipping.phone || '',
+    line1: piShipping.address.line1 || '',
+    line2: piShipping.address.line2 || '',
+    city: piShipping.address.city || '',
+    state: piShipping.address.state || '',
+    postal_code: piShipping.address.postal_code || '',
+    country: piShipping.address.country || '',
+  } : null;
+  await maybeSaveShippingAddressToProfile(supabase, buyer_id, piShippingAddress);
 
   // SMS notification is now handled on the success page
   // This simplifies the flow and ensures the SMS only sends after successful redirect

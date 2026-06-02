@@ -28,7 +28,7 @@ import { EditProfileSheet } from "./edit-profile-sheet";
 import { EditSocialLinksSheet } from "./edit-social-links-sheet";
 import { StripeConnectCard } from "@/components/settings/stripe-connect-card";
 
-interface FormData {
+interface SettingsFormData {
   firstName: string;
   lastName: string;
   email: string;
@@ -44,6 +44,14 @@ interface FormData {
   socialFacebook: string;
   socialStrava: string;
   socialWebsite: string;
+  shippingName: string;
+  shippingPhone: string;
+  shippingLine1: string;
+  shippingLine2: string;
+  shippingCity: string;
+  shippingState: string;
+  shippingPostalCode: string;
+  shippingCountry: string;
 }
 
 interface Preferences {
@@ -55,8 +63,8 @@ interface Preferences {
 }
 
 interface MobileSettingsViewProps {
-  formData: FormData;
-  setFormData: React.Dispatch<React.SetStateAction<FormData>>;
+  formData: SettingsFormData;
+  setFormData: React.Dispatch<React.SetStateAction<SettingsFormData>>;
   preferences: Preferences;
   hasChanges: boolean;
   saving: boolean;
@@ -95,7 +103,7 @@ export function MobileSettingsView({
   ].filter(Boolean).length;
 
   // Handle toggle changes (auto-save behavior)
-  const handleToggle = (field: keyof FormData, value: boolean) => {
+  const handleToggle = (field: keyof SettingsFormData, value: boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 

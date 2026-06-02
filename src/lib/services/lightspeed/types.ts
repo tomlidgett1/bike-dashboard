@@ -325,6 +325,52 @@ export interface LightspeedSalesResponse {
 }
 
 // ============================================================
+// Workorder Types
+// ============================================================
+// Yellow Jersey marketplace creates a Workorder (rather than completing a
+// sale / deducting stock) in the seller's Lightspeed account when one of their
+// products is purchased online. The store reviews the workorder and processes
+// the sale themselves, keeping Lightspeed the source of truth for stock.
+
+export interface LightspeedWorkorder {
+  workorderID: string
+  timeIn: string
+  etaOut: string
+  note: string
+  internalNote: string
+  warranty: string
+  archived: string
+  customerID: string
+  employeeID: string
+  serializedID: string
+  shopID: string
+  saleID?: string
+  saleLineID?: string
+  workorderStatusID: string
+  timeStamp: string
+}
+
+export interface LightspeedWorkorderStatus {
+  workorderStatusID: string
+  name: string
+  sortOrder?: string
+  systemValue?: string
+  htmlColor?: string
+  timeStamp?: string
+}
+
+export interface LightspeedWorkorderStatusesResponse {
+  WorkorderStatus: LightspeedWorkorderStatus | LightspeedWorkorderStatus[]
+  '@attributes'?: {
+    count: string
+    offset?: string
+    limit?: string
+    next?: string
+    previous?: string
+  }
+}
+
+// ============================================================
 // Customer Types
 // ============================================================
 

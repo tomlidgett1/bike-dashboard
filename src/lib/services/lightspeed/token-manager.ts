@@ -5,7 +5,7 @@
  * Uses AES-256-GCM for token encryption at rest.
  */
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/server'
 import { getEncryptionKey, getLightspeedCredentials, LIGHTSPEED_CONFIG } from './config'
 import type { LightspeedConnection, LightspeedTokenResponse } from './types'
 import crypto from 'crypto'
@@ -70,7 +70,7 @@ export async function storeTokens(
   accountId?: string,
   accountName?: string
 ): Promise<LightspeedConnection> {
-  const supabase = await createClient()
+  const supabase = createServiceRoleClient()
   
   const encryptedAccessToken = encryptToken(accessToken)
   const encryptedRefreshToken = encryptToken(refreshToken)
@@ -116,7 +116,7 @@ export async function getDecryptedTokens(userId: string): Promise<{
   expiresAt: Date
   connection: LightspeedConnection
 } | null> {
-  const supabase = await createClient()
+  const supabase = createServiceRoleClient()
   
   const { data: connection, error } = await supabase
     .from('lightspeed_connections')
@@ -153,7 +153,7 @@ export async function getDecryptedTokens(userId: string): Promise<{
  * Get connection without decrypted tokens
  */
 export async function getConnection(userId: string): Promise<LightspeedConnection | null> {
-  const supabase = await createClient()
+  const supabase = createServiceRoleClient()
   
   const { data, error } = await supabase
     .from('lightspeed_connections')
@@ -312,7 +312,7 @@ export async function updateConnectionStatus(
   status: 'connected' | 'disconnected' | 'error' | 'expired',
   errorMessage?: string
 ): Promise<void> {
-  const supabase = await createClient()
+  const supabase = createServiceRoleClient()
   
   const updateData: Record<string, unknown> = {
     status,
@@ -355,7 +355,7 @@ export async function updateConnectionStatus(
  * Update last sync timestamp
  */
 export async function updateLastSyncTime(userId: string): Promise<void> {
-  const supabase = await createClient()
+  const supabase = createServiceRoleClient()
   
   const { error } = await supabase
     .from('lightspeed_connections')
@@ -385,7 +385,7 @@ export async function disconnectUser(userId: string): Promise<void> {
  * Generate and store OAuth state token
  */
 export async function generateOAuthState(userId: string): Promise<string> {
-  const supabase = await createClient()
+  const supabase = createServiceRoleClient()
   
   // Generate secure random state
   const state = crypto.randomBytes(32).toString('hex')
@@ -415,7 +415,7 @@ export async function generateOAuthState(userId: string): Promise<string> {
  * Validate and consume OAuth state token
  */
 export async function validateOAuthState(userId: string, state: string): Promise<boolean> {
-  const supabase = await createClient()
+  const supabase = createServiceRoleClient()
   
   const { data: connection, error } = await supabase
     .from('lightspeed_connections')

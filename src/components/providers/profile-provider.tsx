@@ -51,6 +51,17 @@ export interface SocialLinks {
   website?: string
 }
 
+export interface ShippingAddress {
+  name: string
+  phone: string
+  line1: string
+  line2?: string
+  city: string
+  state: string
+  postal_code: string
+  country: string
+}
+
 export interface UserProfile {
   id?: string
   user_id: string
@@ -78,6 +89,7 @@ export interface UserProfile {
   cover_image_url?: string
   social_links?: SocialLinks
   seller_display_name?: string
+  shipping_address?: ShippingAddress | null
   created_at?: string
   updated_at?: string
 }

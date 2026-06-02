@@ -10,6 +10,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { StripeElementsProvider } from "@/components/providers/stripe-elements-provider";
 import { cn } from "@/lib/utils";
 import type { DeliveryMethod } from "@/app/api/stripe/create-payment-intent/route";
+import { useUserProfile } from "@/lib/hooks/use-user-profile";
 
 // ============================================================
 // Types
@@ -75,6 +76,7 @@ export function CheckoutSheet({
   sellerId,
   onSuccess,
 }: CheckoutSheetProps) {
+  const { profile } = useUserProfile();
   const [clientSecret, setClientSecret] = React.useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = React.useState<string | null>(null);
   const [deliveryOptions, setDeliveryOptions] = React.useState<DeliveryOption[]>([]);
@@ -387,6 +389,7 @@ export function CheckoutSheet({
                 onCheckEligibility={checkUberEligibility}
                 shippingDetails={shippingDetails}
                 onShippingDetailsChange={setShippingDetails}
+                savedShippingAddress={profile?.shipping_address ?? null}
               />
             </StripeElementsProvider>
           )}
@@ -448,6 +451,16 @@ interface CheckoutStepsProps {
       country: string;
     };
   } | null) => void;
+  savedShippingAddress: {
+    name: string;
+    phone: string;
+    line1: string;
+    line2?: string;
+    city: string;
+    state: string;
+    postal_code: string;
+    country: string;
+  } | null;
 }
 
 function CheckoutSteps({
@@ -469,6 +482,7 @@ function CheckoutSteps({
   onCheckEligibility,
   shippingDetails,
   onShippingDetailsChange,
+  savedShippingAddress,
 }: CheckoutStepsProps) {
   const stripe = useStripe();
   const elements = useElements();
@@ -612,7 +626,18 @@ function CheckoutSteps({
                 mode: "google_maps_api",
                 apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
               },
-              defaultValues: {
+              defaultValues: savedShippingAddress ? {
+                name: savedShippingAddress.name,
+                phone: savedShippingAddress.phone,
+                address: {
+                  line1: savedShippingAddress.line1,
+                  line2: savedShippingAddress.line2,
+                  city: savedShippingAddress.city,
+                  state: savedShippingAddress.state,
+                  postal_code: savedShippingAddress.postal_code,
+                  country: savedShippingAddress.country || "AU",
+                },
+              } : {
                 address: { country: "AU" },
               },
               fields: { phone: "always" },

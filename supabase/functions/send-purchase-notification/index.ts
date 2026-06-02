@@ -31,6 +31,7 @@ interface PurchaseNotification {
 interface PurchaseDetails {
   id: string;
   order_number: string;
+  stripe_session_id: string | null;
   buyer_id: string;
   seller_id: string;
   product_id: string;
@@ -105,6 +106,7 @@ Deno.serve(async (_req) => {
         .select(`
           id,
           order_number,
+          stripe_session_id,
           buyer_id,
           seller_id,
           product_id,
@@ -161,10 +163,24 @@ Deno.serve(async (_req) => {
       details: [] as any[],
     };
 
+    // Group notifications so each (recipient + role + order) gets ONE email
+    // listing every product. Cart checkout creates one purchase row per product
+    // sharing a stripe_session_id — without grouping the buyer/seller would
+    // receive N separate emails for a single order.
+    interface NotificationGroup {
+      key: string;
+      user: any;
+      preferences: any;
+      isBuyer: boolean;
+      notificationIds: string[];
+      purchases: PurchaseDetails[];
+    }
+    const groups = new Map<string, NotificationGroup>();
+
     for (const notification of notifications as PurchaseNotification[]) {
       const user = userMap.get(notification.user_id);
-      const preferences = preferencesMap.get(notification.user_id);
       const purchase = purchaseMap.get(notification.purchase_id) as PurchaseDetails | undefined;
+      const isBuyer = notification.type === 'purchase_complete' || notification.type === 'order_confirmed';
 
       if (!user || !user.email || !purchase) {
         await markNotificationAs(supabase, notification.id, 'skipped');
@@ -177,89 +193,127 @@ Deno.serve(async (_req) => {
         continue;
       }
 
-      // Check master email toggle
+      const orderKey = purchase.stripe_session_id || purchase.id;
+      const key = `${notification.user_id}|${isBuyer ? 'buyer' : 'seller'}|${orderKey}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = {
+          key,
+          user,
+          preferences: preferencesMap.get(notification.user_id),
+          isBuyer,
+          notificationIds: [],
+          purchases: [],
+        };
+        groups.set(key, group);
+      }
+      group.notificationIds.push(notification.id);
+      if (!group.purchases.some((p) => p.id === purchase.id)) group.purchases.push(purchase);
+    }
+
+    for (const group of groups.values()) {
+      const { user, preferences, isBuyer, notificationIds, purchases } = group;
+      const markAll = async (status: 'sent' | 'skipped' | 'failed') => {
+        for (const id of notificationIds) await markNotificationAs(supabase, id, status);
+      };
+
+      // Master email toggle
       if (user.email_notifications === false || preferences?.email_enabled === false) {
-        await markNotificationAs(supabase, notification.id, 'skipped');
-        results.skipped++;
-        results.details.push({ id: notification.id, status: 'skipped', reason: 'email_disabled' });
+        await markAll('skipped');
+        results.skipped += notificationIds.length;
+        results.details.push({ ids: notificationIds, status: 'skipped', reason: 'email_disabled' });
         continue;
       }
 
-      // Check per-type preference (falls back to order_alerts legacy field)
-      // 'purchase_complete' and 'order_confirmed' are buyer receipts
-      // 'listing_sold' and 'order_placed' are seller sale notifications
-      const isBuyerNotification = notification.type === 'purchase_complete' || notification.type === 'order_confirmed';
-      const isSellerNotification = notification.type === 'listing_sold' || notification.type === 'order_placed';
-
-      if (isBuyerNotification) {
-        const purchaseConfEnabled = preferences?.purchase_confirmations_enabled ?? user.order_alerts ?? true;
-        if (purchaseConfEnabled === false) {
-          await markNotificationAs(supabase, notification.id, 'skipped');
-          results.skipped++;
-          results.details.push({ id: notification.id, status: 'skipped', reason: 'purchase_confirmations_disabled' });
+      // Per-type preference (falls back to order_alerts legacy field)
+      if (isBuyer) {
+        const enabled = preferences?.purchase_confirmations_enabled ?? user.order_alerts ?? true;
+        if (enabled === false) {
+          await markAll('skipped');
+          results.skipped += notificationIds.length;
+          results.details.push({ ids: notificationIds, status: 'skipped', reason: 'purchase_confirmations_disabled' });
+          continue;
+        }
+      } else {
+        const enabled = preferences?.sale_notifications_enabled ?? user.order_alerts ?? true;
+        if (enabled === false) {
+          await markAll('skipped');
+          results.skipped += notificationIds.length;
+          results.details.push({ ids: notificationIds, status: 'skipped', reason: 'sale_notifications_disabled' });
           continue;
         }
       }
 
-      if (isSellerNotification) {
-        const saleNotifEnabled = preferences?.sale_notifications_enabled ?? user.order_alerts ?? true;
-        if (saleNotifEnabled === false) {
-          await markNotificationAs(supabase, notification.id, 'skipped');
-          results.skipped++;
-          results.details.push({ id: notification.id, status: 'skipped', reason: 'sale_notifications_disabled' });
-          continue;
-        }
-      }
-
-      const buyer = participantMap.get(purchase.buyer_id);
-      const seller = participantMap.get(purchase.seller_id);
+      // Stable display order; the first row drives the shared header fields.
+      purchases.sort((a, b) => (a.order_number || '').localeCompare(b.order_number || ''));
+      const primary = purchases[0];
+      const buyer = participantMap.get(primary.buyer_id);
+      const seller = participantMap.get(primary.seller_id);
       const buyerName = buyer?.business_name || buyer?.name || 'A buyer';
       const buyerLogoUrl = buyer?.logo_url || undefined;
       const sellerName = seller?.business_name || seller?.name || 'The seller';
       const sellerLogoUrl = seller?.logo_url || undefined;
-      const productName = purchase.products?.display_name || purchase.products?.description || 'Product';
-      const isPickup = purchase.products?.pickup_only === true;
-      const pickupLocation = purchase.products?.pickup_location || undefined;
+      const isPickup = primary.products?.pickup_only === true;
+      const pickupLocation = primary.products?.pickup_location || undefined;
+      const productNameOf = (p: PurchaseDetails) => p.products?.display_name || p.products?.description || 'Product';
+      // Multi-item cart rows are numbered ORDER-1, ORDER-2… — strip the suffix
+      // so the consolidated email shows the single order reference.
+      const orderNumber = purchases.length > 1 ? primary.order_number.replace(/-\d+$/, '') : primary.order_number;
 
       try {
         let emailContent;
 
-        if (notification.type === 'purchase_complete' || notification.type === 'order_confirmed') {
+        if (isBuyer) {
+          const items = purchases.map((p) => ({
+            name: productNameOf(p),
+            imageUrl: p.products?.primary_image_url || undefined,
+            price: p.item_price,
+            quantity: 1,
+          }));
           emailContent = purchaseConfirmationTemplate({
             recipientName: user.name || user.email.split('@')[0],
-            orderNumber: purchase.order_number,
-            productName,
-            productImageUrl: purchase.products?.primary_image_url || undefined,
-            productId: purchase.product_id,
+            orderNumber,
+            productName: productNameOf(primary),
+            productImageUrl: primary.products?.primary_image_url || undefined,
+            productId: primary.product_id,
             sellerName,
             sellerLogoUrl,
-            itemPrice: purchase.item_price,
-            shippingCost: purchase.shipping_cost || 0,
-            totalAmount: purchase.total_amount,
+            itemPrice: primary.item_price,
+            shippingCost: purchases.reduce((s, p) => s + (p.shipping_cost || 0), 0),
+            totalAmount: purchases.reduce((s, p) => s + (p.total_amount || 0), 0),
             isPickup,
             pickupLocation,
-            deliveryMethod: purchase.shipping_method || undefined,
-            deliveryDescription: purchase.shipping_address || undefined,
-            paymentDate: purchase.payment_date || new Date().toISOString(),
-            purchaseId: purchase.id,
+            deliveryMethod: primary.shipping_method || undefined,
+            deliveryDescription: primary.shipping_address || undefined,
+            paymentDate: primary.payment_date || new Date().toISOString(),
+            purchaseId: primary.id,
+            items: items.length > 1 ? items : undefined,
           });
         } else {
+          const items = purchases.map((p) => ({
+            name: productNameOf(p),
+            imageUrl: p.products?.primary_image_url || undefined,
+            itemPrice: p.item_price,
+            quantity: 1,
+            sellerPayout: p.seller_payout_amount || 0,
+          }));
           emailContent = saleNotificationTemplate({
             recipientName: user.name || user.email.split('@')[0],
-            orderNumber: purchase.order_number,
-            productName,
-            productImageUrl: purchase.products?.primary_image_url || undefined,
+            orderNumber,
+            productName: productNameOf(primary),
+            productImageUrl: primary.products?.primary_image_url || undefined,
             buyerName,
             buyerLogoUrl,
-            itemPrice: purchase.item_price,
-            platformFee: purchase.platform_fee || 0,
-            sellerPayout: purchase.seller_payout_amount || 0,
+            itemPrice: primary.item_price,
+            platformFee: purchases.reduce((s, p) => s + (p.platform_fee || 0), 0),
+            sellerPayout: purchases.reduce((s, p) => s + (p.seller_payout_amount || 0), 0),
             isPickup,
             pickupLocation,
-            deliveryMethod: purchase.shipping_method || undefined,
-            buyerAddress: purchase.shipping_address || undefined,
-            paymentDate: purchase.payment_date || new Date().toISOString(),
-            purchaseId: purchase.id,
+            deliveryMethod: primary.shipping_method || undefined,
+            buyerAddress: primary.shipping_address || undefined,
+            paymentDate: primary.payment_date || new Date().toISOString(),
+            purchaseId: primary.id,
+            items: items.length > 1 ? items : undefined,
           });
         }
 
@@ -269,43 +323,38 @@ Deno.serve(async (_req) => {
           html: emailContent.html,
           text: emailContent.text,
           tags: [
-            { name: 'type', value: notification.type },
-            { name: 'purchase_id', value: purchase.id },
+            { name: 'type', value: isBuyer ? 'purchase_complete' : 'listing_sold' },
+            { name: 'purchase_id', value: primary.id },
           ],
         });
 
         if (emailResult.success) {
-          await markNotificationAs(supabase, notification.id, 'sent');
-          results.sent++;
+          await markAll('sent');
+          results.sent += notificationIds.length;
           results.details.push({
-            id: notification.id,
-            type: notification.type,
+            ids: notificationIds,
+            role: isBuyer ? 'buyer' : 'seller',
             status: 'sent',
             emailId: emailResult.id,
             recipient: user.email,
+            items: purchases.length,
           });
-          console.log(`[Purchase Notifications] Sent ${notification.type} to ${user.email}`);
+          console.log(`[Purchase Notifications] Sent ${isBuyer ? 'buyer' : 'seller'} email (${purchases.length} item(s)) to ${user.email}`);
         } else {
-          await markNotificationAs(supabase, notification.id, 'failed');
-          results.failed++;
-          results.details.push({
-            id: notification.id,
-            type: notification.type,
-            status: 'failed',
-            error: emailResult.error,
-          });
+          await markAll('failed');
+          results.failed += notificationIds.length;
+          results.details.push({ ids: notificationIds, status: 'failed', error: emailResult.error });
           console.error(`[Purchase Notifications] Failed to send to ${user.email}: ${emailResult.error}`);
         }
       } catch (error) {
-        await markNotificationAs(supabase, notification.id, 'failed');
-        results.failed++;
+        await markAll('failed');
+        results.failed += notificationIds.length;
         results.details.push({
-          id: notification.id,
-          type: notification.type,
+          ids: notificationIds,
           status: 'failed',
           error: error instanceof Error ? error.message : 'Unknown error',
         });
-        console.error(`[Purchase Notifications] Exception for notification ${notification.id}:`, error);
+        console.error(`[Purchase Notifications] Exception for group ${group.key}:`, error);
       }
     }
 
