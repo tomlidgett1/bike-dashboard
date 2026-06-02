@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
         shipping_cost: shippingCost.toString(),
         buyer_fee: buyerFee.toString(),
         total_amount: totalAmount.toString(),
-        platform_fee: calculatePlatformFee(itemPrice).toString(), // 3% of offer price (seller pays)
+        platform_fee: calculatePlatformFee(itemPrice).toString(), // Seller platform fee
         seller_payout: calculateSellerPayout(itemPrice).toString(), // Offer price minus platform fee
         savings: savings.toString(),
         savings_percentage: savingsPercentage,

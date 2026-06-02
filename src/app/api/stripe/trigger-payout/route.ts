@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { requireAdminAccess } from '@/lib/admin-auth';
+import { PLATFORM_FEE_PERCENTAGE } from '@/lib/stripe';
 import Stripe from 'stripe';
 
 export async function POST(request: NextRequest) {
@@ -139,7 +140,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Calculate payout amount
-    const PLATFORM_FEE_PERCENTAGE = 0.03;
     const payoutAmount = purchase.seller_payout_amount || 
       Math.round((purchase.total_amount * (1 - PLATFORM_FEE_PERCENTAGE)) * 100) / 100;
 

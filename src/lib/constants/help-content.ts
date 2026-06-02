@@ -603,7 +603,7 @@ Setting the right price helps your items sell faster while maximising your retur
 - Counter offers can help find the right price
 
 ### Yellow Jersey Fees
-- Selling fee: 10% of the final sale price
+- Selling fee: 5% of the final sale price
 - Payment processing: Handled by Stripe
 - No listing fees for standard listings
     `.trim(),
@@ -750,7 +750,7 @@ After a sale:
 - Check your Stripe dashboard for exact timing
 
 ### Fees
-- **Yellow Jersey Fee**: 10% of sale price
+- **Yellow Jersey Fee**: 5% of sale price
 - **Stripe Processing**: Included in the platform fee
 - **No hidden fees**: What you see is what you get
 
@@ -1649,7 +1649,7 @@ Understanding your earnings and payout schedule.
 Clear breakdown of Yellow Jersey fees.
 
 ### Selling Fees
-**Platform Fee**: 10% of sale price
+**Platform Fee**: 5% of sale price
 - Charged when item sells
 - Deducted from your payout
 - Covers platform, support, and buyer protection
@@ -1663,14 +1663,14 @@ Clear breakdown of Yellow Jersey fees.
 
 ### Fee Calculation Example
 **Item sells for $500**
-- Platform fee (10%): $50
-- You receive: $450
+- Platform fee (5%): $25
+- You receive: $475
 
 **With shipping**
 - Item: $500
 - Shipping (paid by buyer): $20
-- Platform fee (10% of item): $50
-- You receive: $450 + $20 = $470
+- Platform fee (5% of item): $25
+- You receive: $475 for the item
 
 ### No Hidden Fees
 - No listing fees
@@ -2108,4 +2108,3 @@ export function getPopularArticles(): HelpArticle[] {
     .map((id) => getArticleById(id))
     .filter((article): article is HelpArticle => article !== undefined);
 }
-

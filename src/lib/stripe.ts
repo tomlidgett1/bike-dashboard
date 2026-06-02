@@ -56,8 +56,8 @@ export function getStripeClient(): Promise<StripeClient | null> {
 // Constants
 // ============================================================
 
-// Yellow Jersey platform fee percentage (3% from seller)
-export const PLATFORM_FEE_PERCENTAGE = 0.03;
+// Yellow Jersey platform fee percentage (5% from seller)
+export const PLATFORM_FEE_PERCENTAGE = 0.05;
 
 // Buyer service fee percentage (0.5%)
 export const BUYER_FEE_PERCENTAGE = 0.005;
@@ -97,4 +97,3 @@ export interface CheckoutSessionResponse {
   sessionId: string;
   url: string;
 }
-
