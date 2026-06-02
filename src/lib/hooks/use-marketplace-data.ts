@@ -30,6 +30,8 @@ interface MarketplaceDataParams {
   brand?: string | null;
   // Time filter
   createdAfter?: string | null;
+  // Uber delivery feed
+  uberOnly?: boolean;
 }
 
 interface MarketplaceDataResponse {
@@ -49,9 +51,11 @@ interface UseMarketplaceDataReturn {
   pagination: MarketplaceDataResponse['pagination'] | null;
   isLoading: boolean;
   isValidating: boolean;
-  error: any;
+  error: unknown;
   mutate: () => void;
 }
+
+const EMPTY_MARKETPLACE_PRODUCTS: MarketplaceProduct[] = [];
 
 // Fetcher function for SWR
 const fetcher = async (url: string): Promise<MarketplaceDataResponse> => {
@@ -96,6 +100,7 @@ function buildApiUrl(params: MarketplaceDataParams): string {
     sortBy,
     brand,
     createdAfter,
+    uberOnly,
   } = params;
   
   let endpoint = '';
@@ -119,6 +124,7 @@ function buildApiUrl(params: MarketplaceDataParams): string {
   if (sortBy && sortBy !== 'newest') urlParams.set('sortBy', sortBy);
   if (brand) urlParams.set('brand', brand);
   if (createdAfter) urlParams.set('createdAfter', createdAfter);
+  if (uberOnly) urlParams.set('uberOnly', 'true');
 
   // Handle search queries
   if (search) {
@@ -207,7 +213,7 @@ export function useMarketplaceData(
   );
 
   return {
-    products: data?.products || [],
+    products: data?.products ?? EMPTY_MARKETPLACE_PRODUCTS,
     pagination: data?.pagination || null,
     isLoading: !data && !error && isLoading,
     isValidating,
@@ -229,12 +235,16 @@ const categoryCountsFetcher = async (url: string): Promise<{ counts: Record<stri
  * Hook for Lightspeed store categories (Bike Stores tab pills).
  * Fetches distinct category_name values from all active store inventory.
  */
-export function useLightspeedCategories(): {
+export function useLightspeedCategories(uberOnly = false): {
   categories: { label: string; level1: string }[];
   isLoading: boolean;
 } {
+  const key = uberOnly
+    ? '/api/marketplace/store-categories?uberOnly=true'
+    : '/api/marketplace/store-categories';
+
   const { data, error, isLoading } = useSWR<{ categories: { name: string; count: number }[] }>(
-    '/api/marketplace/store-categories',
+    key,
     (url: string) => fetch(url).then(r => r.json()),
     {
       revalidateOnFocus: false,
@@ -274,4 +284,3 @@ export function useCategoryCounts() {
     error,
   };
 }
-

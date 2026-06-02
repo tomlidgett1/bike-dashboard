@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 // ============================================================
@@ -11,19 +11,26 @@ import { createClient } from '@/lib/supabase/server';
 
 export const revalidate = 300; // ISR: revalidate every 5 minutes
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
+    const uberOnly = request.nextUrl.searchParams.get('uberOnly') === 'true';
 
     // Query all active Lightspeed products that have a category_name set.
     // Uses the same filters as category-counts so the product population matches.
-    const { data, error } = await supabase
+    let query = supabase
       .from('products')
       .select('category_name')
       .eq('is_active', true)
       .eq('listing_source', 'lightspeed')
       .or('listing_status.is.null,listing_status.eq.active')
       .not('category_name', 'is', null);
+
+    if (uberOnly) {
+      query = query.eq('uber_delivery_enabled', true);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('[store-categories] Query error:', error);

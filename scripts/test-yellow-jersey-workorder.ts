@@ -8,16 +8,21 @@
  *
  * Run:  npx tsx scripts/test-yellow-jersey-workorder.ts
  *
- * Imports only ./workorder (no Supabase/Next chain) so it runs standalone.
+ * Imports only isolated builders/helpers (no Supabase/Next chain) so it runs standalone.
  */
 
+import { readFileSync } from 'node:fs'
 import {
+  YELLOW_JERSEY_WORKORDER_HOOK,
   YELLOW_JERSEY_WORKORDER_TITLE,
+  assembleYellowJerseyWorkorderItemRequests,
   buildYellowJerseyWorkorderNote,
+  buildYellowJerseyWorkorderItemPayload,
   buildYellowJerseyWorkorderPayload,
   assembleYellowJerseyWorkorderRequest,
   type WorkorderEntitySources,
 } from '../src/lib/services/lightspeed/workorder'
+import { CHECKOUT_PHONE_NUMBER_COLLECTION } from '../src/lib/stripe/checkout-customer'
 
 let passed = 0
 let failed = 0
@@ -62,17 +67,35 @@ console.log('Note content:')
       },
     ],
     buyerName: 'Jane Cyclist',
+    buyerEmail: 'jane@example.com',
+    buyerPhone: '+61400000000',
+    deliveryDescription: 'Australia Post (2-5 business days)',
+    shippingName: 'Jane Cyclist',
+    shippingPhone: '+61400000000',
     shippingAddress: '12 Pedal St, Bristol, BS1 4XY, GB',
+    shippingCost: 12,
+    buyerFee: 6.5,
+    voucherDiscount: 10,
+    totalAmount: 2608.48,
   })
 
   check('starts with YELLOW JERSEY SALE title', note.startsWith(YELLOW_JERSEY_WORKORDER_TITLE), note.split('\n')[0])
+  check('includes hookIn value in visible note', note.includes(`Hook in: ${YELLOW_JERSEY_WORKORDER_HOOK}`), note)
   check('includes order number', note.includes('ORD-20260602-AB123'))
   check('includes item description', note.includes('Trek Marlin 7 Mountain Bike'))
   check('includes SKU', note.includes('TRK-MARLIN7-L'))
   check('includes qty x price = line total', note.includes('2 x $1299.99 = $2599.98'), note)
   check('includes order total', note.includes('Order total: $2599.98'), note)
-  check('includes buyer', note.includes('Buyer: Jane Cyclist'))
+  check('includes buyer name', note.includes('Name: Jane Cyclist'))
+  check('includes buyer email', note.includes('Email: jane@example.com'))
+  check('includes buyer mobile', note.includes('Mobile: +61400000000'))
+  check('includes delivery method', note.includes('Method: Australia Post (2-5 business days)'))
+  check('includes shipping cost', note.includes('Shipping cost: $12.00'))
+  check('includes shipping recipient', note.includes('Recipient: Jane Cyclist'))
   check('includes shipping address', note.includes('Ship to: 12 Pedal St, Bristol, BS1 4XY, GB'))
+  check('includes buyer fee', note.includes('Buyer fee: $6.50'))
+  check('includes voucher discount', note.includes('Voucher discount: -$10.00'))
+  check('includes total paid online', note.includes('Total paid online: $2608.48'))
   check('includes manual-stock action instruction', note.includes('adjust stock-on-hand manually'))
   check('includes do-not-charge-again instruction', note.toLowerCase().includes('do not charge the customer again'))
 }
@@ -88,7 +111,7 @@ console.log('Note with minimal data:')
   })
   check('still has title', note.includes(YELLOW_JERSEY_WORKORDER_TITLE))
   check('falls back when no description', note.includes('(see SKU below)'))
-  check('omits Buyer line when absent', !note.includes('Buyer:'))
+  check('omits Buyer details section when absent', !note.includes('Buyer details:'))
   check('shows Pickup when no shipping address', note.includes('Ship to: Pickup'), note)
   check('single-qty line total', note.includes('1 x $50.00 = $50.00'))
 }
@@ -149,6 +172,61 @@ console.log('POST payload:')
 }
 
 // ------------------------------------------------------------
+// 3b. WorkorderItem payloads for actual item rows
+// ------------------------------------------------------------
+console.log('WorkorderItem payload:')
+{
+  const body = buildYellowJerseyWorkorderItemPayload('7', {
+    itemID: '99',
+    unitQuantity: 3,
+    unitPrice: 42.5,
+    note: 'Marketplace item',
+  })
+
+  check('itemID passed through', body.itemID === '99', body)
+  check('employeeID passed through', body.employeeID === '7', body)
+  check('unit quantity sent as string', body.unitQuantity === '3', body)
+  check('unit price sent with cents', body.unitPrice === '42.50', body)
+  check('line is not approved by default', body.approved === 'false', body)
+  check('line is not taxed by default', body.tax === 'false', body)
+  check('line is not special order by default', body.isSpecialOrder === 'false', body)
+}
+
+console.log('WorkorderItem validation:')
+{
+  assertThrows('rejects missing itemID', () =>
+    buildYellowJerseyWorkorderItemPayload('7', {
+      itemID: ' ',
+      unitQuantity: 1,
+      unitPrice: 42.5,
+    }), 'without itemID')
+  assertThrows('rejects missing employeeID', () =>
+    buildYellowJerseyWorkorderItemPayload(' ', {
+      itemID: '99',
+      unitQuantity: 1,
+      unitPrice: 42.5,
+    }), 'without employeeID')
+  assertThrows('rejects zero quantity', () =>
+    buildYellowJerseyWorkorderItemPayload('7', {
+      itemID: '99',
+      unitQuantity: 0,
+      unitPrice: 42.5,
+    }), 'quantity')
+  assertThrows('rejects fractional quantity', () =>
+    buildYellowJerseyWorkorderItemPayload('7', {
+      itemID: '99',
+      unitQuantity: 1.5,
+      unitPrice: 42.5,
+    }), 'quantity')
+  assertThrows('rejects non-finite unit price', () =>
+    buildYellowJerseyWorkorderItemPayload('7', {
+      itemID: '99',
+      unitQuantity: 1,
+      unitPrice: Number.NaN,
+    }), 'unit price')
+}
+
+// ------------------------------------------------------------
 // 4. Assembler: entity selection + endpoint
 // ------------------------------------------------------------
 console.log('Assembler — full sources:')
@@ -172,7 +250,13 @@ console.log('Assembler — full sources:')
       ],
       orderNumber: 'ORD-55',
       buyerName: 'Sam',
+      buyerEmail: 'sam@example.com',
+      buyerPhone: '0400000000',
+      deliveryDescription: 'Standard Shipping',
+      shippingName: 'Sam Receiver',
       shippingAddress: '1 A St',
+      shippingCost: 20,
+      totalAmount: 1220,
     },
     FIXED_NOW
   )
@@ -184,7 +268,10 @@ console.log('Assembler — full sources:')
   check('selects first customer', body.customerID === '40')
   check('note uses item systemSku', body.note.includes('SPZ-ALLEZ'))
   check('note uses item description', body.note.includes('Specialized Allez'))
-  check('note includes buyer from params', body.note.includes('Buyer: Sam'))
+  check('note includes buyer from params', body.note.includes('Name: Sam'))
+  check('note includes buyer email from params', body.note.includes('Email: sam@example.com'))
+  check('note includes shipping recipient from params', body.note.includes('Recipient: Sam Receiver'))
+  check('note includes delivery total from params', body.note.includes('Total paid online: $1220.00'))
 }
 
 // ------------------------------------------------------------
@@ -257,9 +344,25 @@ console.log('Simulated client POST (multi-item):')
     ],
     orderNumber: 'ORD-77',
     buyerName: 'Pat Rider',
+    buyerEmail: 'pat@example.com',
+    buyerPhone: '0400111222',
+    deliveryDescription: 'Courier',
+    shippingName: 'Pat Rider',
     shippingAddress: '9 Hill Rd, Leeds',
+    shippingCost: 15,
+    buyerFee: 10,
+    totalAmount: 6370,
   })
   const result = fakeRequest(endpoint, { method: 'POST', body: JSON.stringify(body) })
+  const itemRequests = assembleYellowJerseyWorkorderItemRequests(
+    fetchedEntities.accountId,
+    result.Workorder.workorderID,
+    fetchedEntities.employees[0].employeeID,
+    [
+      { itemID: 'LS-1', unitQuantity: 3, unitPrice: 2100 },
+      { itemID: 'LS-2', unitQuantity: 1, unitPrice: 45 },
+    ]
+  )
 
   check('POST method used', sent!.method === 'POST')
   check('correct endpoint', sent!.endpoint === '/Account/STORE-7/Workorder.json', sent!.endpoint)
@@ -269,7 +372,36 @@ console.log('Simulated client POST (multi-item):')
   check('body carries second line total', sent!.body.note.includes('1 x $45.00 = $45.00'))
   check('body order total sums lines', sent!.body.note.includes('Order total: $6345.00'))
   check('body hookIn is ONLINE', sent!.body.hookIn === 'ONLINE')
+  check('body includes buyer email', sent!.body.note.includes('Email: pat@example.com'))
+  check('body includes delivery method', sent!.body.note.includes('Method: Courier'))
+  check('body includes total paid', sent!.body.note.includes('Total paid online: $6370.00'))
+  check('creates one WorkorderItem request per purchased item', itemRequests.length === 2, itemRequests)
+  check('first item request endpoint is nested under workorder', itemRequests[0].endpoint === '/Account/STORE-7/Workorder/WO-1001/WorkorderItem.json', itemRequests[0])
+  check('first item request carries itemID/qty/price', itemRequests[0].body.itemID === 'LS-1' && itemRequests[0].body.unitQuantity === '3' && itemRequests[0].body.unitPrice === '2100.00', itemRequests[0])
+  check('second item request carries itemID/qty/price', itemRequests[1].body.itemID === 'LS-2' && itemRequests[1].body.unitQuantity === '1' && itemRequests[1].body.unitPrice === '45.00', itemRequests[1])
   check('returns workorderID', result.Workorder.workorderID === 'WO-1001')
+}
+
+// ------------------------------------------------------------
+// 8. Stripe Checkout phone collection + webhook mobile mapping
+// ------------------------------------------------------------
+console.log('Stripe Checkout mobile collection:')
+{
+  check('shared phone collection is enabled', CHECKOUT_PHONE_NUMBER_COLLECTION.enabled === true, CHECKOUT_PHONE_NUMBER_COLLECTION)
+
+  const checkoutRoutes = [
+    'src/app/api/stripe/create-checkout/route.ts',
+    'src/app/api/stripe/create-cart-checkout/route.ts',
+    'src/app/api/stripe/create-checkout-offer/route.ts',
+  ]
+  for (const route of checkoutRoutes) {
+    const source = readFileSync(route, 'utf8')
+    check(`${route} uses shared phone collection`, source.includes('phone_number_collection: CHECKOUT_PHONE_NUMBER_COLLECTION'))
+  }
+
+  const webhookSource = readFileSync('src/app/api/stripe/webhook/route.ts', 'utf8')
+  check('webhook normalizes checkout mobile number', webhookSource.includes('checkoutMobileNumber(session, shippingDetails)'))
+  check('workorder receives normalized buyer mobile', webhookSource.includes('buyerPhone: buyerMobile'))
 }
 
 // ------------------------------------------------------------

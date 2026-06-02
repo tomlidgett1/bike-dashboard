@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { ShoppingBag, Store } from "lucide-react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
 
@@ -22,6 +23,21 @@ interface SpaceConfig {
   icon: React.ComponentType<{ className?: string }>;
 }
 
+function UberLogoIcon({ className }: { className?: string }) {
+  return (
+    <span className={cn("flex items-center justify-center", className)}>
+      <Image
+        src="/uber.png"
+        alt=""
+        width={30}
+        height={12}
+        className="h-3 w-auto"
+        unoptimized
+      />
+    </span>
+  );
+}
+
 const SPACES: SpaceConfig[] = [
   {
     id: 'marketplace',
@@ -36,6 +52,13 @@ const SPACES: SpaceConfig[] = [
     shortLabel: 'Stores',
     tagline: "Compare prices across Australia's bike shops",
     icon: Store,
+  },
+  {
+    id: 'uber',
+    label: 'Uber',
+    shortLabel: 'Uber',
+    tagline: 'Fast local delivery from eligible bike stores',
+    icon: UberLogoIcon,
   },
 ];
 
@@ -192,6 +215,7 @@ export function useMarketplaceSpace() {
   // Support legacy 'view' param for backwards compatibility
   const currentSpace: MarketplaceSpace = React.useMemo(() => {
     if (spaceParam === 'stores' || viewParam === 'stores') return 'stores';
+    if (spaceParam === 'uber' || viewParam === 'uber') return 'uber';
     return 'marketplace';
   }, [spaceParam, viewParam]);
   
@@ -226,4 +250,3 @@ export function useMarketplaceSpace() {
 // Export space configs for use elsewhere
 export { SPACES };
 export type { SpaceConfig };
-

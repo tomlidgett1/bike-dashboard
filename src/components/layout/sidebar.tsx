@@ -18,6 +18,7 @@ import {
   CalendarClock,
   ExternalLink,
   Sparkles,
+  Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,12 @@ const mainNavItems: NavItem[] = [
     title: "Optimize",
     href: "/optimize",
     icon: Sparkles,
+    requiresStore: true,
+  },
+  {
+    title: "Uber",
+    href: "/settings/uber",
+    icon: Truck,
     requiresStore: true,
   },
   {

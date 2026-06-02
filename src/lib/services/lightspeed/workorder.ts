@@ -18,6 +18,7 @@ import type { LightspeedWorkorderStatus } from './types'
 
 /** The label that identifies these workorders in the store's Lightspeed. */
 export const YELLOW_JERSEY_WORKORDER_TITLE = 'YELLOW JERSEY SALE'
+export const YELLOW_JERSEY_WORKORDER_HOOK = 'ONLINE'
 
 /**
  * The dedicated customer every marketplace-sale workorder is attached to. The
@@ -48,11 +49,21 @@ export interface YellowJerseyWorkorderDetails {
   items: YellowJerseyWorkorderLineItem[]
   /** Buyer's name from the Stripe checkout, if available. */
   buyerName?: string | null
+  buyerEmail?: string | null
+  buyerPhone?: string | null
+  deliveryMethod?: string | null
+  deliveryDescription?: string | null
+  shippingName?: string | null
+  shippingPhone?: string | null
   /**
    * Single-line formatted shipping address the buyer entered at Stripe
    * checkout. Null/empty means the order is a pickup (no delivery).
    */
   shippingAddress?: string | null
+  shippingCost?: number | null
+  buyerFee?: number | null
+  voucherDiscount?: number | null
+  totalAmount?: number | null
 }
 
 /** Resolved Lightspeed entity IDs required to POST a Workorder. */
@@ -67,6 +78,36 @@ export function formatMoney(amount: number): string {
   return `$${amount.toFixed(2)}`
 }
 
+function hasFiniteAmount(amount: number | null | undefined): amount is number {
+  return typeof amount === 'number' && Number.isFinite(amount)
+}
+
+function trimmed(value: string | null | undefined): string {
+  return value?.trim() ?? ''
+}
+
+function requireNonEmpty(value: string | null | undefined, field: string): string {
+  const result = value?.trim() ?? ''
+  if (!result) {
+    throw new Error(`[Lightspeed] Cannot create YELLOW JERSEY SALE workorder item without ${field}`)
+  }
+  return result
+}
+
+function formatWorkorderItemQuantity(quantity: number): string {
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new Error(`[Lightspeed] Invalid YELLOW JERSEY SALE workorder item quantity: ${quantity}`)
+  }
+  return String(quantity)
+}
+
+function formatWorkorderItemUnitPrice(unitPrice: number): string {
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+    throw new Error(`[Lightspeed] Invalid YELLOW JERSEY SALE workorder item unit price: ${unitPrice}`)
+  }
+  return unitPrice.toFixed(2)
+}
+
 /**
  * Build the human-readable note that the store sees on the workorder. Leads
  * with the YELLOW JERSEY SALE title and a clear action instruction so staff
@@ -75,12 +116,14 @@ export function formatMoney(amount: number): string {
  */
 export function buildYellowJerseyWorkorderNote(d: YellowJerseyWorkorderDetails): string {
   const items = d.items ?? []
-  const orderTotal = items.reduce((sum, it) => sum + it.unitPrice * it.unitQuantity, 0)
+  const itemsSubtotal = items.reduce((sum, it) => sum + it.unitPrice * it.unitQuantity, 0)
+  const deliveryMethod = trimmed(d.deliveryDescription) || trimmed(d.deliveryMethod)
 
   const lines: string[] = [
     YELLOW_JERSEY_WORKORDER_TITLE,
     '================================',
     `Online order: ${d.orderNumber}`,
+    `Hook in: ${YELLOW_JERSEY_WORKORDER_HOOK}`,
     `Items (${items.length}):`,
   ]
 
@@ -94,12 +137,37 @@ export function buildYellowJerseyWorkorderNote(d: YellowJerseyWorkorderDetails):
     )
   })
 
-  lines.push(`Order total: ${formatMoney(orderTotal)}`)
+  lines.push(`Order total: ${formatMoney(itemsSubtotal)}`)
 
-  if (d.buyerName?.trim()) lines.push(`Buyer: ${d.buyerName.trim()}`)
-  // Shipping-only: show the address the buyer entered at checkout, or
-  // "Pickup" when no shipping address was provided (in-store collection).
-  lines.push(`Ship to: ${d.shippingAddress?.trim() || 'Pickup'}`)
+  const buyerLines: string[] = []
+  if (trimmed(d.buyerName)) buyerLines.push(`  Name: ${trimmed(d.buyerName)}`)
+  if (trimmed(d.buyerEmail)) buyerLines.push(`  Email: ${trimmed(d.buyerEmail)}`)
+  if (trimmed(d.buyerPhone)) buyerLines.push(`  Mobile: ${trimmed(d.buyerPhone)}`)
+  if (buyerLines.length > 0) {
+    lines.push('Buyer details:', ...buyerLines)
+  }
+
+  const shippingLines: string[] = []
+  if (deliveryMethod) shippingLines.push(`  Method: ${deliveryMethod}`)
+  if (hasFiniteAmount(d.shippingCost)) shippingLines.push(`  Shipping cost: ${formatMoney(d.shippingCost)}`)
+  if (trimmed(d.shippingName)) shippingLines.push(`  Recipient: ${trimmed(d.shippingName)}`)
+  // Shipping-only: show the address the buyer entered at checkout, or "Pickup"
+  // when no shipping address was provided (in-store collection).
+  shippingLines.push(`  Ship to: ${trimmed(d.shippingAddress) || 'Pickup'}`)
+  if (trimmed(d.shippingPhone) && trimmed(d.shippingPhone) !== trimmed(d.buyerPhone)) {
+    shippingLines.push(`  Recipient mobile: ${trimmed(d.shippingPhone)}`)
+  }
+  lines.push('Fulfilment:', ...shippingLines)
+
+  const paymentLines: string[] = []
+  if (hasFiniteAmount(d.buyerFee)) paymentLines.push(`  Buyer fee: ${formatMoney(d.buyerFee)}`)
+  if (hasFiniteAmount(d.voucherDiscount) && d.voucherDiscount > 0) {
+    paymentLines.push(`  Voucher discount: -${formatMoney(d.voucherDiscount)}`)
+  }
+  if (hasFiniteAmount(d.totalAmount)) paymentLines.push(`  Total paid online: ${formatMoney(d.totalAmount)}`)
+  if (paymentLines.length > 0) {
+    lines.push('Payment:', ...paymentLines)
+  }
 
   lines.push(
     '--------------------------------',
@@ -126,7 +194,7 @@ export function buildYellowJerseyWorkorderPayload(
     note: buildYellowJerseyWorkorderNote(details),
     internalNote: `${YELLOW_JERSEY_WORKORDER_TITLE} — ${details.orderNumber}`,
     warranty: 'false',
-    hookIn: 'ONLINE',
+    hookIn: YELLOW_JERSEY_WORKORDER_HOOK,
     hookOut: '',
     saveParts: 'false',
     assignEmployeeToAll: 'true',
@@ -157,9 +225,56 @@ export interface WorkorderItemParam {
   item?: { description?: string; systemSku?: string; customSku?: string } | null
 }
 
+export interface WorkorderItemPostParam {
+  itemID: string
+  unitQuantity: number
+  unitPrice: number
+  note?: string | null
+}
+
 export interface AssembledWorkorderRequest {
   endpoint: string
   body: Record<string, string>
+}
+
+export interface AssembledWorkorderItemRequest {
+  endpoint: string
+  body: Record<string, string>
+}
+
+/**
+ * Inventory products on a workorder are represented by Lightspeed's
+ * WorkorderItem child endpoint. WorkorderLine is the labor/misc charge shape,
+ * so marketplace products stay here to preserve itemID + quantity semantics.
+ */
+export function buildYellowJerseyWorkorderItemPayload(
+  employeeID: string,
+  item: WorkorderItemPostParam
+): Record<string, string> {
+  return {
+    approved: 'false',
+    unitPrice: formatWorkorderItemUnitPrice(item.unitPrice),
+    unitQuantity: formatWorkorderItemQuantity(item.unitQuantity),
+    warranty: 'false',
+    tax: 'false',
+    isSpecialOrder: 'false',
+    note: trimmed(item.note) || YELLOW_JERSEY_WORKORDER_TITLE,
+    employeeID: requireNonEmpty(employeeID, 'employeeID'),
+    itemID: requireNonEmpty(item.itemID, 'itemID'),
+    discountID: '0',
+  }
+}
+
+export function assembleYellowJerseyWorkorderItemRequests(
+  accountId: string,
+  workorderID: string,
+  employeeID: string,
+  items: WorkorderItemPostParam[]
+): AssembledWorkorderItemRequest[] {
+  return items.map((item) => ({
+    endpoint: `/Account/${accountId}/Workorder/${workorderID}/WorkorderItem.json`,
+    body: buildYellowJerseyWorkorderItemPayload(employeeID, item),
+  }))
 }
 
 /**
@@ -174,7 +289,17 @@ export function assembleYellowJerseyWorkorderRequest(
     items: WorkorderItemParam[]
     orderNumber: string
     buyerName?: string | null
+    buyerEmail?: string | null
+    buyerPhone?: string | null
+    deliveryMethod?: string | null
+    deliveryDescription?: string | null
+    shippingName?: string | null
+    shippingPhone?: string | null
     shippingAddress?: string | null
+    shippingCost?: number | null
+    buyerFee?: number | null
+    voucherDiscount?: number | null
+    totalAmount?: number | null
   },
   now: Date = new Date()
 ): AssembledWorkorderRequest {
@@ -206,7 +331,17 @@ export function assembleYellowJerseyWorkorderRequest(
       unitPrice: it.unitPrice,
     })),
     buyerName: params.buyerName ?? null,
+    buyerEmail: params.buyerEmail ?? null,
+    buyerPhone: params.buyerPhone ?? null,
+    deliveryMethod: params.deliveryMethod ?? null,
+    deliveryDescription: params.deliveryDescription ?? null,
+    shippingName: params.shippingName ?? null,
+    shippingPhone: params.shippingPhone ?? null,
     shippingAddress: params.shippingAddress ?? null,
+    shippingCost: params.shippingCost ?? null,
+    buyerFee: params.buyerFee ?? null,
+    voucherDiscount: params.voucherDiscount ?? null,
+    totalAmount: params.totalAmount ?? null,
   }
 
   const body = buildYellowJerseyWorkorderPayload(

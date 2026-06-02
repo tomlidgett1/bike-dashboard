@@ -5,13 +5,20 @@
 // Supports delivery method selection (Uber Express, AusPost, Pickup)
 
 import { NextRequest, NextResponse } from 'next/server';
+import type Stripe from 'stripe';
 import { createClient } from '@/lib/supabase/server';
 import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
 import { getStripe, calculatePlatformFee, calculateSellerPayout, calculateBuyerFee } from '@/lib/stripe';
+import {
+  CHECKOUT_PHONE_NUMBER_COLLECTION,
+  CHECKOUT_SHIPPING_ALLOWED_COUNTRIES,
+  createCheckoutCustomerPrefill,
+  type CheckoutShippingAddressInput,
+} from '@/lib/stripe/checkout-customer';
 import { resolveLivePrice } from '@/lib/marketplace/pricing';
+import { UBER_EXPRESS_FEE, validateUberDelivery } from '@/lib/uber-delivery';
 
 // Delivery fees (same as payment-intent)
-const UBER_EXPRESS_FEE = 15;
 const AUSPOST_FEE = 12;
 
 export type DeliveryMethod = 'uber_express' | 'auspost' | 'pickup' | 'shipping';
@@ -35,7 +42,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { productId, deliveryMethod = 'uber_express' } = body as { productId: string; deliveryMethod?: DeliveryMethod };
+    const { productId, deliveryMethod = 'auspost', shippingAddress } = body as {
+      productId: string;
+      deliveryMethod?: DeliveryMethod;
+      shippingAddress?: CheckoutShippingAddressInput;
+    };
 
     if (!productId) {
       return NextResponse.json(
@@ -62,7 +73,8 @@ export async function POST(request: NextRequest) {
         user_id,
         is_active,
         sold_at,
-        listing_status
+        listing_status,
+        uber_delivery_enabled
       `)
       .eq('id', productId)
       .single();
@@ -114,6 +126,22 @@ export async function POST(request: NextRequest) {
         { error: 'You cannot purchase your own product' },
         { status: 400 }
       );
+    }
+
+    if (deliveryMethod === 'uber_express') {
+      const validation = await validateUberDelivery(supabase, {
+        sellerId: product.user_id,
+        products: [product],
+        shippingAddress,
+        requireAddress: true,
+      });
+
+      if (!validation.eligible) {
+        return NextResponse.json(
+          { error: validation.reason || 'Uber Express is not available for this product', uberIneligible: true },
+          { status: 400 }
+        );
+      }
     }
 
     // Calculate delivery cost based on method
@@ -221,9 +249,17 @@ export async function POST(request: NextRequest) {
 
     // Determine if we need to collect shipping address (not for pickup)
     const requiresShipping = deliveryMethod !== 'pickup';
+    const { customerParams } = requiresShipping
+      ? await createCheckoutCustomerPrefill({
+          stripe,
+          supabase,
+          user,
+          shippingAddress,
+        })
+      : { customerParams: user.email ? { customer_email: user.email } : {} };
 
     // Build line items
-    const lineItems: any[] = [
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
       {
         price_data: {
           currency: 'aud',
@@ -306,17 +342,14 @@ export async function POST(request: NextRequest) {
       // Only collect shipping address if not pickup
       ...(requiresShipping && {
         shipping_address_collection: {
-          allowed_countries: ['AU', 'NZ'], // Australia and New Zealand
+          allowed_countries: [...CHECKOUT_SHIPPING_ALLOWED_COUNTRIES], // Australia and New Zealand
         },
       }),
-      // Collect phone number for delivery
-      phone_number_collection: {
-        enabled: true,
-      },
+      phone_number_collection: CHECKOUT_PHONE_NUMBER_COLLECTION,
       metadata,
       success_url: `${appUrl}/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/marketplace/checkout/cancel?product_id=${productId}`,
-      customer_email: user.email,
+      ...customerParams,
       expires_at: Math.floor(Date.now() / 1000) + (30 * 60), // 30 minutes
     });
 
@@ -355,4 +388,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

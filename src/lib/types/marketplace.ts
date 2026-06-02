@@ -3,7 +3,7 @@
 // ============================================================
 
 // The two distinct "spaces" in the marketplace
-export type MarketplaceSpace = 'marketplace' | 'stores';
+export type MarketplaceSpace = 'marketplace' | 'stores' | 'uber';
 
 export type MarketplaceCategory = 'Bicycles' | 'Parts' | 'Apparel' | 'Nutrition';
 
@@ -49,10 +49,13 @@ export interface MarketplaceProduct {
   marketplace_level_3_category?: string | null;
   category_name?: string | null; // Lightspeed category name (store inventory only)
   primary_image_url: string | null;
-  image_variants?: any;
-  image_formats?: any;
+  image_variants?: {
+    original?: string | null;
+    [key: string]: string | null | undefined;
+  } | null;
+  image_formats?: Record<string, unknown> | null;
   all_images?: string[]; // All product images for gallery
-  images?: any; // Raw images field (for listings)
+  images?: Array<Record<string, unknown>>; // Raw images field (for listings)
   // Cloudinary: public_id is the single source of truth — responsive URLs are
   // computed from it at render time (see cloudinaryCardLoader). The *_url fields
   // are fallbacks for legacy/external images that have no public_id.
@@ -68,9 +71,10 @@ export interface MarketplaceProduct {
   store_name: string;
   store_logo_url: string | null;
   store_account_type?: string | null;
+  store_bicycle_store?: boolean | null;
   first_name?: string | null;
   last_name?: string | null;
-  
+
   // Brand — from Lightspeed manufacturer_name or manually entered during upload
   brand?: string | null;
 
@@ -80,6 +84,10 @@ export interface MarketplaceProduct {
 
   // Per-product opt-in to the full-bleed Immersive product page layout.
   immersive_page?: boolean | null;
+
+  // Per-product opt-in to Uber Express delivery. Only effective for verified
+  // bicycle stores; checkout revalidates the full cart server-side.
+  uber_delivery_enabled?: boolean | null;
 
   // Bike-specific fields
   frame_size?: string;
@@ -91,18 +99,18 @@ export interface MarketplaceProduct {
   bike_weight?: string;
   color_primary?: string;
   color_secondary?: string;
-  
+
   // Part-specific fields
   part_type_detail?: string;
   compatibility_notes?: string;
   material?: string;
   weight?: string;
-  
+
   // Apparel-specific fields
   size?: string;
   gender_fit?: string;
   apparel_material?: string;
-  
+
   // Condition & history
   condition_rating?: 'New' | 'Like New' | 'Excellent' | 'Good' | 'Fair' | 'Well Used';
   condition_details?: string;
@@ -181,4 +189,3 @@ export interface MarketplaceFilters {
   listingType?: 'store_inventory' | 'private_listing'; // Filter by listing type
   excludeBicycleStores?: boolean; // Exclude products from users with account_type = 'bicycle_store'
 }
-

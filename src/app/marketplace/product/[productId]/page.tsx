@@ -98,11 +98,13 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         seller_contact_preference,
         seller_phone,
         seller_email,
+        uber_delivery_enabled,
         users!user_id (
           business_name,
           name,
           logo_url,
-          account_type
+          account_type,
+          bicycle_store
         ),
         canonical_products!canonical_product_id (
           id,
@@ -234,9 +236,11 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       images: imagesForClient.length > 0 ? imagesForClient : product.images,
       image_variants: null,
       immersive_page: immersivePage,
+      uber_delivery_enabled: product.uber_delivery_enabled ?? false,
       store_name: displayName,
       store_logo_url: user?.logo_url || null,
       store_account_type: user?.account_type || null,
+      store_bicycle_store: user?.bicycle_store ?? null,
     };
   } catch (error) {
     console.error('Error fetching product:', error);

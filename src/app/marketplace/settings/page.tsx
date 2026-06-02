@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
   User,
-  Mail,
   Bell,
   Save,
   Check,
@@ -36,6 +35,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { useUserProfile } from '@/lib/hooks/use-user-profile'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -60,40 +60,12 @@ function StravaIcon({ className }: { className?: string }) {
 // Force dynamic rendering to avoid useSearchParams SSR issues
 export const dynamic = 'force-dynamic'
 
-// Settings navigation tabs
-type SettingsTab = 'profile' | 'payments' | 'notifications' | 'preferences'
-
-interface NavItemProps {
-  icon: React.ReactNode
-  label: string
-  isActive: boolean
-  onClick: () => void
-}
-
-function NavItem({ icon, label, isActive, onClick }: NavItemProps) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium rounded-md transition-colors text-left",
-        isActive
-          ? "text-gray-900 bg-white shadow-sm"
-          : "text-gray-600 hover:bg-gray-200/70"
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  )
-}
-
 export default function MarketplaceSettingsPage() {
   const { user } = useAuth()
   const router = useRouter()
   const [saved, setSaved] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [formReady, setFormReady] = React.useState(false)
-  const [activeTab, setActiveTab] = React.useState<SettingsTab>('profile')
 
   const { profile, loading: profileLoading, saving, saveProfile, refreshProfile } = useUserProfile()
 
@@ -254,7 +226,7 @@ export default function MarketplaceSettingsPage() {
     return (
       <>
         <MarketplaceHeader compactSearchOnMobile />
-        <MarketplaceLayout>
+        <MarketplaceLayout showSidebar={false}>
           <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-24 sm:pb-8">
             <div className="flex items-center justify-center py-24">
               <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
@@ -296,100 +268,38 @@ export default function MarketplaceSettingsPage() {
         />
       </div>
 
-      {/* Desktop View - Sidebar Navigation Layout */}
+      {/* Desktop View */}
       <div className="hidden sm:block">
         <MarketplaceHeader compactSearchOnMobile />
 
-        <MarketplaceLayout>
+        <MarketplaceLayout showSidebar={false}>
           <div className="min-h-screen bg-gray-50 pt-16">
-            <div className="flex w-full">
-              {/* Sidebar */}
-              <aside className="w-72 flex-shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-4rem)]">
-                <div className="sticky top-16 p-6 space-y-6">
-                  {/* Profile Summary */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-14 w-14 rounded-full border-2 border-gray-200 bg-gray-100 overflow-hidden flex-shrink-0">
-                        {formData.logoUrl ? (
-                          <Image
-                            src={formData.logoUrl}
-                            alt="Profile"
-                            width={56}
-                            height={56}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="h-full w-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                            <span className="text-xl font-bold text-gray-400">
-                              {displayName.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-gray-900 truncate">{displayName}</p>
-                        {formData.location && (
-                          <p className="text-xs text-gray-500 flex items-center gap-1 truncate">
-                            <MapPin className="h-3 w-3 flex-shrink-0" />
-                            {formData.location}
-                          </p>
-                        )}
-                      </div>
-                    </div>
+            <main className="px-6 py-8">
+              <div className="mx-auto max-w-4xl space-y-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Manage your seller profile, payment details, notifications, and checkout information.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
                     {user?.id && (
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="w-full rounded-md"
+                        className="rounded-md"
                         onClick={() => router.push(`/marketplace/store/${user.id}`)}
                       >
                         <Eye className="h-4 w-4 mr-2" />
                         View Public Profile
                       </Button>
                     )}
-                  </div>
-
-                  <Separator />
-
-                  {/* Navigation */}
-                  <nav className="space-y-1">
-                    <div className="bg-gray-100 p-1 rounded-md space-y-0.5">
-                      <NavItem
-                        icon={<Store className="h-4 w-4" />}
-                        label="Profile"
-                        isActive={activeTab === 'profile'}
-                        onClick={() => setActiveTab('profile')}
-                      />
-                      <NavItem
-                        icon={<DollarSign className="h-4 w-4" />}
-                        label="Payments"
-                        isActive={activeTab === 'payments'}
-                        onClick={() => setActiveTab('payments')}
-                      />
-                      <NavItem
-                        icon={<Bell className="h-4 w-4" />}
-                        label="Notifications"
-                        isActive={activeTab === 'notifications'}
-                        onClick={() => setActiveTab('notifications')}
-                      />
-                      {hasPreferences && (
-                        <NavItem
-                          icon={<Star className="h-4 w-4" />}
-                          label="Preferences"
-                          isActive={activeTab === 'preferences'}
-                          onClick={() => setActiveTab('preferences')}
-                        />
-                      )}
-                    </div>
-                  </nav>
-
-                  {/* Save Button - in sidebar */}
-                  <div className="pt-4">
                     <Button
                       onClick={handleSave}
                       disabled={!hasChanges || saving}
                       className={cn(
-                        'w-full rounded-md',
+                        'rounded-md',
                         saved && 'bg-green-600 hover:bg-green-700'
                       )}
                     >
@@ -412,23 +322,41 @@ export default function MarketplaceSettingsPage() {
                     </Button>
                   </div>
                 </div>
-              </aside>
+                {/* Error Message */}
+                {error && (
+                  <div className="bg-white border border-red-200 rounded-md p-4">
+                    <p className="text-sm text-red-600">{error}</p>
+                  </div>
+                )}
 
-              {/* Main Content */}
-              <main className="flex-1 p-8 min-w-0">
-                <div className="max-w-4xl space-y-6">
-                  {/* Error Message */}
-                  {error && (
-                    <div className="bg-white border border-red-200 rounded-md p-4">
-                      <p className="text-sm text-red-600">{error}</p>
-                    </div>
-                  )}
+                <Tabs defaultValue="profile" className="space-y-6">
+                  <TabsList className={cn(
+                    'grid w-full rounded-md',
+                    hasPreferences ? 'grid-cols-4' : 'grid-cols-3'
+                  )}>
+                    <TabsTrigger value="profile" className="gap-2 rounded-md">
+                      <User className="h-4 w-4" />
+                      Profile
+                    </TabsTrigger>
+                    <TabsTrigger value="payments" className="gap-2 rounded-md">
+                      <DollarSign className="h-4 w-4" />
+                      Payments
+                    </TabsTrigger>
+                    <TabsTrigger value="notifications" className="gap-2 rounded-md">
+                      <Bell className="h-4 w-4" />
+                      Notifications
+                    </TabsTrigger>
+                    {hasPreferences && (
+                      <TabsTrigger value="preferences" className="gap-2 rounded-md">
+                        <Star className="h-4 w-4" />
+                        Preferences
+                      </TabsTrigger>
+                    )}
+                  </TabsList>
 
-                  {/* Profile Tab */}
-                  {activeTab === 'profile' && (
-                    <>
-                      {/* Seller Profile Card */}
-                      <Card className="bg-white rounded-md shadow-sm">
+                  <TabsContent value="profile" className="mt-0 space-y-6">
+                    {/* Seller Profile */}
+                    <Card className="bg-white rounded-md shadow-sm">
                         <CardHeader className="px-6 py-5">
                           <CardTitle className="flex items-center gap-2 text-lg">
                             <Store className="h-5 w-5" />
@@ -620,7 +548,7 @@ export default function MarketplaceSettingsPage() {
                             </div>
                           </div>
                         </CardContent>
-                      </Card>
+                </Card>
 
                       {/* Personal Information Card */}
                       <Card className="bg-white rounded-md shadow-sm">
@@ -793,20 +721,26 @@ export default function MarketplaceSettingsPage() {
                           </div>
                         </CardContent>
                       </Card>
-                    </>
-                  )}
+                  </TabsContent>
 
-                  {/* Payments Tab */}
-                  {activeTab === 'payments' && (
+                  <TabsContent value="payments" className="mt-0">
                     <Card className="bg-white rounded-md shadow-sm">
-                      <CardContent className="p-0">
-                        <StripeConnectCard />
-                      </CardContent>
+                  <CardHeader className="px-6 py-5">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <DollarSign className="h-5 w-5" />
+                      Payments
+                    </CardTitle>
+                    <CardDescription className="text-sm">
+                      Connect your payout account for seller payments
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <StripeConnectCard />
+                  </CardContent>
                     </Card>
-                  )}
+                  </TabsContent>
 
-                  {/* Notifications Tab */}
-                  {activeTab === 'notifications' && (
+                  <TabsContent value="notifications" className="mt-0">
                     <Card className="bg-white rounded-md shadow-sm">
                       <CardHeader className="px-6 py-5">
                         <CardTitle className="flex items-center gap-2 text-lg">
@@ -867,11 +801,11 @@ export default function MarketplaceSettingsPage() {
                         </div>
                       </CardContent>
                     </Card>
-                  )}
+                  </TabsContent>
 
-                  {/* Preferences Tab */}
-                  {activeTab === 'preferences' && hasPreferences && (
-                    <Card className="bg-white rounded-md shadow-sm">
+                  {hasPreferences && (
+                    <TabsContent value="preferences" className="mt-0">
+                      <Card className="bg-white rounded-md shadow-sm">
                       <CardHeader className="px-6 py-5">
                         <CardTitle className="flex items-center gap-2 text-lg">
                           <Star className="h-5 w-5" />
@@ -969,11 +903,12 @@ export default function MarketplaceSettingsPage() {
                           </p>
                         </div>
                       </CardContent>
-                    </Card>
+                      </Card>
+                    </TabsContent>
                   )}
+                </Tabs>
                 </div>
               </main>
-            </div>
           </div>
         </MarketplaceLayout>
       </div>

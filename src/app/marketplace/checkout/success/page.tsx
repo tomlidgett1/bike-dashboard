@@ -20,12 +20,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { useCart } from "@/components/providers/cart-provider";
+import { useUserProfile } from "@/lib/hooks/use-user-profile";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 // ============================================================
 // Confetti Animation Component
 // ============================================================
+
+function seededRandom(seed: number) {
+  const value = Math.sin(seed) * 10000;
+  return value - Math.floor(value);
+}
 
 function Confetti() {
   const confettiPieces = React.useMemo(() => {
@@ -34,16 +40,18 @@ function Confetti() {
     const colors = ['#FACC15', '#FDE047', '#F59E0B', '#FEF08A', '#1F2937'];
 
     for (let i = 0; i < 56; i++) {
+      const random = (salt: number) => seededRandom(i * 97 + salt);
+
       pieces.push({
         id: i,
-        x: Math.random() * 100,
-        delay: Math.random() * 0.4,
-        duration: 2.6 + Math.random() * 2.2,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        size: 5 + Math.random() * 7,
-        rotation: Math.random() * 360,
-        drift: (Math.random() - 0.5) * 20,
-        round: Math.random() > 0.6,
+        x: random(1) * 100,
+        delay: random(2) * 0.4,
+        duration: 2.6 + random(3) * 2.2,
+        color: colors[Math.floor(random(4) * colors.length)],
+        size: 5 + random(5) * 7,
+        rotation: random(6) * 360,
+        drift: (random(7) - 0.5) * 20,
+        round: random(8) > 0.6,
       });
     }
     return pieces;
@@ -262,6 +270,7 @@ function CheckoutSuccessContent() {
   const searchParams = useSearchParams();
 
   const { clear: clearCart } = useCart();
+  const { refreshProfile } = useUserProfile();
 
   // Support both session_id (Stripe Checkout) and payment_intent (Embedded Checkout)
   const sessionId = searchParams.get("session_id");
@@ -321,6 +330,7 @@ function CheckoutSuccessContent() {
           if (response.ok) {
             const data = await response.json();
             setPurchases(Array.isArray(data.purchases) ? data.purchases : []);
+            await refreshProfile();
           }
         } catch (err) {
           console.error("Error fetching cart purchases:", err);
@@ -345,6 +355,7 @@ function CheckoutSuccessContent() {
           if (response.ok) {
             const data = await response.json();
             setPurchase(data.purchase);
+            await refreshProfile();
           }
         } catch (err) {
           console.error("Error fetching purchase:", err);
@@ -374,6 +385,7 @@ function CheckoutSuccessContent() {
         if (response.ok) {
           const data = await response.json();
           setPurchase(data.purchase);
+          await refreshProfile();
         }
       } catch (err) {
         console.error("Error fetching purchase:", err);
@@ -384,7 +396,7 @@ function CheckoutSuccessContent() {
     };
 
     fetchPurchase();
-  }, [sessionId, paymentIntentId, isCart]);
+  }, [sessionId, paymentIntentId, isCart, refreshProfile]);
 
   // Extract product and seller (handle both array and object from Supabase)
   const product = extractFirst(purchase?.product);
@@ -461,7 +473,7 @@ function CheckoutSuccessContent() {
         {showConfetti && <Confetti />}
       </AnimatePresence>
 
-      <div className="relative max-w-lg mx-auto px-4 pt-10 sm:pt-14 pb-40 sm:pb-16">
+      <div className="relative max-w-lg mx-auto px-4 pt-24 sm:pt-28 pb-40 sm:pb-16">
 
         {/* Hero */}
         <motion.div

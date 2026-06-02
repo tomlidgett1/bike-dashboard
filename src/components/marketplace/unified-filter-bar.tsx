@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Package, ChevronRight, X, Store, SlidersHorizontal } from "lucide-react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import {
   BrowseFiltersToolbar,
@@ -15,6 +16,7 @@ import {
 } from "@/components/marketplace/advanced-filters";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { BikeStoresPicker } from "@/components/marketplace/bike-stores-picker";
+import type { MarketplaceSpace } from "@/lib/types/marketplace";
 
 // ============================================================
 // Unified Filter Bar — view tabs + filter toolbar on same row
@@ -28,6 +30,7 @@ export type ListingTypeFilter = "all" | "stores" | "individuals";
 export type { ProductGridLayout };
 
 interface UnifiedFilterBarProps {
+  currentSpace: MarketplaceSpace;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
 
@@ -48,6 +51,7 @@ interface UnifiedFilterBarProps {
   categoryPillsRef?: React.RefObject<HTMLDivElement | null>;
 
   onNavigateToStores?: () => void;
+  onNavigateToUber?: () => void;
 
   selectedStoreId?: string | null;
   onStoreSelect?: (storeId: string) => void;
@@ -68,7 +72,21 @@ interface UnifiedFilterBarProps {
   onMobileBrowseSheetOpenChange?: (open: boolean) => void;
 }
 
+function UberLogo({ className }: { className?: string }) {
+  return (
+    <Image
+      src="/uber.png"
+      alt="Uber"
+      width={34}
+      height={14}
+      className={cn("h-3.5 w-auto", className)}
+      unoptimized
+    />
+  );
+}
+
 export function UnifiedFilterBar({
+  currentSpace,
   viewMode,
   onViewModeChange,
   selectedLevel1,
@@ -77,6 +95,7 @@ export function UnifiedFilterBar({
   onLevel1Change,
   onLevel2Change,
   onNavigateToStores,
+  onNavigateToUber,
   selectedStoreId,
   onStoreSelect,
   onLevel3Change,
@@ -108,16 +127,18 @@ export function UnifiedFilterBar({
   // Filter panel visibility — mobile only (desktop always shows filters)
   const [filtersOpen, setFiltersOpen] = React.useState(false);
 
-  const isStoresMode = listingTypeFilter === "stores";
+  const isStoresMode = currentSpace === "stores";
+  const isUberMode = currentSpace === "uber";
 
   // Optimistic tab — updates in the same microtask as the click
-  const [optimisticTab, setOptimisticTab] = React.useState<"all" | "stores" | null>(null);
+  const [optimisticTab, setOptimisticTab] = React.useState<MarketplaceSpace | null>(null);
   React.useEffect(() => {
     setOptimisticTab(null);
-  }, [viewMode, listingTypeFilter]);
+  }, [currentSpace, viewMode, listingTypeFilter]);
 
-  const isBrowseActive = optimisticTab ? optimisticTab === "all" : !isStoresMode;
+  const isBrowseActive = optimisticTab ? optimisticTab === "marketplace" : currentSpace === "marketplace";
   const isStoresActive = optimisticTab ? optimisticTab === "stores" : isStoresMode;
+  const isUberActive = optimisticTab ? optimisticTab === "uber" : isUberMode;
 
   const clearAllCategories = () => {
     onLevel1Change(null);
@@ -166,10 +187,10 @@ export function UnifiedFilterBar({
 
       {/* Mobile */}
       <div className="flex items-center gap-2 sm:hidden pt-1 pb-0.5 pr-3">
-        <div className="mx-3 min-w-0 flex-1 h-12 rounded-full bg-white border border-gray-200 shadow-sm p-1 grid grid-cols-2">
+        <div className="mx-3 min-w-0 flex-1 h-12 rounded-full bg-white border border-gray-200 shadow-sm p-1 grid grid-cols-3">
           <button
             type="button"
-            onClick={() => { setOptimisticTab("all"); onViewModeChange("all"); }}
+            onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
             className={cn(
               "flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
               isBrowseActive ? "bg-gray-100 text-gray-900" : "text-gray-500",
@@ -188,6 +209,17 @@ export function UnifiedFilterBar({
           >
             <Store className="h-4 w-4 flex-shrink-0" />
             <span>Stores</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
+            className={cn(
+              "flex h-10 min-w-0 cursor-pointer items-center justify-center rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              isUberActive ? "bg-gray-100 text-gray-900" : "text-gray-500",
+            )}
+            aria-label="Uber delivery"
+          >
+            <UberLogo />
           </button>
         </div>
 
@@ -221,10 +253,10 @@ export function UnifiedFilterBar({
 
       {/* Desktop — filters always visible, no toggle button */}
       <div className="hidden sm:flex items-center gap-3">
-        <div className="h-11 grid-cols-2 rounded-full bg-white border border-gray-200 shadow-sm p-1 grid flex-shrink-0">
+        <div className="h-11 grid-cols-3 rounded-full bg-white border border-gray-200 shadow-sm p-1 grid flex-shrink-0">
           <button
             type="button"
-            onClick={() => { setOptimisticTab("all"); onViewModeChange("all"); }}
+            onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
             className={cn(
               "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
               isBrowseActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
@@ -243,6 +275,17 @@ export function UnifiedFilterBar({
           >
             <Store className="h-4 w-4" />
             Bike Stores
+          </button>
+          <button
+            type="button"
+            onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
+            className={cn(
+              "flex h-9 cursor-pointer items-center justify-center rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              isUberActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
+            )}
+            aria-label="Uber delivery"
+          >
+            <UberLogo />
           </button>
         </div>
 

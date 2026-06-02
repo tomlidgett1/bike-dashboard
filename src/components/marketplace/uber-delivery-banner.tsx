@@ -41,7 +41,7 @@ export function UberDeliveryBanner({ className }: UberDeliveryBannerProps) {
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-white/50">via</span>
         <Image
-          src="/uber.svg"
+          src="/uber.png"
           alt="Uber"
           width={36}
           height={14}
@@ -111,7 +111,7 @@ export function UberDeliveryInlineBadge({ className }: UberDeliveryInlineBadgePr
       </span>
       <span className="text-white/30">|</span>
       <Image
-        src="/uber.svg"
+        src="/uber.png"
         alt="Uber"
         width={32}
         height={13}

@@ -108,6 +108,10 @@ export function ImmersiveProductLayout({
   const sellerName = sellerInfo?.name || product.store_name;
   const sellerLogo = sellerInfo?.logo_url || product.store_logo_url;
   const isStore = (sellerInfo?.account_type || product.store_account_type) === "bicycle_store";
+  const isUberDeliveryEligible =
+    product.uber_delivery_enabled === true &&
+    (sellerInfo?.account_type || product.store_account_type) === "bicycle_store" &&
+    product.store_bicycle_store === true;
 
   // Reused, real purchase actions — styled for the dark immersive card.
   const buyActions = (
@@ -118,6 +122,7 @@ export function ImmersiveProductLayout({
         productPrice={live.price}
         sellerId={product.user_id}
         sellerName={product.store_name}
+        uberDeliveryEligible={isUberDeliveryEligible}
         productImage={images[0] || null}
         maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
         shippingAvailable={(product as any).shipping_available || false}
@@ -148,6 +153,7 @@ export function ImmersiveProductLayout({
           productPrice={live.price}
           sellerId={product.user_id}
           sellerName={product.store_name}
+          uberDeliveryEligible={isUberDeliveryEligible}
           productImage={images[0] || null}
           maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
           variant="outline"
@@ -512,6 +518,7 @@ export function ImmersiveProductLayout({
                 productPrice={live.price}
                 sellerId={product.user_id}
                 sellerName={product.store_name}
+                uberDeliveryEligible={isUberDeliveryEligible}
                 productImage={images[0] || null}
                 maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
                 shippingAvailable={(product as any).shipping_available || false}

@@ -8,12 +8,46 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getStripe } from '@/lib/stripe';
+import {
+  createUberOrderTripLink,
+  getUberNotificationPhones,
+  type UberSellerProfile,
+} from '@/lib/uber-delivery';
 
 // SMS Broadcast Configuration
 const SMS_API_URL = 'https://api.smsbroadcast.com.au/api.php';
-const SMS_USERNAME = 'accounts@ashburtoncycles.com.au';
-const SMS_PASSWORD = 'Ashburton1';
-const SMS_FROM = 'AshyCycles';
+const SMS_USERNAME = process.env.SMS_BROADCAST_USERNAME || 'accounts@ashburtoncycles.com.au';
+const SMS_PASSWORD = process.env.SMS_BROADCAST_PASSWORD || 'Ashburton1';
+const SMS_FROM = process.env.SMS_BROADCAST_FROM || 'AshyCycles';
+
+interface SmsProductRow {
+  id: string;
+  display_name?: string | null;
+  description?: string | null;
+  user_id: string;
+}
+
+function cleanSmsPhone(phone: string): string {
+  return phone.replace(/\s+/g, '').replace(/^\+61/, '0');
+}
+
+async function sendSms(to: string, message: string): Promise<{ phone: string; result: string; success: boolean }> {
+  const params = new URLSearchParams({
+    username: SMS_USERNAME,
+    password: SMS_PASSWORD,
+    from: SMS_FROM,
+    to,
+    message,
+  });
+
+  const response = await fetch(`${SMS_API_URL}?${params.toString()}`);
+  const result = await response.text();
+  return {
+    phone: to,
+    result,
+    success: result.includes('Your message was sent'),
+  };
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +67,8 @@ export async function POST(request: NextRequest) {
     }
 
     let deliveryMethod: string | undefined;
-    let productId: string | undefined;
+    let productIds: string[] = [];
+    let sellerId: string | undefined;
     let shippingPhone: string | undefined;
     let customerName: string | undefined;
     let shippingAddress: string | undefined;
@@ -44,7 +79,12 @@ export async function POST(request: NextRequest) {
       const session = await stripe.checkout.sessions.retrieve(sessionId);
       
       deliveryMethod = session.metadata?.delivery_method;
-      productId = session.metadata?.product_id;
+      sellerId = session.metadata?.seller_id;
+      productIds = session.metadata?.product_ids
+        ? session.metadata.product_ids.split(',').filter(Boolean)
+        : session.metadata?.product_id
+          ? [session.metadata.product_id]
+          : [];
       // Phone from checkout session customer_details
       shippingPhone = session.customer_details?.phone || phoneFromUrl;
       customerName = session.customer_details?.name || 'Unknown';
@@ -70,7 +110,8 @@ export async function POST(request: NextRequest) {
         finalPhone: shippingPhone,
         customerName,
         shippingAddress,
-        productId,
+        productIds,
+        sellerId,
       });
     } 
     // Handle PaymentIntent (embedded checkout flow)
@@ -79,7 +120,8 @@ export async function POST(request: NextRequest) {
       const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
       
       deliveryMethod = paymentIntent.metadata?.delivery_method;
-      productId = paymentIntent.metadata?.product_id;
+      sellerId = paymentIntent.metadata?.seller_id;
+      productIds = paymentIntent.metadata?.product_id ? [paymentIntent.metadata.product_id] : [];
       shippingPhone = paymentIntent.shipping?.phone || phoneFromUrl;
       customerName = paymentIntent.shipping?.name || 'Unknown';
       
@@ -104,7 +146,8 @@ export async function POST(request: NextRequest) {
         finalPhone: shippingPhone,
         customerName,
         shippingAddress,
-        productId,
+        productIds,
+        sellerId,
       });
     }
 
@@ -123,79 +166,98 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Get product name
-    const { data: product } = await supabase
-      .from('products')
-      .select('display_name, description')
-      .eq('id', productId)
-      .single();
+    const { data: products } = productIds.length > 0
+      ? await supabase
+          .from('products')
+          .select('id, display_name, description, user_id')
+          .in('id', productIds)
+      : { data: [] as SmsProductRow[] };
 
-    const productName = product?.display_name || product?.description || 'your item';
+    if (!sellerId && products && products.length > 0) {
+      sellerId = products[0].user_id;
+    }
 
-    // Send SMS to customer
-    const cleanPhone = shippingPhone.replace(/\s+/g, '').replace(/^\+61/, '0');
-    const customerMessage = `Order confirmed! Your item from Ashburton Cycles is on its way. Uber tracking link coming soon. Thanks for your order!`;
+    const { data: seller } = sellerId
+      ? await supabase
+          .from('users')
+          .select('user_id, business_name, account_type, bicycle_store, address, phone, uber_notification_phones')
+          .eq('user_id', sellerId)
+          .maybeSingle()
+      : { data: null };
 
-    const customerParams = new URLSearchParams({
-      username: SMS_USERNAME,
-      password: SMS_PASSWORD,
-      from: SMS_FROM,
-      to: cleanPhone,
-      message: customerMessage.substring(0, 160),
+    const sellerProfile = seller as UberSellerProfile | null;
+    const storeName = sellerProfile?.business_name || 'your bike store';
+    const storeAddress = sellerProfile?.address?.trim() || null;
+    const productNames = (products || [])
+      .map((product: SmsProductRow) => product.display_name || product.description)
+      .filter(Boolean);
+    const productName =
+      productNames.length === 0
+        ? 'your item'
+        : productNames.length === 1
+          ? productNames[0]
+          : `${productNames.length} items`;
+    const uberTripLinkPromise = createUberOrderTripLink({
+      pickupAddress: storeAddress,
+      pickupName: storeName,
+      dropoffAddress: shippingAddress,
+      dropoffName: customerName || 'Customer delivery',
     });
 
-    const customerUrl = `${SMS_API_URL}?${customerParams.toString()}`;
+    // Send SMS to customer
+    const cleanPhone = cleanSmsPhone(shippingPhone);
+    const customerMessage = `Order confirmed! Your item from ${storeName} is on its way. Uber tracking link coming soon. Thanks for your order!`;
     console.log('[SMS Order] Sending customer SMS to:', cleanPhone);
 
-    const customerResponse = await fetch(customerUrl);
-    const customerResult = await customerResponse.text();
+    const customerSms = await sendSms(cleanPhone, customerMessage.substring(0, 160));
 
-    console.log('[SMS Order] Customer SMS result:', customerResult);
+    console.log('[SMS Order] Customer SMS result:', customerSms.result);
 
-    const customerSuccess = customerResult.includes('Your message was sent');
+    const customerSuccess = customerSms.success;
+    const storePhones = getUberNotificationPhones(sellerProfile).map(cleanSmsPhone);
+    const uberTripLink = await uberTripLinkPromise;
 
-    // Send notification SMS to store (0414187820)
-    const storePhone = '0414187820';
+    if (!uberTripLink) {
+      console.warn('[SMS Order] Uber trip link unavailable', {
+        hasStoreAddress: !!storeAddress,
+        hasShippingAddress: !!shippingAddress,
+      });
+    }
     
     // Build detailed store message with customer info
     const storeMessageParts = [
       `UBER ORDER`,
       `Customer: ${customerName || 'Unknown'}`,
       `Product: ${productName}`,
-      `Address: ${shippingAddress || 'Not provided'}`,
+      `Pickup: ${storeAddress ? `${storeName}, ${storeAddress}` : storeName}`,
+      `Dropoff: ${shippingAddress || 'Not provided'}`,
       `Phone: ${cleanPhone}`,
+      ...(uberTripLink ? [`Book Uber: ${uberTripLink}`] : []),
     ];
     const storeMessage = storeMessageParts.join('\n');
 
-    const storeParams = new URLSearchParams({
-      username: SMS_USERNAME,
-      password: SMS_PASSWORD,
-      from: SMS_FROM,
-      to: storePhone,
-      message: storeMessage.substring(0, 320), // Allow longer SMS (2 segments)
-    });
+    console.log('[SMS Order] Sending store notification SMS to:', storePhones);
 
-    const storeUrl = `${SMS_API_URL}?${storeParams.toString()}`;
-    console.log('[SMS Order] Sending store notification SMS to:', storePhone);
+    const storeResults = await Promise.all(
+      storePhones.map((storePhone) => sendSms(storePhone, storeMessage))
+    );
 
-    const storeResponse = await fetch(storeUrl);
-    const storeResult = await storeResponse.text();
+    console.log('[SMS Order] Store SMS result:', storeResults);
 
-    console.log('[SMS Order] Store SMS result:', storeResult);
-
-    const storeSuccess = storeResult.includes('Your message was sent');
+    const storeSuccess = storeResults.length > 0 && storeResults.every((result) => result.success);
 
     return NextResponse.json({
       success: customerSuccess,
       storeNotified: storeSuccess,
-      message: customerSuccess ? 'SMS sent successfully' : customerResult,
+      message: customerSuccess ? 'SMS sent successfully' : customerSms.result,
       debug: {
-        apiUrl: customerUrl,
         phone: cleanPhone,
+        storePhones,
         productName,
+        uberTripLink,
         deliveryMethod,
-        customerResult,
-        storeResult,
+        customerResult: customerSms.result,
+        storeResults,
       },
     });
 
@@ -207,4 +269,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

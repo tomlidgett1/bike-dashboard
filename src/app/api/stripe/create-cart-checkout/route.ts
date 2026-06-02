@@ -11,12 +11,19 @@
 // Pricing is fully re-validated here — the client cart is only a list of ids.
 
 import { NextRequest, NextResponse } from 'next/server';
+import type Stripe from 'stripe';
 import { createClient } from '@/lib/supabase/server';
 import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
 import { getStripe, calculateBuyerFee } from '@/lib/stripe';
+import {
+  CHECKOUT_PHONE_NUMBER_COLLECTION,
+  CHECKOUT_SHIPPING_ALLOWED_COUNTRIES,
+  createCheckoutCustomerPrefill,
+  type CheckoutShippingAddressInput,
+} from '@/lib/stripe/checkout-customer';
 import { resolveLivePrice } from '@/lib/marketplace/pricing';
+import { UBER_EXPRESS_FEE, validateUberDelivery } from '@/lib/uber-delivery';
 
-const UBER_EXPRESS_FEE = 15;
 const AUSPOST_FEE = 12;
 const MAX_CART_ITEMS = 12;
 const MIN_PURCHASE_FOR_VOUCHER_CENTS = 3000;
@@ -45,11 +52,13 @@ export async function POST(request: NextRequest) {
     const {
       items: rawItems,
       productIds: rawProductIds,
-      deliveryMethod = 'uber_express',
+      deliveryMethod = 'auspost',
+      shippingAddress,
     } = body as {
       items?: { productId: string; quantity?: number }[];
       productIds?: string[]; // legacy payload — each id treated as quantity 1
       deliveryMethod?: DeliveryMethod;
+      shippingAddress?: CheckoutShippingAddressInput;
     };
 
     // Normalise the payload to a productId -> requested quantity map. Accepts the
@@ -99,7 +108,8 @@ export async function POST(request: NextRequest) {
         sold_at,
         listing_status,
         qoh,
-        listing_type
+        listing_type,
+        uber_delivery_enabled
       `)
       .in('id', ids);
 
@@ -128,6 +138,22 @@ export async function POST(request: NextRequest) {
         { error: 'You cannot purchase your own products' },
         { status: 400 }
       );
+    }
+
+    if (deliveryMethod === 'uber_express') {
+      const validation = await validateUberDelivery(supabase, {
+        sellerId,
+        products,
+        shippingAddress,
+        requireAddress: true,
+      });
+
+      if (!validation.eligible) {
+        return NextResponse.json(
+          { error: validation.reason || 'Uber Express is not available for this cart', uberIneligible: true },
+          { status: 400 }
+        );
+      }
     }
 
     // Availability + stock check. `available` is the live purchasable quantity:
@@ -261,7 +287,7 @@ export async function POST(request: NextRequest) {
     // applied to a SINGLE unit of the first product (otherwise a per-unit
     // discount would be multiplied by quantity), so when that product has more
     // than one unit we split it into a discounted unit + the rest at full price.
-    const lineItems: any[] = [];
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
     items.forEach((it, idx) => {
       const fullUnit = Math.round(it.price * 100);
       const img = imageMap.get(it.product.id);
@@ -357,6 +383,14 @@ export async function POST(request: NextRequest) {
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const requiresShipping = deliveryMethod !== 'pickup';
+    const { customerParams } = requiresShipping
+      ? await createCheckoutCustomerPrefill({
+          stripe,
+          supabase,
+          user,
+          shippingAddress,
+        })
+      : { customerParams: user.email ? { customer_email: user.email } : {} };
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -364,14 +398,14 @@ export async function POST(request: NextRequest) {
       line_items: lineItems,
       ...(requiresShipping && {
         shipping_address_collection: {
-          allowed_countries: ['AU', 'NZ'],
+          allowed_countries: [...CHECKOUT_SHIPPING_ALLOWED_COUNTRIES],
         },
       }),
-      phone_number_collection: { enabled: true },
+      phone_number_collection: CHECKOUT_PHONE_NUMBER_COLLECTION,
       metadata,
       success_url: `${appUrl}/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}&cart=1`,
       cancel_url: `${appUrl}/marketplace`,
-      customer_email: user.email,
+      ...customerParams,
       expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
     });
 

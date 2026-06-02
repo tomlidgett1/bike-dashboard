@@ -16,7 +16,6 @@ import { cn } from "@/lib/utils";
 // 1x1 light-grey SVG used as the blur-up placeholder for card images
 const CARD_BLUR_DATA_URL =
   "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iI2Y3ZjdmNyIvPjwvc3ZnPg==";
-import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
 
 // ============================================================
 // Product Card - Image-First Design
@@ -60,6 +59,10 @@ type ProductCardData = MarketplaceProduct & {
 function CartOverlayButton({ product }: { product: ProductCardData }) {
   const { has, addItem, openCart } = useCart();
   const inCart = has(product.id);
+  const isUberDeliveryEligible =
+    product.uber_delivery_enabled === true &&
+    product.store_account_type === "bicycle_store" &&
+    product.store_bicycle_store === true;
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -67,11 +70,12 @@ function CartOverlayButton({ product }: { product: ProductCardData }) {
     if (inCart) { openCart(); return; }
     const result = addItem({
       productId: product.id,
-      name: (product as any).display_name || product.description || "",
+      name: product.display_name || product.description || "",
       image: product.card_url || product.primary_image_url || null,
       price: product.price,
       sellerId: product.user_id,
       sellerName: product.store_name || "Store",
+      uberDeliveryEligible: isUberDeliveryEligible,
       quantity: 1,
       maxQuantity: product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1),
     });
@@ -121,10 +125,10 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     const createdAt = new Date(product.created_at);
     const now = new Date();
     const hoursDiff = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
-    
+
     // Only show for products listed in last 24 hours
     if (hoursDiff > 24) return null;
-    
+
     if (hoursDiff < 1) {
       const minutes = Math.floor(hoursDiff * 60);
       return `${minutes}m ago`;
@@ -168,21 +172,21 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     if (productData.card_url) {
       return productData.card_url;
     }
-    
+
     // Priority 2: For private listings with images array (legacy fallback)
     if (productData.listing_type === 'private_listing' && Array.isArray(productData.images)) {
       const primaryImage = productData.images.find(img => img.isPrimary) || productData.images[0];
-      
+
       if (primaryImage) {
         return getCardImageUrl(primaryImage);
       }
     }
-    
+
     // Priority 3: Legacy primary_image_url fallback
     if (product.primary_image_url && !product.primary_image_url.startsWith('blob:')) {
       return product.primary_image_url;
     }
-    
+
     return null;
   }, [product.primary_image_url, productData.card_url, productData.images, productData.listing_type]);
 
@@ -205,12 +209,12 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   // Memoize click handler to prevent recreating on every render
   const handleClick = React.useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    
+
     // Trigger full-page loading overlay
     if (onNavigate) {
       onNavigate();
     }
-    
+
     trackInteraction('click', {
       productId: product.id,
       metadata: {
@@ -230,6 +234,10 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   const isList = layout === "list";
   // Resolve live price once so both the photo badge and the price row can use it.
   const live = resolveLivePrice(product);
+  const isUberDeliveryEligible =
+    productData.uber_delivery_enabled === true &&
+    productData.store_account_type === "bicycle_store" &&
+    productData.store_bicycle_store === true;
 
   return (
     <Link
@@ -249,7 +257,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         )}
       >
         {/* Image Container - Main focus */}
-        <div 
+        <div
           ref={imageRef}
           className={cn(
             "relative overflow-hidden rounded-md bg-gray-100 border border-gray-200/80",
@@ -298,15 +306,14 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </div>
           )}
 
-          {/* Uber Express Badge - Only for Ashburton Cycles */}
-          {MARKETPLACE_PROMO_BANNERS_ENABLED &&
-            productData.store_name === "Ashburton Cycles" && (
+          {/* Uber Express Badge */}
+          {isUberDeliveryEligible && (
             <div className="absolute bottom-2.5 right-2.5">
-              <div className="bg-black/85 px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
-                <Image 
-                  src="/uber.jpg" 
-                  alt="Uber" 
-                  width={26} 
+              <div className="bg-black/85 px-2 py-1 rounded-md shadow-sm flex items-center gap-1">
+                <Image
+                  src="/uberwhite.png"
+                  alt="Uber"
+                  width={26}
                   height={10}
                   quality={100}
                   className="object-contain"
@@ -422,7 +429,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
                 Store
               </span>
             )}
-            
+
             {/* Seller name/location with verified badge */}
             <div className="flex items-center gap-0.5 flex-1 min-w-0">
               <p className="text-xs text-gray-600 font-medium truncate">
@@ -472,6 +479,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
          prevProps.product.discount_active === nextProps.product.discount_active &&
          prevProps.product.discount_percent === nextProps.product.discount_percent &&
          prevProps.product.discount_ends_at === nextProps.product.discount_ends_at &&
+         prevProps.product.uber_delivery_enabled === nextProps.product.uber_delivery_enabled &&
+         prevProps.product.store_bicycle_store === nextProps.product.store_bicycle_store &&
          prevProps.priority === nextProps.priority &&
          prevProps.featuredMobile === nextProps.featuredMobile &&
          prevProps.layout === nextProps.layout;
@@ -497,8 +506,8 @@ export function ProductCardSkeleton({ layout = "grid" }: { layout?: "grid" | "li
   return (
     <div>
       {/* Image Skeleton */}
-      <div 
-        className="relative w-full rounded-xl bg-gray-100 animate-pulse mb-0.5 border border-gray-200" 
+      <div
+        className="relative w-full rounded-xl bg-gray-100 animate-pulse mb-0.5 border border-gray-200"
         style={{ aspectRatio: '1 / 1' }}
       >
       </div>
@@ -507,14 +516,13 @@ export function ProductCardSkeleton({ layout = "grid" }: { layout?: "grid" | "li
       <div className="px-0.5 space-y-0">
         {/* Title Skeleton */}
         <div className="h-4 w-full bg-gray-100 rounded animate-pulse mb-0" />
-        
+
         {/* Price Skeleton */}
         <div className="h-3 w-20 bg-gray-100 rounded animate-pulse mb-0.5" />
-        
+
         {/* Store Skeleton */}
         <div className="h-3 w-16 bg-gray-100 rounded animate-pulse" />
       </div>
     </div>
   );
 }
-

@@ -6,6 +6,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getStripe, calculatePlatformFee, calculateSellerPayout, calculateBuyerFee } from '@/lib/stripe';
+import {
+  CHECKOUT_PHONE_NUMBER_COLLECTION,
+  CHECKOUT_SHIPPING_ALLOWED_COUNTRIES,
+  createCheckoutCustomerPrefill,
+} from '@/lib/stripe/checkout-customer';
 import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
 
 export async function POST(request: NextRequest) {
@@ -160,6 +165,11 @@ export async function POST(request: NextRequest) {
 
     // Get app URL for success/cancel redirects
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const { customerParams } = await createCheckoutCustomerPrefill({
+      stripe,
+      supabase,
+      user,
+    });
 
     // Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
@@ -205,12 +215,9 @@ export async function POST(request: NextRequest) {
       ],
       // Collect shipping address from buyer
       shipping_address_collection: {
-        allowed_countries: ['AU', 'NZ'], // Australia and New Zealand
+        allowed_countries: [...CHECKOUT_SHIPPING_ALLOWED_COUNTRIES], // Australia and New Zealand
       },
-      // Collect phone number for delivery
-      phone_number_collection: {
-        enabled: true,
-      },
+      phone_number_collection: CHECKOUT_PHONE_NUMBER_COLLECTION,
       metadata: {
         // Flag this as an offer payment
         offer_id: offer.id,
@@ -230,7 +237,7 @@ export async function POST(request: NextRequest) {
       },
       success_url: `${appUrl}/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/messages?tab=offers&offer_id=${offerId}`,
-      customer_email: user.email,
+      ...customerParams,
       expires_at: Math.floor(Date.now() / 1000) + (30 * 60), // 30 minutes
     });
 
@@ -272,4 +279,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

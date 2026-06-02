@@ -1,6 +1,17 @@
 import { createClient } from '@/lib/supabase/server'
 import { cache } from 'react'
 
+export interface ServerShippingAddress {
+  name: string
+  phone: string
+  line1: string
+  line2?: string
+  city: string
+  state: string
+  postal_code: string
+  country: string
+}
+
 export interface ServerProfile {
   logo_url?: string | null
   business_name?: string | null
@@ -9,7 +20,8 @@ export interface ServerProfile {
   last_name?: string | null
   account_type?: string | null
   bicycle_store?: boolean | null
-  opening_hours?: any | null
+  uber_notification_phones?: string[] | null
+  opening_hours?: Record<string, unknown> | null
   phone?: string | null
   store_type?: string | null
   address?: string | null
@@ -18,6 +30,7 @@ export interface ServerProfile {
   order_alerts?: boolean | null
   marketing_emails?: boolean | null
   inventory_alerts?: boolean | null
+  shipping_address?: ServerShippingAddress | null
 }
 
 /**
@@ -38,7 +51,7 @@ export const getUserProfile = cache(async (): Promise<ServerProfile | null> => {
     // Fetch user profile with only the fields needed for UI
     const { data, error } = await supabase
       .from('users')
-      .select('logo_url, business_name, name, first_name, last_name, account_type, bicycle_store, opening_hours, phone, store_type, address, website, email_notifications, order_alerts, marketing_emails, inventory_alerts')
+      .select('logo_url, business_name, name, first_name, last_name, account_type, bicycle_store, uber_notification_phones, opening_hours, phone, store_type, address, website, email_notifications, order_alerts, marketing_emails, inventory_alerts, shipping_address')
       .eq('user_id', user.id)
       .single()
     
@@ -53,4 +66,3 @@ export const getUserProfile = cache(async (): Promise<ServerProfile | null> => {
     return null
   }
 })
-

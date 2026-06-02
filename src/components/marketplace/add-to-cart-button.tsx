@@ -20,6 +20,7 @@ interface AddToCartButtonProps {
   productPrice: number;
   sellerId: string;
   sellerName: string;
+  uberDeliveryEligible?: boolean;
   productImage?: string | null;
   /** Max purchasable units (stock on hand). 1 for unique listings; qoh for shop inventory. */
   maxQuantity?: number;
@@ -35,6 +36,7 @@ export function AddToCartButton({
   productPrice,
   sellerId,
   sellerName,
+  uberDeliveryEligible = false,
   productImage,
   maxQuantity = 1,
   variant = "outline",
@@ -61,6 +63,7 @@ export function AddToCartButton({
       price: productPrice,
       sellerId,
       sellerName,
+      uberDeliveryEligible,
       quantity: 1,
       maxQuantity,
     });

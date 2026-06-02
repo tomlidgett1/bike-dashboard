@@ -10,6 +10,7 @@ import Image from "next/image";
 import type { AISearchResult } from "@/types/ai-search";
 import { AISearchResponseDisplay } from "./ai-search-response";
 import { AISearchLoading } from "./ai-search-loading";
+import type { MarketplaceSpace } from "@/lib/types/marketplace";
 
 // ============================================================
 // Enterprise-Level Instant Search
@@ -152,6 +153,8 @@ interface InstantSearchProps {
   leftSlot?: React.ReactNode;
   /** Filter search results by listing type (space context) */
   listingType?: 'store_inventory' | 'private_listing' | null;
+  /** Preserve the active marketplace tab when navigating to a search results page. */
+  spaceContext?: MarketplaceSpace;
 }
 
 export function InstantSearch({ 
@@ -161,6 +164,7 @@ export function InstantSearch({
   placeholder: customPlaceholder, 
   leftSlot,
   listingType,
+  spaceContext = 'marketplace',
 }: InstantSearchProps = {}) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
@@ -185,12 +189,14 @@ export function InstantSearch({
     const params = new URLSearchParams();
     params.set('search', searchTerm);
     // Add space param based on listing type filter
-    if (listingType === 'store_inventory') {
+    if (spaceContext === 'uber') {
+      params.set('space', 'uber');
+    } else if (listingType === 'store_inventory') {
       params.set('space', 'stores');
     }
     // Marketplace space is default, no param needed for private_listing
     return `/marketplace?${params.toString()}`;
-  }, [listingType]);
+  }, [listingType, spaceContext]);
 
   // Auto-focus input when prop is set
   React.useEffect(() => {
@@ -809,7 +815,7 @@ export function InstantSearch({
                     : "px-4 py-2 text-gray-700 hover:bg-gray-50 rounded-md"
                 )}
               >
-                View all results for "{query}"
+                View all results for &quot;{query}&quot;
                 <ArrowRight className="h-4 w-4" />
               </button>
             </div>
@@ -1081,4 +1087,3 @@ export function InstantSearch({
     </div>
   );
 }
-

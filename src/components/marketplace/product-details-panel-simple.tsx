@@ -7,7 +7,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck, Globe } from "lucide-react";
 import { PickupLocationMap } from "./product-detail/pickup-location-map";
 import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
-import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
@@ -134,6 +133,10 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
   
   // Check if product is sold
   const isSold = !!(product as any).sold_at || (product as any).listing_status === 'sold';
+  const isUberDeliveryEligible =
+    product.uber_delivery_enabled === true &&
+    product.store_account_type === "bicycle_store" &&
+    product.store_bicycle_store === true;
 
   // Sync product state with prop
   React.useEffect(() => {
@@ -175,11 +178,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               </div>
             );
           })()}
-          {/* Uber Delivery - Discreet inline badge (only for Ashburton Cycles) */}
-          {MARKETPLACE_PROMO_BANNERS_ENABLED &&
-            !isSold &&
-            !isOwner &&
-            product.store_name === "Ashburton Cycles" && <UberDeliveryInlineBadge />}
+          {!isSold && !isOwner && isUberDeliveryEligible && <UberDeliveryInlineBadge />}
         </div>
         {(product as any).listing_source === 'online_catalog' && (
           <div className="mt-2">
@@ -229,6 +228,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               productPrice={resolveLivePrice(product).price}
               sellerId={product.user_id}
               sellerName={product.store_name}
+              uberDeliveryEligible={isUberDeliveryEligible}
               productImage={product.all_images?.[0] || null}
               maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
               shippingAvailable={(product as any).shipping_available || false}
@@ -247,6 +247,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               productPrice={resolveLivePrice(product).price}
               sellerId={product.user_id}
               sellerName={product.store_name}
+              uberDeliveryEligible={isUberDeliveryEligible}
               productImage={product.all_images?.[0] || product.primary_image_url || null}
               maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
               variant="outline"

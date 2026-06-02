@@ -131,7 +131,7 @@ export function PromoBannerCarousel({
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
                   <Image
-                    src="/uber.jpg"
+                    src="/uber.png"
                     alt="Uber"
                     width={40}
                     height={16}

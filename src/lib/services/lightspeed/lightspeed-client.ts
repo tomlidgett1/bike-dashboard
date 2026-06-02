@@ -7,7 +7,12 @@
 
 import { LIGHTSPEED_CONFIG } from './config'
 import { getValidAccessToken, refreshAccessToken, updateLastSyncTime } from './token-manager'
-import { assembleYellowJerseyWorkorderRequest, YELLOW_JERSEY_CUSTOMER } from './workorder'
+import {
+  assembleYellowJerseyWorkorderItemRequests,
+  assembleYellowJerseyWorkorderRequest,
+  YELLOW_JERSEY_CUSTOMER,
+  YELLOW_JERSEY_WORKORDER_TITLE,
+} from './workorder'
 import type {
   LightspeedAccountResponse,
   LightspeedItemsResponse,
@@ -24,7 +29,6 @@ import type {
   LightspeedSale,
   LightspeedCustomer,
   LightspeedShop,
-  LightspeedRegister,
   LightspeedEmployee,
   LightspeedWorkorder,
   LightspeedWorkorderStatus,
@@ -348,7 +352,10 @@ export class LightspeedClient {
     let nextUrl: string = `/Account/${accountId}/Manufacturer.json?limit=${limit}`
 
     for (let page = 0; page < 50; page++) {
-      const response = await this.request<{ Manufacturer: any; '@attributes'?: { next?: string } }>(nextUrl)
+      const response = await this.request<{
+        Manufacturer?: { manufacturerID: string; name: string } | Array<{ manufacturerID: string; name: string }>
+        '@attributes'?: { next?: string }
+      }>(nextUrl)
       const page_data = this.ensureArray(response.Manufacturer)
       allManufacturers.push(...page_data)
       const next = response['@attributes']?.next
@@ -426,7 +433,17 @@ export class LightspeedClient {
     items: Array<{ itemID: string; unitQuantity: number; unitPrice: number }>
     orderNumber: string
     buyerName?: string | null
+    buyerEmail?: string | null
+    buyerPhone?: string | null
+    deliveryMethod?: string | null
+    deliveryDescription?: string | null
+    shippingName?: string | null
+    shippingPhone?: string | null
     shippingAddress?: string | null
+    shippingCost?: number | null
+    buyerFee?: number | null
+    voucherDiscount?: number | null
+    totalAmount?: number | null
   }): Promise<LightspeedWorkorder> {
     const accountId = await this.getAccountId()
 
@@ -476,7 +493,17 @@ export class LightspeedClient {
         items,
         orderNumber: params.orderNumber,
         buyerName: params.buyerName,
+        buyerEmail: params.buyerEmail,
+        buyerPhone: params.buyerPhone,
+        deliveryMethod: params.deliveryMethod,
+        deliveryDescription: params.deliveryDescription,
+        shippingName: params.shippingName,
+        shippingPhone: params.shippingPhone,
         shippingAddress: params.shippingAddress,
+        shippingCost: params.shippingCost,
+        buyerFee: params.buyerFee,
+        voucherDiscount: params.voucherDiscount,
+        totalAmount: params.totalAmount,
       }
     )
 
@@ -484,7 +511,45 @@ export class LightspeedClient {
       method: 'POST',
       body: JSON.stringify(body),
     })
-    return response.Workorder
+    const workorder = response.Workorder
+
+    const workorderItemRequests = assembleYellowJerseyWorkorderItemRequests(
+      accountId,
+      workorder.workorderID,
+      employees[0].employeeID,
+      params.items.map((line, index) => ({
+        itemID: line.itemID,
+        unitQuantity: line.unitQuantity,
+        unitPrice: line.unitPrice,
+        note: `${YELLOW_JERSEY_WORKORDER_TITLE} ${params.orderNumber} item ${index + 1}`,
+      }))
+    )
+
+    console.log('[Lightspeed] Creating YELLOW JERSEY SALE workorder product lines:', {
+      workorderID: workorder.workorderID,
+      lineCount: workorderItemRequests.length,
+      lines: workorderItemRequests.map(({ body }) => ({
+        itemID: body.itemID,
+        unitQuantity: body.unitQuantity,
+        unitPrice: body.unitPrice,
+      })),
+    })
+
+    for (const [index, itemRequest] of workorderItemRequests.entries()) {
+      await this.request(itemRequest.endpoint, {
+        method: 'POST',
+        body: JSON.stringify(itemRequest.body),
+      })
+      console.log('[Lightspeed] Added YELLOW JERSEY SALE workorder product line:', {
+        workorderID: workorder.workorderID,
+        lineNumber: index + 1,
+        itemID: itemRequest.body.itemID,
+        unitQuantity: itemRequest.body.unitQuantity,
+        unitPrice: itemRequest.body.unitPrice,
+      })
+    }
+
+    return workorder
   }
 
   /**
@@ -691,10 +756,6 @@ export class LightspeedClient {
 export function createLightspeedClient(userId: string): LightspeedClient {
   return new LightspeedClient(userId)
 }
-
-
-
-
 
 
 

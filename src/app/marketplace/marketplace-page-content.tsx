@@ -53,6 +53,14 @@ interface Store {
   joined_date: string;
 }
 
+interface MarketplaceProductsPayload {
+  products?: MarketplaceProduct[];
+  recommendations?: MarketplaceProduct[];
+  pagination?: {
+    hasMore?: boolean;
+  };
+}
+
 interface MarketplacePageContentProps {
   /** Products pre-fetched server-side for immediate first paint. */
   initialProducts?: MarketplaceProduct[];
@@ -77,13 +85,15 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   
   // Derive view states from space
   const isStoresView = currentSpace === 'stores';
+  const isUberView = currentSpace === 'uber';
   const isMarketplaceView = currentSpace === 'marketplace';
+  const isStoreInventoryView = isStoresView || isUberView;
 
   // View mode state (trending, all) - only for products view
   // Default to 'all' for browsing all products
   const urlView = searchParams.get("view");
   const [viewMode, setViewMode] = React.useState<ViewMode>(() =>
-    !isStoresView ? normaliseMarketplaceViewParam(urlView) : "all"
+    !isStoreInventoryView ? normaliseMarketplaceViewParam(urlView) : "all"
   );
 
   // Stores state
@@ -120,7 +130,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     const urlLevel3 = searchParams.get('level3') || null;
     
     // When on Stores view, clear the category filters
-    if (isStoresView) {
+    if (isStoreInventoryView) {
       if (selectedLevel1 !== null) setSelectedLevel1(null);
       if (selectedLevel2 !== null) setSelectedLevel2(null);
       if (selectedLevel3 !== null) setSelectedLevel3(null);
@@ -130,15 +140,15 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       if (urlLevel2 !== selectedLevel2) setSelectedLevel2(urlLevel2);
       if (urlLevel3 !== selectedLevel3) setSelectedLevel3(urlLevel3);
     }
-  }, [searchParams, isStoresView]);
+  }, [searchParams, isStoreInventoryView]);
 
   // Listing type filter state - derived from space
   // Marketplace space = individuals only, Stores space = stores only
   const spaceListingType = React.useMemo((): ListingTypeFilterType => {
-    if (isStoresView) return 'stores';
+    if (isStoreInventoryView) return 'stores';
     if (isMarketplaceView) return 'individuals';
     return 'all';
-  }, [isStoresView, isMarketplaceView]);
+  }, [isStoreInventoryView, isMarketplaceView]);
   
   const [listingTypeFilter, setListingTypeFilter] = React.useState<ListingTypeFilterType>(spaceListingType);
   
@@ -273,7 +283,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   // Detect when filters scroll out of view (mobile only, Browse mode only)
   React.useEffect(() => {
     // Only run on mobile, in Browse mode (or stores view)
-    if (!isMobile || (viewMode !== 'all' && !isStoresView)) {
+    if (!isMobile || (viewMode !== 'all' && !isStoreInventoryView)) {
       setShowStickyFilters(false);
       return;
     }
@@ -300,7 +310,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     return () => {
       observer.unobserve(element);
     };
-  }, [isMobile, viewMode, isStoresView]);
+  }, [isMobile, viewMode, isStoreInventoryView]);
 
   // Infinite scroll sentinel ref — effect added after handleLoadMore is declared
   const bottomSentinelRef = React.useRef<HTMLDivElement>(null);
@@ -331,6 +341,13 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     setSelectedStoreCategory(null);
     resetProductsForFilterChange();
     router.push("/marketplace?space=stores", { scroll: false });
+  }, [router, resetProductsForFilterChange]);
+
+  const handleNavigateToUber = React.useCallback(() => {
+    setSelectedStoreId(null);
+    setSelectedStoreCategory(null);
+    resetProductsForFilterChange();
+    router.push("/marketplace?space=uber", { scroll: false });
   }, [router, resetProductsForFilterChange]);
 
   const handleNavigateToStore = React.useCallback(
@@ -371,12 +388,12 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   // causes the effect to fire immediately after a click (before the URL updates),
   // reading the stale URL value and resetting state back — the multi-flash bug.
 
-  // Bike Stores always uses the browse/products index, not trending — keeps filterKey and fetchers aligned.
+  // Store inventory spaces always use the browse/products index, not trending — keeps filterKey and fetchers aligned.
   React.useEffect(() => {
-    if (isStoresView && viewMode !== "all") {
+    if (isStoreInventoryView && viewMode !== "all") {
       setViewMode("all");
     }
-  }, [isStoresView, viewMode]);
+  }, [isStoreInventoryView, viewMode]);
 
   // Calculate created after date based on recentlyAdded filter
   const createdAfter = React.useMemo(() => {
@@ -400,10 +417,10 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     page: 1,
     pageSize: MARKETPLACE_INITIAL_PAGE_SIZE,
     // Stores tab uses category_name (Lightspeed); marketplace tab uses marketplace_category
-    level1: isStoresView ? null : selectedLevel1,
+    level1: isStoreInventoryView ? null : selectedLevel1,
     level2: selectedLevel2,
     level3: selectedLevel3,
-    lsCategory: isStoresView ? selectedLevel1 : null,
+    lsCategory: isStoreInventoryView ? selectedLevel1 : null,
     search: searchQuery,
     listingType: listingTypeFilter === 'stores' ? 'store_inventory' as const :
                  listingTypeFilter === 'individuals' ? 'private_listing' as const : undefined,
@@ -414,7 +431,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     sortBy: advancedFilters.sortBy,
     brand: advancedFilters.brand || null,
     createdAfter: createdAfter,
-  }), [isStoresView, viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, selectedStoreId, advancedFilters, createdAfter]);
+    uberOnly: isUberView,
+  }), [isStoreInventoryView, isUberView, viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, selectedStoreId, advancedFilters, createdAfter]);
 
   // Use SWR for products data with intelligent caching
   const { 
@@ -436,7 +454,16 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   React.useEffect(() => {
     if (isLoading) return;
     if (currentPage > 1) return;
-    setAccumulatedProducts(fetchedProducts);
+    setAccumulatedProducts((prev) => {
+      if (
+        prev.length === fetchedProducts.length &&
+        prev.every((product, index) => product.id === fetchedProducts[index]?.id)
+      ) {
+        return prev;
+      }
+
+      return fetchedProducts;
+    });
     processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
     setLocalHasMore(null); // reset so hasMore re-reads from fresh SWR response
   }, [fetchedProducts, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -447,7 +474,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const canUseInitialProducts =
     !!initialProducts?.length &&
     viewMode === 'all' &&
-    !isStoresView &&
+    !isStoreInventoryView &&
     !searchQuery &&
     !selectedLevel1 &&
     advancedFilters.condition === 'all' &&
@@ -488,7 +515,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
   // Derive marketplace category pills from the currently loaded products
   const marketplaceCategories = React.useMemo(() => {
-    if (isStoresView || !products?.length) return [];
+    if (isStoreInventoryView || !products?.length) return [];
     const categoryMap = new Map<string, number>();
     products.forEach(product => {
       const cat = product.marketplace_category;
@@ -497,11 +524,11 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     return Array.from(categoryMap.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([level1]) => ({ label: level1, level1 }));
-  }, [isStoresView, products]);
+  }, [isStoreInventoryView, products]);
 
   // Bike Stores tab category pills — fetched from dedicated public API,
   // same data source as the Lightspeed category_name field on products.
-  const { categories: storesViewCategories, isLoading: storesViewCategoriesLoading } = useLightspeedCategories();
+  const { categories: storesViewCategories, isLoading: storesViewCategoriesLoading } = useLightspeedCategories(isUberView);
 
   // Derive store categories from fetched products (zero API calls - instant)
   const storeCategories = React.useMemo(() => {
@@ -550,7 +577,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   // Update URL when filters change (excluding space - that's handled by useMarketplaceSpace)
   React.useEffect(() => {
     // Don't update URL for stores - space navigation handles that
-    if (isStoresView) return;
+    if (isStoreInventoryView) return;
     
     const params = new URLSearchParams(window.location.search);
     
@@ -580,7 +607,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     startTransition(() => {
       router.replace(newUrl, { scroll: false });
     });
-  }, [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, isStoresView, router]);
+  }, [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, isStoreInventoryView, router]);
 
   const [isPaginating, setIsPaginating] = React.useState(false);
 
@@ -604,6 +631,10 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         params.set('listingType', 'store_inventory');
       } else if (listingTypeFilter === 'individuals') {
         params.set('listingType', 'private_listing');
+      }
+
+      if (isUberView) {
+        params.set('uberOnly', 'true');
       }
       
       if (advancedFilters.minPrice) params.set('minPrice', advancedFilters.minPrice);
@@ -656,15 +687,15 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         throw new Error('Failed to fetch more products');
       }
       
-      const data = await response.json();
-      const newProducts = data.products || data.recommendations || [];
+      const data = (await response.json()) as MarketplaceProductsPayload;
+      const newProducts = data.products ?? data.recommendations ?? [];
       
       console.log('[MARKETPLACE] Received products:', newProducts.length);
       
       // Add new products to accumulated list, deduplicating against already-seen IDs
-      const newFiltered = newProducts.filter((p: any) => !processedDataRef.current.has(p.id));
+      const newFiltered = newProducts.filter((p) => !processedDataRef.current.has(p.id));
       console.log('[MARKETPLACE] Adding', newFiltered.length, 'new products (filtered duplicates)');
-      newFiltered.forEach((p: any) => processedDataRef.current.add(p.id));
+      newFiltered.forEach((p) => processedDataRef.current.add(p.id));
       setAccumulatedProducts([...baseProducts, ...newFiltered]);
       setCurrentPage(nextPage);
       
@@ -703,14 +734,14 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
   const handleViewModeChange = (mode: ViewMode) => {
     // Don't reset if clicking the same tab and already in marketplace
-    if (mode === viewMode && !isStoresView) return;
+    if (mode === viewMode && isMarketplaceView) return;
 
     // Wrap all state updates in startTransition so the expensive re-render
     // (effects, SWR rekey, URL sync) is non-blocking. The tab bar shows the
     // new active state immediately via its own optimistic local state.
     startTransition(() => {
       setCurrentPage(1);
-      if (isStoresView) setSpace('marketplace');
+      if (isStoreInventoryView) setSpace('marketplace');
       setViewMode(mode);
       if (mode === "trending") {
         setSelectedLevel1(null);
@@ -877,7 +908,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
       {/* Sticky Filter Header - Mobile Only (appears when category pills scroll out) */}
       <AnimatePresence>
-        {showStickyFilters && ((isMarketplaceView && viewMode === 'all') || isStoresView) && (
+        {showStickyFilters && ((isMarketplaceView && viewMode === 'all') || isStoreInventoryView) && (
           <motion.div
             initial={{ y: -80, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -922,7 +953,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
             </AnimatePresence>
             {/* Top Row - Filters Button */}
             <div className="flex items-center justify-between px-3 pt-2.5 pb-2">
-              {/* Space label - Marketplace or Bike Stores */}
+              {/* Space label - Marketplace, Bike Stores, or Uber */}
               {isStoresView ? (
                 <Image 
                   src="/bikestores.svg" 
@@ -930,6 +961,16 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   width={120} 
                   height={28}
                   className="h-7 w-auto"
+                  priority
+                  unoptimized
+                />
+              ) : isUberView ? (
+                <Image
+                  src="/uber.png"
+                  alt="Uber"
+                  width={82}
+                  height={28}
+                  className="h-6 w-auto"
                   priority
                   unoptimized
                 />
@@ -1030,6 +1071,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
           )}
           <div className="sticky top-14 z-30 bg-white border-b border-gray-100 shadow-sm">
             <UnifiedFilterBar
+              currentSpace={currentSpace}
               viewMode={viewMode}
               onViewModeChange={handleViewModeChange}
               selectedLevel1={selectedLevel1}
@@ -1043,6 +1085,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               productCount={!searchQuery && !isStoresView ? totalCount : undefined}
               categoryPillsRef={categoryPillsRef}
               onNavigateToStores={handleNavigateToAllStores}
+              onNavigateToUber={handleNavigateToUber}
               selectedStoreId={selectedStoreId}
               onStoreSelect={handleNavigateToStore}
               browseFilters={advancedFilters}
@@ -1051,8 +1094,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               onBrowseFiltersReset={handleAdvancedFiltersReset}
               productGridLayout={productGridLayout}
               onProductGridLayoutChange={setProductGridLayout}
-              dynamicCategories={isStoresView ? storesViewCategories : marketplaceCategories}
-              categoriesLoading={isStoresView ? storesViewCategoriesLoading : loading}
+              dynamicCategories={isStoreInventoryView ? storesViewCategories : marketplaceCategories}
+              categoriesLoading={isStoreInventoryView ? storesViewCategoriesLoading : loading}
               mobileBrowseSheetOpen={mobileBrowseSheetOpen}
               onMobileBrowseSheetOpenChange={setMobileBrowseSheetOpen}
             />
@@ -1093,6 +1136,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                 {/* Desktop: main tabs + store pills grouped tightly */}
                 <div className="hidden sm:block space-y-2.5">
                   <UnifiedFilterBar
+                    currentSpace={currentSpace}
                     viewMode={viewMode}
                     onViewModeChange={handleViewModeChange}
                     selectedLevel1={selectedLevel1}
@@ -1106,6 +1150,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     productCount={!searchQuery ? totalCount : undefined}
                     categoryPillsRef={categoryPillsRef}
                     onNavigateToStores={handleNavigateToAllStores}
+                    onNavigateToUber={handleNavigateToUber}
                     selectedStoreId={selectedStoreId}
                     onStoreSelect={handleNavigateToStore}
                     browseFilters={advancedFilters}
@@ -1229,10 +1274,11 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
             {/* Products View - Shown for both Marketplace and Stores space */}
             {(
               <>
-                {/* Desktop Filter Bar - View modes, categories - Only for Marketplace space */}
-                {isMarketplaceView && (
+                {/* Desktop Filter Bar - View modes, categories */}
+                {(isMarketplaceView || isUberView) && (
                   <div className="hidden sm:block">
                     <UnifiedFilterBar
+                      currentSpace={currentSpace}
                       viewMode={viewMode}
                       onViewModeChange={handleViewModeChange}
                       selectedLevel1={selectedLevel1}
@@ -1246,6 +1292,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       productCount={!searchQuery ? totalCount : undefined}
                       categoryPillsRef={categoryPillsRef}
                       onNavigateToStores={handleNavigateToAllStores}
+                      onNavigateToUber={handleNavigateToUber}
                       selectedStoreId={selectedStoreId}
                       onStoreSelect={handleNavigateToStore}
                       browseFilters={advancedFilters}
@@ -1254,8 +1301,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       onBrowseFiltersReset={handleAdvancedFiltersReset}
                       productGridLayout={productGridLayout}
                       onProductGridLayoutChange={setProductGridLayout}
-                      dynamicCategories={marketplaceCategories}
-                      categoriesLoading={loading}
+                      dynamicCategories={isUberView ? storesViewCategories : marketplaceCategories}
+                      categoriesLoading={isUberView ? storesViewCategoriesLoading : loading}
                       additionalFilters={
                         <AdvancedFilters
                           filters={advancedFilters}
@@ -1395,7 +1442,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                           }
                         >
                           {Array.from({
-                            length: isStoresView ? 12 : 36,
+                            length: isStoreInventoryView ? 12 : 36,
                           }).map((_, i) => (
                             <ProductCardSkeleton key={i} layout="grid" />
                           ))}
@@ -1425,7 +1472,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                                 setImageDiscoveryModal({
                                   isOpen: true,
                                   productId: canonicalId,
-                                  productName: (product as any).display_name || product.description,
+                                  productName: product.display_name || product.description,
                                 });
                               }}
                             />
@@ -1445,7 +1492,47 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
                   {!searchQuery && !loading && products.length === 0 && (
                     <div className="bg-white rounded-md border border-gray-200 p-12 text-center">
-                      {isStoresView ? (
+                      {isUberView ? (
+                        <>
+                          <Image
+                            src="/uber.png"
+                            alt="Uber"
+                            width={92}
+                            height={36}
+                            className="mx-auto mb-5 h-7 w-auto opacity-40"
+                            unoptimized
+                          />
+                          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                            No Uber delivery products right now
+                          </h3>
+                          <p className="text-gray-600 max-w-md mx-auto mb-6">
+                            {selectedLevel1
+                              ? `No Uber-eligible ${selectedLevel1.toLowerCase()} products are visible right now. Try a different category or clear filters.`
+                              : "Bike-store products marked for Uber delivery will appear here once they are available."}
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-3">
+                            {selectedLevel1 && (
+                              <Button
+                                onClick={() => {
+                                  setSelectedLevel1(null);
+                                  setSelectedLevel2(null);
+                                  setSelectedLevel3(null);
+                                }}
+                                variant="outline"
+                                className="rounded-md"
+                              >
+                                Clear filters
+                              </Button>
+                            )}
+                            <Button
+                              onClick={() => setSpace("stores")}
+                              className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
+                            >
+                              Browse bike stores
+                            </Button>
+                          </div>
+                        </>
+                      ) : isStoresView ? (
                         <>
                           <StoreIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                           <h3 className="text-xl font-semibold text-gray-900 mb-2">
@@ -1567,4 +1654,3 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     </>
   );
 }
-

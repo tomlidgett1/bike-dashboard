@@ -35,6 +35,49 @@ const FAST_FIELDS = `
   pickup_location
 `
 
+interface InitialMarketplaceProductRow {
+  id: string
+  canonical_product_id: string | null
+  resolved_image_id: string | null
+  resolved_image_source: string | null
+  resolved_external_url: string | null
+  resolved_cloudinary_url: string | null
+  resolved_cloudinary_public_id: string | null
+  display_name: string | null
+  description: string | null
+  price: string | number | null
+  discount_percent: string | number | null
+  discount_active: boolean | null
+  discount_ends_at: string | null
+  sale_price: string | number | null
+  marketplace_category: string | null
+  marketplace_subcategory: string | null
+  marketplace_level_3_category: string | null
+  qoh: number | null
+  created_at: string | null
+  user_id: string | null
+  listing_type: MarketplaceProduct['listing_type'] | null
+  listing_status: string | null
+  model_year: string | null
+  condition_rating: MarketplaceProduct['condition_rating'] | null
+  pickup_location: string | null
+}
+
+interface InitialMarketplaceUserRow {
+  user_id: string
+  business_name: string | null
+  logo_url: string | null
+  account_type: string | null
+  first_name: string | null
+  last_name: string | null
+}
+
+function numberFromDb(value: string | number | null): number {
+  if (typeof value === 'number') return value
+  if (typeof value === 'string') return parseFloat(value) || 0
+  return 0
+}
+
 export interface InitialMarketplacePagination {
   page: number
   pageSize: number
@@ -75,20 +118,22 @@ export async function fetchInitialMarketplaceProducts(): Promise<InitialMarketpl
       .range(0, MARKETPLACE_INITIAL_PAGE_SIZE - 1)
 
     if (error || !data) return EMPTY
+    const rows = data as InitialMarketplaceProductRow[]
 
     // Enrich with seller info in parallel — same pattern as the products API route
-    const userIds = [...new Set(data.map((p: any) => p.user_id).filter(Boolean))]
+    const userIds = [...new Set(rows.map((p) => p.user_id).filter((id): id is string => Boolean(id)))]
     const { data: usersData } = userIds.length > 0
       ? await supabase
           .from('users')
           .select('user_id, business_name, logo_url, account_type, first_name, last_name')
           .in('user_id', userIds)
-      : { data: [] as any[] }
+      : { data: [] as InitialMarketplaceUserRow[] }
 
-    const usersById = new Map((usersData ?? []).map((u: any) => [u.user_id, u]))
+    const users = (usersData ?? []) as InitialMarketplaceUserRow[]
+    const usersById = new Map(users.map((u) => [u.user_id, u]))
 
-    const products: MarketplaceProduct[] = data.map((product: any) => {
-      const user = usersById.get(product.user_id)
+    const products: MarketplaceProduct[] = rows.map((product) => {
+      const user = product.user_id ? usersById.get(product.user_id) : null
       // Normalise hero PIDs to the current HERO_NORMALIZE_TRANSFORM.
       const effectivePublicId = toCurrentHeroPublicId(
         product.resolved_cloudinary_public_id,
@@ -111,19 +156,19 @@ export async function fetchInitialMarketplaceProducts(): Promise<InitialMarketpl
       return {
         id: product.id,
         canonical_product_id: product.canonical_product_id,
-        description: product.description,
-        display_name: product.display_name,
-        price: parseFloat(product.price) || 0,
-        discount_percent: product.discount_percent != null ? parseFloat(product.discount_percent) : null,
+        description: product.description ?? '',
+        display_name: product.display_name ?? undefined,
+        price: numberFromDb(product.price),
+        discount_percent: product.discount_percent != null ? numberFromDb(product.discount_percent) : null,
         discount_active: product.discount_active ?? false,
         discount_ends_at: product.discount_ends_at ?? null,
-        sale_price: product.sale_price != null ? parseFloat(product.sale_price) : null,
-        marketplace_category: product.marketplace_category,
-        marketplace_subcategory: product.marketplace_subcategory,
+        sale_price: product.sale_price != null ? numberFromDb(product.sale_price) : null,
+        marketplace_category: product.marketplace_category ?? '',
+        marketplace_subcategory: product.marketplace_subcategory ?? '',
         primary_image_url: primaryImageUrl,
         image_variants: null,
         all_images: allImages,
-        images: null,
+        images: [],
         cloudinary_public_id: effectivePublicId,
         card_url: primaryImageUrl,
         mobile_card_url: resolved?.mobile_card_url ?? primaryImageUrl,
@@ -131,8 +176,8 @@ export async function fetchInitialMarketplaceProducts(): Promise<InitialMarketpl
         detail_url: resolved?.detail_url ?? resolved?.gallery_url ?? primaryImageUrl,
         qoh: product.qoh || 0,
         model_year: product.model_year,
-        created_at: product.created_at,
-        user_id: product.user_id,
+        created_at: product.created_at ?? '',
+        user_id: product.user_id ?? '',
         store_name: user?.business_name ?? 'Bike Store',
         store_logo_url: user?.logo_url ?? null,
         store_account_type: user?.account_type ?? null,

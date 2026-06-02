@@ -90,10 +90,12 @@ export async function GET(
         seller_contact_preference,
         seller_phone,
         seller_email,
+        uber_delivery_enabled,
         users!user_id (
           business_name,
           logo_url,
-          account_type
+          account_type,
+          bicycle_store
         ),
         canonical_products!canonical_product_id (
           id,
@@ -216,6 +218,7 @@ export async function GET(
       store_name: user?.business_name || 'Unknown Store',
       store_logo_url: user?.logo_url || null,
       store_account_type: user?.account_type || null,
+      store_bicycle_store: user?.bicycle_store ?? null,
     };
 
     const loadTime = Date.now() - startTime;
@@ -237,4 +240,3 @@ export async function GET(
     );
   }
 }
-

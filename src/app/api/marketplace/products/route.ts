@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
     const lsCategory = searchParams.get('lsCategory'); // Filter store inventory by Lightspeed category_name
     const condition = searchParams.get('condition'); // Filter by condition rating
     const brand = searchParams.get('brand'); // Filter by brand name
+    const uberOnly = searchParams.get('uberOnly') === 'true';
     const excludeBicycleStores = searchParams.get('excludeBicycleStores') === 'true';
     const sortBy = searchParams.get('sortBy') || 'newest';
     const page = parseInt(searchParams.get('page') || '1');
@@ -77,6 +78,7 @@ export async function GET(request: NextRequest) {
         listing_type,
         listing_source,
         listing_status,
+        uber_delivery_enabled,
         model_year,
         condition_rating,
         pickup_location
@@ -129,8 +131,13 @@ export async function GET(request: NextRequest) {
       query = query.gte('created_at', createdAfter);
     }
 
+    if (uberOnly) {
+      query = query.eq('uber_delivery_enabled', true);
+    }
+
     // Apply listing type filter
-    if (listingType === 'store_inventory') {
+    const requiresVerifiedStoreProducts = listingType === 'store_inventory' || uberOnly;
+    if (requiresVerifiedStoreProducts) {
       // Shop inventory is identified by verified seller, not only listing_type
       // (Lightspeed sync historically left listing_type NULL).
       const { data: storeUsers, error: storeUsersError } = await supabase
@@ -164,7 +171,9 @@ export async function GET(request: NextRequest) {
       query = query
         .in('user_id', storeUserIds)
         .or('listing_type.eq.store_inventory,listing_type.is.null');
-      console.log(`🏪 [FILTER] Bike stores: ${storeUserIds.length} verified sellers`);
+      console.log(`🏪 [FILTER] Bike stores: ${storeUserIds.length} verified sellers`, {
+        uberOnly,
+      });
     } else if (listingType) {
       query = query.eq('listing_type', listingType);
     }
@@ -270,7 +279,7 @@ export async function GET(request: NextRequest) {
     const { data: usersData } = userIds.length > 0
       ? await supabase
           .from('users')
-          .select('user_id, business_name, logo_url, account_type, first_name, last_name')
+          .select('user_id, business_name, logo_url, account_type, bicycle_store, first_name, last_name')
           .in('user_id', userIds)
       : { data: [] as any[] };
 
@@ -343,7 +352,7 @@ export async function GET(request: NextRequest) {
         primary_image_url: primaryImageUrl,
         image_variants: null, // Only needed on detail page
         all_images: allImages,
-        images: null,
+        images: [],
         cloudinary_public_id: effectivePublicId,
         card_url: primaryImageUrl,
         mobile_card_url: resolved?.mobile_card_url || primaryImageUrl,
@@ -356,11 +365,13 @@ export async function GET(request: NextRequest) {
         store_name: user?.business_name || 'Bike Store',
         store_logo_url: user?.logo_url || null,
         store_account_type: user?.account_type || null,
+        store_bicycle_store: user?.bicycle_store ?? null,
         first_name: user?.first_name || null,
         last_name: user?.last_name || null,
         listing_type: product.listing_type,
         listing_source: product.listing_source,
         listing_status: product.listing_status,
+        uber_delivery_enabled: product.uber_delivery_enabled ?? false,
         condition_rating: product.condition_rating || null,
         pickup_location: product.pickup_location || null,
       } as MarketplaceProduct;
@@ -405,4 +416,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

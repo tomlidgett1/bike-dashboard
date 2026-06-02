@@ -78,6 +78,7 @@ export interface UserProfile {
   opening_hours?: OpeningHours
   account_type: string
   bicycle_store: boolean
+  uber_notification_phones?: string[]
   preferences: UserPreferences
   onboarding_completed: boolean
   email_notifications: boolean
@@ -147,6 +148,7 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
             logo_url: getGooglePictureFromUser(user),
             account_type: 'individual',
             bicycle_store: false,
+            uber_notification_phones: [],
             preferences: {},
             onboarding_completed: false,
             email_notifications: true,
@@ -193,12 +195,14 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
         logo_url: serverProfile.logo_url || googlePicture || undefined,
         account_type: accountType,
         bicycle_store: serverProfile.bicycle_store ?? false,
+        uber_notification_phones: serverProfile.uber_notification_phones ?? [],
         preferences: {},
         onboarding_completed: false,
         email_notifications: serverProfile.email_notifications ?? true,
         order_alerts: serverProfile.order_alerts ?? true,
         inventory_alerts: serverProfile.inventory_alerts ?? true,
         marketing_emails: serverProfile.marketing_emails ?? false,
+        shipping_address: serverProfile.shipping_address ?? null,
       })
       setInitializedFromServer(true)
       // DON'T call fetchFullProfile() - server data is sufficient for display
@@ -306,9 +310,11 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
       setProfile(result.data)
       setIsFirstTime(false)
       return { success: true, data: result.data }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving profile:', error)
-      const errorMessage = error?.message || 'Failed to save profile. Please try again.'
+      const errorMessage = error instanceof Error
+        ? error.message
+        : 'Failed to save profile. Please try again.'
       return { success: false, error: errorMessage }
     } finally {
       setSaving(false)
@@ -338,4 +344,3 @@ export function useUserProfile() {
   }
   return context
 }
-

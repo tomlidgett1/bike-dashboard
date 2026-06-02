@@ -8,6 +8,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { useUserProfile } from "@/lib/hooks/use-user-profile";
 
 // ============================================================
 // Types
@@ -27,6 +28,8 @@ interface MobileDeliverySheetProps {
   isOpen: boolean;
   onClose: () => void;
   productId: string;
+  sellerId: string;
+  uberDeliveryEligible?: boolean;
   productName: string;
   productPrice: number;
   productImage?: string | null;
@@ -47,11 +50,38 @@ interface AddressData {
   country: string;
 }
 
+interface SavedShippingAddress extends AddressData {
+  name?: string;
+  phone?: string;
+}
+
 interface UberEligibility {
   eligible: boolean;
   distance: number | null;
   message?: string;
   checking: boolean;
+}
+
+const EMPTY_ADDRESS: AddressData = {
+  line1: "",
+  line2: "",
+  city: "",
+  state: "",
+  postal_code: "",
+  country: "AU",
+};
+
+function addressFromSavedShippingAddress(saved: SavedShippingAddress | null | undefined): AddressData {
+  if (!saved) return { ...EMPTY_ADDRESS };
+
+  return {
+    line1: saved.line1 || "",
+    line2: saved.line2 || "",
+    city: saved.city || "",
+    state: saved.state || "",
+    postal_code: saved.postal_code || "",
+    country: saved.country || "AU",
+  };
 }
 
 // Delivery fees
@@ -76,6 +106,8 @@ export function MobileDeliverySheet({
   isOpen,
   onClose,
   productId,
+  sellerId,
+  uberDeliveryEligible = false,
   productName,
   productPrice,
   productImage,
@@ -86,18 +118,16 @@ export function MobileDeliverySheet({
   onCheckout,
   isLoading = false,
 }: MobileDeliverySheetProps) {
+  const { profile } = useUserProfile();
+  const savedAddress = React.useMemo(
+    () => addressFromSavedShippingAddress(profile?.shipping_address ?? null),
+    [profile?.shipping_address]
+  );
   const [currentStep, setCurrentStep] = React.useState<MobileStep>("address");
   const [selectedDelivery, setSelectedDelivery] = React.useState<DeliveryMethod>("auspost");
-  
+
   // Address form state
-  const [address, setAddress] = React.useState<AddressData>({
-    line1: "",
-    line2: "",
-    city: "",
-    state: "",
-    postal_code: "",
-    country: "AU",
-  });
+  const [address, setAddress] = React.useState<AddressData>(() => savedAddress);
 
   // Uber eligibility state
   const [uberEligibility, setUberEligibility] = React.useState<UberEligibility>({
@@ -116,14 +146,7 @@ export function MobileDeliverySheet({
     if (!isOpen) {
       setCurrentStep("address");
       setSelectedDelivery("auspost");
-      setAddress({
-        line1: "",
-        line2: "",
-        city: "",
-        state: "",
-        postal_code: "",
-        country: "AU",
-      });
+      setAddress(savedAddress);
       setUberEligibility({
         eligible: false,
         distance: null,
@@ -132,13 +155,19 @@ export function MobileDeliverySheet({
       });
       setApplicableVoucher(null);
     }
-  }, [isOpen]);
+  }, [isOpen, savedAddress]);
+
+  React.useEffect(() => {
+    if (isOpen && currentStep === "address") {
+      setAddress(savedAddress);
+    }
+  }, [isOpen, currentStep, savedAddress]);
 
   // Fetch voucher when sheet opens
   React.useEffect(() => {
     const fetchVoucher = async () => {
       if (!isOpen) return;
-      
+
       setVoucherLoading(true);
       try {
         const response = await fetch('/api/vouchers/check');
@@ -146,15 +175,15 @@ export function MobileDeliverySheet({
           setApplicableVoucher(null);
           return;
         }
-        
+
         const data = await response.json();
-        
+
         // Find an applicable voucher for this product price
         const productPriceCents = productPrice * 100;
         const applicable = data.activeVouchers?.find(
           (v: VoucherInfo) => v.min_purchase_cents <= productPriceCents
         );
-        
+
         if (applicable) {
           setApplicableVoucher(applicable);
         } else {
@@ -185,9 +214,9 @@ export function MobileDeliverySheet({
         },
       ];
     }
-    
+
     const options: DeliveryOption[] = [];
-    
+
     // Seller-defined shipping (if available)
     if (shippingAvailable) {
       options.push({
@@ -198,16 +227,16 @@ export function MobileDeliverySheet({
         available: true,
       });
     }
-    
+
     // Uber Express
     options.push({
       id: 'uber_express' as DeliveryMethod,
       label: 'Uber Express',
       description: 'Get it in 1 hour',
       cost: UBER_EXPRESS_FEE,
-      available: true,
+      available: uberDeliveryEligible,
     });
-    
+
     // Australia Post
     options.push({
       id: 'auspost' as DeliveryMethod,
@@ -216,7 +245,7 @@ export function MobileDeliverySheet({
       cost: AUSPOST_FEE,
       available: true,
     });
-    
+
     // Pickup option
     if (pickupLocation) {
       options.push({
@@ -227,31 +256,42 @@ export function MobileDeliverySheet({
         available: true,
       });
     }
-    
+
     return options;
-  }, [pickupLocation, shippingAvailable, shippingCost, pickupOnly]);
+  }, [pickupLocation, shippingAvailable, shippingCost, pickupOnly, uberDeliveryEligible]);
 
   // Calculate totals
   const selectedOption = deliveryOptions.find(o => o.id === selectedDelivery);
   const deliveryCost = selectedOption?.cost || 0;
   const buyerFee = productPrice * BUYER_FEE_RATE;
-  
+
   // Calculate voucher discount
-  const voucherDiscount = applicableVoucher 
-    ? Math.min(applicableVoucher.amount_cents / 100, productPrice) 
+  const voucherDiscount = applicableVoucher
+    ? Math.min(applicableVoucher.amount_cents / 100, productPrice)
     : 0;
-  
+
   const totalAmount = productPrice + deliveryCost + buyerFee - voucherDiscount;
 
   // Check if address is complete enough for validation
-  const isAddressComplete = address.line1.trim() !== "" && 
-    address.city.trim() !== "" && 
-    address.state.trim() !== "" && 
+  const isAddressComplete = address.line1.trim() !== "" &&
+    address.city.trim() !== "" &&
+    address.state.trim() !== "" &&
     address.postal_code.trim() !== "";
 
   // Check Uber eligibility
   const checkUberEligibility = async () => {
     if (!isAddressComplete) return;
+
+    if (!uberDeliveryEligible) {
+      setUberEligibility({
+        eligible: false,
+        distance: null,
+        message: "This product is not enabled for Uber Express.",
+        checking: false,
+      });
+      setSelectedDelivery("auspost");
+      return;
+    }
 
     setUberEligibility(prev => ({ ...prev, checking: true }));
 
@@ -259,7 +299,7 @@ export function MobileDeliverySheet({
       const response = await fetch("/api/delivery/check-eligibility", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify({ address, sellerId, productIds: [productId] }),
       });
 
       const data = await response.json();
@@ -312,8 +352,8 @@ export function MobileDeliverySheet({
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent 
-        side="bottom" 
+      <SheetContent
+        side="bottom"
         showCloseButton={false}
         className="rounded-t-2xl max-h-[90vh] flex flex-col p-0"
       >
@@ -487,7 +527,8 @@ export function MobileDeliverySheet({
               <div className="space-y-2">
                 {deliveryOptions.map((option) => {
                   const isUber = option.id === "uber_express";
-                  const isDisabled = isUber && !uberEligibility.eligible && !uberEligibility.checking;
+                  const isDisabled =
+                    !option.available || (isUber && !uberEligibility.eligible && !uberEligibility.checking);
                   const isAvailable = option.available && !isDisabled;
 
                   if (!option.available && !isUber) return null;
@@ -512,8 +553,8 @@ export function MobileDeliverySheet({
                         "flex h-10 w-10 items-center justify-center rounded-md flex-shrink-0",
                         isDisabled
                           ? "bg-gray-100"
-                          : selectedDelivery === option.id 
-                            ? "bg-gray-900" 
+                          : selectedDelivery === option.id
+                            ? "bg-gray-900"
                             : "bg-gray-100"
                       )}>
                         {option.id === "uber_express" && (
@@ -523,10 +564,10 @@ export function MobileDeliverySheet({
                             width={20}
                             height={20}
                             className={cn(
-                              isDisabled 
-                                ? "opacity-30" 
-                                : selectedDelivery === option.id 
-                                  ? "brightness-0 saturate-100" 
+                              isDisabled
+                                ? "opacity-30"
+                                : selectedDelivery === option.id
+                                  ? "brightness-0 saturate-100"
                                   : "opacity-60"
                             )}
                             style={!isDisabled && selectedDelivery === option.id ? { filter: "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)" } : {}}
@@ -553,12 +594,12 @@ export function MobileDeliverySheet({
                             {option.label}
                           </span>
                           {option.id === "uber_express" && (
-                            <Image 
-                              src="/uber.svg" 
-                              alt="Uber" 
-                              width={28} 
-                              height={10} 
-                              className={isDisabled ? "opacity-30" : "opacity-60"} 
+                            <Image
+                              src="/uber.png"
+                              alt="Uber"
+                              width={28}
+                              height={10}
+                              className={isDisabled ? "opacity-30" : "opacity-60"}
                             />
                           )}
                         </div>
@@ -566,8 +607,8 @@ export function MobileDeliverySheet({
                           "text-xs mt-0.5",
                           isDisabled ? "text-gray-400" : "text-gray-500"
                         )}>
-                          {isDisabled 
-                            ? "Only available within 10km of Ashburton Cycles" 
+                          {isDisabled
+                            ? (option.available ? "Only available within 10km of this store" : "Not enabled for this product")
                             : option.description}
                         </p>
                       </div>
@@ -596,16 +637,15 @@ export function MobileDeliverySheet({
               </div>
 
               {/* Ineligibility notice */}
-              {!uberEligibility.eligible && uberEligibility.distance !== null && !uberEligibility.checking && (
+              {!uberEligibility.eligible && !uberEligibility.checking && (uberEligibility.distance !== null || uberEligibility.message) && (
                 <div className="flex items-start gap-2 pt-1">
                   <AlertCircle className="h-3.5 w-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                   <div>
                     <p className="text-xs font-medium text-foreground">
-                      You&apos;re {uberEligibility.distance}km from Ashburton Cycles
+                      {uberEligibility.distance !== null ? `You're ${uberEligibility.distance}km from this store` : "Uber Express unavailable"}
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Uber Express is only available within 10km.
-                      Australia Post is available Australia-wide.
+                      {uberEligibility.message || "Australia Post is available Australia-wide."}
                     </p>
                   </div>
                 </div>

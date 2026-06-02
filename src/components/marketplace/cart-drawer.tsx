@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { useCart } from "@/components/providers/cart-provider";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
+import { useUserProfile } from "@/lib/hooks/use-user-profile";
 
 type DeliveryMethod = "uber_express" | "auspost" | "pickup";
 
@@ -60,6 +61,11 @@ interface AddressData {
   country: string;
 }
 
+interface SavedShippingAddress extends AddressData {
+  name?: string;
+  phone?: string;
+}
+
 interface UberEligibility {
   eligible: boolean;
   distance: number | null;
@@ -67,8 +73,30 @@ interface UberEligibility {
   checking: boolean;
 }
 
+const EMPTY_ADDRESS: AddressData = {
+  line1: "",
+  line2: "",
+  city: "",
+  state: "",
+  postal_code: "",
+  country: "AU",
+};
+
 const fmt = (v: number) =>
   `$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function addressFromSavedShippingAddress(saved: SavedShippingAddress | null | undefined): AddressData {
+  if (!saved) return { ...EMPTY_ADDRESS };
+
+  return {
+    line1: saved.line1 || "",
+    line2: saved.line2 || "",
+    city: saved.city || "",
+    state: saved.state || "",
+    postal_code: saved.postal_code || "",
+    country: saved.country || "AU",
+  };
+}
 
 type CartStep = "cart" | "address" | "delivery";
 
@@ -109,6 +137,11 @@ export function CartDrawer() {
   const cart = useCart();
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const { profile } = useUserProfile();
+  const savedAddress = React.useMemo(
+    () => addressFromSavedShippingAddress(profile?.shipping_address ?? null),
+    [profile?.shipping_address]
+  );
 
   // The drawer serves two modes off the same UI: the real (persisted) cart, and
   // a transient single-item "Buy Now". `active*` is whichever set is showing.
@@ -122,17 +155,13 @@ export function CartDrawer() {
     0
   );
   const activeSellerName = activeItems[0]?.sellerName ?? null;
+  const activeSellerId = activeItems[0]?.sellerId ?? null;
+  const cartUberEligible =
+    activeItems.length > 0 && activeItems.every((item) => item.uberDeliveryEligible === true);
 
   const [step, setStep] = React.useState<CartStep>("cart");
   const [selectedDelivery, setSelectedDelivery] = React.useState<DeliveryMethod>("auspost");
-  const [address, setAddress] = React.useState<AddressData>({
-    line1: "",
-    line2: "",
-    city: "",
-    state: "",
-    postal_code: "",
-    country: "AU",
-  });
+  const [address, setAddress] = React.useState<AddressData>(() => savedAddress);
   const [uberEligibility, setUberEligibility] = React.useState<UberEligibility>({
     eligible: false,
     distance: null,
@@ -147,11 +176,18 @@ export function CartDrawer() {
     if (!cart.isOpen) {
       setStep("cart");
       setSelectedDelivery("auspost");
+      setAddress(savedAddress);
       setUberEligibility({ eligible: false, distance: null, message: undefined, checking: false });
       setError(null);
       setIsRedirecting(false);
     }
-  }, [cart.isOpen]);
+  }, [cart.isOpen, savedAddress]);
+
+  React.useEffect(() => {
+    if (cart.isOpen && step === "cart") {
+      setAddress(savedAddress);
+    }
+  }, [cart.isOpen, savedAddress, step]);
 
   // If the active set empties mid-flow, return to the list.
   React.useEffect(() => {
@@ -175,12 +211,28 @@ export function CartDrawer() {
 
   const checkUberEligibility = async () => {
     if (!isAddressComplete) return;
+
+    if (!cartUberEligible) {
+      setUberEligibility({
+        eligible: false,
+        distance: null,
+        message: "Every item in the cart must be enabled for Uber Express.",
+        checking: false,
+      });
+      setSelectedDelivery("auspost");
+      return;
+    }
+
     setUberEligibility((p) => ({ ...p, checking: true }));
     try {
       const res = await fetch("/api/delivery/check-eligibility", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify({
+          address,
+          sellerId: activeSellerId,
+          productIds: activeItems.map((item) => item.productId),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -223,6 +275,7 @@ export function CartDrawer() {
         body: JSON.stringify({
           items: activeItems.map((i) => ({ productId: i.productId, quantity: i.quantity })),
           deliveryMethod: selectedDelivery,
+          shippingAddress: selectedDelivery === "pickup" ? undefined : address,
         }),
       });
       const data = await res.json();
@@ -537,7 +590,9 @@ export function CartDrawer() {
               <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
                 {deliveryOptions.map((option) => {
                   const isUber = option.id === "uber_express";
-                  const isDisabled = isUber && !uberEligibility.eligible && !uberEligibility.checking;
+                  const isDisabled =
+                    isUber &&
+                    (!cartUberEligible || (!uberEligibility.eligible && !uberEligibility.checking));
                   const isAvailable = !isDisabled;
                   return (
                     <button
@@ -571,7 +626,11 @@ export function CartDrawer() {
                           {option.label}
                         </span>
                         <p className={cn("text-xs mt-0.5", isDisabled ? "text-gray-400" : "text-gray-500")}>
-                          {isDisabled ? "Only available within 10km of Ashburton Cycles" : option.description}
+                          {isDisabled
+                            ? cartUberEligible
+                              ? "Only available within 10km of this store"
+                              : "Every cart item must be Uber enabled"
+                            : option.description}
                         </p>
                       </div>
                       <span className={cn("text-sm font-bold flex-shrink-0", isDisabled ? "text-gray-400" : "text-gray-900")}>
@@ -586,12 +645,13 @@ export function CartDrawer() {
                   );
                 })}
 
-                {!uberEligibility.eligible && uberEligibility.distance !== null && !uberEligibility.checking && (
+                {!uberEligibility.eligible && (uberEligibility.distance !== null || uberEligibility.message) && !uberEligibility.checking && (
                   <div className="flex items-start gap-2 pt-1">
                     <AlertCircle className="h-3.5 w-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                     <p className="text-xs text-muted-foreground">
-                      You&apos;re {uberEligibility.distance}km from Ashburton Cycles. Uber Express is only available
-                      within 10km — Australia Post is available Australia-wide.
+                      {uberEligibility.message ||
+                        `You're ${uberEligibility.distance}km from this store. Uber Express is only available within 10km.`}{" "}
+                      Australia Post is available Australia-wide.
                     </p>
                   </div>
                 )}

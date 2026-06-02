@@ -88,7 +88,7 @@ function transformProduct(product: any) {
     store_name: product.store_name || 'Unknown Store',
     store_logo_url: product.store_logo_url || null,
     listing_type: product.listing_type,
-    images: null,
+    images: [],
     created_at: product.created_at,
   };
 }
@@ -305,4 +305,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

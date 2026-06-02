@@ -25,6 +25,8 @@ export interface CartItem {
   price: number;
   sellerId: string;
   sellerName: string;
+  /** Snapshot used only to guide checkout UI. Re-validated server-side. */
+  uberDeliveryEligible?: boolean;
   /** Units of this product in the cart (>= 1). */
   quantity: number;
   /**

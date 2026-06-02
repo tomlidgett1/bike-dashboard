@@ -144,6 +144,7 @@ export async function GET(
         user_id,
         listing_type,
         listing_source,
+        uber_delivery_enabled,
         lightspeed_category_id,
         canonical_product_id,
         resolved_image_id,
@@ -205,6 +206,8 @@ export async function GET(
         detail_url: resolved?.detail_url || resolved?.gallery_url || primaryImageUrl,
         store_name: storeUser.business_name,
         store_logo_url: storeUser.logo_url,
+        store_account_type: 'bicycle_store',
+        store_bicycle_store: true,
         store_id: storeId,
         category: product.category_name,
         qoh: product.qoh,
@@ -212,6 +215,7 @@ export async function GET(
         created_at: product.created_at,
         user_id: product.user_id,
         listing_type: 'store_inventory' as const,
+        uber_delivery_enabled: product.uber_delivery_enabled ?? false,
       };
     };
 
@@ -444,4 +448,3 @@ export async function PATCH(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-

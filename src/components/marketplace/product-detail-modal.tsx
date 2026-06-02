@@ -33,11 +33,13 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
   const [isLiked, setIsLiked] = React.useState(false);
   const [logoError, setLogoError] = React.useState(false);
+  const [openedAtMs, setOpenedAtMs] = React.useState<number | null>(null);
 
   // Reset state when modal opens/closes
   React.useEffect(() => {
     if (isOpen) {
       setCurrentImageIndex(0);
+      setOpenedAtMs(Date.now());
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
@@ -59,22 +61,30 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
-  if (!product) return null;
-
   // Get all available images
   const images = React.useMemo(() => {
+    if (!product) return [];
+
     console.log('🖼️ [MODAL IMAGE DEBUG] Product:', product.id);
     console.log('🖼️ [MODAL IMAGE DEBUG] listing_type:', product.listing_type);
-    console.log('🖼️ [MODAL IMAGE DEBUG] images field:', (product as any).images);
+    console.log('🖼️ [MODAL IMAGE DEBUG] images field:', product.images);
     console.log('🖼️ [MODAL IMAGE DEBUG] all_images:', product.all_images);
     console.log('🖼️ [MODAL IMAGE DEBUG] primary_image_url:', product.primary_image_url);
     
     const imgs: string[] = [];
     
     // For private listings with images array
-    if (product.listing_type === 'private_listing' && Array.isArray((product as any).images)) {
-      const listingImages = (product as any).images as Array<{ url: string; order: number }>;
-      const filtered = listingImages
+    if (product.listing_type === 'private_listing' && Array.isArray(product.images)) {
+      const filtered = product.images
+        .map((image) => {
+          const url = typeof image.url === 'string' ? image.url : null;
+          const order = typeof image.order === 'number'
+            ? image.order
+            : Number(image.order ?? 0) || 0;
+
+          return url ? { url, order } : null;
+        })
+        .filter((image): image is { url: string; order: number } => image !== null)
         .sort((a, b) => a.order - b.order)
         .map(img => img.url)
         .filter(url => url && !url.startsWith('blob:')); // Filter out blob URLs
@@ -102,11 +112,19 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
     return imgs.length > 0 ? imgs : [];
   }, [product]);
 
+  const productTitle = product?.display_name || product?.description || '';
+  const publishedAt = product?.published_at ?? null;
+  const listingAge = publishedAt && openedAtMs !== null
+    ? Math.floor((openedAtMs - new Date(publishedAt).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  if (!product) return null;
+
   const handleShare = async () => {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: (product as any).display_name || product.description,
+          title: productTitle,
           text: `Check out this ${product.marketplace_category} - $${product.price}`,
           url: window.location.href,
         });
@@ -129,11 +147,6 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
   const hasTrustBadges = 
     (product.service_history && product.service_history.length >= 2) ||
     (images.length >= 8);
-
-  // Get listing age
-  const listingAge = product.published_at 
-    ? Math.floor((Date.now() - new Date(product.published_at).getTime()) / (1000 * 60 * 60 * 24))
-    : null;
 
   return (
     <AnimatePresence>
@@ -175,7 +188,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                   <div className="bg-white p-6 lg:p-8 border-r border-gray-200">
                     <EnhancedImageGallery
                       images={images}
-                      productName={(product as any).display_name || product.description}
+                      productName={productTitle}
                       currentIndex={currentImageIndex}
                       onIndexChange={setCurrentImageIndex}
                       onLikeToggle={() => setIsLiked(!isLiked)}
@@ -232,7 +245,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                       {/* Title & Description & Price */}
                       <div className="mb-4 space-y-3">
                         <h1 className="text-xl lg:text-2xl font-bold text-gray-900 line-clamp-2 leading-tight">
-                          {(product as any).display_name || product.description}
+                          {productTitle}
                         </h1>
                         
                         {/* Product Description */}
@@ -245,11 +258,11 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                         )}
 
                         {/* Seller Notes */}
-                        {(product as any).seller_notes && (
+                        {product.seller_notes && (
                           <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl">
                             <h4 className="text-xs font-semibold text-gray-600 mb-1.5">Seller Notes</h4>
                             <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                              {(product as any).seller_notes}
+                              {product.seller_notes}
                             </p>
                           </div>
                         )}
@@ -281,7 +294,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                           <div className="flex items-center gap-1.5 flex-shrink-0">
                             <span className="text-[10px] text-white/50">via</span>
                             <Image
-                              src="/uber.svg"
+                              src="/uber.png"
                               alt="Uber"
                               width={36}
                               height={14}
@@ -296,7 +309,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                         <div className="flex-1">
                           <ProductInquiryButton
                             productId={product.id}
-                            productName={(product as any).display_name || product.description}
+                            productName={productTitle}
                             sellerId={product.user_id}
                             sellerName={product.store_name}
                             productImage={product.all_images?.[0] || product.primary_image_url || null}

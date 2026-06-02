@@ -85,7 +85,7 @@ export function CheckoutSheet({
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [currentStep, setCurrentStep] = React.useState<CheckoutStep>("address"); // Start with address
-  
+
   // Uber eligibility state
   const [uberEligibility, setUberEligibility] = React.useState<UberEligibility>({
     eligible: false,
@@ -93,7 +93,7 @@ export function CheckoutSheet({
     message: undefined,
     checking: false,
   });
-  
+
   // Shipping details captured from address step
   const [shippingDetails, setShippingDetails] = React.useState<{
     name: string;
@@ -107,7 +107,7 @@ export function CheckoutSheet({
       country: string;
     };
   } | null>(null);
-  
+
   // Voucher state - captures any applicable voucher from the API
   const [appliedVoucher, setAppliedVoucher] = React.useState<VoucherInfo | null>(null);
 
@@ -160,7 +160,7 @@ export function CheckoutSheet({
       setPaymentIntentId(data.paymentIntentId);
       setDeliveryOptions(data.deliveryOptions);
       setBreakdown(data.breakdown);
-      
+
       // Capture voucher info if present
       if (data.voucher) {
         setAppliedVoucher(data.voucher);
@@ -173,7 +173,17 @@ export function CheckoutSheet({
     }
   };
 
-  const handleDeliveryChange = async (method: DeliveryMethod) => {
+  const handleDeliveryChange = async (
+    method: DeliveryMethod,
+    addressForValidation?: {
+      line1: string;
+      line2?: string;
+      city: string;
+      state: string;
+      postal_code: string;
+      country: string;
+    }
+  ) => {
     if (method === selectedDelivery || !paymentIntentId) return;
 
     // Don't allow selecting Uber if not eligible
@@ -192,6 +202,7 @@ export function CheckoutSheet({
           paymentIntentId,
           productId,
           deliveryMethod: method,
+          shippingAddress: addressForValidation,
         }),
       });
 
@@ -202,7 +213,7 @@ export function CheckoutSheet({
       }
 
       setBreakdown(data.breakdown);
-      
+
       // Update voucher info if present
       if (data.voucher) {
         setAppliedVoucher(data.voucher);
@@ -227,10 +238,21 @@ export function CheckoutSheet({
     setUberEligibility(prev => ({ ...prev, checking: true }));
 
     try {
+      const uberOption = deliveryOptions.find((option) => option.id === "uber_express");
+      if (!uberOption?.available) {
+        setUberEligibility({
+          eligible: false,
+          distance: null,
+          message: "This product is not enabled for Uber Express.",
+          checking: false,
+        });
+        return;
+      }
+
       const response = await fetch("/api/delivery/check-eligibility", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify({ address, sellerId, productIds: [productId] }),
       });
 
       const data = await response.json();
@@ -259,7 +281,7 @@ export function CheckoutSheet({
         setSelectedDelivery("uber_express");
         // Update payment intent with new delivery method
         if (paymentIntentId) {
-          handleDeliveryChange("uber_express");
+          handleDeliveryChange("uber_express", address);
         }
       }
     } catch (err) {
@@ -308,8 +330,8 @@ export function CheckoutSheet({
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent 
-        side="bottom" 
+      <SheetContent
+        side="bottom"
         showCloseButton={false}
         className="rounded-t-2xl max-h-[92vh] flex flex-col p-0"
       >
@@ -410,7 +432,17 @@ interface CheckoutStepsProps {
   productImage?: string | null;
   deliveryOptions: DeliveryOption[];
   selectedDelivery: DeliveryMethod;
-  onDeliveryChange: (method: DeliveryMethod) => void;
+  onDeliveryChange: (
+    method: DeliveryMethod,
+    addressForValidation?: {
+      line1: string;
+      line2?: string;
+      city: string;
+      state: string;
+      postal_code: string;
+      country: string;
+    }
+  ) => void;
   breakdown: PriceBreakdown | null;
   voucher: VoucherInfo | null;
   isUpdating: boolean;
@@ -558,7 +590,7 @@ function CheckoutSteps({
   const handleAddressChange = async (event: StripeAddressElementChangeEvent) => {
     console.log('[AddressElement] onChange:', { complete: event.complete, value: event.value });
     setAddressComplete(event.complete);
-    
+
     if (event.complete && event.value) {
       // Save the shipping details
       const details = {
@@ -724,7 +756,7 @@ function CheckoutSteps({
             {deliveryOptions.map((option) => {
               // Check if this is Uber and if it's available based on eligibility
               const isUber = option.id === "uber_express";
-              const isDisabled = isUber && !uberEligibility.eligible;
+              const isDisabled = !option.available || (isUber && !uberEligibility.eligible);
               const isAvailable = option.available && !isDisabled;
 
               if (!option.available && !isUber) return null;
@@ -733,7 +765,7 @@ function CheckoutSteps({
                 <button
                   key={option.id}
                   type="button"
-                  onClick={() => isAvailable && onDeliveryChange(option.id)}
+                  onClick={() => isAvailable && onDeliveryChange(option.id, shippingDetails?.address)}
                   disabled={isUpdating || isDisabled}
                   className={cn(
                     "w-full flex items-center gap-3 p-4 rounded-md border-2 transition-all text-left",
@@ -747,10 +779,10 @@ function CheckoutSteps({
                   {/* Icon */}
                   <div className={cn(
                     "flex h-10 w-10 items-center justify-center rounded-md flex-shrink-0",
-                    isDisabled 
+                    isDisabled
                       ? "bg-gray-100"
-                      : selectedDelivery === option.id 
-                        ? "bg-gray-900" 
+                      : selectedDelivery === option.id
+                        ? "bg-gray-900"
                         : "bg-gray-100"
                   )}>
                     {option.id === "uber_express" && (
@@ -760,10 +792,10 @@ function CheckoutSteps({
                         width={20}
                         height={20}
                         className={cn(
-                          isDisabled 
-                            ? "opacity-30" 
-                            : selectedDelivery === option.id 
-                              ? "brightness-0 saturate-100" 
+                          isDisabled
+                            ? "opacity-30"
+                            : selectedDelivery === option.id
+                              ? "brightness-0 saturate-100"
                               : "opacity-60"
                         )}
                         style={!isDisabled && selectedDelivery === option.id ? { filter: "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)" } : {}}
@@ -790,12 +822,12 @@ function CheckoutSteps({
                         {option.label}
                       </span>
                       {option.id === "uber_express" && (
-                        <Image 
-                          src="/uber.svg" 
-                          alt="Uber" 
-                          width={28} 
-                          height={10} 
-                          className={isDisabled ? "opacity-30" : "opacity-60"} 
+                        <Image
+                          src="/uber.png"
+                          alt="Uber"
+                          width={28}
+                          height={10}
+                          className={isDisabled ? "opacity-30" : "opacity-60"}
                         />
                       )}
                     </div>
@@ -803,8 +835,10 @@ function CheckoutSteps({
                       "text-xs mt-0.5",
                       isDisabled ? "text-gray-400" : "text-gray-500"
                     )}>
-                      {isDisabled 
-                        ? `Only available within 10km of Ashburton Cycles` 
+                      {isDisabled
+                        ? option.available
+                          ? `Only available within 10km of this store`
+                          : `Not enabled for this product`
                         : option.description}
                     </p>
                   </div>
@@ -833,17 +867,18 @@ function CheckoutSteps({
           </div>
 
           {/* Ineligibility notice */}
-          {!uberEligibility.eligible && uberEligibility.distance !== null && (
+          {!uberEligibility.eligible && (uberEligibility.distance !== null || uberEligibility.message) && (
             <div className="p-3">
               <div className="flex items-start gap-2">
                 <AlertCircle className="h-3.5 w-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-xs font-medium text-foreground">
-                    You&apos;re {uberEligibility.distance}km from Ashburton Cycles
+                    {uberEligibility.distance !== null
+                      ? `You're ${uberEligibility.distance}km from this store`
+                      : "Uber Express unavailable"}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Uber Express is only available for addresses within 10km.
-                    Australia Post shipping is available Australia-wide.
+                    {uberEligibility.message || "Australia Post shipping is available Australia-wide."}
                   </p>
                 </div>
               </div>
@@ -920,7 +955,7 @@ function CheckoutSteps({
             </div>
           </div>
         )}
-        
+
         {/* Order Summary */}
         <div className="space-y-1.5">
           <div className="flex justify-between">

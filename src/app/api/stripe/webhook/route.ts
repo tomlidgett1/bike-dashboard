@@ -29,6 +29,46 @@ function getServiceClient() {
   return createClient(supabaseUrl, supabaseServiceKey);
 }
 
+type CheckoutShippingAddress = {
+  line1?: string | null
+  line2?: string | null
+  city?: string | null
+  state?: string | null
+  postal_code?: string | null
+  country?: string | null
+}
+
+type CheckoutShippingDetails = {
+  name?: string | null
+  phone?: string | null
+  address?: CheckoutShippingAddress | null
+}
+
+type CheckoutSessionWithShipping = Stripe.Checkout.Session & {
+  shipping_details?: CheckoutShippingDetails | null
+  collected_information?: {
+    shipping_details?: CheckoutShippingDetails | null
+  } | null
+}
+
+type StoredShippingAddress = {
+  name?: string | null
+  phone?: string | null
+  line1?: string | null
+  line2?: string | null
+  city?: string | null
+  state?: string | null
+  postal_code?: string | null
+  country?: string | null
+}
+
+type ProductStockRow = {
+  id: string
+  listing_type?: string | null
+  qoh?: number | null
+  lightspeed_item_id?: string | null
+}
+
 // Disable body parsing - Stripe needs the raw body for signature verification
 export const runtime = 'nodejs';
 
@@ -227,6 +267,9 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     seller_id,
     item_price,
     shipping_cost,
+    delivery_method,
+    delivery_cost,
+    delivery_description,
     buyer_fee,
     total_amount,
     platform_fee,
@@ -234,7 +277,6 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     offer_id,
     voucher_id,
     voucher_discount,
-    voucher_discount_cents,
   } = metadata;
 
   // Log voucher info if present
@@ -289,12 +331,17 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   // Calculate funds release date (7 days from now)
   const fundsReleaseAt = new Date();
   fundsReleaseAt.setDate(fundsReleaseAt.getDate() + 7);
+  const orderShippingCost = parseOptionalMoney(shipping_cost ?? delivery_cost) ?? 0;
 
   // Extract shipping address from session
   // Use type assertion since Stripe's types may not include all fields
-  const sessionAny = session as any;
-  const shippingDetails = sessionAny.shipping_details || sessionAny.collected_information?.shipping_details;
+  const sessionWithShipping = session as CheckoutSessionWithShipping;
+  const shippingDetails = sessionWithShipping.shipping_details || sessionWithShipping.collected_information?.shipping_details;
   const customerDetails = session.customer_details;
+  const buyerMobile = checkoutMobileNumber(session, shippingDetails);
+  if (!buyerMobile) {
+    console.error('[Stripe Webhook] Checkout session completed without required mobile number:', session.id);
+  }
 
   // Shipping address ONLY — the address the buyer entered for delivery at
   // checkout. No billing fallback: a pickup order has no shipping address, so
@@ -304,7 +351,7 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   // Format shipping address as JSON
   const shippingAddress = addr ? {
     name: shippingDetails?.name || customerDetails?.name || '',
-    phone: customerDetails?.phone || '',
+    phone: buyerMobile || '',
     line1: addr.line1 || '',
     line2: addr.line2 || '',
     city: addr.city || '',
@@ -317,13 +364,13 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
 
   // Create purchase record with escrow fields
   // Note: Only include fields that exist in the database
-  const purchaseData: Record<string, any> = {
+  const purchaseData: Record<string, unknown> = {
     buyer_id,
     seller_id,
     product_id,
     order_number: orderNumber,
     item_price: parseFloat(item_price),
-    shipping_cost: parseFloat(shipping_cost || '0'),
+    shipping_cost: orderShippingCost,
     total_amount: parseFloat(total_amount),
     platform_fee: parseFloat(platform_fee),
     seller_payout_amount: parseFloat(seller_payout),
@@ -345,14 +392,18 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
   if (shippingAddress) {
     purchaseData.shipping_address = shippingAddress;
   }
-  if (customerDetails?.phone) {
-    purchaseData.buyer_phone = customerDetails.phone;
+  if (buyerMobile) {
+    purchaseData.buyer_phone = buyerMobile;
   }
   if (customerDetails?.email) {
     purchaseData.buyer_email = customerDetails.email;
   }
   if (buyer_fee) {
     purchaseData.buyer_fee = parseFloat(buyer_fee);
+  }
+  if (delivery_method) {
+    purchaseData.delivery_method = delivery_method;
+    purchaseData.delivery_description = delivery_description;
   }
   // Link to offer if this is an offer payment
   if (offer_id) {
@@ -370,16 +421,14 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
 
   console.log('[Stripe Webhook] Inserting purchase with data:', JSON.stringify(purchaseData, null, 2));
 
-  // Try to insert with all fields, fallback to core fields if new columns don't exist
-  let purchase: any;
-  let purchaseError: any;
-
   // First attempt with all fields
   const result1 = await supabase
     .from('purchases')
     .insert(purchaseData)
     .select()
     .single();
+  let purchase = result1.data as { id: string } | null;
+  let purchaseError = result1.error;
 
   if (result1.error) {
     console.log('[Stripe Webhook] First insert attempt failed, trying with core fields only');
@@ -392,7 +441,7 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
       product_id,
       order_number: orderNumber,
       item_price: parseFloat(item_price),
-      shipping_cost: parseFloat(shipping_cost || '0'),
+      shipping_cost: orderShippingCost,
       total_amount: parseFloat(total_amount),
       platform_fee: parseFloat(platform_fee),
       seller_payout_amount: parseFloat(seller_payout),
@@ -429,6 +478,9 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     console.error('[Stripe Webhook] Error details:', purchaseError.details);
     throw purchaseError;
   }
+  if (!purchase) {
+    throw new Error('[Stripe Webhook] Purchase insert returned no row');
+  }
 
   console.log('[Stripe Webhook] ✓ Purchase created:', purchase.id, orderNumber);
 
@@ -459,8 +511,18 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
       sellerId: seller_id,
       items: [{ lightspeedItemId: product.lightspeed_item_id, quantity: 1, unitPrice: parseFloat(item_price) }],
       orderNumber,
-      buyerName: shippingAddress?.name || customerDetails?.name || null,
+      buyerName: customerDetails?.name || shippingAddress?.name || null,
+      buyerEmail: customerDetails?.email || null,
+      buyerPhone: buyerMobile,
+      deliveryMethod: delivery_method || null,
+      deliveryDescription: delivery_description || null,
+      shippingName: shippingAddress?.name || null,
+      shippingPhone: shippingAddress?.phone || buyerMobile,
       shippingAddress: formatShippingAddressLine(shippingAddress),
+      shippingCost: orderShippingCost,
+      buyerFee: parseOptionalMoney(buyer_fee),
+      voucherDiscount: parseOptionalMoney(voucher_discount),
+      totalAmount: parseOptionalMoney(total_amount),
     });
     // Persist the LS workorder ID for cross-reference if the column exists.
     if (workorderId) {
@@ -597,9 +659,30 @@ async function createLightspeedYellowJerseyWorkorder(args: {
   items: Array<{ lightspeedItemId: string; quantity: number; unitPrice: number }>
   orderNumber: string
   buyerName?: string | null
+  buyerEmail?: string | null
+  buyerPhone?: string | null
+  deliveryMethod?: string | null
+  deliveryDescription?: string | null
+  shippingName?: string | null
+  shippingPhone?: string | null
   shippingAddress?: string | null
+  shippingCost?: number | null
+  buyerFee?: number | null
+  voucherDiscount?: number | null
+  totalAmount?: number | null
 }): Promise<string | null> {
   try {
+    console.log('[Stripe Webhook] Creating Lightspeed YELLOW JERSEY SALE workorder with product lines:', {
+      orderNumber: args.orderNumber,
+      sellerId: args.sellerId,
+      lineCount: args.items.length,
+      lines: args.items.map((item) => ({
+        lightspeedItemId: item.lightspeedItemId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      })),
+    })
+
     const client = new LightspeedClient(args.sellerId)
     const workorder = await client.createYellowJerseySaleWorkorder({
       items: args.items.map((it) => ({
@@ -609,7 +692,17 @@ async function createLightspeedYellowJerseyWorkorder(args: {
       })),
       orderNumber: args.orderNumber,
       buyerName: args.buyerName,
+      buyerEmail: args.buyerEmail,
+      buyerPhone: args.buyerPhone,
+      deliveryMethod: args.deliveryMethod,
+      deliveryDescription: args.deliveryDescription,
+      shippingName: args.shippingName,
+      shippingPhone: args.shippingPhone,
       shippingAddress: args.shippingAddress,
+      shippingCost: args.shippingCost,
+      buyerFee: args.buyerFee,
+      voucherDiscount: args.voucherDiscount,
+      totalAmount: args.totalAmount,
     })
     console.log(
       '[Stripe Webhook] ✓ Lightspeed YELLOW JERSEY SALE workorder created:',
@@ -629,7 +722,7 @@ async function createLightspeedYellowJerseyWorkorder(args: {
 async function maybeSaveShippingAddressToProfile(
   supabase: ReturnType<typeof getServiceClient>,
   buyerId: string,
-  shippingAddress: Record<string, any> | null
+  shippingAddress: StoredShippingAddress | null
 ): Promise<void> {
   if (!shippingAddress || !shippingAddress.line1) return;
 
@@ -654,10 +747,71 @@ async function maybeSaveShippingAddressToProfile(
 }
 
 // Format a stored shipping_address object into a single line for the workorder note.
-function formatShippingAddressLine(addr: Record<string, any> | null | undefined): string | null {
+function formatShippingAddressLine(addr: StoredShippingAddress | null | undefined): string | null {
   if (!addr) return null
-  const parts = [addr.line1, addr.line2, addr.city, addr.state, addr.postal_code, addr.country].filter(Boolean)
+  const parts = [addr.line1, addr.line2, addr.city, addr.state, addr.postal_code, addr.country].filter(
+    (part): part is string => typeof part === 'string' && part.trim().length > 0
+  )
   return parts.length ? parts.join(', ') : null
+}
+
+function parseOptionalMoney(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const amount = typeof value === 'number' ? value : parseFloat(value)
+  return Number.isFinite(amount) ? amount : null
+}
+
+function optionalText(value: string | null | undefined): string | null {
+  const text = value?.trim() ?? ''
+  return text || null
+}
+
+function checkoutMobileNumber(
+  session: Stripe.Checkout.Session,
+  shippingDetails: CheckoutShippingDetails | null | undefined
+): string | null {
+  return optionalText(session.customer_details?.phone) || optionalText(shippingDetails?.phone)
+}
+
+type BuyerProfile = {
+  name?: string | null
+  first_name?: string | null
+  last_name?: string | null
+  email?: string | null
+  phone?: string | null
+}
+
+async function fetchBuyerProfile(
+  supabase: ReturnType<typeof getServiceClient>,
+  buyerId: string
+): Promise<BuyerProfile | null> {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('name, first_name, last_name, email, phone')
+      .eq('user_id', buyerId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[Stripe Webhook] Could not fetch buyer profile for workorder:', error.message);
+      return null;
+    }
+
+    return data as BuyerProfile | null;
+  } catch (err) {
+    console.warn('[Stripe Webhook] Could not fetch buyer profile for workorder:', err);
+    return null;
+  }
+}
+
+function buyerNameFromProfile(profile: BuyerProfile | null): string | null {
+  const explicitName = profile?.name?.trim();
+  if (explicitName) return explicitName;
+
+  const first = profile?.first_name?.trim();
+  const last = profile?.last_name?.trim();
+  const fullName = [first, last].filter(Boolean).join(' ').trim();
+  return fullName || null;
 }
 
 // ============================================================
@@ -688,6 +842,7 @@ async function handleCartCheckoutComplete(
     delivery_cost,
     delivery_description,
     buyer_fee,
+    total_amount,
     voucher_id,
     voucher_discount,
   } = metadata;
@@ -732,16 +887,20 @@ async function handleCartCheckoutComplete(
   }
 
   // Shipping address applies to the whole order (single seller, single shipment)
-  const sessionAny = session as any;
-  const shippingDetails = sessionAny.shipping_details || sessionAny.collected_information?.shipping_details;
+  const sessionWithShipping = session as CheckoutSessionWithShipping;
+  const shippingDetails = sessionWithShipping.shipping_details || sessionWithShipping.collected_information?.shipping_details;
   const customerDetails = session.customer_details;
+  const buyerMobile = checkoutMobileNumber(session, shippingDetails);
+  if (!buyerMobile) {
+    console.error('[Stripe Webhook] Cart session completed without required mobile number:', session.id);
+  }
   // Shipping address ONLY — no billing fallback. A pickup order has no shipping
   // address, so shippingAddress stays null and the workorder note reads "Pickup".
   const addr = shippingDetails?.address;
   const shippingAddress = addr
     ? {
         name: shippingDetails?.name || customerDetails?.name || '',
-        phone: customerDetails?.phone || '',
+        phone: buyerMobile || '',
         line1: addr.line1 || '',
         line2: addr.line2 || '',
         city: addr.city || '',
@@ -773,10 +932,11 @@ async function handleCartCheckoutComplete(
       .select('id, listing_type, qoh, lightspeed_item_id, listing_source')
       .in('id', productIds);
     for (const r of stockRows || []) {
-      stockById.set(r.id, {
-        listingType: (r as any).listing_type ?? null,
-        qoh: typeof (r as any).qoh === 'number' ? (r as any).qoh : null,
-        lightspeedItemId: (r as any).lightspeed_item_id ?? null,
+      const row = r as ProductStockRow;
+      stockById.set(row.id, {
+        listingType: row.listing_type ?? null,
+        qoh: typeof row.qoh === 'number' ? row.qoh : null,
+        lightspeedItemId: row.lightspeed_item_id ?? null,
       });
     }
   }
@@ -813,7 +973,7 @@ async function handleCartCheckoutComplete(
     const rowTotal = Math.max(0, lineSubtotal + rowShipping + rowBuyerFee - rowVoucherDiscount);
     const orderNumber = `${orderBase}-${i + 1}`;
 
-    const purchaseData: Record<string, any> = {
+    const purchaseData: Record<string, unknown> = {
       buyer_id,
       seller_id,
       product_id: productId,
@@ -836,7 +996,7 @@ async function handleCartCheckoutComplete(
     };
 
     if (shippingAddress) purchaseData.shipping_address = shippingAddress;
-    if (customerDetails?.phone) purchaseData.buyer_phone = customerDetails.phone;
+    if (buyerMobile) purchaseData.buyer_phone = buyerMobile;
     if (customerDetails?.email) purchaseData.buyer_email = customerDetails.email;
     if (rowBuyerFee > 0) purchaseData.buyer_fee = rowBuyerFee;
     if (delivery_method && isFirst) {
@@ -850,7 +1010,7 @@ async function handleCartCheckoutComplete(
 
     // Resilient insert: full row first, then core fields if optional columns
     // (buyer_fee/delivery_*/voucher_*/shipping_address) don't exist yet.
-    let purchase: any;
+    let purchase: { id: string } | null = null;
     const result1 = await supabase.from('purchases').insert(purchaseData).select().single();
     if (result1.error) {
       console.log('[Stripe Webhook] Cart: full insert failed, retrying core fields:', result1.error.message);
@@ -882,11 +1042,15 @@ async function handleCartCheckoutComplete(
         console.error('[Stripe Webhook] Cart: core insert also failed for product:', productId, result2.error.message);
         continue; // Skip marking sold; leave for manual reconciliation
       }
-      purchase = result2.data;
+      purchase = result2.data as { id: string } | null;
     } else {
-      purchase = result1.data;
+      purchase = result1.data as { id: string } | null;
     }
 
+    if (!purchase) {
+      console.error('[Stripe Webhook] Cart: insert returned no purchase row for product:', productId);
+      continue;
+    }
     createdCount++;
     if (!firstPurchaseId) firstPurchaseId = purchase.id;
     console.log('[Stripe Webhook] Cart: ✓ purchase created:', purchase.id, orderNumber, 'product:', productId);
@@ -946,8 +1110,18 @@ async function handleCartCheckoutComplete(
         unitPrice: l.unitPrice,
       })),
       orderNumber: orderBase,
-      buyerName: shippingAddress?.name || customerDetails?.name || null,
+      buyerName: customerDetails?.name || shippingAddress?.name || null,
+      buyerEmail: customerDetails?.email || null,
+      buyerPhone: buyerMobile,
+      deliveryMethod: delivery_method || null,
+      deliveryDescription: delivery_description || null,
+      shippingName: shippingAddress?.name || null,
+      shippingPhone: shippingAddress?.phone || buyerMobile,
       shippingAddress: formatShippingAddressLine(shippingAddress),
+      shippingCost: deliveryCost,
+      buyerFee,
+      voucherDiscount,
+      totalAmount: parseOptionalMoney(total_amount),
     });
     if (workorderId) {
       const purchaseIds = lsWorkorderLines.map((l) => l.purchaseId);
@@ -1077,14 +1251,31 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
   const fundsReleaseAt = new Date();
   fundsReleaseAt.setDate(fundsReleaseAt.getDate() + 7);
 
+  const buyerProfile = await fetchBuyerProfile(supabase, buyer_id);
+  const piShipping = paymentIntent.shipping;
+  const piShippingAddress = piShipping?.address ? {
+    name: piShipping.name || '',
+    phone: piShipping.phone || '',
+    line1: piShipping.address.line1 || '',
+    line2: piShipping.address.line2 || '',
+    city: piShipping.address.city || '',
+    state: piShipping.address.state || '',
+    postal_code: piShipping.address.postal_code || '',
+    country: piShipping.address.country || '',
+  } : null;
+  const buyerName = buyerNameFromProfile(buyerProfile) || piShippingAddress?.name || null;
+  const buyerEmail = buyerProfile?.email?.trim() || null;
+  const buyerPhone = piShippingAddress?.phone || buyerProfile?.phone?.trim() || null;
+  const orderShippingCost = parseOptionalMoney(delivery_cost) ?? 0;
+
   // Create purchase record with delivery information
-  const purchaseData: Record<string, any> = {
+  const purchaseData: Record<string, unknown> = {
     buyer_id,
     seller_id,
     product_id,
     order_number: orderNumber,
     item_price: parseFloat(item_price),
-    shipping_cost: parseFloat(delivery_cost || '0'),
+    shipping_cost: orderShippingCost,
     total_amount: parseFloat(total_amount),
     platform_fee: parseFloat(platform_fee),
     seller_payout_amount: parseFloat(seller_payout),
@@ -1107,6 +1298,15 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
   if (buyer_fee) {
     purchaseData.buyer_fee = parseFloat(buyer_fee);
   }
+  if (piShippingAddress) {
+    purchaseData.shipping_address = piShippingAddress;
+  }
+  if (buyerPhone) {
+    purchaseData.buyer_phone = buyerPhone;
+  }
+  if (buyerEmail) {
+    purchaseData.buyer_email = buyerEmail;
+  }
   
   // Add voucher info if this purchase used a voucher
   if (voucher_id) {
@@ -1123,17 +1323,34 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
     .insert(purchaseData)
     .select()
     .single();
+  let purchaseRecord = purchase;
 
   if (purchaseError) {
     console.error('[Stripe Webhook] ✗ Failed to create purchase:', JSON.stringify(purchaseError, null, 2));
-    
-    // Try without delivery columns if they don't exist yet
-    delete purchaseData.delivery_method;
-    delete purchaseData.delivery_description;
-    
+
+    const coreData = {
+      buyer_id,
+      seller_id,
+      product_id,
+      order_number: orderNumber,
+      item_price: parseFloat(item_price),
+      shipping_cost: orderShippingCost,
+      total_amount: parseFloat(total_amount),
+      platform_fee: parseFloat(platform_fee),
+      seller_payout_amount: parseFloat(seller_payout),
+      stripe_payment_intent_id: paymentIntent.id,
+      status: 'paid',
+      payment_status: 'paid',
+      payment_method: 'stripe',
+      payment_date: new Date().toISOString(),
+      payout_status: 'pending',
+      funds_status: 'held',
+      funds_release_at: fundsReleaseAt.toISOString(),
+    };
+
     const { data: purchaseRetry, error: retryError } = await supabase
       .from('purchases')
-      .insert(purchaseData)
+      .insert(coreData)
       .select()
       .single();
     
@@ -1142,13 +1359,14 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
       throw retryError;
     }
     
+    purchaseRecord = purchaseRetry;
     console.log('[Stripe Webhook] ✓ Purchase created (retry):', purchaseRetry.id, orderNumber);
   } else {
     console.log('[Stripe Webhook] ✓ Purchase created:', purchase.id, orderNumber);
   }
 
   // Get the purchase ID (from either attempt)
-  const purchaseId = purchase?.id;
+  const purchaseId = purchaseRecord?.id;
 
   // Mark product as sold
   const { error: updateError } = await supabase
@@ -1176,6 +1394,18 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
       sellerId: seller_id,
       items: [{ lightspeedItemId: product.lightspeed_item_id, quantity: 1, unitPrice: parseFloat(item_price) }],
       orderNumber,
+      buyerName,
+      buyerEmail,
+      buyerPhone,
+      deliveryMethod: delivery_method || null,
+      deliveryDescription: delivery_description || null,
+      shippingName: piShippingAddress?.name || null,
+      shippingPhone: piShippingAddress?.phone || null,
+      shippingAddress: formatShippingAddressLine(piShippingAddress),
+      shippingCost: orderShippingCost,
+      buyerFee: parseOptionalMoney(buyer_fee),
+      voucherDiscount: parseOptionalMoney(voucher_discount),
+      totalAmount: parseOptionalMoney(total_amount),
     });
     if (workorderId && purchaseId) {
       await supabase
@@ -1213,17 +1443,6 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
   }
 
   // Save shipping address to buyer profile if not already set
-  const piShipping = paymentIntent.shipping;
-  const piShippingAddress = piShipping?.address ? {
-    name: piShipping.name || '',
-    phone: piShipping.phone || '',
-    line1: piShipping.address.line1 || '',
-    line2: piShipping.address.line2 || '',
-    city: piShipping.address.city || '',
-    state: piShipping.address.state || '',
-    postal_code: piShipping.address.postal_code || '',
-    country: piShipping.address.country || '',
-  } : null;
   await maybeSaveShippingAddressToProfile(supabase, buyer_id, piShippingAddress);
 
   // SMS notification is now handled on the success page
@@ -1270,4 +1489,3 @@ async function handleAccountUpdated(account: Stripe.Account) {
     console.log('[Stripe Webhook] User updated with status:', status);
   }
 }
-

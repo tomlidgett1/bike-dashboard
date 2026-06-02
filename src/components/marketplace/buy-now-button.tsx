@@ -22,12 +22,22 @@ import { MobileDeliverySheet, type DeliveryMethod } from './mobile-delivery-shee
 // Types
 // ============================================================
 
+interface AddressData {
+  line1: string;
+  line2?: string;
+  city: string;
+  state: string;
+  postal_code: string;
+  country: string;
+}
+
 interface BuyNowButtonProps {
   productId: string;
   productName: string;
   productPrice: number;
   sellerId: string;
   sellerName?: string;
+  uberDeliveryEligible?: boolean;
   productImage?: string | null;
   /** Max purchasable units (stock on hand). 1 for unique listings; qoh for shop inventory. */
   maxQuantity?: number;
@@ -52,6 +62,7 @@ export function BuyNowButton({
   productPrice,
   sellerId,
   sellerName,
+  uberDeliveryEligible = false,
   productImage,
   maxQuantity = 1,
   shippingAvailable = false,
@@ -112,13 +123,14 @@ export function BuyNowButton({
       price: productPrice,
       sellerId,
       sellerName: sellerName ?? '',
+      uberDeliveryEligible,
       quantity: 1,
       maxQuantity,
     });
   };
 
   // Handle mobile checkout after delivery selection
-  const handleMobileCheckout = async (deliveryMethod: DeliveryMethod) => {
+  const handleMobileCheckout = async (deliveryMethod: DeliveryMethod, address?: AddressData) => {
     setIsLoading(true);
     setError(null);
 
@@ -131,6 +143,7 @@ export function BuyNowButton({
         body: JSON.stringify({
           productId,
           deliveryMethod,
+          shippingAddress: deliveryMethod === 'pickup' ? undefined : address,
         }),
       });
 
@@ -218,6 +231,8 @@ export function BuyNowButton({
           setIsLoading(false);
         }}
         productId={productId}
+        sellerId={sellerId}
+        uberDeliveryEligible={uberDeliveryEligible}
         productName={productName}
         productPrice={productPrice}
         productImage={productImage}

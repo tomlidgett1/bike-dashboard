@@ -8,17 +8,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getStripe, calculatePlatformFee, calculateSellerPayout, calculateBuyerFee } from '@/lib/stripe';
 import { resolveLivePrice } from '@/lib/marketplace/pricing';
+import { UBER_EXPRESS_FEE, UBER_RADIUS_KM, validateUberDelivery } from '@/lib/uber-delivery';
 
 // Delivery fees
-const UBER_EXPRESS_FEE = 15;
 const AUSPOST_FEE = 12;
-
-// Ashburton Cycles location for Uber eligibility
-const ASHBURTON_CYCLES = {
-  lat: -37.8673,
-  lng: 145.0824,
-};
-const UBER_RADIUS_KM = 10;
 
 export type DeliveryMethod = 'uber_express' | 'auspost' | 'pickup' | 'shipping';
 
@@ -32,122 +25,6 @@ interface CreatePaymentIntentRequest {
     state: string;
     postal_code: string;
     country: string;
-  };
-}
-
-// ============================================================
-// Haversine Distance Calculation
-// ============================================================
-
-function toRadians(degrees: number): number {
-  return degrees * (Math.PI / 180);
-}
-
-function calculateHaversineDistance(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number {
-  const R = 6371; // Earth's radius in km
-  const dLat = toRadians(lat2 - lat1);
-  const dLng = toRadians(lng2 - lng1);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) *
-      Math.cos(toRadians(lat2)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-// ============================================================
-// Geocode Address (for server-side validation)
-// ============================================================
-
-async function geocodeAddress(address: {
-  line1: string;
-  line2?: string;
-  city: string;
-  state: string;
-  postal_code: string;
-  country: string;
-}): Promise<{ lat: number; lng: number } | null> {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-
-  if (!apiKey) {
-    console.warn('[PaymentIntent] Google Maps API key not configured, skipping eligibility check');
-    return null;
-  }
-
-  const addressParts = [
-    address.line1,
-    address.line2,
-    address.city,
-    address.state,
-    address.postal_code,
-    address.country,
-  ].filter(Boolean);
-
-  const addressString = addressParts.join(', ');
-
-  try {
-    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
-    url.searchParams.set('address', addressString);
-    url.searchParams.set('key', apiKey);
-    url.searchParams.set('region', 'au');
-
-    const response = await fetch(url.toString());
-    const data = await response.json();
-
-    if (data.status === 'OK' && data.results.length > 0) {
-      return {
-        lat: data.results[0].geometry.location.lat,
-        lng: data.results[0].geometry.location.lng,
-      };
-    }
-
-    console.warn('[PaymentIntent] Geocoding failed:', data.status);
-    return null;
-  } catch (error) {
-    console.error('[PaymentIntent] Geocoding error:', error);
-    return null;
-  }
-}
-
-// ============================================================
-// Check Uber Eligibility
-// ============================================================
-
-async function checkUberEligibility(address: {
-  line1: string;
-  line2?: string;
-  city: string;
-  state: string;
-  postal_code: string;
-  country: string;
-}): Promise<{ eligible: boolean; distance: number | null }> {
-  const location = await geocodeAddress(address);
-
-  if (!location) {
-    // If geocoding fails, fail open (allow Uber)
-    console.warn('[PaymentIntent] Could not geocode address, allowing Uber delivery');
-    return { eligible: true, distance: null };
-  }
-
-  const distance = calculateHaversineDistance(
-    location.lat,
-    location.lng,
-    ASHBURTON_CYCLES.lat,
-    ASHBURTON_CYCLES.lng
-  );
-
-  return {
-    eligible: distance <= UBER_RADIUS_KM,
-    distance: Math.round(distance * 10) / 10,
   };
 }
 
@@ -198,7 +75,8 @@ export async function POST(request: NextRequest) {
         user_id,
         is_active,
         sold_at,
-        listing_status
+        listing_status,
+        uber_delivery_enabled
       `)
       .eq('id', productId)
       .single();
@@ -241,10 +119,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Server-side validation for Uber Express eligibility
-    // If user selected uber_express and provided an address, validate it
+    const uberAvailability = await validateUberDelivery(supabase, {
+      sellerId: product.user_id,
+      products: [product],
+      requireAddress: false,
+    });
+
     if (deliveryMethod === 'uber_express' && shippingAddress) {
-      const eligibility = await checkUberEligibility(shippingAddress);
+      const eligibility = await validateUberDelivery(supabase, {
+        sellerId: product.user_id,
+        products: [product],
+        shippingAddress,
+        requireAddress: true,
+      });
       
       if (!eligibility.eligible) {
         console.warn('[PaymentIntent] Uber delivery rejected - address outside 10km radius:', {
@@ -252,13 +139,21 @@ export async function POST(request: NextRequest) {
         });
         return NextResponse.json(
           { 
-            error: `Uber Express is only available within ${UBER_RADIUS_KM}km of Ashburton Cycles. Your address is ${eligibility.distance}km away. Please select Australia Post or Pickup.`,
+            error: eligibility.reason || `Uber Express is only available within ${UBER_RADIUS_KM}km of this store. Please select Australia Post or Pickup.`,
             uberIneligible: true,
             distance: eligibility.distance,
           },
           { status: 400 }
         );
       }
+    } else if (deliveryMethod === 'uber_express') {
+      return NextResponse.json(
+        {
+          error: 'A delivery address is required for Uber Express.',
+          uberIneligible: true,
+        },
+        { status: 400 }
+      );
     }
 
     // Calculate delivery cost based on method
@@ -343,7 +238,7 @@ export async function POST(request: NextRequest) {
         label: 'Uber Express',
         description: 'Get it in 1 hour',
         cost: UBER_EXPRESS_FEE,
-        available: true, // Eligibility checked client-side based on address
+        available: uberAvailability.eligible,
       },
       {
         id: 'auspost' as DeliveryMethod,
@@ -474,29 +369,10 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Server-side validation for Uber Express eligibility
-    if (deliveryMethod === 'uber_express' && shippingAddress) {
-      const eligibility = await checkUberEligibility(shippingAddress);
-      
-      if (!eligibility.eligible) {
-        console.warn('[PaymentIntent] Uber delivery rejected on update:', {
-          distance: eligibility.distance,
-        });
-        return NextResponse.json(
-          { 
-            error: `Uber Express is only available within ${UBER_RADIUS_KM}km of Ashburton Cycles. Your address is ${eligibility.distance}km away.`,
-            uberIneligible: true,
-            distance: eligibility.distance,
-          },
-          { status: 400 }
-        );
-      }
-    }
-
     // Fetch product for recalculation
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('id, price, discount_percent, discount_active, discount_ends_at, sale_price, shipping_available, shipping_cost, pickup_location, display_name, description, user_id')
+      .select('id, price, discount_percent, discount_active, discount_ends_at, sale_price, shipping_available, shipping_cost, pickup_location, display_name, description, user_id, uber_delivery_enabled')
       .eq('id', productId)
       .single();
 
@@ -505,6 +381,29 @@ export async function PATCH(request: NextRequest) {
         { error: 'Product not found' },
         { status: 404 }
       );
+    }
+
+    if (deliveryMethod === 'uber_express') {
+      const eligibility = await validateUberDelivery(supabase, {
+        sellerId: product.user_id,
+        products: [product],
+        shippingAddress,
+        requireAddress: true,
+      });
+      
+      if (!eligibility.eligible) {
+        console.warn('[PaymentIntent] Uber delivery rejected on update:', {
+          distance: eligibility.distance,
+        });
+        return NextResponse.json(
+          { 
+            error: eligibility.reason || `Uber Express is only available within ${UBER_RADIUS_KM}km of this store.`,
+            uberIneligible: true,
+            distance: eligibility.distance,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Calculate new delivery cost
