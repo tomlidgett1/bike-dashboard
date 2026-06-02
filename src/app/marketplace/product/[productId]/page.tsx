@@ -212,12 +212,28 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       }
     }
 
+    // Per-product opt-in to the Immersive layout. Read defensively in its own
+    // query so the page still renders if the immersive_page column hasn't been
+    // migrated yet (a missing column returns a PostgREST error, not a throw).
+    let immersivePage = false;
+    try {
+      const { data: flagRow } = await supabase
+        .from('products')
+        .select('immersive_page')
+        .eq('id', productId)
+        .maybeSingle();
+      immersivePage = !!(flagRow as any)?.immersive_page;
+    } catch {
+      immersivePage = false;
+    }
+
     return {
       ...product,
       primary_image_url: primaryImageUrl,
       all_images: allImages,
       images: imagesForClient.length > 0 ? imagesForClient : product.images,
       image_variants: null,
+      immersive_page: immersivePage,
       store_name: displayName,
       store_logo_url: user?.logo_url || null,
       store_account_type: user?.account_type || null,

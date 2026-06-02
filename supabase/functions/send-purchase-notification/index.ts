@@ -18,7 +18,7 @@ const BATCH_SIZE = 50;
 interface PurchaseNotification {
   id: string;
   user_id: string;
-  type: 'purchase_complete' | 'listing_sold';
+  type: 'purchase_complete' | 'listing_sold' | 'order_confirmed' | 'order_placed';
   purchase_id: string;
   is_read: boolean;
   created_at: string;
@@ -39,14 +39,16 @@ interface PurchaseDetails {
   platform_fee: number;
   seller_payout_amount: number;
   total_amount: number;
-  delivery_method: string | null;
-  delivery_description: string | null;
+  shipping_method: string | null;
+  shipping_address: string | null;
   payment_date: string;
   products: {
     id: string;
     description: string;
     display_name: string | null;
     primary_image_url: string | null;
+    pickup_only: boolean | null;
+    pickup_location: string | null;
   };
 }
 
@@ -63,11 +65,13 @@ Deno.serve(async (_req) => {
     });
 
     // Fetch pending purchase notifications
+    // Note: DB uses notification_category='order' and types 'order_confirmed'/'order_placed'
+    // Legacy types 'purchase_complete'/'listing_sold' are also supported for backwards compat
     const { data: notifications, error: fetchError } = await supabase
       .from('notifications')
       .select('id, user_id, type, purchase_id, is_read, created_at, notification_category, priority, email_delivery_status, email_scheduled_for')
-      .eq('notification_category', 'transaction')
-      .in('type', ['purchase_complete', 'listing_sold'])
+      .in('notification_category', ['order', 'transaction'])
+      .in('type', ['purchase_complete', 'listing_sold', 'order_confirmed', 'order_placed'])
       .or(`email_delivery_status.eq.pending,and(email_delivery_status.eq.scheduled,email_scheduled_for.lte.${new Date().toISOString()})`)
       .not('purchase_id', 'is', null)
       .order('created_at', { ascending: true })
@@ -109,14 +113,16 @@ Deno.serve(async (_req) => {
           platform_fee,
           seller_payout_amount,
           total_amount,
-          delivery_method,
-          delivery_description,
+          shipping_method,
+          shipping_address,
           payment_date,
-          products!product_id (
+          products (
             id,
             description,
             display_name,
-            primary_image_url
+            primary_image_url,
+            pickup_only,
+            pickup_location
           )
         `)
         .in('id', purchaseIds),
@@ -180,7 +186,12 @@ Deno.serve(async (_req) => {
       }
 
       // Check per-type preference (falls back to order_alerts legacy field)
-      if (notification.type === 'purchase_complete') {
+      // 'purchase_complete' and 'order_confirmed' are buyer receipts
+      // 'listing_sold' and 'order_placed' are seller sale notifications
+      const isBuyerNotification = notification.type === 'purchase_complete' || notification.type === 'order_confirmed';
+      const isSellerNotification = notification.type === 'listing_sold' || notification.type === 'order_placed';
+
+      if (isBuyerNotification) {
         const purchaseConfEnabled = preferences?.purchase_confirmations_enabled ?? user.order_alerts ?? true;
         if (purchaseConfEnabled === false) {
           await markNotificationAs(supabase, notification.id, 'skipped');
@@ -190,7 +201,7 @@ Deno.serve(async (_req) => {
         }
       }
 
-      if (notification.type === 'listing_sold') {
+      if (isSellerNotification) {
         const saleNotifEnabled = preferences?.sale_notifications_enabled ?? user.order_alerts ?? true;
         if (saleNotifEnabled === false) {
           await markNotificationAs(supabase, notification.id, 'skipped');
@@ -207,11 +218,13 @@ Deno.serve(async (_req) => {
       const sellerName = seller?.business_name || seller?.name || 'The seller';
       const sellerLogoUrl = seller?.logo_url || undefined;
       const productName = purchase.products?.display_name || purchase.products?.description || 'Product';
+      const isPickup = purchase.products?.pickup_only === true;
+      const pickupLocation = purchase.products?.pickup_location || undefined;
 
       try {
         let emailContent;
 
-        if (notification.type === 'purchase_complete') {
+        if (notification.type === 'purchase_complete' || notification.type === 'order_confirmed') {
           emailContent = purchaseConfirmationTemplate({
             recipientName: user.name || user.email.split('@')[0],
             orderNumber: purchase.order_number,
@@ -223,8 +236,10 @@ Deno.serve(async (_req) => {
             itemPrice: purchase.item_price,
             shippingCost: purchase.shipping_cost || 0,
             totalAmount: purchase.total_amount,
-            deliveryMethod: purchase.delivery_method || undefined,
-            deliveryDescription: purchase.delivery_description || undefined,
+            isPickup,
+            pickupLocation,
+            deliveryMethod: purchase.shipping_method || undefined,
+            deliveryDescription: purchase.shipping_address || undefined,
             paymentDate: purchase.payment_date || new Date().toISOString(),
             purchaseId: purchase.id,
           });
@@ -239,8 +254,10 @@ Deno.serve(async (_req) => {
             itemPrice: purchase.item_price,
             platformFee: purchase.platform_fee || 0,
             sellerPayout: purchase.seller_payout_amount || 0,
-            deliveryMethod: purchase.delivery_method || undefined,
-            deliveryDescription: purchase.delivery_description || undefined,
+            isPickup,
+            pickupLocation,
+            deliveryMethod: purchase.shipping_method || undefined,
+            buyerAddress: purchase.shipping_address || undefined,
             paymentDate: purchase.payment_date || new Date().toISOString(),
             purchaseId: purchase.id,
           });

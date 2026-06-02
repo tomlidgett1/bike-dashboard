@@ -53,6 +53,7 @@ export async function PATCH(
     if ('display_name' in body) updatePayload.display_name = body.display_name || null
     if ('product_description' in body) updatePayload.product_description = body.product_description || null
     if ('product_specs' in body) updatePayload.product_specs = body.product_specs || null
+    if ('immersive_page' in body) updatePayload.immersive_page = !!body.immersive_page
 
     // Update the product
     const { data: updatedProduct, error: updateError } = await supabase

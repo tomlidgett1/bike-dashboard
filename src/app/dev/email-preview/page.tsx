@@ -570,7 +570,7 @@ const PURCHASE_CONFIRM = `<!DOCTYPE html>
       <!-- Content -->
       <tr><td style="padding:36px 40px;">
 
-        <h2 style="margin:0 0 8px;font-size:26px;font-weight:800;color:#111827;letter-spacing:-0.5px;">You're getting a new bike.</h2>
+        <h2 style="margin:0 0 8px;font-size:26px;font-weight:800;color:#111827;letter-spacing:-0.5px;">It's on its way.</h2>
         <p style="margin:0 0 32px;font-size:15px;color:#6b7280;line-height:1.65;">Your payment is held safely in escrow. The seller has been notified and will ship soon.</p>
 
         <!-- Order card -->
@@ -744,6 +744,16 @@ export default function EmailPreviewPage() {
   return (
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', background: '#18181b', minHeight: '100vh', padding: '40px 24px' }}>
       <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+
+        {/* Dev section tabs */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 28 }}>
+          <a href="/dev/email-preview" style={{ padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 700, textDecoration: 'none', color: '#0a0a0a', background: '#ffde59', border: '1px solid #ffde59' }}>
+            Email Templates
+          </a>
+          <a href="/dev/product-designs" style={{ padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 700, textDecoration: 'none', color: '#a1a1aa', background: '#27272a', border: '1px solid #3f3f46' }}>
+            Product Pages
+          </a>
+        </div>
 
         <div style={{ marginBottom: 40 }}>
           <h1 style={{ margin: '0 0 8px', fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: -0.5 }}>

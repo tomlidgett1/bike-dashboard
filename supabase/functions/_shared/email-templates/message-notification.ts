@@ -21,6 +21,7 @@ export function messageNotificationTemplate(params: MessageNotificationParams): 
   text: string;
 } {
   const { senderName, senderLogoUrl, messagePreview, productInfo, conversationId } = params;
+  const productImageUrl = productInfo?.imageUrl;
   const appUrl = getAppUrl();
   const conversationLink = buildConversationLink(conversationId);
   const settingsLink = buildSettingsLink();
@@ -55,6 +56,12 @@ export function messageNotificationTemplate(params: MessageNotificationParams): 
           ${productInfo ? `<td align="right" valign="middle"><p style="margin:0;font-size:13px;color:#3d3000;font-weight:600;">${productInfo.name}</p></td>` : ''}
         </tr></table>
       </td></tr>
+
+      <!-- Product image -->
+      ${productImageUrl ? `
+      <tr><td style="background:#0a0a0a;padding:32px 40px 0;line-height:0;font-size:0;">
+        <img src="${productImageUrl}" width="520" style="display:block;width:100%;max-height:280px;object-fit:cover;border-radius:4px;" alt="${productInfo?.name || 'Product'}" />
+      </td></tr>` : ''}
 
       <!-- White content -->
       <tr><td style="background:#ffffff;padding:36px 40px;">

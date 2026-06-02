@@ -49,7 +49,7 @@ function InlineText({ text }: { text: string }) {
 
 // Full markdown-aware description renderer
 // Handles: **bold**, ## headings, • / - / * bullets, paragraphs
-function ProductDescription({ text }: { text: string }) {
+export function ProductDescription({ text }: { text: string }) {
   const blocks = text.split(/\n{2,}/).filter(b => b.trim());
 
   return (

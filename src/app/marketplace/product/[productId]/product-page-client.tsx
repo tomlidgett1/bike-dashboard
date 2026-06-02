@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useProductView } from "@/lib/tracking/interaction-tracker";
 import { ProductOptimizeDrawer } from "@/components/marketplace/product-optimize-drawer";
+import { ImmersiveProductLayout } from "./immersive-product-layout";
 
 // ============================================================
 // Product Page Client Component
@@ -176,6 +177,22 @@ export function ProductPageClient({
 
   // Show store header when the user arrived from a store page
   const showStoreHeader = !!fromStoreId && !!sellerInfo && sellerInfo.id === fromStoreId;
+
+  // Immersive layout — per-product opt-in (Store Settings → Products tab).
+  if ((product as any).immersive_page) {
+    return (
+      <ImmersiveProductLayout
+        product={localProduct}
+        images={images}
+        sellerInfo={sellerInfo}
+        similarProducts={similarProducts}
+        sellerProducts={sellerProducts}
+        brandProducts={brandProducts}
+        brandName={brandName}
+        isOwner={isOwner}
+      />
+    );
+  }
 
   return (
     <>

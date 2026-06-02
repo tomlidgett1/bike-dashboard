@@ -77,7 +77,10 @@ export interface MarketplaceProduct {
   // Extended fields for private listings
   listing_type?: 'store_inventory' | 'private_listing';
   listing_source?: 'lightspeed' | 'manual' | 'online_catalog';
-  
+
+  // Per-product opt-in to the full-bleed Immersive product page layout.
+  immersive_page?: boolean | null;
+
   // Bike-specific fields
   frame_size?: string;
   frame_material?: string;

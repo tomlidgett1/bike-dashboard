@@ -20,7 +20,7 @@ export function offerReceivedTemplate(params: OfferReceivedParams): {
   html: string;
   text: string;
 } {
-  const { buyerName, buyerLogoUrl, productName, originalPrice, offerAmount, message, offerId, expiresAt } = params;
+  const { buyerName, buyerLogoUrl, productName, productImageUrl, originalPrice, offerAmount, message, offerId, expiresAt } = params;
   const appUrl = getAppUrl();
   const offerLink = buildOfferLink(offerId);
   const settingsLink = buildSettingsLink();
@@ -42,6 +42,12 @@ export function offerReceivedTemplate(params: OfferReceivedParams): {
         <p style="margin:0 0 12px;font-size:11px;color:#F5C518;letter-spacing:5px;text-transform:uppercase;font-weight:700;">New offer</p>
         <h1 style="margin:0;font-size:60px;font-weight:900;color:#ffffff;line-height:0.92;letter-spacing:-2.5px;text-transform:uppercase;">Someone<br/>wants your<br/>bike.</h1>
       </td></tr>
+
+      <!-- Product image -->
+      ${productImageUrl ? `
+      <tr><td style="background:#0a0a0a;padding:32px 40px 0;line-height:0;font-size:0;">
+        <img src="${productImageUrl}" width="520" style="display:block;width:100%;max-height:340px;object-fit:cover;border-radius:4px;" alt="${productName}" />
+      </td></tr>` : ''}
 
       <!-- Yellow bar — offer amount -->
       <tr><td style="background:#F5C518;padding:20px 40px;">

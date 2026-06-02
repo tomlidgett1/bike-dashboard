@@ -12,6 +12,8 @@ export interface PurchaseConfirmationParams {
   shippingCost: number;
   platformFee?: number;
   totalAmount: number;
+  isPickup?: boolean;
+  pickupLocation?: string;
   deliveryMethod?: string;
   deliveryDescription?: string;
   paymentDate: string;
@@ -23,12 +25,63 @@ export function purchaseConfirmationTemplate(params: PurchaseConfirmationParams)
   html: string;
   text: string;
 } {
-  const { recipientName, orderNumber, productName, sellerName, sellerLogoUrl, totalAmount, purchaseId } = params;
+  const {
+    recipientName, orderNumber, productName, productImageUrl, sellerName, sellerLogoUrl,
+    totalAmount, purchaseId, isPickup, pickupLocation,
+  } = params;
   const appUrl = getAppUrl();
   const settingsLink = buildSettingsLink();
   const purchaseLink = `${appUrl}/purchases/${purchaseId}`;
   const subject = `Purchase confirmed — ${productName}`;
   const sellerInitial = sellerName.charAt(0).toUpperCase();
+
+  const heroHeadline = isPickup ? `Ready<br/>to<br/>collect.` : `It's<br/>on its<br/>way.`;
+
+  const introText = isPickup
+    ? `Hey ${recipientName} — ${formatPrice(totalAmount)} is held safely in escrow. ${sellerName} will be in touch to arrange collection${pickupLocation ? ` from ${pickupLocation}` : ''}.`
+    : `Hey ${recipientName} — ${formatPrice(totalAmount)} is held safely in escrow. ${sellerName} has been notified and will ship soon.`;
+
+  const escrowText = isPickup
+    ? `&#128274; Funds are held in escrow — you won't pay until you confirm you've collected and inspected your item.`
+    : `&#128274; Funds are held in escrow — you won't pay until you confirm receipt of your item.`;
+
+  const steps = isPickup ? `
+          <tr><td style="padding:12px 0;border-top:1px solid #f3f4f6;">
+            <table cellpadding="0" cellspacing="0"><tr>
+              <td style="padding-right:14px;"><table cellpadding="0" cellspacing="0"><tr><td style="width:28px;height:28px;background:#F5C518;border-radius:50%;text-align:center;font-size:12px;font-weight:900;color:#0a0a0a;line-height:28px;">1</td></tr></table></td>
+              <td><p style="margin:0;font-size:14px;color:#374151;font-weight:600;">Arrange collection with ${sellerName}${pickupLocation ? ` at ${pickupLocation}` : ''}</p></td>
+            </tr></table>
+          </td></tr>
+          <tr><td style="padding:12px 0;border-top:1px solid #f3f4f6;">
+            <table cellpadding="0" cellspacing="0"><tr>
+              <td style="padding-right:14px;"><table cellpadding="0" cellspacing="0"><tr><td style="width:28px;height:28px;background:#f3f4f6;border-radius:50%;text-align:center;font-size:12px;font-weight:900;color:#9ca3af;line-height:28px;">2</td></tr></table></td>
+              <td><p style="margin:0;font-size:14px;color:#374151;">Inspect the item in person</p></td>
+            </tr></table>
+          </td></tr>
+          <tr><td style="padding:12px 0;border-top:1px solid #f3f4f6;">
+            <table cellpadding="0" cellspacing="0"><tr>
+              <td style="padding-right:14px;"><table cellpadding="0" cellspacing="0"><tr><td style="width:28px;height:28px;background:#f3f4f6;border-radius:50%;text-align:center;font-size:12px;font-weight:900;color:#9ca3af;line-height:28px;">3</td></tr></table></td>
+              <td><p style="margin:0;font-size:14px;color:#374151;">Confirm collection — funds released to seller</p></td>
+            </tr></table>
+          </td></tr>` : `
+          <tr><td style="padding:12px 0;border-top:1px solid #f3f4f6;">
+            <table cellpadding="0" cellspacing="0"><tr>
+              <td style="padding-right:14px;"><table cellpadding="0" cellspacing="0"><tr><td style="width:28px;height:28px;background:#F5C518;border-radius:50%;text-align:center;font-size:12px;font-weight:900;color:#0a0a0a;line-height:28px;">1</td></tr></table></td>
+              <td><p style="margin:0;font-size:14px;color:#374151;font-weight:600;">Seller ships your item within 3 days</p></td>
+            </tr></table>
+          </td></tr>
+          <tr><td style="padding:12px 0;border-top:1px solid #f3f4f6;">
+            <table cellpadding="0" cellspacing="0"><tr>
+              <td style="padding-right:14px;"><table cellpadding="0" cellspacing="0"><tr><td style="width:28px;height:28px;background:#f3f4f6;border-radius:50%;text-align:center;font-size:12px;font-weight:900;color:#9ca3af;line-height:28px;">2</td></tr></table></td>
+              <td><p style="margin:0;font-size:14px;color:#374151;">You receive and inspect the item</p></td>
+            </tr></table>
+          </td></tr>
+          <tr><td style="padding:12px 0;border-top:1px solid #f3f4f6;">
+            <table cellpadding="0" cellspacing="0"><tr>
+              <td style="padding-right:14px;"><table cellpadding="0" cellspacing="0"><tr><td style="width:28px;height:28px;background:#f3f4f6;border-radius:50%;text-align:center;font-size:12px;font-weight:900;color:#9ca3af;line-height:28px;">3</td></tr></table></td>
+              <td><p style="margin:0;font-size:14px;color:#374151;">Confirm receipt — funds released to seller</p></td>
+            </tr></table>
+          </td></tr>`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -42,8 +95,14 @@ export function purchaseConfirmationTemplate(params: PurchaseConfirmationParams)
       <tr><td style="background:#0a0a0a;padding:48px 40px 0;">
         <img src="${appUrl}/yjlogo.png" alt="Yellow Jersey" height="44" style="display:block;margin-bottom:40px;" />
         <p style="margin:0 0 12px;font-size:11px;color:#F5C518;letter-spacing:5px;text-transform:uppercase;font-weight:700;">Purchase confirmed &#10003;</p>
-        <h1 style="margin:0;font-size:64px;font-weight:900;color:#ffffff;line-height:0.92;letter-spacing:-3px;text-transform:uppercase;">You're<br/>getting a<br/>new bike.</h1>
+        <h1 style="margin:0;font-size:64px;font-weight:900;color:#ffffff;line-height:0.92;letter-spacing:-3px;text-transform:uppercase;">${heroHeadline}</h1>
       </td></tr>
+
+      <!-- Product image -->
+      ${productImageUrl ? `
+      <tr><td style="background:#0a0a0a;padding:32px 40px 0;line-height:0;font-size:0;">
+        <img src="${productImageUrl}" width="520" style="display:block;width:100%;max-height:340px;object-fit:cover;border-radius:4px;" alt="${productName}" />
+      </td></tr>` : ''}
 
       <!-- Yellow bar — order summary -->
       <tr><td style="background:#F5C518;padding:20px 40px;">
@@ -71,36 +130,19 @@ export function purchaseConfirmationTemplate(params: PurchaseConfirmationParams)
       <tr><td style="background:#ffffff;padding:36px 40px;">
 
         <p style="margin:0 0 8px;font-size:18px;font-weight:800;color:#111827;letter-spacing:-0.3px;">Your payment is secured.</p>
-        <p style="margin:0 0 32px;font-size:15px;color:#6b7280;line-height:1.65;">Hey ${recipientName} — ${formatPrice(totalAmount)} is held safely in escrow. ${sellerName} has been notified and will ship soon.</p>
+        <p style="margin:0 0 32px;font-size:15px;color:#6b7280;line-height:1.65;">${introText}</p>
 
         <!-- Escrow badge -->
         <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
           <tr><td style="background:#f9f9f7;padding:16px 20px;border-left:4px solid #F5C518;">
-            <p style="margin:0;font-size:14px;color:#374151;font-weight:600;">&#128274; Funds are held in escrow — you won't pay until you confirm receipt of your item.</p>
+            <p style="margin:0;font-size:14px;color:#374151;font-weight:600;">${escrowText}</p>
           </td></tr>
         </table>
 
         <!-- Steps -->
         <p style="margin:0 0 14px;font-size:11px;font-weight:800;color:#111827;text-transform:uppercase;letter-spacing:1.5px;">What happens next</p>
         <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
-          <tr><td style="padding:12px 0;border-top:1px solid #f3f4f6;">
-            <table cellpadding="0" cellspacing="0"><tr>
-              <td style="padding-right:14px;"><table cellpadding="0" cellspacing="0"><tr><td style="width:28px;height:28px;background:#F5C518;border-radius:50%;text-align:center;font-size:12px;font-weight:900;color:#0a0a0a;line-height:28px;">1</td></tr></table></td>
-              <td><p style="margin:0;font-size:14px;color:#374151;font-weight:600;">Seller ships your item within 3 days</p></td>
-            </tr></table>
-          </td></tr>
-          <tr><td style="padding:12px 0;border-top:1px solid #f3f4f6;">
-            <table cellpadding="0" cellspacing="0"><tr>
-              <td style="padding-right:14px;"><table cellpadding="0" cellspacing="0"><tr><td style="width:28px;height:28px;background:#f3f4f6;border-radius:50%;text-align:center;font-size:12px;font-weight:900;color:#9ca3af;line-height:28px;">2</td></tr></table></td>
-              <td><p style="margin:0;font-size:14px;color:#374151;">You receive and inspect the item</p></td>
-            </tr></table>
-          </td></tr>
-          <tr><td style="padding:12px 0;border-top:1px solid #f3f4f6;">
-            <table cellpadding="0" cellspacing="0"><tr>
-              <td style="padding-right:14px;"><table cellpadding="0" cellspacing="0"><tr><td style="width:28px;height:28px;background:#f3f4f6;border-radius:50%;text-align:center;font-size:12px;font-weight:900;color:#9ca3af;line-height:28px;">3</td></tr></table></td>
-              <td><p style="margin:0;font-size:14px;color:#374151;">Confirm receipt — funds released to seller</p></td>
-            </tr></table>
-          </td></tr>
+          ${steps}
         </table>
 
         <!-- CTA -->
@@ -122,6 +164,12 @@ export function purchaseConfirmationTemplate(params: PurchaseConfirmationParams)
 </table>
 </body></html>`;
 
+  const step1Text = isPickup
+    ? `1. Arrange collection with ${sellerName}${pickupLocation ? ` at ${pickupLocation}` : ''}`
+    : `1. Seller ships within 3 days`;
+  const step2Text = isPickup ? `2. Inspect the item in person` : `2. You receive and inspect the item`;
+  const step3Text = isPickup ? `3. Confirm collection — funds released to seller` : `3. Confirm receipt — funds released to seller`;
+
   const text = `Purchase confirmed — ${productName}
 
 Order ${orderNumber}
@@ -129,9 +177,9 @@ ${productName} from ${sellerName}
 Total: ${formatPrice(totalAmount)} (held in escrow)
 
 What happens next:
-1. Seller ships within 3 days
-2. You receive and inspect the item
-3. Confirm receipt — funds released to seller
+${step1Text}
+${step2Text}
+${step3Text}
 
 View purchase: ${purchaseLink}
 

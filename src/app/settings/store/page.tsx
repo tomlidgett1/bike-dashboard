@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Store, Wrench, Tag, FileText, Star, Type, Layers, Home, Globe } from "lucide-react";
+import { Loader2, Store, Wrench, Tag, FileText, Star, Type, Layers, Home, Globe, Sparkles } from "lucide-react";
 import { Header } from "@/components/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,6 +16,7 @@ import { StoreProductDescriptionsManager } from "@/components/settings/store-pro
 import { StoreProductTitlesManager } from "@/components/settings/store-product-titles-manager";
 import { StoreSectionsManager } from "@/components/settings/store-sections-manager";
 import { StoreOnlineProductsManager } from "@/components/settings/store-online-products-manager";
+import { StoreImmersiveProductsManager } from "@/components/settings/store-immersive-products-manager";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 
@@ -243,6 +244,27 @@ function StoreSettingsContent() {
                 </CardHeader>
                 <CardContent>
                   <StoreProductDescriptionsManager />
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-md border-border mt-4">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
+                      <Sparkles className="h-5 w-5 text-foreground" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-semibold">
+                        Immersive Product Pages
+                      </CardTitle>
+                      <CardDescription className="text-sm">
+                        Choose which products use the full-screen Immersive layout — a cinematic hero image with a floating buy card.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <StoreImmersiveProductsManager />
                 </CardContent>
               </Card>
             </TabsContent>
