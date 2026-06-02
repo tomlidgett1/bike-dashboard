@@ -46,6 +46,7 @@ export function RecommendationCarousel({
   const [canScrollLeft, setCanScrollLeft] = React.useState(false);
   const [canScrollRight, setCanScrollRight] = React.useState(false);
   const [isHovered, setIsHovered] = React.useState(false);
+  const [sellerLogoError, setSellerLogoError] = React.useState(false);
 
   // Check scroll position
   const checkScroll = React.useCallback(() => {
@@ -75,6 +76,10 @@ export function RecommendationCarousel({
     };
   }, [checkScroll, products.length]);
 
+  React.useEffect(() => {
+    setSellerLogoError(false);
+  }, [seller?.logo_url]);
+
   const scroll = (direction: 'left' | 'right') => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -94,11 +99,12 @@ export function RecommendationCarousel({
   };
 
   // Don't render if no products and not loading
-  if (!isLoading && products.length < 2) {
+  if (!isLoading && products.length === 0) {
     return null;
   }
 
   const IconComponent = icon === "sparkles" ? Sparkles : icon === "store" ? Store : User;
+  const showSellerLogo = !!seller && icon === "store";
 
   return (
     <motion.section
@@ -112,9 +118,19 @@ export function RecommendationCarousel({
       {/* Section Header - Compact on mobile */}
       <div className="flex items-center justify-between mb-3 sm:mb-4">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          {/* Icon - Hidden on mobile */}
-          <div className="hidden sm:flex items-center justify-center w-9 h-9 rounded-md bg-gray-100 flex-shrink-0">
-            <IconComponent className="h-4.5 w-4.5 text-gray-600" />
+          <div className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-md bg-gray-100 flex-shrink-0 overflow-hidden">
+            {showSellerLogo && seller.logo_url && !sellerLogoError ? (
+              <Image
+                src={seller.logo_url}
+                alt={seller.name}
+                width={36}
+                height={36}
+                className="h-full w-full object-cover"
+                onError={() => setSellerLogoError(true)}
+              />
+            ) : (
+              <IconComponent className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-gray-600" />
+            )}
           </div>
           
           {/* Title */}
@@ -127,6 +143,9 @@ export function RecommendationCarousel({
                 </span>
               )}
             </div>
+            {subtitle && (
+              <p className="mt-0.5 text-xs sm:text-sm text-gray-500 truncate">{subtitle}</p>
+            )}
           </div>
         </div>
 
@@ -274,4 +293,3 @@ export function RecommendationCarouselSkeleton({ className }: { className?: stri
     </div>
   );
 }
-

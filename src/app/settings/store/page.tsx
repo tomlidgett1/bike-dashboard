@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Store, Wrench, Tag, FileText, Star, Type, Layers, Home, Globe, Sparkles } from "lucide-react";
+import { BarChart3, Loader2, Store, Wrench, Tag, FileText, Star, Type, Layers, Home, Globe, Sparkles } from "lucide-react";
 import { Header } from "@/components/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,13 +17,12 @@ import { StoreProductTitlesManager } from "@/components/settings/store-product-t
 import { StoreSectionsManager } from "@/components/settings/store-sections-manager";
 import { StoreOnlineProductsManager } from "@/components/settings/store-online-products-manager";
 import { StoreImmersiveProductsManager } from "@/components/settings/store-immersive-products-manager";
-import { useAuth } from "@/components/providers/auth-provider";
+import { StoreAnalyticsManager } from "@/components/settings/store-analytics-manager";
 import { useUserProfile } from "@/components/providers/profile-provider";
 
-const VALID_TABS = ["home", "categories", "sections", "services", "brands", "products", "titles", "online"];
+const VALID_TABS = ["home", "analytics", "categories", "sections", "services", "brands", "products", "titles", "online"];
 
 function StoreSettingsContent() {
-  const { user } = useAuth();
   const { profile, loading } = useUserProfile();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -84,6 +83,10 @@ function StoreSettingsContent() {
                 <Store className="h-4 w-4" />
                 Categories
               </TabsTrigger>
+              <TabsTrigger value="analytics" className="flex-none gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Analytics
+              </TabsTrigger>
               <TabsTrigger value="sections" className="flex-none gap-2">
                 <Layers className="h-4 w-4" />
                 Sections
@@ -121,6 +124,29 @@ function StoreSettingsContent() {
                 </div>
               </div>
               <StoreHomepageManager />
+            </TabsContent>
+
+            <TabsContent value="analytics">
+              <Card className="rounded-md border-border">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
+                      <BarChart3 className="h-5 w-5 text-foreground" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-semibold">
+                        Analytics
+                      </CardTitle>
+                      <CardDescription className="text-sm">
+                        Track store visits, product views, impressions, and distinct users.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <StoreAnalyticsManager />
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="categories">
@@ -169,7 +195,7 @@ function StoreSettingsContent() {
                         Store Sections
                       </CardTitle>
                       <CardDescription className="text-sm">
-                        Group your carousels into named sections — e.g. "Nutrition" containing Clif, GU, and Specials carousels.
+                        Group your carousels into named sections — e.g. &quot;Nutrition&quot; containing Clif, GU, and Specials carousels.
                       </CardDescription>
                     </div>
                   </div>

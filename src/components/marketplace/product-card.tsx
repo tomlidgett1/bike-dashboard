@@ -4,10 +4,12 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Package, Plus, Check, Sparkles, Store, BadgeCheck } from "lucide-react";
+import { Package, Plus, Check, Sparkles, Store, BadgeCheck, ShoppingBag } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
-import { useCart } from "@/components/providers/cart-provider";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useAuthModal } from "@/components/providers/auth-modal-provider";
+import { useCart, type CartItem } from "@/components/providers/cart-provider";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
 import { cloudinaryCardLoader, extractCloudinaryPublicId } from "@/lib/utils/cloudinary-transforms";
 import { resolveLivePrice, formatPriceAUD, formatPriceAUDFull } from "@/lib/marketplace/pricing";
@@ -53,32 +55,46 @@ type ProductCardData = MarketplaceProduct & {
   images?: ListingImage[] | null;
 };
 
+function getCardActionImage(product: ProductCardData): string | null {
+  return product.card_url || product.primary_image_url || null;
+}
+
+function getCardActionMaxQuantity(product: ProductCardData): number {
+  if (product.listing_type === "private_listing") return 1;
+  return Math.max(1, Math.floor(Number(product.qoh) || 1));
+}
+
+function buildCardCartItem(product: ProductCardData): CartItem {
+  const live = resolveLivePrice(product);
+
+  return {
+    productId: product.id,
+    name: product.display_name || product.description || "Item",
+    image: getCardActionImage(product),
+    price: live.price,
+    sellerId: product.user_id,
+    sellerName: product.store_name || "Store",
+    uberDeliveryEligible:
+      product.uber_delivery_enabled === true &&
+      product.store_account_type === "bicycle_store" &&
+      product.store_bicycle_store === true,
+    quantity: 1,
+    maxQuantity: getCardActionMaxQuantity(product),
+  };
+}
+
 // ── Add-to-cart overlay button ──────────────────────────────
 // Kept outside the memoized ProductCard so cart-state changes (in/out of
 // cart) cause this tiny component to re-render without busting the whole card.
 function CartOverlayButton({ product }: { product: ProductCardData }) {
   const { has, addItem, openCart } = useCart();
   const inCart = has(product.id);
-  const isUberDeliveryEligible =
-    product.uber_delivery_enabled === true &&
-    product.store_account_type === "bicycle_store" &&
-    product.store_bicycle_store === true;
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (inCart) { openCart(); return; }
-    const result = addItem({
-      productId: product.id,
-      name: product.display_name || product.description || "",
-      image: product.card_url || product.primary_image_url || null,
-      price: product.price,
-      sellerId: product.user_id,
-      sellerName: product.store_name || "Store",
-      uberDeliveryEligible: isUberDeliveryEligible,
-      quantity: 1,
-      maxQuantity: product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1),
-    });
+    const result = addItem(buildCardCartItem(product));
     if (result === "added" || result === "exists") openCart();
   };
 
@@ -87,15 +103,57 @@ function CartOverlayButton({ product }: { product: ProductCardData }) {
       type="button"
       onClick={handleClick}
       aria-label={inCart ? "View cart" : "Add to cart"}
+      title={inCart ? "View cart" : "Add to cart"}
       className={cn(
-        "absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-white shadow-md flex items-center justify-center transition-all duration-200 cursor-pointer hover:scale-110",
-        inCart ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        "w-7 h-7 rounded-full bg-white shadow-md flex items-center justify-center transition-all duration-200 cursor-pointer hover:scale-110",
+        inCart ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
       )}
     >
       {inCart
         ? <Check className="h-3.5 w-3.5 text-green-600" />
         : <Plus className="h-3.5 w-3.5 text-gray-700" />
       }
+    </button>
+  );
+}
+
+function BuyNowOverlayButton({ product }: { product: ProductCardData }) {
+  const { user } = useAuth();
+  const { openAuthModal } = useAuthModal();
+  const { startBuyNow } = useCart();
+
+  if (user?.id === product.user_id) return null;
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!user) {
+      openAuthModal();
+      return;
+    }
+
+    startBuyNow(buildCardCartItem(product));
+    trackInteraction("click", {
+      productId: product.id,
+      metadata: {
+        source: "product_card_buy_now",
+        category: product.marketplace_category,
+        price: resolveLivePrice(product).price,
+      },
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-label={`Buy now: ${product.display_name || product.description}`}
+      title="Buy now"
+      className="h-7 rounded-full bg-gray-900/95 px-2.5 text-[11px] font-semibold text-white shadow-md flex items-center gap-1.5 transition-all duration-200 cursor-pointer hover:scale-105 hover:bg-black opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+    >
+      <ShoppingBag className="h-3.5 w-3.5" />
+      <span className="leading-none">Buy now</span>
     </button>
   );
 }
@@ -323,8 +381,11 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </div>
           )}
 
-          {/* Add to cart overlay */}
-          <CartOverlayButton product={productData} />
+          {/* Quick action overlays */}
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+            <CartOverlayButton product={productData} />
+            <BuyNowOverlayButton product={productData} />
+          </div>
 
           {/* Condition Badge - Only for private listings with condition */}
           {productData.listing_type === 'private_listing' && productData.condition_rating && (
@@ -479,8 +540,17 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
          prevProps.product.discount_active === nextProps.product.discount_active &&
          prevProps.product.discount_percent === nextProps.product.discount_percent &&
          prevProps.product.discount_ends_at === nextProps.product.discount_ends_at &&
+         prevProps.product.qoh === nextProps.product.qoh &&
+         prevProps.product.listing_type === nextProps.product.listing_type &&
+         prevProps.product.display_name === nextProps.product.display_name &&
+         prevProps.product.store_name === nextProps.product.store_name &&
+         prevProps.product.store_account_type === nextProps.product.store_account_type &&
          prevProps.product.uber_delivery_enabled === nextProps.product.uber_delivery_enabled &&
          prevProps.product.store_bicycle_store === nextProps.product.store_bicycle_store &&
+         prevProps.hideStoreMeta === nextProps.hideStoreMeta &&
+         prevProps.compact === nextProps.compact &&
+         prevProps.isAdmin === nextProps.isAdmin &&
+         prevProps.storeId === nextProps.storeId &&
          prevProps.priority === nextProps.priority &&
          prevProps.featuredMobile === nextProps.featuredMobile &&
          prevProps.layout === nextProps.layout;

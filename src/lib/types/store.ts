@@ -340,12 +340,3 @@ export interface UpdateBrandRequest {
   display_order?: number;
   is_active?: boolean;
 }
-
-
-
-
-
-
-
-
-

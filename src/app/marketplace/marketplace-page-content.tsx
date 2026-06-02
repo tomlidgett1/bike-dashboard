@@ -68,6 +68,11 @@ interface MarketplacePageContentProps {
   initialPagination?: InitialMarketplacePagination;
 }
 
+const TAB_CONTENT_FADE_TRANSITION = {
+  duration: 0.32,
+  ease: [0.22, 1, 0.36, 1],
+} as const;
+
 export function MarketplacePageContent({ initialProducts, initialPagination }: MarketplacePageContentProps = {}) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -890,6 +895,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     });
   };
 
+  const tabContentAnimationKey = currentSpace;
+
   return (
     <>
       {/* Main header - always rendered so modals remain accessible */}
@@ -1406,111 +1413,205 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   </motion.div>
                 )}
 
-                {/* Split Search Results - Shows both Stores and Marketplace sections */}
-                {searchQuery && (
-                  <SplitSearchResults
-                    searchQuery={searchQuery}
-                    onClearSearch={handleClearSearch}
-                    isAdmin={isAdmin}
-                    onNavigate={() => setIsNavigating(true)}
-                    onImageDiscoveryClick={(productId, productName) => {
-                      setImageDiscoveryModal({
-                        isOpen: true,
-                        productId,
-                        productName,
-                      });
-                    }}
-                  />
-                )}
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={tabContentAnimationKey}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={TAB_CONTENT_FADE_TRANSITION}
+                    className="space-y-4"
+                  >
+                    {/* Split Search Results - Shows both Stores and Marketplace sections */}
+                    {searchQuery && (
+                      <SplitSearchResults
+                        searchQuery={searchQuery}
+                        onClearSearch={handleClearSearch}
+                        isAdmin={isAdmin}
+                        onNavigate={() => setIsNavigating(true)}
+                        onImageDiscoveryClick={(productId, productName) => {
+                          setImageDiscoveryModal({
+                            isOpen: true,
+                            productId,
+                            productName,
+                          });
+                        }}
+                      />
+                    )}
 
-                {!searchQuery && (loading || displayProducts.length > 0) && (
-                  <div className="min-h-0">
-                    {loading ? (
-                      <div className="space-y-3">
-                        {isStoresView && selectedStore && (
-                          <p className="text-sm text-gray-500 px-0.5">
-                            Loading {selectedStore.store_name}…
-                          </p>
-                        )}
-                        <div
-                          className={
-                            productGridLayout === "grid8"
-                              ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
-                              : productGridLayout === "grid4"
-                              ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
-                              : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 sm:gap-3"
-                          }
-                        >
-                          {Array.from({
-                            length: isStoreInventoryView ? 12 : 36,
-                          }).map((_, i) => (
-                            <ProductCardSkeleton key={i} layout="grid" />
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        className={cn(
-                          productGridLayout === "grid8"
-                            ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
-                            : productGridLayout === "grid4"
-                            ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
-                            : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3",
-                        )}
-                      >
-                        {displayProducts.map((product, index) => (
-                          <React.Fragment key={product.id}>
-                            <ProductCard
-                              product={product}
-                              priority={index < 18}
-                              layout="grid"
-                              compact={productGridLayout === "grid8"}
-                              isAdmin={isAdmin}
-                              onNavigate={() => setIsNavigating(true)}
-                              onImageDiscoveryClick={(productId) => {
-                                const canonicalId = product.canonical_product_id || product.id;
-                                setImageDiscoveryModal({
-                                  isOpen: true,
-                                  productId: canonicalId,
-                                  productName: product.display_name || product.description,
-                                });
-                              }}
-                            />
-                            {MARKETPLACE_PROMO_BANNERS_ENABLED &&
-                              index === 11 &&
-                              isMarketplaceView && (
-                              <div>
-                                <ListItemBanner className="sm:hidden" />
-                              </div>
+                    {!searchQuery && (loading || displayProducts.length > 0) && (
+                      <div className="min-h-0">
+                        {loading ? (
+                          <div className="space-y-3">
+                            {isStoresView && selectedStore && (
+                              <p className="text-sm text-gray-500 px-0.5">
+                                Loading {selectedStore.store_name}…
+                              </p>
                             )}
-                          </React.Fragment>
-                        ))}
+                            <div
+                              className={
+                                productGridLayout === "grid8"
+                                  ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
+                                  : productGridLayout === "grid4"
+                                  ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
+                                  : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 sm:gap-3"
+                              }
+                            >
+                              {Array.from({
+                                length: isStoreInventoryView ? 12 : 36,
+                              }).map((_, i) => (
+                                <ProductCardSkeleton key={i} layout="grid" />
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            className={cn(
+                              productGridLayout === "grid8"
+                                ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
+                                : productGridLayout === "grid4"
+                                ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
+                                : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3",
+                            )}
+                          >
+                            {displayProducts.map((product, index) => (
+                              <React.Fragment key={product.id}>
+                                <ProductCard
+                                  product={product}
+                                  priority={index < 18}
+                                  layout="grid"
+                                  compact={productGridLayout === "grid8"}
+                                  isAdmin={isAdmin}
+                                  onNavigate={() => setIsNavigating(true)}
+                                  onImageDiscoveryClick={(productId) => {
+                                    const canonicalId = product.canonical_product_id || product.id;
+                                    setImageDiscoveryModal({
+                                      isOpen: true,
+                                      productId: canonicalId,
+                                      productName: product.display_name || product.description,
+                                    });
+                                  }}
+                                />
+                                {MARKETPLACE_PROMO_BANNERS_ENABLED &&
+                                  index === 11 &&
+                                  isMarketplaceView && (
+                                  <div>
+                                    <ListItemBanner className="sm:hidden" />
+                                  </div>
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
 
-                  {!searchQuery && !loading && products.length === 0 && (
-                    <div className="bg-white rounded-md border border-gray-200 p-12 text-center">
-                      {isUberView ? (
-                        <>
-                          <Image
-                            src="/uber.png"
-                            alt="Uber"
-                            width={92}
-                            height={36}
-                            className="mx-auto mb-5 h-7 w-auto opacity-40"
-                            unoptimized
-                          />
-                          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                            No Uber delivery products right now
-                          </h3>
-                          <p className="text-gray-600 max-w-md mx-auto mb-6">
-                            {selectedLevel1
-                              ? `No Uber-eligible ${selectedLevel1.toLowerCase()} products are visible right now. Try a different category or clear filters.`
-                              : "Bike-store products marked for Uber delivery will appear here once they are available."}
-                          </p>
-                          <div className="flex flex-wrap items-center justify-center gap-3">
+                    {!searchQuery && !loading && products.length === 0 && (
+                      <div className="bg-white rounded-md border border-gray-200 p-12 text-center">
+                        {isUberView ? (
+                          <>
+                            <Image
+                              src="/uber.png"
+                              alt="Uber"
+                              width={92}
+                              height={36}
+                              className="mx-auto mb-5 h-7 w-auto opacity-40"
+                              unoptimized
+                            />
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                              No Uber delivery products right now
+                            </h3>
+                            <p className="text-gray-600 max-w-md mx-auto mb-6">
+                              {selectedLevel1
+                                ? `No Uber-eligible ${selectedLevel1.toLowerCase()} products are visible right now. Try a different category or clear filters.`
+                                : "Bike-store products marked for Uber delivery will appear here once they are available."}
+                            </p>
+                            <div className="flex flex-wrap items-center justify-center gap-3">
+                              {selectedLevel1 && (
+                                <Button
+                                  onClick={() => {
+                                    setSelectedLevel1(null);
+                                    setSelectedLevel2(null);
+                                    setSelectedLevel3(null);
+                                  }}
+                                  variant="outline"
+                                  className="rounded-md"
+                                >
+                                  Clear filters
+                                </Button>
+                              )}
+                              <Button
+                                onClick={() => setSpace("stores")}
+                                className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
+                              >
+                                Browse bike stores
+                              </Button>
+                            </div>
+                          </>
+                        ) : isStoresView ? (
+                          <>
+                            <StoreIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                              No shop products to show yet
+                            </h3>
+                            <p className="text-gray-600 max-w-md mx-auto mb-6">
+                              {selectedStoreId
+                                ? "This store has no visible inventory in the marketplace right now. Try all stores or check back soon."
+                                : "There are no bike shop products listed yet, or filters are hiding results. Try clearing filters or browse private listings."}
+                            </p>
+                            <div className="flex flex-wrap items-center justify-center gap-3">
+                              {(selectedStoreId || selectedStoreCategory) && (
+                                <Button
+                                  onClick={() => {
+                                    setSelectedStoreId(null);
+                                    setSelectedStoreCategory(null);
+                                    setAccumulatedProducts([]);
+                                    processedDataRef.current = new Set();
+                                    setCurrentPage(1);
+                                  }}
+                                  variant="outline"
+                                  className="rounded-md"
+                                >
+                                  Clear store filters
+                                </Button>
+                              )}
+                              <Button
+                                onClick={() => setSpace("marketplace")}
+                                className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
+                              >
+                                Back to marketplace
+                              </Button>
+                            </div>
+                          </>
+                        ) : viewMode === "trending" ? (
+                          <>
+                            <TrendingUp className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                              No trending items from private sellers
+                            </h3>
+                            <p className="text-gray-600 max-w-md mx-auto mb-6">
+                              {selectedLevel1
+                                ? `No trending ${selectedLevel1.toLowerCase()} items from private sellers right now. Try browsing all listings or check back soon!`
+                                : "Popular items from private sellers will appear here. Browse all listings or check back soon!"}
+                            </p>
+                            <Button
+                              onClick={() => setViewMode("all")}
+                              className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
+                            >
+                              Browse All Listings
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                              No listings found
+                            </h3>
+                            <p className="text-gray-600 max-w-md mx-auto mb-6">
+                              {selectedLevel1
+                                ? `No ${selectedLevel1.toLowerCase()} listings from private sellers available. Try a different category!`
+                                : "No listings from private sellers available at the moment."}
+                            </p>
                             {selectedLevel1 && (
                               <Button
                                 onClick={() => {
@@ -1521,116 +1622,33 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                                 variant="outline"
                                 className="rounded-md"
                               >
-                                Clear filters
+                                Clear Filters
                               </Button>
                             )}
-                            <Button
-                              onClick={() => setSpace("stores")}
-                              className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
-                            >
-                              Browse bike stores
-                            </Button>
-                          </div>
-                        </>
-                      ) : isStoresView ? (
-                        <>
-                          <StoreIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                            No shop products to show yet
-                          </h3>
-                          <p className="text-gray-600 max-w-md mx-auto mb-6">
-                            {selectedStoreId
-                              ? "This store has no visible inventory in the marketplace right now. Try all stores or check back soon."
-                              : "There are no bike shop products listed yet, or filters are hiding results. Try clearing filters or browse private listings."}
-                          </p>
-                          <div className="flex flex-wrap items-center justify-center gap-3">
-                            {(selectedStoreId || selectedStoreCategory) && (
-                              <Button
-                                onClick={() => {
-                                  setSelectedStoreId(null);
-                                  setSelectedStoreCategory(null);
-                                  setAccumulatedProducts([]);
-                                  processedDataRef.current = new Set();
-                                  setCurrentPage(1);
-                                }}
-                                variant="outline"
-                                className="rounded-md"
-                              >
-                                Clear store filters
-                              </Button>
-                            )}
-                            <Button
-                              onClick={() => setSpace("marketplace")}
-                              className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
-                            >
-                              Back to marketplace
-                            </Button>
-                          </div>
-                        </>
-                      ) : viewMode === "trending" ? (
-                        <>
-                          <TrendingUp className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                            No trending items from private sellers
-                          </h3>
-                          <p className="text-gray-600 max-w-md mx-auto mb-6">
-                            {selectedLevel1
-                              ? `No trending ${selectedLevel1.toLowerCase()} items from private sellers right now. Try browsing all listings or check back soon!`
-                              : "Popular items from private sellers will appear here. Browse all listings or check back soon!"}
-                          </p>
-                          <Button
-                            onClick={() => setViewMode("all")}
-                            className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
-                          >
-                            Browse All Listings
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                            No listings found
-                          </h3>
-                          <p className="text-gray-600 max-w-md mx-auto mb-6">
-                            {selectedLevel1
-                              ? `No ${selectedLevel1.toLowerCase()} listings from private sellers available. Try a different category!`
-                              : "No listings from private sellers available at the moment."}
-                          </p>
-                          {selectedLevel1 && (
-                            <Button
-                              onClick={() => {
-                                setSelectedLevel1(null);
-                                setSelectedLevel2(null);
-                                setSelectedLevel3(null);
-                              }}
-                              variant="outline"
-                              className="rounded-md"
-                            >
-                              Clear Filters
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
+                          </>
+                        )}
+                      </div>
+                    )}
 
-                  {/* Infinite scroll sentinel — sits just below the product grid */}
-                  <div ref={bottomSentinelRef} className="h-4" aria-hidden="true" />
+                    {/* Infinite scroll sentinel — sits just below the product grid */}
+                    <div ref={bottomSentinelRef} className="h-4" aria-hidden="true" />
 
-                  {/* Skeleton cards while next page loads */}
-                  {!searchQuery && isPaginating && displayProducts.length > 0 && (
-                    <div className={
-                      productGridLayout === "grid8"
-                        ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
-                        : productGridLayout === "grid4"
-                        ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
-                        : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3"
-                    }>
-                      {Array.from({ length: 6 }).map((_, i) => (
-                        <ProductCardSkeleton key={i} layout="grid" />
-                      ))}
-                    </div>
-                  )}
+                    {/* Skeleton cards while next page loads */}
+                    {!searchQuery && isPaginating && displayProducts.length > 0 && (
+                      <div className={
+                        productGridLayout === "grid8"
+                          ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
+                          : productGridLayout === "grid4"
+                          ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
+                          : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3"
+                      }>
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <ProductCardSkeleton key={i} layout="grid" />
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
               </>
             )}
           </div>

@@ -75,6 +75,8 @@ export async function GET(request: NextRequest) {
         qoh,
         created_at,
         user_id,
+        brand,
+        manufacturer_name,
         listing_type,
         listing_source,
         listing_status,
@@ -190,9 +192,10 @@ export async function GET(request: NextRequest) {
       query = query.eq('condition_rating', condition);
     }
 
-    // Apply brand filter (searches in display_name - case insensitive)
+    // Apply brand filter. Lightspeed inventory stores the brand in
+    // manufacturer_name; manual/private listings use brand.
     if (brand) {
-      query = query.ilike('display_name', `%${brand}%`);
+      query = query.or(`brand.ilike.${brand},manufacturer_name.ilike.${brand}`);
       console.log(`🏷️ [FILTER] Applying brand filter: "${brand}"`);
     }
 
@@ -368,6 +371,7 @@ export async function GET(request: NextRequest) {
         store_bicycle_store: user?.bicycle_store ?? null,
         first_name: user?.first_name || null,
         last_name: user?.last_name || null,
+        brand: product.brand || product.manufacturer_name || null,
         listing_type: product.listing_type,
         listing_source: product.listing_source,
         listing_status: product.listing_status,

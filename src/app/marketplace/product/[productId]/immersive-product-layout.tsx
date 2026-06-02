@@ -489,6 +489,7 @@ export function ImmersiveProductLayout({
             icon="store"
             seeAllHref={storeHref}
             seeAllLabel="View all"
+            seller={sellerInfo}
           />
           {brandName && (
             <RecommendationCarousel

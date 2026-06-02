@@ -246,7 +246,7 @@ export async function GET() {
   results.summary = {
     allTestsPassed: allPassed,
     likelyIssue: !allPassed ? 'See failed tests above' : 
-      tests.existingPurchases?.count === 0 
+      tests.existingPurchases?.count === 0
         ? 'Webhook might not be receiving events - check STRIPE_WEBHOOK_SECRET matches the yellowjersey.store endpoint'
         : 'System appears healthy',
   };

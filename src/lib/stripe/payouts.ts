@@ -108,7 +108,7 @@ export async function triggerSellerPayout(purchaseId: string): Promise<void> {
 
   // Calculate payout amount (should already be calculated, but verify)
   const typedPurchase = purchase as PayoutPurchase;
-  const payoutAmount = typedPurchase.seller_payout_amount || 
+  const payoutAmount = typedPurchase.seller_payout_amount ||
     Math.round((purchase.total_amount * (1 - PLATFORM_FEE_PERCENTAGE)) * 100) / 100;
 
   if (payoutAmount <= 0) {

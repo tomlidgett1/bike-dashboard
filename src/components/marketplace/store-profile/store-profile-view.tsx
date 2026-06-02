@@ -45,15 +45,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ProductCard } from "@/components/marketplace/product-card";
-import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
 import { ServicesSection } from "@/components/marketplace/store-profile/services-section";
 import { RentalsSection } from "@/components/marketplace/store-profile/rentals-section";
 import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-tab";
 import { CartButton } from "@/components/marketplace/cart-button";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
-import type { StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
+import type { StoreCategoryWithProducts, StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
+import { useProductImpressions, useStorePageView } from "@/lib/tracking/store-analytics";
 
 // ============================================================
 // Store Profile View
@@ -65,6 +65,13 @@ const BRAND_YELLOW = "#ffde59";
 
 type StoreTab = "home" | "products" | "rentals" | "service" | "about" | "reviews";
 type SortKey = "featured" | "price-asc" | "price-desc" | "newest";
+type StoreProductCategory = StoreCategoryWithProducts & {
+  products: MarketplaceProduct[];
+  carousel_size?: string;
+  section_id?: string | null;
+  logo_url?: string | null;
+  hide_title?: boolean;
+};
 
 interface StoreProfileViewProps {
   store: StoreProfile;
@@ -140,12 +147,22 @@ interface CategoryScrollRowProps {
   rowIndex: number;
   isExpanded: boolean;
   storeId: string;
+  trackAnalytics?: boolean;
 }
 
-function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId }: CategoryScrollRowProps) {
+function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, trackAnalytics }: CategoryScrollRowProps) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = React.useState(false);
   const [canScrollRight, setCanScrollRight] = React.useState(false);
+  const impressionContext = React.useMemo(
+    () => ({ rowIndex, carouselSize: catSize, expanded: isExpanded }),
+    [catSize, isExpanded, rowIndex],
+  );
+  const impressionRef = useProductImpressions(
+    trackAnalytics ? storeId : null,
+    products,
+    impressionContext,
+  );
 
   const checkScroll = React.useCallback(() => {
     const el = scrollRef.current;
@@ -196,17 +213,18 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId }:
       ? { gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))" }
       : undefined;
     return (
-      <div className={gridCls} style={gridStyle}>
+      <div ref={impressionRef} className={gridCls} style={gridStyle}>
         {products.map((product, j) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            priority={rowIndex === 0 && j < 6}
-            hideStoreMeta
-            compact={catSize === 'compact'}
-            featuredMobile={catSize === 'featured'}
-            storeId={storeId}
-          />
+          <div key={product.id} data-analytics-product-id={product.id}>
+            <ProductCard
+              product={product}
+              priority={rowIndex === 0 && j < 6}
+              hideStoreMeta
+              compact={catSize === 'compact'}
+              featuredMobile={catSize === 'featured'}
+              storeId={storeId}
+            />
+          </div>
         ))}
       </div>
     );
@@ -216,7 +234,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId }:
   // Uses CSS grid (grid-auto-flow: column) so every cell in the row gets the
   // same height — identical to how the old static grid worked.
   return (
-    <div className="relative">
+    <div ref={impressionRef} className="relative">
       {/* Left arrow – desktop only */}
       {canScrollLeft && (
         <button
@@ -256,7 +274,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId }:
           }}
         >
           {products.map((product, j) => (
-            <div key={product.id} className="snap-start min-w-0">
+            <div key={product.id} data-analytics-product-id={product.id} className="snap-start min-w-0">
               <ProductCard
                 product={product}
                 priority={rowIndex === 0 && j < 6}
@@ -282,6 +300,7 @@ function CarouselRow({
   compact,
   isOwnProfile,
   storeId,
+  trackAnalytics,
 }: {
   cat: { id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; logo_url?: string | null; hide_title?: boolean; source?: string | null };
   rowIndex: number;
@@ -290,6 +309,7 @@ function CarouselRow({
   compact: boolean;
   isOwnProfile?: boolean;
   storeId?: string;
+  trackAnalytics?: boolean;
 }) {
   const [logoUrl, setLogoUrl] = React.useState<string | null>(cat.logo_url ?? null);
   const [uploading, setUploading] = React.useState(false);
@@ -378,7 +398,11 @@ function CarouselRow({
             type="button"
             onClick={() => setExpandedCategories((prev) => {
               const next = new Set(prev);
-              isExpanded ? next.delete(cat.id) : next.add(cat.id);
+              if (isExpanded) {
+                next.delete(cat.id);
+              } else {
+                next.add(cat.id);
+              }
               return next;
             })}
             className="text-xs text-gray-500 hover:text-gray-900 cursor-pointer transition-colors flex-shrink-0"
@@ -393,6 +417,7 @@ function CarouselRow({
         rowIndex={rowIndex}
         isExpanded={isExpanded}
         storeId={storeId ?? ''}
+        trackAnalytics={trackAnalytics}
       />
     </section>
   );
@@ -408,8 +433,9 @@ function ProductsTab({
   compact,
   isOwnProfile,
   storeId,
+  trackAnalytics,
 }: {
-  sortedCategories: Array<{ id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; section_id?: string | null; logo_url?: string | null; source?: string | null }>;
+  sortedCategories: StoreProductCategory[];
   sections: StoreSectionWithCategories[];
   pageLayout?: Array<{ type: string; id: string }> | null;
   expandedCategories: Set<string>;
@@ -417,11 +443,12 @@ function ProductsTab({
   compact: boolean;
   isOwnProfile?: boolean;
   storeId?: string;
+  trackAnalytics?: boolean;
 }) {
   const productsByCatId = new Map(sortedCategories.map((c) => [c.id, c.products]));
 
   // Sections that have at least one visible carousel (after search/filter)
-  const visibleSectionMap = new Map(
+  const visibleSectionMap = new Map<string, StoreSectionWithCategories & { categories: StoreProductCategory[] }>(
     sections
       .map((sec) => ({
         ...sec,
@@ -430,7 +457,7 @@ function ProductsTab({
           .filter((c) => c.products.length > 0),
       }))
       .filter((sec) => sec.categories.length > 0)
-      .map((sec) => [sec.id, sec])
+      .map((sec) => [sec.id, sec as StoreSectionWithCategories & { categories: StoreProductCategory[] }])
   );
 
   // Standalone carousels (not in any section)
@@ -446,7 +473,7 @@ function ProductsTab({
   let rowIndex = 0;
 
   // ── Render helpers ──────────────────────────────────────────
-  const renderSection = (section: (typeof sections)[number] & { categories: typeof sortedCategories }) => {
+  const renderSection = (section: StoreSectionWithCategories & { categories: StoreProductCategory[] }) => {
     const hasUberCarousel = section.categories.some((cat) => cat.source === "uber");
 
     return (
@@ -465,13 +492,14 @@ function ProductsTab({
           return (
             <CarouselRow
               key={cat.id}
-              cat={{ ...cat, logo_url: (cat as any).logo_url ?? null }}
+              cat={{ ...cat, logo_url: cat.logo_url ?? null }}
               rowIndex={r}
               expandedCategories={expandedCategories}
               setExpandedCategories={setExpandedCategories}
               compact={compact}
               isOwnProfile={isOwnProfile}
               storeId={storeId}
+              trackAnalytics={trackAnalytics}
             />
           );
         })}
@@ -491,6 +519,7 @@ function ProductsTab({
         compact={compact}
         isOwnProfile={isOwnProfile}
         storeId={storeId}
+        trackAnalytics={trackAnalytics}
       />
     );
   };
@@ -503,7 +532,7 @@ function ProductsTab({
     for (const entry of pageLayout) {
       if (entry.type === 'section') {
         const sec = visibleSectionMap.get(entry.id);
-        if (sec) { ordered.push(renderSection(sec as any)); renderedIds.add(entry.id); }
+        if (sec) { ordered.push(renderSection(sec)); renderedIds.add(entry.id); }
       } else if (entry.type === 'carousel') {
         const cat = standaloneById.get(entry.id);
         if (cat) { ordered.push(renderCarousel(cat)); renderedIds.add(entry.id); }
@@ -513,7 +542,7 @@ function ProductsTab({
     // Append anything not yet in the saved layout (newly created items)
     const extras: React.ReactNode[] = [];
     for (const [id, sec] of visibleSectionMap) {
-      if (!renderedIds.has(id)) extras.push(renderSection(sec as any));
+      if (!renderedIds.has(id)) extras.push(renderSection(sec));
     }
     for (const [id, cat] of standaloneById) {
       if (!renderedIds.has(id)) extras.push(renderCarousel(cat));
@@ -536,7 +565,7 @@ function ProductsTab({
       {visibleSections.map((section, secIdx) => (
         <div key={section.id}>
           {secIdx > 0 && <div className="my-6" />}
-          {renderSection(section as any)}
+          {renderSection(section)}
         </div>
       ))}
 
@@ -568,6 +597,8 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   const [scrolled, setScrolled] = React.useState(false);
   const [showSaleOnly, setShowSaleOnly] = React.useState(false);
   const [previewMode, setPreviewMode] = React.useState(false);
+
+  useStorePageView(isOwnProfile ? null : store.id);
 
   // When previewMode is on, strip all owner-only UI so the store sees exactly
   // what a customer sees (no logo-upload overlays, no owner-only empty states, etc.)
@@ -622,7 +653,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
         case "price-desc": products.sort((a, b) => (b.price ?? 0) - (a.price ?? 0)); break;
         case "newest": products.sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()); break;
       }
-      return { ...cat, products, logo_url: (cat as any).logo_url ?? null };
+      return { ...cat, products, logo_url: cat.logo_url ?? null };
     });
   }, [selectedCategory, showSaleOnly, saleProductIds, sort, store.categories, storeSearch]);
 
@@ -699,6 +730,9 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
       )}
     </>
   );
+  const storeContentShell = immersive
+    ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12"
+    : "px-5 sm:px-8 lg:px-10";
 
   return (
     <div className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
@@ -865,7 +899,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
       {/* ── Underline tab bar ────────────────────────────── */}
       <div className={cn(
         "bg-gray-50 border-b border-gray-200",
-        immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
+        storeContentShell
       )}>
         <div className="flex items-center">
           {/* Tabs — scrollable */}
@@ -925,7 +959,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
         <div className="bg-gray-50">
           <div className={cn(
             "pt-3 pb-1",
-            immersive ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12" : "px-5 sm:px-8 lg:px-10"
+            storeContentShell
           )}>
             <div className="flex items-center gap-2 sm:gap-3">
               {/* Category pills (scrollable) */}
@@ -1027,12 +1061,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
       <div className={cn(
         activeTab === "home"
           ? "" // full-bleed; inherits the page's gray-50 so white cards pop
-          : cn(
-              "pt-2 pb-5 sm:pt-3 sm:pb-7",
-              immersive
-                ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12"
-                : "px-5 sm:px-8 lg:px-10",
-            )
+          : cn("pt-2 pb-5 sm:pt-3 sm:pb-7", storeContentShell)
       )}>
         <AnimatePresence mode="wait">
           <motion.div
@@ -1047,6 +1076,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
               <StoreHomeTab
                 store={store}
                 isOwnProfile={viewAsOwner}
+                contentShell={storeContentShell}
                 onNavigate={handleHomeNavigate}
                 onOpenCollection={handleOpenCollection}
               />
@@ -1064,6 +1094,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                   compact={compact}
                   isOwnProfile={viewAsOwner}
                   storeId={store.id}
+                  trackAnalytics={!isOwnProfile}
                 />
               ) : (
                 <EmptyState

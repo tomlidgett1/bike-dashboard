@@ -189,6 +189,16 @@ export function CartDrawer() {
     }
   }, [cart.isOpen, savedAddress, step]);
 
+  React.useEffect(() => {
+    if (!cart.isOpen || !isBuyNow || activeCount === 0) return;
+    setAddress(savedAddress);
+    setSelectedDelivery("auspost");
+    setUberEligibility({ eligible: false, distance: null, message: undefined, checking: false });
+    setError(null);
+    setIsRedirecting(false);
+    setStep("address");
+  }, [cart.buyNowRequestId, cart.isOpen, isBuyNow, activeCount, savedAddress]);
+
   // If the active set empties mid-flow, return to the list.
   React.useEffect(() => {
     if (activeCount === 0 && step !== "cart") setStep("cart");
@@ -380,6 +390,7 @@ export function CartDrawer() {
               <p className="text-xs text-gray-500 mt-1 max-w-[15rem]">
                 Add items from a seller to check out together.
               </p>
+              {error && <p className="mt-3 text-xs text-red-500 max-w-[15rem]">{error}</p>}
               <Button variant="outline" className="mt-5 rounded-md" onClick={cart.closeCart}>
                 Continue browsing
               </Button>

@@ -87,6 +87,7 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         purchase_date,
         service_history,
         upgrades_modifications,
+        manufacturer_name,
         brand,
         model,
         reason_for_selling,
@@ -237,6 +238,7 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       image_variants: null,
       immersive_page: immersivePage,
       uber_delivery_enabled: product.uber_delivery_enabled ?? false,
+      brand: product.brand || product.manufacturer_name || null,
       store_name: displayName,
       store_logo_url: user?.logo_url || null,
       store_account_type: user?.account_type || null,
@@ -324,7 +326,8 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
 
 // Helper function to fetch products from the same brand
 async function fetchBrandProducts(productId: string, brand: string): Promise<MarketplaceProduct[]> {
-  if (!brand.trim()) return [];
+  const normalizedBrand = brand.trim();
+  if (!normalizedBrand) return [];
   try {
     const supabase = await createClient();
 
@@ -332,10 +335,10 @@ async function fetchBrandProducts(productId: string, brand: string): Promise<Mar
       .from('marketplace_ready_products')
       .select(`
         id, description, display_name, price, discount_percent, discount_active, discount_ends_at, sale_price, qoh, model_year, marketplace_category, marketplace_subcategory,
-        created_at, user_id, brand,
+        created_at, user_id, brand, manufacturer_name,
         resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
-      .eq('brand', brand)
+      .or(`brand.ilike.${normalizedBrand},manufacturer_name.ilike.${normalizedBrand}`)
       .neq('id', productId)
       .is('sold_at', null)
       .order('created_at', { ascending: false })
@@ -372,7 +375,7 @@ async function fetchBrandProducts(productId: string, brand: string): Promise<Mar
         model_year: p.model_year || null,
         created_at: p.created_at,
         user_id: p.user_id,
-        brand: p.brand,
+        brand: p.brand || p.manufacturer_name || null,
         primary_image_url: imageUrl,
         card_url: imageUrl,
         cloudinary_public_id: effectivePid,
@@ -503,7 +506,7 @@ export default async function ProductPage({
     notFound();
   }
 
-  const productBrand = (product as any).brand as string | null | undefined;
+  const productBrand = product.brand?.trim() || null;
 
   // Fetch remaining data in parallel
   const [similarProducts, sellerData, brandProducts] = await Promise.all([

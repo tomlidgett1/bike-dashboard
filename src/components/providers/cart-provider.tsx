@@ -78,6 +78,11 @@ interface CartContextValue {
    */
   buyNowItem: CartItem | null;
   isBuyNow: boolean;
+  /**
+   * Incremented for each new Buy Now request so the drawer can move into the
+   * checkout flow once per click without fighting manual back navigation.
+   */
+  buyNowRequestId: number;
   startBuyNow: (item: CartItem) => void;
   exitBuyNow: () => void;
 }
@@ -115,6 +120,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // Buy Now: a single item shown in the drawer without touching the real cart.
   // Intentionally NOT persisted to localStorage.
   const [buyNowItem, setBuyNowItem] = React.useState<CartItem | null>(null);
+  const [buyNowRequestId, setBuyNowRequestId] = React.useState(0);
 
   // Hydrate from localStorage after mount (avoids SSR mismatch).
   React.useEffect(() => {
@@ -151,7 +157,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const closeCart = React.useCallback(() => setIsOpen(false), []);
 
   const startBuyNow = React.useCallback((item: CartItem) => {
-    setBuyNowItem(item);
+    const maxQuantity = Math.max(1, Math.floor(Number(item.maxQuantity) || 1));
+    setBuyNowItem({ ...item, maxQuantity, quantity: clampQty(item.quantity ?? 1, maxQuantity) });
+    setBuyNowRequestId((id) => id + 1);
     setIsOpen(true);
   }, []);
   const exitBuyNow = React.useCallback(() => setBuyNowItem(null), []);
@@ -257,10 +265,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       cancelReplacement,
       buyNowItem,
       isBuyNow: buyNowItem !== null,
+      buyNowRequestId,
       startBuyNow,
       exitBuyNow,
     }),
-    [items, totalQuantity, subtotal, hydrated, isOpen, openCart, closeCart, addItem, removeItem, setQuantity, clear, has, pendingReplacement, confirmReplacement, cancelReplacement, buyNowItem, startBuyNow, exitBuyNow]
+    [items, totalQuantity, subtotal, hydrated, isOpen, openCart, closeCart, addItem, removeItem, setQuantity, clear, has, pendingReplacement, confirmReplacement, cancelReplacement, buyNowItem, buyNowRequestId, startBuyNow, exitBuyNow]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

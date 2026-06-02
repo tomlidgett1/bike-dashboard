@@ -26,7 +26,6 @@ import type {
 } from "@/lib/types/store";
 import { resolveHomepageConfig } from "@/lib/marketplace/homepage-config";
 import { getHomepageIcon } from "@/components/marketplace/store-profile/homepage-icons";
-import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
 import { ProductCard } from "@/components/marketplace/product-card";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 
@@ -39,6 +38,7 @@ import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-ca
 interface StoreHomeTabProps {
   store: StoreProfile;
   isOwnProfile?: boolean;
+  contentShell?: string;
   /** Navigate by CTA href (tab key, 'call', 'directions', or absolute URL). */
   onNavigate: (href: string) => void;
   /** Open the Products tab filtered to a category. */
@@ -103,9 +103,14 @@ function Reveal({
   );
 }
 
-const SHELL = "max-w-[1400px] mx-auto px-5 sm:px-8 lg:px-10";
+const DEFAULT_CONTENT_SHELL = "px-5 sm:px-8 lg:px-10";
+const StoreHomeShellContext = React.createContext(DEFAULT_CONTENT_SHELL);
 
-export function StoreHomeTab({ store, isOwnProfile, onNavigate, onOpenCollection }: StoreHomeTabProps) {
+function useStoreHomeShell() {
+  return React.useContext(StoreHomeShellContext);
+}
+
+export function StoreHomeTab({ store, isOwnProfile, contentShell = DEFAULT_CONTENT_SHELL, onNavigate, onOpenCollection }: StoreHomeTabProps) {
   const config = React.useMemo<StoreHomepageConfig>(
     () => resolveHomepageConfig(store.homepage_config, store),
     [store],
@@ -169,36 +174,38 @@ export function StoreHomeTab({ store, isOwnProfile, onNavigate, onOpenCollection
   };
 
   return (
-    <div className="pb-2">
-      {/* Announcement bar */}
-      {config.announcement.enabled && config.announcement.text.trim() && (
-        <div
-          className="text-center text-sm font-medium py-2 px-4"
-          style={{ backgroundColor: accent, color: accentText }}
-        >
-          {config.announcement.text}
+    <StoreHomeShellContext.Provider value={contentShell}>
+      <div className="pb-2">
+        {/* Announcement bar */}
+        {config.announcement.enabled && config.announcement.text.trim() && (
+          <div
+            className="text-center text-sm font-medium py-2 px-4"
+            style={{ backgroundColor: accent, color: accentText }}
+          >
+            {config.announcement.text}
+          </div>
+        )}
+
+        {/* Hero */}
+        <Hero
+          store={store}
+          config={config}
+          accent={accent}
+          accentText={accentText}
+          onPrimary={() => handleCta(config.hero.primary_cta)}
+          onSecondary={() => handleCta(config.hero.secondary_cta)}
+          isOwnProfile={isOwnProfile}
+        />
+
+        {/* Ordered sections */}
+        <div className="space-y-10 sm:space-y-14 py-8 sm:py-12">
+          {config.section_order.map((key) => sectionRenderers[key]?.())}
         </div>
-      )}
 
-      {/* Hero */}
-      <Hero
-        store={store}
-        config={config}
-        accent={accent}
-        accentText={accentText}
-        onPrimary={() => handleCta(config.hero.primary_cta)}
-        onSecondary={() => handleCta(config.hero.secondary_cta)}
-        isOwnProfile={isOwnProfile}
-      />
-
-      {/* Ordered sections */}
-      <div className="space-y-10 sm:space-y-14 py-8 sm:py-12">
-        {config.section_order.map((key) => sectionRenderers[key]?.())}
+        {/* Store footer */}
+        <HomeFooter store={store} accent={accent} onNavigate={onNavigate} />
       </div>
-
-      {/* Store footer */}
-      <HomeFooter store={store} accent={accent} onNavigate={onNavigate} />
-    </div>
+    </StoreHomeShellContext.Provider>
   );
 }
 
@@ -232,6 +239,7 @@ function Hero({
   onSecondary: () => void;
   isOwnProfile?: boolean;
 }) {
+  const shell = useStoreHomeShell();
   const { hero } = config;
   const status = openStatusFor(store.opening_hours);
 
@@ -260,7 +268,7 @@ function Hero({
   // ── Split variant ──────────────────────────────────────
   if (hero.variant === "split") {
     return (
-      <section className={cn(SHELL, "relative pt-10 sm:pt-14")}>
+      <section className={cn(shell, "relative pt-10 sm:pt-14")}>
         {isOwnProfile && <EditButton />}
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
           <motion.div
@@ -314,7 +322,7 @@ function Hero({
           className="absolute inset-0 -z-10"
           style={{ background: `linear-gradient(180deg, ${accent}14 0%, transparent 60%)` }}
         />
-        <div className={cn(SHELL, "py-20 sm:py-28 text-center")}>
+        <div className={cn(shell, "py-20 sm:py-28 text-center")}>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -371,7 +379,7 @@ function Hero({
           />
         </div>
 
-        <div className={cn(SHELL, "w-full py-16")}>
+        <div className={cn(shell, "w-full py-16")}>
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
@@ -537,8 +545,9 @@ function HeroFallback({ store, accent }: { store: StoreProfile; accent: string }
 
 // ── Highlights ─────────────────────────────────────────────
 function HighlightsSection({ config, accent }: { config: StoreHomepageConfig; accent: string }) {
+  const shell = useStoreHomeShell();
   return (
-    <section className={SHELL}>
+    <section className={shell}>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         {config.highlights.items.map((item, i) => {
           const Icon = getHomepageIcon(item.icon);
@@ -571,8 +580,9 @@ function CollectionsSection({
   onOpenCollection: (categoryName: string) => void;
 }) {
   const items = config.collections.items;
+  const shell = useStoreHomeShell();
   return (
-    <section className={SHELL}>
+    <section className={shell}>
       <Reveal>
         <div className="flex items-end justify-between gap-4 mb-6">
           <div>
@@ -643,6 +653,7 @@ function StorySection({
   config: StoreHomepageConfig;
   accent: string;
 }) {
+  const shell = useStoreHomeShell();
   const { story } = config;
   const imageRight = story.layout === "image-right";
   const ImageBlock = (
@@ -685,7 +696,7 @@ function StorySection({
     </Reveal>
   );
   return (
-    <section className={SHELL}>
+    <section className={shell}>
       <div className={cn("flex flex-col gap-8 lg:gap-14 items-stretch", imageRight ? "lg:flex-row" : "lg:flex-row-reverse")}>
         {TextBlock}
         {ImageBlock}
@@ -709,8 +720,9 @@ function ServicesTeaser({
   onNavigate: (href: string) => void;
 }) {
   const top = [...store.services].sort((a, b) => Number(b.highlight) - Number(a.highlight)).slice(0, 3);
+  const shell = useStoreHomeShell();
   return (
-    <section className={SHELL}>
+    <section className={shell}>
       <div className="rounded-3xl bg-gray-900 text-white overflow-hidden">
         <div className="grid lg:grid-cols-[1.1fr_1.4fr] gap-0">
           {/* Left intro */}
@@ -784,8 +796,9 @@ function ServicesTeaser({
 // ── Gallery ────────────────────────────────────────────────
 function GallerySection({ config }: { config: StoreHomepageConfig }) {
   const imgs = config.gallery.images;
+  const shell = useStoreHomeShell();
   return (
-    <section className={SHELL}>
+    <section className={shell}>
       <Reveal>
         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 mb-6">
           {config.gallery.title}
@@ -820,6 +833,7 @@ function FeaturedCarouselsSection({
   config: StoreHomepageConfig;
   onOpenCollection: (categoryName: string) => void;
 }) {
+  const shell = useStoreHomeShell();
   const slots = [config.featured_carousels.slot1, config.featured_carousels.slot2]
     .filter((id): id is string => Boolean(id))
     .map((id) => store.categories.find((c) => c.id === id))
@@ -834,7 +848,7 @@ function FeaturedCarouselsSection({
       : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 
   return (
-    <section className={cn(SHELL, "space-y-8")}>
+    <section className={cn(shell, "space-y-8")}>
       {slots.map((cat) => (
         <Reveal key={cat!.id}>
           <div>
@@ -878,10 +892,11 @@ function VisitSection({
   accentText: string;
   onNavigate: (href: string) => void;
 }) {
+  const shell = useStoreHomeShell();
   const status = openStatusFor(store.opening_hours);
   const todayKey = DAY_KEYS[new Date().getDay()];
   return (
-    <section className={SHELL}>
+    <section className={shell}>
       <Reveal>
         <div className="grid lg:grid-cols-2 gap-6 lg:gap-8">
           {/* Contact + map CTA */}
@@ -983,9 +998,10 @@ function HomeFooter({
   onNavigate: (href: string) => void;
 }) {
   const social = store.social_links || {};
+  const shell = useStoreHomeShell();
   return (
     <footer className="border-t border-gray-200 bg-white">
-      <div className={cn(SHELL, "py-10")}>
+      <div className={cn(shell, "py-10")}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="flex items-center gap-3">
             {store.logo_url ? (

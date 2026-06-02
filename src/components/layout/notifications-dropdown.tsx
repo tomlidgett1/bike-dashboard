@@ -19,7 +19,6 @@ import {
 import {
   Sheet,
   SheetContent,
-  SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
 import { 
@@ -40,6 +39,18 @@ import type { OrderNotification } from '@/lib/hooks/use-order-notifications';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
+
+type LegacyProductImage = {
+  thumbnailUrl?: string | null;
+  thumbnail_url?: string | null;
+  cardUrl?: string | null;
+  card_url?: string | null;
+  url?: string | null;
+};
+
+function isLegacyProductImage(value: unknown): value is LegacyProductImage {
+  return !!value && typeof value === 'object';
+}
 
 // Get notification display info based on type
 function getNotificationDisplay(type: string): { 
@@ -104,12 +115,23 @@ function getNotificationDisplay(type: string): {
 
 // Get product image from notification
 function getProductImage(notification: OrderNotification): string | null {
-  const images = notification.purchase?.product?.images;
+  const product = notification.purchase?.product;
+  if (!product) return null;
+
+  if (product.thumbnail_url) return product.thumbnail_url;
+  if (product.cached_image_url) return product.cached_image_url;
+  if (product.primary_image_url) return product.primary_image_url;
+
+  const images = product.images;
   if (!images || !Array.isArray(images) || images.length === 0) return null;
   
   const firstImage = images[0];
   if (typeof firstImage === 'string') return firstImage;
+  if (!isLegacyProductImage(firstImage)) return null;
+  if (firstImage?.thumbnailUrl) return firstImage.thumbnailUrl;
+  if (firstImage?.thumbnail_url) return firstImage.thumbnail_url;
   if (firstImage?.cardUrl) return firstImage.cardUrl;
+  if (firstImage?.card_url) return firstImage.card_url;
   if (firstImage?.url) return firstImage.url;
   
   return null;
@@ -255,7 +277,7 @@ export function NotificationsDropdown() {
   };
 
   // Notification content - shared between dropdown and sheet
-  const NotificationContent = () => (
+  const renderNotificationContent = () => (
     <>
       {notifications.length === 0 ? (
         <div className="p-8 text-center text-gray-500">
@@ -326,7 +348,7 @@ export function NotificationsDropdown() {
 
             {/* Notifications List */}
             <div className="flex-1 overflow-y-auto">
-              <NotificationContent />
+              {renderNotificationContent()}
             </div>
 
             {/* Footer */}
@@ -385,7 +407,7 @@ export function NotificationsDropdown() {
 
         {/* Notifications List */}
         <div className="max-h-[400px] overflow-y-auto">
-          <NotificationContent />
+          {renderNotificationContent()}
         </div>
 
         <DropdownMenuSeparator />
@@ -404,4 +426,3 @@ export function NotificationsDropdown() {
     </DropdownMenu>
   );
 }
-

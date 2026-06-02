@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ChevronLeft, Package, Store } from "lucide-react";
+import { ChevronLeft, Store } from "lucide-react";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
 import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
@@ -12,9 +12,9 @@ import { EnhancedImageGallery } from "@/components/marketplace/product-detail/en
 import { RecommendationCarousel } from "@/components/marketplace/product-detail/recommendation-carousel";
 import { ProductUploadSuccessBanner } from "@/components/marketplace/product-upload-success-banner";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useProductView } from "@/lib/tracking/interaction-tracker";
+import { useStoreProductView } from "@/lib/tracking/store-analytics";
 import { ProductOptimizeDrawer } from "@/components/marketplace/product-optimize-drawer";
 import { ImmersiveProductLayout } from "./immersive-product-layout";
 
@@ -39,6 +39,15 @@ interface ProductPageClientProps {
   brandName: string | null;
   showUploadBanner?: boolean;
 }
+
+type ProductPageImage = {
+  url?: string;
+  galleryUrl?: string;
+  detailUrl?: string;
+  cardUrl?: string;
+  order?: number;
+  isPrimary?: boolean;
+};
 
 // ── Store context header (shown when arriving from a store page) ────────────
 function StoreContextHeader({ storeId, storeName, storeLogo }: { storeId: string; storeName: string; storeLogo: string | null }) {
@@ -88,7 +97,6 @@ export function ProductPageClient({
   brandName,
   showUploadBanner = false
 }: ProductPageClientProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const fromStoreId = searchParams.get('store');
   const { user } = useAuth();
@@ -101,17 +109,21 @@ export function ProductPageClient({
 
   // Track product view with dwell time
   useProductView(product.id, user?.id);
+  useStoreProductView(
+    !isOwner && product.store_account_type === "bicycle_store" ? product.user_id : null,
+    product.id,
+  );
 
   // Handle share functionality
   const handleShare = async () => {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: (product as any).display_name || product.description,
+          title: product.display_name || product.description,
           text: `Check out this ${product.marketplace_category} - $${product.price}`,
           url: window.location.href,
         });
-      } catch (err) {
+      } catch {
         console.log("Share cancelled");
       }
     } else {
@@ -130,15 +142,8 @@ export function ProductPageClient({
     }
     
     // Priority 2: Images JSONB field - use galleryUrl for best quality on product pages
-    if (Array.isArray((product as any).images) && (product as any).images.length > 0) {
-      const manualImages = (product as any).images as Array<{ 
-        url?: string; 
-        galleryUrl?: string;
-        detailUrl?: string;
-        cardUrl?: string;
-        order?: number; 
-        isPrimary?: boolean;
-      }>;
+    if (Array.isArray(product.images) && product.images.length > 0) {
+      const manualImages = product.images as ProductPageImage[];
       const filtered = manualImages
         .sort((a, b) => (a.order || 0) - (b.order || 0))
         // Use galleryUrl (1200px 4:3 padded) for product pages, with fallbacks
@@ -179,7 +184,7 @@ export function ProductPageClient({
   const showStoreHeader = !!fromStoreId && !!sellerInfo && sellerInfo.id === fromStoreId;
 
   // Immersive layout — per-product opt-in (Store Settings → Products tab).
-  if ((product as any).immersive_page) {
+  if (product.immersive_page) {
     return (
       <ImmersiveProductLayout
         product={localProduct}
@@ -225,7 +230,7 @@ export function ProductPageClient({
               level1={product.marketplace_category}
               level2={product.marketplace_subcategory}
               level3={product.marketplace_level_3_category}
-              productName={(product as any).display_name || product.description}
+              productName={product.display_name || product.description}
             />
           </div>
 
@@ -236,7 +241,7 @@ export function ProductPageClient({
               <div className="w-full">
                 <EnhancedImageGallery
                   images={images}
-                  productName={(product as any).display_name || product.description}
+                  productName={product.display_name || product.description}
                   currentIndex={currentImageIndex}
                   onIndexChange={setCurrentImageIndex}
                   onLikeToggle={() => setIsLiked(!isLiked)}
@@ -280,6 +285,7 @@ export function ProductPageClient({
               icon="store"
               seeAllHref={sellerSeeAllHref}
               seeAllLabel="View All Listings"
+              seller={sellerInfo}
             />
 
             {/* More from Brand Carousel */}
@@ -299,4 +305,3 @@ export function ProductPageClient({
     </>
   );
 }
-

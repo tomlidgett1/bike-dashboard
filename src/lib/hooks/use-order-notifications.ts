@@ -32,7 +32,11 @@ export interface OrderNotification {
       id: string;
       description: string;
       display_name: string | null;
-      images: any[] | null;
+      canonical_product_id: string | null;
+      primary_image_url: string | null;
+      cached_image_url: string | null;
+      thumbnail_url: string | null;
+      images: unknown[] | null;
     };
   };
   voucher?: {
@@ -52,6 +56,18 @@ interface UseOrderNotificationsReturn {
   markAsRead: (notificationId: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   refresh: () => void;
+}
+
+type RealtimeNotificationPayload = {
+  id?: string;
+  notification_category?: string;
+  is_read?: boolean;
+  read_at?: string | null;
+};
+
+function getRealtimeNotificationPayload(value: unknown): RealtimeNotificationPayload | null {
+  if (!value || typeof value !== 'object') return null;
+  return value as RealtimeNotificationPayload;
 }
 
 export function useOrderNotifications(
@@ -199,8 +215,9 @@ export function useOrderNotifications(
             filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
+            const notification = getRealtimeNotificationPayload(payload.new);
             // Only handle order notifications
-            if (payload.new && (payload.new as any).notification_category === 'order') {
+            if (notification?.notification_category === 'order') {
               // Refresh notifications to get enriched data
               fetchNotifications();
             }
@@ -215,13 +232,17 @@ export function useOrderNotifications(
             filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
+            const updated = getRealtimeNotificationPayload(payload.new);
             // Update local notification if it's an order notification
-            if (payload.new && (payload.new as any).notification_category === 'order') {
-              const updated = payload.new as any;
+            if (updated?.notification_category === 'order' && updated.id) {
               setNotifications(prev =>
                 prev.map(n =>
                   n.id === updated.id
-                    ? { ...n, is_read: updated.is_read, read_at: updated.read_at }
+                    ? {
+                        ...n,
+                        is_read: updated.is_read ?? n.is_read,
+                        read_at: updated.read_at ?? n.read_at,
+                      }
                     : n
                 )
               );
@@ -323,9 +344,11 @@ export function useOrderNotificationCount(refreshInterval: number = 30000) {
             filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
+            const newNotification = getRealtimeNotificationPayload(payload.new);
+            const oldNotification = getRealtimeNotificationPayload(payload.old);
             // Refresh count on any notification change
-            if ((payload.new as any)?.notification_category === 'order' ||
-                (payload.old as any)?.notification_category === 'order') {
+            if (newNotification?.notification_category === 'order' ||
+                oldNotification?.notification_category === 'order') {
               fetchCount();
             }
           }
@@ -354,7 +377,4 @@ export function useOrderNotificationCount(refreshInterval: number = 30000) {
 
   return { count, loading, refresh: fetchCount };
 }
-
-
-
 
