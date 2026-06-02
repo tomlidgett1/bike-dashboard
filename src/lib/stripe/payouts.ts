@@ -5,6 +5,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { getStripe, PLATFORM_FEE_PERCENTAGE } from '@/lib/stripe';
+import type Stripe from 'stripe';
 
 // Use service role client for payout operations
 function getServiceClient() {
@@ -21,6 +22,19 @@ function getServiceClient() {
 // ============================================================
 // Trigger Seller Payout
 // ============================================================
+
+interface PayoutPurchase {
+  id: string;
+  seller_id: string;
+  order_number: string;
+  total_amount: number;
+  platform_fee: number | null;
+  seller_payout_amount: number | null;
+  funds_status: string;
+  stripe_transfer_id: string | null;
+  stripe_payment_intent_id: string | null;
+  stripe_session_id: string | null;
+}
 
 export async function triggerSellerPayout(purchaseId: string): Promise<void> {
   const supabase = getServiceClient();
@@ -39,7 +53,9 @@ export async function triggerSellerPayout(purchaseId: string): Promise<void> {
       platform_fee,
       seller_payout_amount,
       funds_status,
-      stripe_transfer_id
+      stripe_transfer_id,
+      stripe_payment_intent_id,
+      stripe_session_id
     `)
     .eq('id', purchaseId)
     .single();
@@ -84,22 +100,32 @@ export async function triggerSellerPayout(purchaseId: string): Promise<void> {
   }
 
   // Calculate payout amount (should already be calculated, but verify)
-  const payoutAmount = purchase.seller_payout_amount || 
+  const typedPurchase = purchase as PayoutPurchase;
+  const payoutAmount = typedPurchase.seller_payout_amount || 
     Math.round((purchase.total_amount * (1 - PLATFORM_FEE_PERCENTAGE)) * 100) / 100;
 
   try {
-    // Create transfer to connected account
-    const transfer = await stripe.transfers.create({
-      amount: Math.round(payoutAmount * 100), // Convert to cents
+    const sourceCharge = await resolveSourceCharge(stripe, typedPurchase);
+    const transferParams: Stripe.TransferCreateParams = {
+      amount: Math.round(payoutAmount * 100),
       currency: 'aud',
       destination: seller.stripe_account_id,
-      transfer_group: purchase.order_number,
+      transfer_group: sourceCharge?.transferGroup || typedPurchase.order_number,
       metadata: {
-        purchase_id: purchase.id,
-        order_number: purchase.order_number,
+        purchase_id: typedPurchase.id,
+        order_number: typedPurchase.order_number,
         platform: 'yellow_jersey',
+        ...(typedPurchase.stripe_session_id && { stripe_session_id: typedPurchase.stripe_session_id }),
+        ...(typedPurchase.stripe_payment_intent_id && { stripe_payment_intent_id: typedPurchase.stripe_payment_intent_id }),
       },
-    });
+    };
+
+    if (sourceCharge?.chargeId) {
+      transferParams.source_transaction = sourceCharge.chargeId;
+    }
+
+    // Create transfer to connected account
+    const transfer = await stripe.transfers.create(transferParams);
 
     console.log(`[Payout] Transfer created: ${transfer.id}`);
 
@@ -135,13 +161,50 @@ export async function triggerSellerPayout(purchaseId: string): Promise<void> {
   }
 }
 
+async function resolveSourceCharge(
+  stripe: Stripe,
+  purchase: PayoutPurchase
+): Promise<{ chargeId: string; transferGroup?: string | null } | null> {
+  let chargeId: string | null = null;
+
+  if (purchase.stripe_payment_intent_id) {
+    const paymentIntent = await stripe.paymentIntents.retrieve(
+      purchase.stripe_payment_intent_id,
+      { expand: ['latest_charge'] }
+    );
+    chargeId =
+      typeof paymentIntent.latest_charge === 'string'
+        ? paymentIntent.latest_charge
+        : paymentIntent.latest_charge?.id || null;
+  }
+
+  if (!chargeId && purchase.stripe_session_id) {
+    const session = await stripe.checkout.sessions.retrieve(purchase.stripe_session_id, {
+      expand: ['payment_intent'],
+    });
+    const paymentIntent = session.payment_intent;
+    if (paymentIntent && typeof paymentIntent !== 'string') {
+      const latestCharge = paymentIntent.latest_charge;
+      chargeId = typeof latestCharge === 'string' ? latestCharge : latestCharge?.id || null;
+    }
+  }
+
+  if (!chargeId) return null;
+
+  const charge = await stripe.charges.retrieve(chargeId);
+  return {
+    chargeId,
+    transferGroup: charge.transfer_group,
+  };
+}
+
 // ============================================================
 // Record Payout Attempt
 // ============================================================
 
 async function recordPayoutAttempt(
   supabase: ReturnType<typeof getServiceClient>,
-  purchase: any,
+  purchase: Pick<PayoutPurchase, 'id' | 'seller_id' | 'total_amount' | 'platform_fee' | 'seller_payout_amount'>,
   stripeAccountId: string | null,
   status: 'pending' | 'processing' | 'completed' | 'failed',
   failureReason: string | null,
@@ -168,4 +231,3 @@ async function recordPayoutAttempt(
       completed_at: status === 'completed' ? new Date().toISOString() : null,
     });
 }
-

@@ -402,8 +402,7 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     purchaseData.buyer_fee = parseFloat(buyer_fee);
   }
   if (delivery_method) {
-    purchaseData.delivery_method = delivery_method;
-    purchaseData.delivery_description = delivery_description;
+    purchaseData.shipping_method = delivery_method;
   }
   // Link to offer if this is an offer payment
   if (offer_id) {
@@ -1000,8 +999,7 @@ async function handleCartCheckoutComplete(
     if (customerDetails?.email) purchaseData.buyer_email = customerDetails.email;
     if (rowBuyerFee > 0) purchaseData.buyer_fee = rowBuyerFee;
     if (delivery_method && isFirst) {
-      purchaseData.delivery_method = delivery_method;
-      purchaseData.delivery_description = delivery_description;
+      purchaseData.shipping_method = delivery_method;
     }
     if (voucher_id && isFirst) {
       purchaseData.voucher_id = voucher_id;
@@ -1292,8 +1290,7 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
 
   // Add delivery information
   if (delivery_method) {
-    purchaseData.delivery_method = delivery_method;
-    purchaseData.delivery_description = delivery_description;
+    purchaseData.shipping_method = delivery_method;
   }
   if (buyer_fee) {
     purchaseData.buyer_fee = parseFloat(buyer_fee);

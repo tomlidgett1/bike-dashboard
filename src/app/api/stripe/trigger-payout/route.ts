@@ -5,6 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createClient as createServerClient } from '@/lib/supabase/server';
+import { requireAdminAccess } from '@/lib/admin-auth';
 import Stripe from 'stripe';
 
 export async function POST(request: NextRequest) {
@@ -15,6 +17,12 @@ export async function POST(request: NextRequest) {
   };
 
   try {
+    const authClient = await createServerClient();
+    const auth = await requireAdminAccess(authClient);
+    if (!auth.authorized) {
+      return auth.response;
+    }
+
     const { purchaseId } = await request.json();
     
     if (!purchaseId) {
@@ -212,17 +220,30 @@ export async function POST(request: NextRequest) {
         logs,
       });
 
-    } catch (stripeError: any) {
-      log(`❌ Stripe transfer failed: ${stripeError.message}`);
-      log(`   Type: ${stripeError.type}`);
-      log(`   Code: ${stripeError.code}`);
+    } catch (stripeError) {
+      const stripeErrorDetails =
+        stripeError && typeof stripeError === 'object'
+          ? (stripeError as { message?: unknown; type?: unknown; code?: unknown })
+          : {};
+      const message =
+        typeof stripeErrorDetails.message === 'string'
+          ? stripeErrorDetails.message
+          : stripeError instanceof Error
+            ? stripeError.message
+            : 'Unknown Stripe error';
+      const type = typeof stripeErrorDetails.type === 'string' ? stripeErrorDetails.type : undefined;
+      const code = typeof stripeErrorDetails.code === 'string' ? stripeErrorDetails.code : undefined;
+
+      log(`❌ Stripe transfer failed: ${message}`);
+      log(`   Type: ${type || 'unknown'}`);
+      log(`   Code: ${code || 'unknown'}`);
       
       return NextResponse.json({
         error: 'Stripe transfer failed',
         stripe_error: {
-          message: stripeError.message,
-          type: stripeError.type,
-          code: stripeError.code,
+          message,
+          type,
+          code,
         },
         logs,
       }, { status: 500 });

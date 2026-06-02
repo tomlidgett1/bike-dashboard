@@ -3,11 +3,15 @@
 // ============================================================
 // GET: Returns the seller's Stripe Connect account status
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getStripe } from '@/lib/stripe';
+import {
+  isInaccessibleConnectAccountError,
+  resetStoredStripeConnectAccount,
+} from '@/lib/stripe/connect';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     console.log('[Stripe Connect Status] Request received');
     
@@ -32,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     // Get user profile with Stripe info
     // Try to fetch Stripe columns - they may not exist if migration hasn't run
-    const { data: profile, error: profileError } = await supabase
+    const { error: profileError } = await supabase
       .from('users')
       .select('user_id')
       .eq('user_id', user.id)
@@ -143,6 +147,19 @@ export async function GET(request: NextRequest) {
 
     } catch (stripeError) {
       console.error('[Stripe Connect Status] Stripe API error:', stripeError);
+
+      if (isInaccessibleConnectAccountError(stripeError)) {
+        await resetStoredStripeConnectAccount(supabase, user.id);
+
+        return NextResponse.json({
+          connected: false,
+          status: 'not_connected',
+          payoutsEnabled: false,
+          detailsSubmitted: false,
+          onboardingComplete: false,
+          staleAccountReset: true,
+        });
+      }
       
       // Return cached status if Stripe API fails
       return NextResponse.json({
@@ -167,4 +184,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

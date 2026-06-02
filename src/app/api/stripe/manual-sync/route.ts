@@ -4,9 +4,24 @@
 // Manually creates purchase records from completed Stripe sessions
 // Use this to recover purchases that weren't created by webhook
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createClient as createServerClient } from '@/lib/supabase/server';
+import { requireAdminAccess } from '@/lib/admin-auth';
 import Stripe from 'stripe';
+
+type ManualSyncResults = {
+  timestamp: string;
+  synced: Record<string, unknown>[];
+  skipped: Record<string, unknown>[];
+  errors: Record<string, unknown>[];
+  summary?: {
+    synced: number;
+    skipped: number;
+    errors: number;
+  };
+  error?: string;
+};
 
 function getServiceClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -27,8 +42,8 @@ function getStripe() {
   return new Stripe(secretKey, { apiVersion: '2025-11-17.clover' });
 }
 
-export async function GET(request: NextRequest) {
-  const results: Record<string, any> = {
+export async function GET() {
+  const results: ManualSyncResults = {
     timestamp: new Date().toISOString(),
     synced: [],
     skipped: [],
@@ -36,6 +51,12 @@ export async function GET(request: NextRequest) {
   };
 
   try {
+    const authClient = await createServerClient();
+    const auth = await requireAdminAccess(authClient);
+    if (!auth.authorized) {
+      return auth.response;
+    }
+
     const stripe = getStripe();
     const supabase = getServiceClient();
 
@@ -177,4 +198,3 @@ export async function GET(request: NextRequest) {
     headers: { 'Content-Type': 'application/json' },
   });
 }
-

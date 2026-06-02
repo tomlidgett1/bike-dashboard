@@ -3,11 +3,19 @@
 // ============================================================
 // GET: Check payout status for recent purchases
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createClient as createServerClient } from '@/lib/supabase/server';
+import { requireAdminAccess } from '@/lib/admin-auth';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
+    const authClient = await createServerClient();
+    const auth = await requireAdminAccess(authClient);
+    if (!auth.authorized) {
+      return auth.response;
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

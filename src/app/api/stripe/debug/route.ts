@@ -3,16 +3,26 @@
 // ============================================================
 // GET: Checks Stripe configuration and recent events
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getStripe } from '@/lib/stripe';
+import { requireAdminAccess } from '@/lib/admin-auth';
+import { createClient } from '@/lib/supabase/server';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const results: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
   };
 
   try {
+    const supabase = await createClient();
+    const auth = await requireAdminAccess(supabase);
+    if (!auth.authorized) {
+      return auth.response;
+    }
+
     const stripe = getStripe();
+    const secretKey = process.env.STRIPE_SECRET_KEY || '';
+    results.mode = secretKey.startsWith('sk_live') ? 'live' : 'test';
 
     // Test 1: Stripe API connection
     try {
@@ -20,6 +30,7 @@ export async function GET(request: NextRequest) {
       results.stripeConnection = {
         status: 'OK',
         currency: balance.available[0]?.currency || 'unknown',
+        livemode: secretKey.startsWith('sk_live'),
       };
     } catch (err) {
       results.stripeConnection = {
@@ -41,6 +52,7 @@ export async function GET(request: NextRequest) {
           status: s.status,
           paymentStatus: s.payment_status,
           created: new Date(s.created * 1000).toISOString(),
+          livemode: s.livemode,
           hasMetadata: !!s.metadata && Object.keys(s.metadata).length > 0,
           metadataKeys: s.metadata ? Object.keys(s.metadata) : [],
           amountTotal: s.amount_total ? `$${(s.amount_total / 100).toFixed(2)}` : 'N/A',
@@ -63,10 +75,8 @@ export async function GET(request: NextRequest) {
           id: w.id.substring(0, 15) + '...',
           url: w.url,
           status: w.status,
-          enabledEvents: w.enabled_events?.slice(0, 5),
-          moreEvents: w.enabled_events && w.enabled_events.length > 5 
-            ? `+${w.enabled_events.length - 5} more` 
-            : null,
+          hasCheckoutCompleted: w.enabled_events?.includes('checkout.session.completed') || false,
+          enabledEventsCount: w.enabled_events?.length || 0,
         })),
       };
 
@@ -126,4 +136,3 @@ export async function GET(request: NextRequest) {
     headers: { 'Content-Type': 'application/json' },
   });
 }
-

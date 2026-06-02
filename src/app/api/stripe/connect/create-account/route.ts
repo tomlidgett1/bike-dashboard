@@ -7,6 +7,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getStripe } from '@/lib/stripe';
+import {
+  createStripeConnectOnboardingLink,
+  createStripeExpressAccount,
+  isInaccessibleConnectAccountError,
+  resetStoredStripeConnectAccount,
+} from '@/lib/stripe/connect';
 
 export async function POST(request: NextRequest) {
   try {
@@ -56,62 +62,39 @@ export async function POST(request: NextRequest) {
 
     // Check if already has a Stripe account
     if (profile.stripe_account_id) {
-      // Generate new onboarding link for existing account
-      const accountLink = await stripe.accountLinks.create({
-        account: profile.stripe_account_id,
-        refresh_url: `${baseUrl}/marketplace/settings?stripe=refresh`,
-        return_url: `${baseUrl}/marketplace/settings?stripe=success`,
-        type: 'account_onboarding',
-      });
+      try {
+        await stripe.accounts.retrieve(profile.stripe_account_id);
+        const accountLink = await createStripeConnectOnboardingLink(
+          stripe,
+          profile.stripe_account_id,
+          baseUrl
+        );
 
-      return NextResponse.json({
-        url: accountLink.url,
-        accountId: profile.stripe_account_id,
-        isExisting: true,
-      });
+        return NextResponse.json({
+          url: accountLink.url,
+          accountId: profile.stripe_account_id,
+          isExisting: true,
+        });
+      } catch (error) {
+        if (!isInaccessibleConnectAccountError(error)) {
+          throw error;
+        }
+
+        console.warn('[Stripe Connect] Resetting inaccessible stored account before creating a new one:', {
+          userId: user.id,
+          accountId: profile.stripe_account_id,
+        });
+        await resetStoredStripeConnectAccount(supabase, user.id);
+      }
     }
 
-    // Create new Stripe Connect Express account
-    const account = await stripe.accounts.create({
-      type: 'express',
-      country: 'AU',
-      email: profile.email || user.email,
-      capabilities: {
-        card_payments: { requested: true },
-        transfers: { requested: true },
-      },
-      business_type: 'individual', // Can be updated during onboarding
-      business_profile: {
-        name: profile.business_name || profile.name || undefined,
-        product_description: 'Selling cycling products on Yellow Jersey Marketplace',
-      },
-      metadata: {
-        user_id: user.id,
-        platform: 'yellow_jersey',
-      },
-    });
-
-    // Save account ID to user profile
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({
-        stripe_account_id: account.id,
-        stripe_account_status: 'pending',
-        stripe_connected_at: new Date().toISOString(),
-      })
-      .eq('user_id', user.id);
-
-    if (updateError) {
-      console.error('[Stripe Connect] Failed to save account ID:', updateError);
-      // Don't fail - account is created, just log the error
-    }
-
-    // Generate onboarding link
-    const accountLink = await stripe.accountLinks.create({
-      account: account.id,
-      refresh_url: `${baseUrl}/marketplace/settings?stripe=refresh`,
-      return_url: `${baseUrl}/marketplace/settings?stripe=success`,
-      type: 'account_onboarding',
+    const { account, accountLink } = await createStripeExpressAccount({
+      stripe,
+      supabase,
+      userId: user.id,
+      userEmail: user.email,
+      profile,
+      baseUrl,
     });
 
     console.log('[Stripe Connect] Account created:', account.id);
@@ -136,4 +119,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

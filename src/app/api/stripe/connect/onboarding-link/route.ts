@@ -6,6 +6,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getStripe } from '@/lib/stripe';
+import {
+  createStripeConnectOnboardingLink,
+  createStripeExpressAccount,
+  isInaccessibleConnectAccountError,
+  resetStoredStripeConnectAccount,
+} from '@/lib/stripe/connect';
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +39,7 @@ export async function POST(request: NextRequest) {
     // Get user profile
     const { data: profile, error: profileError } = await supabase
       .from('users')
-      .select('stripe_account_id')
+      .select('stripe_account_id, email, business_name, name')
       .eq('user_id', user.id)
       .single();
 
@@ -44,16 +50,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate new onboarding link
-    const accountLink = await stripe.accountLinks.create({
-      account: profile.stripe_account_id,
-      refresh_url: `${baseUrl}/marketplace/settings?stripe=refresh`,
-      return_url: `${baseUrl}/marketplace/settings?stripe=success`,
-      type: 'account_onboarding',
-    });
+    let accountLink;
+    let accountId = profile.stripe_account_id;
+
+    try {
+      await stripe.accounts.retrieve(accountId);
+      accountLink = await createStripeConnectOnboardingLink(stripe, accountId, baseUrl);
+    } catch (error) {
+      if (!isInaccessibleConnectAccountError(error)) {
+        throw error;
+      }
+
+      console.warn('[Stripe Connect Onboarding] Stored account is inaccessible; creating a new account:', {
+        userId: user.id,
+        accountId,
+      });
+      await resetStoredStripeConnectAccount(supabase, user.id);
+      const fresh = await createStripeExpressAccount({
+        stripe,
+        supabase,
+        userId: user.id,
+        userEmail: user.email,
+        profile,
+        baseUrl,
+      });
+      accountId = fresh.account.id;
+      accountLink = fresh.accountLink;
+    }
 
     return NextResponse.json({
       url: accountLink.url,
+      accountId,
     });
 
   } catch (error) {
@@ -64,4 +91,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

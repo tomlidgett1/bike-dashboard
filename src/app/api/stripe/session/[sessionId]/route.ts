@@ -43,7 +43,7 @@ export async function GET(
         status,
         payment_status,
         purchase_date,
-        delivery_method,
+        shipping_method,
         product:products(
           id,
           description,
@@ -57,6 +57,13 @@ export async function GET(
     // so we retry without it rather than masking unrelated errors.
     const isMissingQuantity = (err: { code?: string; message?: string } | null) =>
       !!err && (err.code === '42703' || /quantity/i.test(err.message || ''));
+    const normalizePurchase = (purchase: unknown) => {
+      const row = purchase as Record<string, unknown>;
+      return {
+        ...row,
+        delivery_method: row.shipping_method,
+      };
+    };
 
     // Multi-item (cart) lookup — always keyed by session id
     if (multi) {
@@ -78,7 +85,9 @@ export async function GET(
         return NextResponse.json({ error: 'Purchase not found' }, { status: 404 });
       }
 
-      return NextResponse.json({ purchases: purchases || [] });
+      return NextResponse.json({
+        purchases: (purchases || []).map(normalizePurchase),
+      });
     }
 
     const runSingle = (sel: string) => {
@@ -106,7 +115,9 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ purchase });
+    return NextResponse.json({
+      purchase: normalizePurchase(purchase),
+    });
 
   } catch (error) {
     console.error('[Session API] Error:', error);
@@ -116,4 +127,3 @@ export async function GET(
     );
   }
 }
-

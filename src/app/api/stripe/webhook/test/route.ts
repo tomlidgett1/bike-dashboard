@@ -3,8 +3,10 @@
 // ============================================================
 // GET: Tests the database connection and purchase creation logic
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createClient as createServerClient } from '@/lib/supabase/server';
+import { requireAdminAccess } from '@/lib/admin-auth';
 
 function getServiceClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -17,11 +19,17 @@ function getServiceClient() {
   return createClient(supabaseUrl, supabaseServiceKey);
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const results: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
     tests: {},
   };
+
+  const authClient = await createServerClient();
+  const auth = await requireAdminAccess(authClient);
+  if (!auth.authorized) {
+    return auth.response;
+  }
 
   // Test 1: Environment variables
   results.tests = {
@@ -38,7 +46,7 @@ export async function GET(request: NextRequest) {
     const supabase = getServiceClient();
     
     // Test read from purchases table
-    const { data: purchaseCount, error: countError } = await supabase
+    const { error: countError } = await supabase
       .from('purchases')
       .select('id', { count: 'exact', head: true });
     
@@ -74,7 +82,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Test columns exist on purchases
-    const { data: purchaseCols, error: colsError } = await supabase
+    const { error: colsError } = await supabase
       .from('purchases')
       .select('stripe_session_id, funds_status, funds_release_at')
       .limit(1);
@@ -133,4 +141,3 @@ export async function GET(request: NextRequest) {
     headers: { 'Content-Type': 'application/json' },
   });
 }
-
