@@ -289,6 +289,8 @@ export async function GET(
           catRawProducts = sortedProducts.filter(
             (p) => (p.manufacturer_name ?? '').toLowerCase() === brandLower
           );
+        } else if (cat.source === 'uber') {
+          catRawProducts = sortedProducts.filter((p) => p.uber_delivery_enabled === true);
         } else {
           // custom: explicit product list
           catRawProducts = (cat.product_ids ?? [])
@@ -309,6 +311,7 @@ export async function GET(
           categoriesWithProducts.push({
             id: cat.id,
             name: displayName,
+            source: cat.source,
             display_order: cat.display_order,
             carousel_size: cat.carousel_size ?? 'normal',
             section_id: cat.section_id ?? null,

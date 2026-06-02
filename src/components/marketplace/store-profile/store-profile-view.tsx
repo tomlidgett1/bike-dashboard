@@ -50,6 +50,7 @@ import { ServicesSection } from "@/components/marketplace/store-profile/services
 import { RentalsSection } from "@/components/marketplace/store-profile/rentals-section";
 import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-tab";
 import { CartButton } from "@/components/marketplace/cart-button";
+import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 import type { StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
@@ -284,7 +285,7 @@ function CarouselRow({
   isOwnProfile,
   storeId,
 }: {
-  cat: { id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; logo_url?: string | null; hide_title?: boolean };
+  cat: { id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; logo_url?: string | null; hide_title?: boolean; source?: string | null };
   rowIndex: number;
   expandedCategories: Set<string>;
   setExpandedCategories: React.Dispatch<React.SetStateAction<Set<string>>>;
@@ -333,7 +334,9 @@ function CarouselRow({
     <section key={cat.id}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-3">
-          {logoUrl ? (
+          {cat.source === "uber" ? (
+            <UberCarouselLogo />
+          ) : logoUrl ? (
             <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
               <img src={logoUrl} alt={cat.name} className="h-full w-auto max-w-[96px] object-contain rounded-sm" />
               {isOwnProfile && (

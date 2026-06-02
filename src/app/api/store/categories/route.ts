@@ -104,9 +104,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!['lightspeed', 'custom', 'brand'].includes(body.source)) {
+    if (!['lightspeed', 'custom', 'brand', 'uber'].includes(body.source)) {
       return NextResponse.json(
-        { error: 'Source must be "lightspeed", "custom", or "brand"' },
+        { error: 'Source must be "lightspeed", "custom", "brand", or "uber"' },
         { status: 400 }
       );
     }
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
         source: body.source,
         lightspeed_category_id: body.lightspeed_category_id,
         brand_name: body.brand_name ?? null,
-        product_ids: body.product_ids || [],
+        product_ids: body.source === 'uber' ? [] : body.product_ids || [],
         display_order: displayOrder,
         is_active: true,
       })
@@ -322,7 +322,6 @@ export async function DELETE(request: NextRequest) {
     );
   }
 }
-
 
 
 

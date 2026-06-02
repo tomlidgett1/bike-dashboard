@@ -18,6 +18,7 @@ import {
   ImagePlus,
   X,
   Search,
+  Truck,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { StoreCategory, LightspeedCategoryOption, CarouselSize } from "@/lib/types/store";
+import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 
 interface BrandOption {
   name: string;
@@ -88,7 +90,7 @@ export function StoreCategoriesManager() {
 
   // Product picker filter state
   const [productSearch, setProductSearch] = React.useState('');
-  const [productSourceFilter, setProductSourceFilter] = React.useState<'all' | 'lightspeed' | 'private'>('all');
+  const [productSourceFilter, setProductSourceFilter] = React.useState<'all' | 'lightspeed' | 'private' | 'uber'>('all');
 
   // Logo upload state
   const [uploadingLogoId, setUploadingLogoId] = React.useState<string | null>(null);
@@ -411,6 +413,33 @@ export function StoreCategoriesManager() {
     }
   };
 
+  const handleAddUberCarousel = async () => {
+    const existingUberCarousel = categories.find((category) => category.source === 'uber');
+    if (existingUberCarousel) {
+      alert('An Uber Delivery carousel already exists.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const response = await fetch('/api/store/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Uber Delivery',
+          source: 'uber',
+          product_ids: [],
+        }),
+      });
+
+      if (response.ok) await fetchData();
+    } catch (error) {
+      console.error('Error adding Uber carousel:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Open edit dialog
   const handleEdit = (category: StoreCategory) => {
     setEditingCategory(category);
@@ -574,17 +603,32 @@ export function StoreCategoriesManager() {
 
   const lightspeedCount = products.filter(p => p.listing_type !== 'private_listing').length;
   const privateCount = products.filter(p => p.listing_type === 'private_listing').length;
+  const uberCount = products.filter(p => p.uber_delivery_enabled === true).length;
 
   const filteredProducts = products.filter(p => {
     const isPrivate = p.listing_type === 'private_listing';
     if (productSourceFilter === 'lightspeed' && isPrivate) return false;
     if (productSourceFilter === 'private' && !isPrivate) return false;
+    if (productSourceFilter === 'uber' && p.uber_delivery_enabled !== true) return false;
     if (productSearch) {
       const q = productSearch.toLowerCase();
       if (!(p.display_name || p.description || '').toLowerCase().includes(q)) return false;
     }
     return true;
   });
+  const visibleProductIds = React.useMemo(() => filteredProducts.map((product) => product.id), [filteredProducts]);
+  const allVisibleSelected = visibleProductIds.length > 0 && visibleProductIds.every((id) => formData.productIds.includes(id));
+  const toggleVisibleProducts = () => {
+    setFormData((prev) => {
+      if (allVisibleSelected) {
+        const visibleSet = new Set(visibleProductIds);
+        return { ...prev, productIds: prev.productIds.filter((id) => !visibleSet.has(id)) };
+      }
+      const next = new Set(prev.productIds);
+      visibleProductIds.forEach((id) => next.add(id));
+      return { ...prev, productIds: Array.from(next) };
+    });
+  };
 
   if (loading) {
     return (
@@ -620,6 +664,10 @@ export function StoreCategoriesManager() {
           <Tag className="h-4 w-4 mr-2" />
           Add Brand Carousel
         </Button>
+        <Button onClick={handleAddUberCarousel} variant="outline" disabled={saving} className="rounded-md">
+          <Truck className="h-4 w-4 mr-2" />
+          Add Uber Carousel
+        </Button>
         <Button onClick={handleAddCustom} className="rounded-md">
           <Plus className="h-4 w-4 mr-2" />
           Add Custom
@@ -653,12 +701,18 @@ export function StoreCategoriesManager() {
                       {category.name}
                     </h4>
                     <Badge variant="secondary" className="text-xs flex-shrink-0 font-normal">
-                      {category.source === 'brand' ? `Brand: ${category.brand_name}` : category.source}
+                      {category.source === 'brand'
+                        ? `Brand: ${category.brand_name}`
+                        : category.source === 'uber'
+                          ? 'Uber'
+                          : category.source}
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {category.source === 'brand'
                       ? 'Matches products by brand automatically'
+                      : category.source === 'uber'
+                        ? 'Automatically shows every Uber-enabled product'
                       : `${category.product_ids.length} products assigned`}
                   </p>
                 </div>
@@ -715,15 +769,19 @@ export function StoreCategoriesManager() {
                       </button>
                     </>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleLogoClick(category.id)}
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border rounded-md px-2 py-1 transition-colors cursor-pointer"
-                      title="Add carousel logo"
-                    >
-                      <ImagePlus className="h-3.5 w-3.5" />
-                      Logo
-                    </button>
+                    category.source === 'uber' ? (
+                      <UberCarouselLogo />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleLogoClick(category.id)}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border rounded-md px-2 py-1 transition-colors cursor-pointer"
+                        title="Add carousel logo"
+                      >
+                        <ImagePlus className="h-3.5 w-3.5" />
+                        Logo
+                      </button>
+                    )
                   )}
                 </div>
 
@@ -908,7 +966,18 @@ export function StoreCategoriesManager() {
             </div>
 
             <div className="space-y-2">
-              <Label>Select Products ({formData.productIds.length} selected)</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>Select Products ({formData.productIds.length} selected)</Label>
+                {filteredProducts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={toggleVisibleProducts}
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    {allVisibleSelected ? 'Clear visible' : `Select visible (${filteredProducts.length})`}
+                  </button>
+                )}
+              </div>
               {/* Search + source filter */}
               <div className="space-y-2">
                 <div className="relative">
@@ -925,6 +994,7 @@ export function StoreCategoriesManager() {
                     { key: 'all', label: `All (${products.length})` },
                     { key: 'lightspeed', label: `Lightspeed (${lightspeedCount})` },
                     { key: 'private', label: `Private (${privateCount})` },
+                    { key: 'uber', label: `Uber (${uberCount})` },
                   ] as const).map(({ key, label }) => (
                     <button
                       key={key}
@@ -947,12 +1017,15 @@ export function StoreCategoriesManager() {
                     <p className="text-sm text-muted-foreground text-center py-8">
                       {productSourceFilter === 'private'
                         ? 'No private listings yet. Add secondhand items via your Listings page.'
+                        : productSourceFilter === 'uber'
+                          ? 'No Uber-enabled products yet. Turn on Uber delivery for products in the Uber settings page.'
                         : 'No products found'}
                     </p>
                   ) : (
                     <div className="space-y-0.5">
                       {filteredProducts.map((product) => {
                         const isPrivate = product.listing_type === 'private_listing';
+                        const isUber = product.uber_delivery_enabled === true;
                         return (
                           <div
                             key={product.id}
@@ -978,6 +1051,8 @@ export function StoreCategoriesManager() {
                                 </p>
                                 {isPrivate ? (
                                   <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-amber-300 text-amber-700 bg-amber-50">Private</span>
+                                ) : isUber ? (
+                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-[#0eb462]/30 text-[#087a43] bg-[#0eb462]/10">Uber</span>
                                 ) : (
                                   <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-blue-300 text-blue-700 bg-blue-50">Lightspeed</span>
                                 )}
@@ -1042,7 +1117,18 @@ export function StoreCategoriesManager() {
             </div>
 
             <div className="space-y-2">
-              <Label>Select Products ({formData.productIds.length} selected)</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>Select Products ({formData.productIds.length} selected)</Label>
+                {filteredProducts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={toggleVisibleProducts}
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    {allVisibleSelected ? 'Clear visible' : `Select visible (${filteredProducts.length})`}
+                  </button>
+                )}
+              </div>
               {/* Search + source filter */}
               <div className="space-y-2">
                 <div className="relative">
@@ -1059,6 +1145,7 @@ export function StoreCategoriesManager() {
                     { key: 'all', label: `All (${products.length})` },
                     { key: 'lightspeed', label: `Lightspeed (${lightspeedCount})` },
                     { key: 'private', label: `Private (${privateCount})` },
+                    { key: 'uber', label: `Uber (${uberCount})` },
                   ] as const).map(({ key, label }) => (
                     <button
                       key={key}
@@ -1081,12 +1168,15 @@ export function StoreCategoriesManager() {
                     <p className="text-sm text-muted-foreground text-center py-8">
                       {productSourceFilter === 'private'
                         ? 'No private listings yet. Add secondhand items via your Listings page.'
+                        : productSourceFilter === 'uber'
+                          ? 'No Uber-enabled products yet. Turn on Uber delivery for products in the Uber settings page.'
                         : 'No products found'}
                     </p>
                   ) : (
                     <div className="space-y-0.5">
                       {filteredProducts.map((product) => {
                         const isPrivate = product.listing_type === 'private_listing';
+                        const isUber = product.uber_delivery_enabled === true;
                         return (
                           <div
                             key={product.id}
@@ -1112,6 +1202,8 @@ export function StoreCategoriesManager() {
                                 </p>
                                 {isPrivate ? (
                                   <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-amber-300 text-amber-700 bg-amber-50">Private</span>
+                                ) : isUber ? (
+                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-[#0eb462]/30 text-[#087a43] bg-[#0eb462]/10">Uber</span>
                                 ) : (
                                   <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-blue-300 text-blue-700 bg-blue-50">Lightspeed</span>
                                 )}
@@ -1292,4 +1384,3 @@ export function StoreCategoriesManager() {
     </div>
   );
 }
-

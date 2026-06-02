@@ -28,6 +28,7 @@ import { resolveHomepageConfig } from "@/lib/marketplace/homepage-config";
 import { getHomepageIcon } from "@/components/marketplace/store-profile/homepage-icons";
 import { ProductCarousel } from "@/components/marketplace/store-profile/product-carousel";
 import { ProductCard } from "@/components/marketplace/product-card";
+import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 
 // ============================================================
 // Store Home Tab — the public landing page for a bicycle store.
@@ -838,7 +839,10 @@ function FeaturedCarouselsSection({
         <Reveal key={cat!.id}>
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold text-gray-900">{cat!.name}</h3>
+              <div className="flex items-center gap-3">
+                {cat!.source === "uber" && <UberCarouselLogo />}
+                <h3 className="text-lg font-semibold text-gray-900">{cat!.name}</h3>
+              </div>
               <button
                 type="button"
                 onClick={() => onOpenCollection(cat!.name)}

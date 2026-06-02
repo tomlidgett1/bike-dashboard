@@ -15,6 +15,7 @@ import {
   X,
   Layers,
   ImagePlus,
+  Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +40,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { StoreSection, StoreCategory } from "@/lib/types/store";
+import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 
 // ============================================================
 // Store Sections Manager — page layout + section grouping
@@ -213,6 +215,54 @@ export function StoreSectionsManager() {
     }
   };
 
+  const handleCreateUberSection = async () => {
+    setSaving(true);
+    try {
+      const sectionRes = await fetch("/api/store/sections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Uber Delivery",
+          description: "Products available for fast local Uber delivery",
+        }),
+      });
+      if (!sectionRes.ok) throw new Error("Failed to create Uber section");
+      const { section } = await sectionRes.json();
+
+      let uberCarousel = [...standaloneCategories, ...sections.flatMap((s) => s.categoryRows)]
+        .find((category) => category.source === "uber");
+
+      if (!uberCarousel) {
+        const carouselRes = await fetch("/api/store/categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: "Uber Delivery",
+            source: "uber",
+            product_ids: [],
+          }),
+        });
+        if (!carouselRes.ok) throw new Error("Failed to create Uber carousel");
+        const data = await carouselRes.json();
+        uberCarousel = data.category;
+      }
+
+      if (uberCarousel?.id) {
+        await fetch("/api/store/categories", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: uberCarousel.id, section_id: section.id }),
+        });
+      }
+
+      await fetchData();
+    } catch (err) {
+      console.error("Error creating Uber section:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // ── Delete section ─────────────────────────────────────────
   const handleDelete = async (id: string) => {
     try {
@@ -286,6 +336,10 @@ export function StoreSectionsManager() {
         <Button onClick={openCreate} className="rounded-md flex-shrink-0">
           <Plus className="h-4 w-4 mr-2" />
           New Section
+        </Button>
+        <Button onClick={handleCreateUberSection} variant="outline" disabled={saving} className="rounded-md flex-shrink-0">
+          <Truck className="h-4 w-4 mr-2" />
+          Uber Section
         </Button>
       </div>
 
@@ -420,8 +474,14 @@ export function StoreSectionsManager() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{cat.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {cat.source === "brand" ? `Brand: ${cat.brand_name}` : cat.source}
-                      {" · "}{cat.product_ids.length} products
+                      {cat.source === "brand"
+                        ? `Brand: ${cat.brand_name}`
+                        : cat.source === "uber"
+                          ? "Uber products"
+                          : cat.source}
+                      {cat.source !== "uber" && (
+                        <>{" · "}{cat.product_ids.length} products</>
+                      )}
                     </p>
                   </div>
                   <Plus className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -553,35 +613,45 @@ function SectionPageItem({
               ) : (
                 section.categoryRows.map((cat) => (
                   <div key={cat.id} className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-accent/50 group">
-                    <div className="flex-shrink-0 h-8 w-8 rounded-full overflow-hidden bg-muted border border-border flex items-center justify-center">
-                      {uploadingLogoId === cat.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                      ) : (cat as any).logo_url ? (
-                        <Image src={(cat as any).logo_url} alt="" width={32} height={32} className="h-full w-full object-contain" />
-                      ) : (
-                        <ImagePlus className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                    </div>
+                    {cat.source === "uber" ? (
+                      <UberCarouselLogo className="h-8 px-2.5" />
+                    ) : (
+                      <div className="flex-shrink-0 h-8 w-8 rounded-full overflow-hidden bg-muted border border-border flex items-center justify-center">
+                        {uploadingLogoId === cat.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                        ) : (cat as any).logo_url ? (
+                          <Image src={(cat as any).logo_url} alt="" width={32} height={32} className="h-full w-full object-contain" />
+                        ) : (
+                          <ImagePlus className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                      </div>
+                    )}
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-foreground truncate">{cat.name}</span>
                         <Badge variant="outline" className="text-[10px] font-normal py-0 flex-shrink-0">
-                          {cat.source === "brand" ? "Brand" : cat.source === "lightspeed" ? "Lightspeed" : "Custom"}
+                          {cat.source === "brand" ? "Brand" : cat.source === "lightspeed" ? "Lightspeed" : cat.source === "uber" ? "Uber" : "Custom"}
                         </Badge>
                       </div>
-                      <label className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer transition-colors mt-0.5">
-                        <ImagePlus className="h-3 w-3" />
-                        {(cat as any).logo_url ? "Change logo" : "Add logo"}
-                        <input
-                          type="file" accept="image/*" className="sr-only"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) onLogoUpload(cat.id, file);
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
+                      {cat.source === "uber" ? (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Automatically shows every Uber-enabled product
+                        </p>
+                      ) : (
+                        <label className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer transition-colors mt-0.5">
+                          <ImagePlus className="h-3 w-3" />
+                          {(cat as any).logo_url ? "Change logo" : "Add logo"}
+                          <input
+                            type="file" accept="image/*" className="sr-only"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) onLogoUpload(cat.id, file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      )}
                     </div>
 
                     <button
@@ -626,7 +696,13 @@ function StandaloneCarouselPageItem({ item, category }: { item: PageItem; catego
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <span className="text-sm font-medium text-foreground truncate">{category.name}</span>
           <Badge variant="outline" className="text-xs font-normal flex-shrink-0">
-            {category.source === "brand" ? `Brand: ${category.brand_name}` : category.source === "lightspeed" ? "Lightspeed" : "Custom"}
+            {category.source === "brand"
+              ? `Brand: ${category.brand_name}`
+              : category.source === "lightspeed"
+                ? "Lightspeed"
+                : category.source === "uber"
+                  ? "Uber"
+                  : "Custom"}
           </Badge>
           <span className="text-xs text-muted-foreground flex-shrink-0">Standalone carousel</span>
         </div>

@@ -22,13 +22,15 @@ export interface DayHours {
 }
 
 export type CarouselSize = 'featured' | 'normal' | 'compact';
+export type StoreCategorySource = 'lightspeed' | 'custom' | 'brand' | 'uber' | 'display_override';
+export type EditableStoreCategorySource = Exclude<StoreCategorySource, 'display_override'>;
 
 export interface StoreCategory {
   id: string;
   user_id: string;
   name: string;
   display_order: number;
-  source: 'lightspeed' | 'custom' | 'brand';
+  source: StoreCategorySource;
   lightspeed_category_id?: string;
   brand_name?: string;
   product_ids: string[];
@@ -233,6 +235,7 @@ export interface StoreCategoryWithProducts {
   id: string;
   name: string;
   display_order: number;
+  source?: StoreCategorySource;
   products: MarketplaceProduct[];
   product_count: number;
   carousel_size?: CarouselSize;
@@ -268,7 +271,7 @@ export interface LightspeedCategoryOption {
 
 export interface CreateCategoryRequest {
   name: string;
-  source: 'lightspeed' | 'custom' | 'brand';
+  source: EditableStoreCategorySource;
   lightspeed_category_id?: string;
   brand_name?: string;
   product_ids?: string[];
@@ -285,6 +288,7 @@ export interface UpdateCategoryRequest {
   carousel_size?: CarouselSize;
   section_id?: string | null;
   logo_url?: string | null;
+  hide_title?: boolean;
 }
 
 export interface CreateSectionRequest {
@@ -336,8 +340,6 @@ export interface UpdateBrandRequest {
   display_order?: number;
   is_active?: boolean;
 }
-
-
 
 
 
