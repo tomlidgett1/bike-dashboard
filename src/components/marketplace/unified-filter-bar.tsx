@@ -187,7 +187,7 @@ export function UnifiedFilterBar({
 
       {/* Mobile */}
       <div className="flex items-center gap-2 sm:hidden pt-1 pb-0.5 pr-3">
-        <div className="mx-3 min-w-0 flex-1 h-12 rounded-full bg-white border border-gray-200 shadow-sm p-1 grid grid-cols-3">
+        <div className="mx-3 min-w-0 flex-1 h-12 rounded-full bg-white border border-gray-200 shadow-sm p-1 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
           <button
             type="button"
             onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
@@ -214,7 +214,7 @@ export function UnifiedFilterBar({
             type="button"
             onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
             className={cn(
-              "flex h-10 min-w-0 cursor-pointer items-center justify-center rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              "flex h-10 w-12 cursor-pointer items-center justify-center rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
               isUberActive ? "bg-gray-100 text-gray-900" : "text-gray-500",
             )}
             aria-label="Uber delivery"
@@ -253,7 +253,7 @@ export function UnifiedFilterBar({
 
       {/* Desktop — filters always visible, no toggle button */}
       <div className="hidden sm:flex items-center gap-3">
-        <div className="h-11 grid-cols-3 rounded-full bg-white border border-gray-200 shadow-sm p-1 grid flex-shrink-0">
+        <div className="h-11 rounded-full bg-white border border-gray-200 shadow-sm p-1 inline-flex flex-shrink-0">
           <button
             type="button"
             onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
@@ -280,7 +280,7 @@ export function UnifiedFilterBar({
             type="button"
             onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
             className={cn(
-              "flex h-9 cursor-pointer items-center justify-center rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              "flex h-9 min-w-12 cursor-pointer items-center justify-center rounded-full px-2.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
               isUberActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
             )}
             aria-label="Uber delivery"
