@@ -215,7 +215,7 @@ export function UnifiedFilterBar({
             onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
             className={cn(
               "flex h-10 w-12 cursor-pointer items-center justify-center rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isUberActive ? "bg-gray-100 text-gray-900" : "text-gray-500",
+              isUberActive ? "bg-[#0eb462] text-white shadow-sm" : "text-gray-500",
             )}
             aria-label="Uber delivery"
           >
@@ -281,7 +281,7 @@ export function UnifiedFilterBar({
             onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
             className={cn(
               "flex h-9 min-w-12 cursor-pointer items-center justify-center rounded-full px-2.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isUberActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
+              isUberActive ? "bg-[#0eb462] text-white shadow-sm" : "text-gray-500 hover:text-gray-700",
             )}
             aria-label="Uber delivery"
           >
