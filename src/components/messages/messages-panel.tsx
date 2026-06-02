@@ -54,7 +54,6 @@ export function MessagesPanel() {
 
   const [activeOfferId, setActiveOfferId] = useState<string | null>(null);
   const [offerRole, setOfferRole] = useState<OfferRole | 'all'>('all');
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [offerStatusFilter] = useState<OfferStatus | undefined>();
   const [counterOfferModalOpen, setCounterOfferModalOpen] = useState(false);
   const [selectedOfferForCounter, setSelectedOfferForCounter] = useState<EnrichedOffer | null>(null);
@@ -233,6 +232,11 @@ export function MessagesPanel() {
   };
 
   const activeConvData = conversations.find(c => c.id === activeConversationId);
+  const activeParticipant =
+    activeConvData?.other_participants[0] ||
+    conversation?.participants?.[0]?.user;
+  const activeTicket = activeConvData?.ticket || conversation?.ticket;
+  const activeIsTicket = activeConversationId?.startsWith('ticket:') || conversation?.source === 'ticket';
 
   const showConversationThread =
     activeTab === 'messages' && activeConversationId && conversation;
@@ -443,25 +447,39 @@ export function MessagesPanel() {
                 <div className="px-4 h-[52px] border-b border-border/50 flex items-center gap-3 flex-shrink-0">
                   <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold text-sm flex-shrink-0 select-none">
                     {(
-                      activeConvData?.other_participants[0]?.business_name?.[0] ||
-                      activeConvData?.other_participants[0]?.name?.[0] ||
+                      activeParticipant?.business_name?.[0] ||
+                      activeParticipant?.name?.[0] ||
                       '?'
                     ).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-sm text-foreground truncate">
-                      {activeConvData?.other_participants[0]?.business_name ||
-                        activeConvData?.other_participants[0]?.name ||
+                    <div className="flex items-center gap-2 min-w-0">
+                      {activeIsTicket && (
+                        <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                          Claim
+                        </span>
+                      )}
+                      <p className="font-semibold text-sm text-foreground truncate">
+                      {activeParticipant?.business_name ||
+                        activeParticipant?.name ||
                         'Unknown User'}
-                    </p>
+                      </p>
+                    </div>
+                    {activeIsTicket && activeTicket && (
+                      <p className="mt-0.5 text-xs text-muted-foreground truncate">
+                        {activeTicket.ticket_number} · {conversation?.subject || activeConvData?.subject}
+                      </p>
+                    )}
                   </div>
-                  <button
-                    onClick={handleArchive}
-                    className="h-7 w-7 rounded-lg hover:bg-muted flex items-center justify-center flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-                    title={showArchived ? 'Unarchive conversation' : 'Archive conversation'}
-                  >
-                    <Archive className="h-[14px] w-[14px]" />
-                  </button>
+                  {!activeIsTicket && (
+                    <button
+                      onClick={handleArchive}
+                      className="h-7 w-7 rounded-lg hover:bg-muted flex items-center justify-center flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                      title={showArchived ? 'Unarchive conversation' : 'Archive conversation'}
+                    >
+                      <Archive className="h-[14px] w-[14px]" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Product context card */}
@@ -485,9 +503,11 @@ export function MessagesPanel() {
                       <p className="font-medium text-foreground truncate text-xs leading-tight">
                         {conversation.product.display_name || conversation.product.description}
                       </p>
-                      <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5">
-                        ${conversation.product.price?.toFixed(2)}
-                      </p>
+                      {typeof conversation.product.price === 'number' && conversation.product.price > 0 && (
+                        <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5">
+                          ${conversation.product.price.toFixed(2)}
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
@@ -511,6 +531,8 @@ export function MessagesPanel() {
                     conversationId={activeConversationId}
                     onSend={handleSendMessage}
                     disabled={sendingMessage}
+                    allowAttachments={!activeIsTicket}
+                    placeholder={activeIsTicket ? 'Reply in this claim...' : 'Type your message...'}
                   />
                 </div>
               </>

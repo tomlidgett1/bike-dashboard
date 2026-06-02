@@ -40,6 +40,7 @@ import {
   Scale,
 } from 'lucide-react';
 import { useOrderNotificationsContext } from '@/components/providers/order-notifications-provider';
+import { useMessages } from '@/components/providers/messages-provider';
 import type { OrderNotification } from '@/lib/hooks/use-order-notifications';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -284,6 +285,7 @@ function NotificationItem({
 
 export function NotificationsDropdown() {
   const router = useRouter();
+  const { openConversation } = useMessages();
   const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
   
@@ -310,7 +312,11 @@ export function NotificationsDropdown() {
       await markAsRead(notification.id);
     }
     setMobileSheetOpen(false);
-    router.push(notification.notification_category === 'support' ? '/settings/purchases?tab=claims' : '/settings/purchases');
+    if (notification.notification_category === 'support' && notification.ticket_id) {
+      openConversation(`ticket:${notification.ticket_id}`);
+    } else {
+      router.push('/settings/purchases');
+    }
     refresh();
   };
 

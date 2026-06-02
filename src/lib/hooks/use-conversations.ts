@@ -12,8 +12,75 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import type {
   ConversationListItem,
   GetConversationsResponse,
-  ConversationStatus,
 } from '@/lib/types/message';
+
+type SupportTicketListItem = {
+  id: string;
+  ticket_number: string;
+  subject: string;
+  status: string;
+  category: string;
+  description?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+  messageCount?: number;
+  lastMessage?: {
+    message: string;
+    sender_id: string;
+    created_at: string;
+  } | null;
+  counterpart?: {
+    user_id: string;
+    name?: string | null;
+    business_name?: string | null;
+    logo_url?: string | null;
+  } | null;
+  product?: {
+    id: string;
+    description?: string | null;
+    display_name?: string | null;
+    primary_image_url?: string | null;
+    cached_image_url?: string | null;
+  } | null;
+};
+
+function mapSupportTicketToConversation(ticket: SupportTicketListItem): ConversationListItem {
+  const lastMessageAt = ticket.lastMessage?.created_at || ticket.updated_at || ticket.created_at;
+
+  return {
+    id: `ticket:${ticket.id}`,
+    source: 'ticket',
+    subject: ticket.subject || ticket.ticket_number,
+    status: ['resolved', 'closed'].includes(ticket.status) ? 'closed' : 'active',
+    last_message_at: lastMessageAt,
+    message_count: ticket.messageCount || 0,
+    unread_count: 0,
+    is_archived: false,
+    ticket: {
+      id: ticket.id,
+      ticket_number: ticket.ticket_number,
+      status: ticket.status,
+      category: ticket.category,
+    },
+    other_participants: ticket.counterpart ? [{
+      user_id: ticket.counterpart.user_id,
+      name: ticket.counterpart.name || '',
+      business_name: ticket.counterpart.business_name || '',
+      logo_url: ticket.counterpart.logo_url || null,
+    }] : [],
+    product: ticket.product ? {
+      id: ticket.product.id,
+      description: ticket.product.description || ticket.subject,
+      display_name: ticket.product.display_name || null,
+      primary_image_url: ticket.product.cached_image_url || ticket.product.primary_image_url || null,
+    } : undefined,
+    last_message: {
+      content: ticket.lastMessage?.message || ticket.description || ticket.subject,
+      sender_id: ticket.lastMessage?.sender_id || null,
+      created_at: lastMessageAt,
+    },
+  };
+}
 
 export function useConversations(
   page: number = 1,
@@ -57,8 +124,29 @@ export function useConversations(
       }
 
       const data: GetConversationsResponse = await response.json();
-      setConversations(data.conversations);
-      setTotal(data.total);
+      let mergedConversations = data.conversations;
+
+      if (!archived) {
+        try {
+          const ticketResponse = await fetch('/api/support/tickets?status=active&limit=50');
+          if (ticketResponse.ok) {
+            const ticketData = await ticketResponse.json();
+            const ticketConversations = ((ticketData.tickets || []) as SupportTicketListItem[])
+              .map(mapSupportTicketToConversation);
+
+            mergedConversations = [...data.conversations, ...ticketConversations]
+              .sort((a, b) => (
+                new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+              ))
+              .slice(0, limit);
+          }
+        } catch (ticketError) {
+          console.error('Error fetching support ticket conversations:', ticketError);
+        }
+      }
+
+      setConversations(mergedConversations);
+      setTotal(mergedConversations.length);
       initialLoadCompleteRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -100,6 +188,18 @@ export function useConversations(
           (payload) => {
             console.log('[Realtime] New message in conversations list:', payload);
             // New message received - silently refresh to update last_message preview
+            fetchConversationsRef.current?.(true);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'ticket_messages',
+          },
+          (payload) => {
+            console.log('[Realtime] New ticket message in conversations list:', payload);
             fetchConversationsRef.current?.(true);
           }
         )
@@ -172,7 +272,7 @@ export function useConversations(
   // Initial fetch
   useEffect(() => {
     fetchConversations(false);
-  }, [page, limit, archived]);
+  }, [fetchConversations]);
 
   // Manual refresh (also silent to avoid UI disruption)
   const refresh = useCallback(() => {
@@ -187,9 +287,6 @@ export function useConversations(
     refresh,
   };
 }
-
-
-
 
 
 

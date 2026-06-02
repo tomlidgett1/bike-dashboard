@@ -127,6 +127,13 @@ export interface MessageWithAttachments extends Message {
 }
 
 export interface ConversationWithParticipants extends Conversation {
+  source?: 'conversation' | 'ticket';
+  ticket?: {
+    id: string;
+    ticket_number: string;
+    status: string;
+    category: string;
+  };
   participants: ConversationParticipant[];
   product?: {
     id: string;
@@ -224,12 +231,19 @@ export interface UnreadCountResponse {
 
 export interface ConversationListItem {
   id: string;
+  source?: 'conversation' | 'ticket';
   subject: string;
   status: ConversationStatus;
   last_message_at: string;
   message_count: number;
   unread_count: number;
   is_archived: boolean;
+  ticket?: {
+    id: string;
+    ticket_number: string;
+    status: string;
+    category: string;
+  };
   
   // Participants (excluding current user)
   other_participants: {
@@ -298,4 +312,3 @@ export interface MessagePagination {
   hasMore: boolean;
   total: number;
 }
-

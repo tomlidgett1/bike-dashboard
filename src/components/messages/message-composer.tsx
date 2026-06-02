@@ -9,7 +9,6 @@ import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ImagePlus, Send, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
 interface MessageComposerProps {
@@ -17,13 +16,14 @@ interface MessageComposerProps {
   onSend: (content: string, attachments?: File[]) => Promise<void>;
   disabled?: boolean;
   placeholder?: string;
+  allowAttachments?: boolean;
 }
 
 export function MessageComposer({
-  conversationId,
   onSend,
   disabled = false,
   placeholder = 'Type your message...',
+  allowAttachments = true,
 }: MessageComposerProps) {
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -138,16 +138,18 @@ export function MessageComposer({
         />
         
         {/* Image button */}
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled || sending || attachments.length >= 5}
-          className="rounded-full h-10 w-10 flex-shrink-0"
-        >
-          <ImagePlus className="h-5 w-5 text-gray-600" />
-        </Button>
+        {allowAttachments && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || sending || attachments.length >= 5}
+            className="rounded-full h-10 w-10 flex-shrink-0"
+          >
+            <ImagePlus className="h-5 w-5 text-gray-600" />
+          </Button>
+        )}
 
         {/* Text input */}
         <Textarea

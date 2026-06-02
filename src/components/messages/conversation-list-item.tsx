@@ -26,10 +26,11 @@ export function ConversationListItem({
   const displayName =
     otherParticipant?.business_name ||
     otherParticipant?.name ||
-    'Unknown User';
+    (conversation.source === 'ticket' ? 'Claim thread' : 'Unknown User');
   
   const hasUnread = conversation.unread_count > 0;
   const unreadCount = conversation.unread_count;
+  const isTicket = conversation.source === 'ticket';
 
   return (
     <button
@@ -80,6 +81,11 @@ export function ConversationListItem({
             )}>
               {displayName}
             </h3>
+            {isTicket && (
+              <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                Claim
+              </span>
+            )}
             <div className="flex items-center gap-2 flex-shrink-0">
               <span className={cn(
                 'text-xs',
@@ -93,7 +99,14 @@ export function ConversationListItem({
           </div>
 
           {/* Product Name - if exists */}
-          {conversation.product && (
+          {isTicket ? (
+            <p className={cn(
+              'text-xs truncate mb-0.5',
+              hasUnread ? 'text-gray-700' : 'text-gray-500'
+            )}>
+              {conversation.ticket?.ticket_number || conversation.subject}
+            </p>
+          ) : conversation.product && (
             <p className={cn(
               'text-xs truncate mb-0.5',
               hasUnread ? 'text-gray-700' : 'text-gray-500'

@@ -78,6 +78,18 @@ export async function GET(request: NextRequest) {
           total_amount,
           status,
           purchase_date,
+          seller:users!purchases_seller_id_users_fkey (
+            user_id,
+            name,
+            business_name,
+            logo_url
+          ),
+          buyer:users!purchases_buyer_id_users_fkey (
+            user_id,
+            name,
+            business_name,
+            logo_url
+          ),
           product:products (
             id,
             description,
@@ -118,26 +130,55 @@ export async function GET(request: NextRequest) {
     // Get message counts for each ticket
     const ticketIds = tickets?.map((t) => t.id) || [];
     const messageCounts: Record<string, number> = {};
+    const lastMessages: Record<string, {
+      message: string;
+      sender_id: string;
+      created_at: string;
+    }> = {};
 
     if (ticketIds.length > 0) {
       const { data: counts } = await supabase
         .from('ticket_messages')
-        .select('ticket_id')
+        .select('ticket_id, message, sender_id, created_at')
         .in('ticket_id', ticketIds)
-        .eq('is_internal', false);
+        .eq('is_internal', false)
+        .order('created_at', { ascending: false });
 
       counts?.forEach((msg) => {
         messageCounts[msg.ticket_id] = (messageCounts[msg.ticket_id] || 0) + 1;
+        if (!lastMessages[msg.ticket_id]) {
+          lastMessages[msg.ticket_id] = {
+            message: msg.message,
+            sender_id: msg.sender_id,
+            created_at: msg.created_at,
+          };
+        }
       });
     }
 
     // Enrich tickets
-    const enrichedTickets = tickets?.map((ticket) => ({
-      ...ticket,
-      messageCount: messageCounts[ticket.id] || 0,
-      purchase: ticket.purchases,
-      product: ticket.purchases?.product,
-    }));
+    const enrichedTickets = tickets?.map((ticket) => {
+      const purchase = ticket.purchases;
+      const userRole =
+        ticket.created_by === user.id || purchase?.buyer_id === user.id
+          ? 'buyer'
+          : purchase?.seller_id === user.id
+            ? 'seller'
+            : 'admin';
+      const counterpart = userRole === 'buyer' ? purchase?.seller : purchase?.buyer;
+
+      return {
+        ...ticket,
+        messageCount: messageCounts[ticket.id] || 0,
+        lastMessage: lastMessages[ticket.id] || null,
+        userRole,
+        counterpart,
+        purchase,
+        product: purchase?.product,
+        seller: purchase?.seller,
+        buyer: purchase?.buyer,
+      };
+    });
 
     return NextResponse.json({
       tickets: enrichedTickets || [],
