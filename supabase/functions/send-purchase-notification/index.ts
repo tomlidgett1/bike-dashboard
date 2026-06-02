@@ -12,6 +12,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { sendEmail } from '../_shared/resend-client.ts';
 import { purchaseConfirmationTemplate } from '../_shared/email-templates/purchase-confirmation.ts';
 import { saleNotificationTemplate } from '../_shared/email-templates/sale-notification.ts';
+import { orderStatusNotificationTemplate } from '../_shared/email-templates/order-status-notification.ts';
+import { supportTicketNotificationTemplate } from '../_shared/email-templates/support-ticket-notification.ts';
 
 const BATCH_SIZE = 50;
 
@@ -88,8 +90,10 @@ Deno.serve(async (_req) => {
 
     if (!notifications || notifications.length === 0) {
       console.log('[Purchase Notifications] No pending notifications');
+      const additionalResults = await processAdditionalNotifications(supabase);
+      const duration = Date.now() - startTime;
       return new Response(
-        JSON.stringify({ message: 'No pending notifications', count: 0 }),
+        JSON.stringify({ message: 'Notifications processed', duration: `${duration}ms`, ...additionalResults }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -358,6 +362,9 @@ Deno.serve(async (_req) => {
       }
     }
 
+    const additionalResults = await processAdditionalNotifications(supabase);
+    mergeResults(results, additionalResults);
+
     const duration = Date.now() - startTime;
     console.log(`[Purchase Notifications] Done in ${duration}ms. Sent: ${results.sent}, Skipped: ${results.skipped}, Failed: ${results.failed}`);
 
@@ -373,6 +380,324 @@ Deno.serve(async (_req) => {
     );
   }
 });
+
+const ORDER_STATUS_TYPES = [
+  'order_shipped',
+  'tracking_added',
+  'order_delivered',
+  'receipt_confirmed',
+  'funds_released',
+];
+
+const SUPPORT_TYPES = [
+  'ticket_created',
+  'ticket_message',
+  'ticket_status_changed',
+  'ticket_resolved',
+  'ticket_escalated',
+  'ticket_resolution_offered',
+  'ticket_resolution_accepted',
+  'ticket_refunded',
+  'ticket_released_to_seller',
+];
+
+function emptyResults() {
+  return {
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+    details: [] as any[],
+  };
+}
+
+function mergeResults(target: ReturnType<typeof emptyResults>, source: ReturnType<typeof emptyResults>) {
+  target.sent += source.sent;
+  target.skipped += source.skipped;
+  target.failed += source.failed;
+  target.details.push(...source.details);
+}
+
+async function processAdditionalNotifications(supabase: any): Promise<ReturnType<typeof emptyResults>> {
+  const results = emptyResults();
+  const orderStatusResults = await processOrderStatusNotifications(supabase);
+  mergeResults(results, orderStatusResults);
+  const supportResults = await processSupportNotifications(supabase);
+  mergeResults(results, supportResults);
+  return results;
+}
+
+async function processOrderStatusNotifications(supabase: any): Promise<ReturnType<typeof emptyResults>> {
+  const results = emptyResults();
+  const { data: notifications, error } = await supabase
+    .from('notifications')
+    .select('id, user_id, type, purchase_id, notification_category, priority, email_delivery_status, email_scheduled_for, created_at')
+    .eq('notification_category', 'order')
+    .in('type', ORDER_STATUS_TYPES)
+    .or(`email_delivery_status.eq.pending,and(email_delivery_status.eq.scheduled,email_scheduled_for.lte.${new Date().toISOString()})`)
+    .not('purchase_id', 'is', null)
+    .order('created_at', { ascending: true })
+    .limit(BATCH_SIZE);
+
+  if (error) {
+    console.error('[Order Status Notifications] Error fetching:', error);
+    results.failed++;
+    results.details.push({ status: 'failed', reason: 'fetch_failed', error });
+    return results;
+  }
+
+  if (!notifications || notifications.length === 0) return results;
+
+  const purchaseIds = [...new Set(notifications.map((n: any) => n.purchase_id))];
+  const userIds = [...new Set(notifications.map((n: any) => n.user_id))];
+
+  const [purchasesResult, usersResult, preferencesResult] = await Promise.all([
+    supabase
+      .from('purchases')
+      .select(`
+        id,
+        order_number,
+        buyer_id,
+        seller_id,
+        product_id,
+        total_amount,
+        item_price,
+        tracking_number,
+        status,
+        funds_status,
+        shipped_at,
+        delivered_at,
+        updated_at,
+        products (
+          id,
+          description,
+          display_name,
+          primary_image_url,
+          cached_image_url
+        ),
+        buyer:users!purchases_buyer_id_users_fkey (
+          user_id,
+          name,
+          business_name
+        ),
+        seller:users!purchases_seller_id_users_fkey (
+          user_id,
+          name,
+          business_name
+        )
+      `)
+      .in('id', purchaseIds),
+    supabase
+      .from('users')
+      .select('user_id, email, name, business_name, email_notifications, order_alerts')
+      .in('user_id', userIds),
+    supabase
+      .from('notification_preferences')
+      .select('user_id, email_enabled')
+      .in('user_id', userIds),
+  ]);
+
+  const purchaseMap = new Map<string, any>(purchasesResult.data?.map((p: any) => [p.id, p]) || []);
+  const userMap = new Map<string, any>(usersResult.data?.map((u: any) => [u.user_id, u]) || []);
+  const preferencesMap = new Map<string, any>(preferencesResult.data?.map((p: any) => [p.user_id, p]) || []);
+
+  for (const notification of notifications) {
+    const user = userMap.get(notification.user_id);
+    const purchase = purchaseMap.get(notification.purchase_id);
+    const preferences = preferencesMap.get(notification.user_id);
+
+    if (!user || !user.email || !purchase) {
+      await markNotificationAs(supabase, notification.id, 'skipped');
+      results.skipped++;
+      results.details.push({
+        id: notification.id,
+        status: 'skipped',
+        reason: !user ? 'no_user' : !user.email ? 'no_email' : 'no_purchase',
+      });
+      continue;
+    }
+
+    if (user.email_notifications === false || user.order_alerts === false || preferences?.email_enabled === false) {
+      await markNotificationAs(supabase, notification.id, 'skipped');
+      results.skipped++;
+      results.details.push({ id: notification.id, status: 'skipped', reason: 'email_disabled' });
+      continue;
+    }
+
+    const productName = purchase.products?.display_name || purchase.products?.description || 'Order item';
+    const emailContent = orderStatusNotificationTemplate({
+      recipientName: user.name || user.email.split('@')[0],
+      type: notification.type,
+      orderNumber: purchase.order_number,
+      productName,
+      productImageUrl: purchase.products?.cached_image_url || purchase.products?.primary_image_url || undefined,
+      sellerName: purchase.seller?.business_name || purchase.seller?.name || 'The seller',
+      buyerName: purchase.buyer?.business_name || purchase.buyer?.name || 'The buyer',
+      totalAmount: purchase.total_amount || purchase.item_price || 0,
+      trackingNumber: purchase.tracking_number,
+      purchaseId: purchase.id,
+      eventDate: purchase.delivered_at || purchase.shipped_at || purchase.updated_at || notification.created_at,
+    });
+
+    const emailResult = await sendEmail({
+      to: user.email,
+      subject: emailContent.subject,
+      html: emailContent.html,
+      text: emailContent.text,
+      tags: [
+        { name: 'type', value: notification.type },
+        { name: 'purchase_id', value: purchase.id },
+      ],
+    });
+
+    if (emailResult.success) {
+      await markNotificationAs(supabase, notification.id, 'sent');
+      results.sent++;
+      results.details.push({ id: notification.id, type: notification.type, status: 'sent', recipient: user.email, emailId: emailResult.id });
+    } else {
+      await markNotificationAs(supabase, notification.id, 'failed');
+      results.failed++;
+      results.details.push({ id: notification.id, type: notification.type, status: 'failed', error: emailResult.error });
+    }
+  }
+
+  return results;
+}
+
+async function processSupportNotifications(supabase: any): Promise<ReturnType<typeof emptyResults>> {
+  const results = emptyResults();
+  const { data: notifications, error } = await supabase
+    .from('notifications')
+    .select('id, user_id, type, ticket_id, notification_category, priority, email_delivery_status, email_scheduled_for, created_at')
+    .eq('notification_category', 'support')
+    .in('type', SUPPORT_TYPES)
+    .or(`email_delivery_status.eq.pending,and(email_delivery_status.eq.scheduled,email_scheduled_for.lte.${new Date().toISOString()})`)
+    .not('ticket_id', 'is', null)
+    .order('created_at', { ascending: true })
+    .limit(BATCH_SIZE);
+
+  if (error) {
+    console.error('[Support Notifications] Error fetching:', error);
+    results.failed++;
+    results.details.push({ status: 'failed', reason: 'fetch_failed', error });
+    return results;
+  }
+
+  if (!notifications || notifications.length === 0) return results;
+
+  const ticketIds = [...new Set(notifications.map((n: any) => n.ticket_id))];
+  const userIds = [...new Set(notifications.map((n: any) => n.user_id))];
+
+  const [ticketsResult, usersResult, preferencesResult] = await Promise.all([
+    supabase
+      .from('support_tickets')
+      .select(`
+        id,
+        ticket_number,
+        subject,
+        status,
+        category,
+        resolution_type,
+        resolution,
+        resolution_amount,
+        stripe_refund_id,
+        stripe_transfer_reversal_id,
+        purchase_id,
+        purchases (
+          id,
+          order_number,
+          total_amount,
+          item_price,
+          product_id,
+          products (
+            id,
+            description,
+            display_name,
+            primary_image_url,
+            cached_image_url
+          )
+        )
+      `)
+      .in('id', ticketIds),
+    supabase
+      .from('users')
+      .select('user_id, email, name, business_name, email_notifications')
+      .in('user_id', userIds),
+    supabase
+      .from('notification_preferences')
+      .select('user_id, email_enabled')
+      .in('user_id', userIds),
+  ]);
+
+  const ticketMap = new Map<string, any>(ticketsResult.data?.map((t: any) => [t.id, t]) || []);
+  const userMap = new Map<string, any>(usersResult.data?.map((u: any) => [u.user_id, u]) || []);
+  const preferencesMap = new Map<string, any>(preferencesResult.data?.map((p: any) => [p.user_id, p]) || []);
+
+  for (const notification of notifications) {
+    const user = userMap.get(notification.user_id);
+    const ticket = ticketMap.get(notification.ticket_id);
+    const preferences = preferencesMap.get(notification.user_id);
+
+    if (!user || !user.email || !ticket) {
+      await markNotificationAs(supabase, notification.id, 'skipped');
+      results.skipped++;
+      results.details.push({
+        id: notification.id,
+        status: 'skipped',
+        reason: !user ? 'no_user' : !user.email ? 'no_email' : 'no_ticket',
+      });
+      continue;
+    }
+
+    if (user.email_notifications === false || preferences?.email_enabled === false) {
+      await markNotificationAs(supabase, notification.id, 'skipped');
+      results.skipped++;
+      results.details.push({ id: notification.id, status: 'skipped', reason: 'email_disabled' });
+      continue;
+    }
+
+    const purchase = ticket.purchases;
+    const product = purchase?.products;
+    const emailContent = supportTicketNotificationTemplate({
+      recipientName: user.name || user.email.split('@')[0],
+      type: notification.type,
+      ticketNumber: ticket.ticket_number,
+      ticketSubject: ticket.subject,
+      ticketStatus: ticket.status,
+      category: ticket.category,
+      orderNumber: purchase?.order_number || null,
+      productName: product?.display_name || product?.description || null,
+      productImageUrl: product?.cached_image_url || product?.primary_image_url || null,
+      resolutionType: ticket.resolution_type,
+      resolution: ticket.resolution,
+      resolutionAmount: ticket.resolution_amount,
+      stripeRefundId: ticket.stripe_refund_id,
+      stripeTransferReversalId: ticket.stripe_transfer_reversal_id,
+    });
+
+    const emailResult = await sendEmail({
+      to: user.email,
+      subject: emailContent.subject,
+      html: emailContent.html,
+      text: emailContent.text,
+      tags: [
+        { name: 'type', value: notification.type },
+        { name: 'ticket_id', value: ticket.id },
+      ],
+    });
+
+    if (emailResult.success) {
+      await markNotificationAs(supabase, notification.id, 'sent');
+      results.sent++;
+      results.details.push({ id: notification.id, type: notification.type, status: 'sent', recipient: user.email, emailId: emailResult.id });
+    } else {
+      await markNotificationAs(supabase, notification.id, 'failed');
+      results.failed++;
+      results.details.push({ id: notification.id, type: notification.type, status: 'failed', error: emailResult.error });
+    }
+  }
+
+  return results;
+}
 
 async function markNotificationAs(
   supabase: any,

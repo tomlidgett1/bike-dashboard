@@ -3,10 +3,10 @@
 // ============================================================
 // POST: Mark all order notifications as read for current user
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const supabase = await createClient();
 
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    // Update all unread order notifications as read
+    // Update all unread order, voucher, and support notifications as read
     const { error: updateError, count } = await supabase
       .from('notifications')
       .update({
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
         read_at: new Date().toISOString(),
       })
       .eq('user_id', user.id)
-      .eq('notification_category', 'order')
+      .in('notification_category', ['order', 'voucher', 'support'])
       .eq('is_read', false);
 
     if (updateError) {
@@ -51,7 +51,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
-
 
 

@@ -15,21 +15,34 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  Package,
-  Send,
-  Loader2,
-  Clock,
-  User,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  CircleDollarSign,
+  Clock,
+  Handshake,
+  Loader2,
+  Package,
+  Scale,
+  Send,
+  ShieldCheck,
+  User,
 } from "lucide-react";
 import { TicketStatusBadge } from "./ticket-status-badge";
 import { cn } from "@/lib/utils";
 
-// ============================================================
-// Types
-// ============================================================
+type UserRole = "buyer" | "seller" | "admin";
+type ResolutionType = "refunded" | "partial_refund" | "replaced" | "no_action" | "other";
 
 interface Message {
   id: string;
@@ -57,15 +70,63 @@ interface HistoryItem {
   };
 }
 
+interface ProductSummary {
+  id?: string;
+  display_name?: string | null;
+  description?: string | null;
+  cached_image_url?: string | null;
+  primary_image_url?: string | null;
+}
+
+interface PurchaseSummary {
+  id: string;
+  order_number?: string | null;
+  total_amount?: number | null;
+  item_price?: number | null;
+  status?: string | null;
+  funds_status?: string | null;
+  product?: ProductSummary | null;
+}
+
+interface TicketDetail {
+  id: string;
+  ticket_number: string;
+  subject: string;
+  status: string;
+  category: string;
+  created_at: string;
+  description?: string | null;
+  resolution?: string | null;
+  resolution_type?: ResolutionType | null;
+  resolution_amount?: number | null;
+  resolution_offered_at?: string | null;
+  resolution_accepted_at?: string | null;
+  resolution_actioned_at?: string | null;
+  resolution_error?: string | null;
+  stripe_refund_id?: string | null;
+  stripe_transfer_reversal_id?: string | null;
+  seller_response_due_at?: string | null;
+  buyer_response_due_at?: string | null;
+  escalated_at?: string | null;
+  purchase?: PurchaseSummary | null;
+  product?: ProductSummary | null;
+}
+
 interface TicketDetailSheetProps {
   isOpen: boolean;
   onClose: () => void;
   ticketId: string | null;
 }
 
-// ============================================================
-// Helper Functions
-// ============================================================
+const ACTIVE_STATUSES = new Set(["open", "awaiting_response", "in_review", "escalated"]);
+
+const RESOLUTION_OPTIONS: { value: ResolutionType; label: string; helper: string }[] = [
+  { value: "refunded", label: "Full refund", helper: "Return the full order value to the buyer." },
+  { value: "partial_refund", label: "Partial refund", helper: "Refund part of the order and close the claim." },
+  { value: "replaced", label: "Replacement", helper: "Send a replacement or agreed substitute." },
+  { value: "no_action", label: "Release payment", helper: "Close the claim and release funds to the seller." },
+  { value: "other", label: "Other agreement", helper: "Use when the parties agree a custom outcome." },
+];
 
 function formatDate(date: string): string {
   return new Date(date).toLocaleDateString("en-AU", {
@@ -84,6 +145,14 @@ function formatTime(date: string): string {
 
 function formatDateTime(date: string): string {
   return `${formatDate(date)} at ${formatTime(date)}`;
+}
+
+function formatMoney(amount?: number | null): string {
+  if (typeof amount !== "number") return "$0.00";
+  return amount.toLocaleString("en-AU", {
+    style: "currency",
+    currency: "AUD",
+  });
 }
 
 function getCategoryLabel(category: string): string {
@@ -108,57 +177,110 @@ function getActionLabel(action: string): string {
     reopened: "Ticket reopened",
     escalated: "Ticket escalated",
     assigned: "Ticket assigned",
+    resolution_offered: "Resolution offered",
+    resolution_accepted: "Resolution accepted",
+    resolution_actioned: "Resolution actioned",
+    refund_processed: "Refund processed",
+    transfer_reversed: "Transfer reversed",
   };
-  return labels[action] || action;
+  return labels[action] || action.replace(/_/g, " ");
 }
 
-// ============================================================
-// Component
-// ============================================================
+function getResolutionLabel(type?: ResolutionType | null): string {
+  return RESOLUTION_OPTIONS.find((option) => option.value === type)?.label || "Resolution";
+}
+
+function dueLabel(ticket: TicketDetail, role: UserRole): string | null {
+  const dueAt = role === "buyer" ? ticket.buyer_response_due_at : ticket.seller_response_due_at;
+  if (!dueAt || !ACTIVE_STATUSES.has(ticket.status)) return null;
+  return `Response due ${formatDate(dueAt)}`;
+}
 
 export function TicketDetailSheet({
   isOpen,
   onClose,
   ticketId,
 }: TicketDetailSheetProps) {
-  const [ticket, setTicket] = React.useState<Record<string, unknown> | null>(null);
+  const [ticket, setTicket] = React.useState<TicketDetail | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [history, setHistory] = React.useState<HistoryItem[]>([]);
+  const [userRole, setUserRole] = React.useState<UserRole>("buyer");
   const [loading, setLoading] = React.useState(true);
   const [replyMessage, setReplyMessage] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<"messages" | "timeline">("messages");
+  const [resolutionType, setResolutionType] = React.useState<ResolutionType>("refunded");
+  const [resolutionAmount, setResolutionAmount] = React.useState("");
+  const [resolutionMessage, setResolutionMessage] = React.useState("");
+  const [actionLoading, setActionLoading] = React.useState<null | "propose" | "accept" | "escalate">(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
-  // Fetch ticket details
-  React.useEffect(() => {
+  const fetchTicket = React.useCallback(async () => {
     if (!isOpen || !ticketId) return;
 
-    const fetchTicket = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/support/tickets/${ticketId}`);
-        const data = await res.json();
+    setLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/support/tickets/${ticketId}`);
+      const data = await res.json();
 
-        if (res.ok) {
-          setTicket(data.ticket);
-          setMessages(data.messages || []);
-          setHistory(data.history || []);
-        }
-      } catch (error) {
-        console.error("Failed to fetch ticket:", error);
-      } finally {
-        setLoading(false);
+      if (res.ok) {
+        setTicket(data.ticket);
+        setMessages(data.messages || []);
+        setHistory(data.history || []);
+        setUserRole(data.userRole || "buyer");
       }
-    };
-
-    fetchTicket();
+    } catch (error) {
+      console.error("Failed to fetch ticket:", error);
+    } finally {
+      setLoading(false);
+    }
   }, [isOpen, ticketId]);
 
-  // Scroll to bottom of messages
+  React.useEffect(() => {
+    if (!isOpen || !ticketId) return;
+    setReplyMessage("");
+    setResolutionMessage("");
+    setResolutionAmount("");
+    setResolutionType("refunded");
+    fetchTicket();
+  }, [fetchTicket, isOpen, ticketId]);
+
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const performResolutionAction = async (
+    action: "propose" | "accept" | "escalate",
+    payload: Record<string, unknown> = {}
+  ) => {
+    if (!ticketId || actionLoading) return;
+
+    setActionLoading(action);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/support/tickets/${ticketId}/resolution`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setActionError(data.error || "Action failed");
+        return;
+      }
+
+      setResolutionMessage("");
+      setResolutionAmount("");
+      await fetchTicket();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Action failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const handleSendReply = async () => {
     if (!replyMessage.trim() || !ticketId || sending) return;
@@ -175,6 +297,7 @@ export function TicketDetailSheet({
         const data = await res.json();
         setMessages((prev) => [...prev, data.message]);
         setReplyMessage("");
+        fetchTicket();
       }
     } catch (error) {
       console.error("Failed to send reply:", error);
@@ -183,16 +306,23 @@ export function TicketDetailSheet({
     }
   };
 
-  const product = (ticket?.product || (ticket?.purchase as Record<string, unknown>)?.product) as Record<string, unknown> | undefined;
+  const product = ticket?.product || ticket?.purchase?.product || undefined;
   const productImage = product?.cached_image_url || product?.primary_image_url;
-  const productName = (product?.display_name || product?.description || "Product") as string;
-  const canReply = ticket && !["closed", "resolved"].includes(ticket.status as string);
+  const productName = product?.display_name || product?.description || "Product";
+  const canReply = Boolean(ticket && !["closed", "resolved"].includes(ticket.status));
+  const isActive = Boolean(ticket && ACTIVE_STATUSES.has(ticket.status));
+  const pendingOffer = Boolean(ticket?.resolution_type && ticket.resolution_offered_at && !ticket.resolution_accepted_at && ticket.status !== "resolved");
+  const canOfferResolution = Boolean(ticket && isActive && (userRole === "seller" || userRole === "admin"));
+  const canAcceptResolution = Boolean(ticket && pendingOffer && (userRole === "buyer" || userRole === "admin"));
+  const canEscalate = Boolean(ticket && isActive && ticket.status !== "escalated");
+  const responseDue = ticket ? dueLabel(ticket, userRole) : null;
+  const selectedOption = RESOLUTION_OPTIONS.find((option) => option.value === resolutionType);
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-lg p-0 flex flex-col"
+        className="w-full sm:max-w-xl p-0 flex flex-col"
       >
         {loading ? (
           <div className="flex-1 flex flex-col">
@@ -216,7 +346,6 @@ export function TicketDetailSheet({
           </div>
         ) : (
           <>
-            {/* Header */}
             <SheetHeader className="px-4 py-3 border-b">
               <VisuallyHidden>
                 <SheetDescription>Support ticket details and conversation</SheetDescription>
@@ -232,22 +361,21 @@ export function TicketDetailSheet({
                 </Button>
                 <div className="flex-1 min-w-0">
                   <SheetTitle className="text-sm font-semibold line-clamp-1">
-                    {ticket.subject as string}
+                    {ticket.subject}
                   </SheetTitle>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {ticket.ticket_number as string}
+                    {ticket.ticket_number}
                   </p>
                 </div>
-                <TicketStatusBadge status={ticket.status as string} />
+                <TicketStatusBadge status={ticket.status} />
               </div>
             </SheetHeader>
 
-            {/* Product Card */}
             <div className="px-4 py-3 border-b flex items-center gap-3">
               <div className="relative h-10 w-10 rounded-md overflow-hidden bg-muted flex-shrink-0">
                 {productImage ? (
                   <Image
-                    src={productImage as string}
+                    src={productImage}
                     alt={productName}
                     fill
                     className="object-cover"
@@ -262,12 +390,187 @@ export function TicketDetailSheet({
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-foreground line-clamp-1">{productName}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {getCategoryLabel(ticket.category as string)} · {formatDate(ticket.created_at as string)}
+                  {getCategoryLabel(ticket.category)} · {formatDate(ticket.created_at)}
                 </p>
               </div>
+              {ticket.purchase?.order_number && (
+                <Badge variant="secondary" className="rounded-md font-normal">
+                  {ticket.purchase.order_number}
+                </Badge>
+              )}
             </div>
 
-            {/* Tabs */}
+            <div className="px-4 py-3 border-b bg-muted/20 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="rounded-md gap-1.5 bg-background">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Funds {ticket.purchase?.funds_status === "disputed" ? "held in dispute" : ticket.purchase?.funds_status || "tracked"}
+                </Badge>
+                {responseDue && (
+                  <Badge variant="outline" className="rounded-md gap-1.5 bg-background">
+                    <Clock className="h-3.5 w-3.5" />
+                    {responseDue}
+                  </Badge>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-md border bg-background p-2">
+                  <ShieldCheck className="h-4 w-4 text-green-700" />
+                  <p className="mt-1 text-[11px] font-medium text-foreground">Hold funds</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">Money stays frozen while the claim is active.</p>
+                </div>
+                <div className="rounded-md border bg-background p-2">
+                  <Handshake className="h-4 w-4 text-blue-700" />
+                  <p className="mt-1 text-[11px] font-medium text-foreground">Resolve first</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">Seller can offer refund, replacement, or release.</p>
+                </div>
+                <div className="rounded-md border bg-background p-2">
+                  <Scale className="h-4 w-4 text-amber-700" />
+                  <p className="mt-1 text-[11px] font-medium text-foreground">Escalate</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">Support reviews if the parties cannot agree.</p>
+                </div>
+              </div>
+
+              {actionError && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 flex gap-2">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  <span>{actionError}</span>
+                </div>
+              )}
+
+              {ticket.resolution_error && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex gap-2">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  <span>{ticket.resolution_error}</span>
+                </div>
+              )}
+
+              {pendingOffer && (
+                <div className="rounded-md border bg-background p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {getResolutionLabel(ticket.resolution_type)}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {ticket.resolution}
+                      </p>
+                      {ticket.resolution_amount && (
+                        <p className="text-xs font-medium text-foreground mt-2">
+                          Amount: {formatMoney(ticket.resolution_amount)}
+                        </p>
+                      )}
+                    </div>
+                    <CircleDollarSign className="h-5 w-5 text-green-700 flex-shrink-0" />
+                  </div>
+                  {canAcceptResolution && (
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        size="sm"
+                        className="rounded-md"
+                        onClick={() => performResolutionAction("accept")}
+                        disabled={actionLoading !== null}
+                      >
+                        {actionLoading === "accept" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                        Accept
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-md"
+                        onClick={() => performResolutionAction("escalate")}
+                        disabled={actionLoading !== null}
+                      >
+                        <Scale className="h-4 w-4" />
+                        Escalate
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {canOfferResolution && (
+                <div className="rounded-md border bg-background p-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Offer a resolution</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      The buyer can accept it immediately or escalate to Yellow Jersey.
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="resolution-type" className="text-xs">Outcome</Label>
+                    <Select value={resolutionType} onValueChange={(value) => setResolutionType(value as ResolutionType)}>
+                      <SelectTrigger id="resolution-type" className="w-full rounded-md">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {RESOLUTION_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedOption?.helper && (
+                      <p className="text-xs text-muted-foreground">{selectedOption.helper}</p>
+                    )}
+                  </div>
+                  {resolutionType === "partial_refund" && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="resolution-amount" className="text-xs">Refund amount</Label>
+                      <Input
+                        id="resolution-amount"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={resolutionAmount}
+                        onChange={(event) => setResolutionAmount(event.target.value)}
+                        className="rounded-md"
+                      />
+                    </div>
+                  )}
+                  <div className="grid gap-2">
+                    <Label htmlFor="resolution-message" className="text-xs">Message</Label>
+                    <Textarea
+                      id="resolution-message"
+                      rows={3}
+                      placeholder="Explain what you are offering and what happens next."
+                      value={resolutionMessage}
+                      onChange={(event) => setResolutionMessage(event.target.value)}
+                      className="rounded-md resize-none"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="rounded-md"
+                      onClick={() => performResolutionAction("propose", {
+                        resolutionType,
+                        amount: resolutionType === "partial_refund" ? resolutionAmount : null,
+                        message: resolutionMessage,
+                      })}
+                      disabled={actionLoading !== null || (resolutionType === "partial_refund" && !resolutionAmount)}
+                    >
+                      {actionLoading === "propose" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Handshake className="h-4 w-4" />}
+                      Send offer
+                    </Button>
+                    {canEscalate && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-md"
+                        onClick={() => performResolutionAction("escalate")}
+                        disabled={actionLoading !== null}
+                      >
+                        <Scale className="h-4 w-4" />
+                        Escalate
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex border-b">
               <button
                 onClick={() => setActiveTab("messages")}
@@ -293,24 +596,28 @@ export function TicketDetailSheet({
               </button>
             </div>
 
-            {/* Content */}
             <div className="flex-1 overflow-y-auto">
               {activeTab === "messages" ? (
                 <div className="p-4 space-y-4">
                   {messages.map((msg) => {
                     const isSupport = msg.sender_type === "support";
                     const isSeller = msg.sender_type === "seller";
+                    const isOwnMessage = userRole === "admin"
+                      ? isSupport
+                      : msg.sender_type === userRole;
                     const senderName =
-                      msg.sender?.business_name ||
-                      msg.sender?.name ||
-                      (isSupport ? "Yellow Jersey Support" : isSeller ? "Seller" : "You");
+                      isOwnMessage
+                        ? "You"
+                        : msg.sender?.business_name ||
+                          msg.sender?.name ||
+                          (isSupport ? "Yellow Jersey Support" : isSeller ? "Seller" : "Buyer");
 
                     return (
                       <div
                         key={msg.id}
                         className={cn(
                           "flex gap-3",
-                          msg.sender_type === "buyer" && "flex-row-reverse"
+                          isOwnMessage && "flex-row-reverse"
                         )}
                       >
                         <Avatar className="h-8 w-8 flex-shrink-0">
@@ -326,7 +633,7 @@ export function TicketDetailSheet({
                         <div
                           className={cn(
                             "flex-1 max-w-[80%]",
-                            msg.sender_type === "buyer" && "flex flex-col items-end"
+                            isOwnMessage && "flex flex-col items-end"
                           )}
                         >
                           <div className="flex items-center gap-2 mb-1">
@@ -339,8 +646,8 @@ export function TicketDetailSheet({
                           </div>
                           <div
                             className={cn(
-                              "rounded-md px-3 py-2 text-sm",
-                              msg.sender_type === "buyer"
+                              "rounded-md px-3 py-2 text-sm whitespace-pre-wrap",
+                              isOwnMessage
                                 ? "bg-primary text-primary-foreground"
                                 : "bg-muted text-foreground"
                             )}
@@ -373,7 +680,7 @@ export function TicketDetailSheet({
                           <p className="text-xs font-medium text-foreground">
                             {getActionLabel(item.action)}
                           </p>
-                          {typeof item.new_value?.status === 'string' && item.new_value.status && (
+                          {typeof item.new_value?.status === "string" && item.new_value.status && (
                             <TicketStatusBadge
                               status={item.new_value.status}
                               className="mt-1"
@@ -390,7 +697,6 @@ export function TicketDetailSheet({
               )}
             </div>
 
-            {/* Reply Box */}
             {canReply && activeTab === "messages" && (
               <div className="border-t p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                 <div className="flex gap-2">
@@ -423,17 +729,25 @@ export function TicketDetailSheet({
               </div>
             )}
 
-            {/* Resolved Actions */}
             {ticket.status === "resolved" && (
               <div className="border-t p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                 <div className="flex items-center gap-2.5 mb-2">
                   <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
                   <p className="text-xs font-medium text-foreground">This ticket has been resolved</p>
                 </div>
-                {typeof ticket.resolution === 'string' && ticket.resolution && (
+                {ticket.resolution && (
                   <p className="text-xs text-muted-foreground">
                     Resolution: {ticket.resolution}
                   </p>
+                )}
+                {(ticket.stripe_refund_id || ticket.stripe_transfer_reversal_id) && (
+                  <>
+                    <Separator className="my-3" />
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      {ticket.stripe_refund_id && <p>Stripe refund: {ticket.stripe_refund_id}</p>}
+                      {ticket.stripe_transfer_reversal_id && <p>Transfer reversal: {ticket.stripe_transfer_reversal_id}</p>}
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -443,4 +757,3 @@ export function TicketDetailSheet({
     </Sheet>
   );
 }
-

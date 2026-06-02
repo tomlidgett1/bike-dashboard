@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search,
   Package,
@@ -2242,8 +2242,9 @@ function OrderManagementWrapper({ isStore, children }: { isStore: boolean; child
 // Main Page Component
 // ============================================================
 
-export default function OrderManagementPage() {
+function OrderManagementPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { profile } = useUserProfile();
   const isVerifiedStore = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
 
@@ -2252,6 +2253,13 @@ export default function OrderManagementPage() {
   const [orderMode, setOrderMode] = React.useState<OrderMode>('buying');
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('all');
+
+  React.useEffect(() => {
+    const tab = searchParams.get('tab') as MainTab | null;
+    if (tab && ['orders', 'listings', 'drafts', 'claims', 'offers'].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   // Data
   const [orders, setOrders] = React.useState<Purchase[]>([]);
@@ -3907,5 +3915,22 @@ export default function OrderManagementPage() {
         onComplete={(_ids) => { setBulkUploadOpen(false); fetchListings(); }}
       />
     </>
+  );
+}
+
+export default function OrderManagementPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-background pt-16">
+          <div className="mx-auto max-w-7xl px-4 py-10">
+            <div className="h-8 w-48 animate-pulse rounded bg-muted" />
+            <div className="mt-6 h-64 animate-pulse rounded-lg bg-muted" />
+          </div>
+        </div>
+      }
+    >
+      <OrderManagementPageContent />
+    </React.Suspense>
   );
 }

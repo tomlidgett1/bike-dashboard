@@ -6,9 +6,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+type ProductImage = {
+  id: string;
+  storage_path: string | null;
+  external_url: string | null;
+  is_downloaded: boolean | null;
+  is_primary: boolean | null;
+  sort_order: number | null;
+  approval_status: string | null;
+  width: number | null;
+  height: number | null;
+  file_size: number | null;
+  mime_type: string | null;
+  created_at: string;
+};
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient();
@@ -21,8 +36,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    // Await params if it's a Promise (Next.js 15+)
-    const resolvedParams = params instanceof Promise ? await params : params;
+    const resolvedParams = await params;
     const canonicalProductId = resolvedParams.id;
 
     console.log(`[ADMIN PRODUCT IMAGES] Params object:`, resolvedParams);
@@ -69,7 +83,7 @@ export async function GET(
 
     // Get URLs for images (external URLs for non-downloaded, storage URLs for downloaded)
     const images = await Promise.all(
-      (product.product_images || []).map(async (img: any) => {
+      ((product.product_images || []) as ProductImage[]).map(async (img) => {
         let url: string;
         
         // If not downloaded yet, use external URL
@@ -129,4 +143,3 @@ export async function GET(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

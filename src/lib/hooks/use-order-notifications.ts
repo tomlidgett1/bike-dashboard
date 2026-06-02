@@ -13,6 +13,7 @@ export interface OrderNotification {
   id: string;
   user_id: string;
   purchase_id: string | null;
+  ticket_id: string | null;
   voucher_id: string | null;
   type: string;
   notification_category: string;
@@ -46,6 +47,14 @@ export interface OrderNotification {
     description: string;
     status: string;
   };
+  ticket?: {
+    id: string;
+    ticket_number: string;
+    subject: string;
+    status: string;
+    category: string;
+    purchase?: OrderNotification['purchase'];
+  };
 }
 
 interface UseOrderNotificationsReturn {
@@ -68,6 +77,10 @@ type RealtimeNotificationPayload = {
 function getRealtimeNotificationPayload(value: unknown): RealtimeNotificationPayload | null {
   if (!value || typeof value !== 'object') return null;
   return value as RealtimeNotificationPayload;
+}
+
+function isActionableNotificationCategory(category: string | undefined): boolean {
+  return Boolean(category && ['order', 'voucher', 'support'].includes(category));
 }
 
 export function useOrderNotifications(
@@ -203,7 +216,7 @@ export function useOrderNotifications(
 
       userIdRef.current = user.id;
 
-      // Subscribe to notifications table for this user's order notifications
+      // Subscribe to notifications table for this user's actionable notifications
       channelRef.current = supabase
         .channel('order-notifications')
         .on(
@@ -216,8 +229,7 @@ export function useOrderNotifications(
           },
           (payload) => {
             const notification = getRealtimeNotificationPayload(payload.new);
-            // Only handle order notifications
-            if (notification?.notification_category === 'order') {
+            if (isActionableNotificationCategory(notification?.notification_category)) {
               // Refresh notifications to get enriched data
               fetchNotifications();
             }
@@ -233,14 +245,13 @@ export function useOrderNotifications(
           },
           (payload) => {
             const updated = getRealtimeNotificationPayload(payload.new);
-            // Update local notification if it's an order notification
-            if (updated?.notification_category === 'order' && updated.id) {
+            if (isActionableNotificationCategory(updated?.notification_category) && updated?.id) {
               setNotifications(prev =>
                 prev.map(n =>
                   n.id === updated.id
                     ? {
                         ...n,
-                        is_read: updated.is_read ?? n.is_read,
+                        is_read: typeof updated.is_read === 'boolean' ? updated.is_read : n.is_read,
                         read_at: updated.read_at ?? n.read_at,
                       }
                     : n
@@ -346,9 +357,8 @@ export function useOrderNotificationCount(refreshInterval: number = 30000) {
           (payload) => {
             const newNotification = getRealtimeNotificationPayload(payload.new);
             const oldNotification = getRealtimeNotificationPayload(payload.old);
-            // Refresh count on any notification change
-            if (newNotification?.notification_category === 'order' ||
-                oldNotification?.notification_category === 'order') {
+            if (isActionableNotificationCategory(newNotification?.notification_category) ||
+                isActionableNotificationCategory(oldNotification?.notification_category)) {
               fetchCount();
             }
           }
@@ -377,4 +387,3 @@ export function useOrderNotificationCount(refreshInterval: number = 30000) {
 
   return { count, loading, refresh: fetchCount };
 }
-

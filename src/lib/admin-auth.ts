@@ -20,6 +20,10 @@ function adminEmails(): string[] {
     .filter(Boolean);
 }
 
+export function isAdminEmail(email?: string | null): boolean {
+  return Boolean(email && adminEmails().includes(email.toLowerCase()));
+}
+
 export async function requireAdminAccess(supabase: SupabaseAuthClient) {
   const {
     data: { user },
@@ -33,7 +37,7 @@ export async function requireAdminAccess(supabase: SupabaseAuthClient) {
     };
   }
 
-  if (!user.email || !adminEmails().includes(user.email.toLowerCase())) {
+  if (!isAdminEmail(user.email)) {
     return {
       authorized: false as const,
       response: NextResponse.json({ error: 'Forbidden - Admin only' }, { status: 403 }),

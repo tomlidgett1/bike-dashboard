@@ -5,7 +5,7 @@
 // POST: Add message to ticket
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 
 // ============================================================
 // GET: Get messages for a ticket
@@ -59,7 +59,7 @@ export async function GET(
       .from('ticket_messages')
       .select(`
         *,
-        sender:users!ticket_messages_sender_id_fkey (
+        sender:users!ticket_messages_sender_id_users_fkey (
           user_id,
           name,
           business_name,
@@ -190,16 +190,24 @@ export async function POST(
     }
 
     // Update ticket status to awaiting_response if needed
-    if (ticket.status === 'open' && senderType === 'buyer') {
-      await supabase
+    const serviceClient = createServiceRoleClient();
+    if (senderType === 'buyer' && ['open', 'in_review'].includes(ticket.status)) {
+      await serviceClient
         .from('support_tickets')
-        .update({ status: 'awaiting_response' })
+        .update({
+          status: 'awaiting_response',
+          seller_response_due_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+          buyer_response_due_at: null,
+        })
         .eq('id', ticketId);
-    } else if (ticket.status === 'awaiting_response' && senderType === 'seller') {
-      // Seller responded, back to in_review
-      await supabase
+    } else if (senderType === 'seller' && ['open', 'awaiting_response'].includes(ticket.status)) {
+      await serviceClient
         .from('support_tickets')
-        .update({ status: 'in_review' })
+        .update({
+          status: 'in_review',
+          seller_response_due_at: null,
+          buyer_response_due_at: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+        })
         .eq('id', ticketId);
     }
 
@@ -230,4 +238,3 @@ export async function POST(
     );
   }
 }
-

@@ -48,10 +48,21 @@ type NotificationVoucherRow = {
   status: string;
 };
 
+type NotificationTicketRow = {
+  id: string;
+  ticket_number: string;
+  subject: string;
+  status: string;
+  category: string;
+  purchase_id: string;
+  purchases: NotificationPurchaseRow | NotificationPurchaseRow[] | null;
+};
+
 type NotificationRow = {
   id: string;
   user_id: string;
   purchase_id: string | null;
+  ticket_id: string | null;
   voucher_id: string | null;
   type: string;
   notification_category: string;
@@ -61,6 +72,7 @@ type NotificationRow = {
   read_at: string | null;
   purchases: NotificationPurchaseRow | NotificationPurchaseRow[] | null;
   vouchers: NotificationVoucherRow | NotificationVoucherRow[] | null;
+  support_tickets: NotificationTicketRow | NotificationTicketRow[] | null;
 };
 
 function firstRelation<T>(value: T | T[] | null | undefined): T | null {
@@ -106,6 +118,7 @@ export interface OrderNotification {
   id: string;
   user_id: string;
   purchase_id: string | null;
+  ticket_id: string | null;
   voucher_id: string | null;
   type: string;
   notification_category: string;
@@ -139,6 +152,14 @@ export interface OrderNotification {
     description: string;
     status: string;
   };
+  ticket?: {
+    id: string;
+    ticket_number: string;
+    subject: string;
+    status: string;
+    category: string;
+    purchase?: OrderNotification['purchase'];
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -160,13 +181,14 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     const unreadOnly = searchParams.get('unreadOnly') === 'true';
 
-    // Build query for order and voucher notifications
+    // Build query for order, voucher, and support notifications
     let query = supabase
       .from('notifications')
       .select(`
         id,
         user_id,
         purchase_id,
+        ticket_id,
         voucher_id,
         type,
         notification_category,
@@ -198,10 +220,36 @@ export async function GET(request: NextRequest) {
           min_purchase_cents,
           description,
           status
+        ),
+        support_tickets!ticket_id (
+          id,
+          ticket_number,
+          subject,
+          status,
+          category,
+          purchase_id,
+          purchases!purchase_id (
+            id,
+            order_number,
+            total_amount,
+            status,
+            product_id,
+            buyer_id,
+            seller_id,
+            products!product_id (
+              id,
+              description,
+              display_name,
+              canonical_product_id,
+              primary_image_url,
+              cached_image_url,
+              images
+            )
+          )
         )
       `)
       .eq('user_id', user.id)
-      .in('notification_category', ['order', 'voucher'])
+      .in('notification_category', ['order', 'voucher', 'support'])
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -221,7 +269,15 @@ export async function GET(request: NextRequest) {
 
     const notifications = (data || []) as unknown as NotificationRow[];
     const products = notifications
-      .map((notification) => firstRelation(firstRelation(notification.purchases)?.products))
+      .flatMap((notification) => {
+        const purchase = firstRelation(notification.purchases);
+        const ticket = firstRelation(notification.support_tickets);
+        const ticketPurchase = firstRelation(ticket?.purchases);
+        return [
+          firstRelation(purchase?.products),
+          firstRelation(ticketPurchase?.products),
+        ];
+      })
       .filter((product): product is NotificationProductRow => Boolean(product));
     const productIds = [...new Set(products.map((product) => product.id).filter(Boolean))];
     const canonicalProductIds = [
@@ -262,22 +318,32 @@ export async function GET(request: NextRequest) {
       'canonical_product_id'
     );
 
-    // Transform notifications to include purchase and voucher data
+    // Transform notifications to include order, voucher, and support ticket data
     const enrichedNotifications: OrderNotification[] = notifications.map((notification) => {
       const purchase = firstRelation(notification.purchases);
       const voucher = firstRelation(notification.vouchers);
+      const ticket = firstRelation(notification.support_tickets);
       const product = firstRelation(purchase?.products);
+      const ticketPurchase = firstRelation(ticket?.purchases);
+      const ticketProduct = firstRelation(ticketPurchase?.products);
       const productImage =
         product &&
         (imageByProductId.get(product.id) ||
           (product.canonical_product_id
             ? imageByCanonicalProductId.get(product.canonical_product_id)
             : undefined));
+      const ticketProductImage =
+        ticketProduct &&
+        (imageByProductId.get(ticketProduct.id) ||
+          (ticketProduct.canonical_product_id
+            ? imageByCanonicalProductId.get(ticketProduct.canonical_product_id)
+            : undefined));
 
       return {
         id: notification.id,
         user_id: notification.user_id,
         purchase_id: notification.purchase_id,
+        ticket_id: notification.ticket_id,
         voucher_id: notification.voucher_id,
         type: notification.type,
         notification_category: notification.notification_category,
@@ -315,15 +381,45 @@ export async function GET(request: NextRequest) {
           description: voucher.description,
           status: voucher.status,
         } : undefined,
+        ticket: ticket ? {
+          id: ticket.id,
+          ticket_number: ticket.ticket_number,
+          subject: ticket.subject,
+          status: ticket.status,
+          category: ticket.category,
+          purchase: ticketPurchase ? {
+            id: ticketPurchase.id,
+            order_number: ticketPurchase.order_number,
+            total_amount: ticketPurchase.total_amount,
+            status: ticketPurchase.status,
+            product_id: ticketPurchase.product_id,
+            buyer_id: ticketPurchase.buyer_id,
+            seller_id: ticketPurchase.seller_id,
+            product: ticketProduct ? {
+              id: ticketProduct.id,
+              description: ticketProduct.description,
+              display_name: ticketProduct.display_name,
+              canonical_product_id: ticketProduct.canonical_product_id,
+              primary_image_url: ticketProduct.primary_image_url,
+              cached_image_url: ticketProduct.cached_image_url,
+              thumbnail_url:
+                resolveNotificationThumbnail(ticketProductImage) ||
+                ticketProduct.cached_image_url ||
+                ticketProduct.primary_image_url ||
+                null,
+              images: ticketProduct.images,
+            } : undefined,
+          } : undefined,
+        } : undefined,
       };
     });
 
-    // Count unread notifications (both order and voucher)
+    // Count unread notifications
     const { count: unreadCount } = await supabase
       .from('notifications')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id)
-      .in('notification_category', ['order', 'voucher'])
+      .in('notification_category', ['order', 'voucher', 'support'])
       .eq('is_read', false);
 
     return NextResponse.json({
@@ -343,4 +439,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

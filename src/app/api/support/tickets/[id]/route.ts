@@ -5,6 +5,7 @@
 // PATCH: Update ticket
 
 import { NextRequest, NextResponse } from 'next/server';
+import { isAdminEmail } from '@/lib/admin-auth';
 import { createClient } from '@/lib/supabase/server';
 
 // ============================================================
@@ -91,7 +92,9 @@ export async function GET(
 
     // Check user has access
     const purchase = ticket.purchases;
+    const isAdmin = isAdminEmail(user.email);
     if (
+      !isAdmin &&
       ticket.created_by !== user.id &&
       purchase?.seller_id !== user.id
     ) {
@@ -139,7 +142,11 @@ export async function GET(
       .order('created_at', { ascending: false });
 
     // Determine user's role
-    const userRole = ticket.created_by === user.id ? 'buyer' : 'seller';
+    const userRole = isAdmin
+      ? 'admin'
+      : ticket.created_by === user.id || purchase?.buyer_id === user.id
+        ? 'buyer'
+        : 'seller';
 
     return NextResponse.json({
       ticket: {
@@ -185,7 +192,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { status, resolution, resolutionType } = body;
+    const { status } = body;
 
     // Fetch existing ticket
     const { data: ticket, error: ticketError } = await supabase
@@ -259,4 +266,3 @@ export async function PATCH(
     );
   }
 }
-

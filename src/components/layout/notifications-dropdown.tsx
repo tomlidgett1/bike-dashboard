@@ -33,6 +33,11 @@ import {
   CreditCard,
   X,
   Gift,
+  LifeBuoy,
+  MessageCircle,
+  Handshake,
+  RefreshCw,
+  Scale,
 } from 'lucide-react';
 import { useOrderNotificationsContext } from '@/components/providers/order-notifications-provider';
 import type { OrderNotification } from '@/lib/hooks/use-order-notifications';
@@ -104,6 +109,51 @@ function getNotificationDisplay(type: string): {
       title: 'You earned a $10 voucher!',
       color: 'bg-green-500'
     },
+    ticket_created: {
+      icon: LifeBuoy,
+      title: 'New Claim Opened',
+      color: 'bg-amber-500'
+    },
+    ticket_message: {
+      icon: MessageCircle,
+      title: 'New Claim Message',
+      color: 'bg-blue-500'
+    },
+    ticket_status_changed: {
+      icon: LifeBuoy,
+      title: 'Claim Updated',
+      color: 'bg-blue-500'
+    },
+    ticket_resolution_offered: {
+      icon: Handshake,
+      title: 'Resolution Offered',
+      color: 'bg-green-600'
+    },
+    ticket_resolution_accepted: {
+      icon: CheckCircle2,
+      title: 'Resolution Accepted',
+      color: 'bg-green-600'
+    },
+    ticket_refunded: {
+      icon: RefreshCw,
+      title: 'Refund Processed',
+      color: 'bg-green-600'
+    },
+    ticket_released_to_seller: {
+      icon: DollarSign,
+      title: 'Payment Released',
+      color: 'bg-green-600'
+    },
+    ticket_resolved: {
+      icon: CheckCircle2,
+      title: 'Claim Resolved',
+      color: 'bg-green-600'
+    },
+    ticket_escalated: {
+      icon: Scale,
+      title: 'Claim Escalated',
+      color: 'bg-red-500'
+    },
   };
 
   return displays[type] || { 
@@ -115,7 +165,7 @@ function getNotificationDisplay(type: string): {
 
 // Get product image from notification
 function getProductImage(notification: OrderNotification): string | null {
-  const product = notification.purchase?.product;
+  const product = (notification.purchase || notification.ticket?.purchase)?.product;
   if (!product) return null;
 
   if (product.thumbnail_url) return product.thumbnail_url;
@@ -139,6 +189,10 @@ function getProductImage(notification: OrderNotification): string | null {
 
 // Get product name from notification
 function getProductName(notification: OrderNotification): string {
+  if (notification.notification_category === 'support') {
+    return notification.ticket?.subject || 'Support claim';
+  }
+
   const product = notification.purchase?.product;
   if (!product) return 'Unknown Product';
   return product.display_name || product.description || 'Unknown Product';
@@ -156,6 +210,7 @@ function NotificationItem({
   const Icon = display.icon;
   const productImage = getProductImage(notification);
   const productName = getProductName(notification);
+  const orderNumber = notification.purchase?.order_number || notification.ticket?.purchase?.order_number;
 
   return (
     <button
@@ -206,9 +261,9 @@ function NotificationItem({
               : productName
             }
           </p>
-          {notification.purchase?.order_number && (
+          {orderNumber && (
             <p className="text-xs text-gray-500 mt-0.5">
-              Order #{notification.purchase.order_number}
+              Order #{orderNumber}
             </p>
           )}
           <p className="text-xs text-gray-400 mt-1">
@@ -255,7 +310,7 @@ export function NotificationsDropdown() {
       await markAsRead(notification.id);
     }
     setMobileSheetOpen(false);
-    router.push('/settings/purchases');
+    router.push(notification.notification_category === 'support' ? '/settings/purchases?tab=claims' : '/settings/purchases');
     refresh();
   };
 
@@ -284,7 +339,7 @@ export function NotificationsDropdown() {
           <Bell className="h-12 w-12 mx-auto mb-3 text-gray-300" />
           <p className="font-medium text-gray-900">No notifications yet</p>
           <p className="text-sm text-gray-500 mt-1">
-            You&apos;ll be notified about order updates here
+            You&apos;ll be notified about order and claim updates here
           </p>
         </div>
       ) : (
@@ -357,7 +412,7 @@ export function NotificationsDropdown() {
                 onClick={handleViewAll}
                 className="w-full rounded-md"
               >
-                View All Orders
+                View All
               </Button>
             </div>
           </SheetContent>
@@ -419,7 +474,7 @@ export function NotificationsDropdown() {
             className="w-full rounded-md text-sm cursor-pointer"
             onClick={handleViewAll}
           >
-            View All Orders
+            View All
           </Button>
         </div>
       </DropdownMenuContent>

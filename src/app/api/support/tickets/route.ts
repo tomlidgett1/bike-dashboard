@@ -21,6 +21,28 @@ interface CreateTicketRequest {
   attachments?: { url: string; fileName: string; fileType: string }[];
 }
 
+const DISPUTE_CATEGORIES = [
+  'item_not_received',
+  'item_not_as_described',
+  'damaged',
+  'wrong_item',
+  'refund_request',
+];
+
+const DISPUTE_POLICY_SNAPSHOT = {
+  version: '2026-06-02',
+  sellerResponseHours: 48,
+  buyerResponseHours: 72,
+  fundsHeldWhileDisputed: true,
+  autoReleaseDaysWithoutReceipt: 7,
+  terms: [
+    'Funds are frozen while a claim is active.',
+    'The seller gets a fair chance to respond and propose a resolution.',
+    'The buyer can accept an offer or escalate the claim to Yellow Jersey.',
+    'Refunds are returned to the original payment method.',
+  ],
+};
+
 // ============================================================
 // GET: List user's tickets
 // ============================================================
@@ -94,7 +116,7 @@ export async function GET(request: NextRequest) {
 
     // Get message counts for each ticket
     const ticketIds = tickets?.map((t) => t.id) || [];
-    let messageCounts: Record<string, number> = {};
+    const messageCounts: Record<string, number> = {};
 
     if (ticketIds.length > 0) {
       const { data: counts } = await supabase
@@ -234,6 +256,9 @@ export async function POST(request: NextRequest) {
       priority = 'high'; // Escalate if funds are still held
     }
 
+    const isDisputeCategory = DISPUTE_CATEGORIES.includes(category);
+    const now = new Date().toISOString();
+
     // Create the ticket
     const { data: ticket, error: ticketError } = await supabase
       .from('support_tickets')
@@ -248,6 +273,10 @@ export async function POST(request: NextRequest) {
         subject,
         description,
         requested_resolution: requestedResolution || null,
+        seller_response_due_at: isDisputeCategory
+          ? new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+          : null,
+        policy_snapshot: isDisputeCategory ? DISPUTE_POLICY_SNAPSHOT : {},
       })
       .select()
       .single();
@@ -283,11 +312,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Update purchase funds_status to 'disputed' for certain categories
-    if (['item_not_received', 'item_not_as_described', 'damaged', 'wrong_item', 'refund_request'].includes(category)) {
+    if (isDisputeCategory) {
       if (purchase.funds_status === 'held') {
         await supabase
           .from('purchases')
-          .update({ funds_status: 'disputed' })
+          .update({
+            funds_status: 'disputed',
+            dispute_opened_at: now,
+          })
           .eq('id', purchaseId);
       }
     }
@@ -334,4 +366,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
