@@ -8,6 +8,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { triggerSellerPayout } from '@/lib/stripe/payouts';
 
+type ReleaseCandidate = {
+  id: string;
+  order_number: string;
+  seller_id: string;
+  total_amount: number;
+  platform_fee: number | null;
+  seller_payout_amount: number | null;
+  funds_status: 'held' | 'released' | 'auto_released';
+  funds_release_at: string | null;
+  payout_status: string | null;
+  stripe_transfer_id: string | null;
+};
+
+const RELEASE_CANDIDATE_SELECT = `
+  id,
+  order_number,
+  seller_id,
+  total_amount,
+  platform_fee,
+  seller_payout_amount,
+  funds_status,
+  funds_release_at,
+  payout_status,
+  stripe_transfer_id
+`;
+
 // Use service role for cron job
 function getServiceClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -30,11 +56,18 @@ export async function POST(request: NextRequest) {
 
 async function handleReleaseFunds(request: NextRequest) {
   try {
-    // Optional: Verify cron secret for security
-    const cronSecret = request.headers.get('x-cron-secret');
+    // Allow Vercel Cron, or manual calls with either supported secret header.
     const expectedSecret = process.env.CRON_SECRET;
+    const authHeader = request.headers.get('authorization');
+    const cronSecret = request.headers.get('x-cron-secret');
+    const isVercelCron = request.headers.get('x-vercel-cron') === '1';
     
-    if (expectedSecret && cronSecret !== expectedSecret) {
+    if (
+      expectedSecret &&
+      !isVercelCron &&
+      authHeader !== `Bearer ${expectedSecret}` &&
+      cronSecret !== expectedSecret
+    ) {
       return NextResponse.json(
         { error: 'Unauthorised' },
         { status: 401 }
@@ -42,69 +75,117 @@ async function handleReleaseFunds(request: NextRequest) {
     }
 
     const supabase = getServiceClient();
+    const now = new Date().toISOString();
 
-    // Find all purchases ready for auto-release
-    // funds_status = 'held' AND funds_release_at <= NOW()
-    const { data: purchases, error: fetchError } = await supabase
+    // Held purchases become auto-released after the 7-day hold.
+    const { data: duePurchases, error: dueFetchError } = await supabase
       .from('purchases')
-      .select(`
-        id,
-        order_number,
-        seller_id,
-        total_amount,
-        platform_fee,
-        seller_payout_amount,
-        funds_release_at
-      `)
+      .select(RELEASE_CANDIDATE_SELECT)
       .eq('funds_status', 'held')
-      .lte('funds_release_at', new Date().toISOString());
+      .lte('funds_release_at', now)
+      .returns<ReleaseCandidate[]>();
 
-    if (fetchError) {
-      console.error('[Release Funds Cron] Fetch error:', fetchError);
+    if (dueFetchError) {
+      console.error('[Release Funds Cron] Due purchase fetch error:', dueFetchError);
       return NextResponse.json(
-        { error: 'Failed to fetch purchases' },
+        { error: 'Failed to fetch due purchases' },
         { status: 500 }
       );
     }
 
-    if (!purchases || purchases.length === 0) {
-      console.log('[Release Funds Cron] No purchases ready for release');
+    // If a previous release marked funds released but the Stripe transfer failed,
+    // keep retrying until the purchase has a transfer id.
+    const { data: retryPurchases, error: retryFetchError } = await supabase
+      .from('purchases')
+      .select(RELEASE_CANDIDATE_SELECT)
+      .in('funds_status', ['released', 'auto_released'])
+      .is('stripe_transfer_id', null)
+      .or('payout_status.is.null,payout_status.in.(pending,processing,failed)')
+      .returns<ReleaseCandidate[]>();
+
+    if (retryFetchError) {
+      console.error('[Release Funds Cron] Retry purchase fetch error:', retryFetchError);
+      return NextResponse.json(
+        { error: 'Failed to fetch retryable purchases' },
+        { status: 500 }
+      );
+    }
+
+    const purchasesById = new Map<string, ReleaseCandidate>();
+    for (const purchase of duePurchases || []) {
+      purchasesById.set(purchase.id, purchase);
+    }
+    for (const purchase of retryPurchases || []) {
+      purchasesById.set(purchase.id, purchase);
+    }
+
+    const purchases = Array.from(purchasesById.values());
+
+    if (purchases.length === 0) {
+      console.log('[Release Funds Cron] No purchases ready for release or payout retry');
       return NextResponse.json({
         success: true,
         released: 0,
-        message: 'No purchases ready for auto-release',
+        retried: 0,
+        failed: 0,
+        message: 'No purchases ready for auto-release or payout retry',
       });
     }
 
-    console.log(`[Release Funds Cron] Found ${purchases.length} purchases to release`);
+    console.log(`[Release Funds Cron] Found ${purchases.length} purchases to release or retry`);
 
     const results = {
       released: 0,
+      retried: 0,
       failed: 0,
+      skipped: 0,
       errors: [] as string[],
     };
 
     // Process each purchase
     for (const purchase of purchases) {
       try {
-        // Update funds status to auto_released
-        const { error: updateError } = await supabase
-          .from('purchases')
-          .update({
-            funds_status: 'auto_released',
-          })
-          .eq('id', purchase.id)
-          .eq('funds_status', 'held'); // Atomic check
+        const autoReleaseNow = purchase.funds_status === 'held';
 
-        if (updateError) {
-          throw new Error(`Update failed: ${updateError.message}`);
+        if (autoReleaseNow) {
+          const { data: updatedPurchase, error: updateError } = await supabase
+            .from('purchases')
+            .update({
+              funds_status: 'auto_released',
+              payout_status: 'processing',
+            })
+            .eq('id', purchase.id)
+            .eq('funds_status', 'held')
+            .select('id')
+            .maybeSingle();
+
+          if (updateError) {
+            throw new Error(`Update failed: ${updateError.message}`);
+          }
+
+          if (!updatedPurchase) {
+            results.skipped++;
+            console.log(`[Release Funds Cron] Skipped already-updated purchase: ${purchase.order_number}`);
+            continue;
+          }
+        } else {
+          await supabase
+            .from('purchases')
+            .update({ payout_status: 'processing' })
+            .eq('id', purchase.id)
+            .is('stripe_transfer_id', null);
         }
 
         // Trigger payout
         await triggerSellerPayout(purchase.id);
 
-        results.released++;
-        console.log(`[Release Funds Cron] Released: ${purchase.order_number}`);
+        if (autoReleaseNow) {
+          results.released++;
+          console.log(`[Release Funds Cron] Auto-released: ${purchase.order_number}`);
+        } else {
+          results.retried++;
+          console.log(`[Release Funds Cron] Retried payout: ${purchase.order_number}`);
+        }
 
       } catch (err) {
         results.failed++;
@@ -114,7 +195,10 @@ async function handleReleaseFunds(request: NextRequest) {
       }
     }
 
-    console.log(`[Release Funds Cron] Complete: ${results.released} released, ${results.failed} failed`);
+    console.log(
+      `[Release Funds Cron] Complete: ${results.released} released, ` +
+      `${results.retried} retried, ${results.failed} failed, ${results.skipped} skipped`
+    );
 
     return NextResponse.json({
       success: true,
@@ -129,4 +213,3 @@ async function handleReleaseFunds(request: NextRequest) {
     );
   }
 }
-

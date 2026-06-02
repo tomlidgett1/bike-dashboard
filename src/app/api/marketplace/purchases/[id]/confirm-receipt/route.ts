@@ -73,8 +73,10 @@ export async function POST(
       .update({
         buyer_confirmed_at: new Date().toISOString(),
         funds_status: 'released',
+        payout_status: 'processing',
       })
-      .eq('id', purchaseId);
+      .eq('id', purchaseId)
+      .eq('funds_status', 'held');
 
     if (updateError) {
       console.error('[Confirm Receipt] Update error:', updateError);
@@ -89,13 +91,21 @@ export async function POST(
       await triggerSellerPayout(purchaseId);
     } catch (payoutError) {
       console.error('[Confirm Receipt] Payout error:', payoutError);
-      // Don't fail the request - payout can be retried
+      return NextResponse.json(
+        {
+          success: true,
+          payout_status: 'retry_pending',
+          message: 'Receipt confirmed. Seller payout queued for retry.',
+        },
+        { status: 202 }
+      );
     }
 
     console.log('[Confirm Receipt] Purchase confirmed:', purchaseId);
 
     return NextResponse.json({
       success: true,
+      payout_status: 'completed',
       message: 'Receipt confirmed. Seller payout initiated.',
     });
 
@@ -107,4 +117,3 @@ export async function POST(
     );
   }
 }
-

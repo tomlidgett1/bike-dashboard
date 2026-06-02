@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/release-funds",
-      "schedule": "0 9 * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/ecommerce-hero",

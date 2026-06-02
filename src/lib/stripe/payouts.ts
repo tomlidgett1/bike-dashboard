@@ -67,6 +67,10 @@ export async function triggerSellerPayout(purchaseId: string): Promise<void> {
   // Check if already paid out
   if (purchase.stripe_transfer_id) {
     console.log(`[Payout] Already paid out: ${purchase.stripe_transfer_id}`);
+    await supabase
+      .from('purchases')
+      .update({ payout_status: 'completed' })
+      .eq('id', purchaseId);
     return;
   }
 
@@ -87,16 +91,19 @@ export async function triggerSellerPayout(purchaseId: string): Promise<void> {
   }
 
   if (!seller.stripe_account_id) {
-    console.log(`[Payout] Seller has no Stripe account, skipping payout`);
-    // Record failed payout attempt
-    await recordPayoutAttempt(supabase, purchase, null, 'failed', 'Seller has no Stripe account');
-    return;
+    const failureReason = 'Seller has no Stripe account';
+    console.log(`[Payout] ${failureReason}`);
+    await markPurchasePayoutFailed(supabase, purchase.id);
+    await recordPayoutAttempt(supabase, purchase, null, 'failed', failureReason);
+    throw new Error(failureReason);
   }
 
   if (!seller.stripe_payouts_enabled) {
-    console.log(`[Payout] Seller payouts not enabled, skipping`);
-    await recordPayoutAttempt(supabase, purchase, seller.stripe_account_id, 'failed', 'Seller payouts not enabled');
-    return;
+    const failureReason = 'Seller payouts not enabled';
+    console.log(`[Payout] ${failureReason}`);
+    await markPurchasePayoutFailed(supabase, purchase.id);
+    await recordPayoutAttempt(supabase, purchase, seller.stripe_account_id, 'failed', failureReason);
+    throw new Error(failureReason);
   }
 
   // Calculate payout amount (should already be calculated, but verify)
@@ -104,7 +111,20 @@ export async function triggerSellerPayout(purchaseId: string): Promise<void> {
   const payoutAmount = typedPurchase.seller_payout_amount || 
     Math.round((purchase.total_amount * (1 - PLATFORM_FEE_PERCENTAGE)) * 100) / 100;
 
+  if (payoutAmount <= 0) {
+    const failureReason = `Invalid payout amount: ${payoutAmount}`;
+    await markPurchasePayoutFailed(supabase, purchase.id);
+    await recordPayoutAttempt(supabase, purchase, seller.stripe_account_id, 'failed', failureReason);
+    throw new Error(failureReason);
+  }
+
   try {
+    await supabase
+      .from('purchases')
+      .update({ payout_status: 'processing' })
+      .eq('id', purchaseId)
+      .is('stripe_transfer_id', null);
+
     const sourceCharge = await resolveSourceCharge(stripe, typedPurchase);
     const transferParams: Stripe.TransferCreateParams = {
       amount: Math.round(payoutAmount * 100),
@@ -155,10 +175,22 @@ export async function triggerSellerPayout(purchaseId: string): Promise<void> {
     const errorMessage = stripeError instanceof Error ? stripeError.message : 'Unknown error';
     
     // Record failed payout
+    await markPurchasePayoutFailed(supabase, purchase.id);
     await recordPayoutAttempt(supabase, purchase, seller.stripe_account_id, 'failed', errorMessage);
     
     throw stripeError;
   }
+}
+
+async function markPurchasePayoutFailed(
+  supabase: ReturnType<typeof getServiceClient>,
+  purchaseId: string
+): Promise<void> {
+  await supabase
+    .from('purchases')
+    .update({ payout_status: 'failed' })
+    .eq('id', purchaseId)
+    .is('stripe_transfer_id', null);
 }
 
 async function resolveSourceCharge(
