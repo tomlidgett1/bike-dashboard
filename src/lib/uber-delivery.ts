@@ -52,9 +52,11 @@ export interface UberDeliveryValidationResult {
   seller?: UberSellerProfile | null;
 }
 
+type UberCoordinate = number | 'my_location';
+
 interface UberUniversalLinkLocation {
-  latitude?: number | null;
-  longitude?: number | null;
+  latitude?: UberCoordinate | null;
+  longitude?: UberCoordinate | null;
   nickname?: string | null;
   formattedAddress?: string | null;
 }
@@ -126,10 +128,10 @@ function isAshburtonCycles(seller: UberSellerProfile): boolean {
 }
 
 function hasCoordinates(location: UberUniversalLinkLocation): location is UberUniversalLinkLocation & {
-  latitude: number;
-  longitude: number;
+  latitude: UberCoordinate;
+  longitude: UberCoordinate;
 } {
-  return typeof location.latitude === 'number' && typeof location.longitude === 'number';
+  return location.latitude != null && location.longitude != null;
 }
 
 function appendUberLocationParams(
@@ -267,27 +269,20 @@ async function getStoreLocation(seller: UberSellerProfile): Promise<GeocodedLoca
 }
 
 export async function createUberOrderTripLink({
-  pickupAddress,
-  pickupName,
   dropoffAddress,
   dropoffName,
 }: UberOrderTripLinkArgs): Promise<string | null> {
-  const cleanPickupAddress = pickupAddress?.trim();
   const cleanDropoffAddress = dropoffAddress?.trim();
 
-  if (!cleanPickupAddress || !cleanDropoffAddress) return null;
+  if (!cleanDropoffAddress) return null;
 
-  const [pickupLocation, dropoffLocation] = await Promise.all([
-    geocodeAddressString(cleanPickupAddress),
-    geocodeAddressString(cleanDropoffAddress),
-  ]);
+  const dropoffLocation = await geocodeAddressString(cleanDropoffAddress);
 
   return createUberUniversalLink({
     pickup: {
-      latitude: pickupLocation?.lat ?? null,
-      longitude: pickupLocation?.lng ?? null,
-      nickname: pickupName || pickupLocation?.formattedAddress || cleanPickupAddress,
-      formattedAddress: pickupLocation?.formattedAddress || cleanPickupAddress,
+      latitude: 'my_location',
+      longitude: 'my_location',
+      nickname: 'Current Location',
     },
     dropoff: {
       latitude: dropoffLocation?.lat ?? null,

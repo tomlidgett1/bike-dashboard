@@ -232,7 +232,7 @@ export async function POST(request: NextRequest) {
       `Pickup: ${storeAddress ? `${storeName}, ${storeAddress}` : storeName}`,
       `Dropoff: ${shippingAddress || 'Not provided'}`,
       `Phone: ${cleanPhone}`,
-      ...(uberTripLink ? [`Book Uber: ${uberTripLink}`] : []),
+      ...(uberTripLink ? ['Book Uber:', uberTripLink] : []),
     ];
     const storeMessage = storeMessageParts.join('\n');
 
