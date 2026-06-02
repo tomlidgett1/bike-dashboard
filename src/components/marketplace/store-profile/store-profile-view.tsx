@@ -240,7 +240,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId }:
       {/* Scroll track */}
       <div
         ref={scrollRef}
-        className="overflow-x-auto scrollbar-hide snap-x snap-mandatory sm:snap-none"
+        className="overflow-x-auto scrollbar-hide snap-x snap-mandatory sm:snap-none pe-4 sm:pe-0"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch', overflowY: 'hidden' } as React.CSSProperties}
       >
         {/* Single-row CSS grid: grid-auto-flow: column forces each product into
@@ -267,8 +267,6 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId }:
               />
             </div>
           ))}
-          {/* End spacer so last card isn't flush against the edge on mobile */}
-          <div className="sm:hidden w-1" aria-hidden />
         </div>
       </div>
     </div>
