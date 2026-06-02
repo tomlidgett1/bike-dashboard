@@ -410,7 +410,7 @@ function ProductsTab({
   isOwnProfile,
   storeId,
 }: {
-  sortedCategories: Array<{ id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; section_id?: string | null; logo_url?: string | null }>;
+  sortedCategories: Array<{ id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; section_id?: string | null; logo_url?: string | null; source?: string | null }>;
   sections: StoreSectionWithCategories[];
   pageLayout?: Array<{ type: string; id: string }> | null;
   expandedCategories: Set<string>;
@@ -447,31 +447,38 @@ function ProductsTab({
   let rowIndex = 0;
 
   // ── Render helpers ──────────────────────────────────────────
-  const renderSection = (section: (typeof sections)[number] & { categories: typeof sortedCategories }) => (
-    <div key={section.id} className="bg-gray-200/60 border-y border-gray-300 -mx-5 sm:-mx-8 lg:-mx-10 px-5 sm:px-8 lg:px-10 pt-4 pb-5 space-y-5">
-      <div>
-        <h2 className="text-base font-semibold tracking-tight text-gray-900 leading-snug">{section.name}</h2>
-        {section.description && (
-          <p className="mt-0.5 text-sm text-gray-500 leading-snug">{section.description}</p>
-        )}
+  const renderSection = (section: (typeof sections)[number] & { categories: typeof sortedCategories }) => {
+    const hasUberCarousel = section.categories.some((cat) => cat.source === "uber");
+
+    return (
+      <div key={section.id} className="bg-gray-200/60 border-y border-gray-300 -mx-5 sm:-mx-8 lg:-mx-10 px-5 sm:px-8 lg:px-10 pt-4 pb-5 space-y-5">
+        <div>
+          <div className="flex items-center gap-3">
+            {hasUberCarousel && <UberCarouselLogo className="h-7 px-2.5" />}
+            <h2 className="text-base font-semibold tracking-tight text-gray-900 leading-snug">{section.name}</h2>
+          </div>
+          {section.description && (
+            <p className="mt-0.5 text-sm text-gray-500 leading-snug">{section.description}</p>
+          )}
+        </div>
+        {section.categories.map((cat) => {
+          const r = rowIndex++;
+          return (
+            <CarouselRow
+              key={cat.id}
+              cat={{ ...cat, logo_url: (cat as any).logo_url ?? null }}
+              rowIndex={r}
+              expandedCategories={expandedCategories}
+              setExpandedCategories={setExpandedCategories}
+              compact={compact}
+              isOwnProfile={isOwnProfile}
+              storeId={storeId}
+            />
+          );
+        })}
       </div>
-      {section.categories.map((cat) => {
-        const r = rowIndex++;
-        return (
-          <CarouselRow
-            key={cat.id}
-            cat={{ ...cat, logo_url: (cat as any).logo_url ?? null }}
-            rowIndex={r}
-            expandedCategories={expandedCategories}
-            setExpandedCategories={setExpandedCategories}
-            compact={compact}
-            isOwnProfile={isOwnProfile}
-            storeId={storeId}
-          />
-        );
-      })}
-    </div>
-  );
+    );
+  };
 
   const renderCarousel = (cat: (typeof sortedCategories)[number]) => {
     const r = rowIndex++;
