@@ -105,7 +105,7 @@ export function MessageComposer({
           {previewUrls.map((url, index) => (
             <div
               key={index}
-              className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-gray-200"
+              className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0"
             >
               <Image
                 src={url}
@@ -115,7 +115,7 @@ export function MessageComposer({
               />
               <button
                 onClick={() => removeAttachment(index)}
-                className="absolute -right-1 -top-1 rounded-full bg-red-500 p-1 text-white shadow-md transition hover:bg-red-600"
+                className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 shadow-md"
                 type="button"
               >
                 <X className="h-3 w-3" />
@@ -144,9 +144,9 @@ export function MessageComposer({
           size="icon"
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || sending || attachments.length >= 5}
-          className="h-12 w-12 flex-shrink-0 rounded-full border-gray-300 hover:bg-gray-50"
+          className="rounded-full h-10 w-10 flex-shrink-0"
         >
-          <ImagePlus className="h-5 w-5 text-gray-500" />
+          <ImagePlus className="h-5 w-5 text-gray-600" />
         </Button>
 
         {/* Text input */}
@@ -157,7 +157,7 @@ export function MessageComposer({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled || sending}
-          className="min-h-12 w-full flex-1 resize-none overflow-hidden rounded-2xl border-gray-300 px-4 py-3 text-[15px] leading-snug shadow-none placeholder:text-gray-400 focus-visible:border-gray-400 focus-visible:ring-gray-200"
+          className="resize-none rounded-2xl flex-1 text-sm leading-snug py-2.5 px-4 min-h-[40px] max-h-[120px] overflow-hidden w-full"
           rows={1}
         />
 
@@ -165,11 +165,11 @@ export function MessageComposer({
         <Button
           onClick={handleSend}
           disabled={disabled || sending || (!content.trim() && attachments.length === 0)}
-          className="h-12 w-12 flex-shrink-0 rounded-full bg-[#FFC72C] p-0 text-gray-900 hover:bg-[#E6B328]"
+          className="rounded-full h-10 w-10 p-0 flex-shrink-0"
           size="icon"
         >
           {sending ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-900 border-t-transparent" />
+            <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : (
             <Send className="h-5 w-5" />
           )}
