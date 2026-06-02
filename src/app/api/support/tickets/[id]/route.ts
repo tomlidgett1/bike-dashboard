@@ -142,11 +142,13 @@ export async function GET(
       .order('created_at', { ascending: false });
 
     // Determine user's role
-    const userRole = isAdmin
-      ? 'admin'
-      : ticket.created_by === user.id || purchase?.buyer_id === user.id
-        ? 'buyer'
-        : 'seller';
+    const userRole = ticket.created_by === user.id || purchase?.buyer_id === user.id
+      ? 'buyer'
+      : purchase?.seller_id === user.id
+        ? 'seller'
+        : isAdmin
+          ? 'admin'
+          : 'seller';
 
     return NextResponse.json({
       ticket: {

@@ -124,7 +124,7 @@ const RESOLUTION_OPTIONS: { value: ResolutionType; label: string; helper: string
   { value: "refunded", label: "Full refund", helper: "Return the full order value to the buyer." },
   { value: "partial_refund", label: "Partial refund", helper: "Refund part of the order and close the claim." },
   { value: "replaced", label: "Replacement", helper: "Send a replacement or agreed substitute." },
-  { value: "no_action", label: "Release payment", helper: "Close the claim and release funds to the seller." },
+  { value: "no_action", label: "Ask buyer to release payment", helper: "Use when the issue is solved and the buyer should release seller payout." },
   { value: "other", label: "Other agreement", helper: "Use when the parties agree a custom outcome." },
 ];
 
@@ -186,7 +186,10 @@ function getActionLabel(action: string): string {
   return labels[action] || action.replace(/_/g, " ");
 }
 
-function getResolutionLabel(type?: ResolutionType | null): string {
+function getResolutionLabel(type?: ResolutionType | null, role?: UserRole): string {
+  if (type === "no_action") {
+    return role === "buyer" ? "Release payment to seller" : "Buyer release requested";
+  }
   return RESOLUTION_OPTIONS.find((option) => option.value === type)?.label || "Resolution";
 }
 
@@ -212,7 +215,7 @@ export function TicketDetailSheet({
   const [resolutionType, setResolutionType] = React.useState<ResolutionType>("refunded");
   const [resolutionAmount, setResolutionAmount] = React.useState("");
   const [resolutionMessage, setResolutionMessage] = React.useState("");
-  const [actionLoading, setActionLoading] = React.useState<null | "propose" | "accept" | "escalate">(null);
+  const [actionLoading, setActionLoading] = React.useState<null | "propose" | "accept" | "escalate" | "release_payment">(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
@@ -252,7 +255,7 @@ export function TicketDetailSheet({
   }, [messages]);
 
   const performResolutionAction = async (
-    action: "propose" | "accept" | "escalate",
+    action: "propose" | "accept" | "escalate" | "release_payment",
     payload: Record<string, unknown> = {}
   ) => {
     if (!ticketId || actionLoading) return;
@@ -312,9 +315,13 @@ export function TicketDetailSheet({
   const canReply = Boolean(ticket && !["closed", "resolved"].includes(ticket.status));
   const isActive = Boolean(ticket && ACTIVE_STATUSES.has(ticket.status));
   const pendingOffer = Boolean(ticket?.resolution_type && ticket.resolution_offered_at && !ticket.resolution_accepted_at && ticket.status !== "resolved");
-  const canOfferResolution = Boolean(ticket && isActive && (userRole === "seller" || userRole === "admin"));
-  const canAcceptResolution = Boolean(ticket && pendingOffer && (userRole === "buyer" || userRole === "admin"));
-  const canEscalate = Boolean(ticket && isActive && ticket.status !== "escalated");
+  const isBuyerView = userRole === "buyer";
+  const isSellerView = userRole === "seller";
+  const isSupportView = userRole === "admin";
+  const canOfferResolution = Boolean(ticket && isActive && !pendingOffer && (isSellerView || isSupportView));
+  const canAcceptResolution = Boolean(ticket && pendingOffer && (isBuyerView || isSupportView));
+  const canReleasePayment = Boolean(ticket && isActive && !pendingOffer && isBuyerView);
+  const canEscalate = Boolean(ticket && isActive && ticket.status !== "escalated" && (isBuyerView || isSellerView || isSupportView));
   const responseDue = ticket ? dueLabel(ticket, userRole) : null;
   const selectedOption = RESOLUTION_OPTIONS.find((option) => option.value === resolutionType);
 
@@ -322,7 +329,7 @@ export function TicketDetailSheet({
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-xl p-0 flex flex-col"
+        className="w-full sm:max-w-xl p-0 flex h-dvh flex-col overflow-hidden"
       >
         {loading ? (
           <div className="flex-1 flex flex-col">
@@ -371,6 +378,7 @@ export function TicketDetailSheet({
               </div>
             </SheetHeader>
 
+            <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="px-4 py-3 border-b flex items-center gap-3">
               <div className="relative h-10 w-10 rounded-md overflow-hidden bg-muted flex-shrink-0">
                 {productImage ? (
@@ -423,7 +431,7 @@ export function TicketDetailSheet({
                 <div className="rounded-md border bg-background p-2">
                   <Handshake className="h-4 w-4 text-blue-700" />
                   <p className="mt-1 text-[11px] font-medium text-foreground">Resolve first</p>
-                  <p className="text-[11px] text-muted-foreground leading-snug">Seller can offer refund, replacement, or release.</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">Seller can offer refund, replacement, or request release.</p>
                 </div>
                 <div className="rounded-md border bg-background p-2">
                   <Scale className="h-4 w-4 text-amber-700" />
@@ -451,7 +459,7 @@ export function TicketDetailSheet({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-medium text-foreground">
-                        {getResolutionLabel(ticket.resolution_type)}
+                        {getResolutionLabel(ticket.resolution_type, userRole)}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
                         {ticket.resolution}
@@ -473,7 +481,7 @@ export function TicketDetailSheet({
                         disabled={actionLoading !== null}
                       >
                         {actionLoading === "accept" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                        Accept
+                        {ticket.resolution_type === "no_action" ? "Release payment" : "Accept offer"}
                       </Button>
                       <Button
                         size="sm"
@@ -490,12 +498,62 @@ export function TicketDetailSheet({
                 </div>
               )}
 
+              {pendingOffer && !canAcceptResolution && (isSellerView || isSupportView) && (
+                <div className="rounded-md border bg-background p-3">
+                  <p className="text-sm font-medium text-foreground">Waiting for buyer decision</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    The buyer can accept this outcome, release payment, or escalate to Yellow Jersey. You can keep discussing it in messages.
+                  </p>
+                </div>
+              )}
+
+              {canReleasePayment && (
+                <div className="rounded-md border border-green-200 bg-green-50 p-3">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-700" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-green-950">Ready to release payment?</p>
+                      <p className="mt-1 text-xs leading-relaxed text-green-800">
+                        Use this only when the item has arrived or the issue is fully solved. It closes the claim and immediately starts the seller payout through Stripe.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          className="rounded-md"
+                          onClick={() => performResolutionAction("release_payment", {
+                            message: "Buyer confirmed the issue is solved and released payment to the seller.",
+                          })}
+                          disabled={actionLoading !== null}
+                        >
+                          {actionLoading === "release_payment" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                          Release payment
+                        </Button>
+                        {canEscalate && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="rounded-md bg-white"
+                            onClick={() => performResolutionAction("escalate")}
+                            disabled={actionLoading !== null}
+                          >
+                            <Scale className="h-4 w-4" />
+                            Escalate instead
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {canOfferResolution && (
                 <div className="rounded-md border bg-background p-3 space-y-3">
                   <div>
-                    <p className="text-sm font-medium text-foreground">Offer a resolution</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {isSupportView ? "Set a resolution" : "Offer a resolution"}
+                    </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      The buyer can accept it immediately or escalate to Yellow Jersey.
+                      The buyer can accept it, release payment, or escalate to Yellow Jersey.
                     </p>
                   </div>
                   <div className="grid gap-2">
@@ -596,7 +654,7 @@ export function TicketDetailSheet({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
+            <div className="min-h-0">
               {activeTab === "messages" ? (
                 <div className="p-4 space-y-4">
                   {messages.map((msg) => {
@@ -695,6 +753,7 @@ export function TicketDetailSheet({
                   </div>
                 </div>
               )}
+            </div>
             </div>
 
             {canReply && activeTab === "messages" && (

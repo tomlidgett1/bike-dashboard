@@ -26,6 +26,20 @@ export interface AppliedDisputeResolution {
   payoutQueuedForRetry?: boolean;
 }
 
+export interface MarkPurchasePaymentDisputedOptions {
+  purchaseId: string;
+  ticketId: string;
+  reason?: string | null;
+  openedAt?: string | null;
+}
+
+type PaymentReference = {
+  id: string;
+  order_number: string | null;
+  stripe_payment_intent_id: string | null;
+  stripe_session_id: string | null;
+};
+
 type PurchaseForResolution = {
   id: string;
   order_number: string;
@@ -151,6 +165,31 @@ export async function applyDisputeResolution(
   return {};
 }
 
+export async function markPurchasePaymentDisputed(
+  options: MarkPurchasePaymentDisputedOptions
+): Promise<void> {
+  const supabase = createServiceRoleClient();
+  const stripe = getStripe();
+
+  const { data: purchase, error } = await supabase
+    .from('purchases')
+    .select('id, order_number, stripe_payment_intent_id, stripe_session_id')
+    .eq('id', options.purchaseId)
+    .single();
+
+  if (error || !purchase) {
+    throw new Error('Purchase not found while marking Stripe payment disputed');
+  }
+
+  await updatePaymentIntentMetadata(stripe, purchase as PaymentReference, {
+    yellow_jersey_funds_status: 'in_app_dispute',
+    yellow_jersey_ticket_id: options.ticketId,
+    yellow_jersey_purchase_id: options.purchaseId,
+    yellow_jersey_disputed_at: options.openedAt || new Date().toISOString(),
+    yellow_jersey_dispute_reason: cleanMetadataValue(options.reason || 'buyer_claim'),
+  });
+}
+
 async function refundPurchase(
   stripe: Stripe,
   supabase: ReturnType<typeof createServiceRoleClient>,
@@ -246,6 +285,13 @@ async function refundPurchase(
     transfer_reversal_id: transferReversalId || null,
   });
 
+  await safelyUpdatePaymentIntentMetadata(stripe, purchase, {
+    yellow_jersey_funds_status: 'refunded',
+    yellow_jersey_ticket_id: options.ticketId,
+    yellow_jersey_refund_id: refund.id,
+    yellow_jersey_refunded_at: now,
+  });
+
   return {
     refundId: refund.id,
     transferReversalId,
@@ -261,6 +307,7 @@ async function releasePurchaseToSeller(
     await supabase
       .from('purchases')
       .update({
+        buyer_confirmed_at: new Date().toISOString(),
         funds_status: 'released',
         payout_status: 'processing',
       })
@@ -302,12 +349,19 @@ async function releasePurchaseToSeller(
     payout_queued_for_retry: payoutQueuedForRetry,
   });
 
+  await safelyUpdatePaymentIntentMetadata(getStripe(), purchase, {
+    yellow_jersey_funds_status: 'released_to_seller',
+    yellow_jersey_ticket_id: options.ticketId,
+    yellow_jersey_released_at: now,
+    yellow_jersey_payout_queued_for_retry: String(payoutQueuedForRetry),
+  });
+
   return { payoutReleased: true, payoutQueuedForRetry };
 }
 
 async function resolveSourceCharge(
   stripe: Stripe,
-  purchase: PurchaseForResolution
+  purchase: PaymentReference
 ): Promise<SourceCharge> {
   if (purchase.stripe_payment_intent_id) {
     const paymentIntent = await stripe.paymentIntents.retrieve(
@@ -336,6 +390,39 @@ async function resolveSourceCharge(
   }
 
   return { paymentIntentId: null, chargeId: null };
+}
+
+async function safelyUpdatePaymentIntentMetadata(
+  stripe: Stripe,
+  purchase: PaymentReference,
+  metadata: Record<string, string>
+): Promise<void> {
+  try {
+    await updatePaymentIntentMetadata(stripe, purchase, metadata);
+  } catch (error) {
+    console.error('[Dispute Resolution] Failed to update Stripe payment metadata:', error);
+  }
+}
+
+async function updatePaymentIntentMetadata(
+  stripe: Stripe,
+  purchase: PaymentReference,
+  metadata: Record<string, string>
+): Promise<void> {
+  const source = await resolveSourceCharge(stripe, purchase);
+  if (!source.paymentIntentId) return;
+
+  await stripe.paymentIntents.update(source.paymentIntentId, {
+    metadata: {
+      yellow_jersey_purchase_id: purchase.id,
+      ...(purchase.order_number && { yellow_jersey_order_number: purchase.order_number }),
+      ...metadata,
+    },
+  });
+}
+
+function cleanMetadataValue(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, 500);
 }
 
 function transferReversalAmountCents(

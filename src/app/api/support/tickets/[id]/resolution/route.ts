@@ -36,7 +36,7 @@ const DISPUTE_POLICY_SNAPSHOT = {
   ],
 };
 
-type ResolutionAction = 'propose' | 'accept' | 'escalate' | 'admin_resolve';
+type ResolutionAction = 'propose' | 'accept' | 'release_payment' | 'escalate' | 'admin_resolve';
 
 type PurchaseForTicket = {
   id: string;
@@ -117,6 +117,10 @@ export async function POST(
 
     if (action === 'accept') {
       return acceptResolution(serviceClient, ticket, purchase, user.id, role, body);
+    }
+
+    if (action === 'release_payment') {
+      return releasePayment(serviceClient, ticket, purchase, user.id, role, body);
     }
 
     if (action === 'escalate') {
@@ -257,6 +261,54 @@ async function acceptResolution(
       .update({ resolution_error: errorMessage })
       .eq('id', ticket.id);
     console.error('[Ticket Resolution] Failed to accept resolution:', error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
+}
+
+async function releasePayment(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  ticket: TicketForResolution,
+  purchase: PurchaseForTicket,
+  actorId: string,
+  role: ActorRole,
+  body: Record<string, unknown>
+) {
+  if (!role.isBuyer && !role.isAdmin) {
+    return NextResponse.json({ error: 'Only the buyer or support can release this payment' }, { status: 403 });
+  }
+
+  if (!ACTIVE_TICKET_STATUSES.has(ticket.status)) {
+    return NextResponse.json({ error: 'This ticket is not active' }, { status: 400 });
+  }
+
+  if (ticket.resolution_accepted_at || ticket.status === 'resolved' || ticket.status === 'closed') {
+    return NextResponse.json({ error: 'This claim has already been resolved' }, { status: 400 });
+  }
+
+  const note = cleanMessage(body.message) || 'The buyer confirmed the issue is solved and released payment to the seller.';
+
+  try {
+    const result = await applyDisputeResolution({
+      ticketId: ticket.id,
+      purchaseId: purchase.id,
+      actorId,
+      resolutionType: 'no_action',
+      resolutionAmount: null,
+      note,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Payment released to the seller.',
+      result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to release payment';
+    await supabase
+      .from('support_tickets')
+      .update({ resolution_error: errorMessage })
+      .eq('id', ticket.id);
+    console.error('[Ticket Resolution] Failed to release payment:', error);
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

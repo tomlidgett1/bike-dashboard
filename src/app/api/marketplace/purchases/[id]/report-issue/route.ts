@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { markPurchasePaymentDisputed } from '@/lib/stripe/disputes';
 
 const CATEGORY_MAP: Record<string, string> = {
   not_received: 'item_not_received',
@@ -159,6 +160,17 @@ export async function POST(
         { error: 'Failed to update purchase' },
         { status: 500 }
       );
+    }
+
+    try {
+      await markPurchasePaymentDisputed({
+        purchaseId,
+        ticketId: ticket.id,
+        reason,
+        openedAt: now,
+      });
+    } catch (stripeError) {
+      console.error('[Report Issue] Failed to mark Stripe payment metadata:', stripeError);
     }
 
     console.log('[Report Issue] Dispute created:', purchaseId, reason);

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { markPurchasePaymentDisputed } from '@/lib/stripe/disputes';
 
 // ============================================================
 // Types
@@ -321,6 +322,17 @@ export async function POST(request: NextRequest) {
             dispute_opened_at: now,
           })
           .eq('id', purchaseId);
+      }
+
+      try {
+        await markPurchasePaymentDisputed({
+          purchaseId,
+          ticketId: ticket.id,
+          reason: category,
+          openedAt: now,
+        });
+      } catch (stripeError) {
+        console.error('[Support Tickets] Failed to mark Stripe payment metadata:', stripeError);
       }
     }
 
