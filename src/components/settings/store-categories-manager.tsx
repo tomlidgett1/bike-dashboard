@@ -509,6 +509,19 @@ export function StoreCategoriesManager() {
     });
   };
 
+  // Update carousel title visibility (optimistic)
+  const handleHideTitleChange = async (category: StoreCategory) => {
+    const next = !category.hide_title;
+    setCategories((prev) =>
+      prev.map((c) => (c.id === category.id ? { ...c, hide_title: next } : c))
+    );
+    await fetch('/api/store/categories', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: category.id, hide_title: next }),
+    });
+  };
+
   // Handle reorder
   const handleReorder = async (newOrder: StoreCategory[]) => {
     setCategories(newOrder);
@@ -722,52 +735,27 @@ export function StoreCategoriesManager() {
                   {uploadingLogoId === category.id ? (
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                   ) : category.logo_url ? (
-                    <>
-                      <div className="group relative h-8 w-20 flex items-center justify-center border border-border rounded-md bg-white overflow-hidden">
-                        <img src={category.logo_url} alt="" className="max-h-full max-w-full object-contain p-0.5" />
-                        <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            onClick={() => handleLogoClick(category.id)}
-                            className="text-white hover:text-gray-200 cursor-pointer"
-                            title="Replace logo"
-                          >
-                            <ImagePlus className="h-3 w-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveLogo(category.id)}
-                            className="text-white hover:text-red-300 cursor-pointer"
-                            title="Remove logo"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </div>
+                    <div className="group relative h-8 w-20 flex items-center justify-center border border-border rounded-md bg-white overflow-hidden">
+                      <img src={category.logo_url} alt="" className="max-h-full max-w-full object-contain p-0.5" />
+                      <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => handleLogoClick(category.id)}
+                          className="text-white hover:text-gray-200 cursor-pointer"
+                          title="Replace logo"
+                        >
+                          <ImagePlus className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveLogo(category.id)}
+                          className="text-white hover:text-red-300 cursor-pointer"
+                          title="Remove logo"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
                       </div>
-                      {/* Show/hide title toggle — only meaningful when a logo exists */}
-                      <button
-                        type="button"
-                        title={category.hide_title ? 'Title hidden — click to show' : 'Title visible — click to hide'}
-                        onClick={async () => {
-                          const next = !category.hide_title;
-                          setCategories((prev) =>
-                            prev.map((c) => (c.id === category.id ? { ...c, hide_title: next } : c))
-                          );
-                          await fetch('/api/store/categories', {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: category.id, hide_title: next }),
-                          });
-                        }}
-                        className={`text-xs px-2 py-1 rounded-md border transition-colors cursor-pointer ${
-                          category.hide_title
-                            ? 'border-dashed border-border text-muted-foreground hover:text-foreground'
-                            : 'border-border bg-muted text-foreground hover:bg-muted/70'
-                        }`}
-                      >
-                        {category.hide_title ? 'Title off' : 'Title on'}
-                      </button>
-                    </>
+                    </div>
                   ) : (
                     category.source === 'uber' ? (
                       <UberCarouselLogo />
@@ -782,6 +770,20 @@ export function StoreCategoriesManager() {
                         Logo
                       </button>
                     )
+                  )}
+                  {(category.logo_url || category.source === 'uber') && (
+                    <button
+                      type="button"
+                      title={category.hide_title ? 'Title hidden — click to show' : 'Title visible — click to hide'}
+                      onClick={() => handleHideTitleChange(category)}
+                      className={`text-xs px-2 py-1 rounded-md border transition-colors cursor-pointer ${
+                        category.hide_title
+                          ? 'border-dashed border-border text-muted-foreground hover:text-foreground'
+                          : 'border-border bg-muted text-foreground hover:bg-muted/70'
+                      }`}
+                    >
+                      {category.hide_title ? 'Title off' : 'Title on'}
+                    </button>
                   )}
                 </div>
 
