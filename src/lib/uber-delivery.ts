@@ -52,11 +52,9 @@ export interface UberDeliveryValidationResult {
   seller?: UberSellerProfile | null;
 }
 
-type UberCoordinate = number | 'my_location';
-
 interface UberUniversalLinkLocation {
-  latitude?: UberCoordinate | null;
-  longitude?: UberCoordinate | null;
+  latitude?: number | null;
+  longitude?: number | null;
   nickname?: string | null;
   formattedAddress?: string | null;
 }
@@ -80,6 +78,17 @@ interface GeocodedLocation {
 }
 
 type SupabaseLike = Pick<SupabaseClient, 'from'>;
+
+function getUberClientId(): string | null {
+  return process.env.UBER_CLIENT_ID || process.env.NEXT_PUBLIC_UBER_CLIENT_ID || null;
+}
+
+function buildUberQueryString(entries: Array<[string, string | null | undefined]>): string {
+  return entries
+    .filter((entry): entry is [string, string] => !!entry[1])
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .join('&');
+}
 
 function toRadians(degrees: number): number {
   return degrees * (Math.PI / 180);
@@ -128,10 +137,10 @@ function isAshburtonCycles(seller: UberSellerProfile): boolean {
 }
 
 function hasCoordinates(location: UberUniversalLinkLocation): location is UberUniversalLinkLocation & {
-  latitude: UberCoordinate;
-  longitude: UberCoordinate;
+  latitude: number;
+  longitude: number;
 } {
-  return location.latitude != null && location.longitude != null;
+  return typeof location.latitude === 'number' && typeof location.longitude === 'number';
 }
 
 function appendUberLocationParams(
@@ -278,19 +287,22 @@ export async function createUberOrderTripLink({
 
   const dropoffLocation = await geocodeAddressString(cleanDropoffAddress);
 
-  return createUberUniversalLink({
-    pickup: {
-      latitude: 'my_location',
-      longitude: 'my_location',
-      nickname: 'Current Location',
-    },
-    dropoff: {
-      latitude: dropoffLocation?.lat ?? null,
-      longitude: dropoffLocation?.lng ?? null,
-      nickname: dropoffName || dropoffLocation?.formattedAddress || cleanDropoffAddress,
-      formattedAddress: dropoffLocation?.formattedAddress || cleanDropoffAddress,
-    },
-  });
+  if (!dropoffLocation) return null;
+
+  const dropoffPayload = {
+    latitude: dropoffLocation.lat,
+    longitude: dropoffLocation.lng,
+    addressLine1: dropoffName || dropoffLocation.formattedAddress || cleanDropoffAddress,
+    addressLine2: dropoffLocation.formattedAddress || cleanDropoffAddress,
+  };
+
+  const query = buildUberQueryString([
+    ['client_id', getUberClientId()],
+    ['pickup', 'my_location'],
+    ['drop[0]', JSON.stringify(dropoffPayload)],
+  ]);
+
+  return `https://m.uber.com/looking?${query}`;
 }
 
 export async function validateUberDelivery(
