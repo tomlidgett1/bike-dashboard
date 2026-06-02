@@ -46,16 +46,17 @@ type SupportTicketListItem = {
 
 function mapSupportTicketToConversation(ticket: SupportTicketListItem): ConversationListItem {
   const lastMessageAt = ticket.lastMessage?.created_at || ticket.updated_at || ticket.created_at;
+  const ticketIsClosed = ['resolved', 'closed'].includes(ticket.status);
 
   return {
     id: `ticket:${ticket.id}`,
     source: 'ticket',
     subject: ticket.subject || ticket.ticket_number,
-    status: ['resolved', 'closed'].includes(ticket.status) ? 'closed' : 'active',
+    status: ticketIsClosed ? 'closed' : 'active',
     last_message_at: lastMessageAt,
     message_count: ticket.messageCount || 0,
     unread_count: 0,
-    is_archived: false,
+    is_archived: ticketIsClosed,
     ticket: {
       id: ticket.id,
       ticket_number: ticket.ticket_number,
@@ -126,23 +127,32 @@ export function useConversations(
       const data: GetConversationsResponse = await response.json();
       let mergedConversations = data.conversations;
 
-      if (!archived) {
-        try {
-          const ticketResponse = await fetch('/api/support/tickets?status=active&limit=50');
-          if (ticketResponse.ok) {
-            const ticketData = await ticketResponse.json();
-            const ticketConversations = ((ticketData.tickets || []) as SupportTicketListItem[])
-              .map(mapSupportTicketToConversation);
+      try {
+        const ticketUrls = archived
+          ? [
+              '/api/support/tickets?status=resolved&limit=50',
+              '/api/support/tickets?status=closed&limit=50',
+            ]
+          : ['/api/support/tickets?status=active&limit=50'];
+        const ticketResponses = await Promise.all(ticketUrls.map((url) => fetch(url)));
+        const ticketPayloads = await Promise.all(
+          ticketResponses
+            .filter((ticketResponse) => ticketResponse.ok)
+            .map((ticketResponse) => ticketResponse.json())
+        );
+        const ticketConversations = ticketPayloads
+          .flatMap((ticketData) => (ticketData.tickets || []) as SupportTicketListItem[])
+          .map(mapSupportTicketToConversation);
 
-            mergedConversations = [...data.conversations, ...ticketConversations]
-              .sort((a, b) => (
-                new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
-              ))
-              .slice(0, limit);
-          }
-        } catch (ticketError) {
-          console.error('Error fetching support ticket conversations:', ticketError);
+        if (ticketConversations.length > 0) {
+          mergedConversations = [...data.conversations, ...ticketConversations]
+            .sort((a, b) => (
+              new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+            ))
+            .slice(0, limit);
         }
+      } catch (ticketError) {
+        console.error('Error fetching support ticket conversations:', ticketError);
       }
 
       setConversations(mergedConversations);
@@ -287,7 +297,6 @@ export function useConversations(
     refresh,
   };
 }
-
 
 
 
