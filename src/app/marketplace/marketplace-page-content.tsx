@@ -28,6 +28,7 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { useMarketplaceData, useLightspeedCategories } from "@/lib/hooks/use-marketplace-data";
 import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
 import { MARKETPLACE_INITIAL_PAGE_SIZE } from "@/lib/marketplace-constants";
+import { saveStoreSplashSeed } from "@/lib/marketplace/store-splash";
 import type { InitialMarketplacePagination } from "@/lib/server/fetch-initial-marketplace-products";
 import { cn } from "@/lib/utils";
 
@@ -895,6 +896,15 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     });
   };
 
+  const handleNavigateToStoreProfile = React.useCallback((store: Store) => {
+    saveStoreSplashSeed({
+      storeId: store.id,
+      storeName: store.store_name,
+      logoUrl: store.logo_url,
+    });
+    router.push(`/marketplace/store/${store.id}`);
+  }, [router]);
+
   const tabContentAnimationKey = currentSpace;
 
   return (
@@ -1196,7 +1206,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   <div className="flex items-center justify-between gap-3 px-0.5">
                     <button
                       type="button"
-                      onClick={() => router.push(`/marketplace/store/${selectedStore.id}`)}
+                      onClick={() => handleNavigateToStoreProfile(selectedStore)}
                       className="flex items-center gap-2.5 min-w-0 group hover:opacity-80 transition-opacity cursor-pointer"
                     >
                       {selectedStore.logo_url ? (
@@ -1236,7 +1246,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     <h3 className="text-sm font-semibold text-gray-900">Featured stores</h3>
                     <button
                       type="button"
-                      onClick={() => router.push(`/marketplace/store/${featuredStore.id}`)}
+                      onClick={() => handleNavigateToStoreProfile(featuredStore)}
                       className="flex items-center gap-2.5 min-w-0 group hover:opacity-80 transition-opacity cursor-pointer"
                     >
                       {featuredStore.logo_url ? (

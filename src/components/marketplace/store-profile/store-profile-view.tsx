@@ -353,9 +353,7 @@ function CarouselRow({
     <section key={cat.id}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-3">
-          {cat.source === "uber" ? (
-            <UberCarouselLogo />
-          ) : logoUrl ? (
+          {cat.source !== "uber" && logoUrl ? (
             <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
               <img src={logoUrl} alt={cat.name} className="h-full w-auto max-w-[96px] object-contain rounded-sm" />
               {isOwnProfile && (
@@ -369,7 +367,7 @@ function CarouselRow({
                 </button>
               )}
             </div>
-          ) : isOwnProfile ? (
+          ) : cat.source !== "uber" && isOwnProfile ? (
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}

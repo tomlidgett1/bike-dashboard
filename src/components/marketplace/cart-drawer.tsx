@@ -11,6 +11,7 @@
 
 import * as React from "react";
 import Image from "next/image";
+import { useJsApiLoader } from "@react-google-maps/api";
 import {
   X,
   ShoppingCart,
@@ -51,6 +52,7 @@ type DeliveryMethod = "uber_express" | "auspost" | "pickup";
 const UBER_EXPRESS_FEE = 15;
 const AUSPOST_FEE = 12;
 const BUYER_FEE_RATE = 0.005;
+const GOOGLE_MAPS_LIBRARIES: "places"[] = ["places"];
 
 interface AddressData {
   line1: string;
@@ -84,6 +86,48 @@ const EMPTY_ADDRESS: AddressData = {
 
 const fmt = (v: number) =>
   `$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function getAddressPart(
+  components: google.maps.GeocoderAddressComponent[],
+  type: string,
+  value: "long_name" | "short_name" = "long_name"
+) {
+  return components.find((component) => component.types.includes(type))?.[value] || "";
+}
+
+function addressFromGooglePlace(place: google.maps.places.PlaceResult): AddressData | null {
+  const components = place.address_components;
+  if (!components?.length) return null;
+
+  const streetNumber = getAddressPart(components, "street_number", "short_name");
+  const route = getAddressPart(components, "route");
+  const subpremise = getAddressPart(components, "subpremise", "short_name");
+  const premise = getAddressPart(components, "premise");
+  const line1 =
+    [streetNumber, route].filter(Boolean).join(" ") ||
+    premise ||
+    place.name ||
+    place.formatted_address?.split(",")[0]?.trim() ||
+    "";
+  const city =
+    getAddressPart(components, "locality") ||
+    getAddressPart(components, "sublocality_level_1") ||
+    getAddressPart(components, "postal_town") ||
+    getAddressPart(components, "administrative_area_level_2");
+  const state = getAddressPart(components, "administrative_area_level_1", "short_name");
+  const postalCode = getAddressPart(components, "postal_code", "short_name");
+  const postalCodeSuffix = getAddressPart(components, "postal_code_suffix", "short_name");
+  const country = getAddressPart(components, "country", "short_name") || "AU";
+
+  return {
+    line1,
+    line2: subpremise ? `Unit ${subpremise}` : "",
+    city,
+    state,
+    postal_code: postalCodeSuffix ? `${postalCode}-${postalCodeSuffix}` : postalCode,
+    country,
+  };
+}
 
 function addressFromSavedShippingAddress(saved: SavedShippingAddress | null | undefined): AddressData {
   if (!saved) return { ...EMPTY_ADDRESS };
@@ -121,8 +165,8 @@ function CartReplaceDialog() {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={cancelReplacement}>Keep current cart</AlertDialogCancel>
-          <AlertDialogAction onClick={confirmReplacement}>Replace cart</AlertDialogAction>
+          <AlertDialogCancel className="cursor-pointer" onClick={cancelReplacement}>Keep current cart</AlertDialogCancel>
+          <AlertDialogAction className="cursor-pointer" onClick={confirmReplacement}>Replace cart</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -170,6 +214,14 @@ export function CartDrawer() {
   });
   const [isRedirecting, setIsRedirecting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const addressInputRef = React.useRef<HTMLInputElement | null>(null);
+  const autocompleteRef = React.useRef<google.maps.places.Autocomplete | null>(null);
+  const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+  const { isLoaded: isGoogleMapsLoaded, loadError: googleMapsLoadError } = useJsApiLoader({
+    googleMapsApiKey,
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
+  const canUseGoogleAddressAutocomplete = Boolean(googleMapsApiKey && isGoogleMapsLoaded && !googleMapsLoadError);
 
   // Reset the flow whenever the drawer closes.
   React.useEffect(() => {
@@ -275,6 +327,49 @@ export function CartDrawer() {
     setStep("delivery");
   };
 
+  const handleGooglePlaceChanged = React.useCallback(() => {
+    const place = autocompleteRef.current?.getPlace();
+    if (!place) return;
+
+    const parsedAddress = addressFromGooglePlace(place);
+    if (!parsedAddress) return;
+
+    setAddress((previous) => ({
+      ...previous,
+      ...parsedAddress,
+      line2: parsedAddress.line2 || "",
+    }));
+    setUberEligibility({ eligible: false, distance: null, message: undefined, checking: false });
+    setSelectedDelivery("auspost");
+  }, []);
+
+  React.useEffect(() => {
+    if (step !== "address" || !canUseGoogleAddressAutocomplete || !addressInputRef.current) return;
+
+    const autocomplete = new google.maps.places.Autocomplete(addressInputRef.current, {
+      componentRestrictions: { country: "au" },
+      fields: ["address_components", "formatted_address", "name"],
+      types: ["address"],
+    });
+    autocompleteRef.current = autocomplete;
+
+    const listener = autocomplete.addListener("place_changed", handleGooglePlaceChanged);
+
+    return () => {
+      google.maps.event.removeListener(listener);
+      if (autocompleteRef.current === autocomplete) {
+        autocompleteRef.current = null;
+      }
+    };
+  }, [canUseGoogleAddressAutocomplete, handleGooglePlaceChanged, step]);
+
+  const keepGooglePlacesDropdownInteractive = React.useCallback((event: Event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest(".pac-container")) {
+      event.preventDefault();
+    }
+  }, []);
+
   const handleCheckout = async () => {
     setIsRedirecting(true);
     setError(null);
@@ -333,7 +428,13 @@ export function CartDrawer() {
       <CartReplaceDialog />
 
       <Sheet open={cart.isOpen} onOpenChange={(o) => !o && cart.closeCart()}>
-        <SheetContent side="right" showCloseButton={false} className="w-full sm:max-w-md p-0 flex flex-col gap-0">
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          onInteractOutside={keepGooglePlacesDropdownInteractive}
+          onPointerDownOutside={keepGooglePlacesDropdownInteractive}
+          className="w-full sm:max-w-md p-0 flex flex-col gap-0"
+        >
           <SheetTitle className="sr-only">Shopping cart</SheetTitle>
 
           {/* Header */}
@@ -344,7 +445,7 @@ export function CartDrawer() {
                   <button
                     type="button"
                     onClick={() => setStep(step === "delivery" ? "address" : "cart")}
-                    className="p-1.5 -ml-1.5 rounded-full hover:bg-gray-100 transition-colors"
+                    className="p-1.5 -ml-1.5 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
                     aria-label="Back"
                   >
                     <ChevronLeft className="h-5 w-5 text-gray-600" />
@@ -372,7 +473,7 @@ export function CartDrawer() {
               <button
                 type="button"
                 onClick={cart.closeCart}
-                className="p-2 -mr-2 rounded-full hover:bg-gray-100 transition-colors"
+                className="p-2 -mr-2 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
                 aria-label="Close cart"
               >
                 <X className="h-5 w-5 text-gray-500" />
@@ -391,7 +492,7 @@ export function CartDrawer() {
                 Add items from a seller to check out together.
               </p>
               {error && <p className="mt-3 text-xs text-red-500 max-w-[15rem]">{error}</p>}
-              <Button variant="outline" className="mt-5 rounded-md" onClick={cart.closeCart}>
+              <Button variant="outline" className="mt-5 rounded-md cursor-pointer" onClick={cart.closeCart}>
                 Continue browsing
               </Button>
             </div>
@@ -428,7 +529,7 @@ export function CartDrawer() {
                             type="button"
                             onClick={() => cart.setQuantity(item.productId, item.quantity - 1)}
                             disabled={item.quantity <= 1}
-                            className="flex h-7 w-7 items-center justify-center rounded-l-md text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
+                            className="flex h-7 w-7 items-center justify-center rounded-l-md text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors cursor-pointer"
                             aria-label={`Decrease quantity of ${item.name}`}
                           >
                             <Minus className="h-3.5 w-3.5" />
@@ -443,7 +544,7 @@ export function CartDrawer() {
                             type="button"
                             onClick={() => cart.setQuantity(item.productId, item.quantity + 1)}
                             disabled={item.quantity >= item.maxQuantity}
-                            className="flex h-7 w-7 items-center justify-center rounded-r-md text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
+                            className="flex h-7 w-7 items-center justify-center rounded-r-md text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors cursor-pointer"
                             aria-label={`Increase quantity of ${item.name}`}
                           >
                             <Plus className="h-3.5 w-3.5" />
@@ -460,7 +561,7 @@ export function CartDrawer() {
                       <button
                         type="button"
                         onClick={() => cart.removeItem(item.productId)}
-                        className="p-2 rounded-md hover:bg-gray-100 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0 self-start"
+                        className="p-2 rounded-md hover:bg-gray-100 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0 self-start cursor-pointer"
                         aria-label={`Remove ${item.name}`}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -480,7 +581,7 @@ export function CartDrawer() {
                 {error && <p className="text-xs text-red-500">{error}</p>}
                 <Button
                   onClick={handleProceed}
-                  className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
+                  className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium cursor-pointer"
                 >
                   Proceed to Checkout
                   <ChevronRight className="h-4 w-4 ml-1" />
@@ -489,7 +590,7 @@ export function CartDrawer() {
                   <button
                     type="button"
                     onClick={cart.clear}
-                    className="w-full text-center text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                    className="w-full text-center text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                   >
                     Clear cart
                   </button>
@@ -508,11 +609,13 @@ export function CartDrawer() {
                       Street Address <span className="text-red-500">*</span>
                     </Label>
                     <Input
+                      ref={addressInputRef}
                       id="cart-line1"
                       value={address.line1}
                       onChange={(e) => setAddress((p) => ({ ...p, line1: e.target.value }))}
-                      placeholder="123 Example Street"
+                      placeholder={canUseGoogleAddressAutocomplete ? "Start typing your address" : "123 Example Street"}
                       className="mt-1 rounded-md"
+                      autoComplete="street-address"
                     />
                   </div>
                   <div>
@@ -579,7 +682,7 @@ export function CartDrawer() {
                 <Button
                   onClick={handleAddressContinue}
                   disabled={!isAddressComplete || uberEligibility.checking}
-                  className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
+                  className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium cursor-pointer disabled:cursor-not-allowed"
                 >
                   {uberEligibility.checking ? (
                     <>
@@ -612,12 +715,12 @@ export function CartDrawer() {
                       onClick={() => isAvailable && setSelectedDelivery(option.id)}
                       disabled={isDisabled || uberEligibility.checking}
                       className={cn(
-                        "w-full flex items-center gap-3 p-4 rounded-md border-2 transition-all text-left",
+                        "w-full flex items-center gap-3 p-4 rounded-md border-2 transition-all text-left disabled:cursor-not-allowed",
                         isDisabled
                           ? "border-gray-100 bg-gray-50 cursor-not-allowed opacity-60"
-                          : selectedDelivery === option.id
-                            ? "border-gray-900 bg-gray-50"
-                            : "border-gray-200 hover:border-gray-300 bg-white"
+                        : selectedDelivery === option.id
+                            ? "border-gray-900 bg-gray-50 cursor-pointer"
+                            : "border-gray-200 hover:border-gray-300 bg-white cursor-pointer"
                       )}
                     >
                       <div
@@ -692,7 +795,7 @@ export function CartDrawer() {
                 <Button
                   onClick={handleCheckout}
                   disabled={isRedirecting || uberEligibility.checking}
-                  className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
+                  className="w-full h-12 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium cursor-pointer disabled:cursor-not-allowed"
                 >
                   {isRedirecting ? (
                     <>

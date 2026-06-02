@@ -14,6 +14,11 @@ import { ProductCarousel } from "@/components/marketplace/store-profile/product-
 import { SellerHeader, SellerCategories } from "@/components/marketplace/seller-profile";
 import { StoreProfileView } from "@/components/marketplace/store-profile/store-profile-view";
 import { useAuth } from "@/components/providers/auth-provider";
+import {
+  clearStoreSplashSeed,
+  readStoreSplashSeed,
+  type StoreSplashSeed,
+} from "@/lib/marketplace/store-splash";
 import type { StoreProfile } from "@/lib/types/store";
 import type { SellerProfile, SellerCategory } from "@/app/api/marketplace/seller/[sellerId]/route";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -78,9 +83,19 @@ export default function StoreProfilePage() {
 
   const isOwnProfile = user?.id === storeId;
 
-  type SplashPhase = 'loading' | 'visible' | 'exiting' | 'done';
-  const [splashPhase, setSplashPhase] = React.useState<SplashPhase>('loading');
+  type SplashPhase = 'idle' | 'visible' | 'exiting' | 'done';
+  const [splashSeed, setSplashSeed] = React.useState<StoreSplashSeed | null>(() =>
+    readStoreSplashSeed(storeId)
+  );
+  const [splashPhase, setSplashPhase] = React.useState<SplashPhase>(() =>
+    readStoreSplashSeed(storeId) ? 'visible' : 'idle'
+  );
   const splashTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const splashPhaseRef = React.useRef<SplashPhase>('idle');
+
+  React.useEffect(() => {
+    splashPhaseRef.current = splashPhase;
+  }, [splashPhase]);
 
   React.useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 640);
@@ -89,20 +104,39 @@ export default function StoreProfilePage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  React.useEffect(() => {
+    const seed = readStoreSplashSeed(storeId);
+    setSplashSeed(seed);
+    setSplashPhase(seed ? 'visible' : 'idle');
+
+    if (splashTimerRef.current) {
+      clearTimeout(splashTimerRef.current);
+      splashTimerRef.current = null;
+    }
+  }, [storeId]);
+
   // Fetch profile - try store and seller in parallel for faster loading
   React.useEffect(() => {
+    let cancelled = false;
+
     const fetchProfile = async () => {
       try {
         setLoading(true);
         setError(null);
+        setProfileType(null);
+        setStore(null);
+        setSeller(null);
 
         const [storeResponse, sellerResponse] = await Promise.all([
           fetch(`/api/marketplace/store/${storeId}`),
           fetch(`/api/marketplace/seller/${storeId}`),
         ]);
 
+        if (cancelled) return;
+
         if (storeResponse.ok) {
           const data = await storeResponse.json();
+          if (cancelled) return;
           setStore(data.store);
           setProfileType('store');
           return;
@@ -110,6 +144,7 @@ export default function StoreProfilePage() {
 
         if (sellerResponse.ok) {
           const data = await sellerResponse.json();
+          if (cancelled) return;
           setSeller(data.seller);
           setProfileType('seller');
           return;
@@ -117,30 +152,71 @@ export default function StoreProfilePage() {
 
         setError('Profile not found');
       } catch (err) {
+        if (cancelled) return;
         console.error('Error fetching profile:', err);
         setError('Failed to load profile');
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
     if (storeId) {
       fetchProfile();
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [storeId]);
 
-  // Drive the splash: once store data lands, swap spinner→logo then slide away
+  // Drive the splash once. Card clicks seed the logo/name before navigation, so
+  // the store splash can already be visible while the full profile payload loads.
   React.useEffect(() => {
     if (loading) return;
+
+    if (splashTimerRef.current) {
+      clearTimeout(splashTimerRef.current);
+      splashTimerRef.current = null;
+    }
+
     if (profileType === 'store' && store) {
+      if (splashPhaseRef.current === 'exiting' || splashPhaseRef.current === 'done') {
+        return;
+      }
+
       setSplashPhase('visible');
-      splashTimerRef.current = setTimeout(() => setSplashPhase('exiting'), 800);
+      splashTimerRef.current = setTimeout(() => {
+        if (splashPhaseRef.current !== 'done') {
+          setSplashPhase('exiting');
+        }
+      }, splashSeed ? 450 : 800);
     } else {
-      // Seller or error — dismiss loading cover immediately
+      // Seller or error - dismiss the store splash immediately.
       setSplashPhase('done');
     }
-    return () => { if (splashTimerRef.current) clearTimeout(splashTimerRef.current); };
-  }, [loading, profileType, store]);
+    return () => {
+      if (splashTimerRef.current) {
+        clearTimeout(splashTimerRef.current);
+        splashTimerRef.current = null;
+      }
+    };
+  }, [loading, profileType, store, splashSeed]);
+
+  // Loading state when no click-seeded store splash is available.
+  if (loading && splashPhase === 'idle') {
+    return (
+      <>
+        <MarketplaceHeader />
+        <MarketplaceLayout showFooter={false}>
+          <div className="flex min-h-[60vh] items-center justify-center pt-20">
+            <Loader2 className="h-7 w-7 animate-spin text-gray-300" />
+          </div>
+        </MarketplaceLayout>
+      </>
+    );
+  }
 
   // Error state
   if (!loading && (error || (!store && !seller))) {
@@ -323,12 +399,15 @@ export default function StoreProfilePage() {
     );
   }
 
-  // Store page + initial loading state — both use the single splash overlay
+  const splashName = store?.store_name ?? splashSeed?.storeName ?? "Yellow Jersey";
+  const splashLogoUrl = store?.logo_url ?? splashSeed?.logoUrl ?? null;
+
+  // Store page + click-seeded splash overlay
   return (
     <>
       {storeContent}
 
-      {splashPhase !== 'done' && (
+      {splashPhase !== 'idle' && splashPhase !== 'done' && (
         <motion.div
           className="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center"
           initial={{ y: 0 }}
@@ -339,19 +418,18 @@ export default function StoreProfilePage() {
               : { duration: 0 }
           }
           onAnimationComplete={() => {
-            if (splashPhase === 'exiting') setSplashPhase('done');
+            if (splashPhase === 'exiting') {
+              clearStoreSplashSeed();
+              setSplashPhase('done');
+            }
           }}
         >
           <AnimatePresence mode="wait">
-            {splashPhase === 'loading' ? (
-              <motion.div key="spinner">
-                <Loader2 className="h-8 w-8 animate-spin text-gray-200" />
-              </motion.div>
-            ) : store?.logo_url ? (
+            {splashLogoUrl ? (
               <motion.img
                 key="logo"
-                src={store.logo_url}
-                alt={store.store_name}
+                src={splashLogoUrl}
+                alt={splashName}
                 className="max-h-28 max-w-[300px] w-auto object-contain rounded-2xl"
                 initial={{ opacity: 0, scale: 0.88, y: 14 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -366,24 +444,22 @@ export default function StoreProfilePage() {
                 transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
               >
                 <div className="h-20 w-20 rounded-3xl bg-gray-100 flex items-center justify-center text-2xl font-bold text-gray-400 select-none">
-                  {store?.store_name[0]}
+                  {splashName.charAt(0)}
                 </div>
-                <p className="text-2xl font-bold text-gray-900 tracking-tight">{store?.store_name}</p>
+                <p className="text-2xl font-bold text-gray-900 tracking-tight">{splashName}</p>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {splashPhase !== 'loading' && (
-            <motion.div
-              className="absolute bottom-8 flex items-center gap-2"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.35 }}
-              transition={{ delay: 0.25, duration: 0.3 }}
-            >
-              <span className="text-[11px] text-gray-400 tracking-wide uppercase font-medium">Powered by</span>
-              <Image src="/yj.svg" alt="Yellow Jersey" width={60} height={12} className="h-3 w-auto" unoptimized />
-            </motion.div>
-          )}
+          <motion.div
+            className="absolute bottom-8 flex items-center gap-2"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.35 }}
+            transition={{ delay: 0.25, duration: 0.3 }}
+          >
+            <span className="text-[11px] text-gray-400 tracking-wide uppercase font-medium">Powered by</span>
+            <Image src="/yj.svg" alt="Yellow Jersey" width={60} height={12} className="h-3 w-auto" unoptimized />
+          </motion.div>
         </motion.div>
       )}
     </>

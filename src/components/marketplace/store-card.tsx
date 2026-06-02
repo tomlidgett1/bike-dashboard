@@ -6,7 +6,7 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { Store, Package } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { saveStoreSplashSeed } from "@/lib/marketplace/store-splash";
 
 // ============================================================
 // Store Card
@@ -29,6 +29,11 @@ export function StoreCard({ store, priority = false }: StoreCardProps) {
   const router = useRouter();
 
   const handleClick = () => {
+    saveStoreSplashSeed({
+      storeId: store.id,
+      storeName: store.store_name,
+      logoUrl: store.logo_url,
+    });
     router.push(`/marketplace/store/${store.id}`);
   };
 
@@ -158,4 +163,3 @@ export function StoreCardSkeleton() {
     </Card>
   );
 }
-

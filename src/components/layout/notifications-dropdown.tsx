@@ -217,15 +217,16 @@ function NotificationItem({
     <button
       onClick={onClick}
       className={cn(
-        'w-full text-left p-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0 cursor-pointer',
-        !notification.is_read && 'bg-amber-50/50'
+        'w-full rounded-xl p-2.5 text-left transition-colors cursor-pointer outline-none',
+        'hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/30',
+        !notification.is_read && 'bg-muted/50'
       )}
     >
       <div className="flex items-start gap-3">
         {/* Product Image or Icon */}
         <div className="flex-shrink-0 relative">
           {productImage ? (
-            <div className="w-12 h-12 rounded-md overflow-hidden bg-gray-100 relative">
+            <div className="w-12 h-12 rounded-xl overflow-hidden bg-muted relative ring-1 ring-border/50">
               <Image 
                 src={productImage} 
                 alt={productName} 
@@ -243,31 +244,30 @@ function NotificationItem({
             </div>
           ) : (
             <div className={cn(
-              "w-12 h-12 rounded-md flex items-center justify-center",
-              display.color
+              "w-12 h-12 rounded-xl flex items-center justify-center bg-muted ring-1 ring-border/50"
             )}>
-              <Icon className="h-6 w-6 text-white" />
+              <Icon className="h-5 w-5 text-muted-foreground" />
             </div>
           )}
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900">
+          <p className="text-sm font-medium text-foreground">
             {display.title}
           </p>
-          <p className="text-sm text-gray-600 truncate mt-0.5">
+          <p className="text-sm text-muted-foreground truncate mt-0.5">
             {notification.type === 'voucher_received' && notification.voucher
               ? notification.voucher.description
               : productName
             }
           </p>
           {orderNumber && (
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Order #{orderNumber}
             </p>
           )}
-          <p className="text-xs text-gray-400 mt-1">
+          <p className="text-xs text-muted-foreground/70 mt-1">
             {formatDistanceToNow(new Date(notification.created_at), {
               addSuffix: true,
             })}
@@ -276,7 +276,7 @@ function NotificationItem({
 
         {/* Unread Indicator */}
         {!notification.is_read && (
-          <div className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-amber-500 mt-1" />
+          <div className="flex-shrink-0 w-2 h-2 rounded-full bg-primary mt-1.5" />
         )}
       </div>
     </button>
@@ -341,15 +341,17 @@ export function NotificationsDropdown() {
   const renderNotificationContent = () => (
     <>
       {notifications.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">
-          <Bell className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-          <p className="font-medium text-gray-900">No notifications yet</p>
-          <p className="text-sm text-gray-500 mt-1">
+        <div className="px-8 py-10 text-center text-muted-foreground">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
+            <Bell className="h-5 w-5" />
+          </div>
+          <p className="font-medium text-foreground">No notifications yet</p>
+          <p className="text-sm text-muted-foreground mt-1">
             You&apos;ll be notified about order and claim updates here
           </p>
         </div>
       ) : (
-        <div>
+        <div className="space-y-1 p-1.5">
           {notifications.map((notification) => (
             <NotificationItem
               key={notification.id}
@@ -382,28 +384,28 @@ export function NotificationsDropdown() {
         <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
           <SheetContent side="bottom" className="h-[80vh] rounded-t-2xl p-0 gap-0" showCloseButton={false}>
             {/* Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 rounded-t-2xl">
+            <div className="sticky top-0 bg-popover border-b border-border/60 px-4 py-3 rounded-t-2xl">
               <div className="flex items-center justify-between">
                 <SheetTitle className="text-lg font-semibold">Notifications</SheetTitle>
                 <div className="flex items-center gap-3">
                   {unreadCount > 0 && (
                     <button 
                       onClick={handleMarkAllRead}
-                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                      className="text-sm text-primary hover:text-primary/80 font-medium"
                     >
                       Mark all read
                     </button>
                   )}
                   <button
                     onClick={() => setMobileSheetOpen(false)}
-                    className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
+                    className="h-8 w-8 rounded-full hover:bg-muted flex items-center justify-center"
                   >
-                    <X className="h-5 w-5 text-gray-500" />
+                    <X className="h-5 w-5 text-muted-foreground" />
                   </button>
                 </div>
               </div>
               {unreadCount > 0 && (
-                <p className="text-sm text-gray-500 mt-1">{unreadCount} unread</p>
+                <p className="text-sm text-muted-foreground mt-1">{unreadCount} unread</p>
               )}
             </div>
 
@@ -413,7 +415,7 @@ export function NotificationsDropdown() {
             </div>
 
             {/* Footer */}
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 safe-area-bottom">
+            <div className="sticky bottom-0 bg-popover border-t border-border/60 p-4 safe-area-bottom">
               <Button
                 onClick={handleViewAll}
                 className="w-full rounded-md"
@@ -443,19 +445,23 @@ export function NotificationsDropdown() {
           )}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-96">
-        <DropdownMenuLabel className="font-normal">
+      <DropdownMenuContent
+        align="end"
+        sideOffset={8}
+        className="w-96 overflow-hidden rounded-2xl border border-border/50 bg-popover p-0 text-popover-foreground shadow-2xl shadow-black/15 ring-0"
+      >
+        <DropdownMenuLabel className="px-4 py-3 font-normal">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold">Notifications</span>
+            <span className="text-sm font-semibold text-foreground">Notifications</span>
             <div className="flex items-center gap-2">
               {unreadCount > 0 && (
                 <>
-                  <span className="text-xs text-gray-600">
+                  <span className="text-xs text-muted-foreground">
                     {unreadCount} unread
                   </span>
                   <button 
                     onClick={handleMarkAllRead}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
+                    className="text-xs text-primary hover:text-primary/80 font-medium cursor-pointer"
                   >
                     Mark all read
                   </button>
@@ -464,20 +470,20 @@ export function NotificationsDropdown() {
             </div>
           </div>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
+        <DropdownMenuSeparator className="mx-0 my-0 bg-border/60" />
 
         {/* Notifications List */}
-        <div className="max-h-[400px] overflow-y-auto">
+        <div className="max-h-[400px] overflow-y-auto bg-popover">
           {renderNotificationContent()}
         </div>
 
-        <DropdownMenuSeparator />
+        <DropdownMenuSeparator className="mx-0 my-0 bg-border/60" />
 
         {/* View All Button */}
         <div className="p-2">
           <Button
             variant="ghost"
-            className="w-full rounded-md text-sm cursor-pointer"
+            className="w-full rounded-lg text-sm cursor-pointer"
             onClick={handleViewAll}
           >
             View All

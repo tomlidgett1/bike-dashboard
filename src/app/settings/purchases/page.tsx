@@ -219,10 +219,22 @@ interface SupportTicket {
 
 type MainTab = 'orders' | 'listings' | 'drafts' | 'claims' | 'offers';
 type OrderMode = 'all' | 'buying' | 'selling';
+type OrderActionMode = Exclude<OrderMode, 'all'>;
 
 // Extended purchase with order type for 'all' view
 interface CombinedOrder extends Purchase {
   orderType: 'buying' | 'selling';
+}
+
+type OrderPrimaryActionKind = 'mark_shipped' | 'mark_delivered' | 'confirm_receipt';
+
+interface OrderPrimaryAction {
+  kind: OrderPrimaryActionKind;
+  label: string;
+  busyLabel: string;
+  icon: React.ComponentType<{ className?: string }>;
+  nextStatus?: 'shipped' | 'delivered';
+  className?: string;
 }
 
 // Pending payment offer (accepted offer awaiting buyer payment)
@@ -359,6 +371,129 @@ function getEventDisplay(event: OrderEvent): { icon: React.ComponentType<{ class
   };
 }
 
+function isFundsReleased(fundsStatus?: string | null): boolean {
+  return fundsStatus === 'released' || fundsStatus === 'auto_released';
+}
+
+function getPrimaryOrderAction(purchase: Purchase, orderMode: OrderActionMode): OrderPrimaryAction | null {
+  if (isFundsReleased(purchase.funds_status)) return null;
+
+  if (orderMode === 'selling') {
+    if (purchase.status === 'paid' && !purchase.shipped_at) {
+      return {
+        kind: 'mark_shipped',
+        label: 'Mark shipped',
+        busyLabel: 'Updating...',
+        icon: Truck,
+        nextStatus: 'shipped',
+      };
+    }
+
+    if (purchase.status === 'shipped') {
+      return {
+        kind: 'mark_delivered',
+        label: 'Mark delivered',
+        busyLabel: 'Updating...',
+        icon: CheckCircle2,
+        nextStatus: 'delivered',
+        className: 'bg-green-600 text-white hover:bg-green-700',
+      };
+    }
+  }
+
+  if (
+    orderMode === 'buying' &&
+    purchase.funds_status === 'held' &&
+    (purchase.status === 'shipped' || purchase.status === 'delivered')
+  ) {
+    return {
+      kind: 'confirm_receipt',
+      label: 'Confirm receipt',
+      busyLabel: 'Confirming...',
+      icon: CheckCircle2,
+      className: 'bg-amber-500 text-white hover:bg-amber-600',
+    };
+  }
+
+  return null;
+}
+
+function handleCardKeyDown(event: React.KeyboardEvent, onClick: () => void) {
+  if (
+    event.target instanceof HTMLElement &&
+    event.target.closest('button,a,input,select,textarea,[role="menuitem"]')
+  ) {
+    return;
+  }
+
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  onClick();
+}
+
+function OrderPrimaryActionButton({
+  purchase,
+  orderMode,
+  confirmingId,
+  updatingOrderIds,
+  onConfirmReceipt,
+  onStatusUpdate,
+  className,
+  fullWidth = false,
+  size = 'sm',
+}: {
+  purchase: Purchase;
+  orderMode: OrderActionMode;
+  confirmingId: string | null;
+  updatingOrderIds: Set<string>;
+  onConfirmReceipt: (id: string) => void;
+  onStatusUpdate: (purchase: Purchase, status: 'shipped' | 'delivered') => void;
+  className?: string;
+  fullWidth?: boolean;
+  size?: 'xs' | 'sm';
+}) {
+  const action = getPrimaryOrderAction(purchase, orderMode);
+  if (!action) return null;
+
+  const isBusy = action.kind === 'confirm_receipt'
+    ? confirmingId === purchase.id
+    : updatingOrderIds.has(purchase.id);
+  const Icon = isBusy ? Loader2 : action.icon;
+
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (isBusy) return;
+
+    if (action.kind === 'confirm_receipt') {
+      onConfirmReceipt(purchase.id);
+      return;
+    }
+
+    if (action.nextStatus) {
+      onStatusUpdate(purchase, action.nextStatus);
+    }
+  };
+
+  return (
+    <Button
+      type="button"
+      size={size}
+      onClick={handleClick}
+      disabled={isBusy}
+      aria-label={`${action.label} for order ${purchase.order_number}`}
+      className={cn(
+        "min-w-[132px] text-xs",
+        fullWidth && "w-full",
+        action.className,
+        className
+      )}
+    >
+      <Icon className={cn("h-3.5 w-3.5", isBusy && "animate-spin")} />
+      <span className="truncate">{isBusy ? action.busyLabel : action.label}</span>
+    </Button>
+  );
+}
+
 // ============================================================
 // Status Badge Component
 // ============================================================
@@ -368,14 +503,16 @@ function StatusBadge({
   type = 'order',
   fundsStatus,
   shippedAt,
+  orderMode,
 }: { 
   status: string; 
   type?: 'order' | 'listing';
   fundsStatus?: string | null;
   shippedAt?: string | null;
+  orderMode?: OrderActionMode | null;
 }) {
-  // For delivered orders or orders where funds have been released - show "Received ✓"
-  if (type === 'order' && (status === 'delivered' || fundsStatus === 'released' || fundsStatus === 'auto_released')) {
+  // For orders where funds have been released - show "Received ✓"
+  if (type === 'order' && isFundsReleased(fundsStatus)) {
     return (
       <Badge variant="default" className="rounded-md bg-green-600 hover:bg-green-600 text-white gap-1">
         <Check className="h-3 w-3" />
@@ -384,9 +521,32 @@ function StatusBadge({
     );
   }
 
-  // For orders with held funds that are shipped - show "Confirm Receipt"
-  if (type === 'order' && fundsStatus === 'held' && status === 'shipped') {
+  // For orders with held funds that are shipped/delivered - keep the buyer CTA visible.
+  if (type === 'order' && fundsStatus === 'held' && (status === 'shipped' || status === 'delivered')) {
+    if (orderMode === 'selling') {
+      return (
+        <Badge
+          variant="default"
+          className={cn(
+            "rounded-md text-white",
+            status === 'delivered' ? "bg-green-600 hover:bg-green-600" : "bg-blue-600 hover:bg-blue-600"
+          )}
+        >
+          {status === 'delivered' ? 'Delivered' : 'Shipped'}
+        </Badge>
+      );
+    }
+
     return <Badge variant="default" className="rounded-md bg-amber-500 hover:bg-amber-500">Confirm Receipt</Badge>;
+  }
+
+  if (type === 'order' && status === 'delivered') {
+    return (
+      <Badge variant="default" className="rounded-md bg-green-600 hover:bg-green-600 text-white gap-1">
+        <Check className="h-3 w-3" />
+        Received
+      </Badge>
+    );
   }
 
   // For paid orders that haven't shipped yet - show "Waiting Shipment"
@@ -485,10 +645,18 @@ function MobileBottomNav({
 function MobileCombinedOrderCard({
   order,
   onClick,
+  onConfirmReceipt,
+  onStatusUpdate,
+  confirmingId,
+  updatingOrderIds,
   accentColor = 'border-l-gray-400',
 }: {
   order: CombinedOrder;
   onClick: () => void;
+  onConfirmReceipt: (id: string) => void;
+  onStatusUpdate: (purchase: Purchase, status: 'shipped' | 'delivered') => void;
+  confirmingId: string | null;
+  updatingOrderIds: Set<string>;
   accentColor?: string;
 }) {
   const productImage = getProductImageUrl(order.product);
@@ -497,23 +665,20 @@ function MobileCombinedOrderCard({
     ? (order.seller?.business_name || order.seller?.name || 'Seller')
     : (order.buyer?.name || 'Buyer');
 
-  // Determine what action the user needs to take
-  // If funds are released, no action needed - order is complete
-  const isComplete = order.funds_status === 'released' || order.funds_status === 'auto_released';
+  const hasPrimaryAction = getPrimaryOrderAction(order, order.orderType) !== null;
   
-  const actionText = isComplete
+  const actionText = hasPrimaryAction || isFundsReleased(order.funds_status)
     ? null
-    : order.orderType === 'selling' && order.status === 'paid' && !order.shipped_at
-    ? 'Ship this order'
-    : order.orderType === 'buying' && order.status === 'shipped' && order.funds_status === 'held'
-    ? 'Confirm receipt'
     : order.orderType === 'buying' && order.status === 'paid' && !order.shipped_at
     ? 'Waiting for shipment'
     : null;
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(event) => handleCardKeyDown(event, onClick)}
       className={cn(
         "w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors cursor-pointer",
         "border-l-4",
@@ -549,7 +714,12 @@ function MobileCombinedOrderCard({
                 {actionText}
               </span>
             ) : (
-              <StatusBadge status={order.status} fundsStatus={order.funds_status} shippedAt={order.shipped_at} />
+              <StatusBadge
+                status={order.status}
+                fundsStatus={order.funds_status}
+                shippedAt={order.shipped_at}
+                orderMode={order.orderType}
+              />
             )}
             <span className="font-semibold text-sm">${order.total_amount.toFixed(2)}</span>
           </div>
@@ -557,7 +727,20 @@ function MobileCombinedOrderCard({
 
         <ChevronRight className="h-5 w-5 text-muted-foreground self-center flex-shrink-0" />
       </div>
-    </button>
+      {hasPrimaryAction && (
+        <div className="mt-3 border-t border-border pt-3" onClick={(event) => event.stopPropagation()}>
+          <OrderPrimaryActionButton
+            purchase={order}
+            orderMode={order.orderType}
+            confirmingId={confirmingId}
+            updatingOrderIds={updatingOrderIds}
+            onConfirmReceipt={onConfirmReceipt}
+            onStatusUpdate={onStatusUpdate}
+            fullWidth
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -811,20 +994,33 @@ function MobileOrderCard({
   purchase,
   onClick,
   orderMode,
+  onConfirmReceipt,
+  onStatusUpdate,
+  confirmingId,
+  updatingOrderIds,
 }: {
   purchase: Purchase;
   onClick: () => void;
   orderMode: OrderMode;
+  onConfirmReceipt: (id: string) => void;
+  onStatusUpdate: (purchase: Purchase, status: 'shipped' | 'delivered') => void;
+  confirmingId: string | null;
+  updatingOrderIds: Set<string>;
 }) {
   const productImage = getProductImageUrl(purchase.product);
   const productName = getProductName(purchase.product);
   const otherParty = orderMode === 'buying' 
     ? (purchase.seller?.business_name || purchase.seller?.name || 'Seller')
     : (purchase.buyer?.name || 'Buyer');
+  const actionMode = orderMode === 'all' ? null : orderMode;
+  const hasPrimaryAction = actionMode ? getPrimaryOrderAction(purchase, actionMode) !== null : false;
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(event) => handleCardKeyDown(event, onClick)}
       className="w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors cursor-pointer"
     >
       <div className="flex gap-3">
@@ -847,7 +1043,12 @@ function MobileOrderCard({
           </p>
           <div className="flex items-center justify-between mt-2">
             <div className="flex items-center gap-1.5">
-              <StatusBadge status={purchase.status} fundsStatus={purchase.funds_status} shippedAt={purchase.shipped_at} />
+              <StatusBadge
+                status={purchase.status}
+                fundsStatus={purchase.funds_status}
+                shippedAt={purchase.shipped_at}
+                orderMode={actionMode}
+              />
               {orderMode === 'buying' && (
                 <>
                   {purchase.status === 'paid' && !purchase.shipped_at && 
@@ -867,7 +1068,20 @@ function MobileOrderCard({
 
         <ChevronRight className="h-5 w-5 text-muted-foreground self-center flex-shrink-0" />
       </div>
-    </button>
+      {actionMode && hasPrimaryAction && (
+        <div className="mt-3 border-t border-border pt-3" onClick={(event) => event.stopPropagation()}>
+          <OrderPrimaryActionButton
+            purchase={purchase}
+            orderMode={actionMode}
+            confirmingId={confirmingId}
+            updatingOrderIds={updatingOrderIds}
+            onConfirmReceipt={onConfirmReceipt}
+            onStatusUpdate={onStatusUpdate}
+            fullWidth
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1059,7 +1273,9 @@ function OrderDetailContent({
   const [loadingEvents, setLoadingEvents] = React.useState(true);
   const productImage = getProductImageUrl(purchase.product);
   const productName = getProductName(purchase.product);
-  const canConfirm = purchase.funds_status === 'held' && orderMode === 'buying';
+  const canConfirm = purchase.funds_status === 'held' &&
+    orderMode === 'buying' &&
+    (purchase.status === 'shipped' || purchase.status === 'delivered');
   const isConfirming = confirmingId === purchase.id;
 
   // Fetch order events
@@ -1153,7 +1369,12 @@ function OrderDetailContent({
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-medium">{productName}</p>
-          <StatusBadge status={purchase.status} fundsStatus={purchase.funds_status} shippedAt={purchase.shipped_at} />
+          <StatusBadge
+            status={purchase.status}
+            fundsStatus={purchase.funds_status}
+            shippedAt={purchase.shipped_at}
+            orderMode={orderMode === 'all' ? null : orderMode}
+          />
         </div>
       </div>
 
@@ -1474,6 +1695,10 @@ function DesktopOrdersTable({
   onViewProduct,
   onMessage,
   onGetHelp,
+  onConfirmReceipt,
+  onStatusUpdate,
+  confirmingId,
+  updatingOrderIds,
   loading,
 }: {
   orders: Purchase[];
@@ -1482,6 +1707,10 @@ function DesktopOrdersTable({
   onViewProduct: (productId: string) => void;
   onMessage: (order: Purchase) => void;
   onGetHelp: (order: Purchase) => void;
+  onConfirmReceipt: (id: string) => void;
+  onStatusUpdate: (purchase: Purchase, status: 'shipped' | 'delivered') => void;
+  confirmingId: string | null;
+  updatingOrderIds: Set<string>;
   loading: boolean;
 }) {
   if (loading) {
@@ -1514,6 +1743,7 @@ function DesktopOrdersTable({
           <TableHead>{orderMode === 'buying' ? 'Seller' : 'Buyer'}</TableHead>
           <TableHead>Date</TableHead>
           <TableHead>Status</TableHead>
+          <TableHead>Action</TableHead>
           <TableHead className="text-right">Total</TableHead>
           <TableHead className="w-12"></TableHead>
         </TableRow>
@@ -1548,7 +1778,12 @@ function DesktopOrdersTable({
               <TableCell>{formatDate(order.purchase_date)}</TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
-                  <StatusBadge status={order.status} fundsStatus={order.funds_status} shippedAt={order.shipped_at} />
+                  <StatusBadge
+                    status={order.status}
+                    fundsStatus={order.funds_status}
+                    shippedAt={order.shipped_at}
+                    orderMode={orderMode === 'all' ? null : orderMode}
+                  />
                   {orderMode === 'buying' && (
                     <>
                       {order.status === 'paid' && !order.shipped_at && 
@@ -1562,6 +1797,22 @@ function DesktopOrdersTable({
                     </>
                   )}
                 </div>
+              </TableCell>
+              <TableCell onClick={(e) => e.stopPropagation()}>
+                {orderMode === 'all' ? (
+                  <span className="text-xs text-muted-foreground">—</span>
+                ) : getPrimaryOrderAction(order, orderMode) ? (
+                  <OrderPrimaryActionButton
+                    purchase={order}
+                    orderMode={orderMode}
+                    confirmingId={confirmingId}
+                    updatingOrderIds={updatingOrderIds}
+                    onConfirmReceipt={onConfirmReceipt}
+                    onStatusUpdate={onStatusUpdate}
+                  />
+                ) : (
+                  <span className="text-xs text-muted-foreground">—</span>
+                )}
               </TableCell>
               <TableCell className="text-right font-medium">${order.total_amount.toFixed(2)}</TableCell>
               <TableCell onClick={(e) => e.stopPropagation()}>
@@ -1721,6 +1972,10 @@ function GroupedOrdersView({
   onViewProduct,
   onMessage,
   onGetHelp,
+  onConfirmReceipt,
+  onStatusUpdate,
+  confirmingId,
+  updatingOrderIds,
   pendingPaymentOffers = [],
   sellerPendingOffers = [],
   onOfferClick,
@@ -1737,6 +1992,10 @@ function GroupedOrdersView({
   onViewProduct: (productId: string) => void;
   onMessage: (order: Purchase) => void;
   onGetHelp: (order: Purchase) => void;
+  onConfirmReceipt: (id: string) => void;
+  onStatusUpdate: (purchase: Purchase, status: 'shipped' | 'delivered') => void;
+  confirmingId: string | null;
+  updatingOrderIds: Set<string>;
   pendingPaymentOffers?: PendingPaymentOffer[];
   sellerPendingOffers?: PendingPaymentOffer[];
   onOfferClick?: (offerId: string) => void;
@@ -1809,16 +2068,10 @@ function GroupedOrdersView({
                   ? (order.seller?.business_name || order.seller?.name || 'Seller')
                   : (order.buyer?.name || 'Buyer');
                 
-                // Determine what action the user needs to take
-                // If funds are released, no action needed - order is complete
-                const isComplete = order.funds_status === 'released' || order.funds_status === 'auto_released';
+                const hasPrimaryAction = getPrimaryOrderAction(order, order.orderType) !== null;
                 
-                const actionText = isComplete
+                const actionText = hasPrimaryAction || isFundsReleased(order.funds_status)
                   ? null
-                  : order.orderType === 'selling' && order.status === 'paid' && !order.shipped_at
-                  ? 'Ship this order'
-                  : order.orderType === 'buying' && order.status === 'shipped' && order.funds_status === 'held'
-                  ? 'Confirm receipt'
                   : order.orderType === 'buying' && order.status === 'paid' && !order.shipped_at
                   ? 'Waiting for shipment'
                   : null;
@@ -1869,6 +2122,18 @@ function GroupedOrdersView({
 
                     {/* Price & Actions */}
                     <div className="flex items-center gap-3 flex-shrink-0">
+                      {hasPrimaryAction && (
+                        <div onClick={(event) => event.stopPropagation()}>
+                          <OrderPrimaryActionButton
+                            purchase={order}
+                            orderMode={order.orderType}
+                            confirmingId={confirmingId}
+                            updatingOrderIds={updatingOrderIds}
+                            onConfirmReceipt={onConfirmReceipt}
+                            onStatusUpdate={onStatusUpdate}
+                          />
+                        </div>
+                      )}
                       <span className="font-semibold text-sm">${order.total_amount.toFixed(2)}</span>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -2275,6 +2540,7 @@ function OrderManagementPageContent() {
   const [selectedOrder, setSelectedOrder] = React.useState<Purchase | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
+  const [updatingOrderIds, setUpdatingOrderIds] = React.useState<Set<string>>(new Set());
   
   // Confirm receipt dialog state
   const [confirmDialogOpen, setConfirmDialogOpen] = React.useState(false);
@@ -2581,6 +2847,46 @@ function OrderManagementPageContent() {
   const handleConfirmReceipt = (id: string) => {
     setOrderToConfirm(id);
     setConfirmDialogOpen(true);
+  };
+
+  const handleOrderStatusUpdate = async (purchase: Purchase, status: 'shipped' | 'delivered') => {
+    if (updatingOrderIds.has(purchase.id)) return;
+
+    setUpdatingOrderIds(prev => new Set(prev).add(purchase.id));
+
+    try {
+      const response = await fetch(`/api/marketplace/purchases?id=${purchase.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to update order status');
+      }
+
+      await fetchOrders();
+      setSelectedOrder(prev => {
+        if (!prev || prev.id !== purchase.id) return prev;
+        return {
+          ...prev,
+          status,
+          shipped_at: status === 'shipped' ? prev.shipped_at || new Date().toISOString() : prev.shipped_at,
+          delivered_at: status === 'delivered' ? prev.delivered_at || new Date().toISOString() : prev.delivered_at,
+        };
+      });
+    } catch (error) {
+      console.error('Error updating order status:', error);
+      const message = error instanceof Error ? error.message : 'Failed to update order status. Please try again.';
+      alert(message);
+    } finally {
+      setUpdatingOrderIds(prev => {
+        const next = new Set(prev);
+        next.delete(purchase.id);
+        return next;
+      });
+    }
   };
 
   const executeConfirmReceipt = async () => {
@@ -3070,6 +3376,10 @@ function OrderManagementPageContent() {
                         onViewProduct={(productId) => router.push(`/marketplace/product/${productId}?fromPurchase=true`)}
                         onMessage={handleMessage}
                         onGetHelp={handleGetHelp}
+                        onConfirmReceipt={handleConfirmReceipt}
+                        onStatusUpdate={handleOrderStatusUpdate}
+                        confirmingId={confirmingId}
+                        updatingOrderIds={updatingOrderIds}
                         pendingPaymentOffers={pendingPaymentOffers}
                         sellerPendingOffers={sellerPendingOffers}
                         onOfferClick={(offerId) => router.push(`/messages?tab=offers&offer_id=${offerId}`)}
@@ -3082,6 +3392,10 @@ function OrderManagementPageContent() {
                         onViewProduct={(productId) => router.push(`/marketplace/product/${productId}?fromPurchase=true`)}
                         onMessage={handleMessage}
                         onGetHelp={handleGetHelp} 
+                        onConfirmReceipt={handleConfirmReceipt}
+                        onStatusUpdate={handleOrderStatusUpdate}
+                        confirmingId={confirmingId}
+                        updatingOrderIds={updatingOrderIds}
                         loading={ordersLoading} 
                       />
                     )}
@@ -3461,6 +3775,10 @@ function OrderManagementPageContent() {
                                     key={order.id} 
                                     order={order} 
                                     onClick={() => handleOrderClick(order)}
+                                    onConfirmReceipt={handleConfirmReceipt}
+                                    onStatusUpdate={handleOrderStatusUpdate}
+                                    confirmingId={confirmingId}
+                                    updatingOrderIds={updatingOrderIds}
                                     accentColor={group.accentColor}
                                   />
                                 ))}
@@ -3500,7 +3818,16 @@ function OrderManagementPageContent() {
                       
                       {/* Regular Orders */}
                       {filteredOrders.map((order) => (
-                        <MobileOrderCard key={order.id} purchase={order} onClick={() => handleOrderClick(order)} orderMode={orderMode} />
+                        <MobileOrderCard
+                          key={order.id}
+                          purchase={order}
+                          onClick={() => handleOrderClick(order)}
+                          orderMode={orderMode}
+                          onConfirmReceipt={handleConfirmReceipt}
+                          onStatusUpdate={handleOrderStatusUpdate}
+                          confirmingId={confirmingId}
+                          updatingOrderIds={updatingOrderIds}
+                        />
                       ))}
                     </>
                   )}

@@ -263,6 +263,35 @@ export class LightspeedClient {
   }
 
   /**
+   * Update a single Lightspeed item.
+   *
+   * Lightspeed's Item endpoint uses PUT for partial updates: omitted fields
+   * retain their existing values.
+   */
+  async updateItem(
+    itemId: string,
+    payload: Partial<Pick<
+      LightspeedItem,
+      | 'description'
+      | 'modelYear'
+      | 'upc'
+      | 'categoryID'
+      | 'manufacturerID'
+      | 'defaultCost'
+    >>
+  ): Promise<LightspeedItem> {
+    const accountId = await this.getAccountId()
+    const response = await this.request<{ Item: LightspeedItem }>(
+      `/Account/${accountId}/Item/${itemId}.json`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }
+    )
+    return response.Item
+  }
+
+  /**
    * Get all items with automatic pagination
    */
   async getAllItems(additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>): Promise<LightspeedItem[]> {
@@ -756,7 +785,6 @@ export class LightspeedClient {
 export function createLightspeedClient(userId: string): LightspeedClient {
   return new LightspeedClient(userId)
 }
-
 
 
 

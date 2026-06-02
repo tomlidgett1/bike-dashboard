@@ -43,19 +43,17 @@ export function MessagesDropdown() {
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative rounded-full"
+        <button
+          className="relative h-9 w-9 rounded-full hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center"
           aria-label="Messages"
         >
-          <MessageCircle className="h-5 w-5" />
+          <MessageCircle className="h-[18px] w-[18px] text-gray-700 stroke-[2]" />
           {count > 0 && (
             <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
               {count > 99 ? '99+' : count}
             </span>
           )}
-        </Button>
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[calc(100vw-2rem)] max-w-96">
         <DropdownMenuLabel className="font-normal">

@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Sparkles,
   Truck,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,12 @@ const mainNavItems: NavItem[] = [
     requiresStore: true,
   },
   {
+    title: "Data",
+    href: "/settings/data",
+    icon: Database,
+    requiresStore: true,
+  },
+  {
     title: "My Listings",
     href: "/settings/my-listings",
     icon: Edit,
@@ -107,12 +114,10 @@ function NavLink({
   item,
   pathname,
   onNavigate,
-  compact,
 }: {
   item: NavItem;
   pathname: string | null;
   onNavigate?: () => void;
-  compact?: boolean;
 }) {
   const isActive = pathname === item.href;
   const Icon = item.icon;

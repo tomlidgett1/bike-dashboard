@@ -216,6 +216,17 @@
   }
 }
 
+/* Google Places renders its suggestions at document body level. Keep it above
+   modal sheets and clickable when Radix disables outside pointer events. */
+.pac-container {
+  z-index: 2147483647 !important;
+  pointer-events: auto !important;
+}
+
+.pac-item {
+  cursor: pointer;
+}
+
 @keyframes shimmer {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }

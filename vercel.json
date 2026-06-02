@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/refresh-lightspeed-tokens",
       "schedule": "*/20 * * * *"
+    },
+    {
+      "path": "/api/cron/lightspeed-title-cleaning",
+      "schedule": "* * * * *"
     }
   ]
 }
