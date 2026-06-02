@@ -82,7 +82,7 @@ export function BikeStoresPicker({
   }, []);
 
   const selectedStore = stores.find((s) => s.id === selectedStoreId);
-  const triggerLabel = selectedStore?.name ?? "All stores";
+  const triggerLabel = selectedStore?.name ?? "Stores";
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -91,7 +91,7 @@ export function BikeStoresPicker({
           type="button"
           aria-label="Choose a bike store"
           className={cn(
-            "flex h-12 sm:h-11 max-w-[148px] sm:max-w-[200px] items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 cursor-pointer",
+            "flex h-10 sm:h-11 max-w-[148px] sm:max-w-[200px] items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 cursor-pointer",
             className
           )}
         >
@@ -112,8 +112,10 @@ export function BikeStoresPicker({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        align="end"
-        className="max-h-[min(320px,70vh)] w-64 overflow-y-auto rounded-md border border-gray-200 bg-white p-1 shadow-lg"
+        align="start"
+        sideOffset={6}
+        collisionPadding={12}
+        className="max-h-[min(60vh,22rem)] w-64 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
       >
         {onAllStores && (
           <>

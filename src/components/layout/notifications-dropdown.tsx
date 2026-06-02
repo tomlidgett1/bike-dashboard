@@ -382,7 +382,7 @@ export function NotificationsDropdown() {
         </button>
 
         <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
-          <SheetContent side="bottom" className="h-[80vh] rounded-t-2xl p-0 gap-0" showCloseButton={false}>
+          <SheetContent side="bottom" className="data-[side=bottom]:h-[85dvh] overflow-hidden rounded-t-2xl p-0 gap-0" showCloseButton={false}>
             {/* Header */}
             <div className="sticky top-0 bg-popover border-b border-border/60 px-4 py-3 rounded-t-2xl">
               <div className="flex items-center justify-between">

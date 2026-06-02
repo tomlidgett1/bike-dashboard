@@ -11,6 +11,12 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 
 interface AuthModalProps {
@@ -21,6 +27,52 @@ interface AuthModalProps {
 export function AuthModal({ open, onOpenChange }: AuthModalProps) {
   const router = useRouter();
 
+  // Bottom sheet on mobile, centered dialog on desktop.
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  const handleAuthenticated = ({
+    destination,
+    mode,
+  }: {
+    destination: "/marketplace" | "/settings";
+    mode: "signin" | "signup";
+  }) => {
+    onOpenChange(false);
+    if (destination === "/settings" || mode === "signup") {
+      router.push(destination);
+    }
+    router.refresh();
+  };
+
+  // ── Mobile: bottom sheet (native CSS slide-up animation) ──────────────────
+  if (isMobile) {
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side="bottom"
+          showCloseButton={false}
+          className="max-h-[94dvh] overflow-y-auto rounded-t-3xl border-0 bg-transparent p-0 shadow-none"
+        >
+          <SheetTitle className="sr-only">Sign in to Yellow Jersey</SheetTitle>
+          <SheetDescription className="sr-only">
+            Sign in or create an account to continue using Yellow Jersey.
+          </SheetDescription>
+          <AuthCard
+            className="max-w-none rounded-b-none pb-[calc(1.75rem+env(safe-area-inset-bottom))] shadow-none sm:p-7"
+            onAuthenticated={handleAuthenticated}
+          />
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  // ── Desktop: centered dialog ──────────────────────────────────────────────
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -31,17 +83,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
         <DialogDescription className="sr-only">
           Sign in or create an account to continue using Yellow Jersey.
         </DialogDescription>
-        <AuthCard
-          onAuthenticated={({ destination, mode }) => {
-            onOpenChange(false);
-
-            if (destination === "/settings" || mode === "signup") {
-              router.push(destination);
-            }
-
-            router.refresh();
-          }}
-        />
+        <AuthCard onAuthenticated={handleAuthenticated} />
         <DialogClose asChild>
           <Button
             type="button"

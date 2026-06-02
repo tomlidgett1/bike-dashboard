@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Package, ChevronRight, X, Store, SlidersHorizontal } from "lucide-react";
+import { Package, ChevronRight, X, Store } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import {
@@ -14,7 +14,7 @@ import {
   countActiveFilters,
   type AdvancedFiltersState,
 } from "@/components/marketplace/advanced-filters";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { BikeStoresPicker } from "@/components/marketplace/bike-stores-picker";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
 
@@ -72,14 +72,14 @@ interface UnifiedFilterBarProps {
   onMobileBrowseSheetOpenChange?: (open: boolean) => void;
 }
 
-function UberLogo({ className }: { className?: string }) {
+function UberLogo({ active, className }: { active?: boolean; className?: string }) {
   return (
     <Image
-      src="/uber.png"
+      src={active ? "/uberwhite.png" : "/uber.png"}
       alt="Uber"
-      width={34}
-      height={14}
-      className={cn("h-3.5 w-auto", className)}
+      width={52}
+      height={18}
+      className={cn("h-4 w-auto max-w-none", className)}
       unoptimized
     />
   );
@@ -124,9 +124,6 @@ export function UnifiedFilterBar({
     ? onMobileBrowseSheetOpenChange!
     : setUncontrolledBrowseOpen;
 
-  // Filter panel visibility — mobile only (desktop always shows filters)
-  const [filtersOpen, setFiltersOpen] = React.useState(false);
-
   const isStoresMode = currentSpace === "stores";
   const isUberMode = currentSpace === "uber";
 
@@ -168,87 +165,52 @@ export function UnifiedFilterBar({
   const showBrowseChrome = isOnBrowseMode;
   const activeFilterCount = countActiveFilters(browseFilters);
 
-  // Shared filter toggle button styles
-  const filterToggleClass = (open: boolean) =>
-    cn(
-      "flex items-center gap-1.5 rounded-full border font-medium transition-colors whitespace-nowrap focus:outline-none",
-      open
-        ? "bg-gray-900 text-white border-gray-900"
-        : "bg-white text-gray-600 border-gray-200 hover:bg-gray-100 hover:text-gray-800",
-    );
-
   return (
     <div className="space-y-2">
       {/* ════════════════════════════════════════
-          ROW 1 — tabs · filter controls · [Filters/Hide] far-right
+          ROW 1 — space tabs.
           Category pills are NOT here; they live in Row 2.
+          Advanced filters open from the floating FAB (MarketplaceHeader),
+          so no inline filter control is needed here.
           BikeStoresPicker only shown on Bike Stores tab.
           ════════════════════════════════════════ */}
 
-      {/* Mobile */}
-      <div className="flex items-center gap-2 sm:hidden pt-1 pb-0.5 pr-3">
-        <div className="mx-3 min-w-0 flex-1 h-12 rounded-full bg-white border border-gray-200 shadow-sm p-1 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+      {/* Mobile — segmented control. Tabs only; nothing crammed alongside.
+          Labels carry the meaning on their own, so no icons (less is more). */}
+      <div className="sm:hidden px-3 pt-2 pb-1">
+        <div className="grid grid-cols-3 gap-1 rounded-full bg-gray-100 p-1">
           <button
             type="button"
             onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
             className={cn(
-              "flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isBrowseActive ? "bg-gray-100 text-gray-900" : "text-gray-500",
+              "flex h-10 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 text-sm font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              isBrowseActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
             )}
           >
-            <Package className="h-4 w-4 flex-shrink-0" />
-            <span>Marketplace</span>
+            <span className="truncate">Marketplace</span>
           </button>
           <button
             type="button"
             onClick={() => { setOptimisticTab("stores"); onNavigateToStores?.(); }}
             className={cn(
-              "flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isStoresActive ? "bg-gray-100 text-gray-900" : "text-gray-500",
+              "flex h-10 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 text-sm font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              isStoresActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
             )}
           >
-            <Store className="h-4 w-4 flex-shrink-0" />
-            <span>Stores</span>
+            <span className="truncate">Stores</span>
           </button>
           <button
             type="button"
             onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
             className={cn(
-              "flex h-10 w-12 cursor-pointer items-center justify-center rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isUberActive ? "bg-[#0eb462] text-white shadow-[0_0_10px_rgba(17,24,39,0.16)]" : "text-gray-500",
+              "flex h-10 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              isUberActive ? "bg-[#0eb462] shadow-sm" : "",
             )}
             aria-label="Uber delivery"
           >
-            <UberLogo />
+            <UberLogo active={isUberActive} />
           </button>
         </div>
-
-        {/* Stores-only picker */}
-        {onStoreSelect && isStoresMode && (
-          <BikeStoresPicker
-            selectedStoreId={selectedStoreId}
-            onStoreSelect={onStoreSelect}
-            onAllStores={onNavigateToStores}
-            className="shrink-0"
-          />
-        )}
-
-        {/* Filter toggle — mobile only, far right */}
-        {showBrowseChrome && (
-          <button
-            type="button"
-            onClick={() => setFiltersOpen((v) => !v)}
-            aria-label="Toggle filters"
-            className={cn(filterToggleClass(filtersOpen), "flex-shrink-0 h-10 px-3 text-sm")}
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            {activeFilterCount > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 text-gray-900 text-[10px] font-bold px-1">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-        )}
       </div>
 
       {/* Desktop — filters always visible, no toggle button */}
@@ -280,12 +242,12 @@ export function UnifiedFilterBar({
             type="button"
             onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
             className={cn(
-              "flex h-9 min-w-12 cursor-pointer items-center justify-center rounded-full px-2.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              "flex h-9 min-w-16 cursor-pointer items-center justify-center rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
               isUberActive ? "bg-[#0eb462] text-white shadow-[0_0_10px_rgba(17,24,39,0.16)]" : "text-gray-500 hover:text-gray-700",
             )}
             aria-label="Uber delivery"
           >
-            <UberLogo />
+            <UberLogo active={isUberActive} className="h-3.5" />
           </button>
         </div>
 
@@ -383,35 +345,48 @@ export function UnifiedFilterBar({
         </div>
       )}
 
-      {/* Mobile: category pills row + filter sheet */}
-      {showBrowseChrome && filtersOpen && (
-        <div className="space-y-2 pb-1.5 sm:hidden">
-          <div className="px-3">
-            <BrowseFiltersToolbar
-              categoryPillsRowOnly
-              selectedLevel1={selectedLevel1}
-              selectedLevel2={selectedLevel2}
-              selectedLevel3={selectedLevel3}
-              onLevel1Change={onLevel1Change}
-              onLevel2Change={onLevel2Change}
-              onLevel3Change={onLevel3Change}
-              filters={browseFilters}
-              onFiltersChange={onBrowseFiltersChange}
-              onFiltersApply={onBrowseFiltersApply}
-              gridLayout={productGridLayout}
-              onGridLayoutChange={onProductGridLayoutChange}
-              toolbarScrollRef={categoryPillsRef}
-              dynamicCategories={dynamicCategories}
-              categoriesLoading={categoriesLoading}
-            />
+      {/* Mobile: store picker (Stores tab only) + category pills on one compact row.
+          The picker is pinned left; the pills scroll beside it.
+          The advanced-filter sheet opens from the header's floating FAB. */}
+      {showBrowseChrome && (
+        <div className="sm:hidden">
+          <div className="flex items-center gap-2 px-3 pb-2">
+            {onStoreSelect && isStoresMode && (
+              <BikeStoresPicker
+                selectedStoreId={selectedStoreId}
+                onStoreSelect={onStoreSelect}
+                onAllStores={onNavigateToStores}
+                className="shrink-0"
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              <BrowseFiltersToolbar
+                categoryPillsRowOnly
+                selectedLevel1={selectedLevel1}
+                selectedLevel2={selectedLevel2}
+                selectedLevel3={selectedLevel3}
+                onLevel1Change={onLevel1Change}
+                onLevel2Change={onLevel2Change}
+                onLevel3Change={onLevel3Change}
+                filters={browseFilters}
+                onFiltersChange={onBrowseFiltersChange}
+                onFiltersApply={onBrowseFiltersApply}
+                gridLayout={productGridLayout}
+                onGridLayoutChange={onProductGridLayoutChange}
+                toolbarScrollRef={categoryPillsRef}
+                dynamicCategories={dynamicCategories}
+                categoriesLoading={categoriesLoading}
+              />
+            </div>
           </div>
 
           <Sheet open={browseSheetOpen} onOpenChange={setBrowseSheetOpen}>
             <SheetContent
               side="right"
-              className="w-[50vw] min-w-[280px] max-w-[400px] gap-0 border-0 p-0 h-full flex flex-col"
+              className="data-[side=right]:w-[90vw] min-w-[300px] max-w-[380px] gap-0 border-0 p-0 h-full flex flex-col"
               showCloseButton={false}
             >
+              <SheetTitle className="sr-only">Filters</SheetTitle>
               <MobileFilterContent
                 filters={browseFilters}
                 onFiltersChange={onBrowseFiltersChange}

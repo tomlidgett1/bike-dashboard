@@ -29,6 +29,7 @@ const MAX_CART_ITEMS = 12;
 const MIN_PURCHASE_FOR_VOUCHER_CENTS = 3000;
 
 type DeliveryMethod = 'uber_express' | 'auspost' | 'pickup';
+type CheckoutMode = 'hosted' | 'express';
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,24 +43,35 @@ export async function POST(request: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorised - please sign in to purchase' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Unauthorised - please sign in to purchase' }, { status: 401 });
     }
 
     const body = await request.json();
     const {
       items: rawItems,
       productIds: rawProductIds,
-      deliveryMethod = 'auspost',
       shippingAddress,
     } = body as {
       items?: { productId: string; quantity?: number }[];
       productIds?: string[]; // legacy payload — each id treated as quantity 1
       deliveryMethod?: DeliveryMethod;
+      checkoutMode?: CheckoutMode;
       shippingAddress?: CheckoutShippingAddressInput;
     };
+    const rawDeliveryMethod = (body as { deliveryMethod?: unknown })
+      .deliveryMethod;
+    const requestedDeliveryMethod: DeliveryMethod =
+      rawDeliveryMethod === 'uber_express' ||
+      rawDeliveryMethod === 'pickup' ||
+      rawDeliveryMethod === 'auspost'
+        ? rawDeliveryMethod
+        : 'auspost';
+    const checkoutMode: CheckoutMode =
+      (body as { checkoutMode?: unknown }).checkoutMode === 'express'
+        ? 'express'
+        : 'hosted';
+    const isExpressCheckout = checkoutMode === 'express';
+    const deliveryMethod: DeliveryMethod = isExpressCheckout ? 'auspost' : requestedDeliveryMethod;
 
     // Normalise the payload to a productId -> requested quantity map. Accepts the
     // new {productId, quantity}[] shape and the legacy productIds[] (quantity 1).
@@ -84,16 +96,14 @@ export async function POST(request: NextRequest) {
 
     const ids = [...qtyById.keys()];
     if (ids.length > MAX_CART_ITEMS) {
-      return NextResponse.json(
-        { error: `A cart can hold at most ${MAX_CART_ITEMS} items` },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: `A cart can hold at most ${MAX_CART_ITEMS} items` }, { status: 400 });
     }
 
     // Fetch all products in one query
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select(`
+      .select(
+        `
         id,
         description,
         display_name,
@@ -110,7 +120,8 @@ export async function POST(request: NextRequest) {
         qoh,
         listing_type,
         uber_delivery_enabled
-      `)
+      `,
+      )
       .in('id', ids);
 
     if (productsError) {
@@ -125,19 +136,13 @@ export async function POST(request: NextRequest) {
     // Enforce single-seller cart
     const sellerIds = new Set(products.map((p) => p.user_id));
     if (sellerIds.size > 1) {
-      return NextResponse.json(
-        { error: 'A cart can only contain items from one seller' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'A cart can only contain items from one seller' }, { status: 400 });
     }
     const sellerId = products[0].user_id;
 
     // Prevent buying your own products
     if (sellerId === user.id) {
-      return NextResponse.json(
-        { error: 'You cannot purchase your own products' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'You cannot purchase your own products' }, { status: 400 });
     }
 
     if (deliveryMethod === 'uber_express') {
@@ -150,8 +155,11 @@ export async function POST(request: NextRequest) {
 
       if (!validation.eligible) {
         return NextResponse.json(
-          { error: validation.reason || 'Uber Express is not available for this cart', uberIneligible: true },
-          { status: 400 }
+          {
+            error: validation.reason || 'Uber Express is not available for this cart',
+            uberIneligible: true,
+          },
+          { status: 400 },
         );
       }
     }
@@ -172,12 +180,7 @@ export async function POST(request: NextRequest) {
         unavailable.push({ id: p.id, name, available: 0 });
         continue;
       }
-      const available =
-        p.listing_type === 'private_listing'
-          ? 1
-          : typeof p.qoh === 'number'
-            ? p.qoh
-            : 1;
+      const available = p.listing_type === 'private_listing' ? 1 : typeof p.qoh === 'number' ? p.qoh : 1;
       const requested = qtyById.get(p.id) ?? 1;
       if (available < 1) {
         unavailable.push({ id: p.id, name, available: 0 });
@@ -206,7 +209,12 @@ export async function POST(request: NextRequest) {
     // `price` is the UNIT price; `quantity` is validated above to be <= stock.
     const items = products.map((p) => {
       const live = resolveLivePrice(p);
-      return { product: p, price: live.price, onSale: live.onSale, quantity: Math.max(1, qtyById.get(p.id) ?? 1) };
+      return {
+        product: p,
+        price: live.price,
+        onSale: live.onSale,
+        quantity: Math.max(1, qtyById.get(p.id) ?? 1),
+      };
     });
 
     const subtotal = items.reduce((sum, it) => sum + it.price * it.quantity, 0);
@@ -236,19 +244,14 @@ export async function POST(request: NextRequest) {
     // per-item seller payout is still computed from the full item price downstream).
     let voucherDiscount = 0;
     let voucherDiscountCents = 0;
-    let applicableVoucher: { id: string; amount_cents: number; description: string } | null = null;
+    let applicableVoucher: {
+      id: string;
+      amount_cents: number;
+      description: string;
+    } | null = null;
 
     if (subtotalCents >= MIN_PURCHASE_FOR_VOUCHER_CENTS) {
-      const { data: voucher } = await supabase
-        .from('vouchers')
-        .select('id, amount_cents, min_purchase_cents, description, voucher_type')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .lte('min_purchase_cents', subtotalCents)
-        .or('expires_at.is.null,expires_at.gt.now()')
-        .order('amount_cents', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data: voucher } = await supabase.from('vouchers').select('id, amount_cents, min_purchase_cents, description, voucher_type').eq('user_id', user.id).eq('status', 'active').lte('min_purchase_cents', subtotalCents).or('expires_at.is.null,expires_at.gt.now()').order('amount_cents', { ascending: false }).limit(1).maybeSingle();
 
       if (voucher) {
         applicableVoucher = {
@@ -263,22 +266,13 @@ export async function POST(request: NextRequest) {
 
     // Best primary image per product for the Stripe line items (single query)
     const imageMap = new Map<string, string>();
-    const { data: imageRows } = await supabase
-      .from('product_images')
-      .select('product_id, cloudinary_public_id, cloudinary_url, external_url, is_primary')
-      .in('product_id', ids)
-      .eq('approval_status', 'approved')
-      .order('is_primary', { ascending: false });
+    const { data: imageRows } = await supabase.from('product_images').select('product_id, cloudinary_public_id, cloudinary_url, external_url, is_primary').in('product_id', ids).eq('approval_status', 'approved').order('is_primary', { ascending: false });
 
     if (imageRows) {
       for (const row of imageRows) {
         if (imageMap.has(row.product_id)) continue;
         const publicId = row.cloudinary_public_id || extractCloudinaryPublicId(row.cloudinary_url);
-        const url =
-          buildCloudinaryImageUrl(publicId, 'web_hero') ||
-          row.cloudinary_url ||
-          row.external_url ||
-          undefined;
+        const url = buildCloudinaryImageUrl(publicId, 'web_hero') || row.cloudinary_url || row.external_url || undefined;
         if (url && url.startsWith('https://')) imageMap.set(row.product_id, url);
       }
     }
@@ -331,11 +325,16 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    if (deliveryCost > 0) {
+    const usesStripeShippingRate = isExpressCheckout && deliveryMethod === 'auspost';
+
+    if (deliveryCost > 0 && !usesStripeShippingRate) {
       lineItems.push({
         price_data: {
           currency: 'aud',
-          product_data: { name: deliveryDescription, description: 'Delivery cost' },
+          product_data: {
+            name: deliveryDescription,
+            description: 'Delivery cost',
+          },
           unit_amount: Math.round(deliveryCost * 100),
         },
         quantity: 1,
@@ -346,7 +345,10 @@ export async function POST(request: NextRequest) {
       lineItems.push({
         price_data: {
           currency: 'aud',
-          product_data: { name: 'Service Fee', description: 'Yellow Jersey marketplace fee' },
+          product_data: {
+            name: 'Service Fee',
+            description: 'Yellow Jersey marketplace fee',
+          },
           unit_amount: Math.round(buyerFee * 100),
         },
         quantity: 1,
@@ -394,20 +396,62 @@ export async function POST(request: NextRequest) {
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
-      payment_method_types: ['card'],
       line_items: lineItems,
+      ...(isExpressCheckout && {
+        ui_mode: 'custom' as const,
+        return_url: `${appUrl}/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}&cart=1`,
+      }),
       ...(requiresShipping && {
         shipping_address_collection: {
           allowed_countries: [...CHECKOUT_SHIPPING_ALLOWED_COUNTRIES],
         },
       }),
+      ...(usesStripeShippingRate && {
+        shipping_options: [
+          {
+            shipping_rate_data: {
+              type: 'fixed_amount',
+              display_name: deliveryDescription,
+              fixed_amount: {
+                amount: Math.round(deliveryCost * 100),
+                currency: 'aud',
+              },
+              delivery_estimate: {
+                minimum: { unit: 'business_day', value: 2 },
+                maximum: { unit: 'business_day', value: 5 },
+              },
+            },
+          },
+        ],
+      }),
       phone_number_collection: CHECKOUT_PHONE_NUMBER_COLLECTION,
       metadata,
-      success_url: `${appUrl}/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}&cart=1`,
-      cancel_url: `${appUrl}/marketplace`,
+      ...(!isExpressCheckout && {
+        success_url: `${appUrl}/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}&cart=1`,
+        cancel_url: `${appUrl}/marketplace`,
+      }),
       ...customerParams,
       expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
     });
+
+    if (isExpressCheckout) {
+      if (!session.client_secret) {
+        console.error('[Stripe Cart Checkout] No custom session client secret returned');
+        return NextResponse.json({ error: 'Failed to create express checkout session' }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        sessionId: session.id,
+        clientSecret: session.client_secret,
+        voucher: applicableVoucher
+          ? {
+              id: applicableVoucher.id,
+              discount: voucherDiscount,
+              description: applicableVoucher.description,
+            }
+          : null,
+      });
+    }
 
     if (!session.url) {
       console.error('[Stripe Cart Checkout] No session URL returned');
@@ -427,7 +471,11 @@ export async function POST(request: NextRequest) {
       sessionId: session.id,
       url: session.url,
       voucher: applicableVoucher
-        ? { id: applicableVoucher.id, discount: voucherDiscount, description: applicableVoucher.description }
+        ? {
+            id: applicableVoucher.id,
+            discount: voucherDiscount,
+            description: applicableVoucher.description,
+          }
         : null,
     });
   } catch (error) {

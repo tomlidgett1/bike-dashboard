@@ -25,13 +25,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Sheet,
   SheetContent,
   SheetTitle,
@@ -45,7 +38,7 @@ import { useUpload } from "@/components/providers/upload-provider";
 // Space navigator import removed - now integrated into UnifiedFilterBar
 import type { ListingImage } from "@/lib/types/listing";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
-import { AuthCard } from "@/components/auth/auth-card";
+import { AuthModal } from "@/components/marketplace/auth-modal";
 
 // ============================================================
 // Mobile Nav Item Component
@@ -59,14 +52,16 @@ interface MobileNavItemProps {
 }
 
 function UberLogoIcon({ className }: { className?: string }) {
+  // The wide Uber wordmark keeps its natural aspect ratio (no squashing) and is
+  // centred within the nav row's standard icon slot so the labels stay aligned.
   return (
     <span className={cn("flex items-center justify-center", className)}>
       <Image
         src="/uber.png"
-        alt=""
-        width={26}
-        height={11}
-        className="h-2.5 w-auto"
+        alt="Uber"
+        width={52}
+        height={22}
+        className="h-3 w-auto max-w-none"
         unoptimized
       />
     </span>
@@ -336,10 +331,10 @@ export function MarketplaceHeader({
   return (
     <>
       {/* Floating pill header wrapper */}
-      <div className="fixed top-0 left-0 right-0 z-40 px-3 sm:px-4 pt-2">
+      <div className="relative z-40 bg-white px-0 pt-0 sm:fixed sm:top-0 sm:left-0 sm:right-0 sm:bg-transparent sm:px-4 sm:pt-2">
       <motion.header
         style={{ boxShadow: headerShadow }}
-        className="rounded-full bg-white/95 backdrop-blur-md border border-gray-200"
+        className="rounded-none border-x-0 border-t-0 border-b border-gray-200 bg-white sm:rounded-full sm:border sm:bg-white/95 sm:backdrop-blur-md"
       >
         {/* Navigation Loading Bar */}
         <AnimatePresence>
@@ -814,40 +809,8 @@ export function MarketplaceHeader({
         </SheetContent>
       </Sheet>
 
-      {/* Sell Item Requirement Modal */}
-      <Dialog open={sellRequirementModalOpen} onOpenChange={setSellRequirementModalOpen}>
-        <DialogContent
-          showCloseButton={false}
-          className="w-full max-w-[420px] gap-0 border-0 bg-transparent p-0 text-popover-foreground ring-0 sm:max-w-[420px]"
-        >
-          <DialogTitle className="sr-only">Sign in to list an item</DialogTitle>
-          <DialogDescription className="sr-only">
-            Sign in or create an account to list an item on Yellow Jersey.
-          </DialogDescription>
-          <AuthCard
-            onAuthenticated={({ destination }) => {
-              setSellRequirementModalOpen(false);
-
-              if (destination === "/settings") {
-                router.push(destination);
-              }
-
-              router.refresh();
-            }}
-          />
-          <DialogClose asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="absolute -right-3 -top-3 rounded-full bg-white text-gray-600 shadow-lg ring-1 ring-black/5 hover:bg-gray-50 hover:text-gray-900"
-            >
-              <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
-            </Button>
-          </DialogClose>
-        </DialogContent>
-      </Dialog>
+      {/* Sell Item Requirement Modal — login / sign-up (bottom sheet on mobile) */}
+      <AuthModal open={sellRequirementModalOpen} onOpenChange={setSellRequirementModalOpen} />
 
       {/* Facebook Import Modal */}
       <FacebookImportModal

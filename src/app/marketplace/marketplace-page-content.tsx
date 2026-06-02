@@ -174,10 +174,11 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const [mobileBrowseSheetOpen, setMobileBrowseSheetOpen] = React.useState(false);
 
   React.useEffect(() => {
-    if (!isMarketplaceView || viewMode !== "all") {
+    const filtersAvailable = (isMarketplaceView || isStoreInventoryView) && viewMode === "all";
+    if (!filtersAvailable) {
       setMobileBrowseSheetOpen(false);
     }
-  }, [isMarketplaceView, viewMode]);
+  }, [isMarketplaceView, isStoreInventoryView, viewMode]);
 
   // Handler for private only toggle
   const handlePrivateOnlyChange = (checked: boolean) => {
@@ -918,7 +919,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         onSpaceChange={setSpace}
         isNavigating={isNavigating}
         showStickyFilters={showStickyFilters}
-        showMobileBrowseFiltersFab={isMarketplaceView && viewMode === "all"}
+        showMobileBrowseFiltersFab={(isMarketplaceView || isStoreInventoryView) && viewMode === "all"}
         mobileBrowseFiltersBadge={activeFilterCount}
         onOpenMobileBrowseFilters={() => setMobileBrowseSheetOpen(true)}
       />
@@ -1074,7 +1075,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
       <MarketplaceLayout showFooter={false} showStoreCTA={false}>
         {/* Mobile: promo above Hot / Browse / Stores, then sticky tabs + category pills */}
-        <div className="sm:hidden bg-white pt-14">
+        <div className="sm:hidden bg-white pt-3">
           {MARKETPLACE_PROMO_BANNERS_ENABLED &&
             (isMarketplaceView || isStoresView) &&
             !searchQuery && (
@@ -1086,7 +1087,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               />
             </div>
           )}
-          <div className="sticky top-14 z-30 bg-white border-b border-gray-100 shadow-sm">
+          <div className="sticky top-0 z-30 bg-white border-b border-gray-100 shadow-sm">
             <UnifiedFilterBar
               currentSpace={currentSpace}
               viewMode={viewMode}
@@ -1240,51 +1241,40 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   </div>
                 )}
 
-                {/* Featured Stores — same identity-strip design as a selected store (no store selected) */}
+                {/* Featured Stores — compact single-line strip (no store selected) */}
                 {!selectedStoreId && featuredStore && (
-                  <div className="space-y-1.5">
-                    <h3 className="text-sm font-semibold text-gray-900">Featured stores</h3>
-                    <button
-                      type="button"
-                      onClick={() => handleNavigateToStoreProfile(featuredStore)}
-                      className="flex items-center gap-2.5 min-w-0 group hover:opacity-80 transition-opacity cursor-pointer"
-                    >
-                      {featuredStore.logo_url ? (
-                        <div className="relative h-8 w-8 rounded-full overflow-hidden border border-gray-200 flex-shrink-0 shadow-sm">
-                          <Image
-                            src={featuredStore.logo_url}
-                            alt={featuredStore.store_name}
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <div className="h-8 w-8 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center flex-shrink-0">
-                          <StoreIcon className="h-4 w-4 text-gray-400" />
-                        </div>
-                      )}
-                      <div className="min-w-0 text-left">
-                        <p className="text-sm font-semibold text-gray-900 truncate group-hover:underline">{featuredStore.store_name}</p>
-                        {featuredStore.product_count > 0 && (
-                          <p className="text-xs text-gray-500">{featuredStore.product_count.toLocaleString()} products</p>
-                        )}
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateToStoreProfile(featuredStore)}
+                    className="group flex min-w-0 items-center gap-2 text-left transition-opacity hover:opacity-80 cursor-pointer"
+                  >
+                    <span className="flex-shrink-0 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                      Featured
+                    </span>
+                    {featuredStore.logo_url ? (
+                      <div className="relative h-6 w-6 flex-shrink-0 overflow-hidden rounded-full border border-gray-200">
+                        <Image
+                          src={featuredStore.logo_url}
+                          alt={featuredStore.store_name}
+                          fill
+                          className="object-cover"
+                        />
                       </div>
-                    </button>
-                  </div>
+                    ) : (
+                      <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100">
+                        <StoreIcon className="h-3.5 w-3.5 text-gray-400" />
+                      </div>
+                    )}
+                    <span className="truncate text-sm font-medium text-gray-700 group-hover:underline">
+                      {featuredStore.store_name}
+                    </span>
+                    {featuredStore.product_count > 0 && (
+                      <span className="flex-shrink-0 text-xs text-gray-400">
+                        · {featuredStore.product_count.toLocaleString()}
+                      </span>
+                    )}
+                  </button>
                 )}
-
-                {/* Advanced Filters for Stores - Mobile only (desktop has it in filter bar) */}
-                <div className="flex justify-end sm:hidden">
-                  <AdvancedFilters
-                    filters={advancedFilters}
-                    onFiltersChange={handleAdvancedFiltersChange}
-                    onApply={handleAdvancedFiltersApply}
-                    onReset={handleAdvancedFiltersReset}
-                    activeFilterCount={activeFilterCount}
-                    listingTypeFilter={listingTypeFilter}
-                    onListingTypeChange={handleListingTypeChange}
-                  />
-                </div>
               </div>
             )}
 
