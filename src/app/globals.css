@@ -214,6 +214,12 @@
   html {
     @apply font-sans;
   }
+
+  a[href],
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
 }
 
 /* Google Places renders its suggestions at document body level. Keep it above

@@ -1,10 +1,3 @@
-type RotationRecommendation = {
-  index?: number;
-  rotate_degrees?: number;
-  rotateDegrees?: number;
-  confidence?: number;
-};
-
 const ROTATABLE_URL_KEYS = [
   "url",
   "cardUrl",
@@ -14,21 +7,38 @@ const ROTATABLE_URL_KEYS = [
   "detailUrl",
 ] as const;
 
-function normaliseRotationDegrees(value: unknown): 0 | 90 | 180 | 270 {
+export function normaliseRotationDegrees(value: unknown): 0 | 90 | 180 | 270 {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
   const degrees = ((Math.round(value / 90) * 90) % 360 + 360) % 360;
   return degrees === 90 || degrees === 180 || degrees === 270 ? degrees : 0;
+}
+
+function getExistingManualRotation(transformPath: string): 0 | 90 | 180 | 270 {
+  const match = /(?:^|\/)a_(90|180|270)(?=\/)/.exec(transformPath);
+  return match ? normaliseRotationDegrees(Number(match[1])) : 0;
 }
 
 function stripExistingManualRotation(transformPath: string): string {
   return transformPath.replace(/(?:^|\/)a_(?:90|180|270)(?=\/)/g, "");
 }
 
+export function getCloudinaryRotation(url: string | undefined): 0 | 90 | 180 | 270 {
+  if (!url || !url.includes("res.cloudinary.com") || !url.includes("/image/upload/")) {
+    return 0;
+  }
+
+  const marker = "/image/upload/";
+  const markerIndex = url.indexOf(marker);
+  if (markerIndex === -1) return 0;
+
+  return getExistingManualRotation(url.slice(markerIndex + marker.length));
+}
+
 export function applyCloudinaryRotation(url: string | undefined, degrees: unknown): string | undefined {
   if (!url) return url;
 
   const rotation = normaliseRotationDegrees(degrees);
-  if (!rotation || !url.includes("res.cloudinary.com") || !url.includes("/image/upload/")) {
+  if (!url.includes("res.cloudinary.com") || !url.includes("/image/upload/")) {
     return url;
   }
 
@@ -38,6 +48,8 @@ export function applyCloudinaryRotation(url: string | undefined, degrees: unknow
 
   const prefix = url.slice(0, markerIndex + marker.length);
   let rest = stripExistingManualRotation(url.slice(markerIndex + marker.length)).replace(/^\/+/, "");
+
+  if (!rotation) return `${prefix}${rest}`;
 
   if (rest.startsWith("a_auto,")) {
     const slashIndex = rest.indexOf("/");
@@ -57,40 +69,21 @@ export function applyCloudinaryRotation(url: string | undefined, degrees: unknow
   return `${prefix}a_auto/a_${rotation}/${rest}`;
 }
 
-export function applyImageRotations<T extends object>(
-  images: T[],
-  rotations: RotationRecommendation[] | undefined | null,
-  minConfidence = 80
-): T[] {
-  if (!Array.isArray(rotations) || rotations.length === 0) return images;
+export function rotateCloudinaryUrlClockwise(url: string | undefined): string | undefined {
+  const currentRotation = getCloudinaryRotation(url);
+  const nextRotation = normaliseRotationDegrees(currentRotation + 90);
+  return applyCloudinaryRotation(url, nextRotation);
+}
 
-  const rotationByIndex = new Map<number, 90 | 180 | 270>();
-  for (const recommendation of rotations) {
-    const index = typeof recommendation.index === "number" ? recommendation.index : -1;
-    const confidence = typeof recommendation.confidence === "number" ? recommendation.confidence : 100;
-    const degrees = normaliseRotationDegrees(
-      recommendation.rotate_degrees ?? recommendation.rotateDegrees
-    );
+export function rotateImageUrlsClockwise<T extends object>(image: T): T {
+  const rotated = { ...(image as Record<string, unknown>) };
 
-    if (index >= 0 && degrees && confidence >= minConfidence) {
-      rotationByIndex.set(index, degrees);
+  for (const key of ROTATABLE_URL_KEYS) {
+    const value = rotated[key];
+    if (typeof value === "string") {
+      rotated[key] = rotateCloudinaryUrlClockwise(value);
     }
   }
 
-  if (rotationByIndex.size === 0) return images;
-
-  return images.map((image, index) => {
-    const degrees = rotationByIndex.get(index);
-    if (!degrees) return image;
-
-    const rotated = { ...(image as Record<string, unknown>) };
-    for (const key of ROTATABLE_URL_KEYS) {
-      const value = rotated[key];
-      if (typeof value === "string") {
-        rotated[key] = applyCloudinaryRotation(value, degrees);
-      }
-    }
-
-    return rotated as T;
-  });
+  return rotated as T;
 }

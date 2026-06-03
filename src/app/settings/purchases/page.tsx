@@ -3008,10 +3008,15 @@ function OrderManagementPageContent() {
         method: 'DELETE',
       });
       
-      if (!res.ok) throw new Error('Failed to delete');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to delete listing');
+      }
+      setListings(prev => prev.filter(item => item.id !== listing.id));
       fetchListings();
     } catch (e) {
-      alert('Failed to delete listing');
+      const message = e instanceof Error ? e.message : 'Failed to delete listing';
+      alert(message);
     }
   };
 
@@ -3196,7 +3201,11 @@ function OrderManagementPageContent() {
 
   // Counts
   const activeOrderCount = orders.filter(o => ['pending', 'paid', 'shipped'].includes(o.status)).length;
-  const activeListingCount = listings.filter(l => !l.sold_at && l.listing_status !== 'archived').length;
+  const activeListingCount = listings.filter(l =>
+    !l.sold_at &&
+    l.is_active &&
+    (l.listing_status === 'active' || !l.listing_status)
+  ).length;
   const activeClaimsCount = tickets.filter(t => ['open', 'awaiting_response', 'in_review', 'escalated'].includes(t.status)).length;
   const pendingOffersCount = allBuyerOffers.filter(o => o.status === 'pending').length +
     allBuyerOffers.filter(o => o.status === 'accepted' && o.payment_status === 'pending').length;

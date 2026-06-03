@@ -62,8 +62,7 @@ RULES:
 - Product descriptions should be 2-4 short, natural sentences with no links or source names
 - Condition details should be first person and conversational
 - Use Australian English (colour, tyre, aluminium)
-- Never include URLs, domains, markdown citations, or source names in description fields
-- Return conservative image rotation corrections only when a photo is clearly sideways or upside down.`;
+- Never include URLs, domains, markdown citations, or source names in description fields.`;
 
 const LISTING_SCHEMA = {
   item_type: "string (bike/part/apparel)",
@@ -111,18 +110,6 @@ const LISTING_SCHEMA = {
   brand_confidence: "number 0-100",
   model_confidence: "number 0-100",
   condition_confidence: "number 0-100",
-
-  image_orientation: {
-    rotations: [
-      {
-        index: "number - zero-based image index",
-        rotate_degrees: "number - clockwise correction: 0, 90, 180, or 270",
-        confidence: "number 0-100",
-        reason: "string"
-      }
-    ],
-    primary_image_index: "number"
-  },
 } as const;
 
 function isJsonObject(value: unknown): value is JsonObject {
@@ -188,7 +175,6 @@ Requirements:
 - description must be human-like and factual, with no URLs/source names
 - price_estimate must be second-hand AUD value for an Australian private sale
 - use web search for title, product facts, and pricing context
-- image_orientation.rotations must list any high-confidence display rotations by image index
 
 Return ONLY valid JSON matching this schema:
 ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;

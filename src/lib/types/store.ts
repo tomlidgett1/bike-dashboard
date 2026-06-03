@@ -51,6 +51,8 @@ export interface StoreService {
   price_from?: boolean;
   duration_minutes?: number | null;
   highlight?: boolean;
+  /** Bullet points of what the service includes — shown as a checklist on the cards. */
+  includes?: string[];
   display_order: number;
   is_active: boolean;
   created_at?: string;
@@ -169,6 +171,8 @@ export interface StoreHomepageConfig {
     headline: string;
     subheadline: string;
     image_url: string | null;
+    /** Up to three rotating hero/header images. `image_url` mirrors the first item for older configs. */
+    image_urls: string[];
     /** Dark overlay strength over the hero image, 0–80. */
     overlay: number;
     align: 'left' | 'center';
@@ -312,6 +316,7 @@ export interface CreateServiceRequest {
   price_from?: boolean;
   duration_minutes?: number | null;
   highlight?: boolean;
+  includes?: string[];
   display_order?: number;
 }
 
@@ -323,6 +328,7 @@ export interface UpdateServiceRequest {
   price_from?: boolean;
   duration_minutes?: number | null;
   highlight?: boolean;
+  includes?: string[];
   display_order?: number;
   is_active?: boolean;
 }

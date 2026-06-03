@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { compressImage, compressedToFile, shouldCompress } from "@/lib/utils/image-compression";
-import { applyImageRotations } from "@/lib/utils/cloudinary-rotation";
 import type { ListingAnalysisResult } from "@/lib/ai/schemas";
 
 // ============================================================
@@ -33,7 +32,7 @@ const UPLOAD_MESSAGES = [
   "Did you know we offer 1 hour delivery?",
 ];
 
-type UploadStage = "idle" | "enhancing" | "compressing" | "uploading" | "analysing" | "creating" | "success" | "error";
+type UploadStage = "idle" | "compressing" | "uploading" | "analysing" | "creating" | "success" | "error";
 
 interface UploadPhoto {
   id: string;
@@ -52,7 +51,7 @@ interface UploadState {
 }
 
 interface UploadContextValue extends UploadState {
-  startUpload: (photos: UploadPhoto[], removeBackground: boolean, onComplete: (formData: any, imageUrls: string[]) => void) => void;
+  startUpload: (photos: UploadPhoto[], onComplete: (formData: any, imageUrls: string[]) => void) => void;
   cancelUpload: () => void;
   currentMessage: string;
 }
@@ -142,7 +141,6 @@ export function UploadProvider({ children }: UploadProviderProps) {
 
   const startUpload = React.useCallback(async (
     photos: UploadPhoto[],
-    removeBackground: boolean,
     onComplete: (formData: any, imageUrls: string[]) => void
   ) => {
     if (photos.length === 0) return;
@@ -156,7 +154,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
     // Start upload
     setState({
       isUploading: true,
-      stage: "enhancing",
+      stage: "compressing",
       messageIndex: 0,
       progress: { current: 0, total: photos.length },
       error: null,
@@ -182,28 +180,6 @@ export function UploadProvider({ children }: UploadProviderProps) {
       }
 
       console.log("✅ [UPLOAD CONTEXT] Session OK, user:", session.user.email);
-
-      // Phase 0: Enhance cover image if requested
-      let enhancedCover: {
-        url: string;
-        cardUrl: string;
-        thumbnailUrl: string;
-        galleryUrl?: string;
-        detailUrl?: string;
-      } | null = null;
-
-      if (removeBackground) {
-        setState(prev => ({ ...prev, stage: "enhancing" }));
-        console.log("✨ [UPLOAD CONTEXT] Enhancing cover image...");
-
-        try {
-          enhancedCover = await enhanceCoverImage(photos[0], session.access_token);
-          console.log("✅ [UPLOAD CONTEXT] Cover enhanced:", enhancedCover?.cardUrl);
-        } catch (err) {
-          console.error("⚠️ [UPLOAD CONTEXT] Enhancement failed, continuing without:", err);
-          // Continue without enhancement if it fails
-        }
-      }
 
       // Phase 1: Compress images
       setState(prev => ({ ...prev, stage: "compressing", progress: { current: 0, total: photos.length } }));
@@ -231,24 +207,13 @@ export function UploadProvider({ children }: UploadProviderProps) {
       // Phase 2: Upload to Cloudinary
       setState(prev => ({ ...prev, stage: "uploading" }));
       
-      const startIndex = enhancedCover ? 1 : 0;
-      const filesToUpload = enhancedCover ? compressedFiles.slice(1) : compressedFiles;
+      const startIndex = 0;
+      const filesToUpload = compressedFiles;
       
       setState(prev => ({ ...prev, progress: { current: 0, total: filesToUpload.length } }));
       console.log("📤 [UPLOAD CONTEXT] Uploading to Cloudinary...");
 
       const uploadedImages: Array<{ url: string; cardUrl: string; mobileCardUrl?: string; thumbnailUrl: string; galleryUrl?: string; detailUrl?: string }> = [];
-
-      // If we have an enhanced cover, add it first
-      if (enhancedCover) {
-        uploadedImages.push({
-          url: enhancedCover.url,
-          cardUrl: enhancedCover.cardUrl,
-          thumbnailUrl: enhancedCover.thumbnailUrl,
-          galleryUrl: enhancedCover.galleryUrl,
-          detailUrl: enhancedCover.detailUrl,
-        });
-      }
 
       const listingId = `smart-${Date.now()}`;
 
@@ -337,10 +302,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
 
       const analysis = analysisResult.analysis as ListingAnalysisResult;
 
-      const finalUploadedImages = applyImageRotations(
-        uploadedImages,
-        analysis.image_orientation?.rotations
-      );
+      const finalUploadedImages = uploadedImages;
       const finalUrls = finalUploadedImages.map(img => img.url);
 
       // Map analysis to form data
@@ -395,77 +357,6 @@ export function UploadProvider({ children }: UploadProviderProps) {
 // ============================================================
 // Helper Functions
 // ============================================================
-
-async function enhanceCoverImage(
-  photo: UploadPhoto,
-  accessToken: string
-): Promise<{
-  url: string;
-  cardUrl: string;
-  thumbnailUrl: string;
-  galleryUrl?: string;
-  detailUrl?: string;
-}> {
-  // Compress first
-  let fileToUpload: File;
-  if (shouldCompress(photo.file)) {
-    const compressed = await compressImage(photo.file, {
-      maxDimension: 1920,
-      quality: 0.8,
-    });
-    fileToUpload = compressedToFile(compressed, photo.file.name);
-  } else {
-    fileToUpload = photo.file;
-  }
-
-  // Upload to Cloudinary to get URL
-  const formData = new FormData();
-  formData.append("file", fileToUpload);
-  formData.append("listingId", `enhance-${Date.now()}`);
-  formData.append("index", "0");
-
-  const uploadResponse = await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/upload-to-cloudinary`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: formData,
-    }
-  );
-
-  if (!uploadResponse.ok) {
-    throw new Error("Failed to upload image for enhancement");
-  }
-
-  const uploadResult = await uploadResponse.json();
-  const imageUrl = uploadResult.data.url;
-
-  // Enhance with AI
-  const enhanceResponse = await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/enhance-product-image`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        imageUrl,
-        listingId: `quick-${Date.now()}`,
-      }),
-    }
-  );
-
-  if (!enhanceResponse.ok) {
-    const errorData = await enhanceResponse.json();
-    throw new Error(errorData.error || "Enhancement failed");
-  }
-
-  const enhanceResult = await enhanceResponse.json();
-  return enhanceResult.data;
-}
 
 function buildFormData(
   analysis: ListingAnalysisResult,

@@ -220,28 +220,6 @@ export const LISTING_ANALYSIS_SCHEMA = {
     analysis_notes: {
       type: "string",
       description: "Additional observations or recommendations for the seller"
-    },
-    image_orientation: {
-      type: "object",
-      description: "Conservative display rotation recommendations for uploaded photos",
-      properties: {
-        primary_image_index: {
-          type: "number",
-          description: "Best hero image index"
-        },
-        rotations: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              index: { type: "number" },
-              rotate_degrees: { type: "number", enum: [0, 90, 180, 270] },
-              confidence: { type: "number" },
-              reason: { type: "string" }
-            }
-          }
-        }
-      }
     }
   }
 } as const;
@@ -304,15 +282,6 @@ export type ListingAnalysisResult = {
     pricing?: number;
   };
     analysis_notes?: string;
-    image_orientation?: {
-      primary_image_index?: number;
-      rotations?: Array<{
-        index: number;
-        rotate_degrees: 0 | 90 | 180 | 270;
-        confidence?: number;
-        reason?: string;
-      }>;
-    };
     // Web Search Enrichment (NEW)
     web_enrichment?: {
       clean_title?: string;
@@ -380,4 +349,3 @@ export type ListingAnalysisResult = {
     };
   };
 };
-

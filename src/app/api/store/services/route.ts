@@ -10,6 +10,21 @@ import { createClient } from '@/lib/supabase/server';
 import type { CreateServiceRequest, UpdateServiceRequest } from '@/lib/types/store';
 
 /**
+ * Normalise the "includes" dot-points into a clean string[]:
+ * trims whitespace, drops empty lines, and caps length so a single
+ * service can't store an unbounded list.
+ */
+function sanitizeIncludes(includes: unknown): string[] {
+  if (!Array.isArray(includes)) return [];
+  return includes
+    .filter((i): i is string => typeof i === 'string')
+    .map((i) => i.trim())
+    .filter((i) => i.length > 0)
+    .slice(0, 20)
+    .map((i) => i.slice(0, 200));
+}
+
+/**
  * GET /api/store/services
  * Fetch all services for authenticated merchant
  */
@@ -129,6 +144,7 @@ export async function POST(request: NextRequest) {
         price_from: body.price_from ?? false,
         duration_minutes: body.duration_minutes ?? null,
         highlight: body.highlight ?? false,
+        includes: sanitizeIncludes(body.includes),
         display_order: displayOrder,
         is_active: true,
       })
@@ -200,6 +216,7 @@ export async function PUT(request: NextRequest) {
     if (body.price_from !== undefined) updateData.price_from = body.price_from;
     if ('duration_minutes' in body) updateData.duration_minutes = body.duration_minutes ?? null;
     if (body.highlight !== undefined) updateData.highlight = body.highlight;
+    if (body.includes !== undefined) updateData.includes = sanitizeIncludes(body.includes);
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
     if (body.is_active !== undefined) updateData.is_active = body.is_active;
 

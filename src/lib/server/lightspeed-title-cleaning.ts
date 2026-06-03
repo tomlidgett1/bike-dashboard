@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
+import { ensureTitlePreservesSizes } from '@/lib/product-title-size-guard'
 
 const MODEL = 'gpt-5.4-mini'
 const DEFAULT_BATCH_SIZE = 2
@@ -121,7 +122,9 @@ async function generateCleanTitle(row: InventoryTitleRow): Promise<string> {
     input: `Search the web for "${searchTerms}" and return the clean ecommerce title for this Lightspeed item:\n\n${context}\n\nReturn ONLY the clean title.`,
   })
 
-  const title = extractOutputText(response)
+  const title = ensureTitlePreservesSizes(extractOutputText(response), {
+    rawTitle,
+  })
   if (!title) throw new Error('No title generated')
   return title
 }

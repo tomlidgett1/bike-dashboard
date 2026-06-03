@@ -296,6 +296,10 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     productData.uber_delivery_enabled === true &&
     productData.store_account_type === "bicycle_store" &&
     productData.store_bicycle_store === true;
+  const conditionBadge =
+    productData.listing_type === 'private_listing' && productData.condition_rating
+      ? productData.condition_rating
+      : null;
 
   return (
     <Link
@@ -387,15 +391,6 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             <BuyNowOverlayButton product={productData} />
           </div>
 
-          {/* Condition Badge - Only for private listings with condition */}
-          {productData.listing_type === 'private_listing' && productData.condition_rating && (
-            <div className="absolute top-2 left-2 z-10">
-              <span className="px-1.5 py-0.5 bg-white/90 rounded-md text-[10px] font-medium text-gray-700 shadow-sm">
-                {productData.condition_rating}
-              </span>
-            </div>
-          )}
-
           {/* Bottom-left badges: Online Only + Sale stacked */}
           {(productData.listing_source === 'online_catalog' || live.onSale) && (
             <div className="absolute bottom-2 left-2 z-10 pointer-events-none flex flex-col gap-1 items-start">
@@ -431,12 +426,13 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         </div>
 
         {/* Product Info - Improved text layout */}
-        <div
-          className={cn(
-            isList && "flex flex-1 flex-col justify-center min-w-0 py-0",
-            !isList && (featuredMobile ? "px-0.5 pt-1 mb-3" : "px-0.5 mb-2")
-          )}
-        >
+	        <div
+	          className={cn(
+	            isList && "flex flex-1 flex-col justify-center min-w-0 py-0",
+	            !isList && (featuredMobile ? "px-0.5 pt-1 mb-3" : "px-0.5 mb-2"),
+	            !isList && hideStoreMeta && (featuredMobile ? "h-11 overflow-hidden" : "h-9 overflow-hidden mb-0.5")
+	          )}
+	        >
           {/* Product Title - Enhanced typography */}
           <h3
             className={cn(
@@ -462,29 +458,40 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
               isList && "text-sm",
               !isList && (featuredMobile ? "text-sm" : "text-xs")
             );
+            const priceConditionBadge = conditionBadge ? (
+              <span className="inline-flex items-center rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-gray-700">
+                {conditionBadge}
+              </span>
+            ) : null;
+
             if (live.onSale) {
               return (
-                <div className="flex items-center gap-1.5 flex-wrap mb-0">
-                  <p className={cn(priceSizeClass, "text-red-600 mb-0")}>
-                    {formatPriceAUDFull(live.price)}
-                  </p>
-                  <p className={cn(priceSizeClass, "text-gray-400 font-normal line-through mb-0")}>
-                    {formatPriceAUDFull(live.originalPrice as number)}
-                  </p>
-                </div>
+	                <div className={cn("flex items-center gap-1.5 mb-0", hideStoreMeta ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
+	                  <p className={cn(priceSizeClass, "text-red-600 mb-0")}>
+	                    {formatPriceAUDFull(live.price)}
+	                  </p>
+	                  {priceConditionBadge}
+	                  <p className={cn(priceSizeClass, "text-gray-400 font-normal line-through mb-0", hideStoreMeta && "truncate")}>
+	                    {formatPriceAUDFull(live.originalPrice as number)}
+	                  </p>
+	                </div>
               );
             }
             return (
-              <p className={cn(priceSizeClass, "text-gray-900 mb-0")}>
-                {formatPriceAUD(live.price)}
-              </p>
+	              <div className={cn("flex items-center gap-1.5 mb-0", hideStoreMeta ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
+	                <p className={cn(priceSizeClass, "text-gray-900 mb-0")}>
+	                  {formatPriceAUD(live.price)}
+	                </p>
+                {priceConditionBadge}
+              </div>
             );
           })()}
 
           {/* Seller info - Better organized layout */}
+          {!hideStoreMeta && (
           <div className={cn("flex items-center gap-0.5 flex-wrap", isList ? "mt-1" : "mt-0.5")}>
             {/* Store badge for store inventory items (not online_catalog) */}
-            {!hideStoreMeta && productData.listing_type === 'store_inventory' && productData.listing_source !== 'online_catalog' && (
+            {productData.listing_type === 'store_inventory' && productData.listing_source !== 'online_catalog' && (
               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">
                 <Store className="h-2.5 w-2.5" />
                 Store
@@ -518,7 +525,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </div>
 
             {/* Secondary info - Time */}
-            {!hideStoreMeta && relativeTime && (
+            {relativeTime && (
               <div className="flex items-center gap-0.5 text-xs">
                 <span className="text-emerald-600 font-medium whitespace-nowrap">
                   {relativeTime}
@@ -526,6 +533,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
     </Link>
@@ -542,6 +550,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
          prevProps.product.discount_ends_at === nextProps.product.discount_ends_at &&
          prevProps.product.qoh === nextProps.product.qoh &&
          prevProps.product.listing_type === nextProps.product.listing_type &&
+         prevProps.product.condition_rating === nextProps.product.condition_rating &&
          prevProps.product.display_name === nextProps.product.display_name &&
          prevProps.product.store_name === nextProps.product.store_name &&
          prevProps.product.store_account_type === nextProps.product.store_account_type &&

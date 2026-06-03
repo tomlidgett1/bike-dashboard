@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCw, FileText, ChevronDown, DollarSign, Package, AlertCircle, Shirt, Wrench } from "lucide-react";
+import { RefreshCw, FileText, ChevronDown, DollarSign, Package, AlertCircle, Shirt, Wrench, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +13,7 @@ import { ConfidenceBadge } from "./confidence-badge";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { CONDITION_RATINGS } from "@/lib/types/listing";
+import { rotateCloudinaryUrlClockwise } from "@/lib/utils/cloudinary-rotation";
 
 // ============================================================
 // AI Results Review Screen
@@ -21,7 +22,7 @@ import { CONDITION_RATINGS } from "@/lib/types/listing";
 interface AIResultsReviewProps {
   analysis: ListingAnalysisResult;
   photos: string[];
-  onContinue: (editedData: any, primaryImageIndex: number) => void;
+  onContinue: (editedData: any, primaryImageIndex: number, photos: string[]) => void;
   onReanalyze: () => void;
   onSwitchToManual: () => void;
 }
@@ -34,6 +35,7 @@ export function AIResultsReview({
   onSwitchToManual,
 }: AIResultsReviewProps) {
   const [editedData, setEditedData] = React.useState(analysis);
+  const [reviewPhotos, setReviewPhotos] = React.useState(photos);
   const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
   const [showDetails, setShowDetails] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
@@ -44,6 +46,11 @@ export function AIResultsReview({
     console.log('📝 [AI RESULTS REVIEW] Description:', analysis?.description);
     console.log('📝 [AI RESULTS REVIEW] Seller notes:', analysis?.seller_notes);
   }, [analysis]);
+
+  React.useEffect(() => {
+    setReviewPhotos(photos);
+    setPrimaryImageIndex(0);
+  }, [photos]);
 
   // Detect if on mobile
   React.useEffect(() => {
@@ -86,6 +93,14 @@ export function AIResultsReview({
     return confidence?.[field] || editedData.overall_confidence || 80;
   };
 
+  const rotatePhoto = (indexToRotate: number) => {
+    setReviewPhotos((prev) =>
+      prev.map((url, index) =>
+        index === indexToRotate ? rotateCloudinaryUrlClockwise(url) || url : url
+      )
+    );
+  };
+
   const isBike = editedData.item_type === 'bike';
   const isPart = editedData.item_type === 'part';
   const isApparel = editedData.item_type === 'apparel';
@@ -103,6 +118,8 @@ export function AIResultsReview({
     editedData.title ||
     `${editedData.model_year || ''} ${editedData.brand || ''} ${editedData.model || ''}`.trim() ||
     'Product';
+  const displayPhotos = reviewPhotos.length > 0 ? reviewPhotos : photos;
+  const activePhoto = displayPhotos[primaryImageIndex] || displayPhotos[0];
 
   // Mobile view - card-style like BulkProductCard
   if (isMobile) {
@@ -110,14 +127,26 @@ export function AIResultsReview({
       <div className="min-h-screen bg-gray-50 pb-32">
         {/* Photo Gallery */}
         <div className="relative aspect-square bg-gray-100">
-          {photos.length > 0 && (
+          {activePhoto && (
             <Image
-              src={photos[primaryImageIndex]}
+              src={activePhoto}
               alt="Product"
               fill
               className="object-contain"
               priority
             />
+          )}
+
+          {activePhoto && (
+            <button
+              type="button"
+              onClick={() => rotatePhoto(primaryImageIndex)}
+              className="absolute bottom-3 left-3 h-10 w-10 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center active:bg-gray-100"
+              aria-label="Rotate photo clockwise"
+              title="Rotate photo"
+            >
+              <RotateCw className="h-5 w-5 text-gray-800" />
+            </button>
           )}
           
           {/* Confidence Warning */}
@@ -142,12 +171,11 @@ export function AIResultsReview({
         </div>
 
         {/* Thumbnail Strip */}
-        {photos.length > 1 && (
+        {displayPhotos.length > 1 && (
           <div className="flex gap-2 p-3 border-b border-gray-200 overflow-x-auto bg-white">
-            {photos.map((url, index) => (
-              <button
-                key={index}
-                onClick={() => setPrimaryImageIndex(index)}
+            {displayPhotos.map((url, index) => (
+              <div
+                key={`${url}-${index}`}
                 className={cn(
                   "relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors",
                   index === primaryImageIndex
@@ -155,13 +183,32 @@ export function AIResultsReview({
                     : "border-gray-200"
                 )}
               >
-                <Image
-                  src={url}
-                  alt={`Photo ${index + 1}`}
-                  fill
-                  className="object-cover"
-                />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setPrimaryImageIndex(index)}
+                  className="absolute inset-0"
+                  aria-label={`Use photo ${index + 1} as cover`}
+                >
+                  <Image
+                    src={url}
+                    alt={`Photo ${index + 1}`}
+                    fill
+                    className="object-cover"
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    rotatePhoto(index);
+                  }}
+                  className="absolute bottom-1 left-1 h-6 w-6 rounded-full bg-white/95 shadow-sm border border-gray-200 flex items-center justify-center"
+                  aria-label={`Rotate photo ${index + 1} clockwise`}
+                  title="Rotate photo"
+                >
+                  <RotateCw className="h-3 w-3 text-gray-800" />
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -475,7 +522,7 @@ export function AIResultsReview({
               <RefreshCw className="h-5 w-5" />
             </Button>
             <Button
-              onClick={() => onContinue(editedData, primaryImageIndex)}
+              onClick={() => onContinue(editedData, primaryImageIndex, displayPhotos)}
               className="flex-1 rounded-xl h-12 bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold"
             >
               Continue to Listing
@@ -506,6 +553,74 @@ export function AIResultsReview({
           {editedData.web_enrichment ? 'Web search completed' : 'Web search not available'}
         </div>
       </div>
+
+      {/* Photos */}
+      {displayPhotos.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-gray-900">Photos</h3>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => rotatePhoto(primaryImageIndex)}
+              className="rounded-md"
+            >
+              <RotateCw className="h-4 w-4 mr-2" />
+              Rotate
+            </Button>
+          </div>
+          <div className="grid grid-cols-[220px_1fr] gap-4">
+            <div className="relative aspect-square rounded-lg bg-gray-100 overflow-hidden border border-gray-200">
+              {activePhoto && (
+                <Image
+                  src={activePhoto}
+                  alt="Selected product photo"
+                  fill
+                  className="object-contain"
+                />
+              )}
+            </div>
+            <div className="flex flex-wrap content-start gap-2">
+              {displayPhotos.map((url, index) => (
+                <div
+                  key={`${url}-${index}`}
+                  className={cn(
+                    "relative h-20 w-20 rounded-lg overflow-hidden border-2",
+                    index === primaryImageIndex ? "border-[#FFC72C]" : "border-gray-200"
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setPrimaryImageIndex(index)}
+                    className="absolute inset-0"
+                    aria-label={`Use photo ${index + 1} as cover`}
+                  >
+                    <Image
+                      src={url}
+                      alt={`Photo ${index + 1}`}
+                      fill
+                      className="object-cover"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      rotatePhoto(index);
+                    }}
+                    className="absolute bottom-1 left-1 h-7 w-7 rounded-full bg-white/95 shadow-sm border border-gray-200 flex items-center justify-center hover:bg-gray-50"
+                    aria-label={`Rotate photo ${index + 1} clockwise`}
+                    title="Rotate photo"
+                  >
+                    <RotateCw className="h-3.5 w-3.5 text-gray-800" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Detected Product */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -698,7 +813,7 @@ export function AIResultsReview({
       {/* Actions */}
       <div className="flex flex-col md:flex-row gap-3">
         <Button
-          onClick={() => onContinue(editedData, primaryImageIndex)}
+          onClick={() => onContinue(editedData, primaryImageIndex, displayPhotos)}
           className="flex-1 bg-gray-900 hover:bg-gray-800 text-white rounded-md h-11"
         >
           Continue to Listing

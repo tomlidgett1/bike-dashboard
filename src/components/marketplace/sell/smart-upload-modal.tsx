@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, X, CheckCircle2, Monitor, Smartphone, Camera, ImageIcon, Plus, Wand2, ChevronLeft } from "lucide-react";
+import { Upload, X, Monitor, Smartphone, Camera, ImageIcon, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,8 +15,6 @@ import {
   SheetContent,
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { QrUploadSection } from "./qr-upload-section";
 import { useUpload } from "@/components/providers/upload-provider";
@@ -26,12 +24,11 @@ import { useUpload } from "@/components/providers/upload-provider";
 // ============================================================
 // Features:
 // - Photo selection with drag & drop
-// - AI background removal option for hero images
 // - Delegates processing to UploadProvider for background execution
 // - Closes immediately after starting upload
 // ============================================================
 
-type FlowStage = "upload" | "enhance-options";
+type FlowStage = "upload";
 type UploadTab = "computer" | "phone";
 
 interface SmartUploadModalProps {
@@ -45,7 +42,6 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   const [activeTab, setActiveTab] = React.useState<UploadTab>("computer");
   const [photos, setPhotos] = React.useState<{ id: string; file: File; preview: string }[]>([]);
   const [isMobile, setIsMobile] = React.useState(false);
-  const [removeBackground, setRemoveBackground] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
   
@@ -56,7 +52,7 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   }, [photos]);
 
   // Get upload context
-  const { startUpload, isUploading } = useUpload();
+  const { startUpload } = useUpload();
 
   // Detect if on mobile
   React.useEffect(() => {
@@ -85,7 +81,6 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
       setActiveTab("computer");
       setPhotos([]);
       photosRef.current = [];
-      setRemoveBackground(false);
     }
   }, [isOpen]);
 
@@ -150,16 +145,10 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
     });
   };
 
-  // Move to enhance options stage
+  // Start upload after photo selection
   const handleProceedToOptions = () => {
     if (photos.length === 0) return;
-    setStage("enhance-options");
-  };
-
-  // Handle going back from enhance options
-  const handleBackToUpload = () => {
-    setStage("upload");
-    setRemoveBackground(false);
+    handleStartUpload();
   };
 
   // Start the upload process and close modal immediately
@@ -169,10 +158,9 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
 
     console.log('🚀 [SMART UPLOAD] Starting background upload');
     console.log('🖼️ [SMART UPLOAD] Photos:', currentPhotos.length);
-    console.log('✨ [SMART UPLOAD] Remove background:', removeBackground);
 
     // Start upload in background via context
-    startUpload(currentPhotos, removeBackground, onComplete);
+    startUpload(currentPhotos, onComplete);
 
     // Close modal immediately
     onClose();
@@ -182,7 +170,6 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
   const handleQrPhotosReady = async (images: { id: string; url: string; uploadedAt: string }[]) => {
     if (images.length === 0) return;
     // For QR uploads, we need to handle differently since photos are already uploaded
-    // TODO: Handle QR upload flow with background processing
     console.log('📱 [SMART UPLOAD] QR photos received:', images.length);
   };
 
@@ -353,115 +340,6 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
             </div>
           )}
 
-          {/* Enhance Options Stage - Mobile */}
-          {stage === "enhance-options" && (
-            <div className="flex flex-col flex-1 overflow-hidden">
-              {/* Header with back button */}
-              <div className="px-5 pb-4 flex-shrink-0">
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={handleBackToUpload}
-                    className="p-1.5 -ml-1.5 rounded-md hover:bg-gray-100 active:bg-gray-200 transition-colors"
-                  >
-                    <ChevronLeft className="h-5 w-5 text-gray-600" />
-                  </button>
-                  <h2 className="text-lg font-semibold text-gray-900">Enhance Cover</h2>
-                </div>
-              </div>
-              
-              {/* Content */}
-              <div className="flex-1 overflow-y-auto px-4 pb-4">
-                {/* Cover Preview with toggle overlay */}
-                <div className="relative max-w-[300px] mx-auto">
-                  <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-100">
-                    <img
-                      src={photos[0]?.preview}
-                      alt="Cover photo"
-                      className="w-full h-full object-cover"
-                    />
-                    {/* Subtle gradient overlay when enhancement is on */}
-                    <div 
-                      className={cn(
-                        "absolute inset-0 transition-opacity duration-300",
-                        removeBackground 
-                          ? "bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-100" 
-                          : "opacity-0"
-                      )} 
-                    />
-                    <div className="absolute bottom-3 left-3 bg-[#FFC72C] px-2.5 py-1 rounded-md text-xs text-gray-900 font-bold">
-                      COVER
-                    </div>
-                  </div>
-                  
-                  {/* Enhancement toggle - positioned below image */}
-                  <button
-                    onClick={() => setRemoveBackground(!removeBackground)}
-                    className={cn(
-                      "mt-4 w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all duration-200",
-                      removeBackground 
-                        ? "border-gray-900 bg-gray-900" 
-                        : "border-gray-200 bg-white hover:border-gray-300"
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={cn(
-                        "h-10 w-10 rounded-lg flex items-center justify-center transition-colors duration-200",
-                        removeBackground ? "bg-white/10" : "bg-gray-100"
-                      )}>
-                        <Wand2 className={cn(
-                          "h-5 w-5 transition-colors duration-200",
-                          removeBackground ? "text-white" : "text-gray-600"
-                        )} />
-                      </div>
-                      <div className="text-left">
-                        <p className={cn(
-                          "text-sm font-semibold transition-colors duration-200",
-                          removeBackground ? "text-white" : "text-gray-900"
-                        )}>
-                          Remove Background
-                        </p>
-                        <p className={cn(
-                          "text-xs transition-colors duration-200",
-                          removeBackground ? "text-gray-300" : "text-gray-500"
-                        )}>
-                          Studio-quality white backdrop
-                        </p>
-                      </div>
-                    </div>
-                    <div className={cn(
-                      "h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all duration-200",
-                      removeBackground 
-                        ? "border-white bg-white" 
-                        : "border-gray-300 bg-white"
-                    )}>
-                      {removeBackground && (
-                        <CheckCircle2 className="h-5 w-5 text-gray-900" />
-                      )}
-                    </div>
-                  </button>
-                </div>
-
-                {/* Additional photos count */}
-                {photos.length > 1 && (
-                  <p className="text-center text-xs text-gray-400 mt-5">
-                    +{photos.length - 1} more photo{photos.length > 2 ? 's' : ''} will be uploaded
-                  </p>
-                )}
-              </div>
-
-              {/* Bottom Actions */}
-              <div className="px-4 pb-8 pt-3 border-t border-gray-100 flex-shrink-0 bg-white">
-                <Button
-                  onClick={handleStartUpload}
-                  disabled={isUploading}
-                  className="w-full h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
-                >
-                  {removeBackground ? 'Enhance & Continue' : 'Continue'}
-                </Button>
-              </div>
-            </div>
-          )}
-          
           {/* Safe area padding for iOS */}
           <div className="h-safe-area-inset-bottom flex-shrink-0" />
         </SheetContent>
@@ -591,75 +469,6 @@ export function SmartUploadModal({ isOpen, onClose, onComplete }: SmartUploadMod
             </Tabs>
           )}
 
-          {/* Enhance Options Stage - Desktop */}
-          {stage === "enhance-options" && (
-            <div className="space-y-4">
-              {/* Back button and header */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleBackToUpload}
-                  className="p-1 rounded-md hover:bg-muted transition-colors"
-                >
-                  <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-                </button>
-                <span className="text-sm font-medium text-foreground">Enhance Cover</span>
-              </div>
-
-              {/* Cover Preview with Enhancement Toggle */}
-              <div className="flex gap-4">
-                {/* Cover Preview */}
-                <div className="relative w-28 h-28 rounded-lg overflow-hidden bg-muted flex-shrink-0">
-                  <img
-                    src={photos[0]?.preview}
-                    alt="Cover photo"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute bottom-1 left-1 bg-[#FFC72C] px-1.5 py-0.5 rounded text-[9px] text-gray-900 font-bold">
-                    COVER
-                  </div>
-                </div>
-
-                {/* Enhancement Toggle */}
-                <div className="flex-1 flex flex-col justify-center">
-                  <Label
-                    htmlFor="remove-background"
-                    className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
-                        <Wand2 className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-medium text-foreground">Remove Background</p>
-                        <p className="text-xs text-muted-foreground">Studio-quality white backdrop</p>
-                      </div>
-                    </div>
-                    <Switch
-                      id="remove-background"
-                      checked={removeBackground}
-                      onCheckedChange={setRemoveBackground}
-                    />
-                  </Label>
-
-                  {photos.length > 1 && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      +{photos.length - 1} more photo{photos.length > 2 ? 's' : ''} will be uploaded
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-1 justify-end">
-                <Button type="button" variant="ghost" size="sm" onClick={handleBackToUpload}>
-                  Back
-                </Button>
-                <Button onClick={handleStartUpload} disabled={isUploading} size="sm">
-                  {removeBackground ? 'Enhance & Upload' : 'Upload'}
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       </DialogContent>
     </Dialog>

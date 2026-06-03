@@ -114,6 +114,7 @@ export function resolveHomepageConfig(
 
   // ── Hero ──────────────────────────────────────────────────────────────
   const rawHero = (r.hero ?? {}) as Partial<StoreHomepageConfig['hero']>;
+  const heroImageUrls = sanitizeHeroImages(rawHero.image_urls, rawHero.image_url ?? store.cover_image_url ?? null);
   const hero: StoreHomepageConfig['hero'] = {
     variant: rawHero.variant ?? 'spotlight',
     eyebrow: rawHero.eyebrow ?? (store.store_type || 'Your local bike shop'),
@@ -121,7 +122,8 @@ export function resolveHomepageConfig(
     subheadline:
       rawHero.subheadline ??
       `Bikes, gear and expert servicing${location ? ` in ${location}` : ' for every kind of rider'}.`,
-    image_url: rawHero.image_url ?? store.cover_image_url ?? null,
+    image_url: heroImageUrls[0] ?? null,
+    image_urls: heroImageUrls,
     overlay: typeof rawHero.overlay === 'number' ? clamp(rawHero.overlay, 0, 80) : 40,
     align: rawHero.align ?? 'left',
     primary_cta: rawHero.primary_cta ?? { label: 'Shop the range', href: 'products' },
@@ -254,6 +256,25 @@ function sanitizeSectionOrder(raw: unknown): HomeSectionKey[] {
   return out;
 }
 
+function sanitizeHeroImages(raw: unknown, fallback: string | null): string[] {
+  const urls = Array.isArray(raw) ? raw : [];
+  const out: string[] = [];
+
+  for (const value of urls) {
+    if (typeof value !== 'string') continue;
+    const url = value.trim();
+    if (url && !out.includes(url)) out.push(url);
+    if (out.length === 3) break;
+  }
+
+  if (out.length === 0 && fallback) {
+    const url = fallback.trim();
+    if (url) out.push(url);
+  }
+
+  return out;
+}
+
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
@@ -274,6 +295,7 @@ export function blankHomepageConfig(): StoreHomepageConfig {
       headline: '',
       subheadline: '',
       image_url: null,
+      image_urls: [],
       overlay: 40,
       align: 'left',
       primary_cta: { label: 'Shop the range', href: 'products' },

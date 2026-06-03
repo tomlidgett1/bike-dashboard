@@ -11,7 +11,6 @@ import { BulkReviewStep } from "./bulk-review-step";
 import { Loader2, CheckCircle, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { applyImageRotations } from "@/lib/utils/cloudinary-rotation";
 
 // ============================================================
 // Bulk Upload Flow
@@ -127,46 +126,6 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Handle background removal for a product's images
-  const handleRemoveBackground = async (imageUrls: string[]): Promise<string[]> => {
-    const { createClient } = await import('@/lib/supabase/client');
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (!session) {
-      throw new Error('You must be logged in');
-    }
-
-    // Only enhance the first (cover) image
-    const coverImageUrl = imageUrls[0];
-    
-    const enhanceResponse = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/enhance-product-image`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          imageUrl: coverImageUrl,
-          listingId: `bulk-${Date.now()}`,
-        }),
-      }
-    );
-
-    if (!enhanceResponse.ok) {
-      const errorData = await enhanceResponse.json();
-      throw new Error(errorData.error || 'Background removal failed');
-    }
-
-    const enhanceResult = await enhanceResponse.json();
-    const enhancedUrl = enhanceResult.data?.url || enhanceResult.data?.cardUrl;
-    
-    // Return new array with enhanced cover image
-    return [enhancedUrl, ...imageUrls.slice(1)];
-  };
-
   // Upload photos complete
   const handlePhotosUploaded = (uploadedPhotos: UploadedPhoto[]) => {
     console.log('✅ [BULK FLOW] Photos uploaded:', uploadedPhotos.length);
@@ -247,14 +206,11 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
         const apparelDetails = analysis?.apparel_details || {};
         const priceEstimate = analysis?.price_estimate || {};
 
-        const rotatedPhotos = applyImageRotations(
-          group.photoIndexes.map(idx => photos[idx]),
-          analysis?.image_orientation?.rotations
-        );
+        const groupPhotos = group.photoIndexes.map(idx => photos[idx]);
 
         return {
           groupId: group.id,
-          imageUrls: rotatedPhotos.map(photo => photo.url),
+          imageUrls: groupPhotos.map(photo => photo.url),
           suggestedName: generatedTitle,
           aiData: analysis,
           formData: {
@@ -322,6 +278,14 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
     setProducts(prev => prev.map(p => 
       p.groupId === groupId 
         ? { ...p, formData: data, isValid: validateProduct(data) }
+        : p
+    ));
+  };
+
+  const handleProductImagesUpdate = (groupId: string, imageUrls: string[]) => {
+    setProducts(prev => prev.map(p =>
+      p.groupId === groupId
+        ? { ...p, imageUrls }
         : p
     ));
   };
@@ -502,7 +466,7 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
             suggestedName={product.suggestedName}
             aiData={product.aiData}
             onChange={onChange}
-            onRemoveBackground={handleRemoveBackground}
+            onImagesChange={(imageUrls) => handleProductImagesUpdate(product.groupId, imageUrls)}
           />
         )}
       />

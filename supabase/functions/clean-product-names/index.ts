@@ -28,6 +28,23 @@ interface CleaningResult {
   error?: string;
 }
 
+interface ProductUpdateData {
+  display_name: string;
+  cleaned: boolean;
+  updated_at: string;
+  marketplace_category?: string;
+  marketplace_subcategory?: string;
+  marketplace_level_3_category?: string | null;
+}
+
+interface CleanedProductName {
+  id: string;
+  displayName?: string;
+  category?: string | null;
+  subcategory?: string | null;
+  level3?: string | null;
+}
+
 // Category taxonomy for AI classification
 const CATEGORY_TAXONOMY = [
   { level1: "Bicycles", level2: "Road", level3: null },
@@ -239,7 +256,7 @@ Deno.serve(async (req) => {
           const batchResults: CleaningResult[] = []
           for (const result of cleanedBatch) {
             if (result.success) {
-              const updateData: any = {
+              const updateData: ProductUpdateData = {
                 display_name: result.cleanedName,
                 cleaned: true,
                 updated_at: new Date().toISOString(),
@@ -348,9 +365,11 @@ NAMING RULES:
 3. Fix abbreviations (e.g., "MTB" → "Mountain Bike", "RD" → "Rear Derailleur")
 4. Remove excessive punctuation
 5. Keep brand names, model numbers, and key specifications
-6. Make it customer-friendly but accurate
-7. Keep it concise (under 80 characters if possible)
-8. Preserve Australian spelling (e.g., "colour" not "color")
+6. CRITICAL SIZE RULE: Keep every product size or variant size from the input name, category, manufacturer context, or official product naming. This includes dimensions, fit, capacity, speed, tooth count, width, length, diameter, wheel size, frame size, clothing size, shoe size, volume, and similar sizing.
+7. Never drop size details such as 700x25c, 29x2.4, 27.5x2.6, 160mm, 172.5mm, 31.8mm, 11-34T, 12-speed, 42cm, 56cm, S, M, L, XL, 500ml, 1-1/8", EU 43, or similar sizing.
+8. Make it customer-friendly but accurate
+9. Keep it concise, but preserving size is more important than length
+10. Preserve Australian spelling (e.g., "colour" not "color")
 
 CATEGORISATION:
 Assign each product to the BEST matching category from this taxonomy (level1 > level2 > level3):
@@ -451,19 +470,25 @@ CRITICAL: Return ONLY the JSON object, no other text.`
     console.log(`✅ [GPT-4o-mini] Received response (${data.usage?.total_tokens || '?'} tokens)`)
 
     const content = data.choices[0].message.content
-    const parsed = JSON.parse(content)
+    const parsed = JSON.parse(content) as { cleaned?: CleanedProductName[] }
 
     // Map results back to products
     const results: CleaningResult[] = []
     
     for (const product of products) {
-      const cleaned = parsed.cleaned?.find((c: any) => c.id === product.id)
+      const cleaned = parsed.cleaned?.find((candidate) => candidate.id === product.id)
       
       if (cleaned && cleaned.displayName) {
+        const cleanedName = ensureNamePreservesSizes(
+          cleaned.displayName,
+          product.description,
+          product.category_name,
+        )
+
         results.push({
           productId: product.id,
           originalName: product.description,
-          cleanedName: cleaned.displayName,
+          cleanedName,
           category: cleaned.category || undefined,
           subcategory: cleaned.subcategory || undefined,
           level3Category: cleaned.level3 !== undefined ? cleaned.level3 : undefined,
@@ -474,7 +499,11 @@ CRITICAL: Return ONLY the JSON object, no other text.`
         results.push({
           productId: product.id,
           originalName: product.description,
-          cleanedName: basicCleanProductName(product.description),
+          cleanedName: ensureNamePreservesSizes(
+            basicCleanProductName(product.description),
+            product.description,
+            product.category_name,
+          ),
           success: true,
           error: 'Used fallback cleaning',
         })
@@ -489,7 +518,11 @@ CRITICAL: Return ONLY the JSON object, no other text.`
     return products.map(product => ({
       productId: product.id,
       originalName: product.description,
-      cleanedName: basicCleanProductName(product.description),
+      cleanedName: ensureNamePreservesSizes(
+        basicCleanProductName(product.description),
+        product.description,
+        product.category_name,
+      ),
       success: true,
       error: 'Used fallback cleaning due to API error',
     }))
@@ -516,3 +549,112 @@ function basicCleanProductName(name: string): string {
     .substring(0, 120) // Max 120 chars
 }
 
+function normaliseSizeValue(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[×]/g, 'x')
+    .replace(/[–—]/g, '-')
+    .replace(/\s+/g, '')
+    .replace(/\binch(?:es)?\b/g, '"')
+    .replace(/\bspd\b/g, 'speed')
+    .replace(/[^a-z0-9/."-]/g, '')
+}
+
+function cleanSizeToken(token: string): string {
+  return token
+    .trim()
+    .replace(/[×]/g, 'x')
+    .replace(/[–—]/g, '-')
+    .replace(/\s*([x/-])\s*/g, '$1')
+    .replace(/\s+/g, ' ')
+    .replace(/[.,;:]+$/g, '')
+}
+
+function addSizeToken(tokens: string[], token: string) {
+  const cleaned = cleanSizeToken(token)
+  if (!cleaned) return
+  const key = normaliseSizeValue(cleaned)
+  if (!key || tokens.some((existing) => normaliseSizeValue(existing) === key)) return
+  if (
+    /^(?:XXS|XS|S|M|L|XL|XXL|XXXL)$/i.test(cleaned) &&
+    tokens.some((existing) => normaliseSizeValue(existing) === normaliseSizeValue(`size ${cleaned}`))
+  ) {
+    return
+  }
+  tokens.push(cleaned)
+}
+
+function looksLikeApparelOrWearable(text: string, category?: string | null): boolean {
+  return /\b(apparel|clothing|jersey|shorts?|bibs?|jacket|gilet|gloves?|shoes?|helmet|pads?|protection|wear)\b/i.test(
+    `${category ?? ''} ${text}`,
+  )
+}
+
+function looksLikeBikeOrFrame(text: string, category?: string | null): boolean {
+  return /\b(bicycles?|bikes?|e-bikes?|frames?(?:et)?|road|gravel|mountain|mtb|hybrid|commuter|bmx|kids?)\b/i.test(
+    `${category ?? ''} ${text}`,
+  )
+}
+
+function extractSizeTokens(rawName: string, category?: string | null): string[] {
+  const tokens: string[] = []
+  const text = rawName.replace(/[“”]/g, '"').replace(/[–—]/g, '-')
+  const patterns = [
+    /\b\d+(?:\.\d+)?\s*[x×]\s*\d+(?:\.\d+)?\s*(?:c|mm|cm|in|inch(?:es)?|")?\b/gi,
+    /\b\d+(?:-\d+\/\d+|\/\d+)?\s*(?:"|in\b|inch(?:es)?\b)/gi,
+    /\b\d+(?:\.\d+)?\s*(?:mm|cm|ml|oz|kg|g)\b/gi,
+    /\b\d+(?:\.\d+)?\s*l\b/gi,
+    /\b\d{2,3}\s*c\b/gi,
+    /\b\d{1,2}\s*(?:-| )?\s*(?:speed|spd)\b/gi,
+    /\b\d{1,3}(?:[-/]\d{1,3})+\s*t\b/gi,
+    /\b(?:EU|US|UK)\s*\d+(?:\.\d+)?\b/gi,
+    /\bsize\s*(?:XXS|XS|S|M|L|XL|XXL|XXXL|EU\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?)\b/gi,
+  ]
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      addSizeToken(tokens, match[0])
+    }
+  }
+
+  if (looksLikeApparelOrWearable(text, category)) {
+    for (const match of text.matchAll(/\b(?:XXS|XS|S|M|L|XL|XXL|XXXL)\b/gi)) {
+      addSizeToken(tokens, match[0].toUpperCase())
+    }
+  }
+
+  if (looksLikeBikeOrFrame(text, category)) {
+    for (const match of text.matchAll(/\b(?:4[4-9]|5[0-9]|6[0-4])\b/g)) {
+      addSizeToken(tokens, match[0])
+    }
+  }
+
+  return tokens
+}
+
+function ensureNamePreservesSizes(name: string, rawName: string, category?: string | null): string {
+  const cleanedName = name.trim().replace(/^["']|["']$/g, '').replace(/\.$/, '')
+  if (!cleanedName) return cleanedName
+
+  const nameKey = normaliseSizeValue(cleanedName)
+  const missing = extractSizeTokens(rawName, category).filter((token) => {
+    const tokenKey = normaliseSizeValue(token)
+    if (!tokenKey) return false
+
+    if (/^(?:XXS|XS|S|M|L|XL|XXL|XXXL)$/i.test(token)) {
+      return !new RegExp(`\\b${token}\\b`, 'i').test(cleanedName)
+    }
+
+    if (nameKey.includes(tokenKey)) return false
+
+    const withoutSizePrefix = token.replace(/^size\s+/i, '')
+    if (withoutSizePrefix !== token && nameKey.includes(normaliseSizeValue(withoutSizePrefix))) {
+      return false
+    }
+
+    return true
+  })
+
+  if (!missing.length) return cleanedName
+  return `${cleanedName} ${missing.join(' ')}`
+}

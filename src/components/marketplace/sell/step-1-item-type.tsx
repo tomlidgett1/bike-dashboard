@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt, Star, Truck, Sparkles } from "lucide-react";
+import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt, Star, Truck, Sparkles, RotateCw } from "lucide-react";
 import { ItemType, ListingImage, ConditionRating } from "@/lib/types/listing";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { rotateImageUrlsClockwise } from "@/lib/utils/cloudinary-rotation";
 import Image from "next/image";
 import {
   Select,
@@ -414,8 +415,29 @@ export function Step1ItemType({
       setQuickData({
         ...quickData,
         images: updatedImages,
+        primaryImageUrl: updatedImages[index]?.cardUrl || updatedImages[index]?.url,
       });
     }
+  };
+
+  const handleRotatePhoto = (indexToRotate: number) => {
+    const images = quickData.images || [];
+    if (!images[indexToRotate]) return;
+
+    const updatedImages = images.map((img, index) =>
+      index === indexToRotate ? rotateImageUrlsClockwise(img) : img
+    );
+    const primaryImage =
+      updatedImages.find((img) => img.isPrimary) ||
+      updatedImages.find((img) => img.order === 0) ||
+      updatedImages[primaryImageIndex] ||
+      updatedImages[0];
+
+    setQuickData({
+      ...quickData,
+      images: updatedImages,
+      primaryImageUrl: primaryImage?.cardUrl || primaryImage?.url,
+    });
   };
   
   // Track if we've already initialized from AI data to prevent overwriting user edits
@@ -854,6 +876,18 @@ export function Step1ItemType({
               <span className="text-xs font-medium text-white">{quickData.images.length} photos</span>
             </div>
           )}
+
+          {quickData.images && quickData.images.length > 0 && (
+            <button
+              type="button"
+              onClick={() => handleRotatePhoto(primaryImageIndex)}
+              className="absolute bottom-3 left-3 h-10 w-10 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center active:bg-gray-100"
+              aria-label="Rotate cover photo clockwise"
+              title="Rotate photo"
+            >
+              <RotateCw className="h-5 w-5 text-gray-800" />
+            </button>
+          )}
           
           {/* Cover photo indicator */}
           {quickData.images && quickData.images.length > 0 && (
@@ -868,9 +902,8 @@ export function Step1ItemType({
         {quickData.images && quickData.images.length > 1 && (
           <div className="flex gap-2 p-3 border-b border-gray-200 overflow-x-auto bg-white">
             {quickData.images.map((image, index) => (
-              <button
+              <div
                 key={image.id || index}
-                onClick={() => handleSetPrimaryImage(index)}
                 className={cn(
                   "relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors",
                   index === primaryImageIndex
@@ -878,19 +911,38 @@ export function Step1ItemType({
                     : "border-gray-200"
                 )}
               >
-                <Image
-                  src={image.url}
-                  alt={`Photo ${index + 1}`}
-                  fill
-                  className="object-cover"
-                />
+                <button
+                  type="button"
+                  onClick={() => handleSetPrimaryImage(index)}
+                  className="absolute inset-0"
+                  aria-label={`Use photo ${index + 1} as cover`}
+                >
+                  <Image
+                    src={image.url}
+                    alt={`Photo ${index + 1}`}
+                    fill
+                    className="object-cover"
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRotatePhoto(index);
+                  }}
+                  className="absolute top-1 left-1 h-6 w-6 rounded-full bg-white/95 shadow-sm border border-gray-200 flex items-center justify-center"
+                  aria-label={`Rotate photo ${index + 1} clockwise`}
+                  title="Rotate photo"
+                >
+                  <RotateCw className="h-3 w-3 text-gray-800" />
+                </button>
                 {/* Cover photo indicator */}
                 {index === primaryImageIndex && (
                   <div className="absolute bottom-0 left-0 right-0 bg-[#FFC72C] py-0.5">
                     <span className="text-[8px] font-semibold text-gray-900 block text-center">COVER</span>
                   </div>
                 )}
-              </button>
+              </div>
             ))}
             {/* Add more button */}
             {quickData.images.length < 10 && (
@@ -1804,8 +1856,19 @@ export function Step1ItemType({
                         <span className="text-xs font-semibold text-gray-900">Cover Photo</span>
                       </div>
                       <button
+                        type="button"
+                        onClick={() => handleRotatePhoto(primaryImageIndex)}
+                        className="absolute top-2 right-11 p-1.5 bg-black/70 hover:bg-black/80 rounded-full shadow-sm transition-colors"
+                        aria-label="Rotate cover photo clockwise"
+                        title="Rotate photo"
+                      >
+                        <RotateCw className="h-3.5 w-3.5 text-white" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleRemovePhoto(primaryImageIndex)}
-                        className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-2 right-2 p-1.5 bg-black/70 hover:bg-black/80 rounded-full shadow-sm transition-colors"
+                        aria-label="Remove cover photo"
                       >
                         <X className="h-3.5 w-3.5 text-white" />
                       </button>
@@ -1847,11 +1910,25 @@ export function Step1ItemType({
                             )}
                             {/* Delete button */}
                             <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRotatePhoto(index);
+                              }}
+                              className="absolute top-1 left-1 p-1 bg-black/70 hover:bg-black/80 rounded-full shadow-sm transition-colors"
+                              aria-label={`Rotate photo ${index + 1} clockwise`}
+                              title="Rotate photo"
+                            >
+                              <RotateCw className="h-2.5 w-2.5 text-white" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleRemovePhoto(index);
                               }}
-                              className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-black/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="absolute top-1 right-1 p-1 bg-black/70 hover:bg-black/80 rounded-full shadow-sm transition-colors"
+                              aria-label={`Remove photo ${index + 1}`}
                             >
                               <X className="h-2.5 w-2.5 text-white" />
                             </button>
@@ -2137,4 +2214,3 @@ function ItemTypeCard({
     </motion.button>
   );
 }
-

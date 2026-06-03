@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
+import { ensureTitlePreservesSizes } from '@/lib/product-title-size-guard'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -8,6 +9,16 @@ export const maxDuration = 120
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 // gpt-5.4-mini supports the Responses API with web_search_preview
 const MODEL = 'gpt-5.4-mini'
+
+interface ResponseWithOutput {
+  output?: Array<{
+    type: string
+    content?: Array<{
+      type: string
+      text?: string
+    }>
+  }>
+}
 
 const TITLE_PROMPT = `You are an ecommerce product title specialist for Yellow Jersey, an Australian cycling marketplace.
 
@@ -21,8 +32,10 @@ STEPS (follow in order):
 TITLE RULES (apply after searching):
 - Use the manufacturer's official capitalisation (e.g. Wahoo stylises as "ELEMNT", not "Elemnt")
 - Include the correct model suffix/generation if found (e.g. "v2", "Gen 3", "2024")
+- CRITICAL SIZE RULE: If the raw POS name or official product page includes a size, dimension, fit, capacity, speed, tooth count, width, length, diameter, wheel size, frame size, clothing size, shoe size, volume, or other variant size, the final title MUST include it.
+- Never drop size details such as 700x25c, 29x2.4, 27.5x2.6, 160mm, 172.5mm, 31.8mm, 11-34T, 12-speed, 42cm, 56cm, S, M, L, XL, 500ml, 1-1/8", EU 43, or similar sizing.
 - Remove generic filler words only if the real product name doesn't include them
-- Keep it concise: 3–8 words, never over 10
+- Keep it concise, but preserving size is more important than hitting the word target
 - Australian English spelling
 - Return ONLY the final title — no explanation, no quotes, no trailing punctuation
 
@@ -35,6 +48,17 @@ Examples of correct output:
 
 function send(controller: ReadableStreamDefaultController, encoder: TextEncoder, data: object) {
   controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+}
+
+function extractOutputText(response: ResponseWithOutput): string {
+  let text = ''
+  for (const item of response.output ?? []) {
+    if (item.type !== 'message') continue
+    for (const content of item.content ?? []) {
+      if (content.type === 'output_text' && content.text) text += content.text
+    }
+  }
+  return text
 }
 
 export async function POST(request: NextRequest) {
@@ -105,16 +129,10 @@ export async function POST(request: NextRequest) {
                 input: `Search the web for "${searchTerms}" then return the clean ecommerce title for this product:\n\n${context}\n\nReturn ONLY the title.`,
               })
 
-              let title = ''
-              for (const item of response.output ?? []) {
-                if (item.type === 'message') {
-                  for (const content of (item as any).content ?? []) {
-                    if (content.type === 'output_text') title += content.text
-                  }
-                }
-              }
-
-              title = title.trim().replace(/^["']|["']$/g, '').replace(/\.$/, '')
+              const title = ensureTitlePreservesSizes(extractOutputText(response), {
+                rawTitle: rawName,
+                category: product.marketplace_category,
+              })
 
               if (!title) throw new Error('No title generated')
 

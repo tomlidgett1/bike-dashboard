@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, Image as ImageIcon, GripVertical, CheckCircle2 } from "lucide-react";
+import { Upload, X, Image as ImageIcon, CheckCircle2, RotateCw } from "lucide-react";
 import { PhotosFormData, ListingImage } from "@/lib/types/listing";
-import { SectionHeader, InfoBox } from "./form-elements";
+import { InfoBox } from "./form-elements";
 import { ValidationError, getFieldError } from "@/lib/validation/listing-validation";
 import { cn } from "@/lib/utils";
 import { compressImage, compressedToFile, shouldCompress } from "@/lib/utils/image-compression";
+import { rotateImageUrlsClockwise } from "@/lib/utils/cloudinary-rotation";
 
 // ============================================================
 // Step 7: Photo Upload
@@ -191,6 +192,19 @@ export function Step7Photos({ data, onChange, errors = [], itemType = "bike" }: 
     });
   };
 
+  const rotateImage = (id: string) => {
+    const updatedImages = data.images.map((img) =>
+      img.id === id ? rotateImageUrlsClockwise(img) : img
+    );
+    const primary = updatedImages.find((img) => img.isPrimary) || updatedImages[0];
+
+    onChange({
+      ...data,
+      images: updatedImages,
+      primaryImageUrl: primary?.cardUrl || primary?.url,
+    });
+  };
+
   const photoGuidelines = {
     bike: [
       "Full drive side view (showing chain and gears)",
@@ -353,9 +367,24 @@ export function Step7Photos({ data, onChange, errors = [], itemType = "bike" }: 
                       e.stopPropagation();
                       removeImage(image.id);
                     }}
-                    className="absolute top-2 right-2 w-7 h-7 bg-white rounded-full shadow-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
+                    className="absolute top-2 right-2 w-7 h-7 bg-white rounded-full shadow-md flex items-center justify-center transition-colors hover:bg-red-50"
+                    aria-label="Remove photo"
                   >
                     <X className="h-4 w-4 text-red-600" />
+                  </button>
+
+                  {/* Rotate Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      rotateImage(image.id);
+                    }}
+                    className="absolute bottom-2 left-2 w-8 h-8 bg-white rounded-full shadow-md flex items-center justify-center transition-colors hover:bg-gray-50"
+                    aria-label="Rotate photo clockwise"
+                    title="Rotate photo"
+                  >
+                    <RotateCw className="h-4 w-4 text-gray-700" />
                   </button>
 
                   {/* Order Number */}
@@ -385,4 +414,3 @@ export function Step7Photos({ data, onChange, errors = [], itemType = "bike" }: 
     </div>
   );
 }
-

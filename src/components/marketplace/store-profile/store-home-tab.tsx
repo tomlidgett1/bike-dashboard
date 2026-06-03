@@ -10,7 +10,6 @@ import {
   MapPin,
   Clock,
   Navigation,
-  Sparkles,
   Settings2,
   Store as StoreIcon,
   Wrench,
@@ -26,7 +25,9 @@ import type {
 } from "@/lib/types/store";
 import { resolveHomepageConfig } from "@/lib/marketplace/homepage-config";
 import { getHomepageIcon } from "@/components/marketplace/store-profile/homepage-icons";
+import { ServiceCard } from "@/components/marketplace/store-profile/service-card";
 import { ProductCard } from "@/components/marketplace/product-card";
+import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 
 // ============================================================
 // Store Home Tab — the public landing page for a bicycle store.
@@ -241,6 +242,11 @@ function Hero({
   const shell = useStoreHomeShell();
   const { hero } = config;
   const status = openStatusFor(store.opening_hours);
+  const heroImages = React.useMemo(() => {
+    const urls = Array.isArray(hero.image_urls) ? hero.image_urls : [];
+    const normalized = urls.filter((url): url is string => typeof url === "string" && url.trim().length > 0);
+    return normalized.length > 0 ? normalized.slice(0, 3) : hero.image_url ? [hero.image_url] : [];
+  }, [hero.image_url, hero.image_urls]);
 
   const PrimaryBtn = (
     <button
@@ -275,7 +281,6 @@ function Hero({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           >
-            <HeroEyebrow text={hero.eyebrow} accent={accent} status={config.badges.show_open_status ? status : null} />
             <h1 className="mt-4 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 leading-[1.05]">
               {hero.headline}
             </h1>
@@ -300,9 +305,8 @@ function Hero({
             transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
             className="relative aspect-[4/3] rounded-3xl overflow-hidden bg-gray-100 ring-1 ring-gray-200/70 shadow-xl"
           >
-            {hero.image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={hero.image_url} alt={store.store_name} className="h-full w-full object-cover" />
+            {heroImages.length > 0 ? (
+              <HeroImageRotator images={heroImages} alt={store.store_name} />
             ) : (
               <HeroFallback store={store} accent={accent} />
             )}
@@ -328,9 +332,6 @@ function Hero({
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
             className="mx-auto max-w-3xl"
           >
-            <div className="flex justify-center">
-              <HeroEyebrow text={hero.eyebrow} accent={accent} status={status} center />
-            </div>
             <h1 className="mt-5 text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-gray-900 leading-[1.04]">
               {hero.headline}
             </h1>
@@ -362,9 +363,8 @@ function Hero({
       <div className="relative isolate min-h-[520px] sm:min-h-[600px] flex items-center overflow-hidden">
         {/* Background */}
         <div className="absolute inset-0 -z-10">
-          {hero.image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={hero.image_url} alt="" className="h-full w-full object-cover" />
+          {heroImages.length > 0 ? (
+            <HeroImageRotator images={heroImages} alt="" />
           ) : (
             <HeroFallback store={store} accent={accent} />
           )}
@@ -385,7 +385,6 @@ function Hero({
             transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
             className={cn("max-w-2xl", alignCenter && "mx-auto text-center")}
           >
-            <HeroEyebrow text={hero.eyebrow} accent={accent} status={status} onDark center={alignCenter} />
             <h1 className="mt-4 text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white leading-[1.04] drop-shadow-sm">
               {hero.headline}
             </h1>
@@ -422,46 +421,37 @@ function Hero({
   );
 }
 
-function HeroEyebrow({
-  text,
-  accent,
-  status,
-  onDark,
-  center,
-}: {
-  text: string;
-  accent: string;
-  status: { open: boolean; label: string } | null;
-  onDark?: boolean;
-  center?: boolean;
-}) {
-  if (!text && !status) return null;
+function HeroImageRotator({ images, alt }: { images: string[]; alt: string }) {
+  const [activeIndex, setActiveIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    setActiveIndex(0);
+    if (images.length <= 1) return;
+
+    const timer = window.setInterval(() => {
+      setActiveIndex((current) => (current + 1) % images.length);
+    }, 6000);
+
+    return () => window.clearInterval(timer);
+  }, [images]);
+
   return (
-    <div className={cn("flex items-center gap-2.5 text-sm font-medium", center && "justify-center")}>
-      {text && (
-        <span
+    <>
+      {images.map((src, index) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={src}
+          src={src}
+          alt={index === activeIndex ? alt : ""}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-3 py-1",
-            onDark ? "bg-white/15 text-white backdrop-blur-sm" : "text-gray-700",
+            "absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ease-in-out",
+            index === activeIndex ? "opacity-100" : "opacity-0",
           )}
-          style={!onDark ? { backgroundColor: `${accent}26` } : undefined}
-        >
-          <Sparkles className="h-3.5 w-3.5" style={{ color: onDark ? accent : undefined }} />
-          {text}
-        </span>
-      )}
-      {status && (
-        <span
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs",
-            onDark ? "bg-black/25 text-white backdrop-blur-sm" : status.open ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600",
-          )}
-        >
-          <span className={cn("h-1.5 w-1.5 rounded-full", status.open ? "bg-green-400" : "bg-gray-400")} />
-          {status.label}
-        </span>
-      )}
-    </div>
+          loading={index === 0 ? "eager" : "lazy"}
+          decoding="async"
+        />
+      ))}
+    </>
   );
 }
 
@@ -704,7 +694,7 @@ function StorySection({
   );
 }
 
-// ── Services teaser ────────────────────────────────────────
+// ── Services section — "Clean Checklist" cards ─────────────
 function ServicesTeaser({
   store,
   config,
@@ -718,74 +708,74 @@ function ServicesTeaser({
   accentText: string;
   onNavigate: (href: string) => void;
 }) {
-  const top = [...store.services].sort((a, b) => Number(b.highlight) - Number(a.highlight)).slice(0, 3);
+  const services = React.useMemo(
+    () => [...store.services].sort((a, b) => Number(b.highlight) - Number(a.highlight)),
+    [store.services],
+  );
   const shell = useStoreHomeShell();
+
   return (
     <section className={shell}>
-      <div className="rounded-3xl bg-gray-900 text-white overflow-hidden">
-        <div className="grid lg:grid-cols-[1.1fr_1.4fr] gap-0">
-          {/* Left intro */}
-          <div className="p-8 sm:p-10 lg:p-12 flex flex-col justify-center">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl" style={{ backgroundColor: accent }}>
+      <Reveal>
+        {/* Header */}
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div
+              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl"
+              style={{ backgroundColor: accent }}
+            >
               <Wrench className="h-5 w-5" style={{ color: accentText }} />
             </div>
-            <h2 className="mt-5 text-2xl sm:text-3xl font-bold tracking-tight">{config.services.title}</h2>
-            <p className="mt-2 text-gray-300 leading-relaxed">{config.services.subtitle}</p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => onNavigate("service")}
-                className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-transform hover:-translate-y-0.5 cursor-pointer"
-                style={{ backgroundColor: accent, color: accentText }}
-              >
-                View all services
-                <ArrowRight className="h-4 w-4" />
-              </button>
-              {store.phone && (
-                <button
-                  type="button"
-                  onClick={() => onNavigate("call")}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors cursor-pointer"
-                >
-                  <Phone className="h-4 w-4" />
-                  Call to book
-                </button>
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">
+                {config.services.title}
+              </h2>
+              {config.services.subtitle && (
+                <p className="mt-1 text-gray-500 leading-relaxed">{config.services.subtitle}</p>
               )}
             </div>
           </div>
-          {/* Right service cards */}
-          <div className="bg-white/[0.04] p-6 sm:p-8 lg:p-10 space-y-3">
-            {top.map((svc) => (
-              <button
-                key={svc.id}
-                type="button"
-                onClick={() => onNavigate("service")}
-                className="group flex w-full items-center justify-between gap-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 px-5 py-4 text-left transition-colors cursor-pointer"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-semibold truncate">{svc.name}</h3>
-                    {svc.highlight && (
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ backgroundColor: accent, color: accentText }}>
-                        Popular
-                      </span>
-                    )}
-                  </div>
-                  {svc.description && (
-                    <p className="mt-0.5 text-sm text-gray-400 line-clamp-1">{svc.description}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  {svc.price != null && (
-                    <span className="text-sm font-semibold text-white whitespace-nowrap">
-                      {svc.price_from ? "from " : ""}${svc.price}
-                    </span>
-                  )}
-                  <ChevronRight className="h-4 w-4 text-gray-500 transition-transform group-hover:translate-x-0.5" />
-                </div>
-              </button>
-            ))}
-          </div>
+          {store.phone && (
+            <button
+              type="button"
+              onClick={() => onNavigate("call")}
+              className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-50 cursor-pointer"
+            >
+              <Phone className="h-4 w-4" />
+              Call to book
+            </button>
+          )}
+        </div>
+      </Reveal>
+
+      {/* Desktop / tablet grid */}
+      <div className="hidden sm:grid grid-cols-2 lg:grid-cols-3 gap-4">
+        {services.map((svc) => (
+          <ServiceCard
+            key={svc.id}
+            service={svc}
+            accent={accent}
+            accentText={accentText}
+            onBook={() => onNavigate("service")}
+          />
+        ))}
+      </div>
+
+      {/* Mobile horizontal carousel */}
+      <div className="sm:hidden -mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory px-5">
+        <div className="flex items-stretch gap-3.5" style={{ minWidth: "min-content" }}>
+          {services.map((svc) => (
+            <div key={svc.id} className="w-[82%] max-w-[300px] flex-shrink-0 snap-start">
+              <ServiceCard
+                service={svc}
+                accent={accent}
+                accentText={accentText}
+                onBook={() => onNavigate("service")}
+              />
+            </div>
+          ))}
+          {/* Trailing spacer so the last card can snap clear of the edge */}
+          <div className="w-1 flex-shrink-0" aria-hidden />
         </div>
       </div>
     </section>
@@ -853,6 +843,7 @@ function FeaturedCarouselsSection({
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
+                {cat!.source === "uber" && <UberCarouselLogo className="h-7 px-2.5" />}
                 <h3 className="text-lg font-semibold text-gray-900">{cat!.name}</h3>
               </div>
               <button

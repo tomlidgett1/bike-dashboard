@@ -100,15 +100,19 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
     setError(null);
   };
 
-  const handleContinue = (editedAnalysis: ListingAnalysisResult, primaryImageIndex: number = 0) => {
+  const handleContinue = (
+    editedAnalysis: ListingAnalysisResult,
+    primaryImageIndex: number = 0,
+    reviewedPhotos: string[] = photos
+  ) => {
     console.log('🎯 [SMART UPLOAD] Continue clicked, analysis:', editedAnalysis);
     console.log('🎯 [SMART UPLOAD] Primary image index:', primaryImageIndex);
     console.log('📝 [SMART UPLOAD] editedAnalysis.description:', editedAnalysis.description);
     console.log('📝 [SMART UPLOAD] editedAnalysis.seller_notes:', editedAnalysis.seller_notes);
     console.log('📝 [SMART UPLOAD] editedAnalysis.condition_details:', (editedAnalysis as any).condition_details);
     
-    // Reorder photos so primary is first
-    const reorderedPhotos = [...photos];
+    // Reorder photos so primary is first. Use the reviewed URLs so manual rotations persist.
+    const reorderedPhotos = [...reviewedPhotos];
     if (primaryImageIndex > 0 && primaryImageIndex < reorderedPhotos.length) {
       const [primaryPhoto] = reorderedPhotos.splice(primaryImageIndex, 1);
       reorderedPhotos.unshift(primaryPhoto);

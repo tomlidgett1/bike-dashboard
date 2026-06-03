@@ -77,6 +77,17 @@ export const HERO_NORMALIZE_TRANSFORM = `e_trim:5/c_fit,h_${HERO_FIT_PX},w_${HER
 // with the current c_lpad transform automatically.
 const HERO_COMPOUND_RE =
   /^(e_trim:\d+\/c_fit,h_\d+,w_\d+\/c_l?pad,h_\d+,w_\d+,b_rgb:[0-9a-fA-F]+)\/(.+)/;
+const MANUAL_ROTATION_RE = /^(a_(?:90|180|270))\/(.+)/;
+
+function isCloudinaryTransformSegment(part: string): boolean {
+  return /^(a_|w_|h_|c_|ar_|g_|q_|f_|b_|e_|l_|o_|dpr_|fl_|r_|x_|y_|z_|t_|if_|pg_|so_|sp_|u_|vc_|vs_)/.test(part);
+}
+
+function extractManualRotationTransform(part: string): "a_90" | "a_180" | "a_270" | null {
+  const match = /(?:^|,)a_(90|180|270)(?:,|$)/.exec(part);
+  if (!match) return null;
+  return `a_${match[1]}` as "a_90" | "a_180" | "a_270";
+}
 
 /** @internal Split a compound hero public_id into its transform prefix + raw id. */
 function parseHeroCompoundId(
@@ -85,6 +96,37 @@ function parseHeroCompoundId(
   const m = HERO_COMPOUND_RE.exec(publicId);
   if (!m) return null;
   return { normalizeTransform: m[1], rawId: m[2] };
+}
+
+/** @internal Split a public_id prefixed with a manual display rotation. */
+function parseManualRotationPublicId(
+  publicId: string
+): { rotationTransform: "a_90" | "a_180" | "a_270"; rawId: string } | null {
+  const match = MANUAL_ROTATION_RE.exec(publicId);
+  if (!match) return null;
+  return {
+    rotationTransform: match[1] as "a_90" | "a_180" | "a_270",
+    rawId: match[2],
+  };
+}
+
+function parseTransformPublicId(publicId: string): { preTransforms: string[]; rawId: string } {
+  const preTransforms: string[] = [];
+  let rawId = publicId;
+
+  const rotation = parseManualRotationPublicId(rawId);
+  if (rotation) {
+    preTransforms.push(rotation.rotationTransform);
+    rawId = rotation.rawId;
+  }
+
+  const hero = parseHeroCompoundId(rawId);
+  if (hero) {
+    preTransforms.push(hero.normalizeTransform);
+    rawId = hero.rawId;
+  }
+
+  return { preTransforms, rawId };
 }
 
 /** Returns true if the public_id is a compound hero id (any version). */
@@ -122,6 +164,11 @@ export function toCurrentHeroPublicId(
   imageSource?: string | null
 ): string | null {
   if (!publicId) return null;
+  const rotation = parseManualRotationPublicId(publicId);
+  if (rotation) {
+    const currentRawId = toCurrentHeroPublicId(rotation.rawId, imageSource);
+    return currentRawId ? `${rotation.rotationTransform}/${currentRawId}` : publicId;
+  }
   const heroMatch = HERO_COMPOUND_RE.exec(publicId);
   if (heroMatch) {
     // Any compound PID (any h_N) → re-wrap with current transform
@@ -154,20 +201,31 @@ export function extractCloudinaryPublicId(url: string | null | undefined): strin
     const uploadIndex = parsed.pathname.indexOf("/upload/");
     if (uploadIndex === -1) return null;
 
-    let rest = parsed.pathname.slice(uploadIndex + "/upload/".length);
-    rest = rest.replace(/^v\d+\//, "");
+    const rest = parsed.pathname.slice(uploadIndex + "/upload/".length);
 
     const parts = rest.split("/").filter(Boolean);
-    const publicParts = parts.filter(
-      (part) => !/^(a_|w_|h_|c_|ar_|g_|q_|f_|b_|e_|l_|o_|dpr_|fl_|r_|x_|y_|z_)/.test(part)
-    );
+    const publicParts: string[] = [];
+    let manualRotation: "a_90" | "a_180" | "a_270" | null = null;
+
+    for (const part of parts) {
+      // Cloudinary version segments can appear after delivery transforms:
+      // /upload/a_auto/a_90/v123/public_id.jpg
+      if (publicParts.length === 0 && /^v\d+$/.test(part)) continue;
+
+      const rotation = extractManualRotationTransform(part);
+      if (rotation) manualRotation = rotation;
+
+      if (isCloudinaryTransformSegment(part)) continue;
+      publicParts.push(part);
+    }
 
     if (publicParts.length === 0) return null;
 
     const lastIndex = publicParts.length - 1;
     publicParts[lastIndex] = publicParts[lastIndex].replace(/\.(jpg|jpeg|png|gif|webp|avif)$/i, "");
 
-    return publicParts.join("/");
+    const publicId = publicParts.join("/");
+    return manualRotation ? `${manualRotation}/${publicId}` : publicId;
   } catch {
     return null;
   }
@@ -189,15 +247,10 @@ export function buildCloudinaryImageUrl(
   const cn = resolveCloudName(cloudName);
   if (!publicId || !cn) return null;
 
-  // Hero compound public_id: use the transform stored in the PID so the URL
-  // stays stable. Height normalisation to the CURRENT value happens upstream
-  // (toCurrentHeroPublicId) before the PID reaches this function.
-  const hero = parseHeroCompoundId(publicId);
-  if (hero) {
-    return `https://res.cloudinary.com/${cn}/image/upload/${hero.normalizeTransform}/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${hero.rawId}`;
-  }
+  const parsed = parseTransformPublicId(publicId);
+  const transforms = [...parsed.preTransforms, CLOUDINARY_IMAGE_TRANSFORMS[slot]].join("/");
 
-  return `https://res.cloudinary.com/${cn}/image/upload/${CLOUDINARY_IMAGE_TRANSFORMS[slot]}/${publicId}`;
+  return `https://res.cloudinary.com/${cn}/image/upload/${transforms}/${parsed.rawId}`;
 }
 
 export function buildCloudinaryVariantUrls(
@@ -227,12 +280,11 @@ export function cloudinaryCardLoader({
 }): string {
   const cloudName = resolveCloudName();
 
-  // Hero compound public_id: use the stored transform. Height normalisation to
-  // the current value happens upstream (toCurrentHeroPublicId).
-  const hero = parseHeroCompoundId(src);
-  if (hero) {
-    return `https://res.cloudinary.com/${cloudName}/image/upload/${hero.normalizeTransform}/a_auto,c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${hero.rawId}`;
-  }
+  const parsed = parseTransformPublicId(src);
+  const transforms = [
+    ...parsed.preTransforms,
+    `a_auto,c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto`,
+  ].join("/");
 
-  return `https://res.cloudinary.com/${cloudName}/image/upload/a_auto,c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${src}`;
+  return `https://res.cloudinary.com/${cloudName}/image/upload/${transforms}/${parsed.rawId}`;
 }

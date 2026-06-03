@@ -33,6 +33,7 @@ function ProductCard({ product, index, isSold }: ProductCardProps) {
   const truncatedName = displayName.length > 40 
     ? displayName.substring(0, 40) + '...' 
     : displayName;
+  const conditionBadge = product.condition_rating && !isSold ? product.condition_rating : null;
 
   return (
     <motion.div
@@ -66,16 +67,6 @@ function ProductCard({ product, index, isSold }: ProductCardProps) {
               <Package className="h-12 w-12 text-gray-300" />
             </div>
           )}
-          
-          {/* Condition Badge */}
-          {product.condition_rating && !isSold && (
-            <div className="absolute top-2 left-2">
-              <span className="px-2 py-1 bg-white/90 backdrop-blur-sm rounded-md text-xs font-medium text-gray-700 shadow-sm">
-                {product.condition_rating}
-              </span>
-            </div>
-          )}
-
           {/* Sold Badge */}
           {isSold && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/30">
@@ -89,12 +80,19 @@ function ProductCard({ product, index, isSold }: ProductCardProps) {
 
         {/* Product Info */}
         <div className="px-0.5">
-          <p className={cn(
-            "text-sm font-semibold mb-0.5",
-            isSold ? "text-gray-500 line-through" : "text-gray-900"
-          )}>
-            {formattedPrice}
-          </p>
+          <div className="mb-0.5 flex items-center gap-1.5 flex-wrap">
+            <p className={cn(
+              "text-sm font-semibold",
+              isSold ? "text-gray-500 line-through" : "text-gray-900"
+            )}>
+              {formattedPrice}
+            </p>
+            {conditionBadge && (
+              <span className="inline-flex items-center rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-gray-700">
+                {conditionBadge}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-600 line-clamp-2 leading-snug">
             {truncatedName}
           </p>

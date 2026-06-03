@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, Reorder } from "framer-motion";
-import { Plus, Trash2, Edit2, GripVertical, Loader2, Star, Clock, DollarSign } from "lucide-react";
+import { Plus, Trash2, Edit2, GripVertical, Loader2, Star, Clock, DollarSign, X, Check, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +42,7 @@ interface ServiceFormData {
   price_from: boolean;
   duration_minutes: string;
   highlight: boolean;
+  includes: string[];     // dot-points of what the service covers
 }
 
 const BLANK_FORM: ServiceFormData = {
@@ -51,6 +52,7 @@ const BLANK_FORM: ServiceFormData = {
   price_from: false,
   duration_minutes: "",
   highlight: false,
+  includes: [""],
 };
 
 // Common duration options (minutes)
@@ -64,6 +66,15 @@ const DURATION_PRESETS = [
   { label: "3 hrs",   value: "180" },
   { label: "Half day",value: "240" },
   { label: "Full day",value: "480" },
+];
+
+// Placeholder examples for the "what's included" bullets
+const INCLUDE_EXAMPLES = [
+  "Full drivetrain clean & degrease",
+  "Gears indexed & brakes adjusted",
+  "Wheels trued & tyres inflated",
+  "All bolts torqued to spec",
+  "Frame wipe-down & safety check",
 ];
 
 function formatDuration(minutes: number): string {
@@ -116,9 +127,27 @@ export function StoreServicesManager() {
       price_from: svc.price_from ?? false,
       duration_minutes: svc.duration_minutes != null ? String(svc.duration_minutes) : "",
       highlight: svc.highlight ?? false,
+      includes: svc.includes && svc.includes.length > 0 ? [...svc.includes] : [""],
     });
     setIsDialogOpen(true);
   };
+
+  // ── "What's included" bullet editors ───────────────────────
+  const updateInclude = (i: number, val: string) =>
+    setFormData((f) => ({ ...f, includes: f.includes.map((x, idx) => (idx === i ? val : x)) }));
+  const addInclude = () =>
+    setFormData((f) => ({ ...f, includes: [...f.includes, ""] }));
+  const addIncludeAfter = (i: number) =>
+    setFormData((f) => {
+      const next = [...f.includes];
+      next.splice(i + 1, 0, "");
+      return { ...f, includes: next };
+    });
+  const removeInclude = (i: number) =>
+    setFormData((f) => {
+      const next = f.includes.filter((_, idx) => idx !== i);
+      return { ...f, includes: next.length ? next : [""] };
+    });
 
   // ── Save ───────────────────────────────────────────────────
   const handleSave = async () => {
@@ -137,6 +166,7 @@ export function StoreServicesManager() {
         price_from: price != null ? formData.price_from : false,
         duration_minutes: duration,
         highlight: formData.highlight,
+        includes: formData.includes.map((i) => i.trim()).filter(Boolean),
       };
 
       if (editingService) {
@@ -274,6 +304,12 @@ export function StoreServicesManager() {
                         {formatDuration(svc.duration_minutes)}
                       </span>
                     )}
+                    {svc.includes && svc.includes.length > 0 && (
+                      <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
+                        <ListChecks className="h-3 w-3" />
+                        {svc.includes.length} included
+                      </span>
+                    )}
                     {svc.description && (
                       <span className="text-xs text-muted-foreground line-clamp-1 truncate max-w-[180px]">
                         {svc.description}
@@ -347,14 +383,69 @@ export function StoreServicesManager() {
 
             {/* Description */}
             <div className="space-y-1.5">
-              <Label htmlFor="svc-desc">Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Label htmlFor="svc-desc">Short summary <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <Textarea
                 id="svc-desc"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="What does this service include?"
+                placeholder="One line shown under the title, e.g. “Everything your bike needs to ride like new.”"
                 rows={2}
               />
+            </div>
+
+            {/* What's included — dot points */}
+            <div className="space-y-2">
+              <div>
+                <Label className="flex items-center gap-1.5">
+                  <ListChecks className="h-3.5 w-3.5 text-muted-foreground" />
+                  What&apos;s included
+                </Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Add a bullet for each thing this service covers — shown as a checklist on your storefront card.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                {formData.includes.map((item, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-gray-900">
+                      <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                    </span>
+                    <Input
+                      value={item}
+                      onChange={(e) => updateInclude(i, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addIncludeAfter(i);
+                        }
+                      }}
+                      placeholder={INCLUDE_EXAMPLES[i % INCLUDE_EXAMPLES.length]}
+                      className="h-9"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeInclude(i)}
+                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground/50"
+                      aria-label="Remove item"
+                      disabled={formData.includes.length === 1 && !item.trim()}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addInclude}
+                className="rounded-md"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Add item
+              </Button>
             </div>
 
             {/* Price row */}

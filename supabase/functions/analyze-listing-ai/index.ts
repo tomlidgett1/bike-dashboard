@@ -68,11 +68,6 @@ USED PRICING STYLE:
 - If only new/RRP pricing is found, estimate a second-hand range using item age, condition, visible wear, and normal cycling resale discounts
 - Avoid overpricing. Give a realistic private-sale range a buyer in Australia would actually consider
 
-IMAGE ORIENTATION:
-- For each image, identify whether the product/photo is clearly sideways or upside down
-- Return 0 degrees unless it is clearly wrong
-- Use clockwise degrees needed to make the product upright: 0, 90, 180, or 270
-
 Just be real, honest, useful, and conservative where the evidence is weak.`;
 
 // ============================================================
@@ -125,19 +120,6 @@ const LISTING_SCHEMA = {
   brand_confidence: "number 0-100",
   model_confidence: "number 0-100",
   condition_confidence: "number 0-100",
-
-  // Image orientation correction
-  image_orientation: {
-    rotations: [
-      {
-        index: "number - zero-based image index",
-        rotate_degrees: "number - clockwise correction: 0, 90, 180, or 270",
-        confidence: "number 0-100",
-        reason: "string - brief reason, e.g. sideways drivetrain photo"
-      }
-    ],
-    primary_image_index: "number - best hero image index"
-  },
 };
 
 // ============================================================
@@ -280,7 +262,6 @@ Examine the photos carefully and provide:
 3. Specifications and details
 4. Honest condition assessment (write naturally, like you're describing it to a buyer)
 5. A preliminary second-hand AUD price range from the visible condition
-6. Image orientation corrections for any sideways/upside-down photos
 
 ${userHints?.itemType ? `The user thinks this is a ${userHints.itemType}.` : ''}
 
@@ -295,12 +276,6 @@ For the condition_details field, write in FIRST PERSON as if YOU own and are sel
 - Never say "it looks like" or "appears to be" - you know this item
 - Be conversational, honest, and specific about condition
 - Don't use "Condition:" as a prefix - just write naturally
-
-For image_orientation.rotations:
-- Use the zero-based image index from the upload order
-- rotate_degrees is the clockwise correction needed for display
-- Only recommend 90/180/270 if very clear; otherwise use 0
-- Whole bikes should be horizontal with wheels underneath the frame
 
 Return your analysis as a JSON object with this structure:
 ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { addProductImages } from "@/lib/services/product-images";
 
 // Helper function to find or create canonical product with AI categorisation
@@ -419,10 +419,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Product SELECT RLS is optimized for public marketplace visibility, not
+    // seller management. After authenticating the session, use the service role
+    // and keep the query scoped to the current user's own manual listings.
+    const adminClient = createServiceRoleClient();
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
 
-    let query = supabase
+    let query = adminClient
       .from("products")
       .select("*")
       .eq("user_id", user.id)
@@ -432,15 +437,21 @@ export async function GET(request: NextRequest) {
     if (status) {
       if (status === 'sold') {
         // Sold items have sold_at set
-        query = query.not('sold_at', 'is', null);
+        query = query
+          .not('sold_at', 'is', null)
+          .or('listing_status.is.null,listing_status.neq.removed');
       } else if (status === 'active') {
-        // Active items: not sold and not archived
-        query = query.is('sold_at', null).neq('listing_status', 'archived');
+        // Active items: visible listings that have not been sold.
+        query = query
+          .is('sold_at', null)
+          .or('listing_status.is.null,listing_status.eq.active');
       } else if (status === 'archived') {
         query = query.eq("listing_status", 'archived');
       } else {
         query = query.eq("listing_status", status);
       }
+    } else {
+      query = query.or('listing_status.is.null,listing_status.neq.removed');
     }
 
     const { data: listings, error } = await query;
@@ -459,4 +470,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

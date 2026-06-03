@@ -15,10 +15,10 @@ import {
   Trash2,
   Edit,
   Sparkles,
-  Eraser,
   Truck,
   MapPin,
   DollarSign,
+  RotateCw,
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -40,7 +40,7 @@ import {
   compressedToFile,
   shouldCompress,
 } from "@/lib/utils/image-compression";
-import { applyImageRotations } from "@/lib/utils/cloudinary-rotation";
+import { rotateCloudinaryUrlClockwise } from "@/lib/utils/cloudinary-rotation";
 import { CONDITION_RATINGS, type ConditionRating } from "@/lib/types/listing";
 
 // ============================================================
@@ -56,7 +56,6 @@ type BulkUploadStage =
   | "uploading"
   | "grouping"
   | "assigning"      // NEW: Assign photos to products
-  | "enhancing"      // NEW: Select which products to remove background
   | "reviewing"
   | "final"
   | "publishing"
@@ -162,12 +161,6 @@ export function BulkUploadSheet({
 
   // Error state
   const [error, setError] = React.useState<string | null>(null);
-
-  // Background removal state
-  const [isRemovingBackground, setIsRemovingBackground] = React.useState(false);
-  const [backgroundRemovedProducts, setBackgroundRemovedProducts] = React.useState<Set<string>>(new Set());
-  const [selectedForEnhancement, setSelectedForEnhancement] = React.useState<Set<string>>(new Set());
-  const [enhancementProgress, setEnhancementProgress] = React.useState({ current: 0, total: 0 });
 
   // Description generation state
   const [isGeneratingDescription, setIsGeneratingDescription] = React.useState(false);
@@ -490,15 +483,12 @@ export function BulkUploadSheet({
         const apparelDetails = analysis?.apparel_details || {};
         const priceEstimate = analysis?.price_estimate || {};
 
-        const rotatedPhotos = applyImageRotations(
-          group.photoIndexes.map((idx) => photos[idx]),
-          analysis?.image_orientation?.rotations
-        );
+        const groupPhotos = group.photoIndexes.map((idx) => photos[idx]);
 
         return {
           groupId: group.id,
-          imageUrls: rotatedPhotos.map((photo) => photo.url),
-          thumbnailUrls: rotatedPhotos.map(
+          imageUrls: groupPhotos.map((photo) => photo.url),
+          thumbnailUrls: groupPhotos.map(
             (photo) => photo.thumbnailUrl || photo.cardUrl
           ),
           suggestedName: generatedTitle,
@@ -565,6 +555,24 @@ export function BulkUploadSheet({
             }
           : p
       )
+    );
+  };
+
+  const rotateProductPhoto = (photoIndex: number) => {
+    setProducts((prev) =>
+      prev.map((product, productIndex) => {
+        if (productIndex !== currentProductIndex) return product;
+
+        return {
+          ...product,
+          imageUrls: product.imageUrls.map((url, index) =>
+            index === photoIndex ? rotateCloudinaryUrlClockwise(url) || url : url
+          ),
+          thumbnailUrls: product.thumbnailUrls.map((url, index) =>
+            index === photoIndex ? rotateCloudinaryUrlClockwise(url) || url : url
+          ),
+        };
+      })
     );
   };
 
@@ -655,8 +663,8 @@ export function BulkUploadSheet({
         });
       }
     } else {
-      // Go back to enhancement selection
-      setStage("enhancing");
+      // Go back to photo assignment
+      setStage("assigning");
     }
   };
 
@@ -757,170 +765,6 @@ export function BulkUploadSheet({
 
   const removeEmptyProducts = () => {
     setProducts((prev) => prev.filter((p) => p.imageUrls.length > 0));
-  };
-
-  // ============================================================
-  // Background Removal Handlers
-  // ============================================================
-
-  const toggleEnhancementSelection = (groupId: string) => {
-    setSelectedForEnhancement((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(groupId)) {
-        newSet.delete(groupId);
-      } else {
-        newSet.add(groupId);
-      }
-      return newSet;
-    });
-  };
-
-  const selectAllForEnhancement = () => {
-    setSelectedForEnhancement(new Set(products.map((p) => p.groupId)));
-  };
-
-  const deselectAllForEnhancement = () => {
-    setSelectedForEnhancement(new Set());
-  };
-
-  const handleBatchEnhancement = async () => {
-    if (selectedForEnhancement.size === 0) {
-      setStage("reviewing");
-      return;
-    }
-
-    setIsRemovingBackground(true);
-    setEnhancementProgress({ current: 0, total: selectedForEnhancement.size });
-
-    try {
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        throw new Error("You must be logged in");
-      }
-
-      const productsToEnhance = products.filter((p) => selectedForEnhancement.has(p.groupId));
-      
-      for (let i = 0; i < productsToEnhance.length; i++) {
-        const product = productsToEnhance[i];
-        const coverImageUrl = product.imageUrls[0];
-
-        try {
-          const enhanceResponse = await fetch(
-            `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/enhance-product-image`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                imageUrl: coverImageUrl,
-                listingId: `bulk-${Date.now()}-${i}`,
-              }),
-            }
-          );
-
-          if (enhanceResponse.ok) {
-            const enhanceResult = await enhanceResponse.json();
-            const enhancedUrl = enhanceResult.data?.url || enhanceResult.data?.cardUrl;
-
-            // Update product with enhanced image
-            setProducts((prev) =>
-              prev.map((p) =>
-                p.groupId === product.groupId
-                  ? {
-                      ...p,
-                      imageUrls: [enhancedUrl, ...p.imageUrls.slice(1)],
-                      thumbnailUrls: [enhancedUrl, ...p.thumbnailUrls.slice(1)],
-                    }
-                  : p
-              )
-            );
-
-            setBackgroundRemovedProducts((prev) => new Set([...prev, product.groupId]));
-          }
-        } catch (err) {
-          console.error(`Failed to enhance product ${product.groupId}:`, err);
-        }
-
-        setEnhancementProgress({ current: i + 1, total: selectedForEnhancement.size });
-      }
-
-      console.log("✅ [BULK SHEET] Batch enhancement complete");
-    } catch (err) {
-      console.error("❌ [BULK SHEET] Batch enhancement error:", err);
-      setError(err instanceof Error ? err.message : "Failed to remove backgrounds");
-    } finally {
-      setIsRemovingBackground(false);
-      setStage("reviewing");
-    }
-  };
-
-  const handleRemoveBackground = async () => {
-    if (!currentProduct || isRemovingBackground) return;
-    
-    setIsRemovingBackground(true);
-    
-    try {
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        throw new Error("You must be logged in");
-      }
-
-      const coverImageUrl = currentProduct.imageUrls[0];
-      
-      const enhanceResponse = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/enhance-product-image`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            imageUrl: coverImageUrl,
-            listingId: `bulk-${Date.now()}`,
-          }),
-        }
-      );
-
-      if (!enhanceResponse.ok) {
-        const errorData = await enhanceResponse.json();
-        throw new Error(errorData.error || "Background removal failed");
-      }
-
-      const enhanceResult = await enhanceResponse.json();
-      const enhancedUrl = enhanceResult.data?.url || enhanceResult.data?.cardUrl;
-      
-      // Update product with enhanced image
-      setProducts((prev) =>
-        prev.map((p, idx) =>
-          idx === currentProductIndex
-            ? {
-                ...p,
-                imageUrls: [enhancedUrl, ...p.imageUrls.slice(1)],
-                thumbnailUrls: [enhancedUrl, ...p.thumbnailUrls.slice(1)],
-              }
-            : p
-        )
-      );
-
-      // Track that this product had background removed
-      setBackgroundRemovedProducts((prev) => new Set([...prev, currentProduct.groupId]));
-      
-      console.log("✅ [BULK SHEET] Background removed for product", currentProduct.groupId);
-    } catch (err) {
-      console.error("❌ [BULK SHEET] Background removal error:", err);
-      setError(err instanceof Error ? err.message : "Failed to remove background");
-    } finally {
-      setIsRemovingBackground(false);
-    }
   };
 
   // ============================================================
@@ -1392,7 +1236,7 @@ export function BulkUploadSheet({
               <Button
                 onClick={() => {
                   removeEmptyProducts();
-                  setStage("enhancing");
+                  setStage("reviewing");
                 }}
                 disabled={products.every((p) => p.imageUrls.length === 0)}
                 className="w-full h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
@@ -1400,173 +1244,6 @@ export function BulkUploadSheet({
                 Continue
                 <ChevronRight className="h-5 w-5 ml-1" />
               </Button>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================ */}
-        {/* STAGE: Background Enhancement Selection */}
-        {/* ============================================================ */}
-        {stage === "enhancing" && (
-          <div className="flex flex-col flex-1 overflow-hidden">
-            {/* Header */}
-            <div className="px-5 py-3 border-b border-gray-200 flex-shrink-0">
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => setStage("assigning")}
-                  className="p-2 -ml-2 rounded-lg text-gray-600 active:bg-gray-100"
-                >
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-                <div className="text-center">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Remove Backgrounds
-                  </h2>
-                  <p className="text-xs text-gray-500">
-                    Select products to enhance
-                  </p>
-                </div>
-                <div className="w-9" />
-              </div>
-            </div>
-
-            {/* Selection Controls */}
-            <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-              <span className="text-xs text-gray-600">
-                {selectedForEnhancement.size} of {products.length} selected
-              </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={deselectAllForEnhancement}
-                  className="text-xs text-gray-500 active:text-gray-700"
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={selectAllForEnhancement}
-                  className="text-xs font-medium text-gray-900 active:text-gray-700"
-                >
-                  Select All
-                </button>
-              </div>
-            </div>
-
-            {/* Products Grid - Scrollable */}
-            <div className="flex-1 overflow-y-auto px-4 py-3">
-              <div className="grid grid-cols-2 gap-3">
-                {products.map((product) => {
-                  const isSelected = selectedForEnhancement.has(product.groupId);
-                  const isAlreadyEnhanced = backgroundRemovedProducts.has(product.groupId);
-                  
-                  return (
-                    <button
-                      key={product.groupId}
-                      onClick={() => !isAlreadyEnhanced && toggleEnhancementSelection(product.groupId)}
-                      disabled={isAlreadyEnhanced}
-                      className={cn(
-                        "relative aspect-square rounded-xl overflow-hidden border-2 transition-all",
-                        isAlreadyEnhanced
-                          ? "border-green-400 opacity-60"
-                          : isSelected
-                            ? "border-[#FFC72C] ring-2 ring-[#FFC72C]/30"
-                            : "border-gray-200 active:border-gray-300"
-                      )}
-                    >
-                      <img
-                        src={product.imageUrls[0]}
-                        alt={product.formData.title || "Product"}
-                        className="w-full h-full object-cover"
-                      />
-                      
-                      {/* Selection indicator */}
-                      <div
-                        className={cn(
-                          "absolute top-2 right-2 h-6 w-6 rounded-full flex items-center justify-center transition-all",
-                          isAlreadyEnhanced
-                            ? "bg-green-500"
-                            : isSelected
-                              ? "bg-[#FFC72C]"
-                              : "bg-white/80 border border-gray-300"
-                        )}
-                      >
-                        {(isSelected || isAlreadyEnhanced) && (
-                          <CheckCircle2 className={cn(
-                            "h-4 w-4",
-                            isAlreadyEnhanced ? "text-white" : "text-gray-900"
-                          )} />
-                        )}
-                      </div>
-
-                      {/* Product label */}
-                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                        <p className="text-xs font-medium text-white truncate">
-                          {product.formData.title || product.suggestedName || "Untitled"}
-                        </p>
-                      </div>
-
-                      {/* Enhanced badge */}
-                      {isAlreadyEnhanced && (
-                        <div className="absolute top-2 left-2 bg-green-500 px-1.5 py-0.5 rounded text-[9px] font-bold text-white">
-                          DONE
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Info */}
-              <div className="mt-4 bg-gray-50 rounded-xl p-3 border border-gray-100">
-                <div className="flex items-start gap-2">
-                  <Eraser className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-gray-600">
-                    Background removal creates clean, professional product photos. Best for items photographed on busy backgrounds.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="px-4 pb-8 pt-3 border-t border-gray-100 flex-shrink-0 bg-white space-y-2">
-              {isRemovingBackground ? (
-                <div className="text-center py-3">
-                  <Loader2 className="h-6 w-6 text-gray-600 animate-spin mx-auto mb-2" />
-                  <p className="text-sm font-medium text-gray-900">
-                    Removing backgrounds...
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {enhancementProgress.current} of {enhancementProgress.total}
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <Button
-                    onClick={handleBatchEnhancement}
-                    className="w-full h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold"
-                  >
-                    {selectedForEnhancement.size > 0 ? (
-                      <>
-                        <Eraser className="h-5 w-5 mr-2" />
-                        Enhance {selectedForEnhancement.size} Product{selectedForEnhancement.size !== 1 ? "s" : ""}
-                      </>
-                    ) : (
-                      <>
-                        Skip
-                        <ChevronRight className="h-5 w-5 ml-1" />
-                      </>
-                    )}
-                  </Button>
-                  {selectedForEnhancement.size > 0 && (
-                    <Button
-                      onClick={() => setStage("reviewing")}
-                      variant="ghost"
-                      className="w-full h-10 text-gray-600"
-                    >
-                      Skip for now
-                    </Button>
-                  )}
-                </>
-              )}
             </div>
           </div>
         )}
@@ -1629,6 +1306,15 @@ export function BulkUploadSheet({
                   className="object-contain"
                   priority
                 />
+                <button
+                  type="button"
+                  onClick={() => rotateProductPhoto(0)}
+                  className="absolute bottom-3 left-3 h-10 w-10 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center active:bg-gray-100"
+                  aria-label="Rotate cover photo clockwise"
+                  title="Rotate photo"
+                >
+                  <RotateCw className="h-5 w-5 text-gray-800" />
+                </button>
                 {currentProduct.imageUrls.length > 1 && (
                   <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm rounded-lg px-2.5 py-1.5">
                     <span className="text-xs font-medium text-white">
@@ -1655,6 +1341,15 @@ export function BulkUploadSheet({
                         fill
                         className="object-cover"
                       />
+                      <button
+                        type="button"
+                        onClick={() => rotateProductPhoto(index)}
+                        className="absolute bottom-1 left-1 h-6 w-6 rounded-full bg-white/95 shadow-sm border border-gray-200 flex items-center justify-center"
+                        aria-label={`Rotate photo ${index + 1} clockwise`}
+                        title="Rotate photo"
+                      >
+                        <RotateCw className="h-3 w-3 text-gray-800" />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -1876,31 +1571,6 @@ export function BulkUploadSheet({
                       </button>
                     )}
                   </div>
-                </div>
-
-                {/* Background Remover */}
-                <div className="flex items-center justify-between py-3 px-3 bg-gray-50 rounded-xl border border-gray-200">
-                  <div className="flex items-center gap-2">
-                    <Eraser className="h-4 w-4 text-gray-500" />
-                    <span className="text-xs font-medium text-gray-700">
-                      Remove Background
-                    </span>
-                  </div>
-                  {isRemovingBackground ? (
-                    <Loader2 className="h-4 w-4 text-gray-500 animate-spin" />
-                  ) : backgroundRemovedProducts.has(currentProduct.groupId) ? (
-                    <span className="text-xs text-green-600 font-medium">Done ✓</span>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleRemoveBackground}
-                      className="h-7 text-xs rounded-lg"
-                    >
-                      Apply
-                    </Button>
-                  )}
                 </div>
 
                 {/* Expandable Details */}

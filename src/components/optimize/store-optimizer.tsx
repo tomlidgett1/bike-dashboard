@@ -87,6 +87,13 @@ interface OptimizerProduct {
   } | null;
 }
 
+type ProductApiRow = Omit<OptimizerProduct, "canonical_images" | "canonical_products"> & {
+  canonical_images?: CanonicalImage[];
+  canonical_products?: (NonNullable<OptimizerProduct["canonical_products"]> & {
+    product_images?: CanonicalImage[] | null;
+  }) | null;
+};
+
 type DimKey = "image" | "title" | "description" | "specs";
 const DIMS: DimKey[] = ["image", "title", "description", "specs"];
 type Focus = Record<DimKey, boolean>;
@@ -514,7 +521,7 @@ function ImageReview({
 
   const inner = (
     <>
-      {/* Header row: reasoning + actions */}
+      {/* Header row: image status + actions */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
           {done ? (
@@ -563,10 +570,6 @@ function ImageReview({
           </div>
         )}
       </div>
-
-      {img.reasoning && editable && (
-        <p className="mb-2 text-[11px] italic text-muted-foreground">{img.reasoning}</p>
-      )}
 
       {!hasCanonical && (
         <p className="mb-2 inline-flex items-center gap-1 text-[11px] text-destructive">
@@ -854,10 +857,11 @@ export function StoreOptimizer() {
         if (cat && cat !== "all") params.set("ls_category_id", cat);
         const res = await fetch(`/api/products?${params.toString()}`);
         const data = await res.json();
-        const list: OptimizerProduct[] = (data.products ?? []).map((p: any) => ({
+        const rows = (data.products ?? []) as ProductApiRow[];
+        const list: OptimizerProduct[] = rows.map((p) => ({
           ...p,
           canonical_images: (p.canonical_products?.product_images ?? []).filter(
-            (img: any) => img.approval_status === "approved" || img.approval_status === null,
+            (img) => img.approval_status === "approved" || img.approval_status === null,
           ),
         }));
         setProducts(list);

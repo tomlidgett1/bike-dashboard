@@ -335,12 +335,9 @@ export function StoreHomepageManager() {
             ]}
           />
         </Field>
-        <ImageField
-          label="Hero image"
-          slot="hero"
-          value={config.hero.image_url}
-          onChange={(url) => patchHero({ image_url: url })}
-          hint="Wide, high-quality photo works best. Leave empty for a branded gradient."
+        <HeroImagesField
+          value={config.hero.image_urls}
+          onChange={(urls) => patchHero({ image_urls: urls, image_url: urls[0] ?? null })}
         />
         <TextField label="Eyebrow" value={config.hero.eyebrow} onChange={(v) => patchHero({ eyebrow: v })} placeholder="Your local bike shop" />
         <TextField label="Headline" value={config.hero.headline} onChange={(v) => patchHero({ headline: v })} placeholder={store.store_name} />
@@ -1065,6 +1062,105 @@ function ImageField({
           </Button>
           {hint && !err && <p className="text-xs text-muted-foreground">{hint}</p>}
           {err && <p className="text-xs text-destructive">{err}</p>}
+        </div>
+      </div>
+    </Field>
+  );
+}
+
+function HeroImagesField({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (urls: string[]) => void;
+}) {
+  const [uploading, setUploading] = React.useState(false);
+  const [err, setErr] = React.useState<string | null>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const urls = value.slice(0, 3);
+  const remaining = Math.max(0, 3 - urls.length);
+
+  const onFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).slice(0, remaining);
+    if (files.length === 0) return;
+
+    setUploading(true);
+    setErr(null);
+    try {
+      const uploaded: string[] = [];
+      for (const [index, file] of files.entries()) {
+        uploaded.push(await uploadHomepageImage(file, `hero-${urls.length + index + 1}`));
+      }
+      onChange([...urls, ...uploaded].slice(0, 3));
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  return (
+    <Field label="Header images">
+      <div className="space-y-3">
+        <div className="grid grid-cols-3 gap-2">
+          {[0, 1, 2].map((index) => {
+            const url = urls[index];
+            return (
+              <div
+                key={index}
+                className="relative aspect-[4/3] overflow-hidden rounded-md border-2 border-dashed border-border bg-muted flex items-center justify-center"
+              >
+                {url ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt="" className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => onChange(urls.filter((_, i) => i !== index))}
+                      className="absolute top-1 right-1 rounded-full bg-background/90 border border-border p-0.5 hover:bg-background cursor-pointer"
+                      aria-label="Remove header image"
+                    >
+                      <X className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                  </>
+                ) : uploading ? (
+                  <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+                ) : (
+                  <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="space-y-1">
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/avif"
+            multiple
+            onChange={onFiles}
+            className="hidden"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading || remaining === 0}
+            className="gap-1.5"
+          >
+            {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+            {remaining === 0 ? "Maximum added" : urls.length ? "Add header" : "Upload headers"}
+          </Button>
+          {err ? (
+            <p className="text-xs text-destructive">{err}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Upload up to 3 header images. They are compressed to WebP and resized for fast web and mobile loading.
+            </p>
+          )}
         </div>
       </div>
     </Field>

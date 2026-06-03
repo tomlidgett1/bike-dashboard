@@ -294,8 +294,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Use the service role after authentication for the actual product lookup
+    // and mutation. Product SELECT RLS only exposes public active products plus
+    // order-linked products, so owners can otherwise be blocked from managing
+    // drafts, archived listings, or removed/inactive listings.
+    const adminClient = createServiceRoleClient();
+
     // Verify ownership
-    const { data: existing, error: fetchError } = await supabase
+    const { data: existing, error: fetchError } = await adminClient
       .from("products")
       .select("user_id, listing_status")
       .eq("id", id)
@@ -311,13 +317,13 @@ export async function DELETE(
 
     // If draft, actually delete. If active, mark as removed
     if (existing.listing_status === "draft") {
-      const { error } = await supabase.from("products").delete().eq("id", id);
+      const { error } = await adminClient.from("products").delete().eq("id", id);
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
     } else {
-      const { error } = await supabase
+      const { error } = await adminClient
         .from("products")
         .update({ listing_status: "removed", is_active: false })
         .eq("id", id);
@@ -336,4 +342,3 @@ export async function DELETE(
     );
   }
 }
-

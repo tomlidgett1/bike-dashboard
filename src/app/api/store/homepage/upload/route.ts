@@ -8,16 +8,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import sharp from 'sharp';
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8MB — hero/gallery photos run larger than logos
 const VALID_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/avif'];
-const EXT: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/jpg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/avif': 'avif',
-};
+const HOMEPAGE_IMAGE_MAX_WIDTH = 1920;
+const HOMEPAGE_IMAGE_MAX_HEIGHT = 1280;
+const HOMEPAGE_IMAGE_QUALITY = 82;
 
 export async function POST(request: NextRequest) {
   try {
@@ -56,19 +53,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File size exceeds 8MB limit' }, { status: 400 });
     }
 
-    const ext = EXT[file.type] ?? 'jpg';
-    const path = `homepage/${user.id}/${slot}-${Date.now()}.${ext}`;
+    const path = `homepage/${user.id}/${slot}-${Date.now()}.webp`;
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    const optimized = await sharp(buffer)
+      .rotate()
+      .resize({
+        width: HOMEPAGE_IMAGE_MAX_WIDTH,
+        height: HOMEPAGE_IMAGE_MAX_HEIGHT,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .webp({ quality: HOMEPAGE_IMAGE_QUALITY, effort: 4 })
+      .toBuffer();
 
     // Service role for storage — user is verified above and the path is rooted
     // at the user ID (mirrors the brand-logo upload route).
     const adminStorage = createServiceRoleClient().storage;
     const { error: uploadError } = await adminStorage
       .from('listing-images')
-      .upload(path, buffer, {
+      .upload(path, optimized, {
         cacheControl: '31536000',
-        contentType: file.type,
+        contentType: 'image/webp',
         upsert: false,
       });
 
@@ -78,7 +84,12 @@ export async function POST(request: NextRequest) {
     }
 
     const { data: urlData } = adminStorage.from('listing-images').getPublicUrl(path);
-    return NextResponse.json({ url: urlData.publicUrl });
+    return NextResponse.json({
+      url: urlData.publicUrl,
+      optimized: true,
+      contentType: 'image/webp',
+      bytes: optimized.length,
+    });
   } catch (err) {
     console.error('Error in POST /api/store/homepage/upload:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import {
   Store,
@@ -16,7 +16,6 @@ import {
   Wrench,
   Info,
   Star,
-  Bookmark,
   ChevronLeft,
   ChevronRight,
   Search,
@@ -37,6 +36,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -140,6 +146,25 @@ function getCategoryIcon(name: string): typeof Package {
   return Package;
 }
 
+function getCollapsedCarouselLimit(
+  catSize: 'featured' | 'normal' | 'compact',
+  viewportWidth: number,
+): number {
+  if (viewportWidth >= 1800) {
+    return catSize === 'featured' ? 10 : catSize === 'compact' ? 16 : 14;
+  }
+  if (viewportWidth >= 1536) {
+    return catSize === 'featured' ? 8 : catSize === 'compact' ? 14 : 12;
+  }
+  if (viewportWidth >= 1280) {
+    return catSize === 'featured' ? 6 : catSize === 'compact' ? 12 : 10;
+  }
+  if (viewportWidth >= 1024) {
+    return catSize === 'featured' ? 5 : catSize === 'compact' ? 10 : 8;
+  }
+  return catSize === 'featured' ? 4 : 8;
+}
+
 // ── Per-category horizontal-scroll row ─────────────────────────────────────
 interface CategoryScrollRowProps {
   products: MarketplaceProduct[];
@@ -192,12 +217,12 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
     el.scrollBy({ left: dir === 'left' ? -(el.clientWidth * 0.75) : el.clientWidth * 0.75, behavior: 'smooth' });
   };
 
-  // Column width (px) for the scroll grid — single value avoids responsive-class
-  // inconsistency that caused variable card heights in the flex approach.
-  const colPx =
-    catSize === 'featured' ? 260 :
-    catSize === 'compact'  ? 155 :
-    190;
+  // Responsive column widths keep store rows aligned with the marketplace
+  // homepage grids while preserving a single-row horizontal carousel.
+  const colWidth =
+    catSize === 'featured' ? "clamp(170px, 18vw, 260px)" :
+    catSize === 'compact'  ? "clamp(118px, 12vw, 155px)" :
+    "clamp(145px, 15vw, 205px)";
 
   const gap = catSize === 'compact' ? 8 : 10;
 
@@ -258,23 +283,25 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
       {/* Scroll track */}
       <div
         ref={scrollRef}
-        className="overflow-x-auto scrollbar-hide snap-x snap-mandatory sm:snap-none pe-4 sm:pe-0"
+        className="overflow-x-auto overflow-y-hidden scrollbar-hide snap-x snap-mandatory sm:snap-none"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch', overflowY: 'hidden' } as React.CSSProperties}
       >
-        {/* Single-row CSS grid: grid-auto-flow: column forces each product into
-            its own column, and CSS grid equalises all cell heights in a row so
-            every card is exactly the same size — no more mismatched heights. */}
+        {/* Single-row scroll track. The cards are top-aligned so a taller
+            off-screen card cannot reserve vertical space under shorter cards. */}
         <div
           style={{
-            display: 'grid',
-            gridAutoFlow: 'column',
-            gridAutoColumns: `${colPx}px`,
-            gridTemplateRows: '1fr',
+            display: 'flex',
+            alignItems: 'flex-start',
             gap: `${gap}px`,
           }}
         >
           {products.map((product, j) => (
-            <div key={product.id} data-analytics-product-id={product.id} className="snap-start min-w-0">
+            <div
+              key={product.id}
+              data-analytics-product-id={product.id}
+              className="snap-start min-w-0 flex-none"
+              style={{ width: colWidth }}
+            >
               <ProductCard
                 product={product}
                 priority={rowIndex === 0 && j < 6}
@@ -343,17 +370,33 @@ function CarouselRow({
     }
   };
 
-  if (cat.products.length === 0) return null;
   const catSize = (compact ? 'compact' : (cat.carousel_size ?? 'normal')) as 'featured' | 'normal' | 'compact';
   const isExpanded = expandedCategories.has(cat.id);
   const hasMore = cat.products.length > 8;
-  const displayedProducts = isExpanded ? cat.products : cat.products.slice(0, 8);
+  const [viewportWidth, setViewportWidth] = React.useState(() =>
+    typeof window === "undefined" ? 1280 : window.innerWidth
+  );
+
+  React.useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const collapsedLimit = getCollapsedCarouselLimit(catSize, viewportWidth);
+  const displayedProducts = isExpanded
+    ? cat.products
+    : cat.products.slice(0, collapsedLimit);
+
+  if (cat.products.length === 0) return null;
 
   return (
     <section key={cat.id}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-3">
-          {cat.source !== "uber" && logoUrl ? (
+          {cat.source === "uber" ? (
+            <UberCarouselLogo className="h-7 px-2.5" />
+          ) : logoUrl ? (
             <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
               <img src={logoUrl} alt={cat.name} className="h-full w-auto max-w-[96px] object-contain rounded-sm" />
               {isOwnProfile && (
@@ -367,7 +410,7 @@ function CarouselRow({
                 </button>
               )}
             </div>
-          ) : cat.source !== "uber" && isOwnProfile ? (
+          ) : isOwnProfile ? (
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -589,12 +632,19 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [sort, setSort] = React.useState<SortKey>("featured");
   const [storeSearch, setStoreSearch] = React.useState("");
-  const [isSaved, setIsSaved] = React.useState(false);
   const [expandedCategories, setExpandedCategories] = React.useState<Set<string>>(new Set());
   const [compact, setCompact] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
   const [showSaleOnly, setShowSaleOnly] = React.useState(false);
   const [previewMode, setPreviewMode] = React.useState(false);
+  const [hoursOpen, setHoursOpen] = React.useState(false);
+  const shouldReduceMotion = useReducedMotion();
+  const [introHeadersVisible, setIntroHeadersVisible] = React.useState(
+    () => Boolean(immersive)
+  );
+  const [introHeaderRevealSettled, setIntroHeaderRevealSettled] = React.useState(
+    () => Boolean(immersive)
+  );
 
   useStorePageView(isOwnProfile ? null : store.id);
 
@@ -608,7 +658,28 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  React.useEffect(() => {
+    if (immersive || shouldReduceMotion) {
+      setIntroHeadersVisible(true);
+      setIntroHeaderRevealSettled(true);
+      return;
+    }
+
+    setIntroHeadersVisible(false);
+    setIntroHeaderRevealSettled(false);
+    const timer = window.setTimeout(() => {
+      setIntroHeadersVisible(true);
+    }, 3000);
+
+    return () => window.clearTimeout(timer);
+  }, [immersive, shouldReduceMotion, store.id]);
+
   const openStatus = getOpenStatus(store.opening_hours);
+  const headerRating =
+    store.rating != null && store.homepage_config?.badges?.show_rating !== false
+      ? store.rating
+      : null;
+  const showHeaderHoursBadge = openStatus != null;
 
   // Flatten + dedupe products across categories
   const allProducts = React.useMemo(() => {
@@ -718,14 +789,6 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
           onClick={() => setPreviewMode((v) => !v)}
         />
       )}
-      {!isOwnProfile && (
-        <HeroAction
-          icon={Bookmark}
-          label={isSaved ? "Saved" : "Save"}
-          active={isSaved}
-          onClick={() => setIsSaved((v) => !v)}
-        />
-      )}
     </>
   );
   const storeContentShell = immersive
@@ -735,8 +798,27 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   return (
     <div className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
       <div>
+      <motion.div
+        initial={introHeadersVisible ? "visible" : "hidden"}
+        animate={introHeadersVisible ? "visible" : "hidden"}
+        variants={{
+          hidden: { height: 0, opacity: 0 },
+          visible: { height: "auto", opacity: 1 },
+        }}
+        transition={
+          shouldReduceMotion
+            ? { duration: 0 }
+            : { height: { duration: 0.55, ease: [0.22, 1, 0.36, 1] }, opacity: { duration: 0.22 } }
+        }
+        onAnimationComplete={() => {
+          if (introHeadersVisible) {
+            setIntroHeaderRevealSettled(true);
+          }
+        }}
+        className={cn(introHeaderRevealSettled ? "overflow-visible" : "overflow-hidden")}
+      >
       {/* ══ STICKY STORE HEADER ════════════════════════════
-          Single row: [store logo] [store name]  |  [search] [Save] [← YJ back pill] */}
+          Single row: [store logo] [store name]  |  [search] [← YJ back pill] */}
       <header className={cn(
         "sticky top-0 z-40 bg-white/95 backdrop-blur-md transition-all duration-200",
         scrolled
@@ -744,11 +826,11 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
           : "border-b border-gray-200"
       )}>
         <div className="px-5 sm:px-8 lg:px-10">
-          <div className="flex items-center justify-between gap-3 sm:gap-4 h-14 sm:h-16">
+          <div className="relative flex h-11 items-center justify-between gap-3 sm:h-16 sm:gap-4">
             {/* Store identity */}
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
 
-              <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-full ring-1 ring-gray-200 flex-shrink-0 overflow-hidden bg-white">
+              <div className="h-7 w-7 sm:h-11 sm:w-11 rounded-full ring-1 ring-gray-200 flex-shrink-0 overflow-hidden bg-white">
                 {store.logo_url ? (
                   <Image
                     src={store.logo_url}
@@ -765,22 +847,42 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                   </div>
                 )}
               </div>
-              <div className="min-w-0">
-                <h1 className="text-[15px] sm:text-lg font-bold tracking-tight text-gray-900 leading-tight truncate">
+              <div className="flex min-w-0 flex-col items-start text-left">
+                <h1 className="text-[13px] sm:text-lg font-bold tracking-tight text-gray-900 leading-tight truncate">
                   {store.store_name}
                 </h1>
-                {(store.rating != null || store.address || store.phone) && (
-                  <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-gray-500 min-w-0 mt-0.5">
-                    {store.rating != null && store.homepage_config?.badges?.show_rating !== false && (
+                {showHeaderHoursBadge && openStatus && (
+                  <button
+                    type="button"
+                    onClick={() => setHoursOpen(true)}
+                    className={cn(
+                      "mt-0.5 inline-flex items-center justify-start gap-1 rounded-full text-left text-[10px] font-semibold leading-none transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900/10 sm:hidden",
+                      openStatus.open ? "text-green-700" : "text-gray-600"
+                    )}
+                    aria-label={`Show opening hours. ${openStatus.label}`}
+                  >
+                    <span
+                      className={cn(
+                        "h-1.5 w-1.5 rounded-full",
+                        openStatus.open ? "bg-green-500" : "bg-gray-400"
+                      )}
+                      aria-hidden="true"
+                    />
+                    {openStatus.label}
+                  </button>
+                )}
+                {(headerRating != null || store.address || store.phone || showHeaderHoursBadge) && (
+                  <div className="hidden min-w-0 items-center justify-start gap-1.5 text-left text-[11px] text-gray-500 sm:flex sm:text-xs sm:mt-0.5">
+                    {headerRating != null && (
                       <span className="inline-flex items-center gap-0.5 flex-shrink-0">
                         <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                        <span className="font-semibold text-gray-700">{store.rating.toFixed(1)}</span>
+                        <span className="font-semibold text-gray-700">{headerRating.toFixed(1)}</span>
                         {store.review_count != null && (
                           <span className="text-gray-400">({store.review_count})</span>
                         )}
                       </span>
                     )}
-                    {store.rating != null && store.homepage_config?.badges?.show_rating !== false && store.address && (
+                    {headerRating != null && store.address && (
                       <span className="text-gray-300 flex-shrink-0">·</span>
                     )}
                     {store.address && (
@@ -808,12 +910,44 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                         {store.phone}
                       </a>
                     )}
+                    {showHeaderHoursBadge && openStatus && (
+                      <>
+                        {(store.address || store.phone || headerRating != null) && (
+                          <span
+                            className={cn(
+                              "text-gray-300 flex-shrink-0",
+                              headerRating == null && "hidden sm:inline"
+                            )}
+                          >
+                            ·
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setHoursOpen(true)}
+                          className={cn(
+                            "inline-flex flex-shrink-0 items-center justify-start gap-1 rounded-full px-2 py-0.5 text-left text-[11px] font-semibold transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900/10 cursor-pointer",
+                            openStatus.open ? "text-green-700" : "text-gray-600"
+                          )}
+                          aria-label={`Show opening hours. ${openStatus.label}`}
+                        >
+                          <span
+                            className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              openStatus.open ? "bg-green-500" : "bg-gray-400"
+                            )}
+                            aria-hidden="true"
+                          />
+                          {openStatus.label}
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Actions: search (products) + Save/Edit + back to YJ */}
+            {/* Actions: search (products) + Edit/Preview + back to YJ */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {activeTab === "products" && allProducts.length > 0 && (
                 <div className="relative hidden md:block">
@@ -860,40 +994,6 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
         </div>
       </header>
 
-      {/* Cover banner (optional) — scrolls beneath the sticky header.
-          Hidden on Home, where the hero owns the cover imagery. */}
-      {store.cover_image_url && activeTab !== "home" && (
-        <div className="relative h-32 sm:h-44 lg:h-52 w-full overflow-hidden bg-gray-100">
-          <Image src={store.cover_image_url} alt="" fill sizes="100vw" className="object-cover" priority />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
-        </div>
-      )}
-
-      {/* Mobile product search (the header hides it < md) */}
-      {activeTab === "products" && allProducts.length > 0 && (
-        <div className="md:hidden bg-gray-50 px-5 sm:px-8 pt-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              value={storeSearch}
-              onChange={(e) => setStoreSearch(e.target.value)}
-              placeholder="Search products…"
-              className="h-9 w-full rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
-            />
-            {storeSearch && (
-              <button
-                type="button"
-                onClick={() => setStoreSearch("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Underline tab bar ────────────────────────────── */}
       <div className={cn(
         "bg-gray-50 border-b border-gray-200",
@@ -913,7 +1013,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                     setSelectedCategory(null);
                   }}
                   className={cn(
-                    "relative flex cursor-pointer items-center gap-1.5 px-3 sm:px-3.5 py-3.5 text-sm font-medium whitespace-nowrap transition-colors focus:outline-none",
+	                    "relative flex cursor-pointer items-center gap-1.5 px-2.5 py-2 text-xs font-medium whitespace-nowrap transition-colors focus:outline-none sm:px-3.5 sm:py-3.5 sm:text-sm",
                     active ? "text-gray-900" : "text-gray-500 hover:text-gray-900"
                   )}
                 >
@@ -951,6 +1051,48 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
           )}
         </div>
       </div>
+      </motion.div>
+
+      {/* Cover banner (optional) — scrolls beneath the sticky header.
+          Hidden on Home, where the hero owns the cover imagery. */}
+      {store.cover_image_url && activeTab !== "home" && (
+        <div className="relative h-32 sm:h-44 lg:h-52 w-full overflow-hidden bg-gray-100">
+          <Image src={store.cover_image_url} alt="" fill sizes="100vw" className="object-cover" priority />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
+        </div>
+      )}
+
+      {/* Mobile product search (the header hides it < md) */}
+      {activeTab === "products" && allProducts.length > 0 && (
+        <div className="md:hidden bg-gray-50 px-5 sm:px-8 pt-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={storeSearch}
+              onChange={(e) => setStoreSearch(e.target.value)}
+              placeholder="Search products…"
+              className="h-9 w-full rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
+            />
+            {storeSearch && (
+              <button
+                type="button"
+                onClick={() => setStoreSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <StoreHoursDialog
+        open={hoursOpen}
+        onOpenChange={setHoursOpen}
+        store={store}
+        openStatus={openStatus}
+      />
 
       {/* ── Products filter bar ─────────────────────────── */}
       {activeTab === "products" && allProducts.length > 0 && (
@@ -1206,6 +1348,92 @@ function HeroAction({
   );
 }
 
+function StoreHoursDialog({
+  open,
+  onOpenChange,
+  store,
+  openStatus,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  store: StoreProfile;
+  openStatus: { open: boolean; label: string } | null;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className={cn(
+          "top-auto bottom-0 left-0 max-w-none translate-x-0 translate-y-0 rounded-b-none rounded-t-2xl p-0 duration-200 data-open:slide-in-from-bottom-8 data-closed:slide-out-to-bottom-8",
+          "sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-w-sm sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-0 sm:data-open:slide-in-from-bottom-0 sm:data-closed:slide-out-to-bottom-0"
+        )}
+      >
+        <DialogHeader className="border-b border-gray-100 px-5 pb-4 pt-5">
+          <DialogTitle className="text-base font-semibold text-gray-900">
+            Opening hours
+          </DialogTitle>
+          <DialogDescription className="text-sm text-gray-500">
+            {store.store_name}
+          </DialogDescription>
+        </DialogHeader>
+        <StoreHoursList store={store} openStatus={openStatus} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function StoreHoursList({
+  store,
+  openStatus,
+}: {
+  store: StoreProfile;
+  openStatus: { open: boolean; label: string } | null;
+}) {
+  const todayKey = DAY_KEYS[new Date().getDay()];
+
+  return (
+    <div className="px-5 pb-6 pt-4">
+      {openStatus && (
+        <div
+          className={cn(
+            "mb-4 flex items-center justify-between rounded-lg px-3 py-2 text-sm",
+            openStatus.open ? "bg-green-50 text-green-800" : "bg-gray-100 text-gray-700"
+          )}
+        >
+          <span className="font-semibold">{openStatus.open ? "Open now" : "Closed"}</span>
+          <span className="text-xs font-medium">{openStatus.label}</span>
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        {WEEK_ORDER.map((day) => {
+          const h = store.opening_hours?.[day];
+          const isToday = day === todayKey;
+
+          return (
+            <div
+              key={day}
+              className={cn(
+                "flex items-center justify-between rounded-md px-3 py-2 text-sm",
+                isToday ? "bg-gray-900 font-semibold text-white" : "text-gray-600"
+              )}
+            >
+              <span className="capitalize">{day}</span>
+              <span>
+                {!h || h.closed ? (
+                  <span className={cn(isToday ? "text-white/75" : "text-gray-400")}>
+                    Closed
+                  </span>
+                ) : (
+                  `${h.open} - ${h.close}`
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // ── About tab ──────────────────────────────────────────────
 function AboutTab({

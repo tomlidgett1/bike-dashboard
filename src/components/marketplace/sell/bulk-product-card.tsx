@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertCircle, Trash2, DollarSign, Package, ChevronDown, Shirt, Eraser, Loader2, Sparkles, X } from "lucide-react";
+import { AlertCircle, Trash2, DollarSign, Package, ChevronDown, Shirt, Loader2, Sparkles, X, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { CONDITION_RATINGS, type ConditionRating, type ItemType } from "@/lib/types/listing";
-import { Switch } from "@/components/ui/switch";
+import { rotateCloudinaryUrlClockwise } from "@/lib/utils/cloudinary-rotation";
 
 // ============================================================
 // Bulk Product Card
@@ -23,8 +23,8 @@ interface BulkProductCardProps {
   suggestedName: string;
   aiData: any;
   onChange: (data: any) => void;
+  onImagesChange?: (imageUrls: string[]) => void;
   onDelete?: () => void;
-  onRemoveBackground?: (imageUrls: string[]) => Promise<string[]>;
 }
 
 // Helper: Clean material to single word with capital (e.g., "carbon fiber" -> "Carbon")
@@ -91,8 +91,8 @@ export function BulkProductCard({
   suggestedName,
   aiData,
   onChange,
+  onImagesChange,
   onDelete,
-  onRemoveBackground,
 }: BulkProductCardProps) {
   // Extract nested details from AI response
   const bikeDetails = aiData?.bike_details || {};
@@ -132,9 +132,7 @@ export function BulkProductCard({
     originalRrp: priceEstimate.max_aud || 0,
   });
   
-  const [imageUrls, setImageUrls] = React.useState<string[]>(initialImageUrls);
-  const [isRemovingBackground, setIsRemovingBackground] = React.useState(false);
-  const [backgroundRemoved, setBackgroundRemoved] = React.useState(false);
+  const [imageUrls, setImageUrls] = React.useState(initialImageUrls);
   const [isGeneratingDescription, setIsGeneratingDescription] = React.useState(false);
 
   const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
@@ -151,6 +149,13 @@ export function BulkProductCard({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  React.useEffect(() => {
+    setImageUrls(initialImageUrls);
+    setPrimaryImageIndex((current) =>
+      current < initialImageUrls.length ? current : Math.max(0, initialImageUrls.length - 1)
+    );
+  }, [initialImageUrls]);
+
   // Update parent when form changes
   React.useEffect(() => {
     onChange(formData);
@@ -158,6 +163,15 @@ export function BulkProductCard({
 
   const updateField = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const rotateImage = (indexToRotate: number) => {
+    const updatedImageUrls = imageUrls.map((url, index) =>
+      index === indexToRotate ? rotateCloudinaryUrlClockwise(url) || url : url
+    );
+
+    setImageUrls(updatedImageUrls);
+    onImagesChange?.(updatedImageUrls);
   };
 
   // Generate description using AI with web search
@@ -202,22 +216,6 @@ export function BulkProductCard({
     }
   };
 
-  // Handle background removal
-  const handleRemoveBackground = async () => {
-    if (!onRemoveBackground || isRemovingBackground) return;
-    
-    setIsRemovingBackground(true);
-    try {
-      const newUrls = await onRemoveBackground(imageUrls);
-      setImageUrls(newUrls);
-      setBackgroundRemoved(true);
-    } catch (error) {
-      console.error('Failed to remove background:', error);
-    } finally {
-      setIsRemovingBackground(false);
-    }
-  };
-
   const isLowConfidence = aiData?.overall_confidence < 70;
   const isBike = formData.itemType === 'bike';
   const isPart = formData.itemType === 'part';
@@ -227,11 +225,10 @@ export function BulkProductCard({
   React.useEffect(() => {
     console.log('📦 [BULK CARD] Rendered with:', {
       groupId,
-      hasOnRemoveBackground: !!onRemoveBackground,
       sellerNotes: formData.sellerNotes,
       isMobile,
     });
-  }, [groupId, onRemoveBackground, formData.sellerNotes, isMobile]);
+  }, [groupId, formData.sellerNotes, isMobile]);
 
   return (
     <div className={cn(
@@ -247,6 +244,19 @@ export function BulkProductCard({
           className="object-contain"
           priority
         />
+
+        <button
+          type="button"
+          onClick={() => rotateImage(primaryImageIndex)}
+          className={cn(
+            "absolute bg-white text-gray-800 rounded-full shadow-lg border border-gray-200 flex items-center justify-center transition-colors hover:bg-gray-50 active:bg-gray-100",
+            isMobile ? "bottom-3 left-3 h-10 w-10" : "bottom-4 left-4 h-10 w-10"
+          )}
+          aria-label="Rotate photo clockwise"
+          title="Rotate photo"
+        >
+          <RotateCw className="h-5 w-5" />
+        </button>
         
         {/* Confidence Warning */}
         {isLowConfidence && (
@@ -284,9 +294,8 @@ export function BulkProductCard({
           isMobile ? "p-3" : "p-4"
         )}>
           {imageUrls.map((url, index) => (
-            <button
-              key={index}
-              onClick={() => setPrimaryImageIndex(index)}
+            <div
+              key={`${url}-${index}`}
               className={cn(
                 "relative flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors",
                 index === primaryImageIndex
@@ -295,13 +304,32 @@ export function BulkProductCard({
                 isMobile ? "w-14 h-14" : "w-16 h-16"
               )}
             >
-              <Image
-                src={url}
-                alt={`Photo ${index + 1}`}
-                fill
-                className="object-cover"
-              />
-            </button>
+              <button
+                type="button"
+                onClick={() => setPrimaryImageIndex(index)}
+                className="absolute inset-0"
+                aria-label={`Use photo ${index + 1} as cover`}
+              >
+                <Image
+                  src={url}
+                  alt={`Photo ${index + 1}`}
+                  fill
+                  className="object-cover"
+                />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  rotateImage(index);
+                }}
+                className="absolute bottom-1 left-1 h-6 w-6 rounded-full bg-white/95 shadow-sm border border-gray-200 flex items-center justify-center"
+                aria-label={`Rotate photo ${index + 1} clockwise`}
+                title="Rotate photo"
+              >
+                <RotateCw className="h-3 w-3 text-gray-800" />
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -481,32 +509,6 @@ export function BulkProductCard({
             </div>
           </div>
 
-          {/* Background Remover - always show */}
-          <div className="flex items-center justify-between py-3 px-3 bg-gray-50 rounded-md border border-gray-200">
-            <div className="flex items-center gap-2">
-              <Eraser className="h-4 w-4 text-gray-500" />
-              <span className={cn("font-medium text-gray-700", isMobile ? "text-xs" : "text-sm")}>
-                Remove Background
-              </span>
-            </div>
-            {isRemovingBackground ? (
-              <Loader2 className="h-4 w-4 text-gray-500 animate-spin" />
-            ) : backgroundRemoved ? (
-              <span className="text-xs text-green-600 font-medium">Done ✓</span>
-            ) : onRemoveBackground ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={handleRemoveBackground}
-                className="h-7 text-xs rounded-md"
-              >
-                Apply
-              </Button>
-            ) : (
-              <span className="text-xs text-gray-400">Not available</span>
-            )}
-          </div>
         </div>
 
         {/* Expandable Details Section */}

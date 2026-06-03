@@ -207,14 +207,11 @@ export default function StoreProfilePage() {
   // Loading state when no click-seeded store splash is available.
   if (loading && splashPhase === 'idle') {
     return (
-      <>
-        <MarketplaceHeader />
-        <MarketplaceLayout showFooter={false}>
-          <div className="flex min-h-[60vh] items-center justify-center pt-20">
-            <Loader2 className="h-7 w-7 animate-spin text-gray-300" />
-          </div>
-        </MarketplaceLayout>
-      </>
+      <MarketplaceLayout showFooter={false}>
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="h-7 w-7 animate-spin text-gray-300" />
+        </div>
+      </MarketplaceLayout>
     );
   }
 

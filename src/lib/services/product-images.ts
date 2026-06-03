@@ -503,60 +503,7 @@ export function generateCloudinaryVariants(
   }
 
   try {
-    // Extract the public ID from the URL
-    // URL format: https://res.cloudinary.com/CLOUD_NAME/image/upload/[transformations/]VERSION/PUBLIC_ID
-    const urlObj = new URL(cloudinaryUrl);
-    const pathname = urlObj.pathname;
-    const uploadIndex = pathname.indexOf("/upload/");
-
-    if (uploadIndex === -1) {
-      return null;
-    }
-
-    let afterUpload = pathname.substring(uploadIndex + 8);
-
-    // Remove version if present (v1234567890/)
-    afterUpload = afterUpload.replace(/^v\d+\//, "");
-
-    // Remove any existing transformations (everything before the last path segment that starts with the folder)
-    // Transformations look like: w_400,ar_1:1,c_fill,g_center,q_auto:good,f_webp/
-    const parts = afterUpload.split("/");
-    const publicIdParts: string[] = [];
-    let foundFolder = false;
-
-    for (const part of parts) {
-      // If part contains common transformation patterns, skip it
-      if (
-        /^(w_|h_|c_|ar_|g_|q_|f_|b_|e_|l_|o_|t_|x_|y_|z_|dpr_|fl_|if_|pg_|r_|so_|sp_|u_|vc_|vs_)/.test(
-          part
-        )
-      ) {
-        continue;
-      }
-      // Known folders
-      if (
-        part === "bike-marketplace" ||
-        part === "listings" ||
-        part === "ecommerce-hero" ||
-        part === "canonical"
-      ) {
-        foundFolder = true;
-      }
-      if (foundFolder || publicIdParts.length > 0) {
-        publicIdParts.push(part);
-      }
-    }
-
-    // Remove file extension from last part
-    if (publicIdParts.length > 0) {
-      const lastPart = publicIdParts[publicIdParts.length - 1];
-      publicIdParts[publicIdParts.length - 1] = lastPart.replace(
-        /\.(jpg|jpeg|png|gif|webp)$/i,
-        ""
-      );
-    }
-
-    const publicId = publicIdParts.join("/");
+    const publicId = extractCloudinaryPublicId(cloudinaryUrl);
 
     if (!publicId) {
       return null;
@@ -583,4 +530,3 @@ export function generateCloudinaryVariants(
     return null;
   }
 }
-
