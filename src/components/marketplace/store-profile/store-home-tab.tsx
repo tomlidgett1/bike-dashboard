@@ -12,7 +12,6 @@ import {
   Navigation,
   Settings2,
   Store as StoreIcon,
-  Wrench,
   Instagram,
   Facebook,
 } from "lucide-react";
@@ -43,6 +42,8 @@ interface StoreHomeTabProps {
   onNavigate: (href: string) => void;
   /** Open the Products tab filtered to a category. */
   onOpenCollection: (categoryName: string) => void;
+  /** Open the shared store hours sheet/dialog. */
+  onOpenHours?: () => void;
 }
 
 const DAY_KEYS: (keyof OpeningHours)[] = [
@@ -110,7 +111,7 @@ function useStoreHomeShell() {
   return React.useContext(StoreHomeShellContext);
 }
 
-export function StoreHomeTab({ store, isOwnProfile, contentShell = DEFAULT_CONTENT_SHELL, onNavigate, onOpenCollection }: StoreHomeTabProps) {
+export function StoreHomeTab({ store, isOwnProfile, contentShell = DEFAULT_CONTENT_SHELL, onNavigate, onOpenCollection, onOpenHours }: StoreHomeTabProps) {
   const config = React.useMemo<StoreHomepageConfig>(
     () => resolveHomepageConfig(store.homepage_config, store),
     [store],
@@ -194,6 +195,7 @@ export function StoreHomeTab({ store, isOwnProfile, contentShell = DEFAULT_CONTE
           accentText={accentText}
           onPrimary={() => handleCta(config.hero.primary_cta)}
           onSecondary={() => handleCta(config.hero.secondary_cta)}
+          onOpenHours={onOpenHours}
           isOwnProfile={isOwnProfile}
         />
 
@@ -229,6 +231,7 @@ function Hero({
   accentText,
   onPrimary,
   onSecondary,
+  onOpenHours,
   isOwnProfile,
 }: {
   store: StoreProfile;
@@ -237,6 +240,7 @@ function Hero({
   accentText: string;
   onPrimary: () => void;
   onSecondary: () => void;
+  onOpenHours?: () => void;
   isOwnProfile?: boolean;
 }) {
   const shell = useStoreHomeShell();
@@ -295,7 +299,7 @@ function Hero({
             </div>
             {config.badges.show_hours_on_hero && (
               <div className="mt-5">
-                <HeroHoursCard store={store} status={status} onDark={false} />
+                <HeroHoursCard store={store} status={status} onDark={false} onClick={onOpenHours} />
               </div>
             )}
           </motion.div>
@@ -346,7 +350,7 @@ function Hero({
             </div>
             {config.badges.show_hours_on_hero && (
               <div className="mt-5 flex justify-center">
-                <HeroHoursCard store={store} status={status} onDark={false} />
+                <HeroHoursCard store={store} status={status} onDark={false} onClick={onOpenHours} />
               </div>
             )}
           </motion.div>
@@ -360,7 +364,7 @@ function Hero({
   return (
     <section className="relative">
       {isOwnProfile && <EditButton />}
-      <div className="relative isolate min-h-[520px] sm:min-h-[600px] flex items-center overflow-hidden">
+      <div className="relative isolate min-h-[364px] sm:min-h-[600px] flex items-center overflow-hidden">
         {/* Background */}
         <div className="absolute inset-0 -z-10">
           {heroImages.length > 0 ? (
@@ -413,7 +417,7 @@ function Hero({
             "absolute bottom-5 z-10",
             alignCenter ? "left-1/2 -translate-x-1/2" : "left-5 sm:left-8 lg:left-10"
           )}>
-            <HeroHoursCard store={store} status={status} onDark />
+            <HeroHoursCard store={store} status={status} onDark onClick={onOpenHours} />
           </div>
         )}
       </div>
@@ -461,10 +465,12 @@ function HeroHoursCard({
   store,
   status,
   onDark = false,
+  onClick,
 }: {
   store: StoreProfile;
   status: { open: boolean; label: string } | null;
   onDark?: boolean;
+  onClick?: () => void;
 }) {
   const now = new Date();
   const todayKey = DAY_KEYS[now.getDay()];
@@ -474,15 +480,16 @@ function HeroHoursCard({
   const dayLabel = todayKey.charAt(0).toUpperCase() + todayKey.slice(1);
   const hoursText = todayHours.closed ? 'Closed today' : `${todayHours.open} – ${todayHours.close}`;
 
-  return (
-    <div
-      className={cn(
-        "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs",
-        onDark
-          ? "bg-black/30 text-white backdrop-blur-md border border-white/10"
-          : "bg-white/90 text-gray-800 backdrop-blur-sm border border-gray-200/60 shadow-sm",
-      )}
-    >
+  const cardClassName = cn(
+    "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs",
+    onClick && "cursor-pointer transition-transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-white/50",
+    onDark
+      ? "bg-black/30 text-white backdrop-blur-md border border-white/10"
+      : "bg-white/90 text-gray-800 backdrop-blur-sm border border-gray-200/60 shadow-sm",
+  );
+
+  const contents = (
+    <>
       <Clock className="h-3.5 w-3.5 flex-shrink-0 opacity-70" />
       <span className="font-medium">{dayLabel}</span>
       <span className="opacity-70">·</span>
@@ -501,7 +508,19 @@ function HeroHoursCard({
           </span>
         </>
       )}
-    </div>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={cardClassName}>
+        {contents}
+      </button>
+    );
+  }
+
+  return (
+    <div className={cardClassName}>{contents}</div>
   );
 }
 
@@ -719,21 +738,13 @@ function ServicesTeaser({
       <Reveal>
         {/* Header */}
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div className="flex items-start gap-3.5">
-            <div
-              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl"
-              style={{ backgroundColor: accent }}
-            >
-              <Wrench className="h-5 w-5" style={{ color: accentText }} />
-            </div>
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">
-                {config.services.title}
-              </h2>
-              {config.services.subtitle && (
-                <p className="mt-1 text-gray-500 leading-relaxed">{config.services.subtitle}</p>
-              )}
-            </div>
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">
+              {config.services.title}
+            </h2>
+            {config.services.subtitle && (
+              <p className="mt-1 text-gray-500 leading-relaxed">{config.services.subtitle}</p>
+            )}
           </div>
           {store.phone && (
             <button

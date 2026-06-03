@@ -826,11 +826,11 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
           : "border-b border-gray-200"
       )}>
         <div className="px-5 sm:px-8 lg:px-10">
-          <div className="relative flex h-11 items-center justify-between gap-3 sm:h-16 sm:gap-4">
+          <div className="relative flex h-14 items-center justify-between gap-3 sm:h-16 sm:gap-4">
             {/* Store identity */}
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
 
-              <div className="h-7 w-7 sm:h-11 sm:w-11 rounded-full ring-1 ring-gray-200 flex-shrink-0 overflow-hidden bg-white">
+              <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-full ring-1 ring-gray-200 flex-shrink-0 overflow-hidden bg-white">
                 {store.logo_url ? (
                   <Image
                     src={store.logo_url}
@@ -848,7 +848,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 )}
               </div>
               <div className="flex min-w-0 flex-col items-start text-left">
-                <h1 className="text-[13px] sm:text-lg font-bold tracking-tight text-gray-900 leading-tight truncate">
+                <h1 className="text-[15px] sm:text-lg font-bold tracking-tight text-gray-900 leading-tight truncate">
                   {store.store_name}
                 </h1>
                 {showHeaderHoursBadge && openStatus && (
@@ -1013,7 +1013,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                     setSelectedCategory(null);
                   }}
                   className={cn(
-	                    "relative flex cursor-pointer items-center gap-1.5 px-2.5 py-2 text-xs font-medium whitespace-nowrap transition-colors focus:outline-none sm:px-3.5 sm:py-3.5 sm:text-sm",
+	                    "relative flex cursor-pointer items-center gap-1.5 px-3 sm:px-3.5 py-3.5 text-sm font-medium whitespace-nowrap transition-colors focus:outline-none",
                     active ? "text-gray-900" : "text-gray-500 hover:text-gray-900"
                   )}
                 >
@@ -1219,6 +1219,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 contentShell={storeContentShell}
                 onNavigate={handleHomeNavigate}
                 onOpenCollection={handleOpenCollection}
+                onOpenHours={() => setHoursOpen(true)}
               />
             )}
 
