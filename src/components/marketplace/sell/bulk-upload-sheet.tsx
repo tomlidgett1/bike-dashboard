@@ -40,6 +40,7 @@ import {
   compressedToFile,
   shouldCompress,
 } from "@/lib/utils/image-compression";
+import { applyImageRotations } from "@/lib/utils/cloudinary-rotation";
 import { CONDITION_RATINGS, type ConditionRating } from "@/lib/types/listing";
 
 // ============================================================
@@ -472,14 +473,16 @@ export function BulkUploadSheet({
         const result = results.find((r) => r.groupId === group.id);
         const analysis = result?.success ? result.analysis : null;
 
-        // Generate title from AI data
+        // Generate title from AI data, preferring web-clean product titles.
         const titleParts = [
           analysis?.brand,
           analysis?.model,
           analysis?.model_year,
         ].filter(Boolean);
         const generatedTitle =
-          titleParts.length > 0 ? titleParts.join(" ") : group.suggestedName;
+          analysis?.clean_title ||
+          analysis?.title ||
+          (titleParts.length > 0 ? titleParts.join(" ") : group.suggestedName);
 
         // Get details
         const bikeDetails = analysis?.bike_details || {};
@@ -487,11 +490,16 @@ export function BulkUploadSheet({
         const apparelDetails = analysis?.apparel_details || {};
         const priceEstimate = analysis?.price_estimate || {};
 
+        const rotatedPhotos = applyImageRotations(
+          group.photoIndexes.map((idx) => photos[idx]),
+          analysis?.image_orientation?.rotations
+        );
+
         return {
           groupId: group.id,
-          imageUrls: group.photoIndexes.map((idx) => photos[idx].url),
-          thumbnailUrls: group.photoIndexes.map(
-            (idx) => photos[idx].thumbnailUrl || photos[idx].cardUrl
+          imageUrls: rotatedPhotos.map((photo) => photo.url),
+          thumbnailUrls: rotatedPhotos.map(
+            (photo) => photo.thumbnailUrl || photo.cardUrl
           ),
           suggestedName: generatedTitle,
           aiData: analysis,
@@ -515,9 +523,10 @@ export function BulkUploadSheet({
             genderFit: apparelDetails.gender_fit || "",
             conditionRating: (analysis?.condition_rating ||
               "Good") as ConditionRating,
-            conditionDetails: analysis?.condition_notes || "",
+            conditionDetails: analysis?.condition_details || analysis?.condition_notes || "",
             price: priceEstimate.min_aud
               ? Math.round(
+                  priceEstimate.target_aud ||
                   (priceEstimate.min_aud + priceEstimate.max_aud) / 2
                 )
               : 0,
@@ -2371,4 +2380,3 @@ export function BulkUploadSheet({
     </Sheet>
   );
 }
-

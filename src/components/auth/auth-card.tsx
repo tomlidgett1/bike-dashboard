@@ -28,6 +28,8 @@ type AuthCardProps = {
   onAuthenticated?: (result: AuthSuccess) => void;
 };
 
+const appleAuthEnabled = process.env.NEXT_PUBLIC_ENABLE_APPLE_AUTH === "true";
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong";
 }
@@ -125,6 +127,7 @@ export const AuthCard = forwardRef<AuthCardHandle, AuthCardProps>(
           provider: "apple",
           options: {
             redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
+            scopes: "email name",
           },
         });
         if (error) throw error;
@@ -203,15 +206,17 @@ export const AuthCard = forwardRef<AuthCardHandle, AuthCardProps>(
               {googleLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <GoogleIcon className="mr-2 h-5 w-5" />}
               Continue with Google
             </Button>
-            <Button
-              type="button"
-              onClick={handleAppleSignIn}
-              disabled={busy}
-              className="h-12 w-full rounded-full bg-black text-base font-medium text-white hover:bg-gray-800"
-            >
-              {appleLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <AppleIcon className="mr-2 h-5 w-5" />}
-              Continue with Apple
-            </Button>
+            {appleAuthEnabled && (
+              <Button
+                type="button"
+                onClick={handleAppleSignIn}
+                disabled={busy}
+                className="h-12 w-full rounded-full bg-black text-base font-medium text-white hover:bg-gray-800"
+              >
+                {appleLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <AppleIcon className="mr-2 h-5 w-5" />}
+                Continue with Apple
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"

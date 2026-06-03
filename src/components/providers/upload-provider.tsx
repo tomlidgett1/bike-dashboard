@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { compressImage, compressedToFile, shouldCompress } from "@/lib/utils/image-compression";
+import { applyImageRotations } from "@/lib/utils/cloudinary-rotation";
 import type { ListingAnalysisResult } from "@/lib/ai/schemas";
 
 // ============================================================
@@ -336,15 +337,21 @@ export function UploadProvider({ children }: UploadProviderProps) {
 
       const analysis = analysisResult.analysis as ListingAnalysisResult;
 
+      const finalUploadedImages = applyImageRotations(
+        uploadedImages,
+        analysis.image_orientation?.rotations
+      );
+      const finalUrls = finalUploadedImages.map(img => img.url);
+
       // Map analysis to form data
-      const formData = buildFormData(analysis, urls, uploadedImages);
+      const formData = buildFormData(analysis, finalUrls, finalUploadedImages);
 
       // Phase 4: Create listing (call onComplete which will create the listing)
       setState(prev => ({ ...prev, stage: "creating" }));
       console.log("📝 [UPLOAD CONTEXT] Creating listing...");
 
       // Call the original onComplete callback which creates the listing
-      onCompleteRef.current?.(formData, urls);
+      onCompleteRef.current?.(formData, finalUrls);
 
       // Mark as success
       setState(prev => ({
@@ -465,7 +472,10 @@ function buildFormData(
   urls: string[],
   uploadedImages: Array<{ url: string; cardUrl: string; mobileCardUrl?: string; thumbnailUrl: string; galleryUrl?: string; detailUrl?: string }>
 ): any {
-  const generatedTitle = [analysis.brand, analysis.model].filter(Boolean).join(" ");
+  const generatedTitle =
+    analysis.clean_title ||
+    analysis.title ||
+    [analysis.brand, analysis.model, analysis.model_year].filter(Boolean).join(" ");
 
   // Helper: Check if AI value is unknown/uncertain - if so, return undefined
   const isUnknownValue = (text: string): boolean => {
@@ -571,7 +581,10 @@ function buildFormData(
     wearNotes: analysis.wear_notes,
     usageEstimate: analysis.usage_estimate,
     price: analysis.price_estimate
-      ? Math.round((analysis.price_estimate.min_aud + analysis.price_estimate.max_aud) / 2)
+      ? Math.round(
+          analysis.price_estimate.target_aud ||
+          (analysis.price_estimate.min_aud + analysis.price_estimate.max_aud) / 2
+        )
       : undefined,
   };
 
@@ -633,4 +646,3 @@ function buildFormData(
 
   return formData;
 }
-

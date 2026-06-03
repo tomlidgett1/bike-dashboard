@@ -1,12 +1,12 @@
 // f_auto lets Cloudinary negotiate AVIF/WebP/JPEG per the browser's Accept header
 // (AVIF is ~20-30% smaller than WebP), so we never hardcode a single format.
 export const CLOUDINARY_IMAGE_TRANSFORMS = {
-  thumbnail: "w_120,c_limit,q_auto:low,f_auto",
-  mobile_card: "w_320,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
-  grid_card: "w_640,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
-  mobile_hero: "w_1000,ar_1:1,c_pad,b_white,q_auto:best,f_auto",
-  web_hero: "w_1600,ar_4:3,c_pad,b_white,q_auto:best,f_auto",
-  zoom: "w_2000,c_limit,q_auto:best,f_auto",
+  thumbnail: "a_auto,w_120,c_limit,q_auto:low,f_auto",
+  mobile_card: "a_auto,w_320,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
+  grid_card: "a_auto,w_640,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
+  mobile_hero: "a_auto,w_1000,ar_1:1,c_pad,b_white,q_auto:best,f_auto",
+  web_hero: "a_auto,w_1600,ar_4:3,c_pad,b_white,q_auto:best,f_auto",
+  zoom: "a_auto,w_2000,c_limit,q_auto:best,f_auto",
 } as const;
 
 export type CloudinaryImageSlot = keyof typeof CLOUDINARY_IMAGE_TRANSFORMS;
@@ -159,7 +159,7 @@ export function extractCloudinaryPublicId(url: string | null | undefined): strin
 
     const parts = rest.split("/").filter(Boolean);
     const publicParts = parts.filter(
-      (part) => !/^(w_|h_|c_|ar_|g_|q_|f_|b_|e_|l_|o_|dpr_|fl_|r_|x_|y_|z_)/.test(part)
+      (part) => !/^(a_|w_|h_|c_|ar_|g_|q_|f_|b_|e_|l_|o_|dpr_|fl_|r_|x_|y_|z_)/.test(part)
     );
 
     if (publicParts.length === 0) return null;
@@ -231,8 +231,8 @@ export function cloudinaryCardLoader({
   // the current value happens upstream (toCurrentHeroPublicId).
   const hero = parseHeroCompoundId(src);
   if (hero) {
-    return `https://res.cloudinary.com/${cloudName}/image/upload/${hero.normalizeTransform}/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${hero.rawId}`;
+    return `https://res.cloudinary.com/${cloudName}/image/upload/${hero.normalizeTransform}/a_auto,c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${hero.rawId}`;
   }
 
-  return `https://res.cloudinary.com/${cloudName}/image/upload/c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${src}`;
+  return `https://res.cloudinary.com/${cloudName}/image/upload/a_auto,c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto/${src}`;
 }

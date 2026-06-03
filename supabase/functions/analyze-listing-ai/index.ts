@@ -8,18 +8,30 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const OPENAI_LISTING_MODEL = 'gpt-5.4-mini';
 
 // ============================================================
 // System Prompt - Human-like output style
 // ============================================================
 
-const SYSTEM_PROMPT = `You are an experienced cyclist selling your own gear on a marketplace. Write condition descriptions in FIRST PERSON as if you personally own and are selling this item.
+const SYSTEM_PROMPT = `You are an experienced cyclist selling second-hand cycling gear on an Australian marketplace. Your job is to turn human-uploaded photos into an honest, useful listing.
 
 ABSOLUTE RULE - NO LINKS OR URLS EVER:
 - Never include URLs, website links, or domain names in ANY field
 - Never cite sources inline (no "according to...", no "source:", no footnotes)
 - Never include "www.", "http", ".com", ".au" or any web reference in descriptions
 - Product descriptions must read as plain prose with no citations
+
+PRODUCT TITLE STYLE:
+- Create clean marketplace titles from real product names: brand + model + key variant/spec + model year only when defensible
+- Remove internal codes, all-caps POS style, vague words, keyword stuffing, and duplicated brand/model words
+- Never invent a model. If the exact model is uncertain, use a conservative descriptive title
+
+PRODUCT DESCRIPTION STYLE:
+- Product descriptions should sound human, not like a manufacturer brochure
+- Write 2-4 short sentences that explain what the item is, what it is good for, and any useful specs
+- Keep product features separate from condition; condition belongs in seller_notes / condition_details
+- Use Australian English and AUD pricing assumptions
 
 CRITICAL - CONDITION DESCRIPTION STYLE:
 - Write in FIRST PERSON - you own this item and are describing it
@@ -49,7 +61,19 @@ CORRECT - WRITE LIKE THIS:
 - "Shifts perfectly and I've had no issues" (personal experience)
 - "A few scratches from use but nothing major" (honest, casual)
 
-Just be real, honest, and write like you actually own and are selling this item.`;
+USED PRICING STYLE:
+- Assume the item is second-hand unless the photos and notes clearly show it is new
+- Pricing must be AUD
+- Prefer current or recent used-market evidence over new RRP
+- If only new/RRP pricing is found, estimate a second-hand range using item age, condition, visible wear, and normal cycling resale discounts
+- Avoid overpricing. Give a realistic private-sale range a buyer in Australia would actually consider
+
+IMAGE ORIENTATION:
+- For each image, identify whether the product/photo is clearly sideways or upside down
+- Return 0 degrees unless it is clearly wrong
+- Use clockwise degrees needed to make the product upright: 0, 90, 180, or 270
+
+Just be real, honest, useful, and conservative where the evidence is weak.`;
 
 // ============================================================
 // Analysis Schema
@@ -60,6 +84,7 @@ const LISTING_SCHEMA = {
   overall_confidence: "number 0-100",
   brand: "string",
   model: "string",
+  clean_title: "string - clean marketplace title, no keyword stuffing",
   model_year: "string or null",
   
   // Bike fields
@@ -100,6 +125,19 @@ const LISTING_SCHEMA = {
   brand_confidence: "number 0-100",
   model_confidence: "number 0-100",
   condition_confidence: "number 0-100",
+
+  // Image orientation correction
+  image_orientation: {
+    rotations: [
+      {
+        index: "number - zero-based image index",
+        rotate_degrees: "number - clockwise correction: 0, 90, 180, or 270",
+        confidence: "number 0-100",
+        reason: "string - brief reason, e.g. sideways drivetrain photo"
+      }
+    ],
+    primary_image_index: "number - best hero image index"
+  },
 };
 
 // ============================================================
@@ -234,16 +272,22 @@ Deno.serve(async (req) => {
     console.log('✓ [AI EDGE FUNCTION] All images ready for OpenAI');
 
     // Build analysis prompt
-    const prompt = `Analyze these ${imageUrls.length} photo(s) of a cycling product. 
+    const prompt = `Analyze these ${imageUrls.length} photo(s) of a cycling product uploaded by a human seller.
 
 Examine the photos carefully and provide:
 1. Item type (bike, part, or apparel)
-2. Brand and model identification
+2. Brand, model, and a clean marketplace title
 3. Specifications and details
 4. Honest condition assessment (write naturally, like you're describing it to a buyer)
-5. Realistic price range for the Australian market
+5. A preliminary second-hand AUD price range from the visible condition
+6. Image orientation corrections for any sideways/upside-down photos
 
 ${userHints?.itemType ? `The user thinks this is a ${userHints.itemType}.` : ''}
+
+Title guidance:
+- clean_title should read like a buyer-friendly second-hand listing title
+- Do not include condition, price, location, "used", "for sale", or marketing fluff in the title
+- If exact model is uncertain, keep the title conservative
 
 For the condition_details field, write in FIRST PERSON as if YOU own and are selling this item:
 - Use "I've" and "I" - you personally own this
@@ -251,6 +295,12 @@ For the condition_details field, write in FIRST PERSON as if YOU own and are sel
 - Never say "it looks like" or "appears to be" - you know this item
 - Be conversational, honest, and specific about condition
 - Don't use "Condition:" as a prefix - just write naturally
+
+For image_orientation.rotations:
+- Use the zero-based image index from the upload order
+- rotate_degrees is the clockwise correction needed for display
+- Only recommend 90/180/270 if very clear; otherwise use 0
+- Whole bikes should be horizontal with wheels underneath the frame
 
 Return your analysis as a JSON object with this structure:
 ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
@@ -265,17 +315,24 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5.4-mini',
-        input: [{
-          role: 'user',
-          content: [
-            { type: 'input_text', text: prompt },
-            ...imageData.map((dataUrl: string) => ({
-              type: 'input_image',
-              image_url: dataUrl,
-            })),
-          ],
-        }],
+        model: OPENAI_LISTING_MODEL,
+        input: [
+          {
+            role: 'system',
+            content: [{ type: 'input_text', text: SYSTEM_PROMPT }],
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'input_text', text: prompt },
+              ...imageData.map((dataUrl: string) => ({
+                type: 'input_image',
+                image_url: dataUrl,
+              })),
+            ],
+          },
+        ],
+        store: false,
       }),
     });
 
@@ -292,13 +349,20 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
     // Parse the Responses API output structure
     let outputText = null;
     
-    // Responses API returns: output[0].content[0].text
+    // Responses API can include tool/reasoning items before the message; collect the message text.
     if (Array.isArray(openaiData.output) && openaiData.output.length > 0) {
-      const message = openaiData.output[0];
-      if (message.type === 'message' && Array.isArray(message.content)) {
-        const textContent = message.content.find((item: any) => item.type === 'output_text');
-        if (textContent && textContent.text) {
-          outputText = textContent.text;
+      for (const message of openaiData.output) {
+        if (message?.type === 'message' && Array.isArray(message.content)) {
+          const textContent = message.content.find((item: unknown): item is { text: string } => (
+            typeof item === 'object' &&
+            item !== null &&
+            (item as { type?: unknown }).type === 'output_text' &&
+            typeof (item as { text?: unknown }).text === 'string'
+          ));
+          if (textContent?.text) {
+            outputText = textContent.text;
+            break;
+          }
         }
       }
     }
@@ -409,28 +473,56 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
     let webEnrichment = null;
     let searchUrls: Array<{url: string; type: string; relevance?: number}> = [];
     
-    if (analysis.brand && analysis.model) {
+    const detectedSubject = [
+      analysis.clean_title,
+      analysis.brand,
+      analysis.model,
+      analysis.model_year,
+      analysis.item_type,
+    ]
+      .filter((value) => typeof value === 'string' && value.trim().length > 0)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (detectedSubject) {
       try {
         console.log('🔍 [AI EDGE FUNCTION] Starting web search enrichment...');
         
-        const searchPrompt = `Search for "${analysis.brand} ${analysis.model}" cycling product (${analysis.item_type}). Find comprehensive product information including:
+        const searchPrompt = `Use web search to research this second-hand cycling marketplace item: "${detectedSubject}".
 
-1. Official product description from manufacturer or retailer websites
-2. Technical specifications:
+The product was identified from human-uploaded photos. Treat it as USED unless there is strong evidence it is new.
+
+Find and synthesize:
+1. The clean product title buyers would recognise (official product name when available)
+2. A human, second-hand marketplace product description with accurate product facts
+3. Technical specifications:
    ${analysis.item_type === 'bike' ? '- Frame material, size, groupset, wheel size, suspension type' : ''}
    ${analysis.item_type === 'part' ? '- Compatibility, material, weight, dimensions' : ''}
    ${analysis.item_type === 'apparel' ? '- Size, material, gender fit, features' : ''}
-3. Product category classification (be specific - e.g., "Mountain > Trail" or "Drivetrain > Rear Derailleur")
-4. Current Australian market pricing from retailers (BikeExchange, 99Bikes, Pushys, etc.)
-5. Model year identification if possible
-6. Any compatibility or fitment information
+4. Product category classification (be specific - e.g., "Mountain > Trail" or "Drivetrain > Rear Derailleur")
+5. Used-market value in AUD for an Australian private sale
+6. Model year identification if possible
+7. Any compatibility or fitment information
 
-Focus on cycling-specific sources. Prioritise Australian retailers for pricing.
+Pricing rules:
+- Prioritise used/sold/private listings in Australia when available
+- Use retailer/RRP pricing only as supporting context, then discount for second-hand condition
+- Convert/normalise to AUD if an overseas source is useful, but prefer AUD sources
+- The returned min/max/target must be realistic second-hand prices, not new retail
+- Factor visible condition from the photo analysis:
+  - condition_rating: ${analysis.condition_rating || 'Unknown'}
+  - visible wear: ${analysis.wear_notes || analysis.condition_details || 'Unknown'}
 
-CRITICAL: The product_description field must contain ONLY plain prose text. Never include URLs, hyperlinks, website addresses, domain names, or source citations of any kind in the product_description or any other text field. Sources go only in sources_consulted.
+Description rules:
+- product_description must be natural and human-like, as if written by a knowledgeable seller
+- Keep it factual and useful, not salesy or robotic
+- Do not describe condition here; condition belongs in seller notes
+- The product_description field must contain ONLY plain prose text. Never include URLs, hyperlinks, website addresses, domain names, or source citations of any kind. Sources go only in sources_consulted.
 
 Return ONLY valid JSON (no markdown):
 {
+  "clean_title": "2021 Giant TCR Advanced 2 Disc Road Bike",
   "product_description": "Detailed product description with no links or URLs...",
   "technical_specs": {
     "frame_material": "Carbon",
@@ -441,10 +533,13 @@ Return ONLY valid JSON (no markdown):
     "level2": "Road",
     "level3": "Endurance"
   },
-  "market_pricing": {
+  "used_market_pricing": {
     "min_aud": 2000,
     "max_aud": 3000,
-    "sources": ["BikeExchange", "99Bikes"]
+    "target_aud": 2500,
+    "confidence": 75,
+    "basis": "Used Australian listings plus current RRP discounted for condition",
+    "sources": ["BikeExchange", "eBay Australia"]
   },
   "compatibility_info": "Compatible with...",
   "model_year_confirmed": "2021",
@@ -460,7 +555,7 @@ Return ONLY valid JSON (no markdown):
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'gpt-5.4-mini',
+            model: OPENAI_LISTING_MODEL,
             input: searchPrompt,
             tools: [{ 
               type: 'web_search_preview',
@@ -504,9 +599,11 @@ Return ONLY valid JSON (no markdown):
                   product_description: parsed.product_description,
                   technical_specs: parsed.technical_specs,
                   category_classification: parsed.category_classification,
-                  market_pricing: parsed.market_pricing,
+                  used_market_pricing: parsed.used_market_pricing,
+                  market_pricing: parsed.used_market_pricing || parsed.market_pricing,
                   compatibility_info: parsed.compatibility_info,
                   model_year_confirmed: parsed.model_year_confirmed,
+                  clean_title: parsed.clean_title,
                 };
                 searchUrls = parsed.sources_consulted || [];
                 console.log('✅ [AI EDGE FUNCTION] Web enrichment parsed successfully');
@@ -543,6 +640,16 @@ Return ONLY valid JSON (no markdown):
     const dataSources: Record<string, "image" | "web" | "both"> = {};
 
     if (webEnrichment) {
+      if (webEnrichment.clean_title) {
+        mergedAnalysis.clean_title = stripUrls(webEnrichment.clean_title);
+        mergedAnalysis.title = mergedAnalysis.clean_title;
+        dataSources.title = 'web';
+      } else if (analysis.clean_title) {
+        mergedAnalysis.clean_title = stripUrls(analysis.clean_title);
+        mergedAnalysis.title = mergedAnalysis.clean_title;
+        dataSources.title = 'image';
+      }
+
       // Merge product description (prefer web for comprehensive description)
       // Keep description and condition separate:
       // - description: product info from web search
@@ -576,13 +683,25 @@ Return ONLY valid JSON (no markdown):
         }
       }
       
-      // Use web pricing if more reliable (higher confidence)
-      if (webEnrichment.market_pricing && webEnrichment.market_pricing.min_aud) {
+      // Use web-backed used-market pricing if available.
+      const usedPricing = webEnrichment.used_market_pricing || webEnrichment.market_pricing;
+      if (usedPricing && usedPricing.min_aud) {
+        const minAud = Number(usedPricing.min_aud);
+        const maxAud = Number(usedPricing.max_aud || usedPricing.target_aud || minAud * 1.2);
+        const targetAud = Number(usedPricing.target_aud || Math.round((minAud + maxAud) / 2));
         mergedAnalysis.price_estimate = {
-          min_aud: webEnrichment.market_pricing.min_aud,
-          max_aud: webEnrichment.market_pricing.max_aud || webEnrichment.market_pricing.min_aud * 1.2,
-          reasoning: `Market pricing from ${webEnrichment.market_pricing.sources?.join(', ') || 'web search'}`,
+          min_aud: minAud,
+          max_aud: maxAud,
+          target_aud: targetAud,
+          confidence: usedPricing.confidence,
+          reasoning: stripUrls(
+            usedPricing.basis ||
+            `Used-market AUD pricing from ${usedPricing.sources?.join(', ') || 'web search'}`
+          ),
         };
+        mergedAnalysis.price_min_aud = minAud;
+        mergedAnalysis.price_max_aud = maxAud;
+        mergedAnalysis.price_reasoning = mergedAnalysis.price_estimate.reasoning;
         dataSources.pricing = 'web';
       }
       
@@ -631,6 +750,30 @@ Return ONLY valid JSON (no markdown):
       console.log('✅ [AI EDGE FUNCTION] Data merged successfully');
     }
 
+    if (!mergedAnalysis.clean_title && analysis.clean_title) {
+      mergedAnalysis.clean_title = stripUrls(analysis.clean_title);
+      mergedAnalysis.title = mergedAnalysis.clean_title;
+    }
+
+    if (!mergedAnalysis.price_estimate && analysis.price_min_aud) {
+      const minAud = Number(analysis.price_min_aud);
+      const maxAud = Number(analysis.price_max_aud || minAud * 1.2);
+      mergedAnalysis.price_estimate = {
+        min_aud: minAud,
+        max_aud: maxAud,
+        target_aud: Math.round((minAud + maxAud) / 2),
+        reasoning: stripUrls(analysis.price_reasoning) || 'Preliminary second-hand AUD estimate from image analysis.',
+      };
+      dataSources.pricing = dataSources.pricing || 'image';
+    }
+
+    if (Object.keys(dataSources).length > 0) {
+      mergedAnalysis.data_sources = {
+        ...(mergedAnalysis.data_sources || {}),
+        ...dataSources,
+      };
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -639,6 +782,7 @@ Return ONLY valid JSON (no markdown):
           model: openaiData.model,
           tokensUsed: openaiData.usage?.total_tokens,
           webSearchPerformed: !!webEnrichment,
+          webSearchAttempted: !!detectedSubject,
         },
       }),
       {

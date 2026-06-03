@@ -19,7 +19,9 @@ export function BikeIcon({ iconName, className = "", size = 20 }: BikeIconProps)
       width={size}
       height={size}
       className={className}
-      style={{ width: size, height: size, display: 'inline-block', flexShrink: 0 }}
+      // Size comes from the width/height attributes by default, but a className
+      // (e.g. responsive h-4 sm:h-5) can override it — so don't force it inline.
+      style={{ display: 'inline-block', flexShrink: 0 }}
     />
   );
 }

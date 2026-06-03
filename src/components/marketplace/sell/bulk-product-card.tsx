@@ -123,10 +123,12 @@ export function BulkProductCard({
     size: cleanAiText(apparelDetails.size),
     genderFit: cleanAiText(apparelDetails.gender_fit),
     conditionRating: (aiData?.condition_rating || 'Good') as ConditionRating,
-    conditionDetails: cleanAiText(aiData?.condition_notes),
+    conditionDetails: cleanAiText(aiData?.condition_details || aiData?.condition_notes),
     wearNotes: cleanAiText(aiData?.wear_notes),
     usageEstimate: cleanAiText(aiData?.usage_estimate),
-    price: priceEstimate.min_aud ? Math.round((priceEstimate.min_aud + priceEstimate.max_aud) / 2) : 0,
+    price: priceEstimate.min_aud
+      ? Math.round(priceEstimate.target_aud || (priceEstimate.min_aud + priceEstimate.max_aud) / 2)
+      : 0,
     originalRrp: priceEstimate.max_aud || 0,
   });
   
@@ -699,4 +701,3 @@ export function BulkProductCard({
     </div>
   );
 }
-

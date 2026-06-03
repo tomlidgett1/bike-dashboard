@@ -11,6 +11,7 @@ import { BulkReviewStep } from "./bulk-review-step";
 import { Loader2, CheckCircle, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { applyImageRotations } from "@/lib/utils/cloudinary-rotation";
 
 // ============================================================
 // Bulk Upload Flow
@@ -229,15 +230,16 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
         const result = results.find(r => r.groupId === group.id);
         const analysis = result?.success ? result.analysis : null;
 
-        // Generate title from AI data
+        // Generate title from AI data, preferring web-clean product titles.
         const titleParts = [
           analysis?.brand,
           analysis?.model,
           analysis?.model_year,
         ].filter(Boolean);
-        const generatedTitle = titleParts.length > 0 
-          ? titleParts.join(' ')
-          : group.suggestedName;
+        const generatedTitle =
+          analysis?.clean_title ||
+          analysis?.title ||
+          (titleParts.length > 0 ? titleParts.join(' ') : group.suggestedName);
 
         // Get bike details
         const bikeDetails = analysis?.bike_details || {};
@@ -245,9 +247,14 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
         const apparelDetails = analysis?.apparel_details || {};
         const priceEstimate = analysis?.price_estimate || {};
 
+        const rotatedPhotos = applyImageRotations(
+          group.photoIndexes.map(idx => photos[idx]),
+          analysis?.image_orientation?.rotations
+        );
+
         return {
           groupId: group.id,
-          imageUrls: group.photoIndexes.map(idx => photos[idx].url),
+          imageUrls: rotatedPhotos.map(photo => photo.url),
           suggestedName: generatedTitle,
           aiData: analysis,
           formData: {
@@ -275,10 +282,15 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
             genderFit: cleanAiText(apparelDetails.gender_fit),
             apparelMaterial: cleanMaterial(apparelDetails.apparel_material),
             conditionRating: analysis?.condition_rating || 'Good',
-            conditionDetails: cleanAiText(analysis?.condition_notes),
+            conditionDetails: cleanAiText(analysis?.condition_details || analysis?.condition_notes),
             wearNotes: cleanAiText(analysis?.wear_notes),
             usageEstimate: cleanAiText(analysis?.usage_estimate),
-            price: priceEstimate.min_aud ? Math.round((priceEstimate.min_aud + priceEstimate.max_aud) / 2) : 0,
+            price: priceEstimate.min_aud
+              ? Math.round(
+                  priceEstimate.target_aud ||
+                  (priceEstimate.min_aud + priceEstimate.max_aud) / 2
+                )
+              : 0,
             originalRrp: priceEstimate.max_aud || 0,
           },
           isValid: true, // Will be validated properly in the card
@@ -652,4 +664,3 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
 
   return null;
 }
-

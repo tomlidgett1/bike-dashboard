@@ -1075,7 +1075,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
       <MarketplaceLayout showFooter={false} showStoreCTA={false}>
         {/* Mobile: promo above Hot / Browse / Stores, then sticky tabs + category pills */}
-        <div className="sm:hidden bg-white pt-3">
+        <div className="sm:hidden bg-white">
           {MARKETPLACE_PROMO_BANNERS_ENABLED &&
             (isMarketplaceView || isStoresView) &&
             !searchQuery && (

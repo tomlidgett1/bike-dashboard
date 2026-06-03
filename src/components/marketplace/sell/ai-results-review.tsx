@@ -93,8 +93,16 @@ export function AIResultsReview({
 
   // Calculate suggested price
   const suggestedPrice = editedData.price_estimate
-    ? Math.round((editedData.price_estimate.min_aud + editedData.price_estimate.max_aud) / 2)
+    ? Math.round(
+        editedData.price_estimate.target_aud ||
+        (editedData.price_estimate.min_aud + editedData.price_estimate.max_aud) / 2
+      )
     : 0;
+  const cleanTitle =
+    editedData.clean_title ||
+    editedData.title ||
+    `${editedData.model_year || ''} ${editedData.brand || ''} ${editedData.model || ''}`.trim() ||
+    'Product';
 
   // Mobile view - card-style like BulkProductCard
   if (isMobile) {
@@ -164,11 +172,10 @@ export function AIResultsReview({
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Title</label>
             <Input
-              value={`${editedData.model_year || ''} ${editedData.brand || ''} ${editedData.model || ''}`.trim() || 'Product'}
+              value={cleanTitle}
               onChange={(e) => {
-                const parts = e.target.value.split(' ');
-                // Simple parsing - just update brand for now
-                updateField('brand', e.target.value);
+                updateField('clean_title', e.target.value);
+                updateField('title', e.target.value);
               }}
               className="rounded-xl h-11 text-base"
               placeholder="Product name"
@@ -503,7 +510,7 @@ export function AIResultsReview({
       {/* Detected Product */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="text-base font-bold text-gray-900 mb-1">
-          {editedData.model_year} {editedData.brand} {editedData.model || 'Product'}
+          {cleanTitle}
         </h3>
         <p className="text-sm text-gray-600 mb-3">
           {editedData.item_type === 'bike' && editedData.bike_details?.bike_type || ''}
@@ -723,4 +730,3 @@ export function AIResultsReview({
     </div>
   );
 }
-

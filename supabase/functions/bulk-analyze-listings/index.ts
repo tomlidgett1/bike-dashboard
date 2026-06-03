@@ -8,8 +8,9 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const OPENAI_LISTING_MODEL = 'gpt-5.4-mini';
 
-const MAX_CONCURRENT_ANALYSIS = 5;
+const MAX_CONCURRENT_ANALYSIS = 3;
 
 // ============================================================
 // CORS Headers
@@ -31,10 +32,19 @@ interface ProductGroup {
   suggestedName?: string;
 }
 
+type JsonObject = Record<string, unknown>;
+
+type ResponsesPayload = {
+  output?: unknown[];
+  usage?: {
+    total_tokens?: number;
+  };
+};
+
 interface AnalysisResult {
   groupId: string;
   success: boolean;
-  data?: any;
+  data?: JsonObject;
   error?: string;
 }
 
@@ -42,25 +52,25 @@ interface AnalysisResult {
 // System Prompt (reused from analyze-listing-ai)
 // ============================================================
 
-const SYSTEM_PROMPT = `You are an experienced cyclist selling your own gear on a marketplace. Write descriptions that sound natural and personal - like you're chatting with another cyclist about your bike.
+const SYSTEM_PROMPT = `You are an experienced cyclist selling second-hand cycling gear on an Australian marketplace. Write output that sounds like a real human seller, not AI or a product catalogue.
 
-WRITING STYLE FOR DESCRIPTIONS:
-- Sound like a real person, not AI or a product catalogue
-- Be casual and conversational
-- Use natural phrasing: "It's in great condition", "Shifts perfectly", "A few light scratches but nothing major"
-- Be honest without being negative: "Some normal wear on the crank arms from use" not "Significant deterioration"
-- Skip flowery language - just be real
+RULES:
+- Use web search to verify clean product titles, descriptions, and used AUD pricing
+- Assume products are second-hand unless there is strong evidence they are new
+- Prefer Australian used/sold/private listing evidence for value
+- If only RRP/new pricing is found, discount for age, condition, and normal cycling resale behaviour
+- Product descriptions should be 2-4 short, natural sentences with no links or source names
+- Condition details should be first person and conversational
 - Use Australian English (colour, tyre, aluminium)
-- Avoid phrases like "I'm pleased to", "I'm happy to", "delighted to offer"
-- Don't apologise for wear - it's expected on used gear
-
-Just be real, honest, and helpful.`;
+- Never include URLs, domains, markdown citations, or source names in description fields
+- Return conservative image rotation corrections only when a photo is clearly sideways or upside down.`;
 
 const LISTING_SCHEMA = {
   item_type: "string (bike/part/apparel)",
   overall_confidence: "number 0-100",
   brand: "string",
   model: "string",
+  clean_title: "string - clean marketplace title",
   model_year: "string or null",
   
   // Bike fields
@@ -101,7 +111,56 @@ const LISTING_SCHEMA = {
   brand_confidence: "number 0-100",
   model_confidence: "number 0-100",
   condition_confidence: "number 0-100",
-};
+
+  image_orientation: {
+    rotations: [
+      {
+        index: "number - zero-based image index",
+        rotate_degrees: "number - clockwise correction: 0, 90, 180, or 270",
+        confidence: "number 0-100",
+        reason: "string"
+      }
+    ],
+    primary_image_index: "number"
+  },
+} as const;
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function extractResponsesText(data: unknown): string | null {
+  if (!isJsonObject(data) || !Array.isArray(data.output)) return null;
+
+  for (const item of data.output) {
+    if (!isJsonObject(item) || item.type !== 'message' || !Array.isArray(item.content)) continue;
+
+    const textContent = item.content.find((content): content is { text: string } => (
+      isJsonObject(content) &&
+      content.type === 'output_text' &&
+      typeof content.text === 'string'
+    ));
+    if (textContent) return textContent.text;
+  }
+
+  return null;
+}
+
+function parseJsonFromText(text: string): JsonObject {
+  const parseJsonObject = (candidate: string): JsonObject => {
+    const parsed = JSON.parse(candidate) as unknown;
+    if (!isJsonObject(parsed)) throw new Error('AI response JSON was not an object');
+    return parsed;
+  };
+
+  try {
+    return parseJsonObject(text);
+  } catch {
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON object found in AI response');
+    return parseJsonObject(jsonMatch.length === 2 ? jsonMatch[1] : jsonMatch[0]);
+  }
+}
 
 // ============================================================
 // Helper: Analyse Single Product
@@ -115,52 +174,58 @@ async function analyseSingleProduct(
   try {
     console.log(`🔍 [BULK ANALYSIS] Analysing product: ${groupId} (${imageUrls.length} images)`);
 
-    // Build image content
     const imageContent = imageUrls.map(url => ({
-      type: "image_url" as const,
-      image_url: {
-        url: url,
-        detail: "high" as const,
-      }
+      type: "input_image" as const,
+      image_url: url,
     }));
 
-    const userPrompt = `Analyse this ${suggestedName ? `${suggestedName}` : 'cycling product'} from the photos provided.
+    const userPrompt = `Analyse this ${suggestedName ? `${suggestedName}` : 'cycling product'} from the photos provided, then use web search to verify the clean title, natural product description, and realistic second-hand AUD value.
 
 ${suggestedName ? `Suggested product: ${suggestedName}` : ''}
 
-Extract all visible details and provide pricing recommendations based on Australian market conditions.
+Requirements:
+- clean_title must be a buyer-friendly product title, not keyword-stuffed
+- description must be human-like and factual, with no URLs/source names
+- price_estimate must be second-hand AUD value for an Australian private sale
+- use web search for title, product facts, and pricing context
+- image_orientation.rotations must list any high-confidence display rotations by image index
 
 Return ONLY valid JSON matching this schema:
 ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
 
-    // Call OpenAI API
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Call OpenAI Responses API with web search.
+    const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
+        model: OPENAI_LISTING_MODEL,
+        input: [
           {
             role: 'system',
-            content: SYSTEM_PROMPT,
+            content: [{ type: 'input_text', text: SYSTEM_PROMPT }],
           },
           {
             role: 'user',
             content: [
               {
-                type: "text",
+                type: "input_text",
                 text: userPrompt,
               },
               ...imageContent,
             ],
           },
         ],
-        response_format: { type: 'json_object' },
-        max_tokens: 2000,
+        tools: [{
+          type: 'web_search_preview',
+          search_context_size: 'high',
+          user_location: { type: 'approximate', country: 'AU' },
+        }],
+        tool_choice: 'auto',
         temperature: 0.3,
+        store: false,
       }),
     });
 
@@ -170,9 +235,11 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
       throw new Error(`OpenAI API error: ${openaiResponse.status}`);
     }
 
-    const openaiData = await openaiResponse.json();
-    const content = openaiData.choices[0].message.content;
-    const parsed = JSON.parse(content);
+    const openaiData = await openaiResponse.json() as ResponsesPayload;
+    const content = extractResponsesText(openaiData);
+    if (!content) throw new Error('No output text in OpenAI response');
+
+    const parsed = parseJsonFromText(content);
 
     console.log(`✅ [BULK ANALYSIS] Product ${groupId} analysed (${openaiData.usage?.total_tokens || '?'} tokens)`);
 
@@ -304,4 +371,3 @@ Deno.serve(async (req) => {
     );
   }
 });
-

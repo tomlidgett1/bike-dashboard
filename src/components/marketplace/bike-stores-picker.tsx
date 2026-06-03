@@ -91,7 +91,7 @@ export function BikeStoresPicker({
           type="button"
           aria-label="Choose a bike store"
           className={cn(
-            "flex h-10 sm:h-11 max-w-[148px] sm:max-w-[200px] items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 cursor-pointer",
+            "flex h-8 sm:h-11 max-w-[148px] sm:max-w-[200px] items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 sm:px-3.5 text-[13px] sm:text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 cursor-pointer",
             className
           )}
         >

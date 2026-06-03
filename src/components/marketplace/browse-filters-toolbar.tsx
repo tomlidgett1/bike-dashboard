@@ -31,7 +31,7 @@ function CategoryPillsSkeleton() {
       {SKELETON_WIDTHS.map((w, i) => (
         <div
           key={i}
-          className="h-10 flex-shrink-0 rounded-full bg-gray-200 animate-pulse"
+          className="h-8 sm:h-10 flex-shrink-0 rounded-full bg-gray-200 animate-pulse"
           style={{ width: w }}
         />
       ))}
@@ -234,9 +234,9 @@ export function BrowseFiltersToolbar({
   // ─── Mobile / desktop category-pills-only row ────────────────────────────
   if (categoryPillsRowOnly) {
     return (
-      // h-10 is fixed so the row height never shifts between skeleton and real pills
+      // Fixed height (smaller on mobile) so the row never shifts between skeleton and real pills
       <div ref={toolbarScrollRef as React.RefObject<HTMLDivElement>}
-        className="flex h-10 min-w-0 items-center gap-2 overflow-x-auto scrollbar-hide">
+        className="flex h-8 sm:h-10 min-w-0 items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide">
         {categoriesLoading ? (
           <CategoryPillsSkeleton />
         ) : (
@@ -247,12 +247,12 @@ export function BrowseFiltersToolbar({
               <button key={level1} type="button" onClick={() => handleCategoryClick(level1)}
                 onMouseEnter={() => prefetchProducts(level1)}
                 className={cn(
-                  "box-border flex h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer",
+                  "box-border flex h-8 sm:h-10 shrink-0 items-center gap-1.5 sm:gap-2 rounded-full border sm:border-2 px-3 sm:px-4 text-[13px] sm:text-sm font-medium transition-colors cursor-pointer",
                   isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
                 )}
                 style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}
               >
-                <BikeIcon iconName={icon} size={20} className="opacity-90" />
+                <BikeIcon iconName={icon} size={20} className="opacity-90 h-4 w-4 sm:h-5 sm:w-5" />
                 {label}
               </button>
             );

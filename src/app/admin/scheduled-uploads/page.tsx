@@ -578,7 +578,11 @@ export default function ScheduledUploadsPage() {
         // - seller_notes: condition assessment in first person (from image analysis)
         // - condition_details is the legacy field, used as fallback
         setFormData({
-          title: [analysis.brand, analysis.model].filter(Boolean).join(" ") || "",
+          title:
+            analysis.clean_title ||
+            analysis.title ||
+            [analysis.brand, analysis.model, analysis.model_year].filter(Boolean).join(" ") ||
+            "",
           productDescription: analysis.description || "",
           sellerNotes: analysis.seller_notes || analysis.condition_details || "",
           wearNotes: analysis.wear_notes || "",
@@ -602,9 +606,12 @@ export default function ScheduledUploadsPage() {
           genderFit: apparelDetails.gender_fit || "",
           apparelMaterial: apparelDetails.material || "",
           conditionRating: analysis.condition_rating || "Good",
-          conditionDetails: analysis.wear_notes || "",
+          conditionDetails: analysis.condition_details || analysis.wear_notes || "",
           price: priceEstimate.min_aud
-            ? Math.round((priceEstimate.min_aud + priceEstimate.max_aud) / 2)
+            ? Math.round(
+                priceEstimate.target_aud ||
+                (priceEstimate.min_aud + priceEstimate.max_aud) / 2
+              )
             : 0,
           originalRrp: priceEstimate.max_aud || 0,
           // Shipping defaults
@@ -857,7 +864,11 @@ export default function ScheduledUploadsPage() {
               const priceEstimate = analysis.price_estimate || {};
 
               analysisData = {
-                title: [analysis.brand, analysis.model].filter(Boolean).join(" ") || group.suggestedName,
+                title:
+                  analysis.clean_title ||
+                  analysis.title ||
+                  [analysis.brand, analysis.model, analysis.model_year].filter(Boolean).join(" ") ||
+                  group.suggestedName,
                 productDescription: analysis.description || "",
                 sellerNotes: analysis.seller_notes || analysis.condition_details || "",
                 wearNotes: analysis.wear_notes || "",
@@ -881,9 +892,12 @@ export default function ScheduledUploadsPage() {
                 genderFit: apparelDetails.gender_fit || "",
                 apparelMaterial: apparelDetails.material || "",
                 conditionRating: analysis.condition_rating || "Good",
-                conditionDetails: analysis.wear_notes || "",
+                conditionDetails: analysis.condition_details || analysis.wear_notes || "",
                 price: priceEstimate.min_aud
-                  ? Math.round((priceEstimate.min_aud + priceEstimate.max_aud) / 2)
+                  ? Math.round(
+                      priceEstimate.target_aud ||
+                      (priceEstimate.min_aud + priceEstimate.max_aud) / 2
+                    )
                   : 0,
                 originalRrp: priceEstimate.max_aud || 0,
                 // Shipping defaults
@@ -2669,4 +2683,3 @@ export default function ScheduledUploadsPage() {
     </div>
   );
 }
-

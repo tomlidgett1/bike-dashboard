@@ -212,7 +212,10 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       brand: editedAnalysis.brand,
       model: editedAnalysis.model,
       modelYear: editedAnalysis.model_year,
-      title: [editedAnalysis.brand, editedAnalysis.model].filter(Boolean).join(' '),
+      title:
+        editedAnalysis.clean_title ||
+        editedAnalysis.title ||
+        [editedAnalysis.brand, editedAnalysis.model, editedAnalysis.model_year].filter(Boolean).join(' '),
       conditionRating: editedAnalysis.condition_rating as any,
       // productDescription is the AI-generated product description (from web search enrichment)
       productDescription: editedAnalysis.description,
@@ -220,8 +223,11 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
       sellerNotes: editedAnalysis.seller_notes,
       wearNotes: editedAnalysis.wear_notes,
       usageEstimate: editedAnalysis.usage_estimate,
-      price: editedAnalysis.price_estimate 
-        ? Math.round((editedAnalysis.price_estimate.min_aud + editedAnalysis.price_estimate.max_aud) / 2)
+      price: editedAnalysis.price_estimate
+        ? Math.round(
+            editedAnalysis.price_estimate.target_aud ||
+            (editedAnalysis.price_estimate.min_aud + editedAnalysis.price_estimate.max_aud) / 2
+          )
         : undefined,
     };
 
@@ -355,4 +361,3 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
     </div>
   );
 }
-

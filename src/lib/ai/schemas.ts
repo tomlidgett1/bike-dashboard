@@ -26,6 +26,10 @@ export const LISTING_ANALYSIS_SCHEMA = {
       type: "string",
       description: "Specific model name or number"
     },
+    clean_title: {
+      type: "string",
+      description: "Clean buyer-facing marketplace title"
+    },
     model_year: {
       type: "string",
       description: "Manufacturing year (YYYY) or approximate era (e.g., '2020s', 'early 2010s')"
@@ -216,6 +220,28 @@ export const LISTING_ANALYSIS_SCHEMA = {
     analysis_notes: {
       type: "string",
       description: "Additional observations or recommendations for the seller"
+    },
+    image_orientation: {
+      type: "object",
+      description: "Conservative display rotation recommendations for uploaded photos",
+      properties: {
+        primary_image_index: {
+          type: "number",
+          description: "Best hero image index"
+        },
+        rotations: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              index: { type: "number" },
+              rotate_degrees: { type: "number", enum: [0, 90, 180, 270] },
+              confidence: { type: "number" },
+              reason: { type: "string" }
+            }
+          }
+        }
+      }
     }
   }
 } as const;
@@ -223,9 +249,11 @@ export const LISTING_ANALYSIS_SCHEMA = {
 export type ListingAnalysisResult = {
   item_type: "bike" | "part" | "apparel";
   overall_confidence: number;
-  brand: string;
-  model: string;
-  model_year?: string;
+    brand: string;
+    model: string;
+    clean_title?: string;
+    title?: string;
+    model_year?: string;
   bike_details?: {
     bike_type?: string;
     frame_size?: string;
@@ -261,11 +289,13 @@ export type ListingAnalysisResult = {
   detected_components?: {
     [key: string]: string;
   };
-  price_estimate: {
-    min_aud: number;
-    max_aud: number;
-    reasoning: string;
-  };
+    price_estimate: {
+      min_aud: number;
+      max_aud: number;
+      target_aud?: number;
+      confidence?: number;
+      reasoning: string;
+    };
   field_confidence?: {
     brand?: number;
     model?: number;
@@ -273,21 +303,42 @@ export type ListingAnalysisResult = {
     specifications?: number;
     pricing?: number;
   };
-  analysis_notes?: string;
-  // Web Search Enrichment (NEW)
-  web_enrichment?: {
-    product_description?: string;
-    technical_specs?: Record<string, string>;
+    analysis_notes?: string;
+    image_orientation?: {
+      primary_image_index?: number;
+      rotations?: Array<{
+        index: number;
+        rotate_degrees: 0 | 90 | 180 | 270;
+        confidence?: number;
+        reason?: string;
+      }>;
+    };
+    // Web Search Enrichment (NEW)
+    web_enrichment?: {
+      clean_title?: string;
+      product_description?: string;
+      technical_specs?: Record<string, string>;
     category_classification?: {
       level1?: string;
       level2?: string;
       level3?: string;
     };
-    market_pricing?: {
-      min_aud?: number;
-      max_aud?: number;
-      sources?: string[];
-    };
+      market_pricing?: {
+        min_aud?: number;
+        max_aud?: number;
+        target_aud?: number;
+        confidence?: number;
+        basis?: string;
+        sources?: string[];
+      };
+      used_market_pricing?: {
+        min_aud?: number;
+        max_aud?: number;
+        target_aud?: number;
+        confidence?: number;
+        basis?: string;
+        sources?: string[];
+      };
     compatibility_info?: string;
     model_year_confirmed?: string;
   };
@@ -329,8 +380,4 @@ export type ListingAnalysisResult = {
     };
   };
 };
-
-
-
-
 

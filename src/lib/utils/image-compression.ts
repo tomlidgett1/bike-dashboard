@@ -23,6 +23,13 @@ export interface CompressedImage {
   compressionRatio: number;
 }
 
+type LoadedImage = {
+  source: CanvasImageSource;
+  width: number;
+  height: number;
+  close?: () => void;
+};
+
 const DEFAULT_OPTIONS: Required<CompressionOptions> = {
   maxDimension: 1920,     // Sufficient for web display
   quality: 0.8,           // Good quality, ~80% size reduction
@@ -42,7 +49,7 @@ export async function compressImage(
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const originalSize = file.size;
 
-  // Load image into canvas
+  // Decode with camera/EXIF orientation applied before canvas strips metadata.
   const img = await loadImage(file);
   
   // Calculate new dimensions
@@ -66,8 +73,9 @@ export async function compressImage(
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   
-  // Draw image (this strips EXIF data)
-  ctx.drawImage(img, 0, 0, width, height);
+  // Draw oriented pixels (this strips EXIF data after preserving the visible orientation)
+  ctx.drawImage(img.source, 0, 0, width, height);
+  img.close?.();
 
   // Convert to blob
   const blob = await canvasToBlob(canvas, opts.mimeType, opts.quality);
@@ -120,12 +128,33 @@ export async function compressImages(
 /**
  * Load an image file into an HTMLImageElement
  */
-function loadImage(file: File): Promise<HTMLImageElement> {
+async function loadImage(file: File): Promise<LoadedImage> {
+  if ("createImageBitmap" in window) {
+    try {
+      const bitmap = await createImageBitmap(file, {
+        imageOrientation: "from-image",
+      } as ImageBitmapOptions);
+
+      return {
+        source: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        close: () => bitmap.close(),
+      };
+    } catch {
+      // Fall back to HTMLImageElement below for older browsers or unsupported formats.
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(img.src); // Clean up
-      resolve(img);
+      resolve({
+        source: img,
+        width: img.naturalWidth || img.width,
+        height: img.naturalHeight || img.height,
+      });
     };
     img.onerror = () => {
       URL.revokeObjectURL(img.src);
@@ -216,19 +245,24 @@ export function compressedToFile(
  * Skip compression for already-small images
  */
 export function shouldCompress(file: File): boolean {
-  // Skip if already small (< 300KB)
-  if (file.size < 300 * 1024) {
-    return false;
-  }
-  
   // Skip non-image files
   if (!file.type.startsWith('image/')) {
+    return false;
+  }
+
+  // JPEGs often carry camera orientation in EXIF even when they are small. Run them
+  // through canvas so the uploaded pixels are upright after EXIF is stripped.
+  if (file.type === 'image/jpeg' || file.type === 'image/jpg') {
+    return true;
+  }
+  
+  // Skip already-small non-JPEG images.
+  if (file.size < 300 * 1024) {
     return false;
   }
   
   return true;
 }
-
 
 
 

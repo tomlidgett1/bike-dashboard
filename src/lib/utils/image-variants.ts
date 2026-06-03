@@ -67,7 +67,7 @@ export async function generateImageVariants(
     : Buffer.from(inputBuffer);
 
   // Get original image metadata
-  const metadata = await sharp(buffer).metadata();
+  const metadata = await sharp(buffer).rotate().metadata();
   const originalWidth = metadata.width || 800;
   const originalHeight = metadata.height || 600;
   const format = metadata.format || 'jpeg';
@@ -105,7 +105,7 @@ async function processVariant(
   quality: number,
   originalWidth: number
 ): Promise<Buffer> {
-  let pipeline = sharp(buffer);
+  let pipeline = sharp(buffer).rotate();
 
   // Only resize if maxWidth > 0 and original is larger
   if (maxWidth > 0 && originalWidth > maxWidth) {
@@ -149,4 +149,3 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-

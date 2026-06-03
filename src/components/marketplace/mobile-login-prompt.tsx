@@ -68,8 +68,8 @@ export function MobileLoginPrompt() {
       });
 
       if (error) throw error;
-    } catch (error: any) {
-      console.error("Google sign-in error:", error.message);
+    } catch (error: unknown) {
+      console.error("Google sign-in error:", error instanceof Error ? error.message : "Unknown error");
       setGoogleLoading(false);
     }
   };
@@ -83,12 +83,13 @@ export function MobileLoginPrompt() {
         provider: "apple",
         options: {
           redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
+          scopes: "email name",
         },
       });
 
       if (error) throw error;
-    } catch (error: any) {
-      console.error("Apple sign-in error:", error.message);
+    } catch (error: unknown) {
+      console.error("Apple sign-in error:", error instanceof Error ? error.message : "Unknown error");
       setAppleLoading(false);
     }
   };
@@ -97,4 +98,3 @@ export function MobileLoginPrompt() {
   // This reduces clutter and provides a cleaner mobile experience
   return null;
 }
-
