@@ -392,14 +392,12 @@ export function StoreOnlineProductsCsvPanel({
     );
   }
 
-  const guideHighlight =
-    enriching || enrichedCount > 0
-      ? (["csv", "ai"] as const)
+  const guideHighlight: "csv" | ("csv" | "ai")[] | undefined =
+    enriching || enrichedCount > 0 || activeImport
+      ? ["csv", "ai"]
       : pendingUpload
         ? "csv"
-        : activeImport
-          ? (["csv", "ai"] as const)
-          : undefined;
+        : undefined;
 
   return (
     <div className="space-y-4">

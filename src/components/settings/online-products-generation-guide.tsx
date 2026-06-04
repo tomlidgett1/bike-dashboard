@@ -134,10 +134,9 @@ const PIPELINE: PipelineStep[] = [
   },
 ];
 
-function highlightStep(
-  stepId: PipelineStepId,
-  highlight?: PipelineStepId | PipelineStepId[],
-) {
+type HighlightProp = PipelineStepId | readonly PipelineStepId[];
+
+function highlightStep(stepId: PipelineStepId, highlight?: HighlightProp) {
   if (!highlight) return false;
   if (Array.isArray(highlight)) return highlight.includes(stepId);
   return highlight === stepId;
@@ -149,7 +148,7 @@ export function OnlineProductsGenerationGuide({
   className,
 }: {
   /** Emphasise the step(s) the user is on right now */
-  highlight?: PipelineStepId | PipelineStepId[];
+  highlight?: HighlightProp;
   compact?: boolean;
   className?: string;
 }) {
