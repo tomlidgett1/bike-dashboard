@@ -436,7 +436,7 @@ export function EmptyCategoryPrompt({
   description: string;
 }) {
   return (
-    <div className="rounded-md border bg-white p-8 text-center">
+    <div className="py-16 text-center">
       <p className="text-base font-semibold text-foreground">{title}</p>
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">{description}</p>
       <div className="mx-auto mt-6 max-w-xs">

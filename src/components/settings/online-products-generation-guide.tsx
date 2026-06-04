@@ -1,6 +1,12 @@
 "use client";
 
 import * as React from "react";
+import { HelpCircle } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 type PipelineStepId = "csv" | "ai" | "images" | "publish";
@@ -140,6 +146,55 @@ function highlightStep(stepId: PipelineStepId, highlight?: HighlightProp) {
   if (!highlight) return false;
   if (Array.isArray(highlight)) return highlight.includes(stepId);
   return highlight === stepId;
+}
+
+export function OnlineProductsGenerationTooltip({
+  className,
+}: {
+  className?: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground",
+            className,
+          )}
+          aria-label="What gets generated"
+        >
+          <HelpCircle className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        align="end"
+        sideOffset={6}
+        className="max-w-xs border border-border bg-white p-3 text-left text-xs text-muted-foreground shadow-md whitespace-normal"
+      >
+        <p className="font-medium text-foreground mb-2">What gets generated</p>
+        <ul className="space-y-1.5 leading-relaxed">
+          <li>
+            <span className="font-medium text-foreground">From CSV:</span> row data and SOH
+            (stock columns only — not AI-guessed).
+          </li>
+          <li>
+            <span className="font-medium text-foreground">AI optimise:</span> title, brand, price,
+            category, description, and specs.
+          </li>
+          <li>
+            <span className="font-medium text-foreground">Images:</span> web search on the next
+            screen — you pick primary and gallery.
+          </li>
+          <li>
+            <span className="font-medium text-foreground">Create:</span> store listing, optional
+            Online Only badge; SOH defaults to 9999 if missing from CSV.
+          </li>
+        </ul>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function OnlineProductsGenerationGuide({

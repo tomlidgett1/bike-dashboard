@@ -3,9 +3,9 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FileText, Globe, ImageIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { PhotoQueue } from "@/components/optimize/photo-queue";
 import { CopyQueue } from "@/components/optimize/copy-queue";
+import { OptimiseWorkflowTabs } from "@/components/optimize/optimize-layout";
 import { StoreOnlineProductsManager } from "@/components/settings/store-online-products-manager";
 
 type OptimiseWorkflow = "photos" | "copy" | "online";
@@ -45,27 +45,11 @@ export function OptimiseTabPanel() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-        {WORKFLOWS.map((item) => {
-          const isActive = workflow === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setWorkflow(item.id)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                isActive
-                  ? "text-gray-800 bg-white shadow-sm"
-                  : "text-gray-600 hover:bg-gray-200/70",
-              )}
-            >
-              <item.icon className="size-[15px]" />
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
+      <OptimiseWorkflowTabs
+        items={WORKFLOWS}
+        activeId={workflow}
+        onChange={(id) => setWorkflow(id as OptimiseWorkflow)}
+      />
 
       {workflow === "photos" && <PhotoQueue />}
       {workflow === "copy" && <CopyQueue />}

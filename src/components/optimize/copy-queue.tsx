@@ -9,14 +9,23 @@ import {
   ListChecks,
   Loader2,
   RefreshCw,
-  Search,
   Sparkles,
   StopCircle,
   Type,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  OptimiseBulkBar,
+  OptimiseCenteredState,
+  OptimiseList,
+  OptimiseLoadingState,
+  OptimiseSearchInput,
+  OptimiseSegmentedControl,
+  OptimiseSubToolbar,
+  OptimiseToolbar,
+} from "@/components/optimize/optimize-layout";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/dashboard";
 import {
@@ -280,105 +289,87 @@ export function CopyQueue() {
     );
   }
 
+  const categoryMeta = categories.find((c) => c.id === category);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-4 rounded-md border bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-        <CategoryPicker
-          category={category}
-          categories={categories}
-          loadingCats={loadingCats}
-          disabled={running}
-          onChange={onCategoryChange}
-          className="h-9 w-full rounded-md sm:w-[220px]"
-        />
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search products…"
-            className="rounded-md pl-9"
+    <div>
+      <OptimiseToolbar>
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
+          <CategoryPicker
+            category={category}
+            categories={categories}
+            loadingCats={loadingCats}
+            disabled={running}
+            onChange={onCategoryChange}
+            className="h-9 w-full rounded-md sm:w-[min(100%,280px)]"
           />
+          {categoryMeta && category !== "all" && (
+            <span className="text-sm text-muted-foreground tabular-nums shrink-0">
+              {categoryMeta.count}
+            </span>
+          )}
         </div>
-      </div>
+        <OptimiseSearchInput value={search} onChange={setSearch} />
+      </OptimiseToolbar>
 
       {category && !loading && (
         <>
-          <div className="rounded-md border bg-white p-4">
-            <p className="text-sm font-medium text-foreground">Generate</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Choose which fields to fill for selected products. Results save automatically.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {(
-                [
-                  { key: "title" as const, label: "Titles", icon: Type, count: counts.title },
-                  {
-                    key: "description" as const,
-                    label: "Descriptions",
-                    icon: FileText,
-                    count: counts.description,
-                  },
-                  { key: "specs" as const, label: "Specs", icon: ListChecks, count: counts.specs },
-                ] as const
-              ).map(({ key, label, icon: Icon, count }) => (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={running}
-                  onClick={() => setFields((prev) => ({ ...prev, [key]: !prev[key] }))}
-                  className={cn(
-                    "flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors",
-                    fields[key]
-                      ? "border-gray-300 bg-white text-foreground shadow-sm"
-                      : "border-border bg-muted/30 text-muted-foreground hover:bg-muted/50",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "flex size-4 shrink-0 items-center justify-center rounded-md border",
-                      fields[key] ? "border-gray-400 bg-gray-50" : "border-gray-300 bg-transparent",
-                    )}
-                    aria-hidden
-                  >
-                    {fields[key] ? <Check className="size-3 text-gray-800" /> : null}
-                  </span>
-                  <Icon className="size-3.5" />
-                  {label}
-                  <span className="text-[11px] tabular-nums opacity-70">({count} missing)</span>
-                </button>
-              ))}
+          <OptimiseSubToolbar>
+            <div className="min-w-0 space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Choose fields to generate for selected products. Results save automatically.
+              </p>
+              <ToggleGroup
+                type="multiple"
+                variant="outline"
+                size="sm"
+                spacing={2}
+                disabled={running}
+                value={activeFields}
+                onValueChange={(values) => {
+                  setFields({
+                    title: values.includes("title"),
+                    description: values.includes("description"),
+                    specs: values.includes("specs"),
+                  });
+                }}
+                className="flex-wrap"
+              >
+                {(
+                  [
+                    { key: "title" as const, label: "Titles", icon: Type, count: counts.title },
+                    {
+                      key: "description" as const,
+                      label: "Descriptions",
+                      icon: FileText,
+                      count: counts.description,
+                    },
+                    { key: "specs" as const, label: "Specs", icon: ListChecks, count: counts.specs },
+                  ] as const
+                ).map(({ key, label, icon: Icon, count }) => (
+                  <ToggleGroupItem key={key} value={key} aria-label={label} className="gap-1.5 px-3">
+                    <Icon />
+                    {label}
+                    <span className="text-xs font-normal text-muted-foreground tabular-nums">
+                      ({count} missing)
+                    </span>
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-1 rounded-md bg-gray-100 p-0.5 w-fit">
-              {(
-                [
-                  { id: "all" as const, label: "Any gap" },
-                  { id: "title" as const, label: "Missing title", count: counts.title },
-                  { id: "description" as const, label: "Missing description", count: counts.description },
-                  { id: "specs" as const, label: "Missing specs", count: counts.specs },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setGapFilter(tab.id)}
-                  className={cn(
-                    "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
-                    gapFilter === tab.id
-                      ? "text-gray-800 bg-white shadow-sm"
-                      : "text-gray-600 hover:bg-gray-200/70",
-                  )}
-                >
-                  {tab.label}
-                  {"count" in tab && (tab.count ?? 0) > 0 && (
-                    <span className="tabular-nums text-[10px] opacity-70">({tab.count})</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
+            <OptimiseSegmentedControl
+              value={gapFilter}
+              onChange={setGapFilter}
+              items={[
+                { id: "all" as const, label: "Any gap" },
+                { id: "title" as const, label: "Missing title", count: counts.title },
+                { id: "description" as const, label: "Missing description", count: counts.description },
+                { id: "specs" as const, label: "Missing specs", count: counts.specs },
+              ]}
+            />
+          </OptimiseSubToolbar>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-white px-4 py-3">
+          <OptimiseBulkBar>
             <div className="flex items-center gap-3">
               <Checkbox
                 checked={filtered.length > 0 && filtered.every((p) => selected.has(p.id))}
@@ -418,31 +409,28 @@ export function CopyQueue() {
                 </Button>
               )}
             </div>
-          </div>
+          </OptimiseBulkBar>
         </>
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center rounded-md border bg-white py-16">
-          <Loader2 className="size-7 animate-spin text-muted-foreground" />
-        </div>
+        <OptimiseLoadingState />
       ) : filtered.length === 0 ? (
-        <div className="rounded-md border bg-white p-8 text-center">
+        <OptimiseCenteredState>
           <StatusBadge label="Copy complete" tone="success" />
-          <p className="mt-3 text-sm text-muted-foreground">
+          <p className="mt-3 max-w-md text-sm text-muted-foreground">
             Every product in this view already has the selected fields filled.
           </p>
-        </div>
+        </OptimiseCenteredState>
       ) : (
-        <div className="overflow-hidden rounded-md border bg-white">
-          <div className="hidden border-b bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_80px_80px_80px_100px] sm:gap-3">
+        <OptimiseList>
+          <div className="hidden border-b border-border/60 py-2 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_80px_80px_80px_100px] sm:gap-3">
             <span>Product</span>
             <span className="text-center">Title</span>
             <span className="text-center">Desc</span>
             <span className="text-center">Specs</span>
             <span className="text-right">Status</span>
           </div>
-          <div className="divide-y divide-border/60">
             {filtered.map((p) => {
               const run = runs[p.id] ?? emptyRun();
               const status = rowStatus(run);
@@ -451,7 +439,7 @@ export function CopyQueue() {
               return (
                 <div
                   key={p.id}
-                  className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_80px_80px_80px_100px] sm:items-center sm:gap-3"
+                  className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_80px_80px_80px_100px] sm:items-center sm:gap-3"
                 >
                   <div className="flex min-w-0 items-start gap-3">
                     <Checkbox
@@ -495,8 +483,7 @@ export function CopyQueue() {
                 </div>
               );
             })}
-          </div>
-        </div>
+        </OptimiseList>
       )}
     </div>
   );

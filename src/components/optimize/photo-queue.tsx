@@ -18,8 +18,16 @@ import {
   Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  OptimiseBulkBar,
+  OptimiseCenteredState,
+  OptimiseList,
+  OptimiseLoadingState,
+  OptimiseSearchInput,
+  OptimiseSegmentedControl,
+  OptimiseToolbar,
+} from "@/components/optimize/optimize-layout";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/dashboard";
@@ -422,58 +430,40 @@ export function PhotoQueue() {
     );
   }
 
+  const categoryMeta = categories.find((c) => c.id === category);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-4 rounded-md border bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
+    <div>
+      <OptimiseToolbar>
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
           <CategoryPicker
             category={category}
             categories={categories}
             loadingCats={loadingCats}
             disabled={running}
             onChange={onCategoryChange}
-            className="h-9 w-full rounded-md sm:w-[220px]"
+            className="h-9 w-full rounded-md sm:w-[min(100%,280px)]"
           />
-          <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-            {(
-              [
-                { id: "in_progress" as const, label: "In progress", count: counts.inProgress },
-                { id: "review" as const, label: "Review", count: counts.review },
-                { id: "done" as const, label: "On store", count: counts.done },
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setFilter(tab.id)}
-                className={cn(
-                  "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
-                  filter === tab.id
-                    ? "text-gray-800 bg-white shadow-sm"
-                    : "text-gray-600 hover:bg-gray-200/70",
-                )}
-              >
-                {tab.label}
-                {tab.count > 0 && (
-                  <span className="tabular-nums text-[10px] opacity-70">({tab.count})</span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search products…"
-            className="rounded-md pl-9"
+          {categoryMeta && category !== "all" && (
+            <span className="text-sm text-muted-foreground tabular-nums shrink-0">
+              {categoryMeta.count}
+            </span>
+          )}
+          <OptimiseSegmentedControl
+            value={filter}
+            onChange={setFilter}
+            items={[
+              { id: "in_progress" as const, label: "In progress", count: counts.inProgress },
+              { id: "review" as const, label: "Review", count: counts.review },
+              { id: "done" as const, label: "On store", count: counts.done },
+            ]}
           />
         </div>
-      </div>
+        <OptimiseSearchInput value={search} onChange={setSearch} />
+      </OptimiseToolbar>
 
       {category && !loading && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-white px-4 py-3">
+        <OptimiseBulkBar>
           <div className="flex flex-wrap items-center gap-3">
             <Checkbox
               checked={
@@ -522,29 +512,27 @@ export function PhotoQueue() {
               </Button>
             )}
           </div>
-        </div>
+        </OptimiseBulkBar>
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center rounded-md border bg-white py-16">
-          <Loader2 className="size-7 animate-spin text-muted-foreground" />
-        </div>
+        <OptimiseLoadingState />
       ) : visible.length === 0 ? (
-        <div className="rounded-md border bg-white p-8 text-center">
+        <OptimiseCenteredState>
           <StatusBadge
             label={filter === "done" ? "No products on store yet" : "All caught up"}
             tone="success"
           />
-          <p className="mt-3 text-sm text-muted-foreground">
+          <p className="mt-3 max-w-md text-sm text-muted-foreground">
             {filter === "in_progress"
               ? "Every product in this category has a store photo, or check the Review tab."
               : filter === "review"
                 ? "Run Find photos first — products ready for approval appear here."
                 : "Nothing in this view."}
           </p>
-        </div>
+        </OptimiseCenteredState>
       ) : (
-        <div className="divide-y divide-border/60 rounded-md border bg-white">
+        <OptimiseList>
           {visible.map((p) => {
             const run = runs[p.id] ?? emptyImageRun();
             const status = photoStatus(p, run);
@@ -557,7 +545,7 @@ export function PhotoQueue() {
 
             return (
               <div key={p.id}>
-                <div className="flex items-start gap-3 px-4 py-3">
+                <div className="flex items-start gap-3 py-3">
                   {status === "needs" || status === "error" ? (
                     <Checkbox
                       className="mt-2"
@@ -640,7 +628,7 @@ export function PhotoQueue() {
                 </div>
 
                 {showReviewPanel && (
-                  <div className="border-t border-border/60 bg-muted/20 px-4 py-4">
+                  <div className="border-t border-border/60 bg-muted/20 py-4">
                     <OptimizerImageReview
                       img={run}
                       hasCanonical={!!p.canonical_product_id}
@@ -657,7 +645,7 @@ export function PhotoQueue() {
                 )}
 
                 {isOpen && status === "done" && p.canonical_images.length > 0 && (
-                  <div className="border-t border-border/60 bg-muted/20 px-4 py-3">
+                  <div className="border-t border-border/60 bg-muted/20 py-3">
                     <p className="mb-2 text-xs font-medium text-muted-foreground">
                       {p.canonical_images.length} approved photo{p.canonical_images.length === 1 ? "" : "s"}
                     </p>
@@ -696,7 +684,7 @@ export function PhotoQueue() {
               </div>
             );
           })}
-        </div>
+        </OptimiseList>
       )}
 
       <LightboxOverlay url={lightbox} onClose={() => setLightbox(null)} />

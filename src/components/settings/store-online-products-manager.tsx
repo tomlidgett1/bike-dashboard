@@ -46,7 +46,7 @@ import {
   StoreOnlineProductsCsvPanel,
   type EnrichedFromCsv,
 } from "@/components/settings/store-online-products-csv-panel";
-import { OnlineProductsGenerationGuide } from "@/components/settings/online-products-generation-guide";
+import { OnlineProductsGenerationTooltip } from "@/components/settings/online-products-generation-guide";
 
 const ONLINE_ONLY_BADGE_STORAGE_KEY = "yj-online-products-online-only-badge";
 
@@ -1029,10 +1029,10 @@ export function StoreOnlineProductsManager() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-0">
       {/* Error banner */}
       {errorMsg && (
-        <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           {errorMsg}
         </div>
@@ -1097,7 +1097,7 @@ export function StoreOnlineProductsManager() {
       ) : null}
 
       {intakeMode === "screenshot" && products.length === 0 && uploadFile ? (
-        <div className="rounded-xl border border-border bg-card p-4">
+        <div className="border-b border-border/60 pb-4">
           <div className="flex items-start gap-4">
             {uploadPreview ? (
               <div
@@ -1150,19 +1150,14 @@ export function StoreOnlineProductsManager() {
       {/* Extracted products list */}
       {products.length > 0 && (
         <>
-          <OnlineProductsGenerationGuide
-            highlight={["images", "publish"]}
-            compact
-          />
-
           <OnlineOnlyBadgeToggle
             value={onlineOnlyBadge}
             onChange={handleOnlineOnlyBadgeChange}
             disabled={isCreating || searching}
           />
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 py-3">
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
               {intakeMode === "csv" && (
                 <Button size="sm" variant="outline" onClick={backToCsvTable}>
                   <FileSpreadsheet className="size-4" />
@@ -1180,6 +1175,7 @@ export function StoreOnlineProductsManager() {
               {allSearched && readyCount > 0 && (
                 <span className="text-xs text-muted-foreground">· {readyCount} with images</span>
               )}
+              <OnlineProductsGenerationTooltip />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {(phase === "review" || phase === "searching") && pendingImageCount > 0 && (
@@ -1243,8 +1239,7 @@ export function StoreOnlineProductsManager() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-card">
-            <div className="divide-y divide-border">
+          <div className="divide-y divide-border/60">
               {products.map((product) => (
                 <ProductEditRow
                   key={product.id}
@@ -1269,7 +1264,6 @@ export function StoreOnlineProductsManager() {
                   showDuplicateBadge={intakeMode === "csv"}
                 />
               ))}
-            </div>
           </div>
 
           {/* Bottom action bar */}

@@ -21,7 +21,12 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { headersAtRow, parseCsv } from "@/lib/store/online-products-csv-parse";
-import { OnlineProductsGenerationGuide } from "@/components/settings/online-products-generation-guide";
+import { OnlineProductsGenerationTooltip } from "@/components/settings/online-products-generation-guide";
+import {
+  OptimiseBulkBar,
+  OptimiseCenteredState,
+  OptimiseLoadingState,
+} from "@/components/optimize/optimize-layout";
 
 const HEADER_PREVIEW_MAX_ROWS = 20;
 
@@ -81,7 +86,7 @@ export function OnlineOnlyBadgeToggle({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-white px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
       <div className="min-w-0">
         <p className="text-sm font-medium text-foreground">Online Only badge</p>
         <p className="text-xs text-muted-foreground mt-0.5">
@@ -384,33 +389,19 @@ export function StoreOnlineProductsCsvPanel({
     : 0;
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-white py-16 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" />
-        Loading saved CSV imports…
-      </div>
-    );
+    return <OptimiseLoadingState label="Loading saved CSV imports…" />;
   }
 
-  const guideHighlight: "csv" | ("csv" | "ai")[] | undefined =
-    enriching || enrichedCount > 0 || activeImport
-      ? ["csv", "ai"]
-      : pendingUpload
-        ? "csv"
-        : undefined;
-
   return (
-    <div className="space-y-4">
-      <OnlineProductsGenerationGuide highlight={guideHighlight} />
-
+    <div className="space-y-0">
       <OnlineOnlyBadgeToggle
         value={onlineOnlyBadge}
         onChange={onOnlineOnlyBadgeChange}
         disabled={uploading || enriching}
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 py-3">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           {imports.length > 0 && (
             <Select
               value={activeImportId ?? undefined}
@@ -457,6 +448,7 @@ export function StoreOnlineProductsCsvPanel({
               Delete
             </Button>
           )}
+          <OnlineProductsGenerationTooltip />
         </div>
         {activeImport && (
           <Button
@@ -474,7 +466,7 @@ export function StoreOnlineProductsCsvPanel({
       </div>
 
       {pendingUpload && (
-        <div className="rounded-md border border-border bg-white p-4 space-y-4">
+        <div className="space-y-4 border-b border-border/60 py-4">
           <div>
             <p className="text-sm font-medium text-foreground">Choose header row</p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -483,7 +475,7 @@ export function StoreOnlineProductsCsvPanel({
             </p>
           </div>
 
-          <div className="rounded-md border border-border overflow-hidden">
+          <div className="overflow-hidden rounded-md border border-border/60">
             <div className="max-h-[min(50vh,400px)] overflow-auto">
               <table className="w-full min-w-max text-sm border-collapse">
                 <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm border-b border-border">
@@ -560,7 +552,7 @@ export function StoreOnlineProductsCsvPanel({
             </p>
           )}
 
-          <div className="rounded-md border border-border bg-white px-3 py-2.5 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             <span className="font-medium text-foreground">Columns: </span>
             {previewHeaders.length > 0
               ? previewHeaders.join(", ")
@@ -571,7 +563,7 @@ export function StoreOnlineProductsCsvPanel({
                 · {previewDataRowCount} product row{previewDataRowCount === 1 ? "" : "s"} will be imported
               </span>
             )}
-          </div>
+          </p>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
@@ -609,26 +601,28 @@ export function StoreOnlineProductsCsvPanel({
       )}
 
       {activeImport ? (
-        <div className="rounded-md border border-border bg-white p-4 space-y-3">
-          <div className="flex flex-wrap items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted">
-              <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-foreground">{activeImport.fileName}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {activeImport.rowCount} rows saved · {selectedCount} selected
-                {enrichedCount > 0 && <> · {enrichedCount} enriched</>}
-                {duplicateCount > 0 && <> · {duplicateCount} duplicates</>}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Select rows to optimise. AI adds title, brand, price, category, description, and specs; SOH stays
-                from your CSV. Images are added on the next screen after optimise.
-              </p>
+        <div className="space-y-0">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 py-4">
+            <div className="flex min-w-0 flex-1 flex-wrap items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted/60">
+                <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-foreground">{activeImport.fileName}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {activeImport.rowCount} rows saved · {selectedCount} selected
+                  {enrichedCount > 0 && <> · {enrichedCount} enriched</>}
+                  {duplicateCount > 0 && <> · {duplicateCount} duplicates</>}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Select rows, then run AI optimisation. Your selection is saved automatically.
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <OptimiseBulkBar>
+            <div className="flex flex-wrap items-center gap-3 min-w-0">
             <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
               <button
                 type="button"
@@ -657,6 +651,7 @@ export function StoreOnlineProductsCsvPanel({
                 <span className="tabular-nums text-muted-foreground">({duplicateCount})</span>
               </button>
             </div>
+            </div>
             {rowViewTab === "all" && (
               <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="outline" onClick={() => void toggleAll(true)}>
@@ -667,9 +662,9 @@ export function StoreOnlineProductsCsvPanel({
                 </Button>
               </div>
             )}
-          </div>
+          </OptimiseBulkBar>
 
-          <div className="rounded-md border border-border overflow-hidden">
+          <div className="overflow-hidden rounded-md border border-border/60">
             <div className="max-h-[min(60vh,520px)] overflow-auto">
               <table className="w-full min-w-max text-sm border-collapse">
                 <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm border-b border-border">
@@ -776,7 +771,7 @@ export function StoreOnlineProductsCsvPanel({
                         {isExpanded && row.enriched && typeof row.enriched === "object" && (
                           <tr className="border-b border-border bg-muted/20">
                             <td colSpan={sheetHeaders.length + 3} className="px-4 py-3">
-                              <div className="rounded-md border border-border bg-white p-3 text-xs space-y-2">
+                              <div className="text-xs space-y-2">
                                 <p className="font-medium text-foreground">AI-generated preview</p>
                                 <p className="text-foreground">
                                   {String((row.enriched as { name?: string }).name ?? "")}
@@ -836,27 +831,26 @@ export function StoreOnlineProductsCsvPanel({
           </div>
         </div>
       ) : (
-        <div
-          className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border bg-white p-10 text-center cursor-pointer hover:border-primary/40"
+        <OptimiseCenteredState
+          className="cursor-pointer border border-dashed border-border/60 rounded-md hover:border-primary/40"
           onClick={() => fileRef.current?.click()}
         >
           <FileSpreadsheet className="h-10 w-10 text-muted-foreground" />
           <div>
             <p className="text-sm font-medium text-foreground">Upload a product CSV</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-              Upload your supplier sheet, pick the header row, then optimise selected rows. See above for what AI
-              generates versus what comes from your file.
+              Upload your supplier sheet and pick the header row. Use the help icon for what each step generates.
             </p>
           </div>
           <Button size="sm" variant="outline" disabled={uploading}>
             <Upload className="size-4" />
             Choose CSV file
           </Button>
-        </div>
+        </OptimiseCenteredState>
       )}
 
       {enriching && (
-        <div className="flex items-start gap-2 rounded-md border border-border bg-white px-4 py-3 text-sm text-muted-foreground">
+        <div className="flex items-start gap-2 border-b border-border/60 py-3 text-sm text-muted-foreground">
           <Loader2 className="size-4 shrink-0 animate-spin mt-0.5" />
           <span>{enrichProgress ?? "Researching selected products with web search…"}</span>
         </div>

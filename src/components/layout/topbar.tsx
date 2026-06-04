@@ -1,8 +1,8 @@
 "use client";
 
-import * as React from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Zap } from "lucide-react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -12,10 +12,13 @@ import {
 } from "@/components/ui/breadcrumb";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "./theme-toggle";
+import { TopbarNavPills, topbarPillClass } from "./topbar-nav-pills";
 import { NotificationsDropdown } from "./notifications-dropdown";
 import { MessagesDropdown } from "./messages-dropdown";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useSyncStatus } from "@/lib/hooks/use-sync-status";
+import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
+import { cn } from "@/lib/utils";
 
 // Route → breadcrumb labels. Falls back to a title-cased last segment.
 const CRUMBS: Record<string, { section: string; page: string }> = {
@@ -62,6 +65,8 @@ export function Topbar() {
   const crumb = useCrumb(pathname);
   const { user } = useAuth();
   const { isSyncing, formattedLastSync } = useSyncStatus();
+  const { isConnected: lightspeedConnected, isLoading: lightspeedLoading } =
+    useLightspeedConnection({ autoFetch: true, pollInterval: 60000 });
 
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border/60 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -78,19 +83,28 @@ export function Topbar() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="ml-auto flex items-center gap-1.5">
-        {isSyncing ? (
-          <div className="hidden items-center gap-1.5 rounded-md border bg-muted/40 px-2.5 py-1.5 sm:flex">
-            <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-            <span className="text-xs font-medium text-foreground">Syncing…</span>
-          </div>
-        ) : formattedLastSync && formattedLastSync !== "Never" ? (
-          <div className="hidden items-center gap-1.5 rounded-md border bg-muted/40 px-2.5 py-1.5 lg:flex">
-            <span className="size-1.5 rounded-full bg-emerald-500" />
-            <span className="text-xs text-muted-foreground">
-              Synced {formattedLastSync}
-            </span>
-          </div>
+      <div className="ml-auto flex items-center gap-2">
+        <TopbarNavPills />
+        {!lightspeedLoading && lightspeedConnected ? (
+          isSyncing ? (
+            <div className={cn(topbarPillClass, "hidden sm:inline-flex")}>
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-500" />
+              Syncing…
+            </div>
+          ) : formattedLastSync && formattedLastSync !== "Never" ? (
+            <div className={cn(topbarPillClass, "hidden sm:inline-flex")}>
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              <span className="text-gray-600">Synced {formattedLastSync}</span>
+            </div>
+          ) : null
+        ) : !lightspeedLoading ? (
+          <Link
+            href="/connect-lightspeed"
+            className={cn(topbarPillClass, "hidden sm:inline-flex")}
+          >
+            <Zap className="h-3.5 w-3.5 text-gray-500" />
+            Connect POS
+          </Link>
         ) : null}
 
         {user ? <NotificationsDropdown /> : null}

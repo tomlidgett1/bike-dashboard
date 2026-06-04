@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/sidebar";
 import { StoreSwitcher } from "./store-switcher";
 import { NavUser } from "./nav-user";
-import { SidebarBottomLinks } from "./sidebar-bottom-links";
+import { SidebarBranding } from "./sidebar-branding";
 
 type SubItem = { title: string; href: string };
 type NavItem = {
@@ -215,7 +215,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
       <SidebarSeparator />
       <SidebarFooter>
-        <SidebarBottomLinks />
+        <SidebarBranding />
         <NavUser />
       </SidebarFooter>
     </Sidebar>
