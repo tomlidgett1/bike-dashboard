@@ -240,10 +240,9 @@ function MobileDraftCard({
               <Button
                 size="sm"
                 onClick={() => onContinue(draft)}
-                className="rounded-md h-8 bg-gray-900 hover:bg-gray-800 text-white"
               >
                 Continue
-                <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                <ChevronRight className="size-4" />
               </Button>
             </div>
           </div>
@@ -373,10 +372,10 @@ export default function DraftsPage() {
 
               <Button
                 onClick={() => router.push("/marketplace/sell")}
-                className="rounded-md bg-gray-900 hover:bg-gray-800 text-white flex-shrink-0"
                 size="sm"
+                className="flex-shrink-0"
               >
-                <Plus className="h-4 w-4 sm:mr-2" />
+                <Plus className="size-4" />
                 <span className="hidden sm:inline">Create New Listing</span>
               </Button>
             </div>
@@ -423,9 +422,9 @@ export default function DraftsPage() {
                     </p>
                     <Button
                       onClick={() => router.push("/marketplace/sell")}
-                      className="rounded-md bg-gray-900 hover:bg-gray-800 text-white"
+                      size="sm"
                     >
-                      <Plus className="mr-2 h-4 w-4" />
+                      <Plus className="size-4" />
                       Create New Listing
                     </Button>
                   </div>
@@ -543,18 +542,18 @@ export default function DraftsPage() {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleContinue(draft)}
-                                    className="rounded-md h-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity"
                                   >
                                     Continue
-                                    <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                                    <ChevronRight className="size-4" />
                                   </Button>
                                   <Button
                                     variant="outline"
-                                    size="sm"
+                                    size="icon-sm"
                                     onClick={() => handleDelete(draft.id)}
-                                    className="rounded-md h-8 opacity-0 group-hover:opacity-100 transition-opacity text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive hover:bg-destructive/10"
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <Trash2 className="size-4" />
                                   </Button>
                                 </div>
                               </TableCell>

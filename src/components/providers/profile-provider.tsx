@@ -112,9 +112,9 @@ interface ProfileProviderProps {
 }
 
 export function ProfileProvider({ serverProfile, children }: ProfileProviderProps) {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isFirstTime, setIsFirstTime] = useState(false)
 
@@ -173,6 +173,17 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
 
   // Initialize with server profile data - NO duplicate fetches
   useEffect(() => {
+    if (authLoading) {
+      setLoading(true)
+      return
+    }
+
+    if (!user) {
+      setProfile(null)
+      setLoading(false)
+      return
+    }
+
     if (serverProfile && user && !initializedFromServer) {
       // Use account_type from serverProfile if available, otherwise infer from business_name
       const hasBusinessName = serverProfile.business_name && serverProfile.business_name.trim().length > 0;
@@ -205,13 +216,14 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
         shipping_address: serverProfile.shipping_address ?? null,
       })
       setInitializedFromServer(true)
+      setLoading(false)
       // DON'T call fetchFullProfile() - server data is sufficient for display
     } else if (user && !serverProfile && !initializedFromServer) {
       // No server profile available, fetch from client
       fetchFullProfile()
       setInitializedFromServer(true)
     }
-  }, [user, serverProfile, fetchFullProfile, initializedFromServer])
+  }, [user, serverProfile, fetchFullProfile, initializedFromServer, authLoading])
 
   // Persist Google profile photo to users.logo_url when the DB row is missing it or still has a Google URL.
   useEffect(() => {

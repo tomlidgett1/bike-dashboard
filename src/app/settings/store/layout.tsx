@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 
 /**
@@ -16,12 +17,17 @@ export default function StoreSettingsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { profile, loading } = useUserProfile();
+  const { user, loading: authLoading } = useAuth();
+  const { profile, loading: profileLoading } = useUserProfile();
   const router = useRouter();
   const [authorized, setAuthorized] = React.useState<boolean | null>(null);
 
   React.useEffect(() => {
-    if (loading) return;
+    if (authLoading || profileLoading) return;
+    if (!user) {
+      router.replace("/marketplace");
+      return;
+    }
     if (!profile) {
       router.replace("/marketplace");
       return;
@@ -33,9 +39,9 @@ export default function StoreSettingsLayout({
       return;
     }
     setAuthorized(true);
-  }, [profile, loading, router]);
+  }, [profile, profileLoading, authLoading, user, router]);
 
-  if (loading || authorized === null) {
+  if (authLoading || profileLoading || authorized === null) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="size-8 animate-spin text-muted-foreground" />

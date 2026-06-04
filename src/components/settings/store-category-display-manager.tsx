@@ -145,25 +145,23 @@ export function StoreCategoryDisplayManager() {
                     }}
                   />
                   <Button
-                    size="sm"
+                    size="icon-sm"
                     onClick={() => handleSave(category.category_name, category.override_id)}
                     disabled={!editValue.trim() || saving}
-                    className="h-8 w-8 p-0"
                   >
                     {saving ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <Loader2 className="size-4 animate-spin" />
                     ) : (
-                      <Check className="h-3.5 w-3.5" />
+                      <Check className="size-4" />
                     )}
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon-sm"
                     onClick={handleCancel}
                     disabled={saving}
-                    className="h-8 w-8 p-0"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="size-4" />
                   </Button>
                 </>
               ) : (
@@ -187,9 +185,8 @@ export function StoreCategoryDisplayManager() {
                     variant="ghost"
                     size="sm"
                     onClick={() => handleEdit(category)}
-                    className="h-8 px-3 text-xs"
                   >
-                    <Edit2 className="h-3.5 w-3.5 mr-1" />
+                    <Edit2 className="size-4" />
                     Rename
                   </Button>
                 </>

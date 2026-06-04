@@ -41,19 +41,34 @@ import {
   type SpeedSearchCandidate,
   type SpeedWorkbenchProduct,
 } from "@/lib/admin/image-qa-speed";
+import {
+  OnlineOnlyBadgeToggle,
+  StoreOnlineProductsCsvPanel,
+  type EnrichedFromCsv,
+} from "@/components/settings/store-online-products-csv-panel";
+import { OnlineProductsGenerationGuide } from "@/components/settings/online-products-generation-guide";
+
+const ONLINE_ONLY_BADGE_STORAGE_KEY = "yj-online-products-online-only-badge";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ExtractedProduct {
   id: string; // local only
+  rowIndex?: number;
   name: string;
   brand: string;
   price: number | null;
+  soh?: number | null;
   category: string;
   subcategory: string;
   description: string;
   specs: string;
+  isDuplicate?: boolean;
+  duplicateOfId?: string | null;
+  duplicateOfName?: string | null;
 }
+
+type IntakeMode = "screenshot" | "csv";
 
 type ImagePhase =
   | "idle"
@@ -90,6 +105,7 @@ type FlowPhase =
 type UploadKind = "image" | "csv";
 
 type ExtractResponseProduct = {
+  rowIndex?: unknown;
   name?: unknown;
   brand?: unknown;
   price?: unknown;
@@ -97,6 +113,9 @@ type ExtractResponseProduct = {
   subcategory?: unknown;
   description?: unknown;
   specs?: unknown;
+  isDuplicate?: unknown;
+  duplicateOfId?: unknown;
+  duplicateOfName?: unknown;
 };
 
 const MAX_IMAGES = 6;
@@ -188,7 +207,7 @@ function UploadZone({
       <input
         ref={ref}
         type="file"
-        accept="image/*,.csv,text/csv,application/vnd.ms-excel"
+        accept="image/*"
         className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handle(f); }}
       />
@@ -198,7 +217,7 @@ function UploadZone({
       <div>
         <p className="text-sm font-medium text-foreground">Upload a screenshot or CSV</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          JPG, PNG, WebP up to 20 MB or CSV catalogs up to 5 MB
+          JPG, PNG, or WebP up to 20 MB
         </p>
       </div>
     </div>
@@ -219,6 +238,7 @@ function ProductEditRow({
   onEnhance,
   onLightbox,
   disabled,
+  showDuplicateBadge,
 }: {
   product: ExtractedProduct;
   imageState: ImageState;
@@ -233,6 +253,7 @@ function ProductEditRow({
   onEnhance: (url: string) => void;
   onLightbox: (url: string) => void;
   disabled?: boolean;
+  showDuplicateBadge?: boolean;
 }) {
   const img = imageState;
   const thumb = img.primaryUrl || img.selectedUrls[0] || null;
@@ -264,7 +285,12 @@ function ProductEditRow({
   };
 
   return (
-    <div className="border-b border-border last:border-0">
+    <div
+      className={cn(
+        "border-b border-border last:border-0",
+        showDuplicateBadge && product.isDuplicate && "bg-amber-50/60 dark:bg-amber-950/20",
+      )}
+    >
       <div className="flex items-start gap-3 px-4 py-3">
         {/* Thumbnail */}
         <div
@@ -290,6 +316,7 @@ function ProductEditRow({
           <p className="mt-0.5 text-xs text-muted-foreground">
             {product.brand || "—"} · {product.category}/{product.subcategory}
             {product.price != null ? ` · $${product.price.toFixed(2)}` : ""}
+            {product.soh != null ? ` · SOH ${product.soh}` : ""}
           </p>
           {product.description.trim() ? (
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground line-clamp-3">
@@ -299,6 +326,13 @@ function ProductEditRow({
             <p className="mt-1.5 text-xs italic text-muted-foreground">No description generated</p>
           )}
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {showDuplicateBadge && product.isDuplicate && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-amber-900 dark:border-amber-800 dark:bg-background dark:text-amber-200">
+                <AlertCircle className="h-3 w-3" />
+                Duplicate
+                {product.duplicateOfName ? ` · ${product.duplicateOfName}` : ""}
+              </span>
+            )}
             {imageStatusBadge()}
           </div>
         </div>
@@ -614,6 +648,7 @@ export function StoreOnlineProductsManager() {
   const [uploadPreview, setUploadPreview] = React.useState<string | null>(null);
 
   // Extracted products
+  const [intakeMode, setIntakeMode] = React.useState<IntakeMode>("csv");
   const [products, setProducts] = React.useState<ExtractedProduct[]>([]);
 
   // Per-product image state
@@ -623,6 +658,25 @@ export function StoreOnlineProductsManager() {
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
   const [lightbox, setLightbox] = React.useState<string | null>(null);
   const [imageBatchSize, setImageBatchSize] = React.useState<string>("10");
+  const [onlineOnlyBadge, setOnlineOnlyBadge] = React.useState(true);
+
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem(ONLINE_ONLY_BADGE_STORAGE_KEY);
+      if (stored === "0") setOnlineOnlyBadge(false);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleOnlineOnlyBadgeChange = React.useCallback((value: boolean) => {
+    setOnlineOnlyBadge(value);
+    try {
+      localStorage.setItem(ONLINE_ONLY_BADGE_STORAGE_KEY, value ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Refs for async ops
   const productsRef = React.useRef(products);
@@ -652,15 +706,15 @@ export function StoreOnlineProductsManager() {
 
   const handleFile = (file: File) => {
     const kind = getUploadKind(file);
-    if (!kind) {
-      setErrorMsg("Upload a screenshot image or a CSV product catalog.");
+    if (kind !== "image") {
+      setErrorMsg("Use the CSV catalog tab to upload CSV files.");
       return;
     }
 
     if (uploadPreview) URL.revokeObjectURL(uploadPreview);
     setUploadFile(file);
-    setUploadKind(kind);
-    setUploadPreview(kind === "image" ? URL.createObjectURL(file) : null);
+    setUploadKind("image");
+    setUploadPreview(URL.createObjectURL(file));
     setPhase("idle");
     setProducts([]);
     setImageStates({});
@@ -668,18 +722,50 @@ export function StoreOnlineProductsManager() {
     setErrorMsg(null);
   };
 
+  const applyEnrichedProducts = React.useCallback((items: EnrichedFromCsv[]) => {
+    const extracted: ExtractedProduct[] = items.map((p) => ({
+      id: p.csvRowId,
+      rowIndex: p.rowIndex,
+      name: p.name,
+      brand: p.brand,
+      price: p.price,
+      soh: p.soh,
+      category: p.category,
+      subcategory: p.subcategory,
+      description: p.description,
+      specs: p.specs,
+      isDuplicate: p.isDuplicate,
+      duplicateOfId: p.duplicateOfId,
+      duplicateOfName: p.duplicateOfName,
+    }));
+    setUploadKind("csv");
+    setProducts(extracted);
+    setImageStates(Object.fromEntries(extracted.map((p) => [p.id, emptyImageState()])));
+    setExpanded(new Set());
+    setPhase("review");
+  }, []);
+
+  const handleCsvEnriched = (items: EnrichedFromCsv[]) => {
+    applyEnrichedProducts(items);
+  };
+
+  const backToCsvTable = () => {
+    setProducts([]);
+    setImageStates({});
+    setExpanded(new Set());
+    setPhase("idle");
+    setErrorMsg(null);
+  };
+
   const handleExtract = async () => {
-    if (!uploadFile || !uploadKind) return;
+    if (!uploadFile || uploadKind !== "image") return;
     setPhase("extracting");
     setErrorMsg(null);
 
     try {
       const fd = new FormData();
-      fd.append(uploadKind === "csv" ? "csv" : "image", uploadFile);
-      const endpoint = uploadKind === "csv"
-        ? "/api/store/online-products/extract-csv"
-        : "/api/store/online-products/extract";
-      const res = await fetch(endpoint, { method: "POST", body: fd });
+      fd.append("image", uploadFile);
+      const res = await fetch("/api/store/online-products/extract", { method: "POST", body: fd });
       const data = await res.json() as { success?: boolean; error?: string; products?: unknown };
       if (!res.ok || !data.success) throw new Error(data.error || "Extraction failed");
 
@@ -696,9 +782,7 @@ export function StoreOnlineProductsManager() {
       }));
 
       if (extracted.length === 0) {
-        setErrorMsg(uploadKind === "csv"
-          ? "No products found in this CSV. Check that it has product rows and clear column headers."
-          : "No products found in this screenshot. Try a clearer image of a product listing page.");
+        setErrorMsg("No products found in this screenshot. Try a clearer image of a product listing page.");
         setPhase("idle");
         return;
       }
@@ -854,6 +938,7 @@ export function StoreOnlineProductsManager() {
 
     const toCreate = products
       .filter((p) => {
+        if (p.isDuplicate) return false;
         const img = imageStates[p.id];
         return img && (img.phase === "ready" || img.phase === "done" || img.phase === "idle") && p.price != null;
       })
@@ -863,6 +948,7 @@ export function StoreOnlineProductsManager() {
           name: p.name,
           brand: p.brand || null,
           price: p.price!,
+          soh: p.soh ?? null,
           description: p.description || null,
           specs: p.specs || null,
           category: p.category,
@@ -876,7 +962,7 @@ export function StoreOnlineProductsManager() {
       const res = await fetch("/api/store/online-products/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ products: toCreate }),
+        body: JSON.stringify({ products: toCreate, onlineOnly: onlineOnlyBadge }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Failed to create products");
@@ -899,6 +985,7 @@ export function StoreOnlineProductsManager() {
   });
 
   const readyCount = products.filter((p) => {
+    if (p.isDuplicate) return false;
     const s = imageStates[p.id];
     return s && (s.phase === "ready" || s.phase === "done") && p.price != null;
   }).length;
@@ -923,16 +1010,17 @@ export function StoreOnlineProductsManager() {
         <div>
           <p className="text-base font-semibold text-foreground">Products created!</p>
           <p className="mt-1 text-sm text-muted-foreground max-w-xs">
-            Your online-only products have been saved. Images are uploading in the background — they&apos;ll appear on
-            the marketplace once processing completes.
+            {onlineOnlyBadge
+              ? "Your online-only products have been saved. Images are uploading in the background — they'll appear on the marketplace once processing completes."
+              : "Your store products have been saved without the Online Only badge. Images are uploading in the background — they'll appear on the marketplace once processing completes."}
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={resetFlow}>
+          <Button variant="outline" size="sm" onClick={resetFlow}>
             Add more products
           </Button>
-          <Button onClick={() => router.push("/products")}>
-            <Sparkles className="mr-1.5 h-4 w-4" />
+          <Button size="sm" onClick={() => router.push("/products")}>
+            <Sparkles className="size-4" />
             View My Products
           </Button>
         </div>
@@ -942,18 +1030,6 @@ export function StoreOnlineProductsManager() {
 
   return (
     <div className="space-y-4">
-      {/* Callout */}
-      <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
-        <Globe className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
-        <div>
-          <p className="text-sm font-medium text-foreground">Online-only product listings</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Upload a screenshot or CSV catalog. AI will extract each product, research CSV rows with web search, source images via SERP, and
-            create listings with an <strong>Online Only</strong> badge on the marketplace.
-          </p>
-        </div>
-      </div>
-
       {/* Error banner */}
       {errorMsg && (
         <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -962,17 +1038,68 @@ export function StoreOnlineProductsManager() {
         </div>
       )}
 
-      {/* Upload zone or preview */}
-      {!uploadFile ? (
-        <UploadZone
-          onFile={handleFile}
-          onInvalid={() => setErrorMsg("Upload a screenshot image or a CSV product catalog.")}
+      {/* Intake mode tabs */}
+      {products.length === 0 && (
+        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+          <button
+            type="button"
+            onClick={() => setIntakeMode("csv")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              intakeMode === "csv"
+                ? "text-gray-800 bg-white shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70",
+            )}
+          >
+            <FileSpreadsheet size={15} />
+            CSV catalog
+          </button>
+          <button
+            type="button"
+            onClick={() => setIntakeMode("screenshot")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              intakeMode === "screenshot"
+                ? "text-gray-800 bg-white shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70",
+            )}
+          >
+            <Upload size={15} />
+            Screenshot
+          </button>
+        </div>
+      )}
+
+      {intakeMode === "csv" && products.length === 0 && (
+        <StoreOnlineProductsCsvPanel
+          onEnriched={handleCsvEnriched}
+          onError={setErrorMsg}
+          onlineOnlyBadge={onlineOnlyBadge}
+          onOnlineOnlyBadgeChange={handleOnlineOnlyBadgeChange}
+        />
+      )}
+
+      {intakeMode === "screenshot" && products.length === 0 && (
+        <OnlineOnlyBadgeToggle
+          value={onlineOnlyBadge}
+          onChange={handleOnlineOnlyBadgeChange}
           disabled={phase === "extracting"}
         />
-      ) : (
+      )}
+
+      {/* Screenshot upload */}
+      {intakeMode === "screenshot" && products.length === 0 && !uploadFile ? (
+        <UploadZone
+          onFile={handleFile}
+          onInvalid={() => setErrorMsg("Upload a screenshot image (JPG, PNG, or WebP).")}
+          disabled={phase === "extracting"}
+        />
+      ) : null}
+
+      {intakeMode === "screenshot" && products.length === 0 && uploadFile ? (
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-start gap-4">
-            {uploadKind === "image" && uploadPreview ? (
+            {uploadPreview ? (
               <div
                 className="relative h-24 w-24 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted"
                 onClick={() => setLightbox(uploadPreview)}
@@ -980,23 +1107,19 @@ export function StoreOnlineProductsManager() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={uploadPreview} alt="Screenshot preview" className="h-full w-full object-cover" />
               </div>
-            ) : (
-              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
-                <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
-              </div>
-            )}
+            ) : null}
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground truncate">{uploadFile.name}</p>
               <p className="text-xs text-muted-foreground">{(uploadFile.size / 1024).toFixed(0)} KB</p>
-              {phase === "idle" && products.length === 0 && (
+              {phase === "idle" && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Click <strong>Analyse</strong> to extract products from this {uploadKind === "csv" ? "CSV" : "screenshot"}.
+                  Click <strong>Analyse</strong> to extract products from this screenshot.
                 </p>
               )}
               {phase === "extracting" && (
                 <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {uploadKind === "csv" ? "Reading CSV and researching rows…" : "Analysing screenshot…"}
+                  Analysing screenshot…
                 </p>
               )}
             </div>
@@ -1007,34 +1130,51 @@ export function StoreOnlineProductsManager() {
                   size="sm"
                   onClick={resetFlow}
                 >
-                  <X className="mr-1.5 h-3.5 w-3.5" /> Change
+                  <X className="size-4" /> Change
                 </Button>
               )}
               {(phase === "idle" || phase === "extracting") && products.length === 0 && (
                 <Button size="sm" onClick={handleExtract} disabled={phase === "extracting"}>
                   {phase === "extracting" ? (
-                    <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Analysing…</>
+                    <><Loader2 className="size-4 animate-spin" /> Analysing…</>
                   ) : (
-                    <><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Analyse {uploadKind === "csv" ? "CSV" : "Screenshot"}</>
+                    <><Sparkles className="size-4" /> Analyse screenshot</>
                   )}
                 </Button>
               )}
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Extracted products list */}
       {products.length > 0 && (
         <>
+          <OnlineProductsGenerationGuide
+            highlight={["images", "publish"]}
+            compact
+          />
+
+          <OnlineOnlyBadgeToggle
+            value={onlineOnlyBadge}
+            onChange={handleOnlineOnlyBadgeChange}
+            disabled={isCreating || searching}
+          />
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
+              {intakeMode === "csv" && (
+                <Button size="sm" variant="outline" onClick={backToCsvTable}>
+                  <FileSpreadsheet className="size-4" />
+                  Back to CSV table
+                </Button>
+              )}
               <span className="text-sm font-semibold text-foreground">
-                {products.length} product{products.length === 1 ? "" : "s"} found
+                {products.length} product{products.length === 1 ? "" : "s"} — catalogue fields done, images next
               </span>
               {pendingImageCount > 0 && !allSearched && (
                 <span className="text-xs text-muted-foreground">
-                  · {pendingImageCount} awaiting images
+                  · {pendingImageCount} need image search
                 </span>
               )}
               {allSearched && readyCount > 0 && (
@@ -1072,10 +1212,10 @@ export function StoreOnlineProductsManager() {
                     disabled={searching || isCreating}
                   >
                     {searching ? (
-                      <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Finding images…</>
+                      <><Loader2 className="size-4 animate-spin" /> Finding images…</>
                     ) : (
                       <>
-                        <Search className="mr-1.5 h-3.5 w-3.5" />
+                        <Search className="size-4" />
                         Find images
                         {imageBatchSize === "all"
                           ? ` (${pendingImageCount})`
@@ -1092,9 +1232,11 @@ export function StoreOnlineProductsManager() {
                   disabled={isCreating}
                 >
                   {isCreating ? (
-                    <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Creating…</>
+                    <><Loader2 className="size-4 animate-spin" /> Creating…</>
+                  ) : onlineOnlyBadge ? (
+                    <><Globe className="size-4" /> Create {readyCount} online product{readyCount === 1 ? "" : "s"}</>
                   ) : (
-                    <><Globe className="mr-1.5 h-3.5 w-3.5" /> Create {readyCount} Product{readyCount === 1 ? "" : "s"}</>
+                    <><Package className="size-4" /> Create {readyCount} store product{readyCount === 1 ? "" : "s"}</>
                   )}
                 </Button>
               )}
@@ -1124,6 +1266,7 @@ export function StoreOnlineProductsManager() {
                   onEnhance={(url) => void enhanceImage(product.id, url)}
                   onLightbox={setLightbox}
                   disabled={isCreating || searching}
+                  showDuplicateBadge={intakeMode === "csv"}
                 />
               ))}
             </div>
@@ -1157,10 +1300,10 @@ export function StoreOnlineProductsManager() {
                     disabled={searching}
                   >
                     {searching ? (
-                      <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Finding…</>
+                      <><Loader2 className="size-4 animate-spin" /> Finding…</>
                     ) : (
                       <>
-                        <Search className="mr-1.5 h-3.5 w-3.5" />
+                        <Search className="size-4" />
                         Find images
                         {imageBatchSize === "all"
                           ? ` (${pendingImageCount})`
@@ -1173,9 +1316,9 @@ export function StoreOnlineProductsManager() {
               {allSearched && readyCount > 0 && (
                 <Button size="sm" onClick={handleCreate} disabled={isCreating}>
                   {isCreating ? (
-                    <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Creating…</>
+                    <><Loader2 className="size-4 animate-spin" /> Creating…</>
                   ) : (
-                    <><Globe className="mr-1.5 h-3.5 w-3.5" /> Create {readyCount} Product{readyCount === 1 ? "" : "s"}</>
+                    <><Globe className="size-4" /> Create {readyCount} Product{readyCount === 1 ? "" : "s"}</>
                   )}
                 </Button>
               )}

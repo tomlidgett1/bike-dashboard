@@ -54,14 +54,20 @@ interface BrandOption {
 }
 
 // ============================================================
-// Store Categories Manager
-// Manage categories with Lightspeed scan and custom creation
+// Store carousels manager
+// Manage product carousels with Lightspeed scan and custom creation
 // ============================================================
 
 interface CategoryFormData {
   name: string;
   productIds: string[];
 }
+
+/** Fixed-height carousel form dialogs — body scrolls, header/footer stay put. */
+const PRODUCT_PICKER_DIALOG_CLASS =
+  "flex h-[min(32rem,85vh)] max-h-[min(32rem,85vh)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl";
+const BRAND_CAROUSEL_DIALOG_CLASS =
+  "flex h-[min(26rem,85vh)] max-h-[min(26rem,85vh)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg";
 
 export function StoreCategoriesManager() {
   const [categories, setCategories] = React.useState<StoreCategory[]>([]);
@@ -252,11 +258,11 @@ export function StoreCategoriesManager() {
         setIsScanDialogOpen(true);
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to scan categories');
+        alert(error.error || 'Failed to scan Lightspeed');
       }
     } catch (error) {
       console.error('Error scanning categories:', error);
-      alert('Failed to scan categories');
+      alert('Failed to scan Lightspeed');
     } finally {
       setScanning(false);
     }
@@ -328,7 +334,7 @@ export function StoreCategoriesManager() {
       setSelectedLightspeedCategories(new Set());
     } catch (error) {
       console.error('Error adding categories:', error);
-      alert('Failed to add some categories');
+      alert('Failed to add some carousels');
     } finally {
       setAddingMultiple(false);
     }
@@ -658,40 +664,40 @@ export function StoreCategoriesManager() {
         <Button
           onClick={handleScanLightspeed}
           variant="outline"
+          size="sm"
           disabled={scanning}
-          className="rounded-md"
         >
           {scanning ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
               Scanning...
             </>
           ) : (
             <>
-              <Scan className="h-4 w-4 mr-2" />
+              <Scan className="size-4" />
               Scan Lightspeed
             </>
           )}
         </Button>
-        <Button onClick={handleAddBrandCarousel} variant="outline" className="rounded-md">
-          <Tag className="h-4 w-4 mr-2" />
+        <Button onClick={handleAddBrandCarousel} variant="outline" size="sm">
+          <Tag className="size-4" />
           Add Brand Carousel
         </Button>
-        <Button onClick={handleAddUberCarousel} variant="outline" disabled={saving} className="rounded-md">
-          <Truck className="h-4 w-4 mr-2" />
+        <Button onClick={handleAddUberCarousel} variant="outline" size="sm" disabled={saving}>
+          <Truck className="size-4" />
           Add Uber Carousel
         </Button>
-        <Button onClick={handleAddCustom} className="rounded-md">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Custom
+        <Button onClick={handleAddCustom} size="sm">
+          <Plus className="size-4" />
+          Add custom carousel
         </Button>
       </div>
 
-      {/* Categories List */}
+      {/* Carousels list */}
       {categories.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-sm text-muted-foreground">No categories added yet</p>
+            <p className="text-sm text-muted-foreground">No carousels added yet</p>
           </CardContent>
         </Card>
       ) : (
@@ -819,29 +825,27 @@ export function StoreCategoriesManager() {
                   {category.source === 'lightspeed' && (
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon-sm"
                       onClick={() => handleRefreshCategoryProducts(category)}
-                      className="h-8 px-2 text-xs"
                       title="Refresh products from Lightspeed"
                     >
-                      <RotateCcw className="h-3.5 w-3.5" />
+                      <RotateCcw className="size-4" />
                     </Button>
                   )}
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon-sm"
                     onClick={() => handleEdit(category)}
-                    className="h-8 w-8 p-0"
                   >
-                    <Edit2 className="h-3.5 w-3.5" />
+                    <Edit2 className="size-4" />
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon-sm"
                     onClick={() => setDeleteConfirmId(category.id)}
-                    className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="size-4" />
                   </Button>
                 </div>
               </div>
@@ -863,9 +867,9 @@ export function StoreCategoriesManager() {
       <Dialog open={isScanDialogOpen} onOpenChange={setIsScanDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Lightspeed Categories</DialogTitle>
+            <DialogTitle>Import from Lightspeed</DialogTitle>
             <DialogDescription>
-              Select categories to add to your store. Products will be automatically assigned.
+              Select Lightspeed groups to add as carousels on your store. Products are assigned automatically.
             </DialogDescription>
           </DialogHeader>
 
@@ -876,7 +880,6 @@ export function StoreCategoriesManager() {
                 variant="outline"
                 size="sm"
                 onClick={handleSelectAll}
-                className="rounded-md"
               >
                 {selectedLightspeedCategories.size === lightspeedCategories.length
                   ? 'Deselect All'
@@ -891,7 +894,7 @@ export function StoreCategoriesManager() {
           <div className="overflow-y-auto max-h-[45vh]">
             {lightspeedCategories.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted-foreground">
-                No new categories available
+                Nothing new to import from Lightspeed
               </div>
             ) : (
               <div className="space-y-2 pr-1">
@@ -923,52 +926,53 @@ export function StoreCategoriesManager() {
           <DialogFooter className="flex-shrink-0">
             <Button
               variant="outline"
+              size="sm"
               onClick={() => setIsScanDialogOpen(false)}
               disabled={addingMultiple}
             >
               Cancel
             </Button>
             <Button
+              size="sm"
               onClick={handleAddSelectedCategories}
               disabled={selectedLightspeedCategories.size === 0 || addingMultiple}
-              className="rounded-md"
             >
               {addingMultiple ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Adding {selectedLightspeedCategories.size} categories...
+                  <Loader2 className="size-4 animate-spin" />
+                  Adding {selectedLightspeedCategories.size} carousels...
                 </>
               ) : (
-                `Add ${selectedLightspeedCategories.size} ${selectedLightspeedCategories.size === 1 ? 'Category' : 'Categories'}`
+                `Add ${selectedLightspeedCategories.size} ${selectedLightspeedCategories.size === 1 ? 'carousel' : 'carousels'}`
               )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Add Custom Category Dialog */}
+      {/* Add custom carousel dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Add Custom Category</DialogTitle>
+        <DialogContent className={PRODUCT_PICKER_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 px-6 pt-6 pb-2">
+            <DialogTitle>Add custom carousel</DialogTitle>
             <DialogDescription>
-              Create a custom category and select products to include
+              Create a custom carousel and select products to include
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-6 pb-4">
             <div className="space-y-2">
-              <Label htmlFor="category-name">Category Name *</Label>
+              <Label htmlFor="carousel-name">Carousel name *</Label>
               <Input
-                id="category-name"
+                id="carousel-name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="e.g., New Arrivals"
               />
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <div className="flex shrink-0 items-center justify-between gap-2">
                 <Label>Select Products ({formData.productIds.length} selected)</Label>
                 {filteredProducts.length > 0 && (
                   <button
@@ -980,8 +984,7 @@ export function StoreCategoriesManager() {
                   </button>
                 )}
               </div>
-              {/* Search + source filter */}
-              <div className="space-y-2">
+              <div className="shrink-0 space-y-2">
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                   <Input
@@ -991,7 +994,7 @@ export function StoreCategoriesManager() {
                     className="pl-8"
                   />
                 </div>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap gap-1">
                   {([
                     { key: 'all', label: `All (${products.length})` },
                     { key: 'lightspeed', label: `Lightspeed (${lightspeedCount})` },
@@ -1013,7 +1016,7 @@ export function StoreCategoriesManager() {
                   ))}
                 </div>
               </div>
-              <div className="border rounded-md overflow-y-auto max-h-[35vh]">
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border">
                 <div className="p-2">
                   {filteredProducts.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
@@ -1073,21 +1076,23 @@ export function StoreCategoriesManager() {
             </div>
           </div>
 
-          <DialogFooter className="flex-shrink-0">
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-end">
             <Button
               variant="outline"
+              size="sm"
               onClick={() => setIsAddDialogOpen(false)}
               disabled={saving}
             >
               Cancel
             </Button>
             <Button
+              size="sm"
               onClick={handleSaveCustom}
               disabled={!formData.name.trim() || saving}
             >
               {saving ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                   Saving...
                 </>
               ) : (
@@ -1098,28 +1103,28 @@ export function StoreCategoriesManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Category Dialog */}
+      {/* Edit carousel dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Edit Category</DialogTitle>
+        <DialogContent className={PRODUCT_PICKER_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 px-6 pt-6 pb-2">
+            <DialogTitle>Edit carousel</DialogTitle>
             <DialogDescription>
-              Update category name and product selection
+              Update carousel name and product selection
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-6 pb-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-category-name">Category Name *</Label>
+              <Label htmlFor="edit-carousel-name">Carousel name *</Label>
               <Input
-                id="edit-category-name"
+                id="edit-carousel-name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <div className="flex shrink-0 items-center justify-between gap-2">
                 <Label>Select Products ({formData.productIds.length} selected)</Label>
                 {filteredProducts.length > 0 && (
                   <button
@@ -1131,8 +1136,7 @@ export function StoreCategoriesManager() {
                   </button>
                 )}
               </div>
-              {/* Search + source filter */}
-              <div className="space-y-2">
+              <div className="shrink-0 space-y-2">
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                   <Input
@@ -1142,7 +1146,7 @@ export function StoreCategoriesManager() {
                     className="pl-8"
                   />
                 </div>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap gap-1">
                   {([
                     { key: 'all', label: `All (${products.length})` },
                     { key: 'lightspeed', label: `Lightspeed (${lightspeedCount})` },
@@ -1164,7 +1168,7 @@ export function StoreCategoriesManager() {
                   ))}
                 </div>
               </div>
-              <div className="border rounded-md overflow-y-auto max-h-[35vh]">
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border">
                 <div className="p-2">
                   {filteredProducts.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
@@ -1224,21 +1228,23 @@ export function StoreCategoriesManager() {
             </div>
           </div>
 
-          <DialogFooter className="flex-shrink-0">
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-end">
             <Button
               variant="outline"
+              size="sm"
               onClick={() => setIsEditDialogOpen(false)}
               disabled={saving}
             >
               Cancel
             </Button>
             <Button
+              size="sm"
               onClick={handleUpdate}
               disabled={!formData.name.trim() || saving}
             >
               {saving ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                   Saving...
                 </>
               ) : (
@@ -1251,16 +1257,16 @@ export function StoreCategoriesManager() {
 
       {/* Brand Carousel Dialog */}
       <Dialog open={isBrandDialogOpen} onOpenChange={setIsBrandDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className={BRAND_CAROUSEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 px-6 pt-6 pb-2">
             <DialogTitle>Add Brand Carousel</DialogTitle>
             <DialogDescription>
               Choose a brand — the carousel will automatically show all in-stock products from that brand.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            {/* Brand picker */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+            <div className="space-y-4">
             <div className="space-y-2">
               <Label>Brand</Label>
               {brandScanning ? (
@@ -1270,8 +1276,7 @@ export function StoreCategoriesManager() {
                 </div>
               ) : brandOptions.length > 0 ? (
                 <>
-                  {/* Show top brands inline, rest behind expand */}
-                  <div className="border rounded-md overflow-hidden">
+                  <div className="rounded-md border border-border overflow-hidden">
                     {(brandListExpanded ? brandOptions : brandOptions.slice(0, 6)).map((b) => (
                       <button
                         key={b.name}
@@ -1339,18 +1344,20 @@ export function StoreCategoriesManager() {
               />
               <p className="text-xs text-muted-foreground">Leave blank to use the brand name as the title.</p>
             </div>
+            </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsBrandDialogOpen(false)} disabled={saving}>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-end">
+            <Button variant="outline" size="sm" onClick={() => setIsBrandDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>
             <Button
+              size="sm"
               onClick={handleSaveBrandCarousel}
               disabled={!selectedBrand.trim() || saving}
             >
               {saving ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+                <><Loader2 className="size-4 animate-spin" />Saving...</>
               ) : (
                 'Add Carousel'
               )}
@@ -1366,9 +1373,9 @@ export function StoreCategoriesManager() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Category</AlertDialogTitle>
+            <AlertDialogTitle>Delete carousel</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this category? This action cannot be
+              Are you sure you want to delete this carousel? This action cannot be
               undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

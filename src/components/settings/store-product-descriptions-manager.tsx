@@ -455,9 +455,9 @@ export function StoreProductDescriptionsManager() {
           <Button
             onClick={() => generateDescriptions(needsContentIds)}
             size="sm"
-            className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs whitespace-nowrap"
+            className="whitespace-nowrap"
           >
-            <Zap className="h-3 w-3" />
+            <Zap className="size-4" />
             Generate All ({needsContentIds.length})
           </Button>
         )}
@@ -493,11 +493,12 @@ export function StoreProductDescriptionsManager() {
             <div className="flex items-center gap-3 px-3 py-2 bg-foreground text-background rounded-md">
               <span className="text-xs font-medium">{selected.size} selected</span>
               <Button
-                size="sm"
+                size="xs"
+                variant="outline"
                 onClick={() => generateDescriptions(Array.from(selected))}
-                className="h-6 gap-1 bg-background text-foreground hover:bg-background/90 text-xs px-2"
+                className="bg-background text-foreground hover:bg-background/90"
               >
-                <Sparkles className="h-3 w-3" />
+                <Sparkles className="size-3.5" />
                 Generate selected ({MODE_CONFIG[mode].label.toLowerCase()})
               </Button>
               <button

@@ -599,10 +599,10 @@ export default function ConnectLightspeedPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="rounded-md relative"
+                      className="relative"
                       onClick={openFilterSheet}
                     >
-                      <SlidersHorizontal className="h-4 w-4 mr-1.5" />
+                      <SlidersHorizontal className="size-4" />
                       {viewMode === 'products' ? 'Filters' : 'Sync Filters'}
                       {activeFilterCount > 0 && (
                         <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[10px] font-semibold text-background">
@@ -618,7 +618,6 @@ export default function ConnectLightspeedPage() {
                         <Button
                           onClick={handleSyncSelected}
                           size="sm"
-                          className="rounded-md"
                         >
                           Sync to Marketplace
                         </Button>
@@ -628,7 +627,6 @@ export default function ConnectLightspeedPage() {
                           variant="outline"
                           size="sm"
                           onClick={handleRemoveSelected}
-                          className="rounded-md"
                         >
                           Remove from Marketplace
                         </Button>
@@ -642,7 +640,6 @@ export default function ConnectLightspeedPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleDeleteProducts(Array.from(selectedProducts))}
-                        className="rounded-md"
                       >
                         Remove {selectedProducts.size} from Marketplace
                       </Button>
@@ -650,7 +647,6 @@ export default function ConnectLightspeedPage() {
                       <Button
                         onClick={handleSyncSelectedProducts}
                         size="sm"
-                        className="rounded-md"
                       >
                         Sync {selectedProducts.size} product{selectedProducts.size !== 1 ? 's' : ''} to Marketplace
                       </Button>

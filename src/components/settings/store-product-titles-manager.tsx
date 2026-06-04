@@ -323,9 +323,9 @@ export function StoreProductTitlesManager() {
           <Button
             onClick={() => generateTitles(needsCleaningIds)}
             size="sm"
-            className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs whitespace-nowrap"
+            className="whitespace-nowrap"
           >
-            <Zap className="h-3 w-3" />
+            <Zap className="size-4" />
             Clean All ({needsCleaningIds.length})
           </Button>
         )}
@@ -335,11 +335,11 @@ export function StoreProductTitlesManager() {
             disabled={isApproving}
             size="sm"
             variant="outline"
-            className="gap-1.5 h-8 text-xs whitespace-nowrap"
+            className="whitespace-nowrap"
           >
             {isApproving
-              ? <Loader2 className="h-3 w-3 animate-spin" />
-              : <CheckCircle2 className="h-3 w-3" />}
+              ? <Loader2 className="size-4 animate-spin" />
+              : <CheckCircle2 className="size-4" />}
             Approve All ({needsCleaningIds.length})
           </Button>
         )}
@@ -375,11 +375,12 @@ export function StoreProductTitlesManager() {
             <div className="flex items-center gap-3 px-3 py-2 bg-foreground text-background rounded-md">
               <span className="text-xs font-medium">{selected.size} selected</span>
               <Button
-                size="sm"
+                size="xs"
+                variant="outline"
                 onClick={() => generateTitles(Array.from(selected))}
-                className="h-6 gap-1 bg-background text-foreground hover:bg-background/90 text-xs px-2"
+                className="bg-background text-foreground hover:bg-background/90"
               >
-                <Sparkles className="h-3 w-3" />
+                <Sparkles className="size-3.5" />
                 Clean selected
               </Button>
               <button

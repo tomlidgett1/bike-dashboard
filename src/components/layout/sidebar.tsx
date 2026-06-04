@@ -11,11 +11,9 @@ import {
   Package,
   Store,
   Edit,
-  Instagram,
   ShieldCheck,
   Tag,
   HelpCircle,
-  CalendarClock,
   ExternalLink,
   Sparkles,
   Truck,
@@ -93,20 +91,6 @@ const adminItems: NavItem[] = [
     href: "/admin/image-qa",
     icon: ShieldCheck,
     isAdmin: true,
-  },
-  {
-    title: "Instagram Posts",
-    href: "/admin/instagram-posts",
-    icon: Instagram,
-    isAdmin: true,
-    disabled: true,
-  },
-  {
-    title: "Scheduled Uploads",
-    href: "/admin/scheduled-uploads",
-    icon: CalendarClock,
-    isAdmin: true,
-    disabled: true,
   },
 ];
 

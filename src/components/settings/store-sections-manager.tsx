@@ -333,12 +333,12 @@ export function StoreSectionsManager() {
             Group carousels into sections using the controls inside each section.
           </p>
         </div>
-        <Button onClick={openCreate} className="rounded-md flex-shrink-0">
-          <Plus className="h-4 w-4 mr-2" />
+        <Button onClick={openCreate} size="sm" className="flex-shrink-0">
+          <Plus className="size-4" />
           New Section
         </Button>
-        <Button onClick={handleCreateUberSection} variant="outline" disabled={saving} className="rounded-md flex-shrink-0">
-          <Truck className="h-4 w-4 mr-2" />
+        <Button onClick={handleCreateUberSection} variant="outline" size="sm" disabled={saving} className="flex-shrink-0">
+          <Truck className="size-4" />
           Uber Section
         </Button>
       </div>
@@ -352,8 +352,8 @@ export function StoreSectionsManager() {
           <p className="mt-1 text-xs text-muted-foreground max-w-xs mx-auto">
             Create a section to group carousels, or add carousels in the Carousels tab — they'll appear here to position.
           </p>
-          <Button onClick={openCreate} variant="outline" className="mt-4 rounded-md">
-            <Plus className="h-4 w-4 mr-2" />
+          <Button onClick={openCreate} variant="outline" size="sm" className="mt-4">
+            <Plus className="size-4" />
             Create first section
           </Button>
         </div>
@@ -429,16 +429,16 @@ export function StoreSectionsManager() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saving}>
+            <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={handleSaveSection} disabled={!formName.trim() || saving}>
+            <Button size="sm" onClick={handleSaveSection} disabled={!formName.trim() || saving}>
               {saving ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</>
+                <><Loader2 className="size-4 animate-spin" />Saving…</>
               ) : editingSection ? (
-                <><Check className="h-4 w-4 mr-2" />Save changes</>
+                <><Check className="size-4" />Save changes</>
               ) : (
-                <><Plus className="h-4 w-4 mr-2" />Create section</>
+                <><Plus className="size-4" />Create section</>
               )}
             </Button>
           </DialogFooter>
@@ -491,7 +491,7 @@ export function StoreSectionsManager() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignSectionId(null)}>Done</Button>
+            <Button variant="outline" size="sm" onClick={() => setAssignSectionId(null)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -572,27 +572,28 @@ function SectionPageItem({
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
-          <Button variant="ghost" size="sm" onClick={() => onEdit(section)} className="h-8 w-8 p-0" title="Edit section">
-            <Edit2 className="h-3.5 w-3.5" />
+          <Button variant="ghost" size="icon-sm" onClick={() => onEdit(section)} title="Edit section">
+            <Edit2 className="size-4" />
           </Button>
           <Button
-            variant="ghost" size="sm"
+            variant="ghost"
+            size="icon-sm"
             onClick={() => onDelete(section.id)}
-            className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
             title="Delete section"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="size-4" />
           </Button>
           <Button
-            variant="ghost" size="sm"
+            variant="ghost"
+            size="icon-sm"
             onClick={() => setCollapsed((prev) => {
               const next = new Set(prev);
               isCollapsed ? next.delete(section.id) : next.add(section.id);
               return next;
             })}
-            className="h-8 w-8 p-0"
           >
-            {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+            {isCollapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
           </Button>
         </div>
       </div>

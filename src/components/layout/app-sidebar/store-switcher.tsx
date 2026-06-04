@@ -64,13 +64,19 @@ export function StoreSwitcher() {
             <DropdownMenuLabel className="text-xs text-muted-foreground">
               {name}
             </DropdownMenuLabel>
-            <DropdownMenuItem asChild className="gap-2">
-              <Link href="/marketplace">
-                <Store className="size-4" />
-                View storefront
-                <ExternalLink className="ml-auto size-3.5 text-muted-foreground" />
-              </Link>
-            </DropdownMenuItem>
+            {profile?.user_id ? (
+              <DropdownMenuItem asChild className="gap-2">
+                <Link
+                  href={`/marketplace/store/${profile.user_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Store className="size-4" />
+                  View my store
+                  <ExternalLink className="ml-auto size-3.5 text-muted-foreground" />
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem asChild className="gap-2">
               <Link href="/settings/store">
                 <Settings className="size-4" />

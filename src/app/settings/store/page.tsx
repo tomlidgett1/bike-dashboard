@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 const VALID = [
   "home",
+  "carousels",
   "categories",
   "sections",
   "brands",
@@ -9,7 +10,6 @@ const VALID = [
   "analytics",
   "products",
   "titles",
-  "online",
 ];
 
 // /settings/store now lives as focused sub-pages. Redirect to the right one,
@@ -20,6 +20,10 @@ export default async function StoreSettingsIndex({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { tab } = await searchParams;
-  const dest = tab && VALID.includes(tab) ? tab : "home";
+  if (tab === "online") {
+    redirect("/optimize?workflow=online");
+  }
+  const dest =
+    tab === "categories" ? "carousels" : tab && VALID.includes(tab) ? tab : "home";
   redirect(`/settings/store/${dest}`);
 }

@@ -86,7 +86,7 @@ const NAV: { id: SectionId; label: string; icon: React.ComponentType<{ className
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [mounted, setMounted] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
@@ -98,7 +98,7 @@ export default function SettingsPage() {
   const [section, setSection] = React.useState<SectionId>("account");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const { profile, loading, saving, isFirstTime, saveProfile } = useUserProfile();
+  const { profile, loading: profileLoading, saving, isFirstTime, saveProfile } = useUserProfile();
 
   const {
     isConnected: lightspeedConnected,
@@ -140,21 +140,21 @@ export default function SettingsPage() {
   }, []);
 
   React.useEffect(() => {
-    if (!loading) {
-      if (!profile) {
-        router.replace('/marketplace');
-        return;
-      }
+    if (authLoading || profileLoading) return;
 
-      const authorized = profile.account_type === 'bicycle_store' && profile.bicycle_store === true;
-
-      if (!authorized) {
-        router.replace('/marketplace/settings');
-      } else {
-        setIsAuthorized(true);
-      }
+    if (!user || !profile) {
+      router.replace('/marketplace');
+      return;
     }
-  }, [profile, loading, router]);
+
+    const authorized = profile.account_type === 'bicycle_store' && profile.bicycle_store === true;
+
+    if (!authorized) {
+      router.replace('/marketplace/settings');
+    } else {
+      setIsAuthorized(true);
+    }
+  }, [profile, profileLoading, authLoading, user, router]);
 
   React.useEffect(() => {
     if (profile) {

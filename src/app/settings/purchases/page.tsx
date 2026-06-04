@@ -92,6 +92,12 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { SmartUploadModal } from "@/components/marketplace/sell/smart-upload-modal";
 import { FacebookImportModal } from "@/components/marketplace/sell/facebook-import-modal";
 import { BulkUploadSheet } from "@/components/marketplace/sell/bulk-upload-sheet";
+import { Card } from "@/components/ui/card";
+import {
+  PageBody,
+  PageContainer,
+  PageHeader,
+} from "@/components/dashboard";
 
 // ============================================================
 // Types
@@ -574,6 +580,78 @@ function StatusBadge({
   const config = variants[status] || { label: status, variant: "outline" as const };
   
   return <Badge variant={config.variant} className={cn("rounded-md", config.className)}>{config.label}</Badge>;
+}
+
+const ORDERS_SEARCH_INPUT_CLASS =
+  "h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30";
+
+const TAB_ACTIVE_CLASS = "text-gray-800 bg-white shadow-sm";
+const TAB_INACTIVE_CLASS = "text-gray-600 hover:bg-gray-200/70";
+const SUB_TAB_CONTAINER_CLASS = "flex items-center bg-gray-100 p-0.5 rounded-md w-fit";
+
+function OrdersSearchField({
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("relative w-full lg:max-w-xs", className)}>
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={ORDERS_SEARCH_INPUT_CLASS}
+      />
+    </div>
+  );
+}
+
+function OrderManagementMainTabs({
+  activeTab,
+  onTabChange,
+  tabs,
+  className,
+}: {
+  activeTab: MainTab;
+  onTabChange: (tab: MainTab) => void;
+  tabs: { id: MainTab; label: string; badge: number }[];
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        SUB_TAB_CONTAINER_CLASS,
+        "max-w-full overflow-x-auto",
+        className
+      )}
+    >
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => onTabChange(tab.id)}
+          className={cn(
+            "flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+            activeTab === tab.id ? TAB_ACTIVE_CLASS : TAB_INACTIVE_CLASS
+          )}
+        >
+          {tab.label}
+          {tab.badge > 0 ? (
+            <span className="text-xs text-gray-500">
+              ({tab.badge > 99 ? "99+" : tab.badge})
+            </span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 // ============================================================
@@ -1230,11 +1308,11 @@ function MobileDraftCard({
       </div>
 
       <div className="flex gap-2 mt-3">
-        <Button size="sm" className="flex-1 h-9" onClick={onContinue}>
+        <Button size="sm" className="flex-1" onClick={onContinue}>
           <Edit3 className="h-4 w-4 mr-1.5" />
           Continue
         </Button>
-        <Button size="sm" variant="outline" className="h-9" onClick={onDelete}>
+        <Button size="sm" variant="outline" className="flex-1" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
@@ -2518,12 +2596,26 @@ function OrderManagementPageContent() {
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('all');
 
+  const allowedTabs = React.useMemo<MainTab[]>(
+    () =>
+      isVerifiedStore
+        ? ['orders', 'listings', 'claims', 'offers']
+        : ['orders', 'listings', 'drafts', 'claims', 'offers'],
+    [isVerifiedStore]
+  );
+
   React.useEffect(() => {
     const tab = searchParams.get('tab') as MainTab | null;
-    if (tab && ['orders', 'listings', 'drafts', 'claims', 'offers'].includes(tab)) {
+    if (tab && allowedTabs.includes(tab)) {
       setActiveTab(tab);
     }
-  }, [searchParams]);
+  }, [searchParams, allowedTabs]);
+
+  React.useEffect(() => {
+    if (isVerifiedStore && activeTab === 'drafts') {
+      setActiveTab('orders');
+    }
+  }, [isVerifiedStore, activeTab]);
 
   // Data
   const [orders, setOrders] = React.useState<Purchase[]>([]);
@@ -2751,10 +2843,15 @@ function OrderManagementPageContent() {
   React.useEffect(() => {
     fetchOrders();
     fetchListings();
-    fetchDrafts();
     fetchTickets();
     fetchAllOffers();
   }, []);
+
+  React.useEffect(() => {
+    if (!isVerifiedStore) {
+      fetchDrafts();
+    }
+  }, [isVerifiedStore, fetchDrafts]);
 
   // Refetch orders when mode/filter changes
   React.useEffect(() => {
@@ -3209,85 +3306,77 @@ function OrderManagementPageContent() {
   const pendingOffersCount = allBuyerOffers.filter(o => o.status === 'pending').length +
     allBuyerOffers.filter(o => o.status === 'accepted' && o.payment_status === 'pending').length;
 
-  return (
+  const mainTabs = React.useMemo(
+    () =>
+      [
+        { id: 'orders' as const, label: 'Orders', badge: activeOrderCount },
+        { id: 'listings' as const, label: 'Listings', badge: activeListingCount },
+        { id: 'offers' as const, label: 'Offers', badge: pendingOffersCount },
+        { id: 'claims' as const, label: 'Claims', badge: activeClaimsCount },
+        ...(!isVerifiedStore
+          ? [{ id: 'drafts' as const, label: 'Drafts', badge: drafts.length }]
+          : []),
+      ] satisfies { id: MainTab; label: string; badge: number }[],
+    [
+      activeOrderCount,
+      activeListingCount,
+      pendingOffersCount,
+      activeClaimsCount,
+      drafts.length,
+      isVerifiedStore,
+    ]
+  );
+
+  const newListingActions = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" className="hidden sm:flex">
+          <Plus className="size-4" />
+          New listing
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem onClick={() => setSmartUploadOpen(true)}>
+          <Zap className="h-4 w-4 mr-2" />
+          Quick upload
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setFacebookImportOpen(true)}>
+          <Upload className="h-4 w-4 mr-2" />
+          Import from Facebook
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setBulkUploadOpen(true)}>
+          <FileText className="h-4 w-4 mr-2" />
+          Bulk upload
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const pageChrome = (
     <>
-      {!isVerifiedStore && <MarketplaceHeader compactSearchOnMobile />}
+            <OrderManagementMainTabs
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              tabs={mainTabs}
+              className={cn(!isVerifiedStore && "hidden sm:flex")}
+            />
 
-      <OrderManagementWrapper isStore={isVerifiedStore}>
-          <div className="w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-0">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground">Order Management</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Manage your orders, listings, and drafts</p>
-              </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" className="h-8 text-xs hidden sm:flex gap-1.5">
-                    <Plus className="h-3.5 w-3.5" />
-                    New Listing
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuItem onClick={() => setSmartUploadOpen(true)}>
-                    <Zap className="h-4 w-4 mr-2" />
-                    Quick upload
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFacebookImportOpen(true)}>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Import from Facebook
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setBulkUploadOpen(true)}>
-                    <FileText className="h-4 w-4 mr-2" />
-                    Bulk upload
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            {/* Desktop Tabs */}
-            <div className="hidden sm:block">
-              {/* Underline tab nav */}
-              <div className="border-b flex gap-0 mt-4 mb-4">
-                {([
-                  { id: 'orders',   label: 'Orders',      badge: activeOrderCount },
-                  { id: 'listings', label: 'My Listings',  badge: activeListingCount },
-                  { id: 'offers',   label: 'Offers',       badge: pendingOffersCount },
-                  { id: 'claims',   label: 'Claims',       badge: activeClaimsCount },
-                  { id: 'drafts',   label: 'Drafts',       badge: drafts.length },
-                ] as { id: MainTab; label: string; badge: number }[]).map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={cn(
-                      "py-3 px-3 mr-1 text-xs font-medium border-b-2 transition-colors -mb-px cursor-pointer",
-                      activeTab === tab.id
-                        ? "border-foreground text-foreground"
-                        : "border-transparent text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {tab.label}
-                    {tab.badge > 0 && (
-                      <span className="ml-1.5 text-[10px] text-muted-foreground">({tab.badge})</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
+            {/* Desktop */}
+            <div className="hidden sm:block space-y-4">
                 {/* Orders Tab */}
                 {activeTab === 'orders' && (
-                  <div className="bg-card rounded-md border">
+                  <Card className="gap-0 py-0">
                     {/* Toolbar */}
-                    <div className="p-4 border-b flex flex-wrap gap-3 items-center">
-                      <div className="flex items-center bg-muted p-0.5 rounded-md w-fit">
+                    <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
+                      <div className={SUB_TAB_CONTAINER_CLASS}>
                         <button
                           onClick={() => setOrderMode('all')}
                           className={cn(
                             "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                             orderMode === 'all'
-                              ? "text-foreground bg-background shadow-sm"
-                              : "text-muted-foreground hover:bg-muted/70"
+                              ? TAB_ACTIVE_CLASS
+                              : TAB_INACTIVE_CLASS
                           )}
                         >
                           <Package size={15} />
@@ -3298,8 +3387,8 @@ function OrderManagementPageContent() {
                           className={cn(
                             "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                             orderMode === 'buying'
-                              ? "text-foreground bg-background shadow-sm"
-                              : "text-muted-foreground hover:bg-muted/70"
+                              ? TAB_ACTIVE_CLASS
+                              : TAB_INACTIVE_CLASS
                           )}
                         >
                           <ShoppingBag size={15} />
@@ -3310,8 +3399,8 @@ function OrderManagementPageContent() {
                           className={cn(
                             "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                             orderMode === 'selling'
-                              ? "text-foreground bg-background shadow-sm"
-                              : "text-muted-foreground hover:bg-muted/70"
+                              ? TAB_ACTIVE_CLASS
+                              : TAB_INACTIVE_CLASS
                           )}
                         >
                           <Store size={15} />
@@ -3319,10 +3408,12 @@ function OrderManagementPageContent() {
                         </button>
                       </div>
 
-                      <div className="relative flex-1 max-w-xs">
-                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input placeholder="Search orders..." className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
-                      </div>
+                      <OrdersSearchField
+                        value={search}
+                        onChange={setSearch}
+                        placeholder="Search orders…"
+                        className="flex-1"
+                      />
 
                       <Select value={statusFilter} onValueChange={setStatusFilter}>
                         <SelectTrigger className="w-[140px]">
@@ -3336,8 +3427,8 @@ function OrderManagementPageContent() {
                         </SelectContent>
                       </Select>
 
-                      <Button variant="outline" size="icon" onClick={fetchOrders}>
-                        <RefreshCw className={cn("h-4 w-4", ordersLoading && "animate-spin")} />
+                      <Button variant="outline" size="icon-sm" onClick={fetchOrders}>
+                        <RefreshCw className={cn("size-4", ordersLoading && "animate-spin")} />
                       </Button>
                     </div>
 
@@ -3403,16 +3494,19 @@ function OrderManagementPageContent() {
                         loading={ordersLoading} 
                       />
                     )}
-                  </div>
+                  </Card>
                 )}
 
                 {/* Listings Tab */}
                 {activeTab === 'listings' && (
-                  <div className="bg-card rounded-md border">
-                    <div className="p-4 border-b flex flex-wrap gap-3 items-center">
-                      <div className="relative flex-1 max-w-xs">
-                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input placeholder="Search listings..." className="pl-8" />
+                  <Card className="gap-0 py-0">
+                    <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
+                      <div className="relative w-full lg:max-w-xs">
+                        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          placeholder="Search listings…"
+                          className={ORDERS_SEARCH_INPUT_CLASS}
+                        />
                       </div>
                       
                       <Select value={listingsFilter} onValueChange={(v) => setListingsFilter(v as any)}>
@@ -3427,8 +3521,8 @@ function OrderManagementPageContent() {
                         </SelectContent>
                       </Select>
                       
-                      <Button variant="outline" size="icon" onClick={fetchListings}>
-                        <RefreshCw className={cn("h-4 w-4", listingsLoading && "animate-spin")} />
+                      <Button variant="outline" size="icon-sm" onClick={fetchListings}>
+                        <RefreshCw className={cn("size-4", listingsLoading && "animate-spin")} />
                       </Button>
                     </div>
 
@@ -3446,13 +3540,13 @@ function OrderManagementPageContent() {
                       togglingIds={togglingListingIds}
                       loading={listingsLoading} 
                     />
-                  </div>
+                  </Card>
                 )}
 
                 {/* Claims Tab */}
                 {activeTab === 'claims' && (
-                  <div className="bg-card rounded-md border">
-                    <div className="p-4 border-b flex flex-wrap gap-3 items-center">
+                  <Card className="gap-0 py-0">
+                    <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
                       <Select value={ticketsFilter} onValueChange={(v) => setTicketsFilter(v as any)}>
                         <SelectTrigger className="w-[140px]">
                           <SelectValue placeholder="Status" />
@@ -3467,8 +3561,8 @@ function OrderManagementPageContent() {
 
                       <div className="flex-1" />
 
-                      <Button variant="outline" size="icon" onClick={fetchTickets}>
-                        <RefreshCw className={cn("h-4 w-4", ticketsLoading && "animate-spin")} />
+                      <Button variant="outline" size="icon-sm" onClick={fetchTickets}>
+                        <RefreshCw className={cn("size-4", ticketsLoading && "animate-spin")} />
                       </Button>
                     </div>
 
@@ -3550,13 +3644,13 @@ function OrderManagementPageContent() {
                         </TableBody>
                       </Table>
                     )}
-                  </div>
+                  </Card>
                 )}
 
                 {/* Drafts Tab */}
-                {activeTab === 'drafts' && (
-                  <div className="bg-card rounded-md border">
-                    <div className="p-4 border-b flex gap-3 items-center justify-between">
+                {!isVerifiedStore && activeTab === 'drafts' && (
+                  <Card className="gap-0 py-0">
+                    <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center justify-between">
                       <div className="flex items-center gap-3">
                         <p className="text-sm text-muted-foreground">
                           {drafts.length} draft{drafts.length !== 1 ? 's' : ''}
@@ -3570,16 +3664,15 @@ function OrderManagementPageContent() {
                               size="sm"
                               variant="destructive"
                               onClick={handleBulkDeleteDrafts}
-                              className="h-8"
                             >
-                              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                              <Trash2 className="size-4" />
                               Delete Selected
                             </Button>
                           </div>
                         )}
                       </div>
-                      <Button variant="outline" size="icon" onClick={fetchDrafts}>
-                        <RefreshCw className={cn("h-4 w-4", draftsLoading && "animate-spin")} />
+                      <Button variant="outline" size="icon-sm" onClick={fetchDrafts}>
+                        <RefreshCw className={cn("size-4", draftsLoading && "animate-spin")} />
                       </Button>
                     </div>
 
@@ -3592,21 +3685,21 @@ function OrderManagementPageContent() {
                       onToggleSelect={handleToggleSelectDraft}
                       onToggleSelectAll={handleToggleSelectAllDrafts}
                     />
-                  </div>
+                  </Card>
                 )}
 
                 {/* Offers Tab */}
                 {activeTab === 'offers' && (
-                  <div className="bg-card rounded-md border">
-                    <div className="p-4 border-b flex flex-wrap gap-3 items-center">
-                      <div className="flex items-center bg-muted p-0.5 rounded-md w-fit">
+                  <Card className="gap-0 py-0">
+                    <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
+                      <div className={SUB_TAB_CONTAINER_CLASS}>
                         <button
                           onClick={() => setOffersMode('buying')}
                           className={cn(
                             "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                             offersMode === 'buying'
-                              ? "text-foreground bg-background shadow-sm"
-                              : "text-muted-foreground hover:bg-muted/70"
+                              ? TAB_ACTIVE_CLASS
+                              : TAB_INACTIVE_CLASS
                           )}
                         >
                           <ShoppingBag size={15} />
@@ -3617,8 +3710,8 @@ function OrderManagementPageContent() {
                           className={cn(
                             "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
                             offersMode === 'selling'
-                              ? "text-foreground bg-background shadow-sm"
-                              : "text-muted-foreground hover:bg-muted/70"
+                              ? TAB_ACTIVE_CLASS
+                              : TAB_INACTIVE_CLASS
                           )}
                         >
                           <Store size={15} />
@@ -3639,8 +3732,8 @@ function OrderManagementPageContent() {
                       </Select>
 
                       <div className="flex-1" />
-                      <Button variant="outline" size="icon" onClick={fetchAllOffers}>
-                        <RefreshCw className={cn("h-4 w-4", offersLoading && "animate-spin")} />
+                      <Button variant="outline" size="icon-sm" onClick={fetchAllOffers}>
+                        <RefreshCw className={cn("size-4", offersLoading && "animate-spin")} />
                       </Button>
                     </div>
 
@@ -3651,23 +3744,32 @@ function OrderManagementPageContent() {
                       loading={offersLoading}
                       onOfferClick={(offer) => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
                     />
-                  </div>
+                  </Card>
                 )}
             </div>
 
             {/* Mobile Content */}
             <div className="sm:hidden space-y-4">
+              {isVerifiedStore ? (
+                <OrderManagementMainTabs
+                  activeTab={activeTab}
+                  onTabChange={setActiveTab}
+                  tabs={mainTabs}
+                  className="w-full"
+                />
+              ) : null}
+
               {/* Mobile Header for Orders */}
               {activeTab === 'orders' && (
                 <div className="space-y-3">
-                  <div className="flex items-center bg-muted p-0.5 rounded-md w-full">
+                  <div className={cn(SUB_TAB_CONTAINER_CLASS, "w-full")}>
                     <button
                       onClick={() => setOrderMode('all')}
                       className={cn(
                         "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
                         orderMode === 'all'
-                          ? "text-foreground bg-background shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/70"
+                          ? TAB_ACTIVE_CLASS
+                          : TAB_INACTIVE_CLASS
                       )}
                     >
                       <Package size={14} />
@@ -3678,8 +3780,8 @@ function OrderManagementPageContent() {
                       className={cn(
                         "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
                         orderMode === 'buying'
-                          ? "text-foreground bg-background shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/70"
+                          ? TAB_ACTIVE_CLASS
+                          : TAB_INACTIVE_CLASS
                       )}
                     >
                       <ShoppingBag size={14} />
@@ -3690,8 +3792,8 @@ function OrderManagementPageContent() {
                       className={cn(
                         "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
                         orderMode === 'selling'
-                          ? "text-foreground bg-background shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/70"
+                          ? TAB_ACTIVE_CLASS
+                          : TAB_INACTIVE_CLASS
                       )}
                     >
                       <Store size={14} />
@@ -3700,17 +3802,14 @@ function OrderManagementPageContent() {
                   </div>
 
                   <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input 
-                        placeholder="Search orders..." 
-                        className="pl-8 h-10" 
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                      />
-                    </div>
-                    <Button variant="outline" size="icon" className="h-10 w-10">
-                      <Filter className="h-4 w-4" />
+                    <OrdersSearchField
+                      value={search}
+                      onChange={setSearch}
+                      placeholder="Search orders…"
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon-sm">
+                      <Filter className="size-4" />
                     </Button>
                   </div>
                 </div>
@@ -3846,8 +3945,8 @@ function OrderManagementPageContent() {
                       <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                       <Input placeholder="Search listings..." className="pl-8 h-10" />
                     </div>
-                    <Button onClick={() => router.push('/marketplace/sell')} className="h-10">
-                      <Plus className="h-4 w-4" />
+                    <Button size="icon-sm" onClick={() => router.push('/marketplace/sell')}>
+                      <Plus className="size-4" />
                     </Button>
                   </div>
                   
@@ -3875,8 +3974,8 @@ function OrderManagementPageContent() {
                       <Tag className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                       <p className="font-medium">No listings yet</p>
                       <p className="text-sm text-muted-foreground mt-1">Create your first listing</p>
-                      <Button className="mt-4" onClick={() => router.push('/marketplace/sell')}>
-                        <Plus className="h-4 w-4 mr-2" />
+                      <Button size="sm" className="mt-4" onClick={() => router.push('/marketplace/sell')}>
+                        <Plus className="size-4" />
                         New Listing
                       </Button>
                     </div>
@@ -3945,14 +4044,14 @@ function OrderManagementPageContent() {
               {activeTab === 'offers' && (
                 <div className="space-y-3">
                   {/* Mode toggle */}
-                  <div className="flex items-center bg-muted p-0.5 rounded-md w-full">
+                  <div className={cn(SUB_TAB_CONTAINER_CLASS, "w-full")}>
                     <button
                       onClick={() => setOffersMode('buying')}
                       className={cn(
                         "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
                         offersMode === 'buying'
-                          ? "text-foreground bg-background shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/70"
+                          ? TAB_ACTIVE_CLASS
+                          : TAB_INACTIVE_CLASS
                       )}
                     >
                       <ShoppingBag size={14} />
@@ -3963,8 +4062,8 @@ function OrderManagementPageContent() {
                       className={cn(
                         "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
                         offersMode === 'selling'
-                          ? "text-foreground bg-background shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/70"
+                          ? TAB_ACTIVE_CLASS
+                          : TAB_INACTIVE_CLASS
                       )}
                     >
                       <Store size={14} />
@@ -3980,7 +4079,7 @@ function OrderManagementPageContent() {
                         variant={offersFilter === f ? 'secondary' : 'outline'}
                         size="sm"
                         onClick={() => setOffersFilter(f)}
-                        className="flex-shrink-0 h-8 text-xs"
+                        className="flex-shrink-0"
                       >
                         {f.charAt(0).toUpperCase() + f.slice(1)}
                       </Button>
@@ -4022,7 +4121,7 @@ function OrderManagementPageContent() {
               )}
 
               {/* Mobile Drafts */}
-              {activeTab === 'drafts' && (
+              {!isVerifiedStore && activeTab === 'drafts' && (
                 <div className="space-y-3">
                   {/* Mobile Selection Actions */}
                   {drafts.length > 0 && !draftsLoading && (
@@ -4044,9 +4143,8 @@ function OrderManagementPageContent() {
                           size="sm" 
                           variant="destructive" 
                           onClick={handleBulkDeleteDrafts}
-                          className="h-8"
                         >
-                          <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                          <Trash2 className="size-4" />
                           Delete ({selectedDraftIds.size})
                         </Button>
                       )}
@@ -4080,7 +4178,39 @@ function OrderManagementPageContent() {
                 </div>
               )}
             </div>
+    </>
+  );
+
+  return (
+    <>
+      {!isVerifiedStore && <MarketplaceHeader compactSearchOnMobile />}
+
+      <OrderManagementWrapper isStore={isVerifiedStore}>
+        {isVerifiedStore ? (
+          <PageContainer size="wide">
+            <PageHeader
+              title="Orders"
+              description="Manage orders, listings, offers, and support claims."
+              actions={newListingActions}
+            />
+            <PageBody className="space-y-4">{pageChrome}</PageBody>
+          </PageContainer>
+        ) : (
+          <div className="w-full space-y-4 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                  Order Management
+                </h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Manage your orders, listings, and drafts
+                </p>
+              </div>
+              {newListingActions}
+            </div>
+            {pageChrome}
           </div>
+        )}
       </OrderManagementWrapper>
 
       {/* Mobile Bottom Navigation — only for non-store users; store owners get DashboardLayout's nav */}

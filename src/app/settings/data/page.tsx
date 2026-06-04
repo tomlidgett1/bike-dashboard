@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Database,
   Loader2,
   RefreshCcw,
@@ -147,7 +149,7 @@ function getColumnWidth(column: string) {
 }
 
 export default function DataSettingsPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { profile, loading: profileLoading } = useUserProfile();
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = React.useState<boolean | null>(null);
@@ -176,7 +178,7 @@ export default function DataSettingsPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (profileLoading) return;
+    if (authLoading || profileLoading) return;
 
     if (!user || !profile) {
       router.replace("/marketplace");
@@ -190,7 +192,7 @@ export default function DataSettingsPage() {
     }
 
     setIsAuthorized(true);
-  }, [profile, profileLoading, router, user]);
+  }, [authLoading, profile, profileLoading, router, user]);
 
   const fetchInventory = React.useCallback(async () => {
     setLoading(true);
@@ -476,7 +478,7 @@ export default function DataSettingsPage() {
   const titleCleaningFailedCount = titleCleaningJob?.failed_count || 0;
   const titleCleaningTotalCount = titleCleaningJob?.total_items || 0;
 
-  if (profileLoading || isAuthorized === null) {
+  if (authLoading || profileLoading || isAuthorized === null) {
     return (
       <>
         <Header title="Data" description="Lightspeed inventory grid" />
@@ -541,33 +543,33 @@ export default function DataSettingsPage() {
                   </button>
                 )}
               </div>
-              <Button type="button" variant="outline" className="h-9 rounded-md" onClick={applySearch}>
+              <Button type="button" variant="outline" size="sm" onClick={applySearch}>
                 Search
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                className="h-9 rounded-md"
+                size="sm"
                 onClick={refreshFromLightspeed}
                 disabled={syncing || loading}
               >
                 {syncing ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  <RefreshCcw className="size-4" />
                 )}
                 Refresh from Lightspeed
               </Button>
               <Button
                 type="button"
-                className="h-9 rounded-md"
+                size="sm"
                 onClick={cleanSelectedTitles}
                 disabled={cleaningTitles || selectedItemIds.size === 0}
               >
                 {cleaningTitles ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Sparkles className="mr-2 h-4 w-4" />
+                  <Sparkles className="size-4" />
                 )}
                 Clean selected titles
               </Button>
@@ -765,22 +767,20 @@ export default function DataSettingsPage() {
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="h-8 rounded-md"
+              size="icon-sm"
               disabled={page <= 1 || loading}
               onClick={() => setPage((current) => Math.max(current - 1, 1))}
             >
-              Previous
+              <ChevronLeft className="size-4" />
             </Button>
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="h-8 rounded-md"
+              size="icon-sm"
               disabled={page >= totalPages || loading}
               onClick={() => setPage((current) => current + 1)}
             >
-              Next
+              <ChevronRight className="size-4" />
             </Button>
           </div>
         </div>

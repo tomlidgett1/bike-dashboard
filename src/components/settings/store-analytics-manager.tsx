@@ -27,6 +27,10 @@ interface DailyPoint {
   distinctUsers: number;
 }
 
+function shouldUnoptimizeProductImage(url: string) {
+  return !url.includes("res.cloudinary.com") && !url.includes("supabase.co");
+}
+
 interface TopProduct {
   productId: string;
   name: string;
@@ -193,7 +197,7 @@ export function StoreAnalyticsManager() {
         </div>
         <div className="flex items-center gap-2">
           <Select value={days} onValueChange={setDays}>
-            <SelectTrigger className="h-9 w-[140px] rounded-md">
+            <SelectTrigger size="sm" className="w-[140px] rounded-md">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -204,7 +208,7 @@ export function StoreAnalyticsManager() {
             </SelectContent>
           </Select>
           <Button type="button" variant="outline" size="sm" onClick={loadAnalytics} disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
+            {loading ? <Loader2 className="size-4 animate-spin" /> : "Refresh"}
           </Button>
         </div>
       </div>
@@ -274,7 +278,14 @@ export function StoreAnalyticsManager() {
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="relative h-11 w-11 flex-shrink-0 overflow-hidden rounded-md bg-secondary">
                           {product.imageUrl ? (
-                            <Image src={product.imageUrl} alt="" fill sizes="44px" className="object-cover" />
+                            <Image
+                              src={product.imageUrl}
+                              alt=""
+                              fill
+                              sizes="44px"
+                              className="object-cover"
+                              unoptimized={shouldUnoptimizeProductImage(product.imageUrl)}
+                            />
                           ) : (
                             <Package className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-muted-foreground" />
                           )}

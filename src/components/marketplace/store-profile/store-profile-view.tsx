@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import {
   Store,
@@ -633,6 +634,7 @@ function ProductsTab({
 }
 
 export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfileViewProps) {
+  const router = useRouter();
   // Home is the storefront landing page; it's the default tab unless the owner
   // has explicitly switched it off (homepage_config.enabled === false).
   const homeEnabled = store.homepage_config?.enabled !== false;
@@ -646,13 +648,6 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   const [showSaleOnly, setShowSaleOnly] = React.useState(false);
   const [previewMode, setPreviewMode] = React.useState(false);
   const [hoursOpen, setHoursOpen] = React.useState(false);
-  const shouldReduceMotion = useReducedMotion();
-  const [introHeadersVisible, setIntroHeadersVisible] = React.useState(
-    () => Boolean(immersive)
-  );
-  const [introHeaderRevealSettled, setIntroHeaderRevealSettled] = React.useState(
-    () => Boolean(immersive)
-  );
 
   useStorePageView(isOwnProfile ? null : store.id);
 
@@ -666,36 +661,9 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  React.useEffect(() => {
-    if (immersive || shouldReduceMotion) {
-      setIntroHeadersVisible(true);
-      setIntroHeaderRevealSettled(true);
-      return;
-    }
-
-    setIntroHeadersVisible(false);
-    setIntroHeaderRevealSettled(false);
-    const timer = window.setTimeout(() => {
-      setIntroHeadersVisible(true);
-    }, 3000);
-
-    return () => window.clearTimeout(timer);
-  }, [immersive, shouldReduceMotion, store.id]);
-
-  React.useEffect(() => {
-    if (!introHeadersVisible || introHeaderRevealSettled) return;
-
-    const timer = window.setTimeout(
-      () => setIntroHeaderRevealSettled(true),
-      shouldReduceMotion ? 0 : 560,
-    );
-
-    return () => window.clearTimeout(timer);
-  }, [introHeadersVisible, introHeaderRevealSettled, shouldReduceMotion]);
-
   const openStatus = getOpenStatus(store.opening_hours);
   const headerRating =
-    store.rating != null && store.homepage_config?.badges?.show_rating !== false
+    store.rating != null && store.homepage_config?.badges?.show_rating === true
       ? store.rating
       : null;
   const showHeaderHoursBadge = openStatus != null;
@@ -797,7 +765,9 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
         <HeroAction
           icon={Settings}
           label="Edit Store"
-          onClick={() => (window.location.href = "/settings/store")}
+          onClick={() => {
+            router.push("/settings/store/home");
+          }}
         />
       )}
       {isOwnProfile && (
@@ -817,11 +787,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   return (
     <div className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
       <div>
-      <div
-        data-state={introHeadersVisible ? "visible" : "hidden"}
-        data-settled={introHeaderRevealSettled ? "true" : "false"}
-        className="store-profile-top-headers"
-      >
+      <div>
       {/* ══ STICKY STORE HEADER ════════════════════════════
           Single row: [store logo] [store name]  |  [search] [← YJ back pill] */}
       <header className={cn(
@@ -1498,16 +1464,6 @@ function AboutTab({
             <Clock className="h-4 w-4 text-gray-400" />
             Opening hours
           </h3>
-          {openStatus && store.homepage_config?.badges?.show_open_status !== false && (
-            <span
-              className={cn(
-                "text-xs font-medium px-2 py-0.5 rounded-full",
-                openStatus.open ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"
-              )}
-            >
-              {openStatus.open ? "Open" : "Closed"}
-            </span>
-          )}
         </div>
         <div className="space-y-2">
           {WEEK_ORDER.map((day) => {

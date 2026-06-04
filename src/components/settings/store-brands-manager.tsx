@@ -186,8 +186,8 @@ export function StoreBrandsManager() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button onClick={handleAddNew} className="rounded-md">
-          <Plus className="h-4 w-4 mr-2" />
+        <Button onClick={handleAddNew} size="sm">
+          <Plus className="size-4" />
           Add Brand
         </Button>
       </div>
@@ -241,19 +241,18 @@ export function StoreBrandsManager() {
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon-sm"
                     onClick={() => handleEdit(brand)}
-                    className="h-8 w-8 p-0"
                   >
-                    <Edit2 className="h-3.5 w-3.5" />
+                    <Edit2 className="size-4" />
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon-sm"
                     onClick={() => setDeleteConfirmId(brand.id)}
-                    className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="size-4" />
                   </Button>
                 </div>
               </div>
@@ -316,16 +315,16 @@ export function StoreBrandsManager() {
                     size="sm"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
-                    className="rounded-md w-full"
+                    className="w-full"
                   >
                     {uploading ? (
                       <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        <Loader2 className="size-4 animate-spin" />
                         Uploading...
                       </>
                     ) : (
                       <>
-                        <Upload className="h-4 w-4 mr-2" />
+                        <Upload className="size-4" />
                         Upload Logo
                       </>
                     )}
@@ -356,16 +355,17 @@ export function StoreBrandsManager() {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saving}>
+            <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>
             <Button
+              size="sm"
               onClick={handleSave}
               disabled={!formData.name.trim() || saving || uploading}
             >
               {saving ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                   Saving...
                 </>
               ) : (

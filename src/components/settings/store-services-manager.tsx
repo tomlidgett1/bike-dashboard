@@ -249,8 +249,8 @@ export function StoreServicesManager() {
         <p className="text-xs text-muted-foreground">
           Drag to reorder · ★ to feature on the services tab
         </p>
-        <Button onClick={openAdd} size="sm" className="rounded-md">
-          <Plus className="h-4 w-4 mr-2" />
+        <Button onClick={openAdd} size="sm">
+          <Plus className="size-4" />
           Add Service
         </Button>
       </div>
@@ -336,19 +336,18 @@ export function StoreServicesManager() {
                   </button>
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon-sm"
                     onClick={() => openEdit(svc)}
-                    className="h-8 w-8 p-0"
                   >
-                    <Edit2 className="h-3.5 w-3.5" />
+                    <Edit2 className="size-4" />
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon-sm"
                     onClick={() => setDeleteConfirmId(svc.id)}
-                    className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="size-4" />
                   </Button>
                 </div>
               </div>
@@ -441,9 +440,8 @@ export function StoreServicesManager() {
                 variant="outline"
                 size="sm"
                 onClick={addInclude}
-                className="rounded-md"
               >
-                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                <Plus className="size-4" />
                 Add item
               </Button>
             </div>
@@ -545,12 +543,12 @@ export function StoreServicesManager() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saving}>
+            <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={!formData.name.trim() || saving}>
+            <Button size="sm" onClick={handleSave} disabled={!formData.name.trim() || saving}>
               {saving ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</>
+                <><Loader2 className="size-4 animate-spin" />Saving…</>
               ) : (
                 "Save service"
               )}

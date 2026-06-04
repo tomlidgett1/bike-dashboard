@@ -14,6 +14,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import {
+  buildExistingCatalogIndex,
+  catalogMatchKey,
+  findDuplicateForProduct,
+} from '@/lib/store/online-products-csv';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,12 +33,20 @@ interface IncomingProduct {
   name: string;
   brand: string | null;
   price: number;
+  soh?: number | null;
   description: string | null;
   specs: string | null;
   category: string;
   subcategory: string;
   selectedCandidates: CandidateImage[];
   primaryUrl: string;
+}
+
+function resolveProductQoh(soh: number | null | undefined) {
+  if (typeof soh === 'number' && Number.isFinite(soh)) {
+    return Math.max(0, Math.floor(soh));
+  }
+  return 9999;
 }
 
 async function ensureCanonical(
@@ -96,6 +109,9 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const products: IncomingProduct[] = body.products || [];
+    const onlineOnly = body.onlineOnly !== false;
+    const listingSource = onlineOnly ? 'online_catalog' : 'manual';
+    const skuPrefix = onlineOnly ? 'ONLINE' : 'STORE';
 
     if (!products.length) {
       return NextResponse.json({ error: 'No products provided' }, { status: 400 });
@@ -103,11 +119,28 @@ export async function POST(request: NextRequest) {
 
     const createdIds: string[] = [];
     const errors: string[] = [];
+    const skippedDuplicates: string[] = [];
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    const { data: existingRows } = await supabase
+      .from('products')
+      .select('id, display_name, description, brand')
+      .eq('user_id', user.id)
+      .eq('listing_type', 'store_inventory');
+
+    const catalogIndex = buildExistingCatalogIndex(existingRows ?? []);
 
     const now = Date.now();
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
+
+      const duplicate = findDuplicateForProduct(product.name, product.brand, catalogIndex);
+      if (duplicate) {
+        skippedDuplicates.push(product.name);
+        errors.push(`${product.name}: duplicate of existing store product`);
+        continue;
+      }
+
       // 1. Find or create canonical product
       const canonicalId = await ensureCanonical(supabase, product.name, product.brand);
 
@@ -117,7 +150,7 @@ export async function POST(request: NextRequest) {
         .insert({
           user_id: user.id,
           listing_type: 'store_inventory',
-          listing_source: 'online_catalog',
+          listing_source: listingSource,
           listing_status: 'active',
           is_active: true,
           canonical_product_id: canonicalId,
@@ -129,9 +162,9 @@ export async function POST(request: NextRequest) {
           marketplace_subcategory: product.subcategory,
           product_description: product.description || null,
           product_specs: product.specs || null,
-          qoh: 9999,
-          system_sku: `ONLINE-${now}-${i}`,
-          lightspeed_item_id: `online-${now}-${i}`,
+          qoh: resolveProductQoh(product.soh),
+          system_sku: `${skuPrefix}-${now}-${i}`,
+          lightspeed_item_id: `${listingSource}-${now}-${i}`,
           primary_image_url: product.primaryUrl || null,
         })
         .select('id')
@@ -144,6 +177,14 @@ export async function POST(request: NextRequest) {
       }
 
       createdIds.push(inserted.id);
+
+      const matchKey = catalogMatchKey(product.name, product.brand);
+      if (matchKey) {
+        catalogIndex.byCatalogKey.set(matchKey, {
+          existingProductId: inserted.id,
+          existingProductName: product.name,
+        });
+      }
 
       // 3. Save approved images into product_images linked to canonical product
       if (product.selectedCandidates.length > 0) {
@@ -210,7 +251,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, created: createdIds.length, ids: createdIds, errors });
+    return NextResponse.json({
+      success: true,
+      created: createdIds.length,
+      ids: createdIds,
+      errors,
+      skippedDuplicates: skippedDuplicates.length,
+      onlineOnly,
+    });
   } catch (err) {
     console.error('[online-products/create]', err);
     return NextResponse.json({ error: 'Failed to create products' }, { status: 500 });

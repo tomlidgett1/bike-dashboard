@@ -199,7 +199,7 @@ export function StoreApprovalPanel() {
             disabled={loading || approving}
             onClick={() => void load()}
           >
-            <RefreshCw className={cn("mr-1.5 size-3.5", loading && "animate-spin")} />
+            <RefreshCw className={cn("size-4", loading && "animate-spin")} />
             Refresh
           </Button>
         }
@@ -207,9 +207,9 @@ export function StoreApprovalPanel() {
           selected.size > 0 ? (
             <Button size="sm" disabled={approving} onClick={() => void doApprove(Array.from(selected))}>
               {approving ? (
-                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                <Loader2 className="size-4 animate-spin" />
               ) : (
-                <Check className="mr-1.5 size-3.5" />
+                <Check className="size-4" />
               )}
               Approve {selected.size} selected
             </Button>
@@ -267,7 +267,7 @@ export function StoreApprovalPanel() {
                 disabled={approving || group.products.length === 0}
                 onClick={() => void doApprove(groupIds)}
               >
-                <Check className="mr-1 size-3" />
+                <Check className="size-4" />
                 Approve all
               </Button>
             }
@@ -351,7 +351,7 @@ export function StoreApprovalPanel() {
                         onClick={() => void doApprove([p.id])}
                         className="shrink-0"
                       >
-                        <Check className="mr-1 size-3" />
+                        <Check className="size-4" />
                         Approve
                       </Button>
                     </div>

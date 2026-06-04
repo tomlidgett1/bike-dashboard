@@ -212,8 +212,8 @@ export function resolveHomepageConfig(
   // ── Badges ────────────────────────────────────────────────────────────
   const rawBadges = (r.badges ?? {}) as Partial<StoreHomepageConfig['badges']>;
   const badges: StoreHomepageConfig['badges'] = {
-    show_open_status: rawBadges.show_open_status ?? true,
-    show_rating: rawBadges.show_rating ?? true,
+    show_open_status: rawBadges.show_open_status ?? false,
+    show_rating: rawBadges.show_rating ?? false,
     show_hours_on_hero: rawBadges.show_hours_on_hero ?? true,
   };
 
@@ -325,6 +325,6 @@ export function blankHomepageConfig(): StoreHomepageConfig {
     visit: { enabled: true, title: 'Visit us' },
     featured_carousels: { enabled: false, slot1: null, slot2: null, per_row: 6 },
     section_order: [...HOME_SECTION_ORDER],
-    badges: { show_open_status: true, show_rating: true, show_hours_on_hero: true },
+    badges: { show_open_status: false, show_rating: false, show_hours_on_hero: true },
   };
 }

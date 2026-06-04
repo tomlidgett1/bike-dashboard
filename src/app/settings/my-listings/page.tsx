@@ -126,10 +126,10 @@ function CreateListingDropdown({ onSelectQuick, onSelectFacebook, onSelectBulk }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" className="h-8 text-xs gap-1.5">
-          <Plus className="h-3.5 w-3.5" />
+        <Button size="sm">
+          <Plus className="size-4" />
           Create listing
-          <ChevronDown className="h-3 w-3 opacity-70" />
+          <ChevronDown className="size-3.5 opacity-70" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
@@ -644,8 +644,8 @@ export default function MyListingsPage() {
                           <div className="flex items-center justify-end gap-0.5">
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleView(listing.id)} className="h-7 w-7 p-0">
-                                  <ExternalLink className="h-3.5 w-3.5" />
+                                <Button variant="ghost" size="icon-sm" onClick={() => handleView(listing.id)}>
+                                  <ExternalLink className="size-4" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent side="bottom"><p>View</p></TooltipContent>
@@ -653,8 +653,8 @@ export default function MyListingsPage() {
 
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleEdit(listing.id)} className="h-7 w-7 p-0">
-                                  <Edit className="h-3.5 w-3.5" />
+                                <Button variant="ghost" size="icon-sm" onClick={() => handleEdit(listing.id)}>
+                                  <Edit className="size-4" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent side="bottom"><p>Edit</p></TooltipContent>
@@ -662,8 +662,8 @@ export default function MyListingsPage() {
 
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleBoost(listing.id)} className="h-7 w-7 p-0">
-                                  <Zap className="h-3.5 w-3.5" />
+                                <Button variant="ghost" size="icon-sm" onClick={() => handleBoost(listing.id)}>
+                                  <Zap className="size-4" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent side="bottom"><p>Boost</p></TooltipContent>
@@ -672,8 +672,8 @@ export default function MyListingsPage() {
                             {listing.listing_status !== "sold" && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button variant="ghost" size="sm" onClick={() => handleMarkAsSold(listing.id)} className="h-7 w-7 p-0">
-                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                  <Button variant="ghost" size="icon-sm" onClick={() => handleMarkAsSold(listing.id)}>
+                                    <CheckCircle2 className="size-4" />
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent side="bottom"><p>Mark sold</p></TooltipContent>
@@ -682,8 +682,8 @@ export default function MyListingsPage() {
 
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleDelete(listing.id)} className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive">
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(listing.id)} className="text-muted-foreground hover:text-destructive">
+                                  <Trash2 className="size-4" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent side="bottom"><p>Delete</p></TooltipContent>

@@ -4,20 +4,20 @@ export const dynamic = "force-dynamic";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Truck } from "lucide-react";
-import { PageContainer, PageHeader, PageBody, SettingsSection } from "@/components/dashboard";
+import { Loader2 } from "lucide-react";
+import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
 import { StoreUberManager } from "@/components/settings/store-uber-manager";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 
 export default function UberSettingsPage() {
-  const { user } = useAuth();
-  const { profile, loading } = useUserProfile();
+  const { user, loading: authLoading } = useAuth();
+  const { profile, loading: profileLoading } = useUserProfile();
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = React.useState<boolean | null>(null);
 
   React.useEffect(() => {
-    if (loading) return;
+    if (authLoading || profileLoading) return;
 
     if (!user || !profile) {
       router.replace("/marketplace");
@@ -31,9 +31,9 @@ export default function UberSettingsPage() {
     }
 
     setIsAuthorized(true);
-  }, [loading, profile, router, user]);
+  }, [authLoading, profileLoading, profile, router, user]);
 
-  if (loading || isAuthorized === null) {
+  if (authLoading || profileLoading || isAuthorized === null) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
@@ -48,13 +48,7 @@ export default function UberSettingsPage() {
         description="Offer same-day local delivery on your storefront."
       />
       <PageBody>
-        <SettingsSection
-          title="Uber delivery"
-          description="Choose products and SMS recipients for Uber Express orders."
-          icon={Truck}
-        >
-          <StoreUberManager />
-        </SettingsSection>
+        <StoreUberManager />
       </PageBody>
     </PageContainer>
   );

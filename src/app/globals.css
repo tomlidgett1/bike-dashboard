@@ -366,40 +366,10 @@
     will-change: transform, opacity;
   }
 
-  .store-profile-top-headers {
-    max-height: 0;
-    opacity: 0;
-    overflow: hidden;
-    transform: translate3d(0, -32px, 0);
-    will-change: max-height, transform, opacity;
-    transition:
-      max-height 540ms cubic-bezier(0.16, 1, 0.3, 1),
-      opacity 240ms ease-out,
-      transform 540ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .store-profile-top-headers[data-state="visible"] {
-    max-height: 180px;
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-
-  .store-profile-top-headers[data-settled="true"] {
-    max-height: none;
-    overflow: visible;
-    transform: none;
-    will-change: auto;
-  }
-
   @media (prefers-reduced-motion: reduce) {
     .marketplace-top-header,
     .store-floating-top-header {
       animation: none;
-      will-change: auto;
-    }
-
-    .store-profile-top-headers {
-      transition: none;
       will-change: auto;
     }
   }

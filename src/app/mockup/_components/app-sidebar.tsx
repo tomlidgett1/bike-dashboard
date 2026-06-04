@@ -38,7 +38,6 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  SidebarRail,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { StoreSwitcher } from "./store-switcher";
@@ -115,10 +114,12 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <StoreSwitcher />
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="gap-1">
         {NAV.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+          <SidebarGroup key={group.label} className="px-2 py-1">
+            <SidebarGroupLabel className="h-7 px-2 text-xs text-sidebar-foreground/70">
+              {group.label}
+            </SidebarGroupLabel>
             <SidebarMenu>
               {group.items.map((item) => {
                 // Collapsible parent with sub-items
@@ -192,7 +193,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           </SidebarGroup>
         ))}
 
-        <SidebarGroup className="mt-auto">
+        <SidebarGroup className="mt-auto px-2 py-1">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
@@ -220,7 +221,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   );
 }

@@ -4,10 +4,8 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  CalendarClock,
   ChevronRight,
   Database,
-  Instagram,
   LifeBuoy,
   Package,
   Settings,
@@ -39,11 +37,11 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  SidebarRail,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { StoreSwitcher } from "./store-switcher";
 import { NavUser } from "./nav-user";
+import { SidebarBottomLinks } from "./sidebar-bottom-links";
 
 type SubItem = { title: string; href: string };
 type NavItem = {
@@ -67,14 +65,13 @@ const NAV: NavGroup[] = [
         icon: Store,
         items: [
           { title: "Home page", href: "/settings/store/home" },
-          { title: "Categories", href: "/settings/store/categories" },
+          { title: "Carousels", href: "/settings/store/carousels" },
           { title: "Sections", href: "/settings/store/sections" },
           { title: "Brands", href: "/settings/store/brands" },
           { title: "Services", href: "/settings/store/services" },
           { title: "Analytics", href: "/settings/store/analytics" },
           { title: "Product content", href: "/settings/store/products" },
           { title: "Titles", href: "/settings/store/titles" },
-          { title: "Online products", href: "/settings/store/online" },
         ],
       },
       { title: "Optimize", href: "/optimize", icon: Sparkles },
@@ -89,7 +86,6 @@ const NAV: NavGroup[] = [
         icon: Tag,
         items: [
           { title: "My listings", href: "/settings/my-listings" },
-          { title: "Drafts", href: "/settings/drafts" },
         ],
       },
     ],
@@ -106,8 +102,6 @@ const NAV: NavGroup[] = [
     label: "Admin",
     items: [
       { title: "Image QA", href: "/admin/image-qa", icon: ShieldCheck },
-      { title: "Instagram posts", href: "/admin/instagram-posts", icon: Instagram, disabled: true },
-      { title: "Scheduled uploads", href: "/admin/scheduled-uploads", icon: CalendarClock, disabled: true },
     ],
   },
 ];
@@ -192,10 +186,12 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <StoreSwitcher />
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="gap-1">
         {NAV.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+          <SidebarGroup key={group.label} className="px-2 py-1">
+            <SidebarGroupLabel className="h-7 px-2 text-xs text-sidebar-foreground/70">
+              {group.label}
+            </SidebarGroupLabel>
             <SidebarMenu>
               {group.items.map((item) =>
                 item.items ? (
@@ -208,7 +204,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           </SidebarGroup>
         ))}
 
-        <SidebarGroup className="mt-auto">
+        <SidebarGroup className="mt-auto px-2 py-1">
           <SidebarMenu>
             {FOOTER_ITEMS.map((item) => (
               <FlatNavItem key={item.title} item={item} pathname={pathname} />
@@ -219,9 +215,9 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
       <SidebarSeparator />
       <SidebarFooter>
+        <SidebarBottomLinks />
         <NavUser />
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   );
 }

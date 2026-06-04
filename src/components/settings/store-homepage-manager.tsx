@@ -40,7 +40,6 @@ import {
   MapPin,
   ListOrdered,
   Eye,
-  Star,
   GalleryHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -339,7 +338,6 @@ export function StoreHomepageManager() {
           value={config.hero.image_urls}
           onChange={(urls) => patchHero({ image_urls: urls, image_url: urls[0] ?? null })}
         />
-        <TextField label="Eyebrow" value={config.hero.eyebrow} onChange={(v) => patchHero({ eyebrow: v })} placeholder="Your local bike shop" />
         <TextField label="Headline" value={config.hero.headline} onChange={(v) => patchHero({ headline: v })} placeholder={store.store_name} />
         <TextAreaField label="Subheadline" value={config.hero.subheadline} onChange={(v) => patchHero({ subheadline: v })} rows={2} />
         <div className="grid sm:grid-cols-2 gap-4">
@@ -703,58 +701,21 @@ export function StoreHomepageManager() {
 
       {/* ── Badges ── */}
       <SectionCard icon={Eye} title="Badges & indicators" description="Choose which status indicators appear on your public profile.">
-        <div className="divide-y divide-border">
-          <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-foreground">Open / Closed status</p>
-                <span className={cn(
-                  "text-xs font-medium px-1.5 py-0.5 rounded-full transition-opacity",
-                  config.badges.show_open_status ? "bg-green-50 text-green-700" : "opacity-25 bg-gray-100 text-gray-500",
-                )}>Open now</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">Show a live open or closed pill next to your opening hours and on the About tab.</p>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-foreground">Hours on hero</p>
+              <span className={cn(
+                "text-xs font-medium px-1.5 py-0.5 rounded-full transition-opacity",
+                config.badges.show_hours_on_hero ? "bg-blue-50 text-blue-700" : "opacity-25 bg-gray-100 text-gray-500",
+              )}>Mon 9:00–17:00</span>
             </div>
-            <Switch
-              checked={config.badges.show_open_status}
-              onCheckedChange={(v) => patchBadges({ show_open_status: v })}
-            />
+            <p className="text-xs text-muted-foreground mt-0.5">Show today&apos;s opening hours overlaid on the hero image.</p>
           </div>
-          <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-foreground">Hours on hero</p>
-                <span className={cn(
-                  "text-xs font-medium px-1.5 py-0.5 rounded-full transition-opacity",
-                  config.badges.show_hours_on_hero ? "bg-blue-50 text-blue-700" : "opacity-25 bg-gray-100 text-gray-500",
-                )}>Mon 9:00–17:00</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">Show today's opening hours overlaid on the hero image.</p>
-            </div>
-            <Switch
-              checked={config.badges.show_hours_on_hero}
-              onCheckedChange={(v) => patchBadges({ show_hours_on_hero: v })}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-foreground">Star rating</p>
-                <span className={cn(
-                  "inline-flex items-center gap-0.5 text-xs font-semibold transition-opacity",
-                  config.badges.show_rating ? "text-amber-500" : "opacity-25 text-gray-400",
-                )}>
-                  <Star className="h-3 w-3 fill-current" />
-                  4.8
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">Show your rating score in the store header.</p>
-            </div>
-            <Switch
-              checked={config.badges.show_rating}
-              onCheckedChange={(v) => patchBadges({ show_rating: v })}
-            />
-          </div>
+          <Switch
+            checked={config.badges.show_hours_on_hero}
+            onCheckedChange={(v) => patchBadges({ show_hours_on_hero: v })}
+          />
         </div>
       </SectionCard>
 

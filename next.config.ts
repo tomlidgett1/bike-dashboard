@@ -75,6 +75,19 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // eBay (online product / Serper image sources)
+      {
+        protocol: 'https',
+        hostname: 'i.ebayimg.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'thumbs.ebayimg.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
     // AVIF first for better compression (30% smaller than WebP)
     formats: ['image/avif', 'image/webp'],

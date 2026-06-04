@@ -980,13 +980,7 @@ function StorySection({
   const TextBlock = (
     <Reveal className="lg:w-1/2" delay={0.08}>
       <div className="flex h-full flex-col justify-center">
-        <span
-          className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider text-gray-700"
-          style={{ backgroundColor: `${accent}26` }}
-        >
-          Our story
-        </span>
-        <h2 className="mt-4 text-2xl sm:text-4xl font-bold tracking-tight text-gray-900 leading-tight">
+        <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-gray-900 leading-tight">
           {story.title}
         </h2>
         <p className="mt-5 text-base sm:text-lg text-gray-600 leading-relaxed whitespace-pre-line">
@@ -1288,11 +1282,6 @@ function VisitSection({
                 <Clock className="h-4 w-4 text-gray-400" />
                 Opening hours
               </h3>
-              {status && config.badges.show_open_status && (
-                <span className={cn("text-xs font-medium px-2.5 py-1 rounded-full", status.open ? "bg-green-50 text-green-700" : "bg-gray-200 text-gray-600")}>
-                  {status.open ? "Open now" : "Closed"}
-                </span>
-              )}
             </div>
             <div className="space-y-1">
               {WEEK_ORDER.map((day) => {
