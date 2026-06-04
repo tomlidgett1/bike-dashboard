@@ -25,31 +25,17 @@ import {
   Clock,
   Zap,
   ChevronRight,
+  CreditCard,
+  Monitor,
+  Moon,
+  Sun,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
-import { Header } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import { useUserProfile } from "@/lib/hooks/use-user-profile";
-import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/components/providers/auth-provider";
-import { optimizeImage, formatFileSize } from "@/lib/utils/image-optimizer";
-import { OpeningHoursEditor } from "@/components/opening-hours-editor";
-import type { OpeningHours } from "@/components/providers/profile-provider";
 import {
   Select,
   SelectContent,
@@ -57,9 +43,46 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+import { useUserProfile } from "@/lib/hooks/use-user-profile";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/providers/auth-provider";
+import { optimizeImage, formatFileSize } from "@/lib/utils/image-optimizer";
+import { OpeningHoursEditor } from "@/components/opening-hours-editor";
+import type { OpeningHours } from "@/components/providers/profile-provider";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
 import { StripeConnectCard } from "@/components/settings/stripe-connect-card";
 import { DeleteAccountDialog } from "@/components/settings/delete-account-dialog";
+import {
+  PageContainer,
+  PageHeader,
+  SettingsSection,
+  SettingsRow,
+  SettingsDivider,
+  SettingsField,
+  StatusBadge,
+} from "@/components/dashboard";
+
+type SectionId =
+  | "account"
+  | "business"
+  | "payments"
+  | "logo"
+  | "hours"
+  | "integrations"
+  | "notifications"
+  | "appearance";
+
+const NAV: { id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "account", label: "Account", icon: User },
+  { id: "business", label: "Business", icon: Building2 },
+  { id: "payments", label: "Payments", icon: CreditCard },
+  { id: "logo", label: "Logo", icon: ImageIcon },
+  { id: "hours", label: "Opening hours", icon: Clock },
+  { id: "integrations", label: "Integrations", icon: Store },
+  { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "appearance", label: "Appearance", icon: Palette },
+];
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -72,6 +95,7 @@ export default function SettingsPage() {
   const [logoPreview, setLogoPreview] = React.useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = React.useState(false);
   const [isAuthorized, setIsAuthorized] = React.useState<boolean | null>(null);
+  const [section, setSection] = React.useState<SectionId>("account");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { profile, loading, saving, isFirstTime, saveProfile } = useUserProfile();
@@ -338,625 +362,365 @@ export default function SettingsPage() {
 
   if (isAuthorized === null) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  const SaveButton = () => (
-    <div className="flex justify-end pt-2">
+  const SaveBar = () => (
+    <>
       <Button
         onClick={handleSave}
         disabled={saving || uploadingLogo}
-        className={cn(
-          "min-w-[120px] rounded-md transition-all",
-          saved && "bg-green-600 hover:bg-green-600"
-        )}
+        size="sm"
+        className="min-w-[130px]"
       >
         {saving || uploadingLogo ? (
           <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Saving...
+            <Loader2 className="size-4 animate-spin" />
+            Saving…
           </>
         ) : saved ? (
           <>
-            <Check className="mr-2 h-4 w-4" />
+            <Check className="size-4" />
             Saved
           </>
         ) : (
           <>
-            <Save className="mr-2 h-4 w-4" />
-            Save Changes
+            <Save className="size-4" />
+            Save changes
           </>
         )}
       </Button>
-    </div>
+    </>
   );
 
   return (
-    <>
-      <Header
+    <PageContainer size="wide">
+      <PageHeader
         title="Settings"
-        description="Manage your account and preferences"
+        description="Manage your account, store profile and preferences."
       />
 
-      <div className="p-4 lg:p-6">
-        <div className="mx-auto max-w-3xl space-y-4">
-          {/* First Time User Notice */}
-          {isFirstTime && (
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-border dark:bg-card">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-foreground">
-                    Welcome! Complete Your Profile
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-600 dark:text-muted-foreground">
-                    Please fill in your account details below to get started. This information will be used for your business profile and communications.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+      {isFirstTime && (
+        <div className="mt-6 flex items-start gap-3 rounded-lg border bg-muted/40 p-4">
+          <AlertCircle className="mt-0.5 size-5 text-muted-foreground" />
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">
+              Welcome! Complete your profile
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Fill in your account details below to get started — this is used for
+              your business profile and communications.
+            </p>
+          </div>
+        </div>
+      )}
 
-          {/* Error Message */}
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm dark:border-red-900 dark:bg-card">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
-                <div>
-                  <h3 className="text-sm font-semibold text-red-900 dark:text-red-400">
-                    Error Saving Settings
-                  </h3>
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
-                    {error}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+      {error && (
+        <div className="mt-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+          <AlertCircle className="mt-0.5 size-5 text-destructive" />
+          <div>
+            <h3 className="text-sm font-semibold text-destructive">
+              Error saving settings
+            </h3>
+            <p className="mt-1 text-sm text-destructive/90">{error}</p>
+          </div>
+        </div>
+      )}
 
-          <Tabs defaultValue="account">
-            <div className="overflow-x-auto pb-px">
-              <TabsList className="w-full justify-start h-auto p-1 gap-0.5 flex-nowrap">
-                <TabsTrigger value="account" className="flex-none gap-1.5">
-                  <User className="h-3.5 w-3.5" />
-                  Account
-                </TabsTrigger>
-                <TabsTrigger value="business" className="flex-none gap-1.5">
-                  <Building2 className="h-3.5 w-3.5" />
-                  Business
-                </TabsTrigger>
-                <TabsTrigger value="payments" className="flex-none gap-1.5">
-                  <Zap className="h-3.5 w-3.5" />
-                  Payments
-                </TabsTrigger>
-                <TabsTrigger value="logo" className="flex-none gap-1.5">
-                  <ImageIcon className="h-3.5 w-3.5" />
-                  Logo
-                </TabsTrigger>
-                <TabsTrigger value="hours" className="flex-none gap-1.5">
-                  <Clock className="h-3.5 w-3.5" />
-                  Hours
-                </TabsTrigger>
-                <TabsTrigger value="integrations" className="flex-none gap-1.5">
-                  <Store className="h-3.5 w-3.5" />
-                  Integrations
-                </TabsTrigger>
-                <TabsTrigger value="notifications" className="flex-none gap-1.5">
-                  <Bell className="h-3.5 w-3.5" />
-                  Notifications
-                </TabsTrigger>
-                <TabsTrigger value="appearance" className="flex-none gap-1.5">
-                  <Palette className="h-3.5 w-3.5" />
-                  Appearance
-                </TabsTrigger>
-              </TabsList>
-            </div>
-
-            {/* Account Settings */}
-            <TabsContent value="account" className="mt-4 space-y-4">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
-                      <User className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base font-semibold">Account Settings</CardTitle>
-                      <CardDescription className="text-sm">Update your personal information</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="name" className="text-sm font-medium">Full Name</Label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          id="name"
-                          value={formData.name}
-                          onChange={(e) => updateForm("name", e.target.value)}
-                          className="pl-10 rounded-md"
-                          placeholder="Your name"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email" className="text-sm font-medium">Email Address</Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          id="email"
-                          type="email"
-                          value={formData.email}
-                          onChange={(e) => updateForm("email", e.target.value)}
-                          className="pl-10 rounded-md"
-                          placeholder="your@email.com"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone" className="text-sm font-medium">Phone Number</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="phone"
-                        value={formData.phone}
-                        onChange={(e) => updateForm("phone", e.target.value)}
-                        className="pl-10 rounded-md"
-                        placeholder="+61 400 000 000"
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <SaveButton />
-
-              {/* Danger Zone */}
-              <Card className="bg-white dark:bg-card rounded-md border-red-200 dark:border-red-900/50">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-red-100 dark:bg-red-900/30">
-                      <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base font-semibold text-red-700 dark:text-red-400">Danger Zone</CardTitle>
-                      <CardDescription className="text-sm">Irreversible account actions</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">Delete account</p>
-                      <p className="text-xs text-muted-foreground">
-                        Permanently remove your account, store profile, and all marketplace listings.
-                      </p>
-                    </div>
-                    <DeleteAccountDialog />
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* Business Profile */}
-            <TabsContent value="business" className="mt-4 space-y-4">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
-                      <Building2 className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base font-semibold">Business Profile</CardTitle>
-                      <CardDescription className="text-sm">Your business details for invoices and communications</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="businessName" className="text-sm font-medium">Business Name</Label>
-                    <div className="relative">
-                      <Building2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="businessName"
-                        value={formData.businessName}
-                        onChange={(e) => updateForm("businessName", e.target.value)}
-                        className="pl-10 rounded-md"
-                        placeholder="Your business name"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="storeType" className="text-sm font-medium">Store Type</Label>
-                    <div className="relative">
-                      <Store className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground z-10 pointer-events-none" />
-                      <Select
-                        value={formData.storeType}
-                        onValueChange={(value) => updateForm("storeType", value)}
-                      >
-                        <SelectTrigger className="pl-10 rounded-md">
-                          <SelectValue placeholder="Select store type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Bicycle Shop">Bicycle Shop</SelectItem>
-                          <SelectItem value="Bike Repair & Service">Bike Repair & Service</SelectItem>
-                          <SelectItem value="Mountain Bike Specialist">Mountain Bike Specialist</SelectItem>
-                          <SelectItem value="Road Bike Specialist">Road Bike Specialist</SelectItem>
-                          <SelectItem value="Electric Bike Dealer">Electric Bike Dealer</SelectItem>
-                          <SelectItem value="BMX Shop">BMX Shop</SelectItem>
-                          <SelectItem value="Cycling Accessories">Cycling Accessories</SelectItem>
-                          <SelectItem value="Bike Rental">Bike Rental</SelectItem>
-                          <SelectItem value="Online Bike Store">Online Bike Store</SelectItem>
-                          <SelectItem value="Sports & Recreation">Sports & Recreation</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="address" className="text-sm font-medium">Business Address</Label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="address"
-                        value={formData.address}
-                        onChange={(e) => updateForm("address", e.target.value)}
-                        className="pl-10 rounded-md"
-                        placeholder="123 Street, City, State, Postcode"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="website" className="text-sm font-medium">Website</Label>
-                    <div className="relative">
-                      <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="website"
-                        value={formData.website}
-                        onChange={(e) => updateForm("website", e.target.value)}
-                        className="pl-10 rounded-md"
-                        placeholder="www.yourbusiness.com.au"
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <SaveButton />
-            </TabsContent>
-
-            {/* Payments */}
-            <TabsContent value="payments" className="mt-4">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
-                      <Zap className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base font-semibold">Payments & Payouts</CardTitle>
-                      <CardDescription className="text-sm">
-                        Connect your bank account to receive payouts when you sell items
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <StripeConnectCard />
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* Logo */}
-            <TabsContent value="logo" className="mt-4 space-y-4">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
-                      <ImageIcon className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base font-semibold">Business Logo</CardTitle>
-                      <CardDescription className="text-sm">Upload your business logo (max 5MB)</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-col sm:flex-row gap-4 items-start">
-                    <div className="flex-shrink-0">
-                      <div className="relative h-24 w-24 rounded-lg border-2 border-dashed border-border overflow-hidden bg-secondary/20">
-                        {logoPreview ? (
-                          <>
-                            <Image
-                              src={logoPreview}
-                              alt="Business logo"
-                              fill
-                              className="object-cover"
-                            />
-                            <button
-                              onClick={handleRemoveLogo}
-                              disabled={uploadingLogo}
-                              className="absolute top-1 right-1 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
-                              type="button"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </>
-                        ) : (
-                          <div className="flex items-center justify-center h-full">
-                            <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex-1 space-y-2">
-                      <Label htmlFor="logo-upload" className="text-sm font-medium">Upload Logo</Label>
-                      <div className="flex gap-2">
-                        <input
-                          ref={fileInputRef}
-                          id="logo-upload"
-                          type="file"
-                          accept="image/*"
-                          onChange={handleLogoChange}
-                          className="hidden"
-                          aria-label="Upload logo"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={uploadingLogo}
-                          className="rounded-md"
-                        >
-                          <Upload className="mr-2 h-4 w-4" />
-                          Choose Image
-                        </Button>
-                        {logoFile && (
-                          <span className="text-sm text-muted-foreground flex items-center">
-                            {logoFile.name}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Recommended: Square image, at least 200x200px. Supports JPG, PNG, GIF.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <SaveButton />
-            </TabsContent>
-
-            {/* Opening Hours */}
-            <TabsContent value="hours" className="mt-4 space-y-4">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
-                      <Clock className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base font-semibold">Opening Hours</CardTitle>
-                      <CardDescription className="text-sm">Set your store's operating hours for each day</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <OpeningHoursEditor
-                    value={openingHours}
-                    onChange={setOpeningHours}
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8">
+        {/* Secondary nav */}
+        <nav className="lg:sticky lg:top-20 lg:self-start">
+          <div className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+            {NAV.map((item) => {
+              const isActive = section === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setSection(item.id)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors lg:w-full",
+                    isActive
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  )}
+                >
+                  <item.icon
+                    className={cn(
+                      "size-4 shrink-0",
+                      isActive ? "text-foreground" : "text-muted-foreground"
+                    )}
                   />
-                </CardContent>
-              </Card>
-              <SaveButton />
-            </TabsContent>
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
 
-            {/* Integrations */}
-            <TabsContent value="integrations" className="mt-4">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded bg-secondary overflow-hidden">
-                        <Image
-                          src="/ls.png"
-                          alt="Lightspeed"
-                          width={40}
-                          height={40}
-                          className="object-cover"
-                        />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base font-semibold">Lightspeed Integration</CardTitle>
-                        <CardDescription className="text-sm">
-                          {lightspeedConnected && lightspeedAccount
-                            ? `Connected to ${lightspeedAccount.name}`
-                            : "Connect your Lightspeed POS account"
-                          }
-                        </CardDescription>
-                      </div>
+        {/* Active panel */}
+        <div className="min-w-0 space-y-6">
+          {section === "account" && (
+            <>
+              <SettingsSection
+                title="Account"
+                description="Update your personal information."
+                icon={User}
+                footer={<SaveBar />}
+              >
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <SettingsField label="Full name" htmlFor="name">
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input id="name" value={formData.name} onChange={(e) => updateForm("name", e.target.value)} className="pl-9" placeholder="Your name" />
                     </div>
-                    <Badge
-                      variant="secondary"
+                  </SettingsField>
+                  <SettingsField label="Email address" htmlFor="email">
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input id="email" type="email" value={formData.email} onChange={(e) => updateForm("email", e.target.value)} className="pl-9" placeholder="your@email.com" />
+                    </div>
+                  </SettingsField>
+                  <SettingsField label="Phone number" htmlFor="phone" className="sm:col-span-2">
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input id="phone" value={formData.phone} onChange={(e) => updateForm("phone", e.target.value)} className="pl-9" placeholder="+61 400 000 000" />
+                    </div>
+                  </SettingsField>
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Danger zone"
+                description="Irreversible account actions."
+                icon={Trash2}
+                className="ring-destructive/30"
+              >
+                <SettingsRow
+                  label="Delete account"
+                  description="Permanently remove your account, store profile and all marketplace listings."
+                  control={<div className="sm:flex sm:justify-end"><DeleteAccountDialog /></div>}
+                />
+              </SettingsSection>
+            </>
+          )}
+
+          {section === "business" && (
+            <SettingsSection
+              title="Business profile"
+              description="Your business details for invoices and communications."
+              icon={Building2}
+              footer={<SaveBar />}
+            >
+              <div className="space-y-5">
+                <SettingsField label="Business name" htmlFor="businessName">
+                  <div className="relative">
+                    <Building2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input id="businessName" value={formData.businessName} onChange={(e) => updateForm("businessName", e.target.value)} className="pl-9" placeholder="Your business name" />
+                  </div>
+                </SettingsField>
+                <SettingsField label="Store type" htmlFor="storeType">
+                  <Select value={formData.storeType} onValueChange={(value) => updateForm("storeType", value)}>
+                    <SelectTrigger id="storeType" className="w-full">
+                      <SelectValue placeholder="Select store type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Bicycle Shop">Bicycle Shop</SelectItem>
+                      <SelectItem value="Bike Repair & Service">Bike Repair &amp; Service</SelectItem>
+                      <SelectItem value="Mountain Bike Specialist">Mountain Bike Specialist</SelectItem>
+                      <SelectItem value="Road Bike Specialist">Road Bike Specialist</SelectItem>
+                      <SelectItem value="Electric Bike Dealer">Electric Bike Dealer</SelectItem>
+                      <SelectItem value="BMX Shop">BMX Shop</SelectItem>
+                      <SelectItem value="Cycling Accessories">Cycling Accessories</SelectItem>
+                      <SelectItem value="Bike Rental">Bike Rental</SelectItem>
+                      <SelectItem value="Online Bike Store">Online Bike Store</SelectItem>
+                      <SelectItem value="Sports & Recreation">Sports &amp; Recreation</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </SettingsField>
+                <SettingsField label="Business address" htmlFor="address">
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input id="address" value={formData.address} onChange={(e) => updateForm("address", e.target.value)} className="pl-9" placeholder="123 Street, City, State, Postcode" />
+                  </div>
+                </SettingsField>
+                <SettingsField label="Website" htmlFor="website">
+                  <div className="relative">
+                    <Globe className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input id="website" value={formData.website} onChange={(e) => updateForm("website", e.target.value)} className="pl-9" placeholder="www.yourbusiness.com.au" />
+                  </div>
+                </SettingsField>
+              </div>
+            </SettingsSection>
+          )}
+
+          {section === "payments" && (
+            <SettingsSection
+              title="Payments & payouts"
+              description="Connect your bank account to receive payouts when you sell items."
+              icon={CreditCard}
+            >
+              <StripeConnectCard />
+            </SettingsSection>
+          )}
+
+          {section === "logo" && (
+            <SettingsSection
+              title="Business logo"
+              description="Upload your business logo (max 5MB)."
+              icon={ImageIcon}
+              footer={<SaveBar />}
+            >
+              <div className="flex flex-col items-start gap-4 sm:flex-row">
+                <div className="relative size-24 shrink-0 overflow-hidden rounded-lg border border-dashed bg-muted/30">
+                  {logoPreview ? (
+                    <>
+                      <Image src={logoPreview} alt="Business logo" fill className="object-cover" />
+                      <button
+                        onClick={handleRemoveLogo}
+                        disabled={uploadingLogo}
+                        className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-destructive text-white transition-colors hover:bg-destructive/90"
+                        type="button"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </>
+                  ) : (
+                    <div className="flex h-full items-center justify-center">
+                      <ImageIcon className="size-8 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <SettingsField label="Upload logo" htmlFor="logo-upload" hint="Recommended: square image, at least 200×200px. JPG, PNG or GIF.">
+                    <div className="flex items-center gap-2">
+                      <input ref={fileInputRef} id="logo-upload" type="file" accept="image/*" onChange={handleLogoChange} className="hidden" aria-label="Upload logo" />
+                      <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploadingLogo}>
+                        <Upload className="size-4" />
+                        Choose image
+                      </Button>
+                      {logoFile && <span className="text-sm text-muted-foreground">{logoFile.name}</span>}
+                    </div>
+                  </SettingsField>
+                </div>
+              </div>
+            </SettingsSection>
+          )}
+
+          {section === "hours" && (
+            <SettingsSection
+              title="Opening hours"
+              description="Set your store's operating hours for each day."
+              icon={Clock}
+              footer={<SaveBar />}
+            >
+              <OpeningHoursEditor value={openingHours} onChange={setOpeningHours} />
+            </SettingsSection>
+          )}
+
+          {section === "integrations" && (
+            <SettingsSection
+              title="Lightspeed integration"
+              description={
+                lightspeedConnected && lightspeedAccount
+                  ? `Connected to ${lightspeedAccount.name}`
+                  : "Connect your Lightspeed POS account"
+              }
+              icon={Zap}
+              headerAction={
+                <StatusBadge
+                  label={lightspeedLoading ? "Loading…" : lightspeedConnected ? "Connected" : "Not connected"}
+                  tone={lightspeedConnected ? "success" : "neutral"}
+                />
+              }
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {lightspeedConnected && lightspeedLastSync
+                    ? `Last synced: ${formatLastSync(lightspeedLastSync)}`
+                    : "Sync your products, orders, and inventory with Lightspeed POS."}
+                </p>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/connect-lightspeed">
+                    {lightspeedConnected ? "Manage connection" : "Connect Lightspeed"}
+                    <ChevronRight className="size-4" />
+                  </Link>
+                </Button>
+              </div>
+            </SettingsSection>
+          )}
+
+          {section === "notifications" && (
+            <SettingsSection
+              title="Notification preferences"
+              description="Choose what notifications you receive."
+              icon={Bell}
+              footer={<SaveBar />}
+            >
+              <div className="space-y-5">
+                <SettingsRow
+                  label="Email notifications"
+                  description="Receive important updates via email."
+                  control={<div className="sm:flex sm:justify-end"><Switch checked={formData.emailNotifications} onCheckedChange={(c) => updateForm("emailNotifications", c)} /></div>}
+                />
+                <SettingsDivider />
+                <SettingsRow
+                  label="Order alerts"
+                  description="Get notified when you receive new orders."
+                  control={<div className="sm:flex sm:justify-end"><Switch checked={formData.orderAlerts} onCheckedChange={(c) => updateForm("orderAlerts", c)} /></div>}
+                />
+                <SettingsDivider />
+                <SettingsRow
+                  label="Inventory alerts"
+                  description="Get notified when stock is running low."
+                  control={<div className="sm:flex sm:justify-end"><Switch checked={formData.inventoryAlerts} onCheckedChange={(c) => updateForm("inventoryAlerts", c)} /></div>}
+                />
+                <SettingsDivider />
+                <SettingsRow
+                  label="Marketing emails"
+                  description="Receive tips, product updates, and promotions."
+                  control={<div className="sm:flex sm:justify-end"><Switch checked={formData.marketingEmails} onCheckedChange={(c) => updateForm("marketingEmails", c)} /></div>}
+                />
+              </div>
+            </SettingsSection>
+          )}
+
+          {section === "appearance" && (
+            <SettingsSection
+              title="Appearance"
+              description="Customise how the dashboard looks."
+              icon={Palette}
+            >
+              <label className="mb-3 block text-sm font-medium text-foreground">Theme</label>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { id: "light", label: "Light", icon: Sun },
+                  { id: "dark", label: "Dark", icon: Moon },
+                  { id: "system", label: "System", icon: Monitor },
+                ].map((opt) => {
+                  const isActive = mounted && theme === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => setTheme(opt.id)}
                       className={cn(
-                        "rounded-md",
-                        lightspeedConnected
-                          ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                          : "bg-secondary text-muted-foreground"
+                        "flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-colors",
+                        isActive ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"
                       )}
                     >
-                      <span
-                        className={cn(
-                          "mr-1.5 h-2 w-2 rounded-full",
-                          lightspeedConnected ? "bg-green-500" : "bg-muted-foreground"
-                        )}
-                      />
-                      {lightspeedLoading ? "Loading..." : lightspeedConnected ? "Connected" : "Not Connected"}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="space-y-1">
-                      {lightspeedConnected && lightspeedLastSync ? (
-                        <p className="text-sm text-muted-foreground">
-                          Last synced: {formatLastSync(lightspeedLastSync)}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          Sync your products, orders, and inventory with Lightspeed POS.
-                        </p>
-                      )}
-                    </div>
-                    <Link href="/connect-lightspeed">
-                      <Button variant="outline" className="rounded-md">
-                        {lightspeedConnected ? "Manage Connection" : "Connect Lightspeed"}
-                        <ChevronRight className="ml-2 h-4 w-4" />
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* Notifications */}
-            <TabsContent value="notifications" className="mt-4 space-y-4">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
-                      <Bell className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base font-semibold">Notification Preferences</CardTitle>
-                      <CardDescription className="text-sm">Choose what notifications you receive</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-sm font-medium">Email Notifications</Label>
-                      <p className="text-xs text-muted-foreground">Receive important updates via email</p>
-                    </div>
-                    <Switch
-                      checked={formData.emailNotifications}
-                      onCheckedChange={(checked) => updateForm("emailNotifications", checked)}
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-sm font-medium">Order Alerts</Label>
-                      <p className="text-xs text-muted-foreground">Get notified when you receive new orders</p>
-                    </div>
-                    <Switch
-                      checked={formData.orderAlerts}
-                      onCheckedChange={(checked) => updateForm("orderAlerts", checked)}
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-sm font-medium">Inventory Alerts</Label>
-                      <p className="text-xs text-muted-foreground">Get notified when stock is running low</p>
-                    </div>
-                    <Switch
-                      checked={formData.inventoryAlerts}
-                      onCheckedChange={(checked) => updateForm("inventoryAlerts", checked)}
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-sm font-medium">Marketing Emails</Label>
-                      <p className="text-xs text-muted-foreground">Receive tips, product updates, and promotions</p>
-                    </div>
-                    <Switch
-                      checked={formData.marketingEmails}
-                      onCheckedChange={(checked) => updateForm("marketingEmails", checked)}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-              <SaveButton />
-            </TabsContent>
-
-            {/* Appearance */}
-            <TabsContent value="appearance" className="mt-4">
-              <Card className="bg-white dark:bg-card rounded-md border-border">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
-                      <Palette className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base font-semibold">Appearance</CardTitle>
-                      <CardDescription className="text-sm">Customise how the dashboard looks</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Theme</Label>
-                    <div className="grid grid-cols-3 gap-3">
-                      {mounted && (
-                        <>
-                          <button
-                            onClick={() => setTheme("light")}
-                            className={cn(
-                              "flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-all",
-                              theme === "light"
-                                ? "border-foreground bg-secondary"
-                                : "border-border hover:border-muted-foreground"
-                            )}
-                          >
-                            <div className="h-12 w-12 rounded-md border border-border bg-white shadow-sm" />
-                            <span className="text-xs font-medium">Light</span>
-                          </button>
-                          <button
-                            onClick={() => setTheme("dark")}
-                            className={cn(
-                              "flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-all",
-                              theme === "dark"
-                                ? "border-foreground bg-secondary"
-                                : "border-border hover:border-muted-foreground"
-                            )}
-                          >
-                            <div className="h-12 w-12 rounded-md border border-border bg-[#191919] shadow-sm" />
-                            <span className="text-xs font-medium">Dark</span>
-                          </button>
-                          <button
-                            onClick={() => setTheme("system")}
-                            className={cn(
-                              "flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-all",
-                              theme === "system"
-                                ? "border-foreground bg-secondary"
-                                : "border-border hover:border-muted-foreground"
-                            )}
-                          >
-                            <div className="h-12 w-12 overflow-hidden rounded-md border border-border shadow-sm">
-                              <div className="flex h-full">
-                                <div className="w-1/2 bg-white" />
-                                <div className="w-1/2 bg-[#191919]" />
-                              </div>
-                            </div>
-                            <span className="text-xs font-medium">System</span>
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+                      <opt.icon className={cn("size-5", isActive ? "text-foreground" : "text-muted-foreground")} />
+                      <span className="text-sm font-medium">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </SettingsSection>
+          )}
         </div>
       </div>
-    </>
+    </PageContainer>
   );
 }

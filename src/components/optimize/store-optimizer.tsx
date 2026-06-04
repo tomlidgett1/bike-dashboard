@@ -33,6 +33,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -41,6 +42,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import {
+  SettingsSection,
+  SettingsRow,
+  SettingsDivider,
+  SettingsField,
+  StatCard,
+  StatusBadge,
+} from "@/components/dashboard";
 import {
   buildSpeedSearchQuery,
   fetchSerperCandidates,
@@ -439,10 +448,10 @@ function OpToggle({
       disabled={disabled}
       aria-pressed={active}
       className={cn(
-        "group flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-50",
+        "group flex items-center gap-2.5 rounded-md border px-3 py-2 text-left transition-colors disabled:opacity-50",
         active
           ? "border-primary/50 bg-primary/10"
-          : "border-border bg-card hover:bg-accent",
+          : "border-border bg-muted/30 hover:bg-muted/50",
       )}
     >
       <span
@@ -1625,258 +1634,394 @@ export function StoreOptimizer() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-4">
-      {/* Control bar — category + focus toggles */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        {/* Row 1: category picker */}
-        <div className="flex flex-wrap items-center gap-3">
-          <Select value={category} onValueChange={onCategoryChange} disabled={loadingCats || running}>
-            <SelectTrigger className="h-10 w-full rounded-md sm:max-w-xs">
-              <SelectValue placeholder={loadingCats ? "Loading categories…" : "Select a category"} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">
-                <span className="flex items-center gap-2">
-                  <Layers className="h-3.5 w-3.5" />
-                  All products
-                </span>
-              </SelectItem>
-              {categories.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
+    <div className="space-y-6">
+      {!category && !loadingCats ? (
+        <SettingsSection
+          title="Pick a category"
+          description="We list products that still need work and pre-tick what is missing. Photos return for your review; titles, descriptions and specs save automatically."
+          icon={Sparkles}
+        >
+          <SettingsField label="Category" hint="Choose a Lightspeed category to load products.">
+            <Select value={category} onValueChange={onCategoryChange} disabled={loadingCats || running}>
+              <SelectTrigger className="h-10 w-full rounded-md sm:max-w-md">
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
                   <span className="flex items-center gap-2">
-                    {c.name}
-                    {c.missingSerperImages > 0 ? (
-                      <span className="text-xs font-medium text-orange-600">
-                        {c.missingSerperImages} not on store
-                      </span>
-                    ) : c.missingImages > 0 ? (
-                      <span className="text-xs text-muted-foreground">
-                        {c.missingImages} missing photos
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">{c.count} products</span>
-                    )}
+                    <Layers className="size-3.5" />
+                    All products
                   </span>
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    <span className="flex items-center gap-2">
+                      {c.name}
+                      {c.missingSerperImages > 0 ? (
+                        <span className="text-xs text-amber-600 dark:text-amber-400">
+                          {c.missingSerperImages} not on store
+                        </span>
+                      ) : c.missingImages > 0 ? (
+                        <span className="text-xs text-muted-foreground">
+                          {c.missingImages} missing photos
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {c.count} products
+                        </span>
+                      )}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingsField>
+        </SettingsSection>
+      ) : null}
 
-          {products.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{products.length}</span> products
-            </p>
-          )}
+      {category && products.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard label="Missing photos" value={counts.image} icon={ImageIcon} />
+          <StatCard label="Missing titles" value={counts.title} icon={Type} />
+          <StatCard label="Missing descriptions" value={counts.desc} icon={FileText} />
+          <StatCard label="Missing specs" value={counts.specs} icon={ListChecks} />
+        </div>
+      ) : null}
 
-          {category && (
+      {category ? (
+        <SettingsSection
+          title="Category & scope"
+          description="Load products from Lightspeed, then choose which fields AI should improve."
+          icon={Layers}
+          headerAction={
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               disabled={loading || running}
               onClick={() => void loadProducts(category)}
             >
-              <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", loading && "animate-spin")} />
+              <RefreshCw className={cn("mr-1.5 size-3.5", loading && "animate-spin")} />
               Refresh
             </Button>
-          )}
-        </div>
-
-        {/* Row 2: focus toggles (visible once a category is chosen) */}
-        {category && (
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <OpToggle icon={ImageIcon} label="Photos" active={focus.image} count={counts.image} disabled={running} onClick={() => toggleFocus("image")} />
-            <OpToggle icon={Type} label="Titles" active={focus.title} count={counts.title} disabled={running} onClick={() => toggleFocus("title")} />
-            <OpToggle icon={FileText} label="Descriptions" active={focus.description} count={counts.desc} disabled={running} onClick={() => toggleFocus("description")} />
-            <OpToggle icon={ListChecks} label="Specs" active={focus.specs} count={counts.specs} disabled={running} onClick={() => toggleFocus("specs")} />
-          </div>
-        )}
-
-        {/* Row 3: filter by gap — show only products missing a specific dimension */}
-        {products.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">Show missing:</span>
-            {(
-              [
-                { dim: "title" as DimKey, label: "Titles", count: counts.title },
-                { dim: "description" as DimKey, label: "Descriptions", count: counts.desc },
-                { dim: "specs" as DimKey, label: "Specs", count: counts.specs },
-                { dim: "image" as DimKey, label: "Photos", count: counts.image },
-              ] as const
-            ).map(({ dim, label, count }) => (
-              <button
-                key={dim}
-                type="button"
-                disabled={running}
-                onClick={() => setMissingFilter(missingFilter === dim ? null : dim)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                  missingFilter === dim
-                    ? "bg-primary text-primary-foreground"
-                    : count === 0
-                      ? "bg-muted text-muted-foreground opacity-50"
-                      : "bg-muted text-foreground hover:bg-muted/80",
-                )}
+          }
+        >
+          <SettingsRow
+            label="Category"
+            description={
+              products.length > 0
+                ? `${products.length} products loaded`
+                : "Select a category to load your catalogue"
+            }
+            align="start"
+            control={
+              <Select
+                value={category}
+                onValueChange={onCategoryChange}
+                disabled={loadingCats || running}
               >
-                {label}
-                <span
-                  className={cn(
-                    "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
-                    missingFilter === dim ? "bg-primary-foreground/20 text-primary-foreground" : "bg-background text-muted-foreground",
-                  )}
-                >
-                  {count}
-                </span>
-              </button>
-            ))}
-            {missingFilter && (
-              <button
-                type="button"
-                onClick={() => setMissingFilter(null)}
-                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-              >
-                Clear filter
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+                <SelectTrigger className="h-10 w-full rounded-md">
+                  <SelectValue
+                    placeholder={loadingCats ? "Loading categories…" : "Select a category"}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    <span className="flex items-center gap-2">
+                      <Layers className="size-3.5" />
+                      All products
+                    </span>
+                  </SelectItem>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      <span className="flex items-center gap-2">
+                        {c.name}
+                        {c.missingSerperImages > 0 ? (
+                          <span className="text-xs text-amber-600 dark:text-amber-400">
+                            {c.missingSerperImages} not on store
+                          </span>
+                        ) : c.missingImages > 0 ? (
+                          <span className="text-xs text-muted-foreground">
+                            {c.missingImages} missing photos
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground tabular-nums">
+                            {c.count} products
+                          </span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            }
+          />
 
-      {/* Toolbar — search, bulk actions, run */}
-      {category && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 text-xs"
-            disabled={running || visible.length === 0}
-            onClick={toggleAllPicks}
-          >
-            {anyVisiblePicked ? "Untick all" : "Tick everything"}
-          </Button>
+          <SettingsDivider />
 
-          {(["title", "description", "specs", "image"] as DimKey[]).map((dim) => {
-            const labels: Record<DimKey, string> = {
-              title: "All titles",
-              description: "All descs",
-              specs: "All specs",
-              image: "All photos",
-            };
-            const hasPicked = anyDimPicked(dim);
-            return (
-              <Button
-                key={dim}
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs"
-                disabled={running || visible.length === 0}
-                onClick={() => toggleDimAllPicks(dim)}
-              >
-                {hasPicked ? `Untick ${labels[dim].toLowerCase()}` : labels[dim]}
-              </Button>
-            );
-          })}
-
-          <span className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{runCount}</span> product
-            {runCount === 1 ? "" : "s"} ready
-          </span>
-
-          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-            <Checkbox
-              checked={showCompleted}
-              onCheckedChange={() => setShowCompleted((v) => !v)}
-              aria-label="Show all products"
-            />
-            Show all products
-          </label>
-
-          {rejectedIds.size > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowRejected((v) => !v)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
-                showRejected
-                  ? "bg-destructive/10 text-destructive"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <Ban className="h-3 w-3" />
-              {rejectedIds.size} rejected
-            </button>
-          )}
-
-          <Select
-            value={runLimit === null ? "all" : String(runLimit)}
-            onValueChange={(v) => setRunLimit(v === "all" ? null : Number(v))}
-          >
-            <SelectTrigger className="h-8 w-32 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All products</SelectItem>
-              <SelectItem value="10">Batch of 10</SelectItem>
-              <SelectItem value="20">Batch of 20</SelectItem>
-              <SelectItem value="50">Batch of 50</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <div className="relative ml-auto w-48">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Find a product…"
-              className="h-8 rounded-md pl-8 text-sm"
-            />
-          </div>
-
-          {readyImageCount > 0 && !running && (
-            <Button variant="outline" size="sm" onClick={() => void approveAllImages()}>
-              <CheckCircle2 className="mr-1.5 h-4 w-4" />
-              Approve all photos ({readyImageCount})
-            </Button>
-          )}
-
-          {running ? (
-            <Button variant="outline" size="sm" onClick={handleStop}>
-              <StopCircle className="mr-1.5 h-4 w-4" />
-              Stop
-            </Button>
-          ) : (
-            <Button size="sm" onClick={handleRun} disabled={runCount === 0}>
-              <Sparkles className="mr-1.5 h-4 w-4" />
-              Optimize {runCount > 0 ? `${runCount} product${runCount === 1 ? "" : "s"}` : ""}
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Rejected products panel */}
-      {showRejected && (
-        <div className="rounded-xl border border-destructive/20 bg-card">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Ban className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-semibold">Rejected products</span>
-              <span className="text-xs text-muted-foreground">({rejectedDetails.length})</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              These products are excluded from optimisation. Restore them to include them again.
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-foreground">Improve with AI</p>
+            <p className="text-[13px] text-muted-foreground">
+              Turn dimensions on or off. We pre-tick only what each product is missing.
             </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <OpToggle
+                icon={ImageIcon}
+                label="Photos"
+                active={focus.image}
+                count={counts.image}
+                disabled={running}
+                onClick={() => toggleFocus("image")}
+              />
+              <OpToggle
+                icon={Type}
+                label="Titles"
+                active={focus.title}
+                count={counts.title}
+                disabled={running}
+                onClick={() => toggleFocus("title")}
+              />
+              <OpToggle
+                icon={FileText}
+                label="Descriptions"
+                active={focus.description}
+                count={counts.desc}
+                disabled={running}
+                onClick={() => toggleFocus("description")}
+              />
+              <OpToggle
+                icon={ListChecks}
+                label="Specs"
+                active={focus.specs}
+                count={counts.specs}
+                disabled={running}
+                onClick={() => toggleFocus("specs")}
+              />
+            </div>
           </div>
+
+          {products.length > 0 ? (
+            <>
+              <SettingsDivider />
+              <SettingsRow
+                label="Filter by gap"
+                description="Show only products missing a specific field"
+                align="start"
+                control={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1 rounded-md bg-muted p-0.5">
+                      {(
+                        [
+                          { dim: "title" as DimKey, label: "Titles", count: counts.title },
+                          {
+                            dim: "description" as DimKey,
+                            label: "Descriptions",
+                            count: counts.desc,
+                          },
+                          { dim: "specs" as DimKey, label: "Specs", count: counts.specs },
+                          { dim: "image" as DimKey, label: "Photos", count: counts.image },
+                        ] as const
+                      ).map(({ dim, label, count }) => (
+                        <button
+                          key={dim}
+                          type="button"
+                          disabled={running || count === 0}
+                          onClick={() =>
+                            setMissingFilter(missingFilter === dim ? null : dim)
+                          }
+                          className={cn(
+                            "flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                            missingFilter === dim
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:bg-gray-200/70"
+                          )}
+                        >
+                          {label}
+                          <span className="tabular-nums text-[11px] opacity-80">{count}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {missingFilter ? (
+                      <button
+                        type="button"
+                        onClick={() => setMissingFilter(null)}
+                        className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </div>
+                }
+              />
+            </>
+          ) : null}
+        </SettingsSection>
+      ) : null}
+
+      {category ? (
+        <SettingsSection
+          title="Run batch"
+          description="Tick products and dimensions, then run AI. Review photos before they go live."
+          icon={Wand2}
+          footer={
+            <div className="flex w-full flex-wrap items-center justify-end gap-2">
+              {readyImageCount > 0 && !running ? (
+                <Button variant="outline" size="sm" onClick={() => void approveAllImages()}>
+                  <CheckCircle2 className="mr-1.5 size-4" />
+                  Approve all photos ({readyImageCount})
+                </Button>
+              ) : null}
+              {running ? (
+                <Button variant="outline" size="sm" onClick={handleStop}>
+                  <StopCircle className="mr-1.5 size-4" />
+                  Stop
+                </Button>
+              ) : (
+                <Button size="sm" onClick={handleRun} disabled={runCount === 0}>
+                  <Sparkles className="mr-1.5 size-4" />
+                  Optimise
+                  {runCount > 0
+                    ? ` ${runCount} product${runCount === 1 ? "" : "s"}`
+                    : ""}
+                </Button>
+              )}
+            </div>
+          }
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={running || visible.length === 0}
+              onClick={toggleAllPicks}
+            >
+              {anyVisiblePicked ? "Untick all" : "Tick everything"}
+            </Button>
+            {(["title", "description", "specs", "image"] as DimKey[]).map((dim) => {
+              const labels: Record<DimKey, string> = {
+                title: "All titles",
+                description: "All descriptions",
+                specs: "All specs",
+                image: "All photos",
+              };
+              const hasPicked = anyDimPicked(dim);
+              return (
+                <Button
+                  key={dim}
+                  variant="outline"
+                  size="sm"
+                  disabled={running || visible.length === 0}
+                  onClick={() => toggleDimAllPicks(dim)}
+                >
+                  {hasPicked ? `Untick ${labels[dim].toLowerCase()}` : labels[dim]}
+                </Button>
+              );
+            })}
+          </div>
+
+          <SettingsDivider />
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <SettingsRow
+              label="Products ready"
+              description="With at least one dimension ticked"
+              control={
+                <span className="text-sm font-semibold tabular-nums text-foreground">
+                  {runCount}
+                </span>
+              }
+            />
+            <SettingsRow
+              label="Show completed"
+              description="Include products that no longer need fixes"
+              control={
+                <Switch
+                  checked={showCompleted}
+                  onCheckedChange={(checked) => setShowCompleted(checked === true)}
+                  aria-label="Show all products"
+                />
+              }
+            />
+            <SettingsRow
+              label="Batch size"
+              description="Limit how many rows load at once"
+              control={
+                <Select
+                  value={runLimit === null ? "all" : String(runLimit)}
+                  onValueChange={(v) => setRunLimit(v === "all" ? null : Number(v))}
+                >
+                  <SelectTrigger className="h-9 w-full rounded-md text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All products</SelectItem>
+                    <SelectItem value="10">Batch of 10</SelectItem>
+                    <SelectItem value="20">Batch of 20</SelectItem>
+                    <SelectItem value="50">Batch of 50</SelectItem>
+                  </SelectContent>
+                </Select>
+              }
+            />
+          </div>
+
+          <SettingsDivider />
+
+          <SettingsField label="Search products" htmlFor="optimise-search">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="optimise-search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Find a product…"
+                className="rounded-md pl-9"
+              />
+            </div>
+          </SettingsField>
+
+          {rejectedIds.size > 0 ? (
+            <>
+              <SettingsDivider />
+              <SettingsRow
+                label="Rejected products"
+                description={`${rejectedIds.size} excluded from this queue`}
+                control={
+                  <Button
+                    variant={showRejected ? "secondary" : "outline"}
+                    size="sm"
+                    onClick={() => setShowRejected((v) => !v)}
+                  >
+                    <Ban className="mr-1.5 size-3.5" />
+                    {showRejected ? "Hide" : "Show"}
+                  </Button>
+                }
+              />
+            </>
+          ) : null}
+        </SettingsSection>
+      ) : null}
+
+      {showRejected ? (
+        <SettingsSection
+          title="Rejected products"
+          description="Excluded from optimisation — restore to include them again."
+          icon={Ban}
+          contentClassName="p-0"
+        >
           {rejectedDetails.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">No rejected products</div>
+            <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+              No rejected products
+            </p>
           ) : (
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border/60">
               {rejectedDetails.map((r) => (
-                <div key={r.product_id} className="flex items-center gap-3 px-4 py-3">
+                <div key={r.product_id} className="flex items-center gap-3 px-6 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">
                       {r.display_name || r.description}
                     </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {r.brand || "—"} · {r.category_name || "Unknown category"} · ${Number(r.price).toFixed(2)} · {r.qoh} in stock
+                    <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                      {r.brand || "—"} · {r.category_name || "Unknown category"} · $
+                      {Number(r.price).toFixed(2)} · {r.qoh} in stock
                     </p>
                   </div>
                   <Button
@@ -1885,34 +2030,45 @@ export function StoreOptimizer() {
                     onClick={() => void restoreProduct(r.product_id)}
                     className="shrink-0"
                   >
-                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                    <RotateCcw className="mr-1.5 size-3.5" />
                     Restore
                   </Button>
                 </div>
               ))}
             </div>
           )}
-        </div>
-      )}
+        </SettingsSection>
+      ) : null}
 
-      {/* Product list — 1 per row */}
-      {category && (
+      {category ? (
         loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
-          </div>
+          <SettingsSection title="Products" description="Loading catalogue…" icon={Package}>
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="size-7 animate-spin text-muted-foreground" />
+            </div>
+          </SettingsSection>
         ) : visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border bg-card py-20 text-center">
-            <CheckCircle2 className="h-8 w-8 text-emerald-500/60" />
-            <p className="text-sm font-medium text-foreground">All caught up</p>
-            <p className="max-w-xs text-xs text-muted-foreground">
-              Nothing here needs the selected fixes. Turn on more boxes above, or tick &quot;Show
-              completed&quot; to see everything.
-            </p>
-          </div>
+          <SettingsSection
+            title="All caught up"
+            description="Nothing here needs the selected fixes."
+            icon={CheckCircle2}
+          >
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <StatusBadge label="Queue clear" tone="success" />
+              <p className="max-w-sm text-sm text-muted-foreground">
+                Turn on more improve options above, or enable &quot;Show completed&quot; to see every
+                product.
+              </p>
+            </div>
+          </SettingsSection>
         ) : (
-          <div className="rounded-xl border border-border bg-card">
-            <div className="divide-y divide-border">
+          <SettingsSection
+            title="Products"
+            description={`${visible.length} in queue — tick dimensions per row, then run Optimise`}
+            icon={Package}
+            contentClassName="p-0"
+          >
+            <div className="divide-y divide-border/60">
               {visible.map((p) => {
                 const run = runs[p.id] ?? emptyRun();
                 const pk = picks[p.id];
@@ -1928,7 +2084,7 @@ export function StoreOptimizer() {
                 return (
                   <div key={p.id} className={cn(isComplete && "bg-emerald-50/30 dark:bg-emerald-950/10")}>
                     {/* Main row */}
-                    <div className="flex items-start gap-4 px-4 py-3">
+                    <div className="flex items-start gap-4 px-6 py-3">
                       {/* Checkbox */}
                       <div className="mt-1 shrink-0">
                         <Checkbox
@@ -1947,7 +2103,7 @@ export function StoreOptimizer() {
 
                       {/* Thumbnail — 88px, click to lightbox */}
                       <div
-                        className="relative h-[88px] w-[88px] shrink-0 cursor-zoom-in overflow-hidden rounded-lg bg-muted"
+                        className="relative size-[88px] shrink-0 cursor-zoom-in overflow-hidden rounded-md bg-muted"
                         onClick={() => thumb && setLightbox(thumb)}
                       >
                         {thumb ? (
@@ -1970,15 +2126,9 @@ export function StoreOptimizer() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-semibold text-foreground leading-snug">{name}</p>
                           {hasImage(p) && !hasSerperImage(p) && (
-                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-orange-100 text-orange-700 border border-orange-200 leading-none">
-                              Not on store — needs serper photo
-                            </span>
+                            <StatusBadge label="Not on store" tone="warning" />
                           )}
-                          {!hasImage(p) && (
-                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-red-100 text-red-700 border border-red-200 leading-none">
-                              No photo
-                            </span>
-                          )}
+                          {!hasImage(p) && <StatusBadge label="No photo" tone="danger" />}
                         </div>
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           {p.brand || "—"} · ${Number(p.price).toFixed(2)} · {p.qoh} in stock
@@ -2022,9 +2172,9 @@ export function StoreOptimizer() {
 
                     {/* Existing approved images — shown when product already has photos and no active image run */}
                     {p.canonical_images.length > 0 && img.phase === "idle" && (
-                      <div className="border-t border-border/50 bg-muted/20 px-4 py-3">
+                      <div className="border-t border-border/60 bg-muted/20 px-6 py-3">
                         <div className="mb-2 flex items-center justify-between">
-                          <span className="text-[11px] font-medium text-muted-foreground">
+                          <span className="text-xs font-medium text-muted-foreground">
                             {p.canonical_images.length} approved photo{p.canonical_images.length === 1 ? "" : "s"}
                           </span>
                           <button
@@ -2132,7 +2282,7 @@ export function StoreOptimizer() {
 
                     {/* Image review — full width, shown inline */}
                     {showImageReview && (
-                      <div className="border-t border-border/50 bg-muted/20 px-4 py-4">
+                      <div className="border-t border-border/60 bg-muted/20 px-6 py-4">
                         <ImageReview
                           img={img}
                           hasCanonical={!!p.canonical_product_id}
@@ -2151,7 +2301,7 @@ export function StoreOptimizer() {
 
                     {/* Expanded text details */}
                     {isExpanded && (
-                      <div className="space-y-2 border-t border-border/50 bg-muted/20 px-4 py-3">
+                      <div className="space-y-2 border-t border-border/60 bg-muted/20 px-6 py-3">
                         <div className="text-xs">
                           <span className="font-medium text-foreground">Title: </span>
                           <span className="text-muted-foreground">
@@ -2176,37 +2326,20 @@ export function StoreOptimizer() {
                 );
               })}
             </div>
-          </div>
+          </SettingsSection>
         )
-      )}
+      ) : null}
 
-      {!category && !loadingCats && (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card py-20 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <Sparkles className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">Pick a category to begin</p>
-            <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-              We&apos;ll list every product that still needs work and pre-tick exactly what&apos;s
-              missing. Untick anything to skip it, then press Optimize. Photos come back for you to
-              approve; titles, descriptions and specs save themselves.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Lightbox */}
-      {lightbox && (
+      {lightbox ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/85 p-6 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/85 p-6 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => setLightbox(null)}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={lightbox}
             alt="Full-size preview"
-            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            className="max-h-[90vh] max-w-[90vw] rounded-md object-contain shadow-2xl animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
             onClick={(e) => e.stopPropagation()}
           />
           <button
@@ -2218,7 +2351,7 @@ export function StoreOptimizer() {
             <X className="h-4 w-4" />
           </button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

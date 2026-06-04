@@ -47,8 +47,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Header } from "@/components/layout";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
+import { Card } from "@/components/ui/card";
+import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { SmartUploadModal } from "@/components/marketplace/sell/smart-upload-modal";
@@ -479,32 +480,26 @@ export default function MyListingsPage() {
   };
 
   const content = (
-    <div>
-      {/* Page header */}
-      <div className="px-4 sm:px-6 py-4 border-b flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-sm font-semibold text-foreground">My Listings</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Manage your marketplace listings</p>
+    <Card className="gap-0 py-0">
+      {/* Toolbar: tabs + create */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-2.5">
+        <div className="flex gap-1">
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                activeTab === tab.id
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
         <CreateListingDropdown {...createListingProps} />
-      </div>
-
-      {/* Tabs */}
-      <div className="px-4 sm:px-6 border-b flex gap-1">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              "py-3 px-1 text-xs font-medium border-b-2 transition-colors -mb-px",
-              activeTab === tab.id
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
       </div>
 
       {/* Error banner */}
@@ -704,16 +699,16 @@ export default function MyListingsPage() {
           </div>
         </>
       )}
-    </div>
+    </Card>
   );
 
   return (
     <>
       {isVerifiedStore ? (
-        <>
-          <Header title="My Listings" description="Manage your marketplace listings" />
-          <div className="p-4 lg:p-6">{content}</div>
-        </>
+        <PageContainer size="wide">
+          <PageHeader title="My listings" description="Manage your marketplace listings." />
+          <PageBody>{content}</PageBody>
+        </PageContainer>
       ) : (
         <>
           <MarketplaceHeader compactSearchOnMobile />

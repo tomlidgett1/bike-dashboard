@@ -30,10 +30,12 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
   const isOnboarding = pathname?.startsWith('/onboarding') || false;
   // E-commerce hero page is full-width, no sidebar needed
   const isEcommerceHero = pathname === '/admin/ecommerce-hero';
+  // Settings/products redesign mockup ships its own sidebar-07 shell
+  const isMockup = pathname?.startsWith('/mockup') || false;
 
-  // Don't wrap marketplace, messages, login, auth, onboarding, or ecommerce-hero pages with dashboard layout
+  // Don't wrap marketplace, messages, login, auth, onboarding, ecommerce-hero, or mockup pages with dashboard layout
   // These pages manage their own layout
-  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isEcommerceHero) {
+  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isEcommerceHero || isMockup) {
     return <>{children}</>;
   }
 

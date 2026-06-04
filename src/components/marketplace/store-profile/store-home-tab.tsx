@@ -5,13 +5,17 @@ import { motion } from "framer-motion";
 import {
   ArrowRight,
   ArrowUpRight,
+  CheckCircle2,
   ChevronRight,
   Phone,
   MapPin,
   Clock,
+  Loader2,
+  MessageCircle,
   Navigation,
   Settings2,
   Store as StoreIcon,
+  X,
   Instagram,
   Facebook,
 } from "lucide-react";
@@ -106,12 +110,15 @@ function Reveal({
 
 const DEFAULT_CONTENT_SHELL = "px-5 sm:px-8 lg:px-10";
 const StoreHomeShellContext = React.createContext(DEFAULT_CONTENT_SHELL);
+const MESSAGE_DIALOG_CLOSE_MS = 220;
 
 function useStoreHomeShell() {
   return React.useContext(StoreHomeShellContext);
 }
 
 export function StoreHomeTab({ store, isOwnProfile, contentShell = DEFAULT_CONTENT_SHELL, onNavigate, onOpenCollection, onOpenHours }: StoreHomeTabProps) {
+  const [messageOpen, setMessageOpen] = React.useState(false);
+  const handleCloseMessage = React.useCallback(() => setMessageOpen(false), []);
   const config = React.useMemo<StoreHomepageConfig>(
     () => resolveHomepageConfig(store.homepage_config, store),
     [store],
@@ -195,8 +202,17 @@ export function StoreHomeTab({ store, isOwnProfile, contentShell = DEFAULT_CONTE
           accentText={accentText}
           onPrimary={() => handleCta(config.hero.primary_cta)}
           onSecondary={() => handleCta(config.hero.secondary_cta)}
+          onMessageStore={() => setMessageOpen(true)}
           onOpenHours={onOpenHours}
           isOwnProfile={isOwnProfile}
+        />
+
+        <StoreMessageDialog
+          open={messageOpen}
+          storeName={store.store_name}
+          accent={accent}
+          accentText={accentText}
+          onClose={handleCloseMessage}
         />
 
         {/* Ordered sections */}
@@ -231,6 +247,7 @@ function Hero({
   accentText,
   onPrimary,
   onSecondary,
+  onMessageStore,
   onOpenHours,
   isOwnProfile,
 }: {
@@ -240,6 +257,7 @@ function Hero({
   accentText: string;
   onPrimary: () => void;
   onSecondary: () => void;
+  onMessageStore: () => void;
   onOpenHours?: () => void;
   isOwnProfile?: boolean;
 }) {
@@ -273,6 +291,26 @@ function Hero({
       <ChevronRight className="h-4 w-4" />
     </button>
   ) : null;
+  const LightMessageBtn = (
+    <button
+      type="button"
+      onClick={onMessageStore}
+      className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-50 cursor-pointer"
+    >
+      <MessageCircle className="h-4 w-4" />
+      Message store
+    </button>
+  );
+  const DarkMessageBtn = (
+    <button
+      type="button"
+      onClick={onMessageStore}
+      className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm px-6 py-3 text-sm font-semibold text-white hover:bg-white/20 transition-colors cursor-pointer"
+    >
+      <MessageCircle className="h-4 w-4" />
+      Message store
+    </button>
+  );
 
   // ── Split variant ──────────────────────────────────────
   if (hero.variant === "split") {
@@ -293,6 +331,7 @@ function Hero({
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               {PrimaryBtn}
+              {LightMessageBtn}
               {SecondaryBtn && (
                 <span className="rounded-full border border-gray-200 hover:bg-gray-50">{SecondaryBtn}</span>
               )}
@@ -344,6 +383,7 @@ function Hero({
             </p>
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
               {PrimaryBtn}
+              {LightMessageBtn}
               {SecondaryBtn && (
                 <span className="rounded-full border border-gray-200 hover:bg-gray-50">{SecondaryBtn}</span>
               )}
@@ -397,6 +437,7 @@ function Hero({
             </p>
             <div className={cn("mt-8 flex flex-wrap items-center gap-3", alignCenter && "justify-center")}>
               {PrimaryBtn}
+              {DarkMessageBtn}
               {hero.secondary_cta && (
                 <button
                   type="button"
@@ -422,6 +463,257 @@ function Hero({
         )}
       </div>
     </section>
+  );
+}
+
+function StoreMessageDialog({
+  open,
+  storeName,
+  accent,
+  accentText,
+  onClose,
+}: {
+  open: boolean;
+  storeName: string;
+  accent: string;
+  accentText: string;
+  onClose: () => void;
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const [phone, setPhone] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [success, setSuccess] = React.useState(false);
+  const [messageHref, setMessageHref] = React.useState<string | null>(null);
+  const [shouldRender, setShouldRender] = React.useState(open);
+  const [isLeaving, setIsLeaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      setShouldRender(true);
+      setIsLeaving(false);
+      return;
+    }
+
+    if (!shouldRender) return;
+
+    setIsLeaving(true);
+    const timer = window.setTimeout(() => {
+      setShouldRender(false);
+      setIsLeaving(false);
+    }, MESSAGE_DIALOG_CLOSE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [open, shouldRender]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setPhone("");
+    setError(null);
+    setSuccess(false);
+    setMessageHref(null);
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 120);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onClose]);
+
+  React.useEffect(() => {
+    if (!shouldRender) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [shouldRender]);
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+
+    const trimmedPhone = phone.trim();
+    if (!trimmedPhone) {
+      setError("Enter your mobile number to continue.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setError(null);
+      const response = await fetch("/api/marketplace/store/message-route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: trimmedPhone }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : "We could not set up messaging. Try again shortly.",
+        );
+      }
+
+      const nextMessageHref =
+        typeof data.messageHref === "string" && data.messageHref.startsWith("sms:")
+          ? data.messageHref
+          : typeof data.messageNumber === "string"
+            ? `sms:${data.messageNumber.replace(/[^\d+]/g, "")}`
+            : null;
+
+      if (!nextMessageHref) {
+        throw new Error("Messages is not configured for this store yet.");
+      }
+
+      setPhone("");
+      setSuccess(true);
+      setMessageHref(nextMessageHref);
+      window.setTimeout(() => {
+        window.location.href = nextMessageHref;
+      }, 50);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "We could not set up messaging. Try again shortly.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!shouldRender) return null;
+
+  return (
+    <div
+      data-state={isLeaving ? "closed" : "open"}
+      className="store-message-overlay fixed inset-0 z-[120] flex items-end justify-center bg-black/45 px-0 backdrop-blur-sm sm:items-center sm:px-4"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        data-state={isLeaving ? "closed" : "open"}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="store-message-title"
+        className="store-message-sheet max-h-[calc(100dvh-1rem)] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl ring-1 ring-black/10 sm:max-w-md sm:rounded-3xl"
+      >
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span
+              className="flex h-10 w-10 items-center justify-center rounded-2xl"
+              style={{ backgroundColor: `${accent}26` }}
+            >
+              <MessageCircle className="h-5 w-5 text-gray-900" />
+            </span>
+            <div>
+              <h2 id="store-message-title" className="text-base font-semibold text-gray-900">
+                Message {storeName}
+              </h2>
+              <p className="text-sm text-gray-500">One quick mobile check.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {success ? (
+          <div className="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-7 text-center sm:pb-6">
+            <div
+              className="mx-auto flex h-14 w-14 items-center justify-center rounded-full"
+              style={{ backgroundColor: `${accent}26` }}
+            >
+              <CheckCircle2 className="h-7 w-7 text-gray-900" />
+            </div>
+            <h3 className="mt-4 text-lg font-semibold text-gray-900">Opening Messages...</h3>
+            <p className="mt-2 text-sm leading-relaxed text-gray-500">
+              If Messages does not open automatically, use the button below.
+            </p>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+              {messageHref && (
+                <a
+                  href={messageHref}
+                  className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition-transform hover:-translate-y-0.5"
+                  style={{ backgroundColor: accent, color: accentText }}
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  Open Messages
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex h-11 flex-1 items-center justify-center rounded-full border border-gray-200 px-4 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 sm:pb-6">
+            <p className="text-sm leading-relaxed text-gray-600">
+              Enter your mobile first. We do not use it for marketing or account storage; it only creates the
+              anti-spam route for this store message.
+            </p>
+
+            <div className="mt-5">
+              <label htmlFor="store-message-phone" className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Mobile number
+              </label>
+              <input
+                ref={inputRef}
+                id="store-message-phone"
+                name="phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={phone}
+                onChange={(event) => {
+                  setPhone(event.target.value);
+                  if (error) setError(null);
+                }}
+                placeholder="0400 000 000"
+                className="mt-2 h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-base text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900 focus:bg-white"
+              />
+              {error && (
+                <p className="mt-2 text-sm text-red-600" role="alert">
+                  {error}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0"
+              style={{ backgroundColor: accent, color: accentText }}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Setting up...
+                </>
+              ) : (
+                <>
+                  Continue
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -772,11 +1064,13 @@ function ServicesTeaser({
         ))}
       </div>
 
-      {/* Mobile horizontal carousel */}
-      <div className="sm:hidden -mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory px-5">
+      {/* Mobile: horizontal carousel — wide cards (67vw) so the next one peeks */}
+      <div className="sm:hidden -mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-pl-5">
         <div className="flex items-stretch gap-3.5" style={{ minWidth: "min-content" }}>
+          {/* Leading spacer */}
+          <div className="w-5 flex-shrink-0" aria-hidden />
           {services.map((svc) => (
-            <div key={svc.id} className="w-[82%] max-w-[300px] flex-shrink-0 snap-start">
+            <div key={svc.id} className="w-[67vw] flex-shrink-0 snap-start">
               <ServiceCard
                 service={svc}
                 accent={accent}
@@ -785,8 +1079,8 @@ function ServicesTeaser({
               />
             </div>
           ))}
-          {/* Trailing spacer so the last card can snap clear of the edge */}
-          <div className="w-1 flex-shrink-0" aria-hidden />
+          {/* Trailing spacer */}
+          <div className="w-5 flex-shrink-0" aria-hidden />
         </div>
       </div>
     </section>
@@ -849,31 +1143,69 @@ function FeaturedCarouselsSection({
 
   return (
     <section className={cn(shell, "space-y-8")}>
-      {slots.map((cat) => (
-        <Reveal key={cat!.id}>
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                {cat!.source === "uber" && <UberCarouselLogo className="h-7 px-2.5" />}
-                <h3 className="text-lg font-semibold text-gray-900">{cat!.name}</h3>
+      {slots.map((cat) => {
+        const shown = cat!.products.slice(0, perRow);
+        // Mobile: split all products across two independently-scrolling rows.
+        // Interleaved so the first products fill the initial 2×2 view.
+        const mobileRows = [
+          cat!.products.filter((_, i) => i % 2 === 0),
+          cat!.products.filter((_, i) => i % 2 === 1),
+        ];
+        return (
+          <Reveal key={cat!.id}>
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  {cat!.source === "uber" && <UberCarouselLogo className="h-7 px-2.5" />}
+                  <h3 className="text-lg font-semibold text-gray-900">{cat!.name}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenCollection(cat!.name)}
+                  className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
+                >
+                  View all {cat!.products.length}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => onOpenCollection(cat!.name)}
-                className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
-              >
-                View all {cat!.products.length}
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
+
+              {/* Desktop / tablet grid */}
+              <div className={cn("hidden sm:grid gap-3 sm:gap-4", gridCols)}>
+                {shown.map((product, i) => (
+                  <ProductCard key={product.id} product={product} priority={i < 4} hideStoreMeta />
+                ))}
+              </div>
+
+              {/* Mobile: two independently-scrolling rows (~2 cards visible, all products).
+                  items-start + hideStoreMeta keep every card the same height so no card
+                  leaves dead space when its neighbours are still loading. */}
+              <div className="sm:hidden space-y-3">
+                {mobileRows.map((row, ri) => (
+                  <div
+                    key={ri}
+                    className="-mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-pl-5"
+                  >
+                    <div className="flex items-start gap-3" style={{ minWidth: "min-content" }}>
+                      <div className="w-5 flex-shrink-0" aria-hidden />
+                      {row.map((product, i) => (
+                        // Fixed slot height (square image + info row) so off-screen cards
+                        // that are still lazy-loading can't stretch the row and leave gaps.
+                        <div
+                          key={product.id}
+                          className="w-[42vw] h-[calc(42vw_+_40px)] overflow-hidden flex-shrink-0 snap-start"
+                        >
+                          <ProductCard product={product} priority={ri === 0 && i < 2} hideStoreMeta />
+                        </div>
+                      ))}
+                      <div className="w-5 flex-shrink-0" aria-hidden />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className={cn("grid gap-3 sm:gap-4", gridCols)}>
-              {cat!.products.slice(0, perRow).map((product, i) => (
-                <ProductCard key={product.id} product={product} priority={i < 4} />
-              ))}
-            </div>
-          </div>
-        </Reveal>
-      ))}
+          </Reveal>
+        );
+      })}
     </section>
   );
 }

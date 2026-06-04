@@ -488,10 +488,10 @@ export default function DataSettingsPage() {
   }
 
   return (
-    <>
+    <div className="flex h-[calc(100svh-3.5rem)] flex-col overflow-hidden">
       <Header title="Data" description="Lightspeed inventory grid" />
 
-      <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden">
         <div className="shrink-0 border-b border-border px-4 py-3 lg:px-6">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-center gap-3">
@@ -785,6 +785,6 @@ export default function DataSettingsPage() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

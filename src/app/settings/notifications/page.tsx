@@ -7,17 +7,9 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from 'react';
-import { Header } from '@/components/layout';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -27,18 +19,15 @@ import {
 } from '@/components/ui/select';
 import { useUserProfile } from '@/lib/hooks/use-user-profile';
 import { Save, Check, Loader2, Bell, Mail, Clock, Moon, ShoppingBag, Store, Tag, MessageSquare } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 16 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.04, 0.62, 0.23, 0.98] as [number, number, number, number] } },
-};
+import {
+  PageContainer,
+  PageHeader,
+  PageBody,
+  SettingsSection,
+  SettingsRow,
+  SettingsDivider,
+} from '@/components/dashboard';
 
 type EmailFrequency = 'instant' | 'smart' | 'digest' | 'critical_only';
 type MessageFrequency = 'every_message' | 'new_conversations_only' | 'smart';
@@ -49,15 +38,11 @@ interface NotificationPreferences {
   quiet_hours_enabled: boolean;
   quiet_hours_start: string;
   quiet_hours_end: string;
-  // Purchases
   purchase_confirmations_enabled: boolean;
-  // Offers — granular
   offer_received_enabled: boolean;
   offer_updates_enabled: boolean;
-  // Messages — granular
   message_notifications_enabled: boolean;
   message_frequency: MessageFrequency;
-  // Store-only
   sale_notifications_enabled: boolean;
 }
 
@@ -74,36 +59,6 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
   message_frequency: 'smart',
   sale_notifications_enabled: true,
 };
-
-function SectionDivider() {
-  return <div className="border-t border-gray-200 my-2" />;
-}
-
-function ToggleRow({
-  id,
-  label,
-  description,
-  checked,
-  onCheckedChange,
-  disabled,
-}: {
-  id: string;
-  label: string;
-  description: string;
-  checked: boolean;
-  onCheckedChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className={cn('flex items-center justify-between gap-4', disabled && 'opacity-50')}>
-      <div className="space-y-0.5 flex-1 min-w-0">
-        <Label htmlFor={id} className="text-base cursor-pointer">{label}</Label>
-        <p className="text-sm text-gray-600">{description}</p>
-      </div>
-      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
-    </div>
-  );
-}
 
 const MESSAGE_FREQUENCY_OPTIONS: { value: MessageFrequency; label: string; description: string }[] = [
   {
@@ -125,10 +80,18 @@ const MESSAGE_FREQUENCY_OPTIONS: { value: MessageFrequency; label: string; descr
 
 const EMAIL_FREQUENCY_DESCRIPTIONS: Record<EmailFrequency, React.ReactNode> = {
   instant: <><strong>Instant:</strong> An email for every notification, immediately.</>,
-  smart: <><strong>Smart:</strong> Batches messages when you're active; sends immediately when you're away.</>,
+  smart: <><strong>Smart:</strong> Batches messages when you&apos;re active; sends immediately when you&apos;re away.</>,
   digest: <><strong>Digest:</strong> A summary every few hours rather than individual emails.</>,
   critical_only: <><strong>Critical Only:</strong> Only purchase receipts, sale alerts, and accepted offers.</>,
 };
+
+function NoteBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+      {children}
+    </div>
+  );
+}
 
 export default function NotificationSettingsPage() {
   const { profile, loading, saving, saveProfile } = useUserProfile();
@@ -213,350 +176,258 @@ export default function NotificationSettingsPage() {
   };
 
   const emailDisabled = !preferences.email_enabled;
-  const selectedMsgFreq = MESSAGE_FREQUENCY_OPTIONS.find(o => o.value === preferences.message_frequency)!;
 
   if (loading || loadingPreferences) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header title="Notification Settings" description="Manage your email notification preferences" />
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-        </div>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header title="Notification Settings" description="Manage your email notification preferences" />
-
-      <motion.div
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="container mx-auto px-4 py-8 max-w-3xl"
-      >
-
-        {/* ── Email Delivery ── */}
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-md mb-6">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-md"><Mail className="h-5 w-5 text-blue-600" /></div>
-                <div>
-                  <CardTitle>Email Delivery</CardTitle>
-                  <CardDescription>Master control over all email notifications</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <ToggleRow
-                id="email-enabled"
-                label="Email Notifications"
-                description="Receive emails about messages, offers, purchases, and sales"
-                checked={preferences.email_enabled}
-                onCheckedChange={v => setPref('email_enabled', v)}
-              />
-
-              {preferences.email_enabled && (
-                <>
-                  <SectionDivider />
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="space-y-0.5 flex-1 min-w-0">
-                      <Label className="text-base">Global Frequency</Label>
-                      <p className="text-sm text-gray-600">Default send cadence (overridden by per-type settings below)</p>
-                    </div>
-                    <Select
-                      value={preferences.email_frequency}
-                      onValueChange={v => setPref('email_frequency', v as EmailFrequency)}
-                    >
-                      <SelectTrigger className="w-[200px] rounded-md">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="instant">Instant</SelectItem>
-                        <SelectItem value="smart">Smart (Recommended)</SelectItem>
-                        <SelectItem value="digest">Digest</SelectItem>
-                        <SelectItem value="critical_only">Critical Only</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="bg-gray-50 rounded-md p-4 border border-gray-200 text-sm text-gray-600">
-                    {EMAIL_FREQUENCY_DESCRIPTIONS[preferences.email_frequency]}
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* ── Quiet Hours ── */}
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-md mb-6">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-md"><Moon className="h-5 w-5 text-purple-600" /></div>
-                <div>
-                  <CardTitle>Quiet Hours</CardTitle>
-                  <CardDescription>Hold non-critical emails during specific hours</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <ToggleRow
-                id="quiet-hours"
-                label="Enable Quiet Hours"
-                description="Emails are held and delivered when quiet hours end"
-                checked={preferences.quiet_hours_enabled}
-                onCheckedChange={v => setPref('quiet_hours_enabled', v)}
-              />
-              {preferences.quiet_hours_enabled && (
-                <>
-                  <SectionDivider />
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                      <Label htmlFor="quiet-start" className="text-sm font-medium mb-2 block">Start Time</Label>
-                      <div className="relative">
-                        <Clock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                        <input
-                          id="quiet-start"
-                          type="time"
-                          value={preferences.quiet_hours_start}
-                          onChange={e => setPref('quiet_hours_start', e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center pt-6"><span className="text-gray-500">to</span></div>
-                    <div className="flex-1">
-                      <Label htmlFor="quiet-end" className="text-sm font-medium mb-2 block">End Time</Label>
-                      <div className="relative">
-                        <Clock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                        <input
-                          id="quiet-end"
-                          type="time"
-                          value={preferences.quiet_hours_end}
-                          onChange={e => setPref('quiet_hours_end', e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-purple-50 rounded-md p-4 border border-purple-200">
-                    <p className="text-sm text-purple-700">
-                      Emails will be held between {preferences.quiet_hours_start} and {preferences.quiet_hours_end}, then delivered when quiet hours end.
-                    </p>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* ── Messages ── */}
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-md mb-6">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-md"><MessageSquare className="h-5 w-5 text-blue-600" /></div>
-                <div>
-                  <CardTitle>Messages</CardTitle>
-                  <CardDescription>Control when you get emailed about new messages</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <ToggleRow
-                id="message-notifications"
-                label="Message Notifications"
-                description="Receive email alerts when someone sends you a message"
-                checked={preferences.message_notifications_enabled}
-                onCheckedChange={v => setPref('message_notifications_enabled', v)}
-                disabled={emailDisabled}
-              />
-
-              {preferences.message_notifications_enabled && !emailDisabled && (
-                <>
-                  <SectionDivider />
-                  <div className="space-y-3">
-                    <Label className="text-base">Message Frequency</Label>
-                    <p className="text-sm text-gray-600">Choose how often you receive message emails</p>
-                    <div className="grid gap-2">
-                      {MESSAGE_FREQUENCY_OPTIONS.map(opt => (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => setPref('message_frequency', opt.value)}
-                          className={cn(
-                            'w-full text-left px-4 py-3 rounded-md border transition-colors',
-                            preferences.message_frequency === opt.value
-                              ? 'border-blue-500 bg-blue-50 text-blue-900'
-                              : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700'
-                          )}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={cn(
-                              'w-4 h-4 rounded-full border-2 flex-shrink-0',
-                              preferences.message_frequency === opt.value
-                                ? 'border-blue-500 bg-blue-500'
-                                : 'border-gray-300'
-                            )}>
-                              {preferences.message_frequency === opt.value && (
-                                <div className="w-full h-full rounded-full bg-white scale-[0.4] block" />
-                              )}
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium">{opt.label}</p>
-                              <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* ── Offers ── */}
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-md mb-6">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-amber-100 rounded-md"><Tag className="h-5 w-5 text-amber-600" /></div>
-                <div>
-                  <CardTitle>Offers</CardTitle>
-                  <CardDescription>Emails about offers you make or receive on listings</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <ToggleRow
-                id="offer-received"
-                label="Offers on my listings"
-                description="Email when a buyer makes an offer on something you've listed for sale"
-                checked={preferences.offer_received_enabled}
-                onCheckedChange={v => setPref('offer_received_enabled', v)}
-                disabled={emailDisabled}
-              />
-              <SectionDivider />
-              <ToggleRow
-                id="offer-updates"
-                label="Updates on my offers"
-                description="Email when an offer you made is accepted, rejected, countered, or expires"
-                checked={preferences.offer_updates_enabled}
-                onCheckedChange={v => setPref('offer_updates_enabled', v)}
-                disabled={emailDisabled}
-              />
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* ── Purchases (Buyer) ── */}
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-md mb-6">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-md"><ShoppingBag className="h-5 w-5 text-green-600" /></div>
-                <div>
-                  <CardTitle>Purchases</CardTitle>
-                  <CardDescription>Confirmation emails when you buy something</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <ToggleRow
-                id="purchase-confirmations"
-                label="Purchase Confirmations"
-                description="Receipt email with full order details immediately after a successful purchase"
-                checked={preferences.purchase_confirmations_enabled}
-                onCheckedChange={v => setPref('purchase_confirmations_enabled', v)}
-                disabled={emailDisabled}
-              />
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* ── Store Notifications (stores only) ── */}
-        {isStore && (
-          <motion.div variants={itemVariants}>
-            <Card className="rounded-md mb-6 border-purple-200">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-purple-100 rounded-md"><Store className="h-5 w-5 text-purple-600" /></div>
-                  <div>
-                    <CardTitle>Store Notifications</CardTitle>
-                    <CardDescription>Emails about activity on your store's listings</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <ToggleRow
-                  id="sale-notifications"
-                  label="Sale Alerts"
-                  description="Instant email when one of your listings is purchased, with buyer details and your payout amount"
-                  checked={preferences.sale_notifications_enabled}
-                  onCheckedChange={v => setPref('sale_notifications_enabled', v)}
-                  disabled={emailDisabled}
-                />
-                <div className="bg-gray-50 rounded-md p-4 border border-gray-200 text-sm text-gray-600 space-y-1">
-                  <p className="font-medium text-gray-700">Other store activity</p>
-                  <p>New offers on listings and customer enquiries are controlled in the <strong>Offers</strong> and <strong>Messages</strong> sections above.</p>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-
-        {/* ── In-App ── */}
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-md mb-6">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gray-100 rounded-md"><Bell className="h-5 w-5 text-gray-600" /></div>
-                <div>
-                  <CardTitle>In-App Notifications</CardTitle>
-                  <CardDescription>Bell icon notifications inside the app</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-md p-4">
-                In-app notifications are always on. A badge appears in the header for new messages, offers, and order activity.
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-red-50 border border-red-200 rounded-md p-4 mb-6"
-          >
-            <p className="text-sm text-red-600">{error}</p>
-          </motion.div>
-        )}
-
-        <motion.div variants={itemVariants} className="flex justify-end">
-          <Button
-            onClick={handleSave}
-            disabled={saving || savingPreferences}
-            className={cn('rounded-md min-w-[120px]', saved && 'bg-green-600 hover:bg-green-700')}
-          >
+    <PageContainer size="wide">
+      <PageHeader
+        title="Notifications"
+        description="Manage your email notification preferences."
+        actions={
+          <Button onClick={handleSave} disabled={saving || savingPreferences} size="sm" className="min-w-[130px]">
             {saving || savingPreferences ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+              <><Loader2 className="size-4 animate-spin" />Saving…</>
             ) : saved ? (
-              <><Check className="h-4 w-4 mr-2" />Saved!</>
+              <><Check className="size-4" />Saved</>
             ) : (
-              <><Save className="h-4 w-4 mr-2" />Save Changes</>
+              <><Save className="size-4" />Save changes</>
             )}
           </Button>
-        </motion.div>
+        }
+      />
 
-      </motion.div>
-    </div>
+      <PageBody>
+        {/* Email delivery */}
+        <SettingsSection
+          title="Email delivery"
+          description="Master control over all email notifications."
+          icon={Mail}
+        >
+          <SettingsRow
+            label="Email notifications"
+            description="Receive emails about messages, offers, purchases, and sales."
+            control={
+              <div className="sm:flex sm:justify-end">
+                <Switch checked={preferences.email_enabled} onCheckedChange={v => setPref('email_enabled', v)} />
+              </div>
+            }
+          />
+          {preferences.email_enabled && (
+            <>
+              <SettingsDivider />
+              <SettingsRow
+                label="Global frequency"
+                description="Default send cadence (overridden by per-type settings below)."
+                control={
+                  <Select value={preferences.email_frequency} onValueChange={v => setPref('email_frequency', v as EmailFrequency)}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="instant">Instant</SelectItem>
+                      <SelectItem value="smart">Smart (Recommended)</SelectItem>
+                      <SelectItem value="digest">Digest</SelectItem>
+                      <SelectItem value="critical_only">Critical Only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                }
+              />
+              <div className="mt-4">
+                <NoteBox>{EMAIL_FREQUENCY_DESCRIPTIONS[preferences.email_frequency]}</NoteBox>
+              </div>
+            </>
+          )}
+        </SettingsSection>
+
+        {/* Quiet hours */}
+        <SettingsSection
+          title="Quiet hours"
+          description="Hold non-critical emails during specific hours."
+          icon={Moon}
+        >
+          <SettingsRow
+            label="Enable quiet hours"
+            description="Emails are held and delivered when quiet hours end."
+            control={
+              <div className="sm:flex sm:justify-end">
+                <Switch checked={preferences.quiet_hours_enabled} onCheckedChange={v => setPref('quiet_hours_enabled', v)} />
+              </div>
+            }
+          />
+          {preferences.quiet_hours_enabled && (
+            <>
+              <SettingsDivider />
+              <div className="flex items-end gap-3">
+                <div className="flex-1 space-y-2">
+                  <label htmlFor="quiet-start" className="text-sm font-medium">Start time</label>
+                  <div className="relative">
+                    <Clock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input id="quiet-start" type="time" value={preferences.quiet_hours_start} onChange={e => setPref('quiet_hours_start', e.target.value)} className="pl-9" />
+                  </div>
+                </div>
+                <span className="pb-2.5 text-muted-foreground">to</span>
+                <div className="flex-1 space-y-2">
+                  <label htmlFor="quiet-end" className="text-sm font-medium">End time</label>
+                  <div className="relative">
+                    <Clock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input id="quiet-end" type="time" value={preferences.quiet_hours_end} onChange={e => setPref('quiet_hours_end', e.target.value)} className="pl-9" />
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4">
+                <NoteBox>
+                  Emails will be held between {preferences.quiet_hours_start} and {preferences.quiet_hours_end}, then delivered when quiet hours end.
+                </NoteBox>
+              </div>
+            </>
+          )}
+        </SettingsSection>
+
+        {/* Messages */}
+        <SettingsSection
+          title="Messages"
+          description="Control when you get emailed about new messages."
+          icon={MessageSquare}
+        >
+          <SettingsRow
+            label="Message notifications"
+            description="Receive email alerts when someone sends you a message."
+            control={
+              <div className="sm:flex sm:justify-end">
+                <Switch checked={preferences.message_notifications_enabled} onCheckedChange={v => setPref('message_notifications_enabled', v)} disabled={emailDisabled} />
+              </div>
+            }
+          />
+          {preferences.message_notifications_enabled && !emailDisabled && (
+            <>
+              <SettingsDivider />
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Message frequency</p>
+                  <p className="text-[13px] text-muted-foreground">Choose how often you receive message emails.</p>
+                </div>
+                <div className="grid gap-2">
+                  {MESSAGE_FREQUENCY_OPTIONS.map(opt => {
+                    const active = preferences.message_frequency === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setPref('message_frequency', opt.value)}
+                        className={cn(
+                          'w-full rounded-lg border px-4 py-3 text-left transition-colors',
+                          active ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={cn('flex size-4 shrink-0 items-center justify-center rounded-full border-2', active ? 'border-primary' : 'border-muted-foreground/40')}>
+                            {active && <div className="size-2 rounded-full bg-primary" />}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{opt.label}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{opt.description}</p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </SettingsSection>
+
+        {/* Offers */}
+        <SettingsSection
+          title="Offers"
+          description="Emails about offers you make or receive on listings."
+          icon={Tag}
+        >
+          <SettingsRow
+            label="Offers on my listings"
+            description="Email when a buyer makes an offer on something you've listed for sale."
+            control={
+              <div className="sm:flex sm:justify-end">
+                <Switch checked={preferences.offer_received_enabled} onCheckedChange={v => setPref('offer_received_enabled', v)} disabled={emailDisabled} />
+              </div>
+            }
+          />
+          <SettingsDivider />
+          <SettingsRow
+            label="Updates on my offers"
+            description="Email when an offer you made is accepted, rejected, countered, or expires."
+            control={
+              <div className="sm:flex sm:justify-end">
+                <Switch checked={preferences.offer_updates_enabled} onCheckedChange={v => setPref('offer_updates_enabled', v)} disabled={emailDisabled} />
+              </div>
+            }
+          />
+        </SettingsSection>
+
+        {/* Purchases */}
+        <SettingsSection
+          title="Purchases"
+          description="Confirmation emails when you buy something."
+          icon={ShoppingBag}
+        >
+          <SettingsRow
+            label="Purchase confirmations"
+            description="Receipt email with full order details immediately after a successful purchase."
+            control={
+              <div className="sm:flex sm:justify-end">
+                <Switch checked={preferences.purchase_confirmations_enabled} onCheckedChange={v => setPref('purchase_confirmations_enabled', v)} disabled={emailDisabled} />
+              </div>
+            }
+          />
+        </SettingsSection>
+
+        {/* Store notifications */}
+        {isStore && (
+          <SettingsSection
+            title="Store notifications"
+            description="Emails about activity on your store's listings."
+            icon={Store}
+          >
+            <SettingsRow
+              label="Sale alerts"
+              description="Instant email when one of your listings is purchased, with buyer details and your payout amount."
+              control={
+                <div className="sm:flex sm:justify-end">
+                  <Switch checked={preferences.sale_notifications_enabled} onCheckedChange={v => setPref('sale_notifications_enabled', v)} disabled={emailDisabled} />
+                </div>
+              }
+            />
+            <div className="mt-4">
+              <NoteBox>
+                <p className="font-medium text-foreground">Other store activity</p>
+                <p className="mt-1">New offers on listings and customer enquiries are controlled in the <strong>Offers</strong> and <strong>Messages</strong> sections above.</p>
+              </NoteBox>
+            </div>
+          </SettingsSection>
+        )}
+
+        {/* In-app */}
+        <SettingsSection
+          title="In-app notifications"
+          description="Bell icon notifications inside the app."
+          icon={Bell}
+        >
+          <NoteBox>
+            In-app notifications are always on. A badge appears in the header for new messages, offers, and order activity.
+          </NoteBox>
+        </SettingsSection>
+
+        {error && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+      </PageBody>
+    </PageContainer>
   );
 }

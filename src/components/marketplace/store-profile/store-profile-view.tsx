@@ -224,6 +224,14 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
     catSize === 'compact'  ? "clamp(118px, 12vw, 155px)" :
     "clamp(145px, 15vw, 205px)";
 
+  // Fixed slot height = square image (colWidth) + info row (~40px).
+  // Prevents off-screen lazy-loading skeletons from inflating the row
+  // and leaving dead space below the visible loaded cards.
+  const colHeight =
+    catSize === 'featured' ? "calc(clamp(170px, 18vw, 260px) + 40px)" :
+    catSize === 'compact'  ? "calc(clamp(118px, 12vw, 155px) + 40px)" :
+    "calc(clamp(145px, 15vw, 205px) + 40px)";
+
   const gap = catSize === 'compact' ? 8 : 10;
 
   // ── Grid (expanded) ───────────────────────────────────────────────────────
@@ -299,8 +307,8 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
             <div
               key={product.id}
               data-analytics-product-id={product.id}
-              className="snap-start min-w-0 flex-none"
-              style={{ width: colWidth }}
+              className="snap-start min-w-0 flex-none overflow-hidden"
+              style={{ width: colWidth, height: colHeight }}
             >
               <ProductCard
                 product={product}
@@ -674,6 +682,17 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     return () => window.clearTimeout(timer);
   }, [immersive, shouldReduceMotion, store.id]);
 
+  React.useEffect(() => {
+    if (!introHeadersVisible || introHeaderRevealSettled) return;
+
+    const timer = window.setTimeout(
+      () => setIntroHeaderRevealSettled(true),
+      shouldReduceMotion ? 0 : 560,
+    );
+
+    return () => window.clearTimeout(timer);
+  }, [introHeadersVisible, introHeaderRevealSettled, shouldReduceMotion]);
+
   const openStatus = getOpenStatus(store.opening_hours);
   const headerRating =
     store.rating != null && store.homepage_config?.badges?.show_rating !== false
@@ -798,24 +817,10 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   return (
     <div className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
       <div>
-      <motion.div
-        initial={introHeadersVisible ? "visible" : "hidden"}
-        animate={introHeadersVisible ? "visible" : "hidden"}
-        variants={{
-          hidden: { height: 0, opacity: 0 },
-          visible: { height: "auto", opacity: 1 },
-        }}
-        transition={
-          shouldReduceMotion
-            ? { duration: 0 }
-            : { height: { duration: 0.55, ease: [0.22, 1, 0.36, 1] }, opacity: { duration: 0.22 } }
-        }
-        onAnimationComplete={() => {
-          if (introHeadersVisible) {
-            setIntroHeaderRevealSettled(true);
-          }
-        }}
-        className={cn(introHeaderRevealSettled ? "overflow-visible" : "overflow-hidden")}
+      <div
+        data-state={introHeadersVisible ? "visible" : "hidden"}
+        data-settled={introHeaderRevealSettled ? "true" : "false"}
+        className="store-profile-top-headers"
       >
       {/* ══ STICKY STORE HEADER ════════════════════════════
           Single row: [store logo] [store name]  |  [search] [← YJ back pill] */}
@@ -1001,7 +1006,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
       )}>
         <div className="flex items-center">
           {/* Tabs — scrollable */}
-          <div className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto scrollbar-hide flex-1 min-w-0">
+          <div className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide flex-1 min-w-0">
             {tabs.map(({ key, label, icon: Icon }) => {
               const active = activeTab === key;
               return (
@@ -1051,7 +1056,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
           )}
         </div>
       </div>
-      </motion.div>
+      </div>
 
       {/* Cover banner (optional) — scrolls beneath the sticky header.
           Hidden on Home, where the hero owns the cover imagery. */}
@@ -1103,7 +1108,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
           )}>
             <div className="flex items-center gap-2 sm:gap-3">
               {/* Category pills (scrollable) */}
-              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide flex-1 min-w-0">
                 {/* Sale pill — only when discounted products exist */}
                 {saleProductIds.size > 0 && (
                   <button

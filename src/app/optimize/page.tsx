@@ -1,17 +1,22 @@
 "use client";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Wand2, ShieldCheck } from "lucide-react";
-import { Header } from "@/components/layout";
+import { PageContainer, PageHeader } from "@/components/dashboard";
 import { StoreOptimizer } from "@/components/optimize/store-optimizer";
 import { StoreApprovalPanel } from "@/components/optimize/store-approval-panel";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { cn } from "@/lib/utils";
 
 type Tab = "optimise" | "approve";
+
+const NAV: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "optimise", label: "Optimise", icon: Wand2 },
+  { id: "approve", label: "Approve for store", icon: ShieldCheck },
+];
 
 export default function OptimizePage() {
   const { profile, loading } = useUserProfile();
@@ -22,15 +27,15 @@ export default function OptimizePage() {
   React.useEffect(() => {
     if (!loading) {
       if (!profile) {
-        router.replace('/marketplace');
+        router.replace("/marketplace");
         return;
       }
 
       const authorized =
-        profile.account_type === 'bicycle_store' && profile.bicycle_store === true;
+        profile.account_type === "bicycle_store" && profile.bicycle_store === true;
 
       if (!authorized) {
-        router.replace('/marketplace/settings');
+        router.replace("/marketplace/settings");
       } else {
         setIsAuthorized(true);
       }
@@ -39,59 +44,53 @@ export default function OptimizePage() {
 
   if (loading || isAuthorized === null) {
     return (
-      <>
-        <Header
-          title="Optimize"
-          description="Source images, titles, descriptions and specs across a category"
-        />
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
-        </div>
-      </>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 
   return (
-    <>
-      <Header
-        title="Optimize"
-        description="Improve product data and approve images for the marketplace"
+    <PageContainer size="wide">
+      <PageHeader
+        title="Optimise"
+        description="Improve product data with AI and approve images so listings go live on your storefront."
       />
 
-      <div className="p-4 lg:p-6 space-y-4">
-        {/* Tab bar */}
-        <div className="flex gap-1 rounded-lg border border-border bg-muted/40 p-1 w-fit">
-          <button
-            type="button"
-            onClick={() => setTab("optimise")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              tab === "optimise"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Wand2 className="h-3.5 w-3.5" />
-            Optimise
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("approve")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              tab === "approve"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <ShieldCheck className="h-3.5 w-3.5" />
-            Approve for Store
-          </button>
-        </div>
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8">
+        <nav className="lg:sticky lg:top-20 lg:self-start">
+          <div className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+            {NAV.map((item) => {
+              const isActive = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setTab(item.id)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors lg:w-full",
+                    isActive
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  )}
+                >
+                  <item.icon
+                    className={cn(
+                      "size-4 shrink-0",
+                      isActive ? "text-primary" : "text-muted-foreground"
+                    )}
+                  />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
 
-        {tab === "optimise" && <StoreOptimizer />}
-        {tab === "approve" && <StoreApprovalPanel />}
+        <div className="min-w-0 space-y-6">
+          {tab === "optimise" ? <StoreOptimizer /> : <StoreApprovalPanel />}
+        </div>
       </div>
-    </>
+    </PageContainer>
   );
 }

@@ -421,7 +421,7 @@ export default function ConnectLightspeedPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[70vh]">
         <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
       </div>
     );
@@ -430,7 +430,7 @@ export default function ConnectLightspeedPage() {
   // Not connected state
   if (!isConnected) {
     return (
-      <div className="flex items-center justify-center min-h-screen p-6">
+      <div className="flex items-center justify-center min-h-[70vh] p-6">
         <div className="max-w-md w-full space-y-6 text-center">
           <div className="flex justify-center">
             <div className="h-16 w-16 rounded-md bg-secondary flex items-center justify-center">
@@ -509,13 +509,13 @@ export default function ConnectLightspeedPage() {
                 {/* Left: view tabs + synced/not-synced toggle */}
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* View Mode Tabs */}
-                  <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                  <div className="flex items-center bg-muted p-0.5 rounded-md w-fit">
                     <button
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
                         viewMode === 'categories'
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
+                          ? "text-foreground bg-background shadow-xs ring-1 ring-border"
+                          : "text-muted-foreground hover:bg-muted/70"
                       )}
                       onClick={() => setViewMode('categories')}
                     >
@@ -530,8 +530,8 @@ export default function ConnectLightspeedPage() {
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
                         viewMode === 'products'
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
+                          ? "text-foreground bg-background shadow-xs ring-1 ring-border"
+                          : "text-muted-foreground hover:bg-muted/70"
                       )}
                       onClick={() => setViewMode('products')}
                     >
@@ -546,8 +546,8 @@ export default function ConnectLightspeedPage() {
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
                         viewMode === 'logs'
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70"
+                          ? "text-foreground bg-background shadow-xs ring-1 ring-border"
+                          : "text-muted-foreground hover:bg-muted/70"
                       )}
                       onClick={() => setViewMode('logs')}
                     >
@@ -557,13 +557,13 @@ export default function ConnectLightspeedPage() {
 
                   {/* Synced / Not Synced toggle — only for categories and products views */}
                   {(viewMode === 'categories' || viewMode === 'products') && (
-                    <div className="flex items-center bg-gray-100 p-0.5 rounded-md">
+                    <div className="flex items-center bg-muted p-0.5 rounded-md">
                       <button
                         className={cn(
                           "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
                           (viewMode === 'products' ? productSyncFilter : categorySyncFilter) === 'not_synced'
-                            ? "text-gray-800 bg-white shadow-sm"
-                            : "text-gray-600 hover:bg-gray-200/70"
+                            ? "text-foreground bg-background shadow-xs ring-1 ring-border"
+                            : "text-muted-foreground hover:bg-muted/70"
                         )}
                         onClick={() =>
                           viewMode === 'products'
@@ -577,8 +577,8 @@ export default function ConnectLightspeedPage() {
                         className={cn(
                           "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
                           (viewMode === 'products' ? productSyncFilter : categorySyncFilter) === 'synced'
-                            ? "text-gray-800 bg-white shadow-sm"
-                            : "text-gray-600 hover:bg-gray-200/70"
+                            ? "text-foreground bg-background shadow-xs ring-1 ring-border"
+                            : "text-muted-foreground hover:bg-muted/70"
                         )}
                         onClick={() =>
                           viewMode === 'products'
@@ -661,7 +661,7 @@ export default function ConnectLightspeedPage() {
             </div>
 
             {/* Table Container - Full width, scrollable */}
-            <div className="flex-1 overflow-auto bg-white dark:bg-gray-950">
+            <div className="flex-1 overflow-auto bg-background">
               {viewMode === 'categories' ? (
                 <UnifiedCategoryTable
                   categories={inventoryData?.categories || []}

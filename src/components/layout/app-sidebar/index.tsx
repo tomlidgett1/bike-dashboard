@@ -1,0 +1,227 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  CalendarClock,
+  ChevronRight,
+  Database,
+  Instagram,
+  LifeBuoy,
+  Package,
+  Settings,
+  ShieldCheck,
+  ShoppingBag,
+  Sparkles,
+  Store,
+  Tag,
+  Truck,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarRail,
+  SidebarSeparator,
+} from "@/components/ui/sidebar";
+import { StoreSwitcher } from "./store-switcher";
+import { NavUser } from "./nav-user";
+
+type SubItem = { title: string; href: string };
+type NavItem = {
+  title: string;
+  icon: LucideIcon;
+  href?: string;
+  badge?: string;
+  exact?: boolean;
+  disabled?: boolean;
+  items?: SubItem[];
+};
+type NavGroup = { label: string; items: NavItem[] };
+
+const NAV: NavGroup[] = [
+  {
+    label: "Store",
+    items: [
+      { title: "Products", href: "/products", icon: Package },
+      {
+        title: "Storefront",
+        icon: Store,
+        items: [
+          { title: "Home page", href: "/settings/store/home" },
+          { title: "Categories", href: "/settings/store/categories" },
+          { title: "Sections", href: "/settings/store/sections" },
+          { title: "Brands", href: "/settings/store/brands" },
+          { title: "Services", href: "/settings/store/services" },
+          { title: "Analytics", href: "/settings/store/analytics" },
+          { title: "Product content", href: "/settings/store/products" },
+          { title: "Titles", href: "/settings/store/titles" },
+          { title: "Online products", href: "/settings/store/online" },
+        ],
+      },
+      { title: "Optimize", href: "/optimize", icon: Sparkles },
+    ],
+  },
+  {
+    label: "Marketplace",
+    items: [
+      { title: "Orders", href: "/settings/purchases", icon: ShoppingBag },
+      {
+        title: "Listings",
+        icon: Tag,
+        items: [
+          { title: "My listings", href: "/settings/my-listings" },
+          { title: "Drafts", href: "/settings/drafts" },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { title: "Uber Direct", href: "/settings/uber", icon: Truck },
+      { title: "Data", href: "/settings/data", icon: Database },
+      { title: "Lightspeed", href: "/connect-lightspeed", icon: Zap },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      { title: "Image QA", href: "/admin/image-qa", icon: ShieldCheck },
+      { title: "Instagram posts", href: "/admin/instagram-posts", icon: Instagram, disabled: true },
+      { title: "Scheduled uploads", href: "/admin/scheduled-uploads", icon: CalendarClock, disabled: true },
+    ],
+  },
+];
+
+const FOOTER_ITEMS: NavItem[] = [
+  { title: "Settings", href: "/settings", icon: Settings, exact: true },
+  { title: "Help & support", href: "/marketplace/help", icon: LifeBuoy },
+];
+
+function flatActive(pathname: string, item: NavItem) {
+  if (!item.href) return false;
+  return item.exact ? pathname === item.href : pathname.startsWith(item.href);
+}
+
+function groupActive(pathname: string, item: NavItem) {
+  return !!item.items?.some((sub) => pathname.startsWith(sub.href));
+}
+
+function CollapsibleNavItem({ item, pathname }: { item: NavItem; pathname: string }) {
+  const open = groupActive(pathname, item);
+  return (
+    <Collapsible asChild defaultOpen={open} className="group/collapsible">
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuButton tooltip={item.title} isActive={open}>
+            <item.icon />
+            <span>{item.title}</span>
+            <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+          </SidebarMenuButton>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {item.items!.map((sub) => (
+              <SidebarMenuSubItem key={sub.href}>
+                <SidebarMenuSubButton asChild isActive={pathname.startsWith(sub.href)}>
+                  <Link href={sub.href}>{sub.title}</Link>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            ))}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
+  );
+}
+
+function FlatNavItem({ item, pathname }: { item: NavItem; pathname: string }) {
+  if (item.disabled) {
+    return (
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          tooltip={`${item.title} — coming soon`}
+          aria-disabled
+          className="cursor-not-allowed opacity-50"
+        >
+          <item.icon />
+          <span>{item.title}</span>
+        </SidebarMenuButton>
+        <SidebarMenuBadge className="text-[10px] tracking-wide">SOON</SidebarMenuBadge>
+      </SidebarMenuItem>
+    );
+  }
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild tooltip={item.title} isActive={flatActive(pathname, item)}>
+        <Link href={item.href!}>
+          <item.icon />
+          <span>{item.title}</span>
+        </Link>
+      </SidebarMenuButton>
+      {item.badge ? <SidebarMenuBadge>{item.badge}</SidebarMenuBadge> : null}
+    </SidebarMenuItem>
+  );
+}
+
+export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
+  const pathname = usePathname() ?? "/products";
+
+  return (
+    <Sidebar collapsible="icon" {...props}>
+      <SidebarHeader>
+        <StoreSwitcher />
+      </SidebarHeader>
+
+      <SidebarContent>
+        {NAV.map((group) => (
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarMenu>
+              {group.items.map((item) =>
+                item.items ? (
+                  <CollapsibleNavItem key={item.title} item={item} pathname={pathname} />
+                ) : (
+                  <FlatNavItem key={item.title} item={item} pathname={pathname} />
+                )
+              )}
+            </SidebarMenu>
+          </SidebarGroup>
+        ))}
+
+        <SidebarGroup className="mt-auto">
+          <SidebarMenu>
+            {FOOTER_ITEMS.map((item) => (
+              <FlatNavItem key={item.title} item={item} pathname={pathname} />
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarSeparator />
+      <SidebarFooter>
+        <NavUser />
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
+  );
+}

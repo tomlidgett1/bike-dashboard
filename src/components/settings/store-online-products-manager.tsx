@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Globe,
   Upload,
+  FileSpreadsheet,
   Loader2,
   X,
   Sparkles,
@@ -15,15 +16,12 @@ import {
   Search,
   Star,
   Plus,
-  ZoomIn,
   Wand2,
   Eye,
   RefreshCw,
-  ImageIcon,
   Package,
   ChevronDown,
   ChevronRight,
-  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,6 +87,18 @@ type FlowPhase =
   | "creating"
   | "done";
 
+type UploadKind = "image" | "csv";
+
+type ExtractResponseProduct = {
+  name?: unknown;
+  brand?: unknown;
+  price?: unknown;
+  category?: unknown;
+  subcategory?: unknown;
+  description?: unknown;
+  specs?: unknown;
+};
+
 const MAX_IMAGES = 6;
 const IMAGE_CONCURRENCY = 2;
 
@@ -125,20 +135,41 @@ function toSpeedProduct(p: ExtractedProduct): SpeedWorkbenchProduct {
   };
 }
 
+function isCsvFile(file: File) {
+  const name = file.name.toLowerCase();
+  return (
+    name.endsWith(".csv") ||
+    file.type === "text/csv" ||
+    file.type === "application/csv" ||
+    file.type === "application/vnd.ms-excel"
+  );
+}
+
+function getUploadKind(file: File): UploadKind | null {
+  if (file.type.startsWith("image/")) return "image";
+  if (isCsvFile(file)) return "csv";
+  return null;
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function UploadZone({
   onFile,
+  onInvalid,
   disabled,
 }: {
   onFile: (file: File) => void;
+  onInvalid: () => void;
   disabled?: boolean;
 }) {
   const ref = React.useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = React.useState(false);
 
   const handle = (file: File) => {
-    if (!file.type.startsWith("image/")) return;
+    if (!getUploadKind(file)) {
+      onInvalid();
+      return;
+    }
     onFile(file);
   };
 
@@ -157,7 +188,7 @@ function UploadZone({
       <input
         ref={ref}
         type="file"
-        accept="image/*"
+        accept="image/*,.csv,text/csv,application/vnd.ms-excel"
         className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handle(f); }}
       />
@@ -165,9 +196,9 @@ function UploadZone({
         <Upload className="h-5 w-5 text-primary" />
       </div>
       <div>
-        <p className="text-sm font-medium text-foreground">Upload a screenshot</p>
+        <p className="text-sm font-medium text-foreground">Upload a screenshot or CSV</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Drag & drop or click — JPG, PNG, WebP up to 20 MB
+          JPG, PNG, WebP up to 20 MB or CSV catalogs up to 5 MB
         </p>
       </div>
     </div>
@@ -552,8 +583,9 @@ export function StoreOnlineProductsManager() {
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
   // Upload
-  const [screenshotFile, setScreenshotFile] = React.useState<File | null>(null);
-  const [screenshotPreview, setScreenshotPreview] = React.useState<string | null>(null);
+  const [uploadFile, setUploadFile] = React.useState<File | null>(null);
+  const [uploadKind, setUploadKind] = React.useState<UploadKind | null>(null);
+  const [uploadPreview, setUploadPreview] = React.useState<string | null>(null);
 
   // Extracted products
   const [products, setProducts] = React.useState<ExtractedProduct[]>([]);
@@ -579,40 +611,67 @@ export function StoreOnlineProductsManager() {
 
   // ── Upload handlers ──────────────────────────────────────────────────────────
 
+  const resetFlow = React.useCallback(() => {
+    setPhase("idle");
+    setUploadFile(null);
+    setUploadKind(null);
+    if (uploadPreview) URL.revokeObjectURL(uploadPreview);
+    setUploadPreview(null);
+    setProducts([]);
+    setImageStates({});
+    setExpanded(new Set());
+    setErrorMsg(null);
+  }, [uploadPreview]);
+
   const handleFile = (file: File) => {
-    setScreenshotFile(file);
-    setScreenshotPreview(URL.createObjectURL(file));
+    const kind = getUploadKind(file);
+    if (!kind) {
+      setErrorMsg("Upload a screenshot image or a CSV product catalog.");
+      return;
+    }
+
+    if (uploadPreview) URL.revokeObjectURL(uploadPreview);
+    setUploadFile(file);
+    setUploadKind(kind);
+    setUploadPreview(kind === "image" ? URL.createObjectURL(file) : null);
     setPhase("idle");
     setProducts([]);
     setImageStates({});
+    setExpanded(new Set());
     setErrorMsg(null);
   };
 
   const handleExtract = async () => {
-    if (!screenshotFile) return;
+    if (!uploadFile || !uploadKind) return;
     setPhase("extracting");
     setErrorMsg(null);
 
     try {
       const fd = new FormData();
-      fd.append("image", screenshotFile);
-      const res = await fetch("/api/store/online-products/extract", { method: "POST", body: fd });
-      const data = await res.json();
+      fd.append(uploadKind === "csv" ? "csv" : "image", uploadFile);
+      const endpoint = uploadKind === "csv"
+        ? "/api/store/online-products/extract-csv"
+        : "/api/store/online-products/extract";
+      const res = await fetch(endpoint, { method: "POST", body: fd });
+      const data = await res.json() as { success?: boolean; error?: string; products?: unknown };
       if (!res.ok || !data.success) throw new Error(data.error || "Extraction failed");
 
-      const extracted: ExtractedProduct[] = (data.products as any[]).map((p, i) => ({
+      const rawProducts = Array.isArray(data.products) ? data.products as ExtractResponseProduct[] : [];
+      const extracted: ExtractedProduct[] = rawProducts.map((p, i) => ({
         id: `extract-${i}-${Date.now()}`,
-        name: p.name || "Unknown Product",
-        brand: p.brand || "",
+        name: typeof p.name === "string" && p.name.trim() ? p.name : "Unknown Product",
+        brand: typeof p.brand === "string" ? p.brand : "",
         price: typeof p.price === "number" ? p.price : null,
-        category: p.category || "Parts",
-        subcategory: p.subcategory || "Other",
-        description: p.description || "",
-        specs: p.specs || "",
+        category: typeof p.category === "string" && p.category.trim() ? p.category : "Parts",
+        subcategory: typeof p.subcategory === "string" && p.subcategory.trim() ? p.subcategory : "Other",
+        description: typeof p.description === "string" ? p.description : "",
+        specs: typeof p.specs === "string" ? p.specs : "",
       }));
 
       if (extracted.length === 0) {
-        setErrorMsg("No products found in this screenshot. Try a clearer image of a product listing page.");
+        setErrorMsg(uploadKind === "csv"
+          ? "No products found in this CSV. Check that it has product rows and clear column headers."
+          : "No products found in this screenshot. Try a clearer image of a product listing page.");
         setPhase("idle");
         return;
       }
@@ -827,7 +886,7 @@ export function StoreOnlineProductsManager() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setPhase("idle"); setScreenshotFile(null); setScreenshotPreview(null); setProducts([]); setImageStates({}); }}>
+          <Button variant="outline" onClick={resetFlow}>
             Add more products
           </Button>
           <Button onClick={() => router.push("/products")}>
@@ -847,7 +906,7 @@ export function StoreOnlineProductsManager() {
         <div>
           <p className="text-sm font-medium text-foreground">Online-only product listings</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Upload a screenshot from any online store. AI will extract each product, source images via SERP, and
+            Upload a screenshot or CSV catalog. AI will extract each product, research CSV rows with web search, source images via SERP, and
             create listings with an <strong>Online Only</strong> badge on the marketplace.
           </p>
         </div>
@@ -862,31 +921,40 @@ export function StoreOnlineProductsManager() {
       )}
 
       {/* Upload zone or preview */}
-      {!screenshotFile ? (
-        <UploadZone onFile={handleFile} disabled={phase === "extracting"} />
+      {!uploadFile ? (
+        <UploadZone
+          onFile={handleFile}
+          onInvalid={() => setErrorMsg("Upload a screenshot image or a CSV product catalog.")}
+          disabled={phase === "extracting"}
+        />
       ) : (
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-start gap-4">
-            {screenshotPreview && (
+            {uploadKind === "image" && uploadPreview ? (
               <div
                 className="relative h-24 w-24 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted"
-                onClick={() => setLightbox(screenshotPreview)}
+                onClick={() => setLightbox(uploadPreview)}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={screenshotPreview} alt="Screenshot preview" className="h-full w-full object-cover" />
+                <img src={uploadPreview} alt="Screenshot preview" className="h-full w-full object-cover" />
+              </div>
+            ) : (
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
+                <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-foreground truncate">{screenshotFile.name}</p>
-              <p className="text-xs text-muted-foreground">{(screenshotFile.size / 1024).toFixed(0)} KB</p>
+              <p className="text-sm font-medium text-foreground truncate">{uploadFile.name}</p>
+              <p className="text-xs text-muted-foreground">{(uploadFile.size / 1024).toFixed(0)} KB</p>
               {phase === "idle" && products.length === 0 && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Click <strong>Analyse</strong> to extract products from this screenshot.
+                  Click <strong>Analyse</strong> to extract products from this {uploadKind === "csv" ? "CSV" : "screenshot"}.
                 </p>
               )}
               {phase === "extracting" && (
                 <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Analysing screenshot…
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {uploadKind === "csv" ? "Reading CSV and researching rows…" : "Analysing screenshot…"}
                 </p>
               )}
             </div>
@@ -895,7 +963,7 @@ export function StoreOnlineProductsManager() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => { setScreenshotFile(null); setScreenshotPreview(null); setProducts([]); setImageStates({}); setPhase("idle"); setErrorMsg(null); }}
+                  onClick={resetFlow}
                 >
                   <X className="mr-1.5 h-3.5 w-3.5" /> Change
                 </Button>
@@ -905,7 +973,7 @@ export function StoreOnlineProductsManager() {
                   {phase === "extracting" ? (
                     <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Analysing…</>
                   ) : (
-                    <><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Analyse Screenshot</>
+                    <><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Analyse {uploadKind === "csv" ? "CSV" : "Screenshot"}</>
                   )}
                 </Button>
               )}

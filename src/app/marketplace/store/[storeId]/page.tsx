@@ -5,8 +5,7 @@ export const dynamic = 'force-dynamic';
 import * as React from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
-import { Loader2, User, Package, ArrowLeft, X } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { User, Package, ArrowLeft, X } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard } from "@/components/marketplace/product-card";
@@ -14,11 +13,6 @@ import { ProductCarousel } from "@/components/marketplace/store-profile/product-
 import { SellerHeader, SellerCategories } from "@/components/marketplace/seller-profile";
 import { StoreProfileView } from "@/components/marketplace/store-profile/store-profile-view";
 import { useAuth } from "@/components/providers/auth-provider";
-import {
-  clearStoreSplashSeed,
-  readStoreSplashSeed,
-  type StoreSplashSeed,
-} from "@/lib/marketplace/store-splash";
 import type { StoreProfile } from "@/lib/types/store";
 import type { SellerProfile, SellerCategory } from "@/app/api/marketplace/seller/[sellerId]/route";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -31,6 +25,38 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 // ============================================================
 
 type ProfileType = 'store' | 'seller' | null;
+
+function StorePageLoadingAnimation({ className = "h-16 w-16" }: { className?: string }) {
+  return (
+    <Image
+      src="/dual-ball-loader.svg"
+      alt="Loading"
+      width={200}
+      height={200}
+      className={className}
+      priority
+      unoptimized
+    />
+  );
+}
+
+function PoweredByYellowJersey() {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
+        Powered by Yellow Jersey
+      </span>
+      <Image
+        src="/yj.svg"
+        alt=""
+        width={64}
+        height={13}
+        className="h-3 w-auto opacity-60"
+        unoptimized
+      />
+    </div>
+  );
+}
 
 // Convert seller categories to marketplace products for carousel display
 function convertSellerProductsToMarketplace(
@@ -83,37 +109,12 @@ export default function StoreProfilePage() {
 
   const isOwnProfile = user?.id === storeId;
 
-  type SplashPhase = 'idle' | 'visible' | 'exiting' | 'done';
-  const [splashSeed, setSplashSeed] = React.useState<StoreSplashSeed | null>(() =>
-    readStoreSplashSeed(storeId)
-  );
-  const [splashPhase, setSplashPhase] = React.useState<SplashPhase>(() =>
-    readStoreSplashSeed(storeId) ? 'visible' : 'idle'
-  );
-  const splashTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const splashPhaseRef = React.useRef<SplashPhase>('idle');
-
-  React.useEffect(() => {
-    splashPhaseRef.current = splashPhase;
-  }, [splashPhase]);
-
   React.useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 640);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
-
-  React.useEffect(() => {
-    const seed = readStoreSplashSeed(storeId);
-    setSplashSeed(seed);
-    setSplashPhase(seed ? 'visible' : 'idle');
-
-    if (splashTimerRef.current) {
-      clearTimeout(splashTimerRef.current);
-      splashTimerRef.current = null;
-    }
-  }, [storeId]);
 
   // Fetch profile - try store and seller in parallel for faster loading
   React.useEffect(() => {
@@ -171,47 +172,14 @@ export default function StoreProfilePage() {
     };
   }, [storeId]);
 
-  // Drive the splash once. Card clicks seed the logo/name before navigation, so
-  // the store splash can already be visible while the full profile payload loads.
-  React.useEffect(() => {
-    if (loading) return;
-
-    if (splashTimerRef.current) {
-      clearTimeout(splashTimerRef.current);
-      splashTimerRef.current = null;
-    }
-
-    if (profileType === 'store' && store) {
-      if (splashPhaseRef.current === 'exiting' || splashPhaseRef.current === 'done') {
-        return;
-      }
-
-      setSplashPhase('visible');
-      splashTimerRef.current = setTimeout(() => {
-        if (splashPhaseRef.current !== 'done') {
-          setSplashPhase('exiting');
-        }
-      }, splashSeed ? 450 : 800);
-    } else {
-      // Seller or error - dismiss the store splash immediately.
-      setSplashPhase('done');
-    }
-    return () => {
-      if (splashTimerRef.current) {
-        clearTimeout(splashTimerRef.current);
-        splashTimerRef.current = null;
-      }
-    };
-  }, [loading, profileType, store, splashSeed]);
-
-  // Loading state when no click-seeded store splash is available.
-  if (loading && splashPhase === 'idle') {
+  if (loading) {
     return (
-      <MarketplaceLayout showFooter={false}>
-        <div className="flex min-h-screen items-center justify-center">
-          <Loader2 className="h-7 w-7 animate-spin text-gray-300" />
+      <div className="flex min-h-screen flex-col items-center justify-center bg-white px-6">
+        <div className="flex flex-col items-center gap-5">
+          <StorePageLoadingAnimation />
+          <PoweredByYellowJersey />
         </div>
-      </MarketplaceLayout>
+      </div>
     );
   }
 
@@ -247,7 +215,7 @@ export default function StoreProfilePage() {
     immersive ? (
       <div className="relative">
         {/* Minimal floating bar */}
-        <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none">
+        <div className="store-floating-top-header fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none">
           <button
             onClick={() => router.push('/marketplace')}
             className="pointer-events-auto inline-flex items-center gap-0 bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm rounded-full overflow-hidden cursor-pointer hover:bg-white transition-colors"
@@ -396,69 +364,5 @@ export default function StoreProfilePage() {
     );
   }
 
-  const splashName = store?.store_name ?? splashSeed?.storeName ?? "Yellow Jersey";
-  const splashLogoUrl = store?.logo_url ?? splashSeed?.logoUrl ?? null;
-
-  // Store page + click-seeded splash overlay
-  return (
-    <>
-      {storeContent}
-
-      {splashPhase !== 'idle' && splashPhase !== 'done' && (
-        <motion.div
-          className="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center"
-          initial={{ y: 0 }}
-          animate={{ y: splashPhase === 'exiting' ? '-100%' : 0 }}
-          transition={
-            splashPhase === 'exiting'
-              ? { duration: 0.55, ease: [0.55, 0, 0.45, 1] }
-              : { duration: 0 }
-          }
-          onAnimationComplete={() => {
-            if (splashPhase === 'exiting') {
-              clearStoreSplashSeed();
-              setSplashPhase('done');
-            }
-          }}
-        >
-          <AnimatePresence mode="wait">
-            {splashLogoUrl ? (
-              <motion.img
-                key="logo"
-                src={splashLogoUrl}
-                alt={splashName}
-                className="max-h-28 max-w-[300px] w-auto object-contain rounded-2xl"
-                initial={{ opacity: 0, scale: 0.88, y: 14 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-              />
-            ) : (
-              <motion.div
-                key="name"
-                className="flex flex-col items-center gap-4 px-10 text-center"
-                initial={{ opacity: 0, scale: 0.88, y: 14 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-              >
-                <div className="h-20 w-20 rounded-3xl bg-gray-100 flex items-center justify-center text-2xl font-bold text-gray-400 select-none">
-                  {splashName.charAt(0)}
-                </div>
-                <p className="text-2xl font-bold text-gray-900 tracking-tight">{splashName}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <motion.div
-            className="absolute bottom-8 flex items-center gap-2"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.35 }}
-            transition={{ delay: 0.25, duration: 0.3 }}
-          >
-            <span className="text-[11px] text-gray-400 tracking-wide uppercase font-medium">Powered by</span>
-            <Image src="/yj.svg" alt="Yellow Jersey" width={60} height={12} className="h-3 w-auto" unoptimized />
-          </motion.div>
-        </motion.div>
-      )}
-    </>
-  );
+  return <>{storeContent}</>;
 }

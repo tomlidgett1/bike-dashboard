@@ -25,7 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Header } from "@/components/layout";
+import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { useUserProfile } from "@/components/providers/profile-provider";
@@ -384,19 +384,6 @@ export default function DraftsPage() {
         </div>
       )}
 
-      {isVerifiedStore && (
-        <div className="mb-4 flex justify-end">
-          <Button
-            onClick={() => router.push("/marketplace/sell")}
-            className="rounded-md bg-gray-900 hover:bg-gray-800 text-white flex-shrink-0"
-            size="sm"
-          >
-            <Plus className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Create New Listing</span>
-          </Button>
-        </div>
-      )}
-
       {/* Content Container */}
       <div>
             {/* Error Message */}
@@ -587,18 +574,24 @@ export default function DraftsPage() {
   return (
     <>
       {isVerifiedStore ? (
-        <>
-          <Header
-            title="Draft Listings"
-            description="Continue working on your saved drafts"
+        <PageContainer size="wide">
+          <PageHeader
+            title="Drafts"
+            description="Continue working on your saved drafts."
+            actions={
+              <Button onClick={() => router.push("/marketplace/sell")} size="sm">
+                <Plus className="size-4" />
+                New listing
+              </Button>
+            }
           />
-          <div className="p-4 lg:p-6">{draftsBody}</div>
-        </>
+          <PageBody>{draftsBody}</PageBody>
+        </PageContainer>
       ) : (
         <>
           <MarketplaceHeader compactSearchOnMobile />
           <MarketplaceLayout showFooter={false}>
-            <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-24 sm:pb-8">
+            <div className="min-h-screen bg-background pt-16 sm:pt-16 pb-24 sm:pb-8">
               {draftsBody}
             </div>
           </MarketplaceLayout>

@@ -331,7 +331,7 @@ export function MarketplaceHeader({
   return (
     <>
       {/* Floating pill header wrapper */}
-      <div className="relative z-40 bg-white px-0 pt-0 sm:fixed sm:top-0 sm:left-0 sm:right-0 sm:bg-transparent sm:px-4 sm:pt-2">
+      <div className="marketplace-top-header relative z-40 bg-white px-0 pt-0 sm:fixed sm:top-0 sm:left-0 sm:right-0 sm:bg-transparent sm:px-4 sm:pt-2">
       <motion.header
         style={{ boxShadow: headerShadow }}
         className="rounded-none border-x-0 border-t-0 border-b border-gray-200 bg-white sm:rounded-full sm:border sm:bg-white/95 sm:backdrop-blur-md"

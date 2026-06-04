@@ -39,7 +39,9 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/api/marketplace') ||
     request.nextUrl.pathname.startsWith('/api/stripe') ||  // Stripe webhooks
     request.nextUrl.pathname.startsWith('/api/cron') ||    // Cron jobs
-    request.nextUrl.pathname === '/api/genie'              // Public AI chat
+    request.nextUrl.pathname === '/api/genie' ||           // Public AI chat
+    request.nextUrl.pathname.startsWith('/mockup') ||      // Design mockup (no auth needed)
+    request.nextUrl.pathname.startsWith('/preview-verify') // TEMP sidebar check (no auth)
   
   if (isPublicRoute) {
     return NextResponse.next()

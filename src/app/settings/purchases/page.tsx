@@ -85,7 +85,6 @@ import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
-import { Header } from "@/components/layout";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { EditProductDrawer } from "@/components/marketplace/edit-product-drawer";
 import { OrderHelpWizard, TicketCard, MobileTicketCard, TicketDetailSheet, TicketStatusBadge } from "@/components/support";
@@ -3212,19 +3211,15 @@ function OrderManagementPageContent() {
 
   return (
     <>
-      {isVerifiedStore ? (
-        <Header title="Order Management" description="Manage your orders, listings, and drafts" />
-      ) : (
-        <MarketplaceHeader compactSearchOnMobile />
-      )}
+      {!isVerifiedStore && <MarketplaceHeader compactSearchOnMobile />}
 
       <OrderManagementWrapper isStore={isVerifiedStore}>
           <div className="w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
             {/* Header */}
             <div className="flex items-center justify-between mb-0">
               <div>
-                <h1 className="text-sm font-semibold text-foreground">Order Management</h1>
-                <p className="text-xs text-muted-foreground mt-0.5">Manage your orders, listings, and drafts</p>
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground">Order Management</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Manage your orders, listings, and drafts</p>
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

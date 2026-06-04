@@ -3,32 +3,45 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Search,
-  Filter,
   Package,
   Image as ImageIcon,
+  ImageOff,
   ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Loader2,
   RefreshCw,
   AlertCircle,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Eye,
+  EyeOff,
   Sparkles,
   CheckCircle2,
   XCircle,
   Star,
+  MoreHorizontal,
+  Plus,
+  ListFilter,
+  PackageX,
+  TriangleAlert,
+  X,
 } from "lucide-react";
-import { Header } from "@/components/layout";
+import Image from "next/image";
+import NextDynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -44,43 +57,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import Image from "next/image";
-import NextDynamic from "next/dynamic";
-import { MarketplaceReadinessBadges } from "@/components/products/marketplace-readiness-badges";
+import {
+  PageBody,
+  PageContainer,
+  PageHeader,
+  StatCard,
+  StatusBadge,
+  type StatusTone,
+} from "@/components/dashboard";
 import type { MarketplaceReadiness } from "@/lib/marketplace/product-readiness";
 
-// Dynamically import Dialog components to avoid SSR issues
-const Dialog = NextDynamic(
-  () => import("@/components/ui/dialog").then((mod) => mod.Dialog),
-  { ssr: false }
-);
-const DialogContent = NextDynamic(
-  () => import("@/components/ui/dialog").then((mod) => mod.DialogContent),
-  { ssr: false }
-);
-const DialogDescription = NextDynamic(
-  () => import("@/components/ui/dialog").then((mod) => mod.DialogDescription),
-  { ssr: false }
-);
-const DialogHeader = NextDynamic(
-  () => import("@/components/ui/dialog").then((mod) => mod.DialogHeader),
-  { ssr: false }
-);
-const DialogTitle = NextDynamic(
-  () => import("@/components/ui/dialog").then((mod) => mod.DialogTitle),
-  { ssr: false }
-);
-const DialogTrigger = NextDynamic(
-  () => import("@/components/ui/dialog").then((mod) => mod.DialogTrigger),
-  { ssr: false }
-);
-
-// Dynamically import ImageGallery to avoid SSR issues
-const ImageGallery = NextDynamic(
-  () => import("@/components/products/image-gallery").then((mod) => mod.ImageGallery),
-  { ssr: false }
-);
+// Dialog (lazy — avoids SSR issues)
+const Dialog = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.Dialog), { ssr: false });
+const DialogContent = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.DialogContent), { ssr: false });
+const DialogDescription = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.DialogDescription), { ssr: false });
+const DialogHeader = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.DialogHeader), { ssr: false });
+const DialogTitle = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.DialogTitle), { ssr: false });
+const ImageGallery = NextDynamic(() => import("@/components/products/image-gallery").then((m) => m.ImageGallery), { ssr: false });
 
 interface Product {
   id: string;
@@ -122,399 +117,114 @@ interface PaginationInfo {
   totalPages: number;
 }
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.05,
-    },
-  },
-};
+interface ProductStats {
+  total: number;
+  live: number;
+  lowStock: number;
+  needsImages: number;
+}
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 10 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.3,
-      ease: [0.04, 0.62, 0.23, 0.98] as [number, number, number, number],
-    },
-  },
-};
+// ── Row helpers ──────────────────────────────────────────────────────────────
 
-// Memoized Filters Bar Component
-const FiltersBar = React.memo(({
-  search,
-  onSearchChange,
-  categoryFilter,
-  onCategoryFilterChange,
-  stockFilter,
-  onStockFilterChange,
-  statusFilter,
-  onStatusFilterChange,
-  categories,
-  refreshing,
-  onRefresh,
-  productsCount,
-  totalProducts,
-  currentPage,
-  totalPages
-}: {
-  search: string;
-  onSearchChange: (value: string) => void;
-  categoryFilter: string;
-  onCategoryFilterChange: (value: string) => void;
-  stockFilter: string;
-  onStockFilterChange: (value: string) => void;
-  statusFilter: string;
-  onStatusFilterChange: (value: string) => void;
-  categories: string[];
-  refreshing: boolean;
-  onRefresh: () => void;
-  productsCount: number;
-  totalProducts: number;
-  currentPage: number;
-  totalPages: number;
-}) => {
+function hasImage(p: Product) {
+  return !!(p.resolved_image_url || p.primary_image_url);
+}
+
+function deriveStatus(p: Product): { label: string; tone: StatusTone } {
+  if (!p.is_active) return { label: "Hidden", tone: "neutral" };
+  if (!hasImage(p)) return { label: "Needs images", tone: "warning" };
+  if (p.listing_status === "draft") return { label: "Draft", tone: "neutral" };
+  return { label: "Live", tone: "success" };
+}
+
+function isExternal(url: string | null | undefined) {
+  if (!url) return false;
+  return !url.includes("res.cloudinary.com") && !url.includes("supabase.co");
+}
+
+function ProductThumb({ product, onDiscover }: { product: Product; onDiscover: (p: Product) => void }) {
+  const src = product.resolved_image_url || product.primary_image_url;
+
+  if (src) {
+    return (
+      <div className="size-10 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-border">
+        <Image
+          src={src}
+          alt={product.description}
+          width={40}
+          height={40}
+          className="size-full object-cover"
+          unoptimized={isExternal(product.resolved_image_url) && isExternal(product.primary_image_url)}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex-shrink-0 px-6 py-4 border-b border-border bg-card">
-      <motion.div
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="space-y-3"
-      >
-        <motion.div variants={itemVariants}>
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search products by name or SKU..."
-                value={search}
-                onChange={(e) => onSearchChange(e.target.value)}
-                className="pl-10 rounded-md h-9"
-              />
-            </div>
-
-            {/* Category Filter */}
-            <Select value={categoryFilter || "all"} onValueChange={(value) => onCategoryFilterChange(value === "all" ? "" : value)}>
-              <SelectTrigger className="w-full sm:w-[180px] rounded-md h-9">
-                <SelectValue placeholder="All Categories" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Stock Filter */}
-            <Select value={stockFilter} onValueChange={onStockFilterChange}>
-              <SelectTrigger className="w-full sm:w-[140px] rounded-md h-9">
-                <SelectValue placeholder="All Stock" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Stock</SelectItem>
-                <SelectItem value="in-stock">In Stock</SelectItem>
-                <SelectItem value="low-stock">Low Stock</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Status Filter */}
-            <Select value={statusFilter} onValueChange={onStatusFilterChange}>
-              <SelectTrigger className="w-full sm:w-[140px] rounded-md h-9">
-                <SelectValue placeholder="All Products" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Products</SelectItem>
-                <SelectItem value="active">Active Only</SelectItem>
-                <SelectItem value="inactive">Inactive Only</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Refresh Button */}
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={onRefresh}
-              disabled={refreshing}
-              className="rounded-md h-9 w-9"
-            >
-              <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-            </Button>
-          </div>
-        </motion.div>
-
-        {/* Results Info */}
-        <motion.div variants={itemVariants}>
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              Showing {productsCount} of {totalProducts} products
-            </span>
-            {totalPages > 1 && (
-              <span>
-                Page {currentPage} of {totalPages}
-              </span>
-            )}
-          </div>
-        </motion.div>
-      </motion.div>
-    </div>
+    <button
+      type="button"
+      onClick={() => onDiscover(product)}
+      disabled={!product.canonical_product_id}
+      title={product.canonical_product_id ? "Discover images with AI" : "Needs catalog match first"}
+      className={cn(
+        "flex size-10 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors",
+        product.canonical_product_id && "hover:border-primary hover:text-primary"
+      )}
+    >
+      <ImageOff className="size-4" />
+    </button>
   );
-});
+}
 
-FiltersBar.displayName = 'FiltersBar';
+function StockCell({ qoh, reorder }: { qoh: number; reorder: number }) {
+  if (qoh <= 0) {
+    return <span className="font-medium text-rose-600 dark:text-rose-400">Out of stock</span>;
+  }
+  if (qoh <= reorder) {
+    return <span className="font-medium text-amber-600 dark:text-amber-400">{qoh} · Low</span>;
+  }
+  return (
+    <span className="font-medium text-foreground">
+      {qoh}
+      <span className="ml-1 font-normal text-muted-foreground">in stock</span>
+    </span>
+  );
+}
 
-// Memoized Table Header Component
-const ProductTableHeader = React.memo(({
+function SortButton({
+  label,
+  column,
   sortBy,
   sortOrder,
-  onSort
+  onSort,
+  align = "left",
 }: {
+  label: string;
+  column: string;
   sortBy: string;
-  sortOrder: 'asc' | 'desc';
-  onSort: (column: string) => void;
-}) => {
-  const SortIcon = ({ column }: { column: string }) => {
-    if (sortBy !== column) {
-      return <ArrowUpDown className="h-3 w-3 opacity-50" />;
-    }
-    return sortOrder === 'asc' ? (
-      <ArrowUp className="h-3 w-3" />
-    ) : (
-      <ArrowDown className="h-3 w-3" />
-    );
-  };
-
+  sortOrder: "asc" | "desc";
+  onSort: (c: string) => void;
+  align?: "left" | "right";
+}) {
+  const active = sortBy === column;
+  const Icon = !active ? ArrowUpDown : sortOrder === "asc" ? ArrowUp : ArrowDown;
   return (
-    <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm border-b border-border">
-      <TableRow className="hover:bg-transparent">
-        <TableHead className="h-10 px-6 font-semibold" style={{ maxWidth: '8cm' }}>
-          <button
-            onClick={() => onSort('description')}
-            className="flex items-center gap-1.5 text-xs uppercase tracking-wider hover:text-foreground transition-colors"
-          >
-            Product
-            <SortIcon column="description" />
-          </button>
-        </TableHead>
-        <TableHead className="h-10 px-4 font-semibold">
-          <button
-            onClick={() => onSort('custom_sku')}
-            className="flex items-center gap-1.5 text-xs uppercase tracking-wider hover:text-foreground transition-colors"
-          >
-            SKU
-            <SortIcon column="custom_sku" />
-          </button>
-        </TableHead>
-        <TableHead className="h-10 px-4 font-semibold">
-          <button
-            onClick={() => onSort('category_name')}
-            className="flex items-center gap-1.5 text-xs uppercase tracking-wider hover:text-foreground transition-colors"
-          >
-            Category
-            <SortIcon column="category_name" />
-          </button>
-        </TableHead>
-        <TableHead className="h-10 px-4 font-semibold">
-          <button
-            onClick={() => onSort('manufacturer_name')}
-            className="flex items-center gap-1.5 text-xs uppercase tracking-wider hover:text-foreground transition-colors"
-          >
-            Brand
-            <SortIcon column="manufacturer_name" />
-          </button>
-        </TableHead>
-        <TableHead className="h-10 px-4 text-right font-semibold">
-          <button
-            onClick={() => onSort('price')}
-            className="flex items-center gap-1.5 ml-auto text-xs uppercase tracking-wider hover:text-foreground transition-colors"
-          >
-            Price
-            <SortIcon column="price" />
-          </button>
-        </TableHead>
-        <TableHead className="h-10 px-4 text-right font-semibold">
-          <button
-            onClick={() => onSort('default_cost')}
-            className="flex items-center gap-1.5 ml-auto text-xs uppercase tracking-wider hover:text-foreground transition-colors"
-          >
-            Cost
-            <SortIcon column="default_cost" />
-          </button>
-        </TableHead>
-        <TableHead className="h-10 px-4 text-right font-semibold">
-          <button
-            onClick={() => onSort('qoh')}
-            className="flex items-center gap-1.5 ml-auto text-xs uppercase tracking-wider hover:text-foreground transition-colors"
-          >
-            Stock
-            <SortIcon column="qoh" />
-          </button>
-        </TableHead>
-        <TableHead className="h-10 px-4 font-semibold">
-          <span className="text-xs uppercase tracking-wider">
-            Source
-          </span>
-        </TableHead>
-        <TableHead className="h-10 px-4 text-center font-semibold">
-          <button
-            onClick={() => onSort('is_active')}
-            className="flex items-center gap-1.5 mx-auto text-xs uppercase tracking-wider hover:text-foreground transition-colors"
-          >
-            Status
-            <SortIcon column="is_active" />
-          </button>
-        </TableHead>
-        <TableHead className="h-10 px-4 font-semibold min-w-[180px]">
-          <span className="text-xs uppercase tracking-wider">
-            Marketplace
-          </span>
-        </TableHead>
-        <TableHead className="h-10 px-6 text-center font-semibold">
-          <span className="text-xs uppercase tracking-wider">
-            Actions
-          </span>
-        </TableHead>
-      </TableRow>
-    </TableHeader>
+    <button
+      onClick={() => onSort(column)}
+      className={cn(
+        "-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground",
+        align === "right" && "ml-auto flex-row-reverse"
+      )}
+    >
+      {label}
+      <Icon className={cn("size-3", active ? "opacity-100" : "opacity-40")} />
+    </button>
   );
-});
-
-ProductTableHeader.displayName = 'ProductTableHeader';
-
-// Memoized Pagination Component
-const PaginationFooter = React.memo(({ 
-  pagination, 
-  loading,
-  onPageSizeChange,
-  onPageChange 
-}: {
-  pagination: PaginationInfo;
-  loading: boolean;
-  onPageSizeChange: (value: string) => void;
-  onPageChange: (page: number) => void;
-}) => {
-  return (
-    <div className="flex-shrink-0 px-6 py-3 border-t border-border bg-card">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        {/* Page Size Selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Show:</span>
-          <Select 
-            value={pagination.pageSize.toString()} 
-            onValueChange={onPageSizeChange}
-          >
-            <SelectTrigger className="w-[70px] h-8 rounded-md text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="10">10</SelectItem>
-              <SelectItem value="20">20</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-            </SelectContent>
-          </Select>
-          <span className="text-xs text-muted-foreground">per page</span>
-        </div>
-
-        {/* Page Navigation */}
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => onPageChange(1)}
-            disabled={pagination.page === 1 || loading}
-            className="rounded-md h-8 w-8"
-          >
-            <ChevronsLeft className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => onPageChange(pagination.page - 1)}
-            disabled={pagination.page === 1 || loading}
-            className="rounded-md h-8 w-8"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </Button>
-          
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center gap-1">
-              {[...Array(Math.min(5, pagination.totalPages))].map((_, idx) => {
-                let pageNum: number;
-                
-                if (pagination.totalPages <= 5) {
-                  pageNum = idx + 1;
-                } else if (pagination.page <= 3) {
-                  pageNum = idx + 1;
-                } else if (pagination.page >= pagination.totalPages - 2) {
-                  pageNum = pagination.totalPages - 4 + idx;
-                } else {
-                  pageNum = pagination.page - 2 + idx;
-                }
-                
-                return (
-                  <Button
-                    key={pageNum}
-                    variant={pagination.page === pageNum ? "default" : "outline"}
-                    size="icon"
-                    onClick={() => onPageChange(pageNum)}
-                    disabled={loading}
-                    className="rounded-md h-8 w-8 text-xs font-medium"
-                  >
-                    {pageNum}
-                  </Button>
-                );
-              })}
-            </div>
-          )}
-          
-          {pagination.totalPages > 1 && (
-            <>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => onPageChange(pagination.page + 1)}
-                disabled={pagination.page === pagination.totalPages || loading}
-                className="rounded-md h-8 w-8"
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => onPageChange(pagination.totalPages)}
-                disabled={pagination.page === pagination.totalPages || loading}
-                className="rounded-md h-8 w-8"
-              >
-                <ChevronsRight className="h-3.5 w-3.5" />
-              </Button>
-            </>
-          )}
-        </div>
-
-        {/* Page Info */}
-        <div className="text-xs text-muted-foreground tabular-nums">
-          {(pagination.page - 1) * pagination.pageSize + 1}-
-          {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
-          {pagination.total}
-        </div>
-      </div>
-    </div>
-  );
-});
-
-PaginationFooter.displayName = 'PaginationFooter';
+}
 
 export default function ProductsPage() {
   const [products, setProducts] = React.useState<Product[]>([]);
+  const [stats, setStats] = React.useState<ProductStats | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [pagination, setPagination] = React.useState<PaginationInfo>({
@@ -531,46 +241,46 @@ export default function ProductsPage() {
   const [sortBy, setSortBy] = React.useState<string>('created_at');
   const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('desc');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
-  
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [imageManageProduct, setImageManageProduct] = React.useState<Product | null>(null);
+
   // Image discovery state
   const [discoveryModalOpen, setDiscoveryModalOpen] = React.useState(false);
   const [discoveringProduct, setDiscoveringProduct] = React.useState<Product | null>(null);
   const [discoveredImages, setDiscoveredImages] = React.useState<DiscoveredImage[]>([]);
   const [discovering, setDiscovering] = React.useState(false);
-  
-  // Use refs to access current values without causing re-renders
+
+  // Refs to access current values without re-renders
   const paginationRef = React.useRef(pagination);
   const sortByRef = React.useRef(sortBy);
   const sortOrderRef = React.useRef(sortOrder);
-  
-  React.useEffect(() => {
-    paginationRef.current = pagination;
-  }, [pagination]);
-  
-  React.useEffect(() => {
-    sortByRef.current = sortBy;
-  }, [sortBy]);
-  
-  React.useEffect(() => {
-    sortOrderRef.current = sortOrder;
-  }, [sortOrder]);
+
+  React.useEffect(() => { paginationRef.current = pagination; }, [pagination]);
+  React.useEffect(() => { sortByRef.current = sortBy; }, [sortBy]);
+  React.useEffect(() => { sortOrderRef.current = sortOrder; }, [sortOrder]);
 
   // Debounce search input
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search);
-    }, 300);
-
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timer);
   }, [search]);
 
+  const fetchStats = React.useCallback(async () => {
+    try {
+      const res = await fetch('/api/products/stats');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.stats) setStats(data.stats);
+      }
+    } catch (error) {
+      console.error('Error fetching product stats:', error);
+    }
+  }, []);
+
   // Fetch products
   const fetchProducts = React.useCallback(async (page: number = 1, isInitialLoad: boolean = false) => {
-    // Only show full loading state on initial load
-    if (isInitialLoad) {
-      setLoading(true);
-    }
-    
+    if (isInitialLoad) setLoading(true);
+
     try {
       const params = new URLSearchParams({
         page: page.toString(),
@@ -584,10 +294,7 @@ export default function ProductsPage() {
       });
 
       const response = await fetch(`/api/products?${params}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch products');
-      }
+      if (!response.ok) throw new Error('Failed to fetch products');
 
       const data = await response.json();
       setProducts(data.products || []);
@@ -596,17 +303,18 @@ export default function ProductsPage() {
     } catch (error) {
       console.error('Error fetching products:', error);
     } finally {
-      if (isInitialLoad) {
-        setLoading(false);
-      }
+      if (isInitialLoad) setLoading(false);
       setRefreshing(false);
     }
   }, [pagination.pageSize, debouncedSearch, categoryFilter, stockFilter, statusFilter, sortBy, sortOrder]);
 
-  // Initial fetch
+  // Initial + filter-change fetch
   React.useEffect(() => {
     fetchProducts(1, loading);
   }, [debouncedSearch, categoryFilter, stockFilter, statusFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts, loading]);
+
+  // Load stats once on mount
+  React.useEffect(() => { fetchStats(); }, [fetchStats]);
 
   // Auto-backfill brand/category names from Lightspeed if any are missing
   const backfillRan = React.useRef(false);
@@ -626,10 +334,8 @@ export default function ProductsPage() {
 
   const handleSort = React.useCallback((column: string) => {
     if (sortByRef.current === column) {
-      // Toggle sort order
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
-      // New column, default to ascending
       setSortBy(column);
       setSortOrder('asc');
     }
@@ -638,60 +344,47 @@ export default function ProductsPage() {
   const handleRefresh = React.useCallback(() => {
     setRefreshing(true);
     fetchProducts(paginationRef.current.page);
-  }, [fetchProducts]);
+    fetchStats();
+  }, [fetchProducts, fetchStats]);
 
   const handlePageChange = React.useCallback((newPage: number) => {
+    setSelected(new Set());
     fetchProducts(newPage);
   }, [fetchProducts]);
 
-  // Memoized filter setters
-  const handleSearchChange = React.useCallback((value: string) => {
-    setSearch(value);
-  }, []);
-
-  const handleCategoryFilterChange = React.useCallback((value: string) => {
-    setCategoryFilter(value);
-  }, []);
-
-  const handleStockFilterChange = React.useCallback((value: string) => {
-    setStockFilter(value);
-  }, []);
-
-  const handleStatusFilterChange = React.useCallback((value: string) => {
-    setStatusFilter(value);
-  }, []);
-
   const handleToggleActive = async (productId: string, currentStatus: boolean) => {
     try {
-      // Optimistic update
-      setProducts(prev => 
-        prev.map(p => 
-          p.id === productId ? { ...p, is_active: !currentStatus } : p
-        )
-      );
-
+      setProducts(prev => prev.map(p => p.id === productId ? { ...p, is_active: !currentStatus } : p));
       const response = await fetch(`/api/products/${productId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: !currentStatus }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to update product status');
-      }
-
+      if (!response.ok) throw new Error('Failed to update product status');
       fetchProducts(paginationRef.current.page);
+      fetchStats();
     } catch (error) {
       console.error('Error toggling product status:', error);
-      // Revert optimistic update on error
-      setProducts(prev => 
-        prev.map(p => 
-          p.id === productId ? { ...p, is_active: currentStatus } : p
-        )
-      );
+      setProducts(prev => prev.map(p => p.id === productId ? { ...p, is_active: currentStatus } : p));
     }
+  };
+
+  const handleBulkActive = async (active: boolean) => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setProducts(prev => prev.map(p => selected.has(p.id) ? { ...p, is_active: active } : p));
+    try {
+      await Promise.all(ids.map(id => fetch(`/api/products/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: active }),
+      })));
+    } catch (error) {
+      console.error('Error in bulk update:', error);
+    }
+    setSelected(new Set());
+    fetchProducts(paginationRef.current.page);
+    fetchStats();
   };
 
   // Handle image placeholder click - trigger AI discovery
@@ -707,36 +400,22 @@ export default function ProductsPage() {
     setDiscoveredImages([]);
 
     try {
-      // Clean product name and prepend "cycling"
       const cleanedName = product.description.trim();
       const searchQuery = `cycling ${cleanedName}`;
-
-      console.log(`[DISCOVER] Starting discovery for: ${searchQuery}`);
 
       const response = await fetch('/api/admin/images/discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          canonicalProductId: product.canonical_product_id,
-          customSearchQuery: searchQuery
-        }),
+        body: JSON.stringify({ canonicalProductId: product.canonical_product_id, customSearchQuery: searchQuery }),
       });
 
-      if (!response.ok) {
-        throw new Error('Discovery failed');
-      }
+      if (!response.ok) throw new Error('Discovery failed');
+      await response.json();
 
-      const result = await response.json();
-      console.log('[DISCOVER] Result:', result);
-      console.log('[DISCOVER] Canonical Product ID:', product.canonical_product_id);
-
-      // Poll for images
       let pollCount = 0;
       const maxPolls = 20;
       const pollInterval = setInterval(async () => {
         pollCount++;
-        console.log(`[DISCOVER] Polling ${pollCount}/${maxPolls} for canonical_product_id:`, product.canonical_product_id);
-
         const { data, error } = await (await import('@/lib/supabase/client')).createClient()
           .from('product_images')
           .select('id, external_url, cloudinary_url, is_primary, approval_status')
@@ -744,19 +423,15 @@ export default function ProductsPage() {
           .eq('approval_status', 'pending')
           .order('created_at', { ascending: false });
 
-        if (error) {
-          console.error('[DISCOVER] Polling error:', error);
-        }
+        if (error) console.error('[DISCOVER] Polling error:', error);
 
         if (!error && data && data.length > 0) {
-          console.log(`[DISCOVER] ✅ Found ${data.length} pending images:`, data);
           const mappedImages = data.map(img => ({
             id: img.id,
             url: img.cloudinary_url || img.external_url || '',
             is_primary: img.is_primary || false,
             approval_status: img.approval_status as 'pending' | 'approved' | 'rejected'
           }));
-          console.log('[DISCOVER] Mapped images:', mappedImages);
           setDiscoveredImages(mappedImages);
           clearInterval(pollInterval);
           setDiscovering(false);
@@ -769,7 +444,6 @@ export default function ProductsPage() {
           }
         }
       }, 2000);
-
     } catch (error) {
       console.error('[DISCOVER] Error:', error);
       alert(`Failed to discover images: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -778,554 +452,410 @@ export default function ProductsPage() {
     }
   };
 
-  // Handle image approval/rejection
   const handleToggleImageApproval = async (imageId: string, currentStatus: string) => {
     const newStatus = currentStatus === 'pending' ? 'approved' : currentStatus === 'approved' ? 'rejected' : 'pending';
-    
-    console.log(`[APPROVE] Changing image ${imageId} from ${currentStatus} to ${newStatus}`);
-    
-    // Optimistic update
-    setDiscoveredImages(prev => prev.map(img => 
-      img.id === imageId ? { ...img, approval_status: newStatus } : img
-    ));
-
+    setDiscoveredImages(prev => prev.map(img => img.id === imageId ? { ...img, approval_status: newStatus } : img));
     try {
       const { createClient } = await import('@/lib/supabase/client');
       const supabase = createClient();
-      
-      const { error, data } = await supabase
-        .from('product_images')
-        .update({ approval_status: newStatus })
-        .eq('id', imageId)
-        .select();
-
+      const { error } = await supabase.from('product_images').update({ approval_status: newStatus }).eq('id', imageId).select();
       if (error) throw error;
-      console.log(`[APPROVE] ✅ Updated image ${imageId} to ${newStatus}`, data);
     } catch (error) {
-      console.error('[APPROVE] ❌ Error updating image:', error);
-      // Revert on error
-      setDiscoveredImages(prev => prev.map(img => 
-        img.id === imageId ? { ...img, approval_status: currentStatus as any } : img
-      ));
+      console.error('[APPROVE] Error updating image:', error);
+      setDiscoveredImages(prev => prev.map(img => img.id === imageId ? { ...img, approval_status: currentStatus as any } : img));
     }
   };
 
-  // Handle setting primary image
   const handleSetPrimary = async (imageId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    
     if (!discoveringProduct?.canonical_product_id) return;
-
-    console.log(`[PRIMARY] Setting image ${imageId} as primary for canonical product ${discoveringProduct.canonical_product_id}`);
-
-    // Optimistic update
-    setDiscoveredImages(prev => prev.map(img => ({
-      ...img,
-      is_primary: img.id === imageId
-    })));
-
+    setDiscoveredImages(prev => prev.map(img => ({ ...img, is_primary: img.id === imageId })));
     try {
       const { createClient } = await import('@/lib/supabase/client');
       const supabase = createClient();
-      
-      // Unset all primaries
-      console.log('[PRIMARY] Unsetting all primaries for canonical product');
-      await supabase
-        .from('product_images')
-        .update({ is_primary: false })
-        .eq('canonical_product_id', discoveringProduct.canonical_product_id);
-
-      // Set this one as primary
-      console.log('[PRIMARY] Setting new primary image');
-      const { error, data } = await supabase
-        .from('product_images')
-        .update({ is_primary: true })
-        .eq('id', imageId)
-        .select();
-
+      await supabase.from('product_images').update({ is_primary: false }).eq('canonical_product_id', discoveringProduct.canonical_product_id);
+      const { error } = await supabase.from('product_images').update({ is_primary: true }).eq('id', imageId).select();
       if (error) throw error;
-      console.log('[PRIMARY] ✅ Successfully set primary image', data);
     } catch (error) {
-      console.error('[PRIMARY] ❌ Error setting primary:', error);
+      console.error('[PRIMARY] Error setting primary:', error);
       alert('Failed to set primary image');
     }
   };
 
-  // Handle completing image selection
   const handleCompleteSelection = async () => {
     const approvedImages = discoveredImages.filter(img => img.approval_status === 'approved');
     const hasPrimary = approvedImages.some(img => img.is_primary);
 
-    console.log('[COMPLETE] Starting image selection completion');
-    console.log('[COMPLETE] Approved images:', approvedImages.length);
-    console.log('[COMPLETE] Has primary:', hasPrimary);
+    if (approvedImages.length === 0) { alert('Please approve at least one image'); return; }
+    if (!hasPrimary) { alert('Please select a primary image (click the ⭐ star)'); return; }
 
-    if (approvedImages.length === 0) {
-      alert('Please approve at least one image');
-      return;
-    }
-
-    if (!hasPrimary) {
-      alert('Please select a primary image (click the ⭐ star)');
-      return;
-    }
-
-    // Delete non-approved images
-    const nonApprovedIds = discoveredImages
-      .filter(img => img.approval_status !== 'approved')
-      .map(img => img.id);
-
-    console.log('[COMPLETE] Will delete', nonApprovedIds.length, 'non-approved images');
-
+    const nonApprovedIds = discoveredImages.filter(img => img.approval_status !== 'approved').map(img => img.id);
     if (nonApprovedIds.length > 0) {
       try {
         const { createClient } = await import('@/lib/supabase/client');
         const supabase = createClient();
-        
-        const { error, data } = await supabase
-          .from('product_images')
-          .delete()
-          .in('id', nonApprovedIds)
-          .select();
-
-        if (error) {
-          console.error('[COMPLETE] ❌ Error deleting rejected images:', error);
-        } else {
-          console.log('[COMPLETE] ✅ Deleted', data?.length || 0, 'rejected images');
-        }
+        const { error } = await supabase.from('product_images').delete().in('id', nonApprovedIds).select();
+        if (error) console.error('[COMPLETE] Error deleting rejected images:', error);
       } catch (error) {
-        console.error('[COMPLETE] ❌ Exception deleting rejected images:', error);
+        console.error('[COMPLETE] Exception deleting rejected images:', error);
       }
     }
 
-    console.log('[COMPLETE] ✅ Image selection complete! Refreshing products...');
-    console.log('[COMPLETE] Canonical Product ID:', discoveringProduct?.canonical_product_id);
-    console.log('[COMPLETE] Trigger should have updated cached_image_url for all products with this canonical_product_id');
-
-    // Close modal and refresh products
     setDiscoveryModalOpen(false);
     setDiscoveredImages([]);
     setDiscoveringProduct(null);
     fetchProducts(pagination.page);
+    fetchStats();
   };
 
+  // Selection helpers
+  const allChecked = products.length > 0 && products.every(p => selected.has(p.id));
+  const someChecked = products.some(p => selected.has(p.id));
+  const toggleAll = () => setSelected(() => allChecked ? new Set() : new Set(products.map(p => p.id)));
+  const toggleOne = (id: string) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const hasFilters = search !== '' || categoryFilter !== '' || stockFilter !== 'all' || statusFilter !== 'all';
+  const clearFilters = () => {
+    setSearch('');
+    setCategoryFilter('');
+    setStockFilter('all');
+    setStatusFilter('all');
+  };
+
+  const rangeStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
+  const rangeEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
+
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <Header
+    <PageContainer size="wide">
+      <PageHeader
         title="Products"
-        description="Manage your synced inventory from Lightspeed"
+        description="Your synced inventory from Lightspeed."
+        actions={
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+            Sync
+          </Button>
+        }
       />
 
-      {/* Full-width container with no padding */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Filters Bar - with horizontal padding only */}
-        <FiltersBar
-          search={search}
-          onSearchChange={handleSearchChange}
-          categoryFilter={categoryFilter}
-          onCategoryFilterChange={handleCategoryFilterChange}
-          stockFilter={stockFilter}
-          onStockFilterChange={handleStockFilterChange}
-          statusFilter={statusFilter}
-          onStatusFilterChange={handleStatusFilterChange}
-          categories={categories}
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          productsCount={products.length}
-          totalProducts={pagination.total}
-          currentPage={pagination.page}
-          totalPages={pagination.totalPages}
-        />
-
-        {/* Table Container - Full width, scrollable */}
-        <div className="flex-1 overflow-auto bg-card">
-          {loading && !refreshing ? (
-            <div className="flex items-center justify-center h-full">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : products.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No products found</h3>
-                <p className="text-sm text-muted-foreground">
-                  Try syncing your inventory from Lightspeed
-                </p>
-              </div>
-            </div>
-          ) : (
-            <Table>
-              <ProductTableHeader
-                sortBy={sortBy}
-                sortOrder={sortOrder}
-                onSort={handleSort}
-              />
-              <TableBody>
-                <AnimatePresence mode="popLayout">
-                  {products.map((product) => (
-                    <motion.tr
-                      key={product.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className="group border-b border-border/50 hover:bg-muted/50 transition-colors"
-                    >
-                      {/* Product Column */}
-                      <TableCell className="py-2.5 px-6" style={{ maxWidth: '8cm' }}>
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => product.resolved_image_url || product.primary_image_url ? null : handleDiscoverImages(product)}
-                            disabled={!!product.resolved_image_url || !!product.primary_image_url}
-                            className={cn(
-                              "flex-shrink-0 h-10 w-10 rounded-md overflow-hidden ring-1 ring-border transition-all",
-                              (!product.resolved_image_url && !product.primary_image_url) && "cursor-pointer hover:ring-primary hover:bg-primary/10",
-                              (product.resolved_image_url || product.primary_image_url) && "bg-muted"
-                            )}
-                            title={(!product.resolved_image_url && !product.primary_image_url) ? "Click to discover images with AI" : ""}
-                          >
-                            {product.resolved_image_url || product.primary_image_url ? (
-                              <Image
-                                src={product.resolved_image_url || product.primary_image_url || ''}
-                                alt={product.description}
-                                width={40}
-                                height={40}
-                                className="object-cover w-full h-full"
-                                unoptimized={
-                                  // Use unoptimized for external URLs not from our configured domains
-                                  !product.resolved_image_url?.includes('res.cloudinary.com') &&
-                                  !product.resolved_image_url?.includes('supabase.co') &&
-                                  !product.primary_image_url?.includes('res.cloudinary.com') &&
-                                  !product.primary_image_url?.includes('supabase.co')
-                                }
-                                onError={(e) => {
-                                  // Fallback to placeholder on error
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                  target.parentElement!.innerHTML = '<div class="h-full w-full flex items-center justify-center"><svg class="h-5 w-5 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>';
-                                }}
-                              />
-                            ) : (
-                              <div className="h-full w-full flex items-center justify-center group-hover:text-primary">
-                                <Sparkles className="h-5 w-5 text-muted-foreground transition-colors" />
-                              </div>
-                            )}
-                          </button>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-foreground truncate">
-                              {product.description}
-                            </p>
-                            {product.canonical_product_id && product.resolved_image_url && (
-                              <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 mt-0.5">
-                                <span className="inline-block w-1 h-1 rounded-full bg-green-600 dark:bg-green-400"></span>
-                                Image uploaded
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-
-                      {/* SKU Column */}
-                      <TableCell className="py-2.5 px-4">
-                        <span className="text-sm font-mono text-foreground/80">
-                          {product.custom_sku || product.system_sku || '-'}
-                        </span>
-                      </TableCell>
-
-                      {/* Category Column */}
-                      <TableCell className="py-2.5 px-4">
-                        {product.category_name ? (
-                          <Badge variant="secondary" className="rounded-md text-xs font-medium">
-                            {product.category_name}
-                          </Badge>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-
-                      {/* Brand Column */}
-                      <TableCell className="py-2.5 px-4">
-                        {product.manufacturer_name ? (
-                          <span className="text-sm text-foreground/80">{product.manufacturer_name}</span>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-
-                      {/* Price Column */}
-                      <TableCell className="py-2.5 px-4 text-right">
-                        <span className="text-sm font-semibold text-foreground">
-                          ${product.price.toFixed(2)}
-                        </span>
-                      </TableCell>
-
-                      {/* Cost Column */}
-                      <TableCell className="py-2.5 px-4 text-right">
-                        <span className="text-sm text-muted-foreground">
-                          ${product.default_cost.toFixed(2)}
-                        </span>
-                      </TableCell>
-
-                        {/* Stock Column */}
-                        <TableCell className="py-2.5 px-4 text-right">
-                          <div className="inline-flex items-center gap-1.5">
-                            <span
-                              className={cn(
-                                "inline-block w-1.5 h-1.5 rounded-full",
-                                product.qoh > product.reorder_point
-                                  ? "bg-green-500"
-                                  : product.qoh > 0
-                                  ? "bg-yellow-500"
-                                  : "bg-red-500"
-                              )}
-                            />
-                            <span
-                              className={cn(
-                                "text-sm font-semibold tabular-nums",
-                                product.qoh > product.reorder_point
-                                  ? "text-green-600 dark:text-green-400"
-                                  : product.qoh > 0
-                                  ? "text-yellow-600 dark:text-yellow-400"
-                                  : "text-red-600 dark:text-red-400"
-                              )}
-                            >
-                              {product.qoh}
-                            </span>
-                          </div>
-                        </TableCell>
-
-                        {/* Source Column */}
-                        <TableCell className="py-2.5 px-4">
-                          {product.listing_source === "lightspeed" ? (
-                            <div className="flex items-center gap-1.5">
-                              <div className="flex-shrink-0 h-4 w-4 rounded bg-card ring-1 ring-border overflow-hidden">
-                                <Image
-                                  src="/ls.png"
-                                  alt="Lightspeed"
-                                  width={16}
-                                  height={16}
-                                  className="object-contain w-full h-full"
-                                />
-                              </div>
-                              <span className="text-xs text-muted-foreground font-medium">
-                                Lightspeed
-                              </span>
-                            </div>
-                          ) : product.listing_source === "manual" ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs text-muted-foreground font-medium">
-                                Manual
-                              </span>
-                            </div>
-                          ) : product.listing_source === "online_catalog" ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                                Online
-                              </span>
-                            </div>
-                          ) : null}
-                        </TableCell>
-
-                        {/* Status Column */}
-                        <TableCell className="py-2.5 px-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <Switch
-                            checked={product.is_active}
-                            onCheckedChange={() => handleToggleActive(product.id, product.is_active)}
-                            className="data-[state=checked]:bg-green-600"
-                          />
-                          <span className="text-xs text-muted-foreground font-medium min-w-[50px]">
-                            {product.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </div>
-                      </TableCell>
-
-                      {/* Marketplace Column */}
-                      <TableCell className="py-2.5 px-4 align-top">
-                        {product.marketplace_readiness ? (
-                          <MarketplaceReadinessBadges
-                            readiness={product.marketplace_readiness}
-                          />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-
-                      {/* Actions Column */}
-                      <TableCell className="py-2.5 px-6">
-                        <div className="flex items-center justify-center">
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                className="gap-1.5 rounded-md h-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                                disabled={!product.canonical_product_id}
-                              >
-                                <ImageIcon className="h-3.5 w-3.5" />
-                                Images
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="w-[90vw] h-[80vh] max-w-none flex flex-col animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
-                              <DialogHeader className="flex-shrink-0">
-                                <DialogTitle>Manage Product Images</DialogTitle>
-                                <DialogDescription className="line-clamp-2">
-                                  {product.description}
-                                </DialogDescription>
-                              </DialogHeader>
-                              
-                              <div className="flex-1 overflow-y-auto min-h-0">
-                                <ImageGallery
-                                  productId={product.id}
-                                  canonicalProductId={product.canonical_product_id || undefined}
-                                />
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </div>
-                      </TableCell>
-                    </motion.tr>
-                  ))}
-                </AnimatePresence>
-              </TableBody>
-            </Table>
-          )}
+      <PageBody>
+        {/* Stat cards */}
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          <StatCard label="Total products" value={(stats?.total ?? pagination.total).toLocaleString()} icon={Package} hint={`${categories.length} categories`} />
+          <StatCard label="Live on marketplace" value={(stats?.live ?? 0).toLocaleString()} icon={Eye} hint={stats ? `${Math.round((stats.live / Math.max(stats.total, 1)) * 100)}% of catalogue` : undefined} />
+          <StatCard label="Low stock" value={(stats?.lowStock ?? 0).toLocaleString()} icon={TriangleAlert} hint="at or below reorder point" />
+          <StatCard label="Needs images" value={(stats?.needsImages ?? 0).toLocaleString()} icon={ImageOff} hint="hidden from marketplace" />
         </div>
 
-        {/* Pagination Footer - with horizontal padding only */}
-        {!loading && products.length > 0 && (
-          <PaginationFooter
-            pagination={pagination}
-            loading={loading}
-            onPageSizeChange={handlePageSizeChange}
-            onPageChange={handlePageChange}
-          />
-        )}
-      </div>
+        {/* Table card */}
+        <Card className="gap-0 py-0">
+          {/* Toolbar */}
+          <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
+            <div className="relative w-full lg:max-w-xs">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name or SKU…"
+                className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+              <Select value={categoryFilter || "all"} onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}>
+                <SelectTrigger size="sm" className="w-[150px]"><SelectValue placeholder="Category" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              <Select value={stockFilter} onValueChange={setStockFilter}>
+                <SelectTrigger size="sm" className="w-[130px]"><SelectValue placeholder="Stock" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All stock</SelectItem>
+                  <SelectItem value="in-stock">In stock</SelectItem>
+                  <SelectItem value="low-stock">Low stock</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger size="sm" className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {hasFilters ? (
+                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                  <X className="size-4" />
+                  Clear
+                </Button>
+              ) : (
+                <Button variant="outline" size="icon-sm" disabled>
+                  <ListFilter className="size-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Bulk bar */}
+          {selected.size > 0 && (
+            <div className="flex items-center gap-3 border-b border-border/60 bg-primary/5 px-4 py-2.5">
+              <span className="text-sm font-medium">{selected.size} selected</span>
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="xs" onClick={() => handleBulkActive(true)}>
+                  <Eye className="size-3.5" />
+                  Set active
+                </Button>
+                <Button variant="outline" size="xs" onClick={() => handleBulkActive(false)}>
+                  <EyeOff className="size-3.5" />
+                  Set inactive
+                </Button>
+              </div>
+              <Button variant="ghost" size="xs" className="ml-auto text-muted-foreground" onClick={() => setSelected(new Set())}>
+                Clear selection
+              </Button>
+            </div>
+          )}
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-10 pl-4">
+                    <Checkbox
+                      checked={allChecked ? true : someChecked ? "indeterminate" : false}
+                      onCheckedChange={toggleAll}
+                      aria-label="Select all"
+                    />
+                  </TableHead>
+                  <TableHead><SortButton label="Product" column="description" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} /></TableHead>
+                  <TableHead className="hidden md:table-cell"><SortButton label="Category" column="category_name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} /></TableHead>
+                  <TableHead className="hidden lg:table-cell"><SortButton label="Brand" column="manufacturer_name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} /></TableHead>
+                  <TableHead className="text-right"><SortButton label="Price" column="price" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" /></TableHead>
+                  <TableHead className="text-right"><SortButton label="Stock" column="qoh" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" /></TableHead>
+                  <TableHead>Marketplace</TableHead>
+                  <TableHead className="w-10 pr-4" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={8} className="h-64 text-center">
+                      <Loader2 className="mx-auto size-7 animate-spin text-muted-foreground" />
+                    </TableCell>
+                  </TableRow>
+                ) : products.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={8} className="h-64 text-center">
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <PackageX className="size-8" />
+                        <p className="text-sm font-medium text-foreground">No products found</p>
+                        <p className="text-sm">
+                          {hasFilters ? "Try adjusting your filters" : "Sync your inventory from Lightspeed"}
+                        </p>
+                        {hasFilters && <Button variant="outline" size="sm" onClick={clearFilters}>Clear filters</Button>}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <AnimatePresence mode="popLayout">
+                    {products.map((product) => {
+                      const status = deriveStatus(product);
+                      const checked = selected.has(product.id);
+                      return (
+                        <motion.tr
+                          key={product.id}
+                          layout
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.15 }}
+                          data-state={checked ? "selected" : undefined}
+                          className="group border-b border-border/50 transition-colors hover:bg-muted/40 data-[state=selected]:bg-muted/50"
+                        >
+                          <TableCell className="pl-4">
+                            <Checkbox checked={checked} onCheckedChange={() => toggleOne(product.id)} aria-label={`Select ${product.description}`} />
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <ProductThumb product={product} onDiscover={handleDiscoverImages} />
+                              <div className="min-w-0">
+                                <p className="truncate font-medium text-foreground">{product.description}</p>
+                                <p className="font-mono text-xs text-muted-foreground">{product.custom_sku || product.system_sku || "—"}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden text-muted-foreground md:table-cell">{product.category_name || "—"}</TableCell>
+                          <TableCell className="hidden text-muted-foreground lg:table-cell">{product.manufacturer_name || "—"}</TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">${product.price.toFixed(2)}</TableCell>
+                          <TableCell className="text-right tabular-nums"><StockCell qoh={product.qoh} reorder={product.reorder_point} /></TableCell>
+                          <TableCell><StatusBadge label={status.label} tone={status.tone} /></TableCell>
+                          <TableCell className="pr-4">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon-sm" className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100">
+                                  <MoreHorizontal className="size-4" />
+                                  <span className="sr-only">Actions</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-52">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem disabled={!product.canonical_product_id} onClick={() => setImageManageProduct(product)}>
+                                  <ImageIcon className="size-4" />
+                                  Manage images
+                                </DropdownMenuItem>
+                                <DropdownMenuItem disabled={!product.canonical_product_id} onClick={() => handleDiscoverImages(product)}>
+                                  <Sparkles className="size-4" />
+                                  Discover images
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleToggleActive(product.id, product.is_active)}>
+                                  {product.is_active ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                  {product.is_active ? "Set inactive" : "Set active"}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </motion.tr>
+                      );
+                    })}
+                  </AnimatePresence>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination footer */}
+          <div className="flex flex-col gap-3 border-t border-border/60 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-muted-foreground">
+              {pagination.total > 0 ? (
+                <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{pagination.total.toLocaleString()}</span> products</>
+              ) : "No products"}
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="hidden text-muted-foreground sm:inline">Rows per page</span>
+              <Select value={pagination.pageSize.toString()} onValueChange={handlePageSizeChange}>
+                <SelectTrigger size="sm" className="w-[72px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon-sm" disabled={pagination.page <= 1 || loading} onClick={() => handlePageChange(pagination.page - 1)}>
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <span className="px-2 text-muted-foreground">Page {pagination.page} of {Math.max(pagination.totalPages, 1)}</span>
+                <Button variant="outline" size="icon-sm" disabled={pagination.page >= pagination.totalPages || loading} onClick={() => handlePageChange(pagination.page + 1)}>
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </PageBody>
+
+      {/* Manage images dialog (controlled) */}
+      <Dialog open={!!imageManageProduct} onOpenChange={(open: boolean) => !open && setImageManageProduct(null)}>
+        <DialogContent className="flex h-[80vh] w-[90vw] max-w-none flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle>Manage product images</DialogTitle>
+            <DialogDescription className="line-clamp-2">{imageManageProduct?.description}</DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {imageManageProduct && (
+              <ImageGallery productId={imageManageProduct.id} canonicalProductId={imageManageProduct.canonical_product_id || undefined} />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Image Discovery Modal */}
       <AnimatePresence>
         {discoveryModalOpen && (
           <>
-            {/* Overlay */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed inset-0 bg-black/50 z-50"
+              className="fixed inset-0 z-50 bg-black/50"
               onClick={() => !discovering && setDiscoveryModalOpen(false)}
             />
-
-            {/* Modal */}
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] as [number, number, number, number] }}
-              className="fixed inset-4 md:inset-auto md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[90vw] md:max-w-4xl md:h-[80vh] bg-card rounded-md shadow-2xl z-50 flex flex-col overflow-hidden"
+              className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-xl bg-card shadow-2xl md:inset-auto md:left-1/2 md:top-1/2 md:h-[80vh] md:w-[90vw] md:max-w-4xl md:-translate-x-1/2 md:-translate-y-1/2"
             >
-              {/* Header */}
-              <div className="flex-shrink-0 px-6 py-4 border-b border-border">
-                <h2 className="text-lg font-semibold text-foreground">
-                  Discover Images with AI
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
-                  {discoveringProduct?.description}
-                </p>
+              <div className="flex-shrink-0 border-b border-border px-6 py-4">
+                <h2 className="text-lg font-semibold text-foreground">Discover images with AI</h2>
+                <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{discoveringProduct?.description}</p>
               </div>
 
-              {/* Content */}
               <div className="flex-1 overflow-y-auto p-6">
                 {discovering ? (
-                  <div className="flex flex-col items-center justify-center h-full">
-                    <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-                    <p className="text-lg font-medium text-foreground mb-2">
-                      Discovering images...
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      This may take 15-25 seconds. Searching for "cycling {discoveringProduct?.description}"
-                    </p>
+                  <div className="flex h-full flex-col items-center justify-center">
+                    <Loader2 className="mb-4 size-12 animate-spin text-primary" />
+                    <p className="mb-2 text-lg font-medium text-foreground">Discovering images…</p>
+                    <p className="text-sm text-muted-foreground">This may take 15–25 seconds.</p>
                   </div>
                 ) : discoveredImages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full">
-                    <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-                    <p className="text-lg font-medium text-foreground mb-2">
-                      No images found
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Try a different product or check the product name
-                    </p>
+                  <div className="flex h-full flex-col items-center justify-center">
+                    <AlertCircle className="mb-4 size-12 text-muted-foreground" />
+                    <p className="mb-2 text-lg font-medium text-foreground">No images found</p>
+                    <p className="text-sm text-muted-foreground">Try a different product or check the product name.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="bg-primary/10 border border-primary/20 rounded-md p-3">
-                      <p className="text-sm text-foreground font-medium">
-                        Click images to approve/reject • Click ⭐ to set primary image
-                      </p>
+                    <div className="rounded-lg border bg-muted/40 p-3">
+                      <p className="text-sm font-medium text-foreground">Click images to approve/reject • Click ⭐ to set primary image</p>
                     </div>
-
                     <div className="grid grid-cols-3 gap-4">
                       {discoveredImages.map((image) => (
                         <div key={image.id} className="relative">
                           <button
                             onClick={() => handleToggleImageApproval(image.id, image.approval_status)}
                             className={cn(
-                              'relative aspect-square rounded-md overflow-hidden transition-all group w-full',
-                              'hover:scale-105 hover:shadow-lg',
-                              image.approval_status === 'approved' && 'ring-4 ring-green-500',
+                              'group relative aspect-square w-full overflow-hidden rounded-lg transition-all hover:scale-105 hover:shadow-lg',
+                              image.approval_status === 'approved' && 'ring-4 ring-emerald-500',
                               image.approval_status === 'pending' && 'ring-2 ring-border hover:ring-primary',
-                              image.approval_status === 'rejected' && 'ring-4 ring-red-500 opacity-60'
+                              image.approval_status === 'rejected' && 'opacity-60 ring-4 ring-rose-500'
                             )}
                           >
-                            <img
-                              src={image.url}
-                              alt=""
-                              className="w-full h-full object-cover"
-                            />
-
-                            {/* Status Indicator */}
-                            <div className="absolute top-2 right-2">
+                            <img src={image.url} alt="" className="size-full object-cover" />
+                            <div className="absolute right-2 top-2">
                               {image.approval_status === 'approved' ? (
-                                <CheckCircle2 className="h-6 w-6 text-green-500 drop-shadow-lg bg-white rounded-full" />
+                                <CheckCircle2 className="size-6 rounded-full bg-white text-emerald-500 drop-shadow-lg" />
                               ) : image.approval_status === 'rejected' ? (
-                                <XCircle className="h-6 w-6 text-red-500 drop-shadow-lg bg-white rounded-full" />
+                                <XCircle className="size-6 rounded-full bg-white text-rose-500 drop-shadow-lg" />
                               ) : (
-                                <div className="h-6 w-6 rounded-full bg-background/80 border-2 border-border" />
+                                <div className="size-6 rounded-full border-2 border-border bg-background/80" />
                               )}
                             </div>
-
-                            {/* Hover Overlay */}
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                              <span className="text-white font-medium opacity-0 group-hover:opacity-100 transition-opacity text-sm">
-                                {image.approval_status === 'approved' 
-                                  ? 'Click to Reject' 
-                                  : image.approval_status === 'rejected'
-                                  ? 'Click to Re-approve'
-                                  : 'Click to Approve'}
-                              </span>
-                            </div>
                           </button>
-
-                          {/* Primary Star Button - Only show for approved images */}
                           {image.approval_status === 'approved' && (
                             <button
                               onClick={(e) => handleSetPrimary(image.id, e)}
                               className={cn(
-                                'absolute -bottom-3 left-1/2 -translate-x-1/2 z-10',
-                                'p-1.5 rounded-full transition-all shadow-lg',
-                                image.is_primary
-                                  ? 'bg-primary hover:bg-primary/90'
-                                  : 'bg-background hover:bg-muted border-2 border-border'
+                                'absolute -bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full p-1.5 shadow-lg transition-all',
+                                image.is_primary ? 'bg-primary hover:bg-primary/90' : 'border-2 border-border bg-background hover:bg-muted'
                               )}
                               title={image.is_primary ? 'Primary image' : 'Set as primary'}
                             >
-                              <Star
-                                className={cn(
-                                  'h-4 w-4',
-                                  image.is_primary ? 'text-primary-foreground fill-primary-foreground' : 'text-muted-foreground'
-                                )}
-                              />
+                              <Star className={cn('size-4', image.is_primary ? 'fill-primary-foreground text-primary-foreground' : 'text-muted-foreground')} />
                             </button>
                           )}
                         </div>
@@ -1335,32 +865,23 @@ export default function ProductsPage() {
                 )}
               </div>
 
-              {/* Footer */}
               {!discovering && discoveredImages.length > 0 && (
-                <div className="flex-shrink-0 px-6 py-4 border-t border-border flex items-center justify-between">
+                <div className="flex flex-shrink-0 items-center justify-between border-t border-border px-6 py-4">
                   <div className="text-sm text-muted-foreground">
-                    {discoveredImages.filter(img => img.approval_status === 'approved').length} approved • 
-                    {discoveredImages.filter(img => img.approval_status === 'pending').length} pending • 
-                    {discoveredImages.filter(img => img.approval_status === 'rejected').length} rejected
+                    {discoveredImages.filter(img => img.approval_status === 'approved').length} approved · {discoveredImages.filter(img => img.approval_status === 'pending').length} pending · {discoveredImages.filter(img => img.approval_status === 'rejected').length} rejected
                   </div>
                   <div className="flex gap-3">
+                    <Button variant="outline" size="sm" onClick={() => setDiscoveryModalOpen(false)}>Cancel</Button>
                     <Button
-                      variant="outline"
-                      onClick={() => setDiscoveryModalOpen(false)}
-                      className="rounded-md"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
+                      size="sm"
                       onClick={handleCompleteSelection}
-                      className="rounded-md bg-green-600 hover:bg-green-700 text-white"
                       disabled={
                         discoveredImages.filter(img => img.approval_status === 'approved').length === 0 ||
                         !discoveredImages.some(img => img.is_primary && img.approval_status === 'approved')
                       }
                     >
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                      Save Selection
+                      <CheckCircle2 className="size-4" />
+                      Save selection
                     </Button>
                   </div>
                 </div>
@@ -1369,7 +890,6 @@ export default function ProductsPage() {
           </>
         )}
       </AnimatePresence>
-    </div>
+    </PageContainer>
   );
 }
-

@@ -1,12 +1,5 @@
 "use client";
 
-// ============================================================
-// Store Approval Panel
-// ============================================================
-// Shows Lightspeed products that have an image but haven't been
-// approved for the marketplace (no serper_workbench image).
-// One click approves them so they go live on the store.
-
 import * as React from "react";
 import Image from "next/image";
 import {
@@ -18,10 +11,18 @@ import {
   Check,
   RefreshCw,
   Layers,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import {
+  SettingsSection,
+  SettingsRow,
+  SettingsDivider,
+  StatCard,
+  StatusBadge,
+} from "@/components/dashboard";
 
 interface ApprovalProduct {
   id: string;
@@ -58,8 +59,13 @@ export function StoreApprovalPanel() {
       const data = await res.json();
       const list: ApprovalProduct[] = data.products ?? [];
       setProducts(list);
-      // Auto-expand all categories on first load
-      const cats = new Set(list.map((p) => p.lightspeed_category_id ?? (p.category_name ? `name:${p.category_name}` : "other")));
+      const cats = new Set(
+        list.map(
+          (p) =>
+            p.lightspeed_category_id ??
+            (p.category_name ? `name:${p.category_name}` : "other")
+        )
+      );
       setExpandedCats(cats);
     } catch {
       setProducts([]);
@@ -68,14 +74,17 @@ export function StoreApprovalPanel() {
     }
   }, []);
 
-  React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => {
+    void load();
+  }, [load]);
 
-  // Group by category
   const groups = React.useMemo<CategoryGroup[]>(() => {
     const map = new Map<string, CategoryGroup>();
     for (const p of products) {
       if (approved.has(p.id)) continue;
-      const key = p.lightspeed_category_id ?? (p.category_name ? `name:${p.category_name}` : "other");
+      const key =
+        p.lightspeed_category_id ??
+        (p.category_name ? `name:${p.category_name}` : "other");
       const name = p.category_name ?? "Uncategorised";
       if (!map.has(key)) map.set(key, { key, name, products: [] });
       map.get(key)!.products.push(p);
@@ -137,138 +146,158 @@ export function StoreApprovalPanel() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center rounded-md border bg-card py-20">
+        <Loader2 className="size-7 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (remaining === 0 && approved.size === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card py-20 text-center">
-        <CheckCircle2 className="h-10 w-10 text-emerald-500/70" />
-        <p className="text-sm font-medium text-foreground">All products live</p>
-        <p className="max-w-xs text-xs text-muted-foreground">
-          Every Lightspeed product with an image is already approved for the marketplace.
-        </p>
-      </div>
+      <SettingsSection
+        title="All products live"
+        description="Every Lightspeed product with an image is already approved for the marketplace."
+        icon={CheckCircle2}
+      >
+        <div className="flex flex-col items-center gap-2 py-8 text-center">
+          <StatusBadge label="Storefront up to date" tone="success" />
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Nothing is waiting for approval. New products with Lightspeed photos will appear here.
+          </p>
+        </div>
+      </SettingsSection>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header bar */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-foreground">
-              {remaining > 0 ? (
-                <>{remaining} product{remaining !== 1 ? "s" : ""} hidden from the marketplace</>
-              ) : (
-                <>All done — products are going live</>
-              )}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              These have Lightspeed images. Approving them marks the image as store-quality and makes the product visible.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {selected.size > 0 && (
-              <Button
-                size="sm"
-                disabled={approving}
-                onClick={() => void doApprove(Array.from(selected))}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                {approving ? (
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Check className="mr-1.5 h-3.5 w-3.5" />
-                )}
-                Approve {selected.size} selected
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={loading || approving}
-              onClick={() => void load()}
-            >
-              <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", loading && "animate-spin")} />
-              Refresh
-            </Button>
-          </div>
-        </div>
-
-        {/* Select all */}
-        {remaining > 0 && (
-          <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
-            <Checkbox
-              checked={selected.size === remaining && remaining > 0}
-              onCheckedChange={(checked) => {
-                if (checked) {
-                  const all = products.filter((p) => !approved.has(p.id)).map((p) => p.id);
-                  setSelected(new Set(all));
-                } else {
-                  setSelected(new Set());
-                }
-              }}
-              id="select-all"
-            />
-            <label htmlFor="select-all" className="text-xs text-muted-foreground cursor-pointer select-none">
-              Select all ({remaining})
-            </label>
-          </div>
-        )}
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <StatCard
+          label="Pending approval"
+          value={remaining}
+          icon={ShieldCheck}
+          hint="Hidden from the marketplace until approved"
+        />
+        {approved.size > 0 ? (
+          <StatCard
+            label="Approved this session"
+            value={approved.size}
+            icon={CheckCircle2}
+            hint="Now visible on your store"
+          />
+        ) : null}
       </div>
 
-      {/* Category groups */}
+      <SettingsSection
+        title="Approve for store"
+        description="These products have Lightspeed images. Approving marks them as store-quality and makes them visible on the marketplace."
+        icon={ShieldCheck}
+        headerAction={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading || approving}
+            onClick={() => void load()}
+          >
+            <RefreshCw className={cn("mr-1.5 size-3.5", loading && "animate-spin")} />
+            Refresh
+          </Button>
+        }
+        footer={
+          selected.size > 0 ? (
+            <Button size="sm" disabled={approving} onClick={() => void doApprove(Array.from(selected))}>
+              {approving ? (
+                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              ) : (
+                <Check className="mr-1.5 size-3.5" />
+              )}
+              Approve {selected.size} selected
+            </Button>
+          ) : undefined
+        }
+      >
+        {remaining > 0 ? (
+          <>
+            <SettingsRow
+              label="Select all"
+              description={`${remaining} product${remaining === 1 ? "" : "s"} in queue`}
+              control={
+                <Checkbox
+                  checked={selected.size === remaining && remaining > 0}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      const all = products
+                        .filter((p) => !approved.has(p.id))
+                        .map((p) => p.id);
+                      setSelected(new Set(all));
+                    } else {
+                      setSelected(new Set());
+                    }
+                  }}
+                  aria-label="Select all pending products"
+                />
+              }
+            />
+            <SettingsDivider />
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            All pending products were approved this session.
+          </p>
+        )}
+      </SettingsSection>
+
       {groups.map((group) => {
         const expanded = expandedCats.has(group.key);
         const groupIds = group.products.map((p) => p.id);
-        const allGroupSelected = groupIds.length > 0 && groupIds.every((id) => selected.has(id));
+        const allGroupSelected =
+          groupIds.length > 0 && groupIds.every((id) => selected.has(id));
         const someGroupSelected = groupIds.some((id) => selected.has(id));
 
         return (
-          <div key={group.key} className="rounded-xl border border-border bg-card overflow-hidden">
-            {/* Category header */}
-            <div className="flex items-center gap-3 px-4 py-3 bg-muted/30 border-b border-border">
-              <Checkbox
-                checked={allGroupSelected}
-                data-state={someGroupSelected && !allGroupSelected ? "indeterminate" : undefined}
-                onCheckedChange={() => toggleCategory(group)}
-              />
-              <button
-                type="button"
-                className="flex flex-1 items-center gap-2 text-left"
-                onClick={() => toggleExpand(group.key)}
-              >
-                <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="text-sm font-semibold text-foreground">{group.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {group.products.length} product{group.products.length !== 1 ? "s" : ""}
-                </span>
-                {expanded ? (
-                  <ChevronDown className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
-                )}
-              </button>
+          <SettingsSection
+            key={group.key}
+            title={group.name}
+            description={`${group.products.length} product${group.products.length === 1 ? "" : "s"}`}
+            icon={Layers}
+            headerAction={
               <Button
                 size="sm"
                 variant="outline"
-                disabled={approving}
+                disabled={approving || group.products.length === 0}
                 onClick={() => void doApprove(groupIds)}
-                className="shrink-0 h-7 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300"
               >
-                <Check className="mr-1 h-3 w-3" />
+                <Check className="mr-1 size-3" />
                 Approve all
               </Button>
+            }
+            contentClassName="p-0"
+          >
+            <div className="flex items-center gap-3 border-b border-border/60 px-6 py-3">
+              <Checkbox
+                checked={allGroupSelected}
+                data-state={
+                  someGroupSelected && !allGroupSelected ? "indeterminate" : undefined
+                }
+                onCheckedChange={() => toggleCategory(group)}
+                aria-label={`Select all in ${group.name}`}
+              />
+              <button
+                type="button"
+                className="flex flex-1 items-center gap-2 text-left text-sm font-medium text-foreground"
+                onClick={() => toggleExpand(group.key)}
+              >
+                {expanded ? (
+                  <ChevronDown className="size-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                )}
+                {expanded ? "Collapse" : "Expand"} category
+              </button>
             </div>
 
-            {/* Product rows */}
             {expanded && (
-              <div className="divide-y divide-border">
+              <div className="divide-y divide-border/60">
                 {group.products.map((p) => {
                   const name = p.display_name || p.description;
                   const isSelected = selected.has(p.id);
@@ -277,18 +306,18 @@ export function StoreApprovalPanel() {
                     <div
                       key={p.id}
                       className={cn(
-                        "flex items-center gap-2 px-4 py-1.5 transition-colors",
-                        isSelected && "bg-emerald-50/40 dark:bg-emerald-950/10",
+                        "flex items-center gap-3 px-6 py-3",
+                        isSelected && "bg-muted/30"
                       )}
                     >
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={() => toggleProduct(p.id)}
+                        aria-label={`Select ${name}`}
                       />
 
-                      {/* Thumbnail */}
                       <div
-                        className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-muted cursor-zoom-in"
+                        className="relative size-14 shrink-0 cursor-zoom-in overflow-hidden rounded-md bg-muted"
                         onClick={() => p.thumbnail_url && setLightbox(p.thumbnail_url)}
                       >
                         {p.thumbnail_url ? (
@@ -302,28 +331,27 @@ export function StoreApprovalPanel() {
                           />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center">
-                            <Package className="h-5 w-5 text-muted-foreground/40" />
+                            <Package className="size-5 text-muted-foreground/40" />
                           </div>
                         )}
                       </div>
 
-                      {/* Info — single line: name · brand · price · stock */}
-                      <div className="min-w-0 flex-1 flex items-center gap-1.5 overflow-hidden">
-                        <p className="text-sm font-medium text-foreground truncate shrink">{name}</p>
-                        <p className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                          {p.brand ? `· ${p.brand}` : ""} · ${Number(p.price).toFixed(2)} · {p.qoh} in stock
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">{name}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                          {p.brand ? `${p.brand} · ` : ""}$
+                          {Number(p.price).toFixed(2)} · {p.qoh} in stock
                         </p>
                       </div>
 
-                      {/* Approve button */}
                       <Button
                         size="sm"
                         variant="outline"
                         disabled={approving}
                         onClick={() => void doApprove([p.id])}
-                        className="shrink-0 h-7 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300"
+                        className="shrink-0"
                       >
-                        <Check className="mr-1 h-3 w-3" />
+                        <Check className="mr-1 size-3" />
                         Approve
                       </Button>
                     </div>
@@ -331,31 +359,24 @@ export function StoreApprovalPanel() {
                 })}
               </div>
             )}
-          </div>
+          </SettingsSection>
         );
       })}
 
-      {/* Approved count */}
-      {approved.size > 0 && (
-        <p className="text-center text-xs text-emerald-600 font-medium">
-          <CheckCircle2 className="inline-block mr-1 h-3.5 w-3.5" />
-          {approved.size} product{approved.size !== 1 ? "s" : ""} approved this session — now live on the store
-        </p>
-      )}
-
-      {/* Lightbox */}
-      {lightbox && (
+      {lightbox ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/85 p-6 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => setLightbox(null)}
         >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={lightbox}
             alt=""
-            className="max-h-[80vh] max-w-[80vw] rounded-lg object-contain shadow-2xl"
+            className="max-h-[90vh] max-w-[90vw] rounded-md object-contain shadow-2xl animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
+            onClick={(e) => e.stopPropagation()}
           />
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
