@@ -291,6 +291,13 @@ function ProductEditRow({
             {product.brand || "—"} · {product.category}/{product.subcategory}
             {product.price != null ? ` · $${product.price.toFixed(2)}` : ""}
           </p>
+          {product.description.trim() ? (
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground line-clamp-3">
+              {product.description}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-xs italic text-muted-foreground">No description generated</p>
+          )}
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {imageStatusBadge()}
           </div>
@@ -385,6 +392,25 @@ function ProductEditRow({
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label className="text-xs font-medium">Description</Label>
+              <textarea
+                value={product.description}
+                onChange={(e) => onUpdate({ description: e.target.value })}
+                disabled={disabled}
+                rows={4}
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="AI-generated description will appear here…"
+              />
+            </div>
+            {product.specs.trim() ? (
+              <div className="space-y-1 sm:col-span-2">
+                <Label className="text-xs font-medium">Specs</Label>
+                <p className="whitespace-pre-line rounded-md border border-border/60 bg-background px-3 py-2 text-xs text-muted-foreground">
+                  {product.specs}
+                </p>
+              </div>
+            ) : null}
           </div>
 
           {/* Image review */}
@@ -596,6 +622,7 @@ export function StoreOnlineProductsManager() {
   // UI
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
   const [lightbox, setLightbox] = React.useState<string | null>(null);
+  const [imageBatchSize, setImageBatchSize] = React.useState<string>("10");
 
   // Refs for async ops
   const productsRef = React.useRef(products);
@@ -678,7 +705,7 @@ export function StoreOnlineProductsManager() {
 
       setProducts(extracted);
       setImageStates(Object.fromEntries(extracted.map((p) => [p.id, emptyImageState()])));
-      setExpanded(new Set(extracted.map((p) => p.id)));
+      setExpanded(new Set());
       setPhase("review");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Extraction failed");
@@ -743,9 +770,22 @@ export function StoreOnlineProductsManager() {
     [patchImg],
   );
 
+  const pendingImageSearch = React.useMemo(
+    () =>
+      products.filter((p) => {
+        const s = imageStates[p.id];
+        return !s || s.phase === "idle";
+      }),
+    [products, imageStates],
+  );
+
+  const imageBatchLimit = imageBatchSize === "all" ? pendingImageSearch.length : Number(imageBatchSize);
+
   const handleFindImages = async () => {
+    const batch = pendingImageSearch.slice(0, imageBatchLimit);
+    if (batch.length === 0) return;
     setPhase("searching");
-    const tasks = products.map((p) => () => runImageSearch(p));
+    const tasks = batch.map((p) => () => runImageSearch(p));
     await runWithConcurrency(tasks, IMAGE_CONCURRENCY);
     setPhase("review");
   };
@@ -869,6 +909,8 @@ export function StoreOnlineProductsManager() {
   });
 
   const isCreating = phase === "creating";
+  const pendingImageCount = pendingImageSearch.length;
+  const nextBatchCount = Math.min(imageBatchLimit, pendingImageCount);
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -985,29 +1027,63 @@ export function StoreOnlineProductsManager() {
       {/* Extracted products list */}
       {products.length > 0 && (
         <>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold text-foreground">
                 {products.length} product{products.length === 1 ? "" : "s"} found
               </span>
+              {pendingImageCount > 0 && !allSearched && (
+                <span className="text-xs text-muted-foreground">
+                  · {pendingImageCount} awaiting images
+                </span>
+              )}
               {allSearched && readyCount > 0 && (
                 <span className="text-xs text-muted-foreground">· {readyCount} with images</span>
               )}
             </div>
-            <div className="flex gap-2">
-              {(phase === "review" || phase === "searching") && !allSearched && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleFindImages}
-                  disabled={searching || isCreating}
-                >
-                  {searching ? (
-                    <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Finding images…</>
-                  ) : (
-                    <><Search className="mr-1.5 h-3.5 w-3.5" /> Find Images for All</>
-                  )}
-                </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {(phase === "review" || phase === "searching") && pendingImageCount > 0 && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="image-batch-size" className="text-xs text-muted-foreground whitespace-nowrap">
+                      Images per batch
+                    </Label>
+                    <Select
+                      value={imageBatchSize}
+                      onValueChange={setImageBatchSize}
+                      disabled={searching || isCreating}
+                    >
+                      <SelectTrigger id="image-batch-size" className="h-8 w-[120px] rounded-md text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5 products</SelectItem>
+                        <SelectItem value="10">10 products</SelectItem>
+                        <SelectItem value="20">20 products</SelectItem>
+                        <SelectItem value="50">50 products</SelectItem>
+                        <SelectItem value="all">All remaining</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleFindImages}
+                    disabled={searching || isCreating}
+                  >
+                    {searching ? (
+                      <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Finding images…</>
+                    ) : (
+                      <>
+                        <Search className="mr-1.5 h-3.5 w-3.5" />
+                        Find images
+                        {imageBatchSize === "all"
+                          ? ` (${pendingImageCount})`
+                          : ` (next ${nextBatchCount})`}
+                      </>
+                    )}
+                  </Button>
+                </>
               )}
               {allSearched && readyCount > 0 && (
                 <Button
@@ -1055,20 +1131,44 @@ export function StoreOnlineProductsManager() {
 
           {/* Bottom action bar */}
           {(phase === "review" || phase === "searching") && (
-            <div className="flex justify-end gap-2">
-              {!allSearched && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleFindImages}
-                  disabled={searching}
-                >
-                  {searching ? (
-                    <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Finding…</>
-                  ) : (
-                    <><Search className="mr-1.5 h-3.5 w-3.5" /> Find Images for All</>
-                  )}
-                </Button>
+            <div className="flex flex-wrap justify-end items-center gap-2">
+              {pendingImageCount > 0 && (
+                <>
+                  <Select
+                    value={imageBatchSize}
+                    onValueChange={setImageBatchSize}
+                    disabled={searching}
+                  >
+                    <SelectTrigger className="h-8 w-[120px] rounded-md text-xs">
+                      <SelectValue placeholder="Batch size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">5 products</SelectItem>
+                      <SelectItem value="10">10 products</SelectItem>
+                      <SelectItem value="20">20 products</SelectItem>
+                      <SelectItem value="50">50 products</SelectItem>
+                      <SelectItem value="all">All remaining</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleFindImages}
+                    disabled={searching}
+                  >
+                    {searching ? (
+                      <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Finding…</>
+                    ) : (
+                      <>
+                        <Search className="mr-1.5 h-3.5 w-3.5" />
+                        Find images
+                        {imageBatchSize === "all"
+                          ? ` (${pendingImageCount})`
+                          : ` (next ${nextBatchCount})`}
+                      </>
+                    )}
+                  </Button>
+                </>
               )}
               {allSearched && readyCount > 0 && (
                 <Button size="sm" onClick={handleCreate} disabled={isCreating}>
