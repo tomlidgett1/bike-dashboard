@@ -1,8 +1,8 @@
 /**
  * Lightspeed Categories API
- * 
+ *
  * GET /api/lightspeed/categories
- * 
+ *
  * Fetches all categories from Lightspeed
  */
 
@@ -12,7 +12,6 @@ import { createLightspeedClient } from '@/lib/services/lightspeed'
 
 export async function GET() {
   try {
-    // Get authenticated user
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
@@ -23,10 +22,7 @@ export async function GET() {
       )
     }
 
-    // Create Lightspeed client
     const client = createLightspeedClient(user.id)
-
-    // Fetch all categories
     const categories = await client.getAllCategories({ archived: 'false' })
 
     return NextResponse.json({
@@ -38,10 +34,9 @@ export async function GET() {
         nodeDepth: cat.nodeDepth,
       })),
     })
-
   } catch (error) {
     console.error('[Categories API] Error:', error)
-    
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error occurred' },
       { status: 500 }

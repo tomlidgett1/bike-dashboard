@@ -27,8 +27,9 @@ import { ProductTableView } from "@/components/lightspeed/product-table-view";
 import { SyncProgressModal } from "@/components/lightspeed/sync-progress-modal";
 import { DeleteConfirmDialog } from "@/components/lightspeed/delete-confirm-dialog";
 import { InventoryLogsView } from "@/components/lightspeed/inventory-logs-view";
+import { CategoryAdjustmentsPanel } from "@/components/lightspeed/category-adjustments-panel";
 
-type ViewMode = 'categories' | 'products' | 'logs';
+type ViewMode = 'categories' | 'products' | 'logs' | 'category_adjustments';
 
 interface SyncFilters {
   minSoh: string;
@@ -553,6 +554,17 @@ export default function ConnectLightspeedPage() {
                     >
                       Logs
                     </button>
+                    <button
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                        viewMode === 'category_adjustments'
+                          ? "text-foreground bg-background shadow-xs ring-1 ring-border"
+                          : "text-muted-foreground hover:bg-muted/70"
+                      )}
+                      onClick={() => setViewMode('category_adjustments')}
+                    >
+                      Adjust categories
+                    </button>
                   </div>
 
                   {/* Synced / Not Synced toggle — only for categories and products views */}
@@ -695,6 +707,8 @@ export default function ConnectLightspeedPage() {
                   activeFilterCount={activeFilterCount}
                   onOpenFilters={openFilterSheet}
                 />
+              ) : viewMode === 'category_adjustments' ? (
+                <CategoryAdjustmentsPanel onCategoriesChanged={fetchInventoryData} />
               ) : (
                 <InventoryLogsView />
               )}

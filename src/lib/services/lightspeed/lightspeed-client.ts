@@ -367,6 +367,84 @@ export class LightspeedClient {
     return allCategories
   }
 
+  /**
+   * Get a single category by ID.
+   */
+  async getCategory(categoryId: string): Promise<LightspeedCategory> {
+    const accountId = await this.getAccountId()
+    const response = await this.request<{ Category: LightspeedCategory }>(
+      `/Account/${accountId}/Category/${categoryId}.json`
+    )
+    return response.Category
+  }
+
+  /**
+   * Create a new category in Lightspeed.
+   */
+  async createCategory(payload: {
+    name: string
+    fullPathName: string
+    parentID?: string
+  }): Promise<LightspeedCategory> {
+    const accountId = await this.getAccountId()
+    const response = await this.request<{ Category: LightspeedCategory }>(
+      `/Account/${accountId}/Category.json`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          name: payload.name,
+          fullPathName: payload.fullPathName,
+          parentID: payload.parentID ?? '0',
+        }),
+      }
+    )
+    return response.Category
+  }
+
+  /**
+   * Update an existing category in Lightspeed.
+   */
+  async updateCategory(
+    categoryId: string,
+    payload: {
+      name: string
+      fullPathName: string
+      parentID?: string
+    }
+  ): Promise<LightspeedCategory> {
+    const accountId = await this.getAccountId()
+    const body: Record<string, string> = {
+      name: payload.name,
+      fullPathName: payload.fullPathName,
+    }
+    if (payload.parentID !== undefined) {
+      body.parentID = payload.parentID
+    }
+
+    const response = await this.request<{ Category: LightspeedCategory }>(
+      `/Account/${accountId}/Category/${categoryId}.json`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }
+    )
+    return response.Category
+  }
+
+  /**
+   * Permanently delete a category from Lightspeed.
+   */
+  async deleteCategory(categoryId: string): Promise<LightspeedCategory> {
+    const accountId = await this.getAccountId()
+    const response = await this.request<{ Category: LightspeedCategory }>(
+      `/Account/${accountId}/Category/${categoryId}.json`,
+      {
+        method: 'DELETE',
+      }
+    )
+    return response.Category
+  }
+
   // ============================================================
   // Manufacturer Methods
   // ============================================================
