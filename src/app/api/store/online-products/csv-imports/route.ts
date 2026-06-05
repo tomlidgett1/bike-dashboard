@@ -47,6 +47,9 @@ function serialiseImport(row: Record<string, unknown>) {
     id: row.id as string,
     fileName: row.file_name as string,
     headers: row.headers as string[],
+    sohColumn: (row.soh_column as string | null) ?? null,
+    searchColumn: (row.search_column as string | null) ?? null,
+    imageSearchBicycleContext: Boolean(row.image_search_bicycle_context),
     rowCount: row.row_count as number,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -80,7 +83,7 @@ export async function GET() {
 
     const { data: imports, error } = await supabase
       .from('online_product_csv_imports')
-      .select('id, file_name, headers, row_count, created_at, updated_at')
+      .select('id, file_name, headers, soh_column, search_column, image_search_bicycle_context, row_count, created_at, updated_at')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false })
       .limit(30);
@@ -131,6 +134,22 @@ export async function POST(request: NextRequest) {
         ? Math.max(0, Number.parseInt(String(headerRowRaw), 10) || 0)
         : 0;
 
+    const sohColumnRaw = formData.get('sohColumn');
+    const sohColumn =
+      sohColumnRaw != null && String(sohColumnRaw).trim()
+        ? String(sohColumnRaw).trim()
+        : null;
+
+    const searchColumnRaw = formData.get('searchColumn');
+    const searchColumn =
+      searchColumnRaw != null && String(searchColumnRaw).trim()
+        ? String(searchColumnRaw).trim()
+        : null;
+
+    const bicycleContextRaw = formData.get('imageSearchBicycleContext');
+    const imageSearchBicycleContext =
+      bicycleContextRaw != null && String(bicycleContextRaw) === 'true';
+
     const { headers, rows, totalDataRows } = parseCsvText(
       await csvFile.text(),
       headerRowIndex,
@@ -150,9 +169,12 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         file_name: csvFile.name,
         headers,
+        soh_column: sohColumn,
+        search_column: searchColumn,
+        image_search_bicycle_context: imageSearchBicycleContext,
         row_count: rows.length,
       })
-      .select('id, file_name, headers, row_count, created_at, updated_at')
+      .select('id, file_name, headers, soh_column, search_column, image_search_bicycle_context, row_count, created_at, updated_at')
       .single();
 
     if (importError || !importRow) {

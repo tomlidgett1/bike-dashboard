@@ -38,6 +38,8 @@ interface IncomingProduct {
   brand: string | null;
   price: number | null;
   soh?: number | null;
+  /** Raw CSV row label — stored on products.description for optimise title checks */
+  catalogDescription?: string | null;
   description: string | null;
   specs: string | null;
   category: string;
@@ -149,6 +151,11 @@ export async function POST(request: NextRequest) {
       const resolvedPrice =
         typeof product.price === 'number' && Number.isFinite(product.price) ? product.price : 0;
 
+      const catalogDescription =
+        product.catalogDescription?.trim() ||
+        product.description?.trim() ||
+        product.name;
+
       // 1. Find or create canonical product
       const canonicalId = await ensureCanonical(supabase, product.name, product.brand);
 
@@ -162,7 +169,7 @@ export async function POST(request: NextRequest) {
           listing_status: 'active',
           is_active: true,
           canonical_product_id: canonicalId,
-          description: product.name,
+          description: catalogDescription,
           display_name: product.name,
           brand: product.brand,
           price: resolvedPrice,

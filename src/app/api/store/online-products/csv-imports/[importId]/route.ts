@@ -17,6 +17,9 @@ function serialiseImport(row: Record<string, unknown>) {
     id: row.id as string,
     fileName: row.file_name as string,
     headers: row.headers as string[],
+    sohColumn: (row.soh_column as string | null) ?? null,
+    searchColumn: (row.search_column as string | null) ?? null,
+    imageSearchBicycleContext: Boolean(row.image_search_bicycle_context),
     rowCount: row.row_count as number,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -46,7 +49,7 @@ async function loadImport(
 ) {
   const { data: importRow, error } = await supabase
     .from('online_product_csv_imports')
-    .select('id, file_name, headers, row_count, created_at, updated_at')
+    .select('id, file_name, headers, soh_column, search_column, image_search_bicycle_context, row_count, created_at, updated_at')
     .eq('id', importId)
     .eq('user_id', userId)
     .single();
@@ -120,6 +123,34 @@ export async function PATCH(
     const selectAll: boolean | undefined = body.selectAll;
     const selectAllValue: boolean = body.selected ?? true;
     const onlyPending: boolean = body.onlyPending !== false;
+    const sohColumn: string | null | undefined = body.sohColumn;
+    const searchColumn: string | null | undefined = body.searchColumn;
+    const imageSearchBicycleContext: boolean | undefined = body.imageSearchBicycleContext;
+
+    const importPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (sohColumn !== undefined) {
+      importPatch.soh_column =
+        sohColumn && String(sohColumn).trim() ? String(sohColumn).trim() : null;
+    }
+    if (searchColumn !== undefined) {
+      importPatch.search_column =
+        searchColumn && String(searchColumn).trim() ? String(searchColumn).trim() : null;
+    }
+    if (imageSearchBicycleContext !== undefined) {
+      importPatch.image_search_bicycle_context = Boolean(imageSearchBicycleContext);
+    }
+
+    if (Object.keys(importPatch).length > 1) {
+      const { error: metaError } = await supabase
+        .from('online_product_csv_imports')
+        .update(importPatch)
+        .eq('id', importId)
+        .eq('user_id', user.id);
+
+      if (metaError) {
+        return NextResponse.json({ error: metaError.message }, { status: 500 });
+      }
+    }
 
     if (selectAll === true) {
       let query = supabase

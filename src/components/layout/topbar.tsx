@@ -35,7 +35,7 @@ const LazyTopbarLightspeedStatus = dynamic(
 // Route → breadcrumb labels. Falls back to a title-cased last segment.
 const CRUMBS: Record<string, { section: string; page: string }> = {
   "/products": { section: "Store", page: "Products" },
-  "/optimize": { section: "Store", page: "Optimise" },
+  "/optimize": { section: "Store", page: "Product Optimise" },
   "/settings/store": { section: "Store", page: "Storefront" },
   "/settings/store/nest": { section: "Store", page: "Nest" },
   "/settings/my-listings": { section: "Marketplace", page: "My listings" },

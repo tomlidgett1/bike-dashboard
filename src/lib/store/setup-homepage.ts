@@ -37,6 +37,39 @@ export async function patchHomepageHeroImage(url: string) {
   });
 }
 
+/** Keep landing-page hero copy aligned with profile fields saved in Settings. */
+export async function patchHomepageHeroCopy(fields: {
+  headline?: string;
+  eyebrow?: string;
+}) {
+  const current = await fetchRawHomepageConfig();
+  const hero = current.hero ?? {};
+  await saveHomepageConfig({
+    ...current,
+    hero: {
+      ...hero,
+      ...(fields.headline !== undefined ? { headline: fields.headline } : {}),
+      ...(fields.eyebrow !== undefined ? { eyebrow: fields.eyebrow } : {}),
+    } as StoreHomepageConfig["hero"],
+  });
+}
+
+/** Bio is stored on users.bio (About tab) and story.body (Home → Our story). */
+export async function patchHomepageStory(body: string, storeName?: string) {
+  const current = await fetchRawHomepageConfig();
+  const story = (current.story ?? {}) as Partial<StoreHomepageConfig["story"]>;
+  const existingTitle = typeof story.title === "string" ? story.title.trim() : "";
+  await saveHomepageConfig({
+    ...current,
+    story: {
+      ...story,
+      enabled: true,
+      body: body.trim(),
+      title: existingTitle || (storeName ? `The ${storeName} story` : "Our story"),
+    } as StoreHomepageConfig["story"],
+  });
+}
+
 export async function uploadHomepageHeroImage(file: File): Promise<string> {
   const fd = new FormData();
   fd.append("file", file);

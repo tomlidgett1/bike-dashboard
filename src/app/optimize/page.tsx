@@ -46,8 +46,8 @@ export default function OptimizePage() {
   return (
     <PageContainer size="wide">
       <PageHeader
-        title="Optimise"
-        description="Add and approve catalogue photos, generate titles and descriptions, or import products from CSV or screenshots."
+        title="Product Optimise"
+        description="Choose catalogue, private listings, or CSV — then follow a simple step-by-step flow to optimise copy and photos."
       />
 
       <div className="mt-6 min-w-0">

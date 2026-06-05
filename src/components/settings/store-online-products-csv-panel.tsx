@@ -30,7 +30,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { headersAtRow, parseCsv } from "@/lib/store/online-products-csv-parse";
+import { Label } from "@/components/ui/label";
+import {
+  buildCsvSerperSearchQuery,
+  headersAtRow,
+  inferRowLabel,
+  parseCsv,
+  parseSohFromColumn,
+  parseSohFromValues,
+  sampleValueFromColumn,
+  suggestSearchColumn,
+  suggestSohColumn,
+} from "@/lib/store/online-products-csv-parse";
 import { OnlineProductsGenerationTooltip } from "@/components/settings/online-products-generation-guide";
 import {
   OptimiseBulkBar,
@@ -47,6 +58,9 @@ export interface CsvImportMeta {
   id: string;
   fileName: string;
   headers: string[];
+  sohColumn: string | null;
+  searchColumn: string | null;
+  imageSearchBicycleContext: boolean;
   rowCount: number;
   createdAt: string;
   updatedAt: string;
@@ -82,8 +96,23 @@ export interface EnrichedFromCsv {
   duplicateOfName: string | null;
 }
 
+export interface CsvPhotosPayload {
+  importId: string;
+  headers: string[];
+  sohColumn: string | null;
+  searchColumn: string | null;
+  imageSearchBicycleContext: boolean;
+  items: EnrichedFromCsv[];
+  rows: CsvImportTableRow[];
+}
+
 interface Props {
   onError: (message: string | null) => void;
+  wizardMode?: boolean;
+  wizardStep?: "import" | "copy";
+  onImportComplete?: () => void;
+  onReadyForPhotos?: (payload: CsvPhotosPayload) => void;
+  onBackToImport?: () => void;
 }
 
 interface ListingCreateSummary {
@@ -173,7 +202,14 @@ function statusLabel(status: string) {
   }
 }
 
-export function StoreOnlineProductsCsvPanel({ onError }: Props) {
+export function StoreOnlineProductsCsvPanel({
+  onError,
+  wizardMode = false,
+  wizardStep = "import",
+  onImportComplete,
+  onReadyForPhotos,
+  onBackToImport,
+}: Props) {
   const router = useRouter();
   const [imports, setImports] = React.useState<CsvImportMeta[]>([]);
   const [activeImportId, setActiveImportId] = React.useState<string | null>(null);
@@ -192,6 +228,10 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
     parsedRows: string[][];
   } | null>(null);
   const [headerRowIndex, setHeaderRowIndex] = React.useState(0);
+  const [importDialogStep, setImportDialogStep] = React.useState<"header" | "columns">("header");
+  const [sohColumn, setSohColumn] = React.useState<string>("");
+  const [searchColumn, setSearchColumn] = React.useState<string>("");
+  const [imageSearchBicycleContext, setImageSearchBicycleContext] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -209,8 +249,10 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
     if (!res.ok || !data.success) throw new Error(data.error || "Failed to load import");
     setActiveImportId(importId);
     setActiveImport(data.import);
-    setRows(data.rows ?? []);
+    const nextRows = (data.rows ?? []) as CsvImportTableRow[];
+    setRows(nextRows);
     setRowViewTab("all");
+    return { import: data.import as CsvImportMeta, rows: nextRows };
   }, []);
 
   React.useEffect(() => {
@@ -220,7 +262,7 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
         setLoading(true);
         const list = await loadImports();
         if (cancelled) return;
-        if (list.length > 0) {
+        if (list.length > 0 && !(wizardMode && wizardStep === "import")) {
           await loadImport(list[0].id);
         }
       } catch (err) {
@@ -287,19 +329,33 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
         return;
       }
       setHeaderRowIndex(0);
+      setImportDialogStep("header");
+      const headers = headersAtRow(parsedRows, 0);
+      setSohColumn(suggestSohColumn(headers) ?? "");
+      setSearchColumn(suggestSearchColumn(headers) ?? "");
+      setImageSearchBicycleContext(false);
       setPendingUpload({ file, parsedRows });
     } catch (err) {
       onError(err instanceof Error ? err.message : "Could not read CSV");
     }
   };
 
-  const handleUpload = async (file: File, headerIndex: number) => {
+  const handleUpload = async (
+    file: File,
+    headerIndex: number,
+    sohCol: string,
+    searchCol: string,
+    bicycleContext: boolean,
+  ) => {
     setUploading(true);
     onError(null);
     try {
       const fd = new FormData();
       fd.append("csv", file);
       fd.append("headerRowIndex", String(headerIndex));
+      if (sohCol.trim()) fd.append("sohColumn", sohCol.trim());
+      if (searchCol.trim()) fd.append("searchColumn", searchCol.trim());
+      fd.append("imageSearchBicycleContext", bicycleContext ? "true" : "false");
       const res = await fetch("/api/store/online-products/csv-imports", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Upload failed");
@@ -308,6 +364,7 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
       setActiveImport(data.import);
       setRows(data.rows ?? []);
       setPendingUpload(null);
+      if (wizardMode) onImportComplete?.();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -322,12 +379,19 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
       onError("Pick a header row that has at least one product row beneath it.");
       return;
     }
-    void handleUpload(pendingUpload.file, headerRowIndex);
+    void handleUpload(
+      pendingUpload.file,
+      headerRowIndex,
+      sohColumn,
+      searchColumn,
+      imageSearchBicycleContext,
+    );
   };
 
   const dismissPendingUpload = () => {
     if (uploading) return;
     setPendingUpload(null);
+    setImportDialogStep("header");
     onError(null);
   };
 
@@ -359,22 +423,34 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
       onError(null);
 
       try {
+        const headers = activeImport?.headers ?? [];
         const res = await fetch("/api/store/online-products/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            products: items.map((p) => ({
-              name: p.name,
-              brand: p.brand || null,
-              price: p.price,
-              soh: p.soh,
-              description: p.description || null,
-              specs: p.specs || null,
-              category: p.category || "Parts",
-              subcategory: p.subcategory || "Other",
-              selectedCandidates: [],
-              primaryUrl: "",
-            })),
+            products: items.map((p) => {
+              const row = rows.find((r) => r.id === p.csvRowId);
+              const preferredSoh =
+                activeImport?.sohColumn ?? (sohColumn.trim() || null);
+              const sohFromCsv =
+                row && headers.length > 0
+                  ? parseSohFromColumn(row.rawValues, preferredSoh) ??
+                    parseSohFromValues(row.rawValues, headers, preferredSoh)
+                  : null;
+              return {
+                name: p.name,
+                brand: p.brand || null,
+                price: p.price,
+                soh: p.soh ?? sohFromCsv,
+                catalogDescription: row?.displayLabel || null,
+                description: p.description || null,
+                specs: p.specs || null,
+                category: p.category || "Parts",
+                subcategory: p.subcategory || "Other",
+                selectedCandidates: [],
+                primaryUrl: "",
+              };
+            }),
             onlineOnly: false,
             csvLinks: items.map((p) => ({ csvRowId: p.csvRowId })),
           }),
@@ -394,7 +470,7 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
         setCreatingListings(false);
       }
     },
-    [onError],
+    [activeImport?.headers, activeImport?.sohColumn, onError, rows, sohColumn],
   );
 
   const handleEnrich = async () => {
@@ -444,7 +520,31 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
 
       const nonDuplicates = allProducts.filter((p) => !p.isDuplicate);
       if (nonDuplicates.length === 0) {
-        onError("No new products to add — selected rows are duplicates or were skipped.");
+        onError("No new products to optimise — selected rows are duplicates or were skipped.");
+        return;
+      }
+
+      if (wizardMode && onReadyForPhotos && activeImportId) {
+        const refreshed = activeImportId ? await loadImport(activeImportId) : null;
+        const importMeta = refreshed?.import ?? activeImport;
+        const freshRows = refreshed?.rows ?? rows;
+        const enrichedItems = freshRows
+          .map(enrichedRowToProduct)
+          .filter((p): p is EnrichedFromCsv => p !== null);
+        if (!importMeta || enrichedItems.length === 0) {
+          onError("Enrichment finished but no rows are ready. Try again.");
+          return;
+        }
+        onReadyForPhotos({
+          importId: activeImportId,
+          headers: importMeta.headers,
+          sohColumn: importMeta.sohColumn ?? (sohColumn.trim() || null),
+          searchColumn: importMeta.searchColumn ?? (searchColumn.trim() || null),
+          imageSearchBicycleContext:
+            importMeta.imageSearchBicycleContext ?? imageSearchBicycleContext,
+          items: enrichedItems,
+          rows: freshRows,
+        });
         return;
       }
 
@@ -464,6 +564,27 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
       setEnriching(false);
       setEnrichProgress(null);
     }
+  };
+
+  const continueToPhotos = () => {
+    if (!wizardMode || !onReadyForPhotos || !activeImportId || !activeImport) return;
+    const enrichedItems = rows
+      .map(enrichedRowToProduct)
+      .filter((p): p is EnrichedFromCsv => p !== null);
+    if (enrichedItems.length === 0) {
+      onError("No enriched rows yet. Select rows and run Optimise copy first.");
+      return;
+    }
+    onReadyForPhotos({
+      importId: activeImportId,
+      headers: activeImport.headers,
+      sohColumn: activeImport.sohColumn ?? (sohColumn.trim() || null),
+      searchColumn: activeImport.searchColumn ?? (searchColumn.trim() || null),
+      imageSearchBicycleContext:
+        activeImport.imageSearchBicycleContext ?? imageSearchBicycleContext,
+      items: enrichedItems,
+      rows,
+    });
   };
 
   const handleCreateListings = async () => {
@@ -512,6 +633,46 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
     ? Math.max(0, pendingUpload.parsedRows.length - headerRowIndex - 1)
     : 0;
 
+  React.useEffect(() => {
+    if (!pendingUpload) return;
+    const headers = headersAtRow(pendingUpload.parsedRows, headerRowIndex);
+    const suggestedSoh = suggestSohColumn(headers);
+    const suggestedSearch = suggestSearchColumn(headers);
+    setSohColumn((prev) => {
+      if (prev && headers.includes(prev)) return prev;
+      return suggestedSoh ?? "";
+    });
+    setSearchColumn((prev) => {
+      if (prev && headers.includes(prev)) return prev;
+      return suggestedSearch ?? "";
+    });
+  }, [pendingUpload, headerRowIndex]);
+
+  const sohSample = pendingUpload
+    ? sampleValueFromColumn(pendingUpload.parsedRows, headerRowIndex, sohColumn)
+    : null;
+  const searchSample = pendingUpload
+    ? sampleValueFromColumn(pendingUpload.parsedRows, headerRowIndex, searchColumn)
+    : null;
+  const previewNameSample = pendingUpload
+    ? (() => {
+        const dataRow = pendingUpload.parsedRows[headerRowIndex + 1];
+        if (!dataRow || previewHeaders.length === 0) return null;
+        const values: Record<string, string> = {};
+        previewHeaders.forEach((header, index) => {
+          values[header] = dataRow[index] ?? "";
+        });
+        return inferRowLabel(values, previewHeaders);
+      })()
+    : null;
+  const previewSerperQuery = pendingUpload
+    ? buildCsvSerperSearchQuery({
+        searchColumnValue: searchSample,
+        name: previewNameSample ?? undefined,
+        bicycleContext: imageSearchBicycleContext,
+      })
+    : "";
+
   if (loading) {
     return <OptimiseLoadingState label="Loading saved CSV imports…" />;
   }
@@ -540,8 +701,8 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
           <Button size="sm" onClick={() => router.push("/products?source=manual")}>
             View products
           </Button>
-          <Button size="sm" variant="outline" onClick={() => router.push("/optimize?workflow=photos")}>
-            Optimise photos
+          <Button size="sm" variant="outline" onClick={() => router.push("/optimize?source=catalogue")}>
+            Optimise more
           </Button>
           <Button size="sm" variant="outline" onClick={() => setListingSummary(null)}>
             Back to CSV
@@ -551,93 +712,136 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
     );
   }
 
+  const showImportToolbar = !wizardMode || wizardStep === "import";
+  const showCopyToolbar = !wizardMode || wizardStep === "copy";
+  const showRowTable = !wizardMode || wizardStep === "copy";
+  const showImportToolbarUI = showImportToolbar && !(wizardMode && !activeImport);
+
+  const csvFileInput = (
+    <input
+      ref={fileRef}
+      type="file"
+      accept=".csv,text/csv,application/vnd.ms-excel"
+      className="hidden"
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        if (f) void handleFileChosen(f);
+        e.target.value = "";
+      }}
+    />
+  );
+
+  const openCsvFilePicker = () => fileRef.current?.click();
+
   return (
     <div className="space-y-0">
-      <div className="rounded-md border border-border/60 bg-white px-4 py-3 text-sm text-muted-foreground">
-        CSV rows are saved as <span className="font-medium text-foreground">manual / other</span>{" "}
-        listings in Products. Use the Photos and Copy tabs to add images and polish descriptions.
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 py-3">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          {imports.length > 0 && (
-            <Select
-              value={activeImportId ?? undefined}
-              onValueChange={(id) => void loadImport(id)}
-            >
-              <SelectTrigger className="h-9 w-[min(100%,280px)] rounded-md text-sm">
-                <SelectValue placeholder="Saved CSV" />
-              </SelectTrigger>
-              <SelectContent>
-                {imports.map((imp) => (
-                  <SelectItem key={imp.id} value={imp.id}>
-                    {imp.fileName} ({imp.rowCount} rows)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv,text/csv,application/vnd.ms-excel"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleFileChosen(f);
-              e.target.value = "";
-            }}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={uploading}
-            onClick={() => fileRef.current?.click()}
-          >
-            {uploading ? (
-              <><Loader2 className="size-4 animate-spin" /> Uploading…</>
-            ) : (
-              <><Upload className="size-4" /> Upload CSV</>
-            )}
-          </Button>
-          {activeImportId && (
-            <Button size="sm" variant="ghost" onClick={() => void handleDeleteImport()}>
-              <Trash2 className="size-4" />
-              Delete
-            </Button>
-          )}
-          <OnlineProductsGenerationTooltip />
+      {csvFileInput}
+      {!wizardMode && (
+        <div className="rounded-md border border-border/60 bg-white px-4 py-3 text-sm text-muted-foreground">
+          CSV rows are saved as <span className="font-medium text-foreground">manual / other</span>{" "}
+          listings in Products. Use the Photos and Copy tabs to add images and polish descriptions.
         </div>
-        {activeImport && (
-          <>
-            {readyToCreateCount > 0 && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void handleCreateListings()}
-                disabled={enriching || creatingListings}
-              >
-                {creatingListings ? (
-                  <><Loader2 className="size-4 animate-spin" /> Creating listings…</>
-                ) : (
-                  <>Create {readyToCreateCount} listing{readyToCreateCount === 1 ? "" : "s"}</>
+      )}
+
+      {(showImportToolbarUI || showCopyToolbar) && (
+        <div
+          className={cn(
+            "flex flex-wrap items-center justify-between gap-3",
+            wizardMode ? "pb-3" : "border-b border-border/60 py-3",
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            {showImportToolbar && (
+              <>
+                {imports.length > 0 && !wizardMode && (
+                  <Select
+                    value={activeImportId ?? undefined}
+                    onValueChange={(id) => void loadImport(id)}
+                  >
+                    <SelectTrigger className="h-9 w-[min(100%,280px)] rounded-md text-sm">
+                      <SelectValue placeholder="Saved CSV" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {imports.map((imp) => (
+                        <SelectItem key={imp.id} value={imp.id}>
+                          {imp.fileName} ({imp.rowCount} rows)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 )}
-              </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={uploading}
+                  onClick={openCsvFilePicker}
+                >
+                  {uploading ? (
+                    <><Loader2 className="size-4 animate-spin" /> Uploading…</>
+                  ) : (
+                    <><Upload className="size-4" /> Upload CSV</>
+                  )}
+                </Button>
+                {activeImportId && !wizardMode && (
+                  <Button size="sm" variant="ghost" onClick={() => void handleDeleteImport()}>
+                    <Trash2 className="size-4" />
+                    Delete
+                  </Button>
+                )}
+              </>
             )}
-            <Button
-              size="sm"
-              onClick={() => void handleEnrich()}
-              disabled={enriching || creatingListings || pendingEnrichCount === 0}
-            >
-              {enriching ? (
-                <><Loader2 className="size-4 animate-spin" /> {enrichProgress ?? "Optimising…"}</>
-              ) : (
-                <><Sparkles className="size-4" /> Optimise selected with AI ({pendingEnrichCount || selectedCount})</>
+            {showCopyToolbar && activeImport && (
+              <span className="text-sm text-muted-foreground">
+                {activeImport.fileName} · {activeImport.rowCount} rows
+                {activeImport.sohColumn ? ` · SOH: ${activeImport.sohColumn}` : ""}
+                {activeImport.searchColumn ? ` · Search: ${activeImport.searchColumn}` : ""}
+              </span>
+            )}
+            {!wizardMode && <OnlineProductsGenerationTooltip />}
+          </div>
+          {showCopyToolbar && activeImport && (
+            <>
+              {!wizardMode && readyToCreateCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleCreateListings()}
+                  disabled={enriching || creatingListings}
+                >
+                  {creatingListings ? (
+                    <><Loader2 className="size-4 animate-spin" /> Creating listings…</>
+                  ) : (
+                    <>Create {readyToCreateCount} listing{readyToCreateCount === 1 ? "" : "s"}</>
+                  )}
+                </Button>
               )}
-            </Button>
-          </>
-        )}
-      </div>
+              {wizardMode && pendingEnrichCount === 0 && enrichedCount > 0 ? (
+                <Button size="sm" onClick={continueToPhotos}>
+                  Continue to photos ({enrichedCount})
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={() => void handleEnrich()}
+                  disabled={
+                    enriching ||
+                    creatingListings ||
+                    (pendingEnrichCount === 0 && enrichedCount === 0)
+                  }
+                >
+                  {enriching ? (
+                    <><Loader2 className="size-4 animate-spin" /> {enrichProgress ?? "Optimising…"}</>
+                  ) : wizardMode ? (
+                    <><Sparkles className="size-4" /> Optimise copy ({pendingEnrichCount || selectedCount})</>
+                  ) : (
+                    <><Sparkles className="size-4" /> Optimise selected with AI ({pendingEnrichCount || selectedCount})</>
+                  )}
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       <Dialog
         open={Boolean(pendingUpload)}
@@ -658,15 +862,163 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
         >
           {pendingUpload ? (
             <>
-              <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left">
-                <DialogTitle className="text-base">Import CSV</DialogTitle>
-                <DialogDescription className="text-left">
-                  Select the row with your column titles (e.g. Name, SKU, Price). Rows above it are
-                  ignored. File: <span className="font-medium text-foreground">{pendingUpload.file.name}</span>
-                </DialogDescription>
+              <DialogHeader className="shrink-0 space-y-3 border-b border-border/60 px-6 py-4 text-left">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <DialogTitle className="text-base">Import CSV</DialogTitle>
+                    <DialogDescription className="text-left">
+                      {importDialogStep === "header"
+                        ? "Step 1 — pick the row that contains your column titles."
+                        : "Step 2 — map columns used for stock and image search."}
+                      {" "}
+                      <span className="font-medium text-foreground">{pendingUpload.file.name}</span>
+                    </DialogDescription>
+                  </div>
+                  <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit shrink-0">
+                    <button
+                      type="button"
+                      disabled={uploading}
+                      onClick={() => setImportDialogStep("header")}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                        importDialogStep === "header"
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70",
+                      )}
+                    >
+                      1. Header
+                    </button>
+                    <button
+                      type="button"
+                      disabled={uploading || previewDataRowCount < 1}
+                      onClick={() => setImportDialogStep("columns")}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                        importDialogStep === "columns"
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : previewDataRowCount < 1
+                            ? "text-muted-foreground cursor-not-allowed opacity-50"
+                            : "text-gray-600 hover:bg-gray-200/70",
+                      )}
+                    >
+                      2. Columns
+                    </button>
+                  </div>
+                </div>
               </DialogHeader>
 
               <div className="min-h-0 flex-1 overflow-hidden px-6 py-4">
+                {importDialogStep === "columns" ? (
+                  <div className="flex h-full min-h-[12rem] flex-col gap-4 overflow-auto">
+                    <div className="rounded-md border border-border/60 bg-white p-4 space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Stock on hand (SOH)</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Quantity available when each listing is created. Leave unset if your file
+                          has no stock column.
+                        </p>
+                      </div>
+                      <Select
+                        value={sohColumn || "__none__"}
+                        onValueChange={(value) =>
+                          setSohColumn(value === "__none__" ? "" : value)
+                        }
+                        disabled={uploading}
+                      >
+                        <SelectTrigger className="h-9 w-full rounded-md text-sm">
+                          <SelectValue placeholder="Choose SOH column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Not in this file</SelectItem>
+                          {previewHeaders.map((header) => (
+                            <SelectItem key={`soh-${header}`} value={header}>
+                              {header}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {sohColumn && (
+                        <p className="text-xs text-muted-foreground">
+                          Example from first row:{" "}
+                          <span className="font-medium text-foreground">
+                            {sohSample ?? "—"}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="rounded-md border border-border/60 bg-white p-4 space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          Part number / search key
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Serper uses this value first when finding product images — ideal for SKU,
+                          MPN, UPC, or catalogue numbers. Works for non-bicycle catalogues too.
+                        </p>
+                      </div>
+                      <Select
+                        value={searchColumn || "__none__"}
+                        onValueChange={(value) =>
+                          setSearchColumn(value === "__none__" ? "" : value)
+                        }
+                        disabled={uploading}
+                      >
+                        <SelectTrigger className="h-9 w-full rounded-md text-sm">
+                          <SelectValue placeholder="Choose search column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Use product title only</SelectItem>
+                          {previewHeaders.map((header) => (
+                            <SelectItem key={`search-${header}`} value={header}>
+                              {header}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {searchColumn && (
+                        <p className="text-xs text-muted-foreground">
+                          Example from first row:{" "}
+                          <span className="font-medium text-foreground">
+                            {searchSample ?? "—"}
+                          </span>
+                        </p>
+                      )}
+                      {!searchColumn && (
+                        <div className="flex items-start gap-2 rounded-md border border-border/60 bg-white px-3 py-2">
+                          <Checkbox
+                            id="csv-bicycle-context"
+                            checked={imageSearchBicycleContext}
+                            onCheckedChange={(checked) =>
+                              setImageSearchBicycleContext(checked === true)
+                            }
+                            disabled={uploading}
+                          />
+                          <Label
+                            htmlFor="csv-bicycle-context"
+                            className="text-xs font-normal leading-snug text-muted-foreground"
+                          >
+                            Add cycling context to image search (turn off for general / non-bike
+                            catalogues)
+                          </Label>
+                        </div>
+                      )}
+                      {previewSerperQuery && (
+                        <p className="text-xs text-muted-foreground">
+                          Sample image search:{" "}
+                          <span className="font-medium text-foreground">{previewSerperQuery}</span>
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="rounded-md border border-border/60 bg-white px-3 py-2 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{previewDataRowCount}</span>{" "}
+                      product row{previewDataRowCount === 1 ? "" : "s"} ·{" "}
+                      {previewHeaders.length} column{previewHeaders.length === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                ) : (
+                <>
                 <div className="flex h-full min-h-[12rem] flex-col overflow-hidden rounded-md border border-border/60 bg-white">
                   <div className="min-h-0 flex-1 overflow-auto">
                     <table className="w-full min-w-max text-sm border-collapse">
@@ -744,24 +1096,12 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
                     non-empty rows.
                   </p>
                 )}
+                </>
+                )}
               </div>
 
-              <div className="shrink-0 space-y-3 border-t border-border/60 bg-white px-6 py-4">
-                <div className="rounded-md border border-border/60 bg-white px-3 py-2 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">Columns: </span>
-                  {previewHeaders.length > 0
-                    ? previewHeaders.join(", ")
-                    : "Select a header row"}
-                  {previewDataRowCount > 0 && (
-                    <span>
-                      {" "}
-                      · {previewDataRowCount} product row
-                      {previewDataRowCount === 1 ? "" : "s"} will be imported
-                    </span>
-                  )}
-                </div>
-
-                <DialogFooter className="gap-2 sm:justify-end">
+              <div className="shrink-0 border-t border-border/60 bg-white px-6 py-4">
+                <DialogFooter className="gap-2 sm:justify-between">
                   <Button
                     type="button"
                     size="sm"
@@ -771,24 +1111,48 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
                   >
                     Cancel
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={uploading || previewDataRowCount < 1}
-                    onClick={() => confirmPendingUpload()}
-                  >
-                    {uploading ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        Importing…
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="size-4" />
-                        Import {previewDataRowCount} row{previewDataRowCount === 1 ? "" : "s"}
-                      </>
+                  <div className="flex flex-wrap gap-2">
+                    {importDialogStep === "columns" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={uploading}
+                        onClick={() => setImportDialogStep("header")}
+                      >
+                        Back
+                      </Button>
                     )}
-                  </Button>
+                    {importDialogStep === "header" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={uploading || previewDataRowCount < 1}
+                        onClick={() => setImportDialogStep("columns")}
+                      >
+                        Continue
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={uploading || previewDataRowCount < 1}
+                        onClick={() => confirmPendingUpload()}
+                      >
+                        {uploading ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" />
+                            Importing…
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="size-4" />
+                            Import {previewDataRowCount} row{previewDataRowCount === 1 ? "" : "s"}
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
                 </DialogFooter>
               </div>
             </>
@@ -796,27 +1160,29 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
         </DialogContent>
       </Dialog>
 
-      {activeImport ? (
+      {activeImport && showRowTable ? (
         <div className="space-y-0">
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 py-4">
-            <div className="flex min-w-0 flex-1 flex-wrap items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted/60">
-                <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground">{activeImport.fileName}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {activeImport.rowCount} rows saved · {selectedCount} selected
-                  {enrichedCount > 0 && <> · {enrichedCount} enriched</>}
-                  {duplicateCount > 0 && <> · {duplicateCount} duplicates</>}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Select rows, run AI optimisation, then listings are created automatically. Your
-                  selection is saved automatically.
-                </p>
+          {!wizardMode && (
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 py-4">
+              <div className="flex min-w-0 flex-1 flex-wrap items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted/60">
+                  <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-foreground">{activeImport.fileName}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {activeImport.rowCount} rows saved · {selectedCount} selected
+                    {enrichedCount > 0 && <> · {enrichedCount} enriched</>}
+                    {duplicateCount > 0 && <> · {duplicateCount} duplicates</>}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Select rows, run AI optimisation, then listings are created automatically. Your
+                    selection is saved automatically.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <OptimiseBulkBar>
             <div className="flex flex-wrap items-center gap-3 min-w-0">
@@ -1030,7 +1396,7 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
       ) : (
         <OptimiseCenteredState
           className="cursor-pointer border border-dashed border-border/60 rounded-md hover:border-primary/40"
-          onClick={() => fileRef.current?.click()}
+          onClick={openCsvFilePicker}
         >
           <FileSpreadsheet className="h-10 w-10 text-muted-foreground" />
           <div>
@@ -1039,7 +1405,16 @@ export function StoreOnlineProductsCsvPanel({ onError }: Props) {
               Upload your supplier sheet and pick the header row. Use the help icon for what each step generates.
             </p>
           </div>
-          <Button size="sm" variant="outline" disabled={uploading}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={uploading}
+            onClick={(e) => {
+              e.stopPropagation();
+              openCsvFilePicker();
+            }}
+          >
             <Upload className="size-4" />
             Choose CSV file
           </Button>

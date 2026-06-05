@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSidebar } from "./app-sidebar";
+import { ForceLightChrome } from "./force-light-chrome";
 import { Topbar } from "./topbar";
 
 interface DashboardLayoutProps {
@@ -23,6 +24,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   }
 
   return (
+    <ForceLightChrome>
     <TooltipProvider delayDuration={0}>
       <SidebarProvider className="dashboard-light-surface h-svh overflow-hidden bg-background text-foreground">
         <AppSidebar />
@@ -34,5 +36,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>
+    </ForceLightChrome>
   );
 }

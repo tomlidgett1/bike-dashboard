@@ -15,6 +15,7 @@ import {
   findDuplicateForProduct,
   type ExistingCatalogProduct,
 } from '@/lib/store/online-products-csv';
+import { parseSohFromValues } from '@/lib/store/online-products-csv-parse';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -68,6 +69,7 @@ export interface ExtractedCatalogProduct {
   name: string;
   brand: string;
   price: number | null;
+  soh: number | null;
   category: string;
   subcategory: string;
   description: string;
@@ -267,7 +269,11 @@ function sanitiseText(value: string | null | undefined) {
   return String(value || '').trim();
 }
 
-function sanitiseProduct(product: EnrichedProduct, fallbackRow: CsvRowForAI) {
+function sanitiseProduct(
+  product: EnrichedProduct,
+  fallbackRow: CsvRowForAI,
+  headers: string[],
+) {
   const category = normaliseCategory(product.category);
   const name = sanitiseText(product.name);
 
@@ -278,6 +284,7 @@ function sanitiseProduct(product: EnrichedProduct, fallbackRow: CsvRowForAI) {
     name,
     brand: sanitiseText(product.brand),
     price: normalisePrice(product.price),
+    soh: parseSohFromValues(fallbackRow.values, headers),
     category,
     subcategory: normaliseSubcategory(category, product.subcategory),
     description: sanitiseText(product.description),
@@ -312,7 +319,10 @@ async function enrichBatch(headers: string[], rows: CsvRowForAI[]) {
   const byRow = new Map(rows.map((row) => [row.rowIndex, row]));
 
   const products = (parsed.products ?? [])
-    .map((product) => sanitiseProduct(product, byRow.get(product.rowIndex ?? -1) ?? rows[0]))
+    .map((product) => {
+      const fallbackRow = byRow.get(product.rowIndex ?? -1) ?? rows[0];
+      return sanitiseProduct(product, fallbackRow, headers);
+    })
     .filter((product): product is NonNullable<ReturnType<typeof sanitiseProduct>> => Boolean(product));
 
   const skippedRows: SkippedRow[] = (parsed.skippedRows ?? [])

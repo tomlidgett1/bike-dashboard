@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { refreshPublicMarketplaceAfterMutation } from '@/lib/server/refresh-public-marketplace'
 
 export async function DELETE() {
   try {
@@ -36,6 +37,10 @@ export async function DELETE() {
     }
 
     console.log(`✅ Deleted ${count || 0} products`)
+
+    if ((count || 0) > 0) {
+      await refreshPublicMarketplaceAfterMutation()
+    }
 
     return NextResponse.json({
       success: true,

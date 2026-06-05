@@ -36,7 +36,7 @@ export async function POST(
 
     const { data: importRow, error: importError } = await supabase
       .from('online_product_csv_imports')
-      .select('id, headers')
+      .select('id, headers, soh_column')
       .eq('id', importId)
       .eq('user_id', user.id)
       .single();
@@ -74,6 +74,7 @@ export async function POST(
     }
 
     const headers = importRow.headers as string[];
+    const sohColumn = (importRow.soh_column as string | null) ?? null;
     const aiRows = toEnrich.map((row) => ({
       rowIndex: row.row_index as number,
       values: row.raw_values as Record<string, string>,
@@ -118,7 +119,7 @@ export async function POST(
       if (!dbId) continue;
 
       const rawValues = rawByRowIndex.get(product.rowIndex) ?? {};
-      const soh = parseSohFromValues(rawValues, headers);
+      const soh = parseSohFromValues(rawValues, headers, sohColumn);
 
       const enrichedPayload = {
         name: product.name,

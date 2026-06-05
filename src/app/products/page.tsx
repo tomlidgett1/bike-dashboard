@@ -28,6 +28,7 @@ import {
   ListFilter,
   PackageX,
   TriangleAlert,
+  Trash2,
   X,
   Zap,
 } from "lucide-react";
@@ -59,6 +60,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { SyncProgressModal } from "@/components/lightspeed/sync-progress-modal";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
@@ -303,6 +314,9 @@ export default function ProductsPage() {
   const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('desc');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [deleteMode, setDeleteMode] = React.useState<"selected" | "page" | "all">("selected");
+  const [isDeleting, setIsDeleting] = React.useState(false);
   const [imageManageProduct, setImageManageProduct] = React.useState<Product | null>(null);
 
   // Image discovery state
@@ -471,6 +485,50 @@ export default function ProductsPage() {
     setSelected(new Set());
     fetchProducts(paginationRef.current.page);
     fetchStats();
+  };
+
+  const openDeleteDialog = (mode: "selected" | "page" | "all") => {
+    setDeleteMode(mode);
+    setDeleteDialogOpen(true);
+  };
+
+  const getDeleteCount = () => {
+    if (deleteMode === "all") return pagination.total;
+    if (deleteMode === "page") return products.length;
+    return selected.size;
+  };
+
+  const handleConfirmDelete = async () => {
+    setIsDeleting(true);
+    try {
+      if (deleteMode === "all") {
+        const response = await fetch("/api/products/delete-all", { method: "DELETE" });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(json.error || "Failed to delete products");
+      } else {
+        const productIds =
+          deleteMode === "page" ? products.map((p) => p.id) : [...selected];
+        if (productIds.length === 0) return;
+
+        const response = await fetch("/api/products/bulk-delete", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productIds, hardDelete: true }),
+        });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(json.error || "Failed to delete products");
+      }
+
+      setSelected(new Set());
+      setDeleteDialogOpen(false);
+      fetchProducts(1);
+      fetchStats();
+    } catch (error) {
+      console.error("Error deleting products:", error);
+      alert(error instanceof Error ? error.message : "Failed to delete products");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Handle image placeholder click - trigger AI discovery
@@ -766,10 +824,11 @@ export default function ProductsPage() {
             </div>
         </div>
 
-        {selected.size > 0 && (
-            <div className="flex items-center gap-3 border-b border-border/60 bg-primary/5 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 py-2.5">
+          {selected.size > 0 ? (
+            <div className="flex flex-wrap items-center gap-3">
               <span className="text-sm font-medium">{selected.size} selected</span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <Button variant="outline" size="xs" onClick={() => handleBulkActive(true)}>
                   <Eye className="size-3.5" />
                   Set active
@@ -778,12 +837,55 @@ export default function ProductsPage() {
                   <EyeOff className="size-3.5" />
                   Set inactive
                 </Button>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => openDeleteDialog("selected")}
+                >
+                  <Trash2 className="size-3.5" />
+                  Delete selected
+                </Button>
               </div>
-              <Button variant="ghost" size="xs" className="ml-auto text-muted-foreground" onClick={() => setSelected(new Set())}>
+              <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => setSelected(new Set())}>
                 Clear selection
               </Button>
             </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {products.length > 0
+                ? "Select products to run bulk actions"
+                : "No products on this page"}
+            </span>
           )}
+          {products.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button variant="outline" size="xs" onClick={toggleAll}>
+                {allChecked ? "Deselect all" : "Select all on page"}
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                className="text-destructive hover:text-destructive"
+                onClick={() => openDeleteDialog("page")}
+              >
+                <Trash2 className="size-3.5" />
+                Delete all on page
+              </Button>
+              {pagination.total > products.length && (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => openDeleteDialog("all")}
+                >
+                  <Trash2 className="size-3.5" />
+                  Delete entire catalogue
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="w-full overflow-x-auto">
             <Table className="w-full min-w-full">
@@ -1086,6 +1188,45 @@ export default function ProductsPage() {
           </>
         )}
       </AnimatePresence>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="rounded-md bg-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteMode === "all"
+                ? "Delete entire catalogue?"
+                : deleteMode === "page"
+                  ? "Delete all products on this page?"
+                  : "Delete selected products?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteMode === "all"
+                ? `This will permanently delete all ${pagination.total} products in your catalogue. This cannot be undone.`
+                : `This will permanently delete ${getDeleteCount()} product${getDeleteCount() === 1 ? "" : "s"}. This cannot be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmDelete();
+              }}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                "Delete permanently"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageContainer>
   );
 }

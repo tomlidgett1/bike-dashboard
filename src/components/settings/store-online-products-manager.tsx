@@ -43,8 +43,15 @@ import {
 } from "@/lib/admin/image-qa-speed";
 import {
   OnlineOnlyBadgeToggle,
+  type CsvPhotosPayload,
   StoreOnlineProductsCsvPanel,
 } from "@/components/settings/store-online-products-csv-panel";
+import {
+  buildCsvSerperSearchQuery,
+  parseSohFromColumn,
+  parseSohFromValues,
+  valueFromColumn,
+} from "@/lib/store/online-products-csv-parse";
 import { OnlineProductsGenerationTooltip } from "@/components/settings/online-products-generation-guide";
 
 const ONLINE_ONLY_BADGE_STORAGE_KEY = "yj-online-products-online-only-badge";
@@ -52,16 +59,18 @@ const ONLINE_ONLY_BADGE_STORAGE_KEY = "yj-online-products-online-only-badge";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ExtractedProduct {
-  id: string; // local only
+  id: string; // local only (csv row id when seeded from CSV wizard)
   rowIndex?: number;
   name: string;
   brand: string;
   price: number | null;
   soh?: number | null;
+  catalogDescription?: string | null;
   category: string;
   subcategory: string;
   description: string;
   specs: string;
+  serperSearchQuery?: string | null;
   isDuplicate?: boolean;
   duplicateOfId?: string | null;
   duplicateOfName?: string | null;
@@ -148,7 +157,7 @@ function toSpeedProduct(p: ExtractedProduct): SpeedWorkbenchProduct {
     manufacturer: p.brand || null,
     marketplace_category: p.category,
     marketplace_subcategory: p.subcategory,
-    image_review_search_query: null,
+    image_review_search_query: p.serperSearchQuery ?? null,
     store_product_name: p.name,
   };
 }
@@ -238,6 +247,7 @@ function ProductEditRow({
   onLightbox,
   disabled,
   showDuplicateBadge,
+  showSohField,
 }: {
   product: ExtractedProduct;
   imageState: ImageState;
@@ -253,6 +263,7 @@ function ProductEditRow({
   onLightbox: (url: string) => void;
   disabled?: boolean;
   showDuplicateBadge?: boolean;
+  showSohField?: boolean;
 }) {
   const img = imageState;
   const thumb = img.primaryUrl || img.selectedUrls[0] || null;
@@ -265,9 +276,15 @@ function ProductEditRow({
       </span>
     );
     if (img.phase === "ready") return (
-      <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground">
+      <button
+        type="button"
+        onClick={() => {
+          if (!expanded) onToggleExpand();
+        }}
+        className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground transition-colors hover:bg-primary/15"
+      >
         <Eye className="h-3 w-3" /> Review images
-      </span>
+      </button>
     );
     if (imgBusy) return (
       <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -315,7 +332,7 @@ function ProductEditRow({
           <p className="mt-0.5 text-xs text-muted-foreground">
             {product.brand || "—"} · {product.category}/{product.subcategory}
             {product.price != null ? ` · $${product.price.toFixed(2)}` : ""}
-            {product.soh != null ? ` · SOH ${product.soh}` : ""}
+            {showSohField ? ` · SOH ${product.soh != null ? product.soh : "—"}` : null}
           </p>
           {product.description.trim() ? (
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground line-clamp-3">
@@ -391,6 +408,31 @@ function ProductEditRow({
                 placeholder="0.00"
               />
             </div>
+            {showSohField && (
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Stock on hand (SOH)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={product.soh ?? ""}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (!raw) {
+                      onUpdate({ soh: null });
+                      return;
+                    }
+                    const parsed = Number.parseInt(raw, 10);
+                    onUpdate({
+                      soh: Number.isFinite(parsed) ? Math.max(0, parsed) : null,
+                    });
+                  }}
+                  disabled={disabled}
+                  className="h-8 rounded-md text-sm"
+                  placeholder="From CSV or enter manually"
+                />
+              </div>
+            )}
             <div className="space-y-1">
               <Label className="text-xs font-medium">Category</Label>
               <Select
@@ -634,8 +676,15 @@ function ImageReviewBlock({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function StoreOnlineProductsManager() {
+export function StoreOnlineProductsManager({
+  csvPhotosSeed,
+  onCsvPhotosComplete,
+}: {
+  csvPhotosSeed?: CsvPhotosPayload;
+  onCsvPhotosComplete?: () => void;
+} = {}) {
   const router = useRouter();
+  const csvOnlyMode = Boolean(csvPhotosSeed);
 
   // Flow state
   const [phase, setPhase] = React.useState<FlowPhase>("idle");
@@ -688,6 +737,56 @@ export function StoreOnlineProductsManager() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  React.useEffect(() => {
+    if (!csvPhotosSeed) return;
+    const {
+      items,
+      rows,
+      headers,
+      sohColumn,
+      searchColumn,
+      imageSearchBicycleContext,
+    } = csvPhotosSeed;
+    const extracted: ExtractedProduct[] = items.map((item) => {
+      const row = rows.find((r) => r.id === item.csvRowId);
+      const preferredSoh = sohColumn;
+      const sohFromCsv =
+        row && headers.length > 0
+          ? parseSohFromColumn(row.rawValues, preferredSoh) ??
+            parseSohFromValues(row.rawValues, headers, preferredSoh)
+          : null;
+      const searchColumnValue = row
+        ? valueFromColumn(row.rawValues, searchColumn)
+        : null;
+      const serperSearchQuery = buildCsvSerperSearchQuery({
+        searchColumnValue,
+        brand: item.brand,
+        name: item.name,
+        subcategory: item.subcategory,
+        bicycleContext: imageSearchBicycleContext,
+      });
+      return {
+        id: item.csvRowId,
+        rowIndex: item.rowIndex,
+        name: item.name,
+        brand: item.brand,
+        price: item.price,
+        soh: item.soh ?? sohFromCsv,
+        catalogDescription: row?.displayLabel ?? null,
+        category: item.category,
+        subcategory: item.subcategory,
+        description: item.description,
+        specs: item.specs,
+        serperSearchQuery,
+      };
+    });
+    setProducts(extracted);
+    setImageStates(Object.fromEntries(extracted.map((p) => [p.id, emptyImageState()])));
+    setExpanded(new Set());
+    setPhase("review");
+    setIntakeMode("csv");
+  }, [csvPhotosSeed]);
 
   // ── Upload handlers ──────────────────────────────────────────────────────────
 
@@ -917,10 +1016,12 @@ export function StoreOnlineProductsManager() {
       .map((p) => {
         const img = imageStates[p.id] ?? emptyImageState();
         return {
+          csvRowId: p.id,
           name: p.name,
           brand: p.brand || null,
           price: p.price!,
           soh: p.soh ?? null,
+          catalogDescription: p.catalogDescription ?? null,
           description: p.description || null,
           specs: p.specs || null,
           category: p.category,
@@ -934,7 +1035,13 @@ export function StoreOnlineProductsManager() {
       const res = await fetch("/api/store/online-products/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ products: toCreate, onlineOnly: onlineOnlyBadge }),
+        body: JSON.stringify({
+          products: toCreate.map(({ csvRowId: _csvRowId, ...product }) => product),
+          onlineOnly: csvOnlyMode ? false : onlineOnlyBadge,
+          csvLinks: csvPhotosSeed
+            ? toCreate.map((p) => ({ csvRowId: p.csvRowId }))
+            : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Failed to create products");
@@ -943,6 +1050,7 @@ export function StoreOnlineProductsManager() {
         throw new Error(detail);
       }
       setPhase("done");
+      onCsvPhotosComplete?.();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to create products");
       setPhase("review");
@@ -1011,7 +1119,7 @@ export function StoreOnlineProductsManager() {
       )}
 
       {/* Intake mode tabs */}
-      {products.length === 0 && (
+      {!csvOnlyMode && products.length === 0 && (
         <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
           <button
             type="button"
@@ -1042,11 +1150,11 @@ export function StoreOnlineProductsManager() {
         </div>
       )}
 
-      {intakeMode === "csv" && products.length === 0 && (
+      {!csvOnlyMode && intakeMode === "csv" && products.length === 0 && (
         <StoreOnlineProductsCsvPanel onError={setErrorMsg} />
       )}
 
-      {intakeMode === "screenshot" && products.length === 0 && (
+      {!csvOnlyMode && intakeMode === "screenshot" && products.length === 0 && (
         <OnlineOnlyBadgeToggle
           value={onlineOnlyBadge}
           onChange={handleOnlineOnlyBadgeChange}
@@ -1117,32 +1225,44 @@ export function StoreOnlineProductsManager() {
       {/* Extracted products list */}
       {products.length > 0 && (
         <>
-          <OnlineOnlyBadgeToggle
-            value={onlineOnlyBadge}
-            onChange={handleOnlineOnlyBadgeChange}
-            disabled={isCreating || searching}
-          />
+          {!csvOnlyMode && (
+            <OnlineOnlyBadgeToggle
+              value={onlineOnlyBadge}
+              onChange={handleOnlineOnlyBadgeChange}
+              disabled={isCreating || searching}
+            />
+          )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 py-3">
+          <div
+            className={cn(
+              "flex flex-wrap items-center justify-between gap-3",
+              csvOnlyMode ? "pb-2" : "border-b border-border/60 py-3",
+            )}
+          >
             <div className="flex flex-wrap items-center gap-2 min-w-0">
-              {intakeMode === "csv" && (
+              {intakeMode === "csv" && !csvOnlyMode && (
                 <Button size="sm" variant="outline" onClick={backToCsvTable}>
                   <FileSpreadsheet className="size-4" />
                   Back to CSV table
                 </Button>
               )}
-              <span className="text-sm font-semibold text-foreground">
-                {products.length} product{products.length === 1 ? "" : "s"} — catalogue fields done, images next
+              <span className="text-sm text-muted-foreground">
+                {products.length} product{products.length === 1 ? "" : "s"}
+                {csvOnlyMode
+                  ? ` · tap a row to review copy and add photos${
+                      csvPhotosSeed?.searchColumn
+                        ? ` · image search uses ${csvPhotosSeed.searchColumn}`
+                        : ""
+                    }`
+                  : " — catalogue fields done, images next"}
+                {pendingImageCount > 0 && !allSearched && (
+                  <> · {pendingImageCount} need images</>
+                )}
+                {allSearched && readyCount > 0 && (
+                  <> · {readyCount} ready to create</>
+                )}
               </span>
-              {pendingImageCount > 0 && !allSearched && (
-                <span className="text-xs text-muted-foreground">
-                  · {pendingImageCount} need image search
-                </span>
-              )}
-              {allSearched && readyCount > 0 && (
-                <span className="text-xs text-muted-foreground">· {readyCount} with images</span>
-              )}
-              <OnlineProductsGenerationTooltip />
+              {!csvOnlyMode && <OnlineProductsGenerationTooltip />}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {(phase === "review" || phase === "searching") && pendingImageCount > 0 && (
@@ -1196,6 +1316,8 @@ export function StoreOnlineProductsManager() {
                 >
                   {isCreating ? (
                     <><Loader2 className="size-4 animate-spin" /> Creating…</>
+                  ) : csvOnlyMode ? (
+                    <><Package className="size-4" /> Create {readyCount} listing{readyCount === 1 ? "" : "s"}</>
                   ) : onlineOnlyBadge ? (
                     <><Globe className="size-4" /> Create {readyCount} online product{readyCount === 1 ? "" : "s"}</>
                   ) : (
@@ -1229,12 +1351,13 @@ export function StoreOnlineProductsManager() {
                   onLightbox={setLightbox}
                   disabled={isCreating || searching}
                   showDuplicateBadge={intakeMode === "csv"}
+                  showSohField={csvOnlyMode}
                 />
               ))}
           </div>
 
           {/* Bottom action bar */}
-          {(phase === "review" || phase === "searching") && (
+          {!csvOnlyMode && (phase === "review" || phase === "searching") && (
             <div className="flex flex-wrap justify-end items-center gap-2">
               {pendingImageCount > 0 && (
                 <>

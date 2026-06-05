@@ -371,22 +371,12 @@ export function MarketplaceHeader({
               className="flex h-full max-h-full shrink-0 items-center hover:opacity-80 transition-opacity cursor-pointer"
             >
               <Image
-                src="/yjsmall.svg"
+                src="/yjlogo.png"
                 alt="Yellow Jersey"
-                width={120}
-                height={24}
-                className="h-8 w-auto sm:hidden"
+                width={500}
+                height={60}
+                className="h-5 w-auto"
                 priority
-                unoptimized
-              />
-              <Image
-                src="/yj.svg"
-                alt="Yellow Jersey"
-                width={220}
-                height={36}
-                className="hidden h-9 w-auto sm:block"
-                priority
-                unoptimized
               />
             </button>
 

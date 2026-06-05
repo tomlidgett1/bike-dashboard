@@ -21,8 +21,19 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -268,14 +279,31 @@ interface ListingCardProps {
   formatDate: (date: string) => string;
   onToggleActive: (id: string, currentIsActive: boolean) => void;
   isToggling: boolean;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
 }
 
-function MobileListingCard({ listing, onActionClick, onView, formatDate, onToggleActive, isToggling }: ListingCardProps) {
+function MobileListingCard({
+  listing,
+  onActionClick,
+  onView,
+  formatDate,
+  onToggleActive,
+  isToggling,
+  selected,
+  onToggleSelect,
+}: ListingCardProps) {
   const primaryImage = listing.primary_image_url || (Array.isArray(listing.images) && listing.images[0]?.url);
 
   return (
     <div className="border-b last:border-b-0">
       <div className="px-4 py-3 flex gap-3">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={() => onToggleSelect(listing.id)}
+          aria-label={`Select ${listing.description || "listing"}`}
+          className="mt-1 flex-shrink-0"
+        />
         <button onClick={() => onView(listing.id)} className="flex-shrink-0 h-16 w-16 rounded-md bg-muted overflow-hidden">
           {primaryImage ? (
             <img src={primaryImage as string} alt={listing.description} className="h-full w-full object-cover" />
@@ -342,6 +370,11 @@ export default function MyListingsPage() {
   const [actionSheetOpen, setActionSheetOpen] = React.useState(false);
   const [selectedListing, setSelectedListing] = React.useState<Listing | null>(null);
   const [togglingIds, setTogglingIds] = React.useState<Set<string>>(new Set());
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [deleteMode, setDeleteMode] = React.useState<"single" | "selected" | "page" | "all">("selected");
+  const [singleDeleteId, setSingleDeleteId] = React.useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = React.useState(false);
 
   // Upload modal state
   const [smartUploadOpen, setSmartUploadOpen] = React.useState(false);
@@ -349,6 +382,7 @@ export default function MyListingsPage() {
   const [bulkUploadOpen, setBulkUploadOpen] = React.useState(false);
 
   React.useEffect(() => {
+    setSelected(new Set());
     fetchListings();
   }, [activeTab]);
 
@@ -372,8 +406,75 @@ export default function MyListingsPage() {
     // TODO: implement
   };
 
+  const allChecked = listings.length > 0 && listings.every((l) => selected.has(l.id));
+  const someChecked = listings.some((l) => selected.has(l.id));
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected(allChecked ? new Set() : new Set(listings.map((l) => l.id)));
+  };
+
+  const openDeleteDialog = (mode: "single" | "selected" | "page" | "all", id?: string) => {
+    setDeleteMode(mode);
+    setSingleDeleteId(id ?? null);
+    setDeleteDialogOpen(true);
+  };
+
+  const getDeleteCount = () => {
+    if (deleteMode === "all") return listings.length;
+    if (deleteMode === "page") return listings.length;
+    if (deleteMode === "single") return 1;
+    return selected.size;
+  };
+
   const handleDelete = (id: string) => {
-    // TODO: implement
+    setActionSheetOpen(false);
+    openDeleteDialog("single", id);
+  };
+
+  const handleConfirmDelete = async () => {
+    setIsDeleting(true);
+    try {
+      let body: { listingIds?: string[]; deleteAll?: boolean; status?: TabType };
+
+      if (deleteMode === "all") {
+        body = { deleteAll: true, status: activeTab };
+      } else if (deleteMode === "page") {
+        body = { listingIds: listings.map((l) => l.id) };
+      } else if (deleteMode === "single" && singleDeleteId) {
+        body = { listingIds: [singleDeleteId] };
+      } else {
+        body = { listingIds: [...selected] };
+      }
+
+      const response = await fetch("/api/marketplace/listings/bulk-delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json.error || "Failed to delete listings");
+
+      setSelected(new Set());
+      setSingleDeleteId(null);
+      setDeleteDialogOpen(false);
+      await fetchListings();
+    } catch (err) {
+      console.error("Error deleting listings:", err);
+      setError(err instanceof Error ? err.message : "Failed to delete listings");
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleMarkAsSold = (id: string) => {
@@ -502,6 +603,60 @@ export default function MyListingsPage() {
         <CreateListingDropdown {...createListingProps} />
       </div>
 
+      {!loading && listings.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
+          {selected.size > 0 ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-medium">{selected.size} selected</span>
+              <Button
+                variant="outline"
+                size="xs"
+                className="text-destructive hover:text-destructive"
+                onClick={() => openDeleteDialog("selected")}
+              >
+                <Trash2 className="size-3.5" />
+                Delete selected
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                className="text-muted-foreground"
+                onClick={() => setSelected(new Set())}
+              >
+                Clear selection
+              </Button>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              Select listings to run bulk actions
+            </span>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button variant="outline" size="xs" onClick={toggleAll}>
+              {allChecked ? "Deselect all" : "Select all on page"}
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              className="text-destructive hover:text-destructive"
+              onClick={() => openDeleteDialog("page")}
+            >
+              <Trash2 className="size-3.5" />
+              Delete all on page
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              className="text-destructive hover:text-destructive"
+              onClick={() => openDeleteDialog("all")}
+            >
+              <Trash2 className="size-3.5" />
+              Delete all in tab
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Error banner */}
       {error && (
         <div className="px-4 sm:px-6 py-2 border-b">
@@ -535,6 +690,8 @@ export default function MyListingsPage() {
                 formatDate={formatDate}
                 onToggleActive={handleToggleActive}
                 isToggling={togglingIds.has(listing.id)}
+                selected={selected.has(listing.id)}
+                onToggleSelect={toggleSelect}
               />
             ))}
           </div>
@@ -544,7 +701,14 @@ export default function MyListingsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-6 w-[360px]">Listing</TableHead>
+                  <TableHead className="w-10 pl-6">
+                    <Checkbox
+                      checked={allChecked ? true : someChecked ? "indeterminate" : false}
+                      onCheckedChange={toggleAll}
+                      aria-label="Select all listings on page"
+                    />
+                  </TableHead>
+                  <TableHead className="w-[360px]">Listing</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Price</TableHead>
                   <TableHead>Condition</TableHead>
@@ -560,8 +724,15 @@ export default function MyListingsPage() {
                   const primaryImage = listing.primary_image_url || (Array.isArray(listing.images) && listing.images[0]?.url);
                   return (
                     <TableRow key={listing.id} className="group">
-                      {/* Listing */}
                       <TableCell className="py-2.5 pl-6">
+                        <Checkbox
+                          checked={selected.has(listing.id)}
+                          onCheckedChange={() => toggleSelect(listing.id)}
+                          aria-label={`Select ${listing.description || "listing"}`}
+                        />
+                      </TableCell>
+                      {/* Listing */}
+                      <TableCell className="py-2.5">
                         <div className="flex items-center gap-3 max-w-[320px]">
                           <div className="h-10 w-10 rounded-md bg-muted overflow-hidden flex-shrink-0">
                             {primaryImage ? (
@@ -748,6 +919,47 @@ export default function MyListingsPage() {
         onClose={() => setBulkUploadOpen(false)}
         onComplete={(_ids) => { setBulkUploadOpen(false); fetchListings(); }}
       />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="rounded-md bg-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteMode === "all"
+                ? `Delete all ${activeTab} listings?`
+                : deleteMode === "page"
+                  ? "Delete all listings on this page?"
+                  : deleteMode === "single"
+                    ? "Delete this listing?"
+                    : "Delete selected listings?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteMode === "all"
+                ? `This will remove all listings in the ${activeTab} tab. Drafts are deleted permanently; active listings are removed from the marketplace.`
+                : `This will remove ${getDeleteCount()} listing${getDeleteCount() === 1 ? "" : "s"}. Drafts are deleted permanently; active listings are removed from the marketplace.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmDelete();
+              }}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

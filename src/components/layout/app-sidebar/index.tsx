@@ -80,7 +80,7 @@ const NAV: NavGroup[] = [
           { title: "Titles", href: "/settings/store/titles" },
         ],
       },
-      { title: "Optimize", href: "/optimize", icon: Sparkles },
+      { title: "Product Optimise", href: "/optimize", icon: Sparkles },
     ],
   },
   {

@@ -76,9 +76,9 @@ function photoStatus(
   return "needs";
 }
 
-export function PhotoQueue() {
+export function PhotoQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }) {
   const { categories, loadingCats } = useOptimizerCategories();
-  const [scope, setScope] = React.useState<OptimizerProductScope>("catalogue");
+  const [scope, setScope] = React.useState<OptimizerProductScope>(fixedScope ?? "catalogue");
   const [category, setCategory] = React.useState("");
   const [productLimit, setProductLimit] = React.useState<OptimizerProductLimit>(
     DEFAULT_OPTIMIZER_PRODUCT_LIMIT,
@@ -443,10 +443,12 @@ export function PhotoQueue() {
     }
   };
 
+  const showScopeTabs = !fixedScope;
+
   if (scope === "catalogue" && !category && !loadingCats) {
     return (
       <div className="space-y-6">
-        <OptimizerScopeTabs scope={scope} onChange={onScopeChange} />
+        {showScopeTabs && <OptimizerScopeTabs scope={scope} onChange={onScopeChange} />}
         <EmptyCategoryPrompt
           loadingCats={loadingCats}
           category={category}
@@ -466,7 +468,9 @@ export function PhotoQueue() {
     <div>
       <OptimiseToolbar>
         <div className="flex flex-wrap items-center gap-3 min-w-0">
-          <OptimizerScopeTabs scope={scope} disabled={running} onChange={onScopeChange} />
+          {showScopeTabs && (
+            <OptimizerScopeTabs scope={scope} disabled={running} onChange={onScopeChange} />
+          )}
           {showCataloguePicker ? (
             <CategoryPicker
               category={category}
@@ -478,7 +482,9 @@ export function PhotoQueue() {
             />
           ) : (
             <span className="text-sm text-muted-foreground shrink-0">
-              Manual / CSV·image imports
+              {scope === "private_listing"
+                ? "Private listings"
+                : "Manual / CSV·image imports"}
             </span>
           )}
           <ProductLimitPicker
@@ -490,9 +496,11 @@ export function PhotoQueue() {
             <span className="text-sm text-muted-foreground tabular-nums shrink-0">
               {formatOptimizerProductCount(products.length, totalInCategory)}
             </span>
-          ) : scope === "csv_image" && totalInCategory != null ? (
+          ) : (scope === "csv_image" || scope === "private_listing") && totalInCategory != null ? (
             <span className="text-sm text-muted-foreground tabular-nums shrink-0">
-              {totalInCategory} manual listing{totalInCategory === 1 ? "" : "s"}
+              {totalInCategory}{" "}
+              {scope === "private_listing" ? "private" : "manual"} listing
+              {totalInCategory === 1 ? "" : "s"}
             </span>
           ) : categoryMeta && category !== "all" ? (
             <span className="text-sm text-muted-foreground tabular-nums shrink-0">
@@ -512,7 +520,7 @@ export function PhotoQueue() {
         <OptimiseSearchInput value={search} onChange={setSearch} />
       </OptimiseToolbar>
 
-      {(scope === "csv_image" || category) && !loading && (
+      {(scope === "csv_image" || scope === "private_listing" || category) && !loading && (
         <OptimiseBulkBar>
           <div className="flex flex-wrap items-center gap-3">
             <Checkbox
@@ -567,12 +575,20 @@ export function PhotoQueue() {
 
       {loading ? (
         <OptimiseLoadingState />
-      ) : products.length === 0 && scope === "csv_image" ? (
+      ) : products.length === 0 && (scope === "csv_image" || scope === "private_listing") ? (
         <OptimiseCenteredState>
-          <StatusBadge label="No CSV/Image products yet" tone="neutral" />
+          <StatusBadge
+            label={
+              scope === "private_listing"
+                ? "No private listings yet"
+                : "No CSV/Image products yet"
+            }
+            tone="neutral"
+          />
           <p className="mt-3 max-w-md text-sm text-muted-foreground">
-            Import a CSV on the CSV/Image tab and create listings first. They will appear here as
-            manual products ready for photos.
+            {scope === "private_listing"
+              ? "Create private listings in Products first, then return here to add photos."
+              : "Import a CSV and create listings first. They will appear here as manual products ready for photos."}
           </p>
         </OptimiseCenteredState>
       ) : visible.length === 0 ? (
@@ -585,7 +601,9 @@ export function PhotoQueue() {
             {filter === "in_progress"
               ? scope === "csv_image"
                 ? "Every CSV/Image import in this batch has a store photo, or check the Review tab."
-                : "Every product in this category has a store photo, or check the Review tab."
+                : scope === "private_listing"
+                  ? "Every private listing in this batch has a store photo, or check the Review tab."
+                  : "Every product in this category has a store photo, or check the Review tab."
               : filter === "review"
                 ? "Run Find photos first — products ready for approval appear here."
                 : "Nothing in this view."}

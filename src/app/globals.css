@@ -228,21 +228,27 @@
   }
 
   html:has(.marketplace-light-surface),
-  html:has(.marketplace-light-surface) body {
-    background-color: #ffffff;
+  html:has(.marketplace-light-surface) body,
+  html.dark:has(.marketplace-light-surface),
+  html.dark:has(.marketplace-light-surface) body {
+    background-color: #ffffff !important;
     color-scheme: light;
   }
 
   @media (min-width: 640px) {
     html:has(.marketplace-light-surface),
-    html:has(.marketplace-light-surface) body {
-      background-color: #f9fafb;
+    html:has(.marketplace-light-surface) body,
+    html.dark:has(.marketplace-light-surface),
+    html.dark:has(.marketplace-light-surface) body {
+      background-color: #f9fafb !important;
     }
   }
 
   html:has(.dashboard-light-surface),
-  html:has(.dashboard-light-surface) body {
-    background-color: #ffffff;
+  html:has(.dashboard-light-surface) body,
+  html.dark:has(.dashboard-light-surface),
+  html.dark:has(.dashboard-light-surface) body {
+    background-color: #ffffff !important;
     color-scheme: light;
   }
 

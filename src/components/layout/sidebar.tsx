@@ -56,7 +56,7 @@ const mainNavItems: NavItem[] = [
     requiresStore: true,
   },
   {
-    title: "Optimize",
+    title: "Product Optimise",
     href: "/optimize",
     icon: Sparkles,
     requiresStore: true,

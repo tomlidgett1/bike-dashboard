@@ -1,15 +1,18 @@
 import type { OpeningHours } from "@/components/providers/profile-provider";
 import { BRAND_YELLOW } from "@/lib/marketplace/homepage-config";
 
+/** Values must match Settings → Business profile → Store type exactly. */
 export const STORE_TYPES = [
-  { value: "Bicycle Shop", label: "Bicycle shop", description: "General retail and advice" },
-  { value: "Bike Repair & Service", label: "Repair & service", description: "Workshop-first store" },
-  { value: "Mountain Bike Specialist", label: "Mountain bike specialist", description: "Trail and MTB focus" },
-  { value: "Road Bike Specialist", label: "Road bike specialist", description: "Road and performance" },
-  { value: "Electric Bike Dealer", label: "E-bike dealer", description: "Electric bikes and support" },
-  { value: "BMX Shop", label: "BMX shop", description: "BMX and skate park culture" },
-  { value: "Bike Rental", label: "Bike rental", description: "Hire and experiences" },
-  { value: "Online Bike Store", label: "Online store", description: "Mostly online sales" },
+  { value: "Bicycle Shop", label: "Bicycle Shop", description: "General retail and advice" },
+  { value: "Bike Repair & Service", label: "Bike Repair & Service", description: "Workshop-first store" },
+  { value: "Mountain Bike Specialist", label: "Mountain Bike Specialist", description: "Trail and MTB focus" },
+  { value: "Road Bike Specialist", label: "Road Bike Specialist", description: "Road and performance" },
+  { value: "Electric Bike Dealer", label: "Electric Bike Dealer", description: "Electric bikes and support" },
+  { value: "BMX Shop", label: "BMX Shop", description: "BMX and skate park culture" },
+  { value: "Cycling Accessories", label: "Cycling Accessories", description: "Parts, apparel and accessories" },
+  { value: "Bike Rental", label: "Bike Rental", description: "Hire and experiences" },
+  { value: "Online Bike Store", label: "Online Bike Store", description: "Mostly online sales" },
+  { value: "Sports & Recreation", label: "Sports & Recreation", description: "Broader sports retail" },
   { value: "Other", label: "Other", description: "Something else" },
 ] as const;
 

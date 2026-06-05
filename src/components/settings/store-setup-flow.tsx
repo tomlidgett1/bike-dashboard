@@ -35,7 +35,9 @@ import {
 } from "@/lib/store/setup-constants";
 import {
   fetchRawHomepageConfig,
+  patchHomepageHeroCopy,
   patchHomepageHeroImage,
+  patchHomepageStory,
   patchHomepageTheme,
   uploadHomepageHeroImage,
 } from "@/lib/store/setup-homepage";
@@ -74,44 +76,44 @@ const STEP_META: Record<StoreSetupStepId, { title: string; description: string }
     description: "Set up your storefront in a few minutes.",
   },
   "store-name": {
-    title: "What is your store called?",
-    description: "This is the name customers see on your Yellow Jersey storefront.",
+    title: "What is your business name?",
+    description: "Same as Settings → Business profile. Shown as your store name and hero headline.",
   },
   "store-type": {
-    title: "What kind of bike shop are you?",
-    description: "Helps shoppers understand what you specialise in.",
+    title: "What is your store type?",
+    description: "Same as Settings → Business profile. Shown on your profile and hero eyebrow.",
   },
   address: {
-    title: "Where are you located?",
-    description: "Shown on your storefront so customers can visit or get directions.",
+    title: "What is your business address?",
+    description: "Same as Settings → Business profile. Shown on your About tab and visit section.",
   },
   phone: {
-    title: "What is your shop phone number?",
-    description: "Customers can call you directly from your storefront.",
+    title: "What is your phone number?",
+    description: "Shown on your storefront header and About tab.",
   },
   logo: {
-    title: "Upload your store logo",
-    description: "Square image works best. You can change this anytime in Settings.",
+    title: "Upload your business logo",
+    description: "Same as Settings → Business logo. Shown in your storefront header.",
   },
   "opening-hours": {
-    title: "When are you open?",
-    description: "Set hours for each day — copy one day to all if your schedule is consistent.",
+    title: "Opening hours",
+    description: "Same as Settings → Opening hours. Shown on your profile and hero.",
   },
   "header-image": {
-    title: "Choose a header image",
-    description: "The banner at the top of your storefront. Upload your own or pick a default.",
+    title: "Hero image",
+    description: "Same as Settings → Landing page → Hero images. The banner at the top of your Home tab.",
   },
   theme: {
-    title: "Pick your storefront colour",
-    description: "Your accent colour appears on buttons and highlights across your shop page.",
+    title: "Accent colour",
+    description: "Same as Settings → Landing page → Theme. Used on buttons and highlights.",
   },
   bio: {
-    title: "Tell customers about your shop",
-    description: "A short intro for your storefront — what makes your shop worth visiting?",
+    title: "About your shop",
+    description: "Saved to your About tab and Home → Our story section.",
   },
   service: {
-    title: "What is your main service?",
-    description: "Most bike shops offer at least one workshop service. You can add more later.",
+    title: "Store services",
+    description: "Same as Settings → Services. Your main workshop offering on the storefront.",
   },
   lightspeed: {
     title: "Connect your inventory",
@@ -260,6 +262,25 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
   const goNext = () => setStepIndex((i) => Math.min(i + 1, totalSteps - 1));
   const goBack = () => setStepIndex((i) => Math.max(i - 1, 0));
 
+  const resetToStart = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      await saveProfile({
+        preferences: {
+          ...(profile?.preferences ?? {}),
+          store_setup_completed: false,
+        },
+      });
+      hasSetInitialStep.current = true;
+      setStepIndex(0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reset onboarding");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const uploadLogo = async (file: File): Promise<string> => {
     const fd = new FormData();
     fd.append("file", file);
@@ -329,11 +350,13 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
           setError("Please enter your store name.");
           return;
         }
+        const name = form.businessName.trim();
         const result = await saveProfile({
-          business_name: form.businessName.trim(),
-          name: form.businessName.trim(),
+          business_name: name,
+          name,
         });
         if (!result.success) throw new Error(result.error);
+        await patchHomepageHeroCopy({ headline: name });
       }
 
       if (stepId === "store-type") {
@@ -343,6 +366,7 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
         }
         const result = await saveProfile({ store_type: form.storeType });
         if (!result.success) throw new Error(result.error);
+        await patchHomepageHeroCopy({ eyebrow: form.storeType });
       }
 
       if (stepId === "address") {
@@ -395,8 +419,10 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
 
       if (stepId === "bio") {
         if (form.bio.trim()) {
-          const result = await saveProfile({ bio: form.bio.trim() });
+          const bio = form.bio.trim();
+          const result = await saveProfile({ bio });
           if (!result.success) throw new Error(result.error);
+          await patchHomepageStory(bio, form.businessName.trim() || profile?.business_name || undefined);
         }
       }
 
@@ -608,9 +634,9 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
               <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                 {stepId === "store-name" && (
                   <div className="space-y-2">
-                    <Label htmlFor="store-name" className="text-sm font-medium text-gray-700">
-                      Store name
-                    </Label>
+                <Label htmlFor="store-name" className="text-sm font-medium text-gray-700">
+                  Business name
+                </Label>
                     <div className="relative">
                       <Store className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                       <Input
@@ -646,9 +672,9 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
 
                 {stepId === "address" && (
                   <div className="space-y-2">
-                    <Label htmlFor="address" className="text-sm font-medium text-gray-700">
-                      Store address
-                    </Label>
+                <Label htmlFor="address" className="text-sm font-medium text-gray-700">
+                  Business address
+                </Label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                       <Input
@@ -775,7 +801,7 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
                       Upload your own
                     </Button>
                     <p className="text-center text-xs text-gray-400">
-                      Optional — you can change this on your landing page settings.
+                      Optional — same field as Landing page → Hero images in Settings.
                     </p>
                   </div>
                 )}
@@ -831,9 +857,9 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
 
                 {stepId === "bio" && (
                   <div className="space-y-2">
-                    <Label htmlFor="bio" className="text-sm font-medium text-gray-700">
-                      About your shop
-                    </Label>
+                <Label htmlFor="bio" className="text-sm font-medium text-gray-700">
+                  About your shop (About tab and Our story)
+                </Label>
                     <Textarea
                       id="bio"
                       value={form.bio}
@@ -853,9 +879,9 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
 
                 {stepId === "service" && (
                   <div className="space-y-2">
-                    <Label htmlFor="service" className="text-sm font-medium text-gray-700">
-                      Main service
-                    </Label>
+                <Label htmlFor="service" className="text-sm font-medium text-gray-700">
+                  Service name
+                </Label>
                     <div className="relative">
                       <Wrench className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                       <Input
@@ -971,13 +997,23 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
               )}
 
               {stepId === "complete" && (
-                <Button
-                  type="button"
-                  onClick={handleContinue}
-                  className="h-12 w-full rounded-full bg-[#FFC72C] text-base font-semibold text-gray-900 hover:bg-[#E6B328]"
-                >
-                  Get started
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    onClick={handleContinue}
+                    className="h-12 w-full rounded-full bg-[#FFC72C] text-base font-semibold text-gray-900 hover:bg-[#E6B328]"
+                  >
+                    Get started
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={resetToStart}
+                    disabled={loading}
+                    className="mt-3 flex w-full items-center justify-center text-sm font-medium text-gray-500 transition hover:text-gray-900"
+                  >
+                    Back to start (testing)
+                  </button>
+                </>
               )}
 
               {stepIndex > 0 && stepId !== "complete" && (

@@ -13,6 +13,7 @@ import { ProductInquiryButton } from "@/components/marketplace/product-inquiry-b
 import { ProductDescription } from "@/components/marketplace/product-details-panel-simple";
 import { RecommendationCarousel } from "@/components/marketplace/product-detail/recommendation-carousel";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
+import { formatStockOnHandLabel } from "@/lib/marketplace/stock-display";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
 
@@ -81,8 +82,11 @@ export function ImmersiveProductLayout({
     }
   };
 
+  const stockLabel = formatStockOnHandLabel(product.qoh, product.listing_type);
+
   // Spec candidates → render the ones that have a value.
   const specPairs: Array<[string, string | number | null | undefined]> = [
+    ["Stock on hand", stockLabel ? Math.floor(Number(product.qoh)) : null],
     ["Condition", (product as any).condition_rating],
     ["Year", product.model_year],
     ["Size", (product as any).frame_size || (product as any).size],

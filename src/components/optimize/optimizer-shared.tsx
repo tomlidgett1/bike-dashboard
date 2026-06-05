@@ -159,15 +159,30 @@ export function hasSerperImage(p: OptimizerProduct) {
   );
 }
 
+export function isManualCatalogListing(p: OptimizerProduct) {
+  return p.listing_source === "manual" || p.listing_source === "online_catalog";
+}
+
 export function hasTitle(p: OptimizerProduct) {
-  if (!p.display_name) return false;
-  return (
-    p.display_name.trim().toLowerCase() !== (p.description ?? "").trim().toLowerCase()
-  );
+  const display = p.display_name?.trim();
+  if (!display) return false;
+  // CSV / manual listings set description to the source row label; display_name is the optimised title.
+  if (isManualCatalogListing(p)) return true;
+  return display.toLowerCase() !== (p.description ?? "").trim().toLowerCase();
 }
 
 export function hasDesc(p: OptimizerProduct) {
-  return !!p.product_description;
+  const marketing = p.product_description?.trim();
+  if (marketing) return true;
+  // Legacy CSV rows may only have copy on description before product_description was populated.
+  if (isManualCatalogListing(p)) {
+    const fallback = p.description?.trim();
+    const title = (p.display_name ?? "").trim().toLowerCase();
+    if (fallback && fallback.toLowerCase() !== title && fallback.length >= 24) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function hasSpecs(p: OptimizerProduct) {
@@ -293,7 +308,7 @@ export type OptimizerProductLimit =
 
 export const DEFAULT_OPTIMIZER_PRODUCT_LIMIT: OptimizerProductLimit = "20";
 
-export type OptimizerProductScope = "catalogue" | "csv_image";
+export type OptimizerProductScope = "catalogue" | "csv_image" | "private_listing";
 
 export function optimizerLimitToPageSize(limit: OptimizerProductLimit): number {
   return limit === "all" ? 1000 : Number.parseInt(limit, 10);
@@ -333,6 +348,8 @@ export function useOptimizerProducts(
         });
         if (productScope === "csv_image") {
           params.set("source", "manual");
+        } else if (productScope === "private_listing") {
+          params.set("listing_type", "private_listing");
         } else if (cat && cat !== "all") {
           params.set("ls_category_id", cat);
         }
@@ -354,7 +371,7 @@ export function useOptimizerProducts(
   );
 
   React.useEffect(() => {
-    if (scope === "csv_image") {
+    if (scope === "csv_image" || scope === "private_listing") {
       void loadProducts("", limit, scope);
       return;
     }

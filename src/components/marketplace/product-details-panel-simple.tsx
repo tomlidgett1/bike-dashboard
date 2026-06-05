@@ -16,6 +16,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
+import { formatStockOnHandLabel } from "@/lib/marketplace/stock-display";
 import { cn } from "@/lib/utils";
 
 const PickupLocationMap = dynamic(
@@ -152,6 +153,10 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
     product.uber_delivery_enabled === true &&
     product.store_account_type === "bicycle_store" &&
     product.store_bicycle_store === true;
+  const stockLabel = formatStockOnHandLabel(
+    product.qoh,
+    (product as { listing_type?: string }).listing_type,
+  );
 
   // Sync product state with prop
   React.useEffect(() => {
@@ -195,14 +200,26 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
           })()}
           {!isSold && !isOwner && isUberDeliveryEligible && <UberDeliveryInlineBadge />}
         </div>
-        {(product as any).listing_source === 'online_catalog' && (
-          <div className="mt-2">
-            <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#ffde59] text-gray-900 text-xs font-medium rounded-md">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {(product as any).listing_source === "online_catalog" && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-[#ffde59] px-2 py-1 text-xs font-medium text-gray-900">
               <Globe className="h-3 w-3" />
               Online Only
             </span>
-          </div>
-        )}
+          )}
+          {stockLabel && (
+            <span
+              className={cn(
+                "inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium",
+                stockLabel === "Out of stock"
+                  ? "border-gray-200 bg-gray-100 text-gray-600"
+                  : "border-gray-200 bg-white text-gray-700",
+              )}
+            >
+              {stockLabel}
+            </span>
+          )}
+        </div>
         {(product as any).pickup_location && (
           <div className="flex items-center gap-1.5 mt-1.5">
             <MapPin className="h-3.5 w-3.5 text-gray-400" />
@@ -476,6 +493,9 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               {/* Condition row — always shown at top when set */}
               {(product as any).condition_rating && (
                 <SpecRow label="Condition" value={(product as any).condition_rating} />
+              )}
+              {stockLabel && (
+                <SpecRow label="Stock on hand" value={Math.floor(Number(product.qoh))} />
               )}
 
               {(product as any).product_specs ? (
