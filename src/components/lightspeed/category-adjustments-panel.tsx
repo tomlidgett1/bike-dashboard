@@ -1,10 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -59,7 +61,10 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
   const [createParentId, setCreateParentId] = React.useState("0");
   const [creating, setCreating] = React.useState(false);
 
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [deleteTarget, setDeleteTarget] = React.useState<ManagedLightspeedCategory | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  const [bulkDeleting, setBulkDeleting] = React.useState(false);
 
   const loadCategories = React.useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -218,6 +223,11 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
       setCategories((prev) =>
         prev.filter((item) => item.categoryID !== deleteTarget.categoryID)
       );
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deleteTarget.categoryID);
+        return next;
+      });
       setMessage(`Deleted "${deleteTarget.name}" from Lightspeed.`);
       setDeleteTarget(null);
       await onCategoriesChanged?.();
@@ -227,6 +237,101 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
       setDeletingId(null);
     }
   };
+
+  const selectedCategories = React.useMemo(
+    () => categories.filter((category) => selectedIds.has(category.categoryID)),
+    [categories, selectedIds]
+  );
+
+  const allSelected =
+    categories.length > 0 && categories.every((category) => selectedIds.has(category.categoryID));
+  const someSelected = categories.some((category) => selectedIds.has(category.categoryID));
+
+  const toggleCategorySelection = (categoryId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) {
+        next.delete(categoryId);
+      } else {
+        next.add(categoryId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(categories.map((category) => category.categoryID)));
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkDelete = async () => {
+    if (selectedCategories.length === 0) return;
+
+    setBulkDeleting(true);
+    setError(null);
+
+    const deletedIds: string[] = [];
+    const failures: string[] = [];
+
+    for (const category of selectedCategories) {
+      setDeletingId(category.categoryID);
+      try {
+        const response = await fetch("/api/lightspeed/categories/manage", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ categoryID: category.categoryID }),
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to delete category");
+        }
+
+        deletedIds.push(category.categoryID);
+      } catch (err) {
+        failures.push(
+          `${category.name}: ${err instanceof Error ? err.message : "Delete failed"}`
+        );
+      }
+    }
+
+    if (deletedIds.length > 0) {
+      setCategories((prev) => prev.filter((item) => !deletedIds.includes(item.categoryID)));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        deletedIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      setMessage(
+        deletedIds.length === 1
+          ? "Deleted 1 category from Lightspeed."
+          : `Deleted ${deletedIds.length} categories from Lightspeed.`
+      );
+      await onCategoriesChanged?.();
+    }
+
+    if (failures.length > 0) {
+      setError(
+        failures.length === selectedCategories.length
+          ? failures[0]
+          : `${failures.length} categor${failures.length === 1 ? "y" : "ies"} could not be deleted. ${failures[0]}`
+      );
+    }
+
+    setBulkDeleteOpen(false);
+    setBulkDeleting(false);
+    setDeletingId(null);
+  };
+
+  const selectedProductCount = selectedCategories.reduce(
+    (total, category) => total + category.productCount,
+    0
+  );
 
   const parentCategoryOptions = categories;
 
@@ -289,10 +394,50 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
           </div>
         )}
 
+        {selectedIds.size > 0 && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-white px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="rounded-md">
+                {selectedIds.size} selected
+              </Badge>
+              <span className="text-sm text-muted-foreground">
+                {formatNumber(selectedProductCount)} products across selected categories
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={clearSelection}>
+                <X className="size-4" />
+                Clear
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkDeleteOpen(true)}
+                disabled={bulkDeleting}
+              >
+                {bulkDeleting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
+                Delete selected
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-hidden rounded-md border border-border bg-white">
           <table className="w-full">
             <thead className="border-b border-border bg-muted/40">
               <tr>
+                <th className="w-12 px-4 py-3">
+                  <Checkbox
+                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="Select all categories"
+                  />
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Category
                 </th>
@@ -310,7 +455,7 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
             <tbody>
               {categories.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={5} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     No Lightspeed categories found.
                   </td>
                 </tr>
@@ -319,12 +464,24 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
                   const isEditing = editingId === category.categoryID;
                   const isSaving = savingId === category.categoryID;
                   const isDeleting = deletingId === category.categoryID;
+                  const isSelected = selectedIds.has(category.categoryID);
 
                   return (
                     <tr
                       key={category.categoryID}
-                      className="border-b border-border/60 last:border-b-0"
+                      className={cn(
+                        "border-b border-border/60 last:border-b-0",
+                        isSelected && "bg-muted/30"
+                      )}
                     >
+                      <td className="px-4 py-3">
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleCategorySelection(category.categoryID)}
+                          disabled={isEditing || isDeleting || bulkDeleting}
+                          aria-label={`Select ${category.name}`}
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         {isEditing ? (
                           <Input
@@ -493,6 +650,23 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
             : undefined
         }
         itemCount={1}
+        itemType="categories"
+      />
+
+      <DeleteConfirmDialog
+        isOpen={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={handleBulkDelete}
+        isDeleting={bulkDeleting}
+        title="Delete selected categories?"
+        description={`Permanently delete ${selectedIds.size} categor${
+          selectedIds.size === 1 ? "y" : "ies"
+        } from Lightspeed?${
+          selectedProductCount > 0
+            ? ` ${formatNumber(selectedProductCount)} products are currently assigned across the selected categories.`
+            : ""
+        }`}
+        itemCount={selectedIds.size}
         itemType="categories"
       />
     </>
