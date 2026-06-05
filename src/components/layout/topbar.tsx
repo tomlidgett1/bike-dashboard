@@ -20,6 +20,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { useSyncStatus } from "@/lib/hooks/use-sync-status";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
 import { cn } from "@/lib/utils";
+import { isStoreDashboardPath } from "@/lib/routes/store-dashboard";
 
 // Route → breadcrumb labels. Falls back to a title-cased last segment.
 const CRUMBS: Record<string, { section: string; page: string }> = {
@@ -63,7 +64,7 @@ function useCrumb(pathname: string) {
 
 export function Topbar() {
   const pathname = usePathname() ?? "/products";
-  const isStoreSettings = pathname.startsWith("/settings/store");
+  const showAgentInHeader = isStoreDashboardPath(pathname);
   const crumb = useCrumb(pathname);
   const { user } = useAuth();
   const { isSyncing, formattedLastSync } = useSyncStatus();
@@ -86,7 +87,7 @@ export function Topbar() {
       </Breadcrumb>
 
       <div className="ml-auto flex items-center gap-2">
-        {isStoreSettings ? <AgentHeaderButton /> : null}
+        {showAgentInHeader ? <AgentHeaderButton /> : null}
         <TopbarNavPills />
         {!lightspeedLoading && lightspeedConnected ? (
           isSyncing ? (
