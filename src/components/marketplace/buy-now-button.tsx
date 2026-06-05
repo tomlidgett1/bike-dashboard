@@ -8,7 +8,6 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
 import { useCart } from '@/components/providers/cart-provider';
@@ -125,13 +124,9 @@ export function BuyNowButton({
 
       {/* Error Message */}
       {error && (
-        <motion.p
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-xs text-red-500 mt-2 text-center"
-        >
+        <p className="text-xs text-red-500 mt-2 text-center">
           {error}
-        </motion.p>
+        </p>
       )}
     </div>
   );

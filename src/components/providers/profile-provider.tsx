@@ -5,6 +5,7 @@ import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from './auth-provider'
 import type { ServerProfile } from '@/lib/server/get-user-profile'
+import { preloadStoreSidebarLogo } from '@/components/layout/app-sidebar/store-sidebar-logo'
 
 function getGooglePictureFromUser(user: User): string | undefined {
   const hasGoogle = user.identities?.some((i) => i.provider === 'google')
@@ -269,6 +270,11 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
       cancelled = true
     }
   }, [user, isFirstTime])
+
+  // Keep the sidebar store logo warm in the browser cache whenever it changes
+  useEffect(() => {
+    preloadStoreSidebarLogo(profile?.logo_url)
+  }, [profile?.logo_url])
 
   const saveProfile = async (profileData: Partial<UserProfile>) => {
     if (!user) return { success: false, error: 'No user logged in' }

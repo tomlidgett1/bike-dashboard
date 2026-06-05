@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
+import dynamic from "next/dynamic";
 import { Menu, X, Settings, LogOut, Sparkles, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Upload, Bell, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { DesktopHeaderPill } from "./desktop-header-pill";
 import { CartButton } from "./cart-button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
+import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { useSellModal } from "@/components/providers/sell-modal-provider";
 import { UserAvatar } from "@/components/ui/user-avatar";
@@ -29,16 +30,45 @@ import {
   SheetContent,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { formatDistanceToNow } from 'date-fns';
-import { FacebookImportModal } from "./sell/facebook-import-modal";
-import { SmartUploadModal } from "./sell/smart-upload-modal";
-import { MobileUploadMethodDialog } from "./sell/mobile-upload-method-dialog";
-import { BulkUploadSheet } from "./sell/bulk-upload-sheet";
 import { useUpload } from "@/components/providers/upload-provider";
 // Space navigator import removed - now integrated into UnifiedFilterBar
 import type { ListingImage } from "@/lib/types/listing";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
-import { AuthModal } from "@/components/marketplace/auth-modal";
+const AuthModal = dynamic(
+  () => import("@/components/marketplace/auth-modal").then((mod) => mod.AuthModal),
+  { ssr: false }
+);
+const FacebookImportModal = dynamic(
+  () => import("./sell/facebook-import-modal").then((mod) => mod.FacebookImportModal),
+  { ssr: false }
+);
+const SmartUploadModal = dynamic(
+  () => import("./sell/smart-upload-modal").then((mod) => mod.SmartUploadModal),
+  { ssr: false }
+);
+const MobileUploadMethodDialog = dynamic(
+  () => import("./sell/mobile-upload-method-dialog").then((mod) => mod.MobileUploadMethodDialog),
+  { ssr: false }
+);
+const BulkUploadSheet = dynamic(
+  () => import("./sell/bulk-upload-sheet").then((mod) => mod.BulkUploadSheet),
+  { ssr: false }
+);
+
+function formatRelativeTime(value: string) {
+  const then = new Date(value).getTime();
+  if (!Number.isFinite(then)) return "";
+
+  const seconds = Math.round((then - Date.now()) / 1000);
+  const abs = Math.abs(seconds);
+  const rtf = new Intl.RelativeTimeFormat("en-AU", { numeric: "auto" });
+
+  if (abs < 60) return rtf.format(seconds, "second");
+  if (abs < 3600) return rtf.format(Math.round(seconds / 60), "minute");
+  if (abs < 86400) return rtf.format(Math.round(seconds / 3600), "hour");
+  if (abs < 2592000) return rtf.format(Math.round(seconds / 86400), "day");
+  return rtf.format(Math.round(seconds / 2592000), "month");
+}
 
 // ============================================================
 // Mobile Nav Item Component
@@ -134,7 +164,6 @@ export function MarketplaceHeader({
   const [mounted, setMounted] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
-  const { scrollY } = useScroll();
   const router = useRouter();
   const { isUploading } = useUpload();
   
@@ -145,7 +174,9 @@ export function MarketplaceHeader({
       ? 'private_listing' as const
       : null;
   const { user } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const { profile, loading } = useUserProfile();
+  const isGuestLayout = !user;
   const { registerHandler } = useSellModal();
   const supabase = createClient();
   
@@ -315,52 +346,20 @@ export function MarketplaceHeader({
     router.refresh();
   };
 
-  // Add shadow when scrolled
-  const headerShadow = useTransform(
-    scrollY,
-    [0, 50],
-    ['0px 0px 0px rgba(0, 0, 0, 0)', '0px 4px 12px rgba(0, 0, 0, 0.08)']
-  );
-
-  const headerBg = useTransform(
-    scrollY,
-    [0, 50],
-    ['rgba(255, 255, 255, 0.9)', 'rgba(255, 255, 255, 0.95)']
-  );
-
   return (
     <>
       {/* Floating pill header wrapper */}
       <div className="marketplace-top-header relative z-40 bg-white px-0 pt-0 sm:fixed sm:top-0 sm:left-0 sm:right-0 sm:bg-transparent sm:px-4 sm:pt-2">
-      <motion.header
-        style={{ boxShadow: headerShadow }}
+      <header
         className="rounded-none border-x-0 border-t-0 border-b border-gray-200 bg-white sm:rounded-full sm:border sm:bg-white/95 sm:backdrop-blur-md"
       >
         {/* Navigation Loading Bar */}
-        <AnimatePresence>
-          {isNavigating && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="absolute top-0 left-0 right-0 h-0.5 bg-[#ffde59] overflow-hidden"
-            >
-              <motion.div
-                initial={{ x: "-100%" }}
-                animate={{ x: "200%" }}
-                transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut" }}
-                className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent"
-              />
-              <motion.div
-                initial={{ left: "-40%", width: "40%" }}
-                animate={{ left: "100%", width: "40%" }}
-                transition={{ repeat: Infinity, duration: 1, ease: [0.4, 0, 0.2, 1] }}
-                className="absolute inset-y-0 bg-[#f0cf45]"
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {isNavigating && (
+          <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#ffde59] overflow-hidden animate-pulse">
+            <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+            <div className="absolute inset-y-0 left-1/3 w-1/3 bg-[#f0cf45]" />
+          </div>
+        )}
         <div className="px-4 sm:px-5">
           <div className="flex h-12 sm:h-14 items-center min-w-0">
             {/* Left: Logo */}
@@ -379,20 +378,35 @@ export function MarketplaceHeader({
               />
             </button>
 
-            {/* Center: search (flex-1 keeps it from ever overlapping the right side) */}
-            <div className="flex-1 flex items-center justify-center px-3 sm:px-4 min-w-0">
-              {/* Tablet (sm–md) */}
-              <div className="hidden sm:block lg:hidden w-full max-w-sm">
+            {/* Search — guests: left-aligned after logo; signed-in: centred */}
+            <div
+              className={cn(
+                "flex-1 flex items-center min-w-0",
+                isGuestLayout
+                  ? "justify-start gap-2 pl-2 sm:pl-3 pr-2"
+                  : "justify-center px-3 sm:px-4"
+              )}
+            >
+              {/* Tablet (sm–lg) */}
+              <div
+                className={cn(
+                  "hidden sm:block lg:hidden w-full",
+                  isGuestLayout ? "max-w-md" : "max-w-sm mx-auto"
+                )}
+              >
                 <InstantSearch listingType={searchListingType} spaceContext={currentSpace} />
               </div>
               {/* Desktop search pill */}
-              <div className={cn(
-                "hidden lg:flex items-center border border-gray-200 rounded-full h-9 px-2 w-[583px]",
-                "[&_input]:!border-0 [&_input]:!bg-transparent [&_input]:!shadow-none",
-                "[&_input]:!ring-0 [&_input:focus]:!ring-0 [&_input:focus]:!border-0",
-                "[&_input]:!h-8",
-                "[&_kbd]:!hidden",
-              )}>
+              <div
+                className={cn(
+                  "hidden lg:flex items-center border border-gray-200 rounded-full h-9 px-2 min-w-0",
+                  "[&_input]:!border-0 [&_input]:!bg-transparent [&_input]:!shadow-none",
+                  "[&_input]:!ring-0 [&_input:focus]:!ring-0 [&_input:focus]:!border-0",
+                  "[&_input]:!h-8",
+                  "[&_kbd]:!hidden",
+                  isGuestLayout ? "flex-1 max-w-xl" : "w-[583px]"
+                )}
+              >
                 <InstantSearch listingType={searchListingType} spaceContext={currentSpace} />
               </div>
             </div>
@@ -434,8 +448,8 @@ export function MarketplaceHeader({
               </button>
             </div>
 
-            {/* Desktop nav + sell */}
-            <div className="hidden lg:flex items-center gap-1 flex-shrink-0">
+            {/* Desktop / tablet nav + sell */}
+            <div className="hidden md:flex items-center gap-1 flex-shrink-0">
               <CartButton />
 
               <div className="w-px h-5 bg-gray-200 mx-1 flex-shrink-0" />
@@ -448,11 +462,13 @@ export function MarketplaceHeader({
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      className="rounded-full bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-semibold h-9 px-4 text-sm"
+                      className="group rounded-full bg-[#ffde59] hover:bg-[#f5cf3f] text-gray-900 font-semibold h-9 pl-1.5 pr-3.5 text-sm shadow-sm hover:shadow-md hover:-translate-y-px transition-all duration-200"
                     >
-                      <Plus className="mr-1 h-3.5 w-3.5" />
-                      Sell Item
-                      <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+                      <span className="flex items-center justify-center h-6 w-6 rounded-full bg-gray-900 mr-2">
+                        <Plus className="h-3.5 w-3.5 text-white" strokeWidth={2.75} />
+                      </span>
+                      Create Listing
+                      <ChevronDown className="ml-1.5 h-3.5 w-3.5 text-gray-800/70 transition-transform duration-200 group-data-[state=open]:rotate-180" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
@@ -500,27 +516,18 @@ export function MarketplaceHeader({
             </div>
           </div>
         </div>
-      </motion.header>
+      </header>
       </div>{/* end floating pill wrapper */}
 
       {/* Mobile Space Navigator removed - now integrated into UnifiedFilterBar */}
 
       {/* Mobile Floating List Item Button - Only shown on homepage and product pages */}
       {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && !isUploading && (
-        <motion.div 
-          initial={{ y: 100, opacity: 0 }}
-          animate={{ 
-            y: 0, 
-            opacity: 1,
-          }}
-          transition={{ 
-            y: { delay: 0.3, duration: 0.5, ease: [0.22, 1, 0.36, 1] },
-            opacity: { delay: 0.3, duration: 0.5, ease: [0.22, 1, 0.36, 1] },
-          }}
-          className="sm:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+        <div
+          className="sm:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300"
         >
           <div className="flex items-center gap-3 justify-center">
-            <motion.button
+            <button
               onClick={() => {
                 if (user) {
                   setMobileUploadMethodOpen(true);
@@ -528,12 +535,7 @@ export function MarketplaceHeader({
                   setSellRequirementModalOpen(true);
                 }
               }}
-              whileTap={{ scale: 0.95 }}
-              className="relative"
-              layout
-              transition={{ 
-                layout: { duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }
-              }}
+              className="relative transition-transform active:scale-95"
             >
               {/* Main button */}
               <div className="relative flex items-center gap-2.5 px-6 py-3.5 bg-[#ffde59] rounded-full border border-white/20 shadow-lg">
@@ -544,19 +546,14 @@ export function MarketplaceHeader({
                   {user ? 'List Item' : 'Sell Now'}
                 </span>
               </div>
-            </motion.button>
+            </button>
 
             {showMobileBrowseFiltersFab && onOpenMobileBrowseFilters && (
-              <motion.button
+              <button
                 type="button"
                 onClick={onOpenMobileBrowseFilters}
-                whileTap={{ scale: 0.95 }}
-                className="relative"
-                layout
+                className="relative transition-transform active:scale-95"
                 aria-label="Filters"
-                transition={{
-                  layout: { duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }
-                }}
               >
                 <div className="relative flex items-center justify-center px-4 py-3.5 bg-[#ffde59] rounded-full border border-white/20 shadow-lg">
                   <div className="flex items-center justify-center w-6 h-6 bg-gray-900 rounded-full">
@@ -568,31 +565,21 @@ export function MarketplaceHeader({
                     </span>
                   )}
                 </div>
-              </motion.button>
+              </button>
             )}
 
             {/* Circular Search Button - Appears when sticky filters are visible */}
-            <AnimatePresence mode="popLayout">
-              {showStickyFilters && (
-                <motion.button
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0, opacity: 0 }}
-                  transition={{ 
-                    duration: 0.4,
-                    ease: [0.04, 0.62, 0.23, 0.98]
-                  }}
-                  onClick={() => setMobileSearchOpen(true)}
-                  whileTap={{ scale: 0.9 }}
-                  className="flex items-center justify-center w-[54px] h-[54px] bg-[#ffde59] rounded-full border border-white/20 shadow-lg"
-                  aria-label="Search"
-                >
-                  <Search className="h-5 w-5 text-gray-900 stroke-[2]" />
-                </motion.button>
-              )}
-            </AnimatePresence>
+            {showStickyFilters && (
+              <button
+                onClick={() => setMobileSearchOpen(true)}
+                className="flex items-center justify-center w-[54px] h-[54px] bg-[#ffde59] rounded-full border border-white/20 shadow-lg transition-transform active:scale-95 animate-in fade-in zoom-in-95 duration-200"
+                aria-label="Search"
+              >
+                <Search className="h-5 w-5 text-gray-900 stroke-[2]" />
+              </button>
+            )}
           </div>
-        </motion.div>
+        </div>
       )}
 
       {/* Mobile Slide-out Menu - Uses hardware-accelerated Sheet */}
@@ -660,10 +647,12 @@ export function MarketplaceHeader({
                       setSellRequirementModalOpen(true);
                     }
                   }}
-                  className="w-full flex items-center justify-center gap-2 rounded-md bg-[#ffde59] hover:bg-[#f0cf45] px-4 py-2.5 text-sm font-medium text-gray-900 transition-colors"
+                  className="w-full flex items-center justify-center gap-2 rounded-md bg-[#ffde59] hover:bg-[#f0cf45] px-4 py-2.5 text-sm font-semibold text-gray-900 transition-colors"
                 >
-                  <Plus className="h-4 w-4" />
-                  Sell Item
+                  <span className="flex items-center justify-center h-5 w-5 rounded-full bg-gray-900">
+                    <Plus className="h-3 w-3 text-white" strokeWidth={2.75} />
+                  </span>
+                  Create Listing
                 </button>
               </div>
 
@@ -795,15 +784,27 @@ export function MarketplaceHeader({
                     Sign Out
                   </Button>
                 ) : (
-                  <Button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      router.push("/login");
-                    }}
-                    className="w-full rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-medium"
-                  >
-                    Sign In
-                  </Button>
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        openAuthModal({ mode: "signin" });
+                      }}
+                      className="w-full rounded-md"
+                    >
+                      Sign in
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        openAuthModal({ mode: "signup" });
+                      }}
+                      className="w-full rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-semibold"
+                    >
+                      Create account
+                    </Button>
+                  </div>
                 )}
               </div>
         </SheetContent>
@@ -885,37 +886,29 @@ export function MarketplaceHeader({
       />
 
       {/* Mobile Search Overlay - Full screen takeover */}
-      <AnimatePresence>
-        {mobileSearchOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[102] bg-white sm:hidden flex flex-col"
-          >
-            {/* Full-height search with close button */}
-            <div className="flex-1 flex flex-col min-h-0">
-              <InstantSearch 
-                autoFocus 
-                onResultClick={() => setMobileSearchOpen(false)} 
-                mobileFullPage
-                listingType={searchListingType}
-                spaceContext={currentSpace}
-                leftSlot={
-                  <button
-                    onClick={() => setMobileSearchOpen(false)}
-                    className="p-2 rounded-md active:bg-gray-100 transition-colors flex-shrink-0"
-                    aria-label="Close search"
-                  >
-                    <X className="h-5 w-5 text-gray-500" />
-                  </button>
-                }
-              />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {mobileSearchOpen && (
+        <div className="fixed inset-0 z-[102] bg-white sm:hidden flex flex-col animate-in fade-in duration-200">
+          {/* Full-height search with close button */}
+          <div className="flex-1 flex flex-col min-h-0">
+            <InstantSearch
+              autoFocus
+              onResultClick={() => setMobileSearchOpen(false)}
+              mobileFullPage
+              listingType={searchListingType}
+              spaceContext={currentSpace}
+              leftSlot={
+                <button
+                  onClick={() => setMobileSearchOpen(false)}
+                  className="p-2 rounded-md active:bg-gray-100 transition-colors flex-shrink-0"
+                  aria-label="Close search"
+                >
+                  <X className="h-5 w-5 text-gray-500" />
+                </button>
+              }
+            />
+          </div>
+        </div>
+      )}
 
       {/* Mobile Messages Sheet - Slides in from right */}
       <Sheet open={messagesSheetOpen} onOpenChange={setMessagesSheetOpen}>
@@ -969,7 +962,7 @@ export function MarketplaceHeader({
                         'text-xs mt-1',
                         msg.is_own ? 'text-blue-100' : 'text-gray-500'
                       )}>
-                        {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
+                        {formatRelativeTime(msg.created_at)}
                       </p>
                     </div>
                   ))
@@ -1062,9 +1055,7 @@ export function MarketplaceHeader({
                               {conversation.message?.content || 'Sent you a message'}
                             </p>
                             <p className="text-xs text-gray-500 mt-1">
-                              {formatDistanceToNow(new Date(conversation.created_at), {
-                                addSuffix: true,
-                              })}
+                              {formatRelativeTime(conversation.created_at)}
                             </p>
                           </div>
 

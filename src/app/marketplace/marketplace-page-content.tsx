@@ -3,7 +3,6 @@
 import * as React from "react";
 import { Suspense, startTransition } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import { TrendingUp, Package, X, Search, Store as StoreIcon, User, Clock, DollarSign, SlidersHorizontal, Loader2 } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
@@ -59,6 +58,10 @@ interface MarketplaceProductsPayload {
   recommendations?: MarketplaceProduct[];
   pagination?: {
     hasMore?: boolean;
+    nextCursor?: {
+      createdAt: string;
+      id: string;
+    } | null;
   };
 }
 
@@ -68,11 +71,6 @@ interface MarketplacePageContentProps {
   /** Pagination metadata from the server fetch. */
   initialPagination?: InitialMarketplacePagination;
 }
-
-const TAB_CONTENT_FADE_TRANSITION = {
-  duration: 0.32,
-  ease: [0.22, 1, 0.36, 1],
-} as const;
 
 export function MarketplacePageContent({ initialProducts, initialPagination }: MarketplacePageContentProps = {}) {
   const searchParams = useSearchParams();
@@ -441,6 +439,19 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     uberOnly: isUberView,
   }), [isStoreInventoryView, isUberView, viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, selectedStoreId, advancedFilters, createdAfter]);
 
+  // Only seed SWR with server-prefetched products in the default public view.
+  // We still revalidate on mount so recently deactivated listings disappear
+  // quickly after navigating back from owner/settings screens.
+  const canUseInitialProducts =
+    !!initialProducts?.length &&
+    viewMode === 'all' &&
+    !isStoreInventoryView &&
+    !searchQuery &&
+    !selectedLevel1 &&
+    advancedFilters.condition === 'all' &&
+    !advancedFilters.minPrice &&
+    !advancedFilters.maxPrice;
+
   // Use SWR for products data with intelligent caching
   const { 
     products: fetchedProducts, 
@@ -453,6 +464,14 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       enabled: true, // Enable for both marketplace and stores space
       revalidateOnFocus: false,
       dedupingInterval: 5000,
+      fallbackData: canUseInitialProducts && initialPagination
+        ? {
+            products: initialProducts ?? [],
+            pagination: initialPagination,
+            success: true,
+          }
+        : undefined,
+      revalidateOnMount: canUseInitialProducts ? true : undefined,
     }
   );
 
@@ -473,20 +492,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     });
     processedDataRef.current = new Set(fetchedProducts.map(p => p.id));
     setLocalHasMore(null); // reset so hasMore re-reads from fresh SWR response
+    setLocalNextCursor(null); // reset so cursor re-reads from fresh SWR response
   }, [fetchedProducts, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Only use server-prefetched products when the view is in its default state —
-  // no filters, no search, default mode. This prevents flash when a user arrives
-  // with URL params that differ from what the server fetched.
-  const canUseInitialProducts =
-    !!initialProducts?.length &&
-    viewMode === 'all' &&
-    !isStoreInventoryView &&
-    !searchQuery &&
-    !selectedLevel1 &&
-    advancedFilters.condition === 'all' &&
-    !advancedFilters.minPrice &&
-    !advancedFilters.maxPrice;
 
   // For page 1: SWR data when available, otherwise fall back to server-prefetched products.
   // For page 2+: render from accumulatedProducts which contains all appended pages.
@@ -505,7 +512,12 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   // localHasMore tracks whether the last paginated fetch returned more pages.
   // null = not yet paginated (fall back to SWR's first-page value).
   const [localHasMore, setLocalHasMore] = React.useState<boolean | null>(null);
+  const [localNextCursor, setLocalNextCursor] = React.useState<{
+    createdAt: string;
+    id: string;
+  } | null>(null);
   const hasMore = localHasMore ?? (pagination?.hasMore ?? initialPagination?.hasMore ?? false);
+  const nextCursor = localNextCursor ?? pagination?.nextCursor ?? initialPagination?.nextCursor ?? null;
   const totalCount = pagination?.total ?? initialPagination?.total ?? 0;
 
   // Resolve the currently selected store object (for identity strip)
@@ -535,7 +547,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
   // Bike Stores tab category pills — fetched from dedicated public API,
   // same data source as the Lightspeed category_name field on products.
-  const { categories: storesViewCategories, isLoading: storesViewCategoriesLoading } = useLightspeedCategories(isUberView);
+  const { categories: storesViewCategories, isLoading: storesViewCategoriesLoading } = useLightspeedCategories(isUberView, isStoreInventoryView);
 
   // Derive store categories from fetched products (zero API calls - instant)
   const storeCategories = React.useMemo(() => {
@@ -633,6 +645,10 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       const params = new URLSearchParams();
       params.set('page', String(nextPage));
       params.set('pageSize', String(MARKETPLACE_INITIAL_PAGE_SIZE));
+      if (!searchQuery && advancedFilters.sortBy === 'newest' && nextCursor) {
+        params.set('cursorCreatedAt', nextCursor.createdAt);
+        params.set('cursorId', nextCursor.id);
+      }
       
       if (listingTypeFilter === 'stores') {
         params.set('listingType', 'store_inventory');
@@ -657,14 +673,16 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       let endpoint = '';
       if (searchQuery) {
         params.set('search', searchQuery);
-        if (selectedLevel1) params.set('level1', selectedLevel1);
-        if (selectedLevel2) params.set('level2', selectedLevel2);
-        if (selectedLevel3) params.set('level3', selectedLevel3);
+        if (listingTypeFilter === 'stores') {
+          if (selectedLevel1) params.set('lsCategory', selectedLevel1);
+        } else {
+          if (selectedLevel1) params.set('level1', selectedLevel1);
+          if (selectedLevel2) params.set('level2', selectedLevel2);
+          if (selectedLevel3) params.set('level3', selectedLevel3);
+        }
         endpoint = `/api/marketplace/products?${params}`;
       } else if (listingTypeFilter === 'stores') {
-        if (selectedLevel1) params.set('level1', selectedLevel1);
-        if (selectedLevel2) params.set('level2', selectedLevel2);
-        if (selectedLevel3) params.set('level3', selectedLevel3);
+        if (selectedLevel1) params.set('lsCategory', selectedLevel1);
         endpoint = `/api/marketplace/products?${params}`;
       } else {
         switch (viewMode) {
@@ -709,9 +727,11 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       // Update local hasMore from this page's pagination response
       if (data.pagination) {
         setLocalHasMore(data.pagination.hasMore ?? false);
+        setLocalNextCursor(data.pagination.nextCursor ?? null);
       } else {
         // No pagination info — assume no more pages if we got fewer than a full page
         setLocalHasMore(newProducts.length >= MARKETPLACE_INITIAL_PAGE_SIZE);
+        setLocalNextCursor(null);
       }
     } catch (error) {
       console.error('[MARKETPLACE] Error loading more products:', error);
@@ -906,8 +926,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     router.push(`/marketplace/store/${store.id}`);
   }, [router]);
 
-  const tabContentAnimationKey = currentSpace;
-
   return (
     <>
       {/* Main header - always rendered so modals remain accessible */}
@@ -925,50 +943,15 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       />
 
       {/* Sticky Filter Header - Mobile Only (appears when category pills scroll out) */}
-      <AnimatePresence>
-        {showStickyFilters && ((isMarketplaceView && viewMode === 'all') || isStoreInventoryView) && (
-          <motion.div
-            initial={{ y: -80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -80, opacity: 0 }}
-            transition={{ duration: 0.25, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className="sm:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 shadow-md"
-          >
+      {showStickyFilters && ((isMarketplaceView && viewMode === 'all') || isStoreInventoryView) && (
+        <div className="sm:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 shadow-md animate-in fade-in slide-in-from-top-4 duration-200">
             {/* Navigation Loading Bar */}
-            <AnimatePresence>
-              {isNavigating && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute top-0 left-0 right-0 h-1 bg-[#ffde59] overflow-hidden"
-                >
-                  {/* Animated shimmer effect */}
-                  <motion.div
-                    initial={{ x: "-100%" }}
-                    animate={{ x: "200%" }}
-                    transition={{
-                      repeat: Infinity,
-                      duration: 1.2,
-                      ease: "easeInOut",
-                    }}
-                    className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent"
-                  />
-                  {/* Indeterminate progress animation */}
-                  <motion.div
-                    initial={{ left: "-40%", width: "40%" }}
-                    animate={{ left: "100%", width: "40%" }}
-                    transition={{
-                      repeat: Infinity,
-                      duration: 1,
-                      ease: [0.4, 0, 0.2, 1],
-                    }}
-                    className="absolute inset-y-0 bg-[#f0cf45]"
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {isNavigating && (
+              <div className="absolute top-0 left-0 right-0 h-1 bg-[#ffde59] overflow-hidden animate-pulse">
+                <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+                <div className="absolute inset-y-0 left-1/3 w-1/3 bg-[#f0cf45]" />
+              </div>
+            )}
             {/* Top Row - Filters Button */}
             <div className="flex items-center justify-between px-3 pt-2.5 pb-2">
               {/* Space label - Marketplace, Bike Stores, or Uber */}
@@ -979,7 +962,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   width={120} 
                   height={28}
                   className="h-7 w-auto"
-                  priority
                   unoptimized
                 />
               ) : isUberView ? (
@@ -989,7 +971,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   width={82}
                   height={28}
                   className="h-6 w-auto"
-                  priority
                   unoptimized
                 />
               ) : (
@@ -999,7 +980,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   width={120} 
                   height={28}
                   className="h-7 w-auto"
-                  priority
                   unoptimized
                 />
               )}
@@ -1069,9 +1049,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                 ))}
               </div>
             </div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
       <MarketplaceLayout showFooter={false} showStoreCTA={false}>
         {/* Mobile: promo above Hot / Browse / Stores, then sticky tabs + category pills */}
@@ -1119,13 +1098,11 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
             />
             {isStoresView && selectedStoreId && storeCategories.length > 0 && (
               <div className="px-3 pt-2 pb-2.5">
-                <AnimatePresence>
-                  <StoreCategoryPills
-                    categories={storeCategories}
-                    selectedCategory={selectedStoreCategory}
-                    onCategoryChange={setSelectedStoreCategory}
-                  />
-                </AnimatePresence>
+                <StoreCategoryPills
+                  categories={storeCategories}
+                  selectedCategory={selectedStoreCategory}
+                  onCategoryChange={setSelectedStoreCategory}
+                />
               </div>
             )}
           </div>
@@ -1191,15 +1168,13 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       />
                     }
                   />
-                  <AnimatePresence>
-                    {selectedStoreId && storeCategories.length > 0 && (
-                      <StoreCategoryPills
-                        categories={storeCategories}
-                        selectedCategory={selectedStoreCategory}
-                        onCategoryChange={setSelectedStoreCategory}
-                      />
-                    )}
-                  </AnimatePresence>
+                  {selectedStoreId && storeCategories.length > 0 && (
+                    <StoreCategoryPills
+                      categories={storeCategories}
+                      selectedCategory={selectedStoreCategory}
+                      onCategoryChange={setSelectedStoreCategory}
+                    />
+                  )}
                 </div>
 
                 {/* Store identity strip — shown when a specific store is selected */}
@@ -1327,11 +1302,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
                 {/* Active Advanced Filters Summary */}
                 {viewMode === 'all' && activeFilterCount > 0 && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center gap-2 flex-wrap"
-                  >
+                  <div className="flex items-center gap-2 flex-wrap animate-in fade-in slide-in-from-top-2 duration-200">
                     <span className="text-xs text-gray-500 font-medium">Active filters:</span>
                     {advancedFilters.minPrice && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-md">
@@ -1410,18 +1381,10 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     >
                       Clear all
                     </button>
-                  </motion.div>
+                  </div>
                 )}
 
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={tabContentAnimationKey}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={TAB_CONTENT_FADE_TRANSITION}
-                    className="space-y-4"
-                  >
+                <div className="space-y-4">
                     {/* Split Search Results - Shows both Stores and Marketplace sections */}
                     {searchQuery && (
                       <SplitSearchResults
@@ -1478,7 +1441,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                               <React.Fragment key={product.id}>
                                 <ProductCard
                                   product={product}
-                                  priority={index < 18}
+                                  priority={index < 6}
                                   layout="grid"
                                   compact={productGridLayout === "grid8"}
                                   isAdmin={isAdmin}
@@ -1647,8 +1610,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                         ))}
                       </div>
                     )}
-                  </motion.div>
-                </AnimatePresence>
+                </div>
               </>
             )}
           </div>

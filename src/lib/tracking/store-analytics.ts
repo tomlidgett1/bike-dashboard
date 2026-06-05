@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { v4 as uuidv4 } from "uuid";
+import { getStoreAnalyticsDeviceType } from "@/lib/tracking/store-analytics-device";
 
 type StoreAnalyticsEventType = "store_page_view" | "product_view" | "product_impression";
 
@@ -58,6 +59,7 @@ export function trackStoreAnalyticsEvent(event: StoreAnalyticsEvent) {
     productId: event.productId || null,
     visitorId: getStoredUuid(VISITOR_KEY),
     sessionId: getSessionId(),
+    deviceType: getStoreAnalyticsDeviceType(),
     source: window.location.pathname,
     metadata: event.metadata || {},
     occurredAt: new Date().toISOString(),

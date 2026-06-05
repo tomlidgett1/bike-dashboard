@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { refreshPublicMarketplaceAfterMutation } from '@/lib/server/refresh-public-marketplace';
 
 export async function POST(
   request: NextRequest,
@@ -73,6 +74,8 @@ export async function POST(
         { status: 500 }
       );
     }
+
+    await refreshPublicMarketplaceAfterMutation();
 
     return NextResponse.json({
       success: true,
@@ -153,6 +156,8 @@ export async function DELETE(
       );
     }
 
+    await refreshPublicMarketplaceAfterMutation();
+
     return NextResponse.json({
       success: true,
       message: 'Listing is back for sale',
@@ -165,4 +170,3 @@ export async function DELETE(
     );
   }
 }
-

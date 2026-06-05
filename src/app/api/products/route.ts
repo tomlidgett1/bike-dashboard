@@ -10,6 +10,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms'
 import { getMarketplaceReadiness } from '@/lib/marketplace/product-readiness'
+import {
+  LIGHTSPEED_SOURCE_OR_FILTER,
+  MANUAL_SOURCE_OR_FILTER,
+} from '@/lib/products/catalog-helpers'
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,6 +39,7 @@ export async function GET(request: NextRequest) {
     const lsCategoryId = searchParams.get('ls_category_id') || ''
     const stockFilter = searchParams.get('stock') || 'all' // all, in-stock, low-stock
     const statusFilter = searchParams.get('status') || 'all' // all, active, inactive
+    const sourceFilter = searchParams.get('source') || 'all' // all, lightspeed, manual
     const listingTypeFilter = searchParams.get('listing_type') || '' // e.g. private_listing
 
     // Calculate offset
@@ -104,6 +109,13 @@ export async function GET(request: NextRequest) {
     // Apply listing type filter
     if (listingTypeFilter) {
       query = query.eq('listing_type', listingTypeFilter)
+    }
+
+    // Lightspeed vs manual / online catalogue (aligned with isLightspeedProduct)
+    if (sourceFilter === 'lightspeed') {
+      query = query.or(LIGHTSPEED_SOURCE_OR_FILTER)
+    } else if (sourceFilter === 'manual') {
+      query = query.or(MANUAL_SOURCE_OR_FILTER)
     }
 
     // Apply sorting
@@ -212,12 +224,25 @@ export async function GET(request: NextRequest) {
         canonicalImages,
       });
 
+      const canonical = product.canonical_products as {
+        marketplace_category?: string | null
+        marketplace_subcategory?: string | null
+        marketplace_level_3_category?: string | null
+      } | null
+
       return {
         ...product,
         resolved_image_url: resolvedImageUrl,
         marketplace_readiness,
         brand: product.manufacturer_name || null,
-        marketplace_category: product.category_name || (product.canonical_products as any)?.marketplace_category || null,
+        marketplace_category:
+          product.marketplace_category ?? canonical?.marketplace_category ?? null,
+        marketplace_subcategory:
+          product.marketplace_subcategory ?? canonical?.marketplace_subcategory ?? null,
+        marketplace_level_3_category:
+          product.marketplace_level_3_category ??
+          canonical?.marketplace_level_3_category ??
+          null,
       };
     });
 

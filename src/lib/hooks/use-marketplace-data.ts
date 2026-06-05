@@ -42,6 +42,10 @@ interface MarketplaceDataResponse {
     total: number;
     totalPages: number;
     hasMore: boolean;
+    nextCursor?: {
+      createdAt: string;
+      id: string;
+    } | null;
   };
   success?: boolean;
 }
@@ -181,12 +185,16 @@ export function useMarketplaceData(
     enabled?: boolean;
     revalidateOnFocus?: boolean;
     dedupingInterval?: number;
+    fallbackData?: MarketplaceDataResponse;
+    revalidateOnMount?: boolean;
   } = {}
 ): UseMarketplaceDataReturn {
   const {
     enabled = true,
     revalidateOnFocus = false,
     dedupingInterval = 5000, // Dedupe requests within 5 seconds
+    fallbackData,
+    revalidateOnMount,
   } = options;
 
   // Build cache key and URL
@@ -199,7 +207,9 @@ export function useMarketplaceData(
     {
       revalidateOnFocus,
       revalidateOnReconnect: false,
+      revalidateOnMount,
       dedupingInterval,
+      fallbackData,
       // Don't keep previous key's data — lets isLoading work correctly and allows
       // instant display from cache on re-visits (cache hit → isLoading false, no skeleton).
       keepPreviousData: false,
@@ -235,13 +245,15 @@ const categoryCountsFetcher = async (url: string): Promise<{ counts: Record<stri
  * Hook for Lightspeed store categories (Bike Stores tab pills).
  * Fetches distinct category_name values from all active store inventory.
  */
-export function useLightspeedCategories(uberOnly = false): {
+export function useLightspeedCategories(uberOnly = false, enabled = true): {
   categories: { label: string; level1: string }[];
   isLoading: boolean;
 } {
-  const key = uberOnly
-    ? '/api/marketplace/store-categories?uberOnly=true'
-    : '/api/marketplace/store-categories';
+  const key = enabled
+    ? uberOnly
+      ? '/api/marketplace/store-categories?uberOnly=true'
+      : '/api/marketplace/store-categories'
+    : null;
 
   const { data, error, isLoading } = useSWR<{ categories: { name: string; count: number }[] }>(
     key,

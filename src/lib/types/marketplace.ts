@@ -154,6 +154,10 @@ export interface MarketplaceProductsResponse {
     total: number;
     totalPages: number;
     hasMore: boolean;
+    nextCursor?: {
+      createdAt: string;
+      id: string;
+    } | null;
   };
 }
 

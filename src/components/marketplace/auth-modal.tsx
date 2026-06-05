@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { XIcon } from "lucide-react";
-import { AuthCard } from "@/components/auth/auth-card";
+import { AuthCard, type AuthCardHandle } from "@/components/auth/auth-card";
+import type { AuthModalMode } from "@/components/providers/auth-modal-provider";
 import {
   Dialog,
   DialogClose,
@@ -22,10 +23,16 @@ import { Button } from "@/components/ui/button";
 interface AuthModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  mode?: AuthModalMode;
 }
 
-export function AuthModal({ open, onOpenChange }: AuthModalProps) {
+export function AuthModal({
+  open,
+  onOpenChange,
+  mode = "signin",
+}: AuthModalProps) {
   const router = useRouter();
+  const authCardRef = React.useRef<AuthCardHandle>(null);
 
   // Bottom sheet on mobile, centered dialog on desktop.
   const [isMobile, setIsMobile] = React.useState(false);
@@ -36,15 +43,27 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  React.useEffect(() => {
+    if (!open) {
+      authCardRef.current?.reset();
+      return;
+    }
+    if (mode === "signup") {
+      authCardRef.current?.showSignup();
+    } else {
+      authCardRef.current?.reset();
+    }
+  }, [open, mode]);
+
   const handleAuthenticated = ({
     destination,
-    mode,
+    mode: authMode,
   }: {
     destination: "/marketplace" | "/settings";
     mode: "signin" | "signup";
   }) => {
     onOpenChange(false);
-    if (destination === "/settings" || mode === "signup") {
+    if (destination === "/settings" || authMode === "signup") {
       router.push(destination);
     }
     router.refresh();
@@ -64,6 +83,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
             Sign in or create an account to continue using Yellow Jersey.
           </SheetDescription>
           <AuthCard
+            ref={authCardRef}
             className="max-w-none rounded-b-none pb-[calc(1.75rem+env(safe-area-inset-bottom))] shadow-none sm:p-7"
             onAuthenticated={handleAuthenticated}
           />
@@ -83,7 +103,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
         <DialogDescription className="sr-only">
           Sign in or create an account to continue using Yellow Jersey.
         </DialogDescription>
-        <AuthCard onAuthenticated={handleAuthenticated} />
+        <AuthCard ref={authCardRef} onAuthenticated={handleAuthenticated} />
         <DialogClose asChild>
           <Button
             type="button"

@@ -3,9 +3,8 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
+import dynamic from "next/dynamic";
 import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck, Globe } from "lucide-react";
-import { PickupLocationMap } from "./product-detail/pickup-location-map";
 import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,13 +12,29 @@ import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
 import { BuyNowButton } from "./buy-now-button";
 import { AddToCartButton } from "./add-to-cart-button";
-import { ProductLearnPanel } from "./product-learn-panel";
-import { EditProductDrawer } from "./edit-product-drawer";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import { cn } from "@/lib/utils";
+
+const PickupLocationMap = dynamic(
+  () => import("./product-detail/pickup-location-map").then((mod) => mod.PickupLocationMap),
+  {
+    ssr: false,
+    loading: () => <div className="h-36 mx-3 mb-3 rounded-md bg-gray-100" />,
+  },
+);
+
+const ProductLearnPanel = dynamic(
+  () => import("./product-learn-panel").then((mod) => mod.ProductLearnPanel),
+  { ssr: false },
+);
+
+const EditProductDrawer = dynamic(
+  () => import("./edit-product-drawer").then((mod) => mod.EditProductDrawer),
+  { ssr: false },
+);
 
 // Adaptive spec row: short values inline (label ↔ value), long values stacked
 function SpecRow({ label, value }: { label: string; value: string | number }) {
@@ -361,17 +376,9 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
 
       {/* Tab Content */}
       <div className="px-4 py-4">
-        <AnimatePresence mode="wait">
-          {/* Overview Tab */}
-          {activeTab === 'overview' && (
-            <motion.div
-              key="overview"
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-4"
-            >
+        {/* Overview Tab */}
+        {activeTab === 'overview' && (
+          <div className="space-y-4">
               {/* Description */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 mb-2">Description</h3>
@@ -460,18 +467,12 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                   </div>
                 </div>
               )}
-            </motion.div>
-          )}
+          </div>
+        )}
 
-          {/* Specs Tab */}
-          {activeTab === 'specs' && (
-            <motion.div
-              key="specs"
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
-              transition={{ duration: 0.2 }}
-            >
+        {/* Specs Tab */}
+        {activeTab === 'specs' && (
+          <div>
               {/* Condition row — always shown at top when set */}
               {(product as any).condition_rating && (
                 <SpecRow label="Condition" value={(product as any).condition_rating} />
@@ -510,20 +511,21 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                   )}
                 </div>
               )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+          </div>
+        )}
       </div>
 
       {/* AI Product Learn Panel */}
-      <ProductLearnPanel
-        product={product}
-        isOpen={isLearnOpen}
-        onClose={() => setIsLearnOpen(false)}
-      />
+      {isLearnOpen && (
+        <ProductLearnPanel
+          product={product}
+          isOpen={isLearnOpen}
+          onClose={() => setIsLearnOpen(false)}
+        />
+      )}
 
       {/* Edit Product Drawer - Only for owners */}
-      {isOwner && (
+      {isOwner && isEditOpen && (
         <EditProductDrawer
           product={product}
           isOpen={isEditOpen}

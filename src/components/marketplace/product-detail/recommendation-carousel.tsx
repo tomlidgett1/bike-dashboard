@@ -3,7 +3,6 @@
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, ArrowRight, Store, User, Sparkles } from "lucide-react";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -107,10 +106,7 @@ export function RecommendationCarousel({
   const showSellerLogo = !!seller && icon === "store";
 
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+    <section
       className={cn("py-4", className)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -165,42 +161,32 @@ export function RecommendationCarousel({
       {/* Carousel Container */}
       <div className="relative">
         {/* Left Navigation Arrow */}
-        <AnimatePresence>
-          {canScrollLeft && (
-            <motion.button
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: isHovered ? 1 : 0.7, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              transition={{ duration: 0.2 }}
-              onClick={() => scroll('left')}
-              className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 z-20 w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
-              aria-label="Scroll left"
-            >
-              <ChevronLeft className="h-5 w-5 text-gray-700" />
-            </motion.button>
-          )}
-        </AnimatePresence>
+        {canScrollLeft && (
+          <button
+            onClick={() => scroll('left')}
+            className={cn(
+              "absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 z-20 w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors",
+              isHovered ? "opacity-100" : "opacity-70"
+            )}
+            aria-label="Scroll left"
+          >
+            <ChevronLeft className="h-5 w-5 text-gray-700" />
+          </button>
+        )}
 
         {/* Right Navigation Arrow */}
-        <AnimatePresence>
-          {canScrollRight && (
-            <motion.button
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: isHovered ? 1 : 0.7, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              transition={{ duration: 0.2 }}
-              onClick={() => scroll('right')}
-              className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 z-20 w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
-              aria-label="Scroll right"
-            >
-              <ChevronRight className="h-5 w-5 text-gray-700" />
-            </motion.button>
-          )}
-        </AnimatePresence>
+        {canScrollRight && (
+          <button
+            onClick={() => scroll('right')}
+            className={cn(
+              "absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 z-20 w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors",
+              isHovered ? "opacity-100" : "opacity-70"
+            )}
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="h-5 w-5 text-gray-700" />
+          </button>
+        )}
 
         {/* Gradient Fade Edges */}
         {canScrollLeft && (
@@ -223,42 +209,28 @@ export function RecommendationCarousel({
             {isLoading ? (
               // Loading Skeletons
               Array.from({ length: 6 }).map((_, index) => (
-                <motion.div
+                <div
                   key={`skeleton-${index}`}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ 
-                    duration: 0.3, 
-                    delay: index * 0.05,
-                    ease: [0.04, 0.62, 0.23, 0.98]
-                  }}
                   className="flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] lg:w-[210px] snap-start"
                 >
                   <ProductCardSkeleton />
-                </motion.div>
+                </div>
               ))
             ) : (
               // Products with staggered animation
               products.map((product, index) => (
-                <motion.div
+                <div
                   key={product.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ 
-                    duration: 0.3, 
-                    delay: index * 0.05,
-                    ease: [0.04, 0.62, 0.23, 0.98]
-                  }}
                   className="flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] lg:w-[210px] snap-start"
                 >
                   <ProductCard product={product} priority={index < 4} />
-                </motion.div>
+                </div>
               ))
             )}
           </div>
         </div>
       </div>
-    </motion.section>
+    </section>
   );
 }
 

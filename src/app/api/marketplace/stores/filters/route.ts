@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed';
 
 // ============================================================
 // Store Filters API — store pills for Bike Stores tab
@@ -7,14 +7,13 @@ import { createClient } from '@/lib/supabase/server';
 // (no product counts — avoids heavy aggregation)
 // ============================================================
 
-export const dynamic = 'force-dynamic';
 export const revalidate = 300;
 
 export async function GET() {
   const startTime = performance.now();
 
   try {
-    const supabase = await createClient();
+    const supabase = createPublicSupabaseClient();
 
     const { data: stores, error: rpcError } = await supabase.rpc(
       'get_bike_stores_for_marketplace_filters'

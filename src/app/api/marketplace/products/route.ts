@@ -4,18 +4,303 @@ import { createClient } from '@/lib/supabase/server';
 import type { MarketplaceProduct, MarketplaceProductsResponse } from '@/lib/types/marketplace';
 import { resolveProductImage } from '@/lib/services/image-resolver';
 import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms';
+import {
+  createPublicSupabaseClient,
+  hasMissingPublicCardFeedError,
+  PUBLIC_MARKETPLACE_CARD_FIELDS,
+  transformPublicMarketplaceCard,
+  type PublicMarketplaceCardRow,
+} from '@/lib/marketplace/public-card-feed';
 
 // ============================================================
 // Marketplace Products API - Public Endpoint
 // Enterprise-grade with caching, pagination, and optimization
 // ============================================================
 
-// Enable ISR caching for enterprise performance
-// Revalidate every 60 seconds - balance between freshness and speed
-export const revalidate = 60;
+// Short public freshness budget: marketplace listings must disappear quickly
+// after an owner deactivates or removes them.
+export const revalidate = 15;
 
 // Deploy to edge runtime for global CDN distribution (20-50ms latency globally)
 export const runtime = 'edge';
+
+function parsePositiveInt(value: string | null, fallback: number, max: number) {
+  const parsed = Number.parseInt(value || '', 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, max);
+}
+
+function getSpaceForCount(listingType: string | null, uberOnly: boolean) {
+  if (uberOnly) return 'uber';
+  if (listingType === 'store_inventory') return 'stores';
+  if (listingType === 'private_listing') return 'marketplace';
+  return null;
+}
+
+async function getPrecomputedSpaceTotal(
+  supabase: ReturnType<typeof createPublicSupabaseClient>,
+  space: string | null,
+) {
+  if (!space) return null;
+
+  const { data, error } = await supabase
+    .from('public_marketplace_space_counts')
+    .select('total')
+    .eq('space', space)
+    .maybeSingle();
+
+  if (hasMissingPublicCardFeedError(error)) return null;
+  if (error) {
+    console.warn('[MARKETPLACE API] Space count lookup failed:', error.message);
+    return null;
+  }
+
+  const total = data?.total;
+  return typeof total === 'number' ? total : Number(total ?? 0);
+}
+
+function estimatedTotalFromPage(page: number, pageSize: number, returned: number, hasMore: boolean) {
+  return (page - 1) * pageSize + returned + (hasMore ? 1 : 0);
+}
+
+async function tryGetProductsFromPublicCards(
+  request: NextRequest,
+  startTime: number,
+): Promise<NextResponse | null> {
+  const searchParams = request.nextUrl.searchParams;
+
+  const category = searchParams.get('category');
+  const subcategory = searchParams.get('subcategory');
+  const level1 = searchParams.get('level1');
+  const level2 = searchParams.get('level2');
+  const level3 = searchParams.get('level3');
+  const search = searchParams.get('search');
+  const minPrice = searchParams.get('minPrice');
+  const maxPrice = searchParams.get('maxPrice');
+  const createdAfter = searchParams.get('createdAfter');
+  const listingType = searchParams.get('listingType');
+  const lsCategory = searchParams.get('lsCategory');
+  const condition = searchParams.get('condition');
+  const brand = searchParams.get('brand');
+  const uberOnly = searchParams.get('uberOnly') === 'true';
+  const excludeBicycleStores = searchParams.get('excludeBicycleStores') === 'true';
+  const sortBy = searchParams.get('sortBy') || 'newest';
+  const page = parsePositiveInt(searchParams.get('page'), 1, 10_000);
+  const pageSize = parsePositiveInt(searchParams.get('pageSize'), 24, 60);
+  const storeId = searchParams.get('storeId');
+  const cursorCreatedAt = searchParams.get('cursorCreatedAt');
+  const cursorId = searchParams.get('cursorId');
+  const canUseCursor = sortBy === 'newest' && !search && !!cursorCreatedAt && !!cursorId;
+  const searchWindowSize = page * pageSize + 1;
+
+  const supabase = createPublicSupabaseClient();
+  let searchResults: string[] | null = null;
+
+  try {
+    if (search?.trim()) {
+      const { data: searchData, error: searchError } = await supabase
+        .rpc('search_marketplace_products', {
+          search_query: search.trim(),
+          similarity_threshold: 0.15,
+        });
+
+      if (!searchError && searchData) {
+        const matchedIds = searchData.map((r: any) => r.product_id).filter(Boolean) as string[];
+        if (matchedIds.length === 0) {
+          return NextResponse.json({
+            products: [],
+            pagination: {
+              page,
+              pageSize,
+              total: 0,
+              totalPages: 0,
+              hasMore: false,
+              nextCursor: null,
+            },
+          });
+        }
+
+        if (searchWindowSize > 200) {
+          return null;
+        }
+
+        searchResults = matchedIds;
+      } else if (searchError) {
+        console.warn('[MARKETPLACE API] Search RPC failed on public-card fast path:', searchError.message);
+      }
+    }
+
+    let query = supabase
+      .from('public_marketplace_cards')
+      .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
+      .not('resolved_image_id', 'is', null)
+      .or('listing_status.is.null,listing_status.eq.active');
+
+    const isStoreFeed = listingType === 'store_inventory' || uberOnly;
+
+    if (isStoreFeed) {
+      query = query
+        .eq('listing_type', 'store_inventory')
+        .eq('is_verified_bike_store', true);
+    } else if (listingType === 'private_listing') {
+      query = query.eq('listing_type', 'private_listing');
+    } else if (listingType) {
+      query = query.eq('listing_type', listingType);
+    }
+
+    if (uberOnly) {
+      query = query.eq('uber_delivery_enabled', true);
+    }
+
+    if (storeId) {
+      query = query.eq('user_id', storeId);
+    }
+
+    if (lsCategory) {
+      query = query.eq('category_name', lsCategory);
+    } else if (!isStoreFeed && level1) {
+      query = query.eq('marketplace_category', level1);
+    } else if (!isStoreFeed && category) {
+      query = query.eq('marketplace_category', category);
+    }
+
+    if (!isStoreFeed && level2) {
+      query = query.eq('marketplace_subcategory', level2);
+    } else if (!isStoreFeed && subcategory && subcategory !== 'All') {
+      query = query.eq('marketplace_subcategory', subcategory);
+    }
+
+    if (!isStoreFeed && level3) {
+      query = query.eq('marketplace_level_3_category', level3);
+    }
+
+    if (minPrice) query = query.gte('price', Number.parseFloat(minPrice));
+    if (maxPrice) query = query.lte('price', Number.parseFloat(maxPrice));
+    if (createdAfter) query = query.gte('created_at', createdAfter);
+    if (condition) query = query.eq('condition_rating', condition);
+    if (brand) query = query.ilike('brand', `%${brand}%`);
+    if (excludeBicycleStores) {
+      query = query.or('store_account_type.is.null,store_account_type.neq.bicycle_store');
+    }
+    if (searchResults?.length) {
+      query = query
+        .in('id', searchResults.slice(0, searchWindowSize))
+        .limit(searchWindowSize);
+    } else if (search?.trim()) {
+      query = query.or(`display_name.ilike.%${search.trim()}%,description.ilike.%${search.trim()}%`);
+    }
+
+    if (!searchResults?.length) {
+      switch (sortBy) {
+        case 'price_asc':
+          query = query.order('price', { ascending: true }).order('id', { ascending: true });
+          break;
+        case 'price_desc':
+          query = query.order('price', { ascending: false }).order('id', { ascending: false });
+          break;
+        case 'oldest':
+          query = query.order('created_at', { ascending: true }).order('id', { ascending: true });
+          break;
+        case 'newest':
+        default:
+          query = query.order('created_at', { ascending: false }).order('id', { ascending: false });
+          break;
+      }
+    }
+
+    if (searchResults?.length) {
+      // Ranked search IDs are sorted in memory below; avoid applying a database
+      // range without an equivalent ORDER BY because it can drop top-ranked rows.
+    } else if (canUseCursor) {
+      query = query
+        .or(`created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`)
+        .limit(pageSize + 1);
+    } else {
+      const from = (page - 1) * pageSize;
+      query = query.range(from, from + pageSize);
+    }
+
+    const { data, error } = await query;
+
+    if (hasMissingPublicCardFeedError(error)) return null;
+    if (error) {
+      console.warn('[MARKETPLACE API] Public-card fast path failed, falling back:', error.message);
+      return null;
+    }
+
+    let rows = ((data || []) as PublicMarketplaceCardRow[]);
+
+    if (searchResults?.length) {
+      const orderMap = new Map(searchResults.map((id, index) => [id, index]));
+      rows = rows.sort((a, b) => {
+        const orderA = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const orderB = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        return orderA - orderB;
+      });
+      const from = (page - 1) * pageSize;
+      rows = rows.slice(from, from + pageSize + 1);
+    }
+
+    const hasMore = rows.length > pageSize;
+    const pageRows = rows.slice(0, pageSize);
+    const products = pageRows.map(transformPublicMarketplaceCard);
+    const last = products[products.length - 1];
+
+    const hasOnlySpaceFilters =
+      !search &&
+      !minPrice &&
+      !maxPrice &&
+      !createdAfter &&
+      !condition &&
+      !brand &&
+      !storeId &&
+      !level1 &&
+      !level2 &&
+      !level3 &&
+      !lsCategory &&
+      !category &&
+      !subcategory &&
+      !excludeBicycleStores;
+
+    const precomputedTotal = hasOnlySpaceFilters
+      ? await getPrecomputedSpaceTotal(supabase, getSpaceForCount(listingType, uberOnly))
+      : null;
+    const total = precomputedTotal ?? estimatedTotalFromPage(page, pageSize, products.length, hasMore);
+    const totalPages = Math.ceil(total / pageSize);
+    const totalTime = Date.now() - startTime;
+
+    const response: MarketplaceProductsResponse = {
+      products,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        hasMore,
+        nextCursor: last
+          ? {
+              createdAt: last.created_at,
+              id: last.id,
+            }
+          : null,
+      },
+    };
+
+    return NextResponse.json(response, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=15',
+        'CDN-Cache-Control': 'public, s-maxage=15',
+        'Vercel-CDN-Cache-Control': 'public, s-maxage=15',
+        'Vary': 'Accept-Encoding',
+        'X-Response-Time': `${totalTime}ms`,
+        'X-Marketplace-Feed': 'public-cards',
+      },
+    });
+  } catch (error) {
+    console.warn('[MARKETPLACE API] Public-card fast path exception, falling back:', error);
+    return null;
+  }
+}
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -40,8 +325,12 @@ export async function GET(request: NextRequest) {
     const uberOnly = searchParams.get('uberOnly') === 'true';
     const excludeBicycleStores = searchParams.get('excludeBicycleStores') === 'true';
     const sortBy = searchParams.get('sortBy') || 'newest';
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = parseInt(searchParams.get('pageSize') || '24');
+    const page = parsePositiveInt(searchParams.get('page'), 1, 10_000);
+    const pageSize = parsePositiveInt(searchParams.get('pageSize'), 24, 60);
+    const storeId = searchParams.get('storeId');
+
+    const publicCardResponse = await tryGetProductsFromPublicCards(request, startTime);
+    if (publicCardResponse) return publicCardResponse;
     
     console.log(`📊 [MARKETPLACE API] Request received:`, {
       level1, level2, level3, page, pageSize, sortBy
@@ -89,7 +378,8 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('marketplace_ready_products')
       .select(fastFields, { count: countType, head: false })
-      .not('resolved_image_id', 'is', null);
+      .not('resolved_image_id', 'is', null)
+      .or('listing_status.is.null,listing_status.eq.active');
 
     // Apply new 3-level taxonomy filters (takes precedence)
     if (level1) {
@@ -181,7 +471,6 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply store filter (filter products by specific store/user)
-    const storeId = searchParams.get('storeId');
     if (storeId) {
       query = query.eq('user_id', storeId);
       console.log(`🏪 [FILTER] Applying store filter: "${storeId}"`);
@@ -405,9 +694,9 @@ export async function GET(request: NextRequest) {
     // Cache filtered results for 5 minutes, allow stale content while revalidating
     return NextResponse.json(response, {
       headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
-        'CDN-Cache-Control': 'public, s-maxage=300',
-        'Vercel-CDN-Cache-Control': 'public, s-maxage=300',
+        'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=15',
+        'CDN-Cache-Control': 'public, s-maxage=15',
+        'Vercel-CDN-Cache-Control': 'public, s-maxage=15',
         'Vary': 'Accept-Encoding',
         'X-Response-Time': `${totalTime}ms`, // Track performance
       },

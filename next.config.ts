@@ -4,6 +4,13 @@ const nextConfig: NextConfig = {
   // Allow an isolated build dir (e.g. for a parallel preview server) without
   // clobbering the primary `.next` dir used by a concurrently running dev server.
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  // The repository has a parent lockfile used for unrelated tooling. Keep file
+  // tracing scoped to this app so production builds do not infer the parent as
+  // the workspace root.
+  outputFileTracingRoot: process.cwd(),
+  typescript: {
+    ignoreBuildErrors: process.env.NEXT_IGNORE_TYPESCRIPT === "1",
+  },
   async redirects() {
     // OAuth PKCE cookies are host-specific; mixing www and apex breaks sign-in.
     return [

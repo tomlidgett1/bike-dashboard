@@ -1,22 +1,38 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
-import { ChevronLeft, Store } from "lucide-react";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
+import { StoreProductContextHeader } from "@/components/marketplace/product-detail/store-product-context-header";
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
 import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
 import { EnhancedImageGallery } from "@/components/marketplace/product-detail/enhanced-image-gallery";
-import { RecommendationCarousel } from "@/components/marketplace/product-detail/recommendation-carousel";
-import { ProductUploadSuccessBanner } from "@/components/marketplace/product-upload-success-banner";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useProductView } from "@/lib/tracking/interaction-tracker";
 import { useStoreProductView } from "@/lib/tracking/store-analytics";
-import { ProductOptimizeDrawer } from "@/components/marketplace/product-optimize-drawer";
-import { ImmersiveProductLayout } from "./immersive-product-layout";
+
+const RecommendationCarousel = dynamic(
+  () => import("@/components/marketplace/product-detail/recommendation-carousel").then((mod) => mod.RecommendationCarousel),
+  { ssr: false },
+);
+
+const ProductUploadSuccessBanner = dynamic(
+  () => import("@/components/marketplace/product-upload-success-banner").then((mod) => mod.ProductUploadSuccessBanner),
+  { ssr: false },
+);
+
+const ProductOptimizeDrawer = dynamic(
+  () => import("@/components/marketplace/product-optimize-drawer").then((mod) => mod.ProductOptimizeDrawer),
+  { ssr: false },
+);
+
+const ImmersiveProductLayout = dynamic(
+  () => import("./immersive-product-layout").then((mod) => mod.ImmersiveProductLayout),
+  { ssr: false },
+);
 
 // ============================================================
 // Product Page Client Component
@@ -48,45 +64,6 @@ type ProductPageImage = {
   order?: number;
   isPrimary?: boolean;
 };
-
-// ── Store context header (shown when arriving from a store page) ────────────
-function StoreContextHeader({ storeId, storeName, storeLogo }: { storeId: string; storeName: string; storeLogo: string | null }) {
-  return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200">
-      <div className="max-w-[1400px] mx-auto px-5 sm:px-8 lg:px-10">
-        <div className="flex items-center justify-between h-14 sm:h-16">
-          {/* Back to store */}
-          <a
-            href={`/marketplace/store/${storeId}`}
-            className="flex items-center gap-2.5 min-w-0 group"
-          >
-            <ChevronLeft className="h-4 w-4 text-gray-400 flex-shrink-0 group-hover:text-gray-700 transition-colors" />
-            <div className="h-9 w-9 rounded-full ring-1 ring-gray-200 overflow-hidden bg-white flex-shrink-0 flex items-center justify-center">
-              {storeLogo ? (
-                <Image src={storeLogo} alt={storeName} width={36} height={36} className="h-full w-full object-cover" />
-              ) : (
-                <Store className="h-4 w-4 text-gray-400" />
-              )}
-            </div>
-            <span className="text-[15px] sm:text-base font-bold tracking-tight text-gray-900 truncate group-hover:text-gray-600 transition-colors">
-              {storeName}
-            </span>
-          </a>
-
-          {/* YJ back link */}
-          <a
-            href="/marketplace"
-            aria-label="Back to Yellow Jersey marketplace"
-            className="hidden sm:inline-flex items-center gap-2 flex-shrink-0 rounded-full border border-gray-200 bg-white hover:bg-gray-50 px-3 py-1.5 transition-colors"
-          >
-            <ChevronLeft className="h-3 w-3 text-gray-400" />
-            <Image src="/yj.svg" alt="Yellow Jersey" width={72} height={14} className="h-[26px] w-auto" unoptimized />
-          </a>
-        </div>
-      </div>
-    </header>
-  );
-}
 
 export function ProductPageClient({
   product,
@@ -202,28 +179,32 @@ export function ProductPageClient({
   return (
     <>
       {showStoreHeader ? (
-        <StoreContextHeader
-          storeId={fromStoreId}
+        <StoreProductContextHeader
+          storeId={fromStoreId!}
           storeName={sellerInfo!.name}
           storeLogo={sellerInfo!.logo_url}
+          accountType={sellerInfo!.account_type}
         />
       ) : (
         <MarketplaceHeader compactSearchOnMobile showFloatingButton={false} />
       )}
       
       {/* Main Content */}
-      <div className="min-h-screen bg-white sm:bg-gray-50 pt-14 sm:pt-16 pb-24 sm:pb-8">
+      <div
+        className={cn(
+          "min-h-screen bg-white sm:bg-gray-50 pb-24 sm:pb-8",
+          showStoreHeader ? "pt-16 sm:pt-[72px]" : "pt-14 sm:pt-16"
+        )}
+      >
         {/* Upload Success Banner */}
-        <ProductUploadSuccessBanner 
-          show={showBanner} 
-          onClose={() => setShowBanner(false)} 
-        />
+        {showBanner && (
+          <ProductUploadSuccessBanner
+            show={showBanner}
+            onClose={() => setShowBanner(false)}
+          />
+        )}
         
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
-        >
+        <div>
           {/* Breadcrumbs - Hidden on mobile, shown on tablet+ */}
           <div className="hidden sm:block max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 mb-4 sm:mb-6">
             <ProductBreadcrumbs
@@ -300,7 +281,7 @@ export function ProductPageClient({
               />
             )}
           </div>
-        </motion.div>
+        </div>
       </div>
     </>
   );

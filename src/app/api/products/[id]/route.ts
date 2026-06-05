@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { refreshPublicMarketplaceAfterMutation } from '@/lib/server/refresh-public-marketplace'
 
 export async function PATCH(
   request: NextRequest,
@@ -68,6 +69,10 @@ export async function PATCH(
       throw updateError
     }
 
+    if (body.is_active !== undefined) {
+      await refreshPublicMarketplaceAfterMutation()
+    }
+
     return NextResponse.json({
       success: true,
       product: updatedProduct,
@@ -81,4 +86,3 @@ export async function PATCH(
     )
   }
 }
-

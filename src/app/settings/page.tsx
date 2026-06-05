@@ -47,7 +47,6 @@ import { cn } from "@/lib/utils";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/auth-provider";
-import { optimizeImage, formatFileSize } from "@/lib/utils/image-optimizer";
 import { OpeningHoursEditor } from "@/components/opening-hours-editor";
 import type { OpeningHours } from "@/components/providers/profile-provider";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
@@ -97,6 +96,16 @@ export default function SettingsPage() {
   const [isAuthorized, setIsAuthorized] = React.useState<boolean | null>(null);
   const [section, setSection] = React.useState<SectionId>("account");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const logoPreviewObjectUrlRef = React.useRef<string | null>(null);
+
+  const revokeLogoPreviewObjectUrl = React.useCallback(() => {
+    if (logoPreviewObjectUrlRef.current) {
+      URL.revokeObjectURL(logoPreviewObjectUrlRef.current);
+      logoPreviewObjectUrlRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => () => revokeLogoPreviewObjectUrl(), [revokeLogoPreviewObjectUrl]);
 
   const { profile, loading: profileLoading, saving, isFirstTime, saveProfile } = useUserProfile();
 
@@ -180,6 +189,7 @@ export default function SettingsPage() {
       });
 
       if (profile.logo_url) {
+        revokeLogoPreviewObjectUrl();
         setLogoPreview(profile.logo_url);
       }
 
@@ -187,58 +197,28 @@ export default function SettingsPage() {
         setOpeningHours(profile.opening_hours);
       }
     }
-  }, [profile]);
+  }, [profile, revokeLogoPreviewObjectUrl]);
 
-  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    try {
-      if (!file.type.startsWith('image/')) {
-        setError('Please select an image file');
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        setError('Image size must be less than 5MB');
-        return;
-      }
-
-      setError(null);
-      setUploadingLogo(true);
-
-      const optimizedBlob = await optimizeImage(file, {
-        maxWidth: 512,
-        maxHeight: 512,
-        quality: 0.85,
-        format: 'webp'
-      });
-
-      const optimizedFile = new File(
-        [optimizedBlob],
-        file.name.replace(/\.[^/.]+$/, '.webp'),
-        { type: 'image/webp' }
-      );
-
-      console.log('Image optimized:', {
-        original: formatFileSize(file.size),
-        optimized: formatFileSize(optimizedFile.size),
-        savings: `${Math.round((1 - optimizedFile.size / file.size) * 100)}%`
-      });
-
-      setLogoFile(optimizedFile);
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setLogoPreview(reader.result as string);
-        setUploadingLogo(false);
-      };
-      reader.readAsDataURL(optimizedFile);
-    } catch (error) {
-      console.error('Error optimizing image:', error);
-      setError('Failed to process image. Please try another file.');
-      setUploadingLogo(false);
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file');
+      return;
     }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image size must be less than 5MB');
+      return;
+    }
+
+    setError(null);
+    revokeLogoPreviewObjectUrl();
+    const previewUrl = URL.createObjectURL(file);
+    logoPreviewObjectUrlRef.current = previewUrl;
+    setLogoPreview(previewUrl);
+    setLogoFile(file);
   };
 
   const handleRemoveLogo = async () => {
@@ -259,6 +239,7 @@ export default function SettingsPage() {
 
       await saveProfile({ logo_url: null });
 
+      revokeLogoPreviewObjectUrl();
       setLogoFile(null);
       setLogoPreview(null);
       setFormData(prev => ({ ...prev, logoUrl: "" }));
@@ -271,45 +252,23 @@ export default function SettingsPage() {
   };
 
   const uploadLogo = async (): Promise<string | null> => {
-    if (!logoFile || !user) return null;
+    if (!logoFile) return null;
 
-    try {
-      const supabase = createClient();
+    const fd = new FormData();
+    fd.append('file', logoFile);
 
-      if (formData.logoUrl) {
-        const oldFileName = formData.logoUrl.split('/').pop();
-        if (oldFileName) {
-          await supabase.storage
-            .from('logo')
-            .remove([`${user.id}/${oldFileName}`]);
-        }
-      }
+    const response = await fetch('/api/settings/upload-logo', {
+      method: 'POST',
+      body: fd,
+    });
 
-      const fileExt = logoFile.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
+    const data = await response.json().catch(() => ({}));
 
-      const { error: uploadError } = await supabase.storage
-        .from('logo')
-        .upload(filePath, logoFile, {
-          cacheControl: '31536000',
-          upsert: false,
-          contentType: 'image/webp'
-        });
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('logo')
-        .getPublicUrl(filePath);
-
-      return publicUrl;
-    } catch (error) {
-      console.error('Error uploading logo:', error);
-      throw error;
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to upload logo');
     }
+
+    return data.url as string;
   };
 
   const handleSave = async () => {
@@ -344,6 +303,11 @@ export default function SettingsPage() {
       if (result.success) {
         setSaved(true);
         setLogoFile(null);
+        revokeLogoPreviewObjectUrl();
+        if (logoUrl) {
+          setLogoPreview(logoUrl);
+          setFormData((prev) => ({ ...prev, logoUrl }));
+        }
         setTimeout(() => setSaved(false), 2000);
       } else {
         setError(result.error || "Failed to save settings");
@@ -570,7 +534,7 @@ export default function SettingsPage() {
           {section === "logo" && (
             <SettingsSection
               title="Business logo"
-              description="Upload your business logo (max 5MB)."
+              description="Upload your business logo (max 5MB). Images are compressed to WebP for fast loading."
               icon={ImageIcon}
               footer={<SaveBar />}
             >
@@ -595,7 +559,7 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <div className="flex-1 space-y-2">
-                  <SettingsField label="Upload logo" htmlFor="logo-upload" hint="Recommended: square image, at least 200×200px. JPG, PNG or GIF.">
+                  <SettingsField label="Upload logo" htmlFor="logo-upload" hint="Square image, at least 200×200px. JPG, PNG or WebP — we compress automatically on save.">
                     <div className="flex items-center gap-2">
                       <input ref={fileInputRef} id="logo-upload" type="file" accept="image/*" onChange={handleLogoChange} className="hidden" aria-label="Upload logo" />
                       <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploadingLogo}>

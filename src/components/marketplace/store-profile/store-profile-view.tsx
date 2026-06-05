@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import {
   Store,
@@ -52,8 +52,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ProductCard } from "@/components/marketplace/product-card";
-import { ServicesSection } from "@/components/marketplace/store-profile/services-section";
-import { RentalsSection } from "@/components/marketplace/store-profile/rentals-section";
+import { StoreCarouselRowControls } from "@/components/marketplace/store-profile/store-carousel-row-controls";
 import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-tab";
 import { CartButton } from "@/components/marketplace/cart-button";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
@@ -69,6 +68,13 @@ import { useProductImpressions, useStorePageView } from "@/lib/tracking/store-an
 // ============================================================
 
 const BRAND_YELLOW = "#ffde59";
+
+const ServicesSection = dynamic(() =>
+  import("@/components/marketplace/store-profile/services-section").then((mod) => mod.ServicesSection),
+);
+const RentalsSection = dynamic(() =>
+  import("@/components/marketplace/store-profile/rentals-section").then((mod) => mod.RentalsSection),
+);
 
 type StoreTab = "home" | "products" | "rentals" | "service" | "about" | "reviews";
 type SortKey = "featured" | "price-asc" | "price-desc" | "newest";
@@ -174,12 +180,10 @@ interface CategoryScrollRowProps {
   isExpanded: boolean;
   storeId: string;
   trackAnalytics?: boolean;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
 }
 
-function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, trackAnalytics }: CategoryScrollRowProps) {
-  const scrollRef = React.useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = React.useState(false);
-  const [canScrollRight, setCanScrollRight] = React.useState(false);
+function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, trackAnalytics, scrollRef }: CategoryScrollRowProps) {
   const impressionContext = React.useMemo(
     () => ({ rowIndex, carouselSize: catSize, expanded: isExpanded }),
     [catSize, isExpanded, rowIndex],
@@ -189,34 +193,6 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
     products,
     impressionContext,
   );
-
-  const checkScroll = React.useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 2);
-    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
-  }, []);
-
-  React.useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || isExpanded) return;
-    el.scrollLeft = 0;
-    // Slight delay so DOM has rendered card widths
-    const t = setTimeout(checkScroll, 60);
-    el.addEventListener('scroll', checkScroll, { passive: true });
-    window.addEventListener('resize', checkScroll);
-    return () => {
-      clearTimeout(t);
-      el.removeEventListener('scroll', checkScroll);
-      window.removeEventListener('resize', checkScroll);
-    };
-  }, [checkScroll, isExpanded, products]);
-
-  const scroll = (dir: 'left' | 'right') => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollBy({ left: dir === 'left' ? -(el.clientWidth * 0.75) : el.clientWidth * 0.75, behavior: 'smooth' });
-  };
 
   // Responsive column widths keep store rows aligned with the marketplace
   // homepage grids while preserving a single-row horizontal carousel.
@@ -265,31 +241,8 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
   }
 
   // ── Horizontal scroll (default) ───────────────────────────────────────────
-  // Uses CSS grid (grid-auto-flow: column) so every cell in the row gets the
-  // same height — identical to how the old static grid worked.
   return (
-    <div ref={impressionRef} className="relative">
-      {/* Left arrow – desktop only */}
-      {canScrollLeft && (
-        <button
-          onClick={() => scroll('left')}
-          className="hidden sm:flex absolute -left-4 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white shadow-md border border-gray-100 items-center justify-center hover:bg-gray-50 transition-colors"
-          aria-label="Scroll left"
-        >
-          <ChevronLeft className="h-4 w-4 text-gray-700" />
-        </button>
-      )}
-      {/* Right arrow – desktop only */}
-      {canScrollRight && (
-        <button
-          onClick={() => scroll('right')}
-          className="hidden sm:flex absolute -right-4 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white shadow-md border border-gray-100 items-center justify-center hover:bg-gray-50 transition-colors"
-          aria-label="Scroll right"
-        >
-          <ChevronRight className="h-4 w-4 text-gray-700" />
-        </button>
-      )}
-      {/* Scroll track */}
+    <div ref={impressionRef}>
       <div
         ref={scrollRef}
         className="overflow-x-auto overflow-y-hidden scrollbar-hide snap-x snap-mandatory sm:snap-none"
@@ -381,7 +334,9 @@ function CarouselRow({
 
   const catSize = (compact ? 'compact' : (cat.carousel_size ?? 'normal')) as 'featured' | 'normal' | 'compact';
   const isExpanded = expandedCategories.has(cat.id);
-  const hasMore = cat.products.length > 8;
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = React.useState(false);
+  const [canScrollRight, setCanScrollRight] = React.useState(false);
   const [viewportWidth, setViewportWidth] = React.useState(() =>
     typeof window === "undefined" ? 1280 : window.innerWidth
   );
@@ -396,6 +351,49 @@ function CarouselRow({
   const displayedProducts = isExpanded
     ? cat.products
     : cat.products.slice(0, collapsedLimit);
+  const showSeeAll = cat.products.length > collapsedLimit;
+
+  const checkScroll = React.useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 2);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
+  }, []);
+
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || isExpanded) return;
+    el.scrollLeft = 0;
+    const t = setTimeout(checkScroll, 60);
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    window.addEventListener("resize", checkScroll);
+    return () => {
+      clearTimeout(t);
+      el.removeEventListener("scroll", checkScroll);
+      window.removeEventListener("resize", checkScroll);
+    };
+  }, [checkScroll, isExpanded, displayedProducts]);
+
+  const scrollCarousel = (dir: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({
+      left: dir === "left" ? -(el.clientWidth * 0.75) : el.clientWidth * 0.75,
+      behavior: "smooth",
+    });
+  };
+
+  const toggleExpanded = () => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (isExpanded) {
+        next.delete(cat.id);
+      } else {
+        next.add(cat.id);
+      }
+      return next;
+    });
+  };
 
   if (cat.products.length === 0) return null;
 
@@ -403,9 +401,7 @@ function CarouselRow({
     <section key={cat.id}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-3">
-          {cat.source === "uber" ? (
-            <UberCarouselLogo className="h-7 px-2.5" />
-          ) : logoUrl ? (
+          {logoUrl ? (
             <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
               <img src={logoUrl} alt={cat.name} className="h-full w-auto max-w-[96px] object-contain rounded-sm" />
               {isOwnProfile && (
@@ -443,22 +439,24 @@ function CarouselRow({
           {!cat.hide_title && <h3 className="text-base font-semibold text-gray-900">{cat.name}</h3>}
           <span className="text-xs text-gray-400 tabular-nums">({cat.products.length})</span>
         </div>
-        {hasMore && (
+        {isExpanded ? (
           <button
             type="button"
-            onClick={() => setExpandedCategories((prev) => {
-              const next = new Set(prev);
-              if (isExpanded) {
-                next.delete(cat.id);
-              } else {
-                next.add(cat.id);
-              }
-              return next;
-            })}
-            className="text-xs text-gray-500 hover:text-gray-900 cursor-pointer transition-colors flex-shrink-0"
+            onClick={toggleExpanded}
+            className="text-sm font-semibold text-gray-900 hover:text-gray-700 transition-colors cursor-pointer flex-shrink-0"
           >
-            {isExpanded ? "Show less" : `See all ${cat.products.length}`}
+            Show less
           </button>
+        ) : (
+          <StoreCarouselRowControls
+            showSeeAll={showSeeAll}
+            seeAllLabel="See All"
+            onSeeAll={toggleExpanded}
+            canScrollLeft={canScrollLeft}
+            canScrollRight={canScrollRight}
+            onScrollLeft={() => scrollCarousel("left")}
+            onScrollRight={() => scrollCarousel("right")}
+          />
         )}
       </div>
       <CategoryScrollRow
@@ -468,6 +466,7 @@ function CarouselRow({
         isExpanded={isExpanded}
         storeId={storeId ?? ''}
         trackAnalytics={trackAnalytics}
+        scrollRef={scrollRef}
       />
     </section>
   );
@@ -633,8 +632,9 @@ function ProductsTab({
   );
 }
 
-export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfileViewProps) {
+export function StoreProfileView({ store: initialStore, isOwnProfile, immersive }: StoreProfileViewProps) {
   const router = useRouter();
+  const [store, setStore] = React.useState(initialStore);
   // Home is the storefront landing page; it's the default tab unless the owner
   // has explicitly switched it off (homepage_config.enabled === false).
   const homeEnabled = store.homepage_config?.enabled !== false;
@@ -648,8 +648,13 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
   const [showSaleOnly, setShowSaleOnly] = React.useState(false);
   const [previewMode, setPreviewMode] = React.useState(false);
   const [hoursOpen, setHoursOpen] = React.useState(false);
+  const [loadingFullProducts, setLoadingFullProducts] = React.useState(false);
 
   useStorePageView(isOwnProfile ? null : store.id);
+
+  React.useEffect(() => {
+    setStore(initialStore);
+  }, [initialStore]);
 
   // When previewMode is on, strip all owner-only UI so the store sees exactly
   // what a customer sees (no logo-upload overlays, no owner-only empty states, etc.)
@@ -660,6 +665,38 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  React.useEffect(() => {
+    if (activeTab !== "products" || store.product_feed_complete !== false) return;
+
+    let cancelled = false;
+    setLoadingFullProducts(true);
+
+    fetch(`/api/marketplace/store/${store.id}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Store products request failed: ${response.status}`);
+        return response.json();
+      })
+      .then((data) => {
+        if (!cancelled && data.store) {
+          setStore(data.store);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error('[Store profile] Failed to load full product feed:', error);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingFullProducts(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, store.id, store.product_feed_complete]);
 
   const openStatus = getOpenStatus(store.opening_hours);
   const headerRating =
@@ -766,7 +803,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
           icon={Settings}
           label="Edit Store"
           onClick={() => {
-            router.push("/settings/store/home");
+            router.push("/settings/store/landing");
           }}
         />
       )}
@@ -991,10 +1028,8 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                   <Icon className={cn("h-3.5 w-3.5 flex-shrink-0", active ? "text-gray-900" : "text-gray-400")} />
                   {label}
                   {active && (
-                    <motion.span
-                      layoutId="storeTabUnderline"
+                    <span
                       className="absolute inset-x-1.5 -bottom-px h-[2px] rounded-full bg-gray-900"
-                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
                     />
                   )}
                 </button>
@@ -1081,7 +1116,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                     type="button"
                     onClick={() => setShowSaleOnly((v) => !v)}
                     className={cn(
-                      "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap border",
+                      "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
                       showSaleOnly
                         ? "bg-red-600 text-white border-red-600"
                         : "bg-white text-red-600 border-red-200 hover:bg-red-50"
@@ -1105,7 +1140,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                       type="button"
                       onClick={() => setSelectedCategory((cur) => (cur === cat.name ? null : cat.name))}
                       className={cn(
-                        "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap border",
+                        "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
                         selectedCategory === cat.name
                           ? "bg-gray-900 text-white border-gray-900"
                           : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
@@ -1174,14 +1209,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
           ? "" // full-bleed; inherits the page's gray-50 so white cards pop
           : cn("pt-2 pb-5 sm:pt-3 sm:pb-7", storeContentShell)
       )}>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.18 }}
-          >
+          <div key={activeTab}>
             {/* HOME — storefront landing page */}
             {activeTab === "home" && (
               <StoreHomeTab
@@ -1196,7 +1224,12 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
 
             {/* PRODUCTS */}
             {activeTab === "products" &&
-              (allProducts.length > 0 ? (
+              (loadingFullProducts ? (
+                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-medium text-gray-500">
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
+                  Loading products...
+                </div>
+              ) : allProducts.length > 0 ? (
                 <ProductsTab
                   sortedCategories={sortedCategories}
                   sections={store.sections ?? []}
@@ -1275,8 +1308,7 @@ export function StoreProfileView({ store, isOwnProfile, immersive }: StoreProfil
                 body="Reviews from customers will appear here once this store has been rated."
               />
             )}
-          </motion.div>
-        </AnimatePresence>
+          </div>
       </div>
       </div>
 

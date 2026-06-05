@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, X, Heart, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +37,7 @@ export function EnhancedImageGallery({
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [fullscreenIndex, setFullscreenIndex] = React.useState(0);
   const [mobileImageIndex, setMobileImageIndex] = React.useState(0);
+  const touchStartXRef = React.useRef<number | null>(null);
 
   // Next.js can only optimize images from hosts whitelisted in next.config.ts
   // (Cloudinary + Supabase). Raw external URLs — e.g. Serper-discovered retailer
@@ -237,10 +237,18 @@ export function EnhancedImageGallery({
     setMobileImageIndex(mobileImageIndex === images.length - 1 ? 0 : mobileImageIndex + 1);
   };
 
-  const handleMobileDragEnd = (event: any, info: any) => {
+  const handleMobileTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const startX = touchStartXRef.current;
+    touchStartXRef.current = null;
+    if (startX == null) return;
+
+    const endX = event.changedTouches[0]?.clientX;
+    if (typeof endX !== "number") return;
+
     const swipeThreshold = 50;
-    if (Math.abs(info.offset.x) > swipeThreshold) {
-      if (info.offset.x > 0) {
+    const offsetX = endX - startX;
+    if (Math.abs(offsetX) > swipeThreshold) {
+      if (offsetX > 0) {
         handleMobilePrev();
       } else {
         handleMobileNext();
@@ -253,32 +261,26 @@ export function EnhancedImageGallery({
       {/* Mobile: Swipeable Single Image */}
       <div className="sm:hidden relative">
         <div className="relative aspect-square bg-gray-100 overflow-hidden">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={mobileImageIndex}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              drag="x"
-              dragConstraints={{ left: 0, right: 0 }}
-              dragElastic={0.2}
-              onDragEnd={handleMobileDragEnd}
-              className="absolute inset-0 cursor-grab active:cursor-grabbing"
-              onClick={() => openFullscreen(mobileImageIndex)}
-            >
-              <Image
-                src={images[mobileImageIndex]}
-                alt={`${productName} - Image ${mobileImageIndex + 1}`}
-                fill
-                unoptimized={!isOptimizableHost(images[mobileImageIndex])}
-                className="object-cover"
-                sizes="100vw"
-                priority={mobileImageIndex === 0}
-                quality={85}
-              />
-            </motion.div>
-          </AnimatePresence>
+          <div
+            key={mobileImageIndex}
+            className="absolute inset-0 cursor-grab active:cursor-grabbing"
+            onClick={() => openFullscreen(mobileImageIndex)}
+            onTouchStart={(event) => {
+              touchStartXRef.current = event.touches[0]?.clientX ?? null;
+            }}
+            onTouchEnd={handleMobileTouchEnd}
+          >
+            <Image
+              src={images[mobileImageIndex]}
+              alt={`${productName} - Image ${mobileImageIndex + 1}`}
+              fill
+              unoptimized={!isOptimizableHost(images[mobileImageIndex])}
+              className="object-cover"
+              sizes="100vw"
+              priority={mobileImageIndex === 0}
+              quality={85}
+            />
+          </div>
 
           {/* Like and Share Buttons - Top Right */}
           <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
@@ -372,23 +374,16 @@ export function EnhancedImageGallery({
       </div>
 
       {/* Fullscreen Modal */}
-      <AnimatePresence>
-        {isFullscreen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black z-[100]"
-              onClick={() => setIsFullscreen(false)}
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="fixed inset-0 z-[101] flex items-center justify-center p-4"
-              onClick={() => setIsFullscreen(false)}
-            >
+      {isFullscreen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black z-[100]"
+            onClick={() => setIsFullscreen(false)}
+          />
+          <div
+            className="fixed inset-0 z-[101] flex items-center justify-center p-4"
+            onClick={() => setIsFullscreen(false)}
+          >
               <div className="relative w-full h-full max-w-5xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
                 <Image
                   src={images[fullscreenIndex]}
@@ -467,10 +462,9 @@ export function EnhancedImageGallery({
               <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full text-sm font-medium">
                 {fullscreenIndex + 1} / {images.length}
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+          </div>
+        </>
+      )}
     </>
   );
 }

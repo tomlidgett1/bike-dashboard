@@ -1,19 +1,108 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import type { MarketplaceProduct } from '@/lib/types/marketplace';
 import { resolveProductImage, pickPrimaryImage } from '@/lib/services/image-resolver';
 import { extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
+import {
+  createPublicSupabaseClient,
+  hasMissingPublicCardFeedError,
+  numberFromDb,
+  PUBLIC_MARKETPLACE_CARD_FIELDS,
+  transformPublicMarketplaceCard,
+  type PublicMarketplaceCardRow,
+} from '@/lib/marketplace/public-card-feed';
 
 // ============================================================
 // Similar Products API
 // Rule-based similarity matching with weighted scoring
 // ============================================================
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 
 interface ScoredProduct {
   product: any;
   score: number;
+}
+
+function cacheHeaders(startTime: number, feed: string = 'fallback') {
+  return {
+    'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+    'CDN-Cache-Control': 'public, s-maxage=60',
+    'Vercel-CDN-Cache-Control': 'public, s-maxage=60',
+    'Vary': 'Accept-Encoding',
+    'X-Response-Time': `${Date.now() - startTime}ms`,
+    'X-Marketplace-Feed': feed,
+  };
+}
+
+async function tryGetSimilarFromPublicCards(productId: string, limit: number, startTime: number) {
+  const supabase = createPublicSupabaseClient();
+
+  const { data: sourceRow, error: sourceError } = await supabase
+    .from('public_marketplace_cards')
+    .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
+    .eq('id', productId)
+    .maybeSingle();
+
+  if (hasMissingPublicCardFeedError(sourceError)) return null;
+  if (sourceError || !sourceRow) return null;
+
+  const source = sourceRow as PublicMarketplaceCardRow;
+  if (!source.marketplace_category) {
+    return NextResponse.json({ products: [], count: 0 }, { headers: cacheHeaders(startTime, 'public-cards') });
+  }
+
+  const { data: rows, error } = await supabase
+    .from('public_marketplace_cards')
+    .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
+    .eq('marketplace_category', source.marketplace_category)
+    .neq('id', productId)
+    .order('created_at', { ascending: false })
+    .limit(120);
+
+  if (hasMissingPublicCardFeedError(error)) return null;
+  if (error) {
+    console.warn('[SIMILAR API] Public-card fast path failed:', error.message);
+    return null;
+  }
+
+  const sourceBrand = source.brand || extractBrand(source.display_name || source.description);
+  const sourcePrice = numberFromDb(source.price);
+
+  const products = ((rows || []) as PublicMarketplaceCardRow[])
+    .map((row) => {
+      let score = 0;
+      const rowPrice = numberFromDb(row.price);
+
+      if (source.marketplace_level_3_category && row.marketplace_level_3_category === source.marketplace_level_3_category) score += 6;
+      if (source.marketplace_subcategory && row.marketplace_subcategory === source.marketplace_subcategory) score += 5;
+      if (row.marketplace_category === source.marketplace_category) score += 3;
+      if (sourceBrand && row.brand && row.brand.toLowerCase() === sourceBrand.toLowerCase()) score += 3;
+      if (source.condition_rating && row.condition_rating === source.condition_rating) score += 2;
+      if (sourcePrice > 0 && rowPrice > 0) {
+        const priceDiff = Math.abs(rowPrice - sourcePrice) / sourcePrice;
+        if (priceDiff <= 0.3) score += 2;
+        else if (priceDiff <= 0.5) score += 1;
+      }
+
+      return { row, score };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return new Date(b.row.created_at || 0).getTime() - new Date(a.row.created_at || 0).getTime();
+    })
+    .slice(0, limit)
+    .map(({ row }) => transformPublicMarketplaceCard(row));
+
+  return NextResponse.json(
+    {
+      products,
+      count: products.length,
+      sourceCategory: source.marketplace_category,
+      sourceSubcategory: source.marketplace_subcategory,
+    },
+    { headers: cacheHeaders(startTime, 'public-cards') },
+  );
 }
 
 export async function GET(
@@ -36,7 +125,10 @@ export async function GET(
 
     console.log(`🔍 [SIMILAR API] Finding similar products for: ${productId}`);
 
-    const supabase = await createClient();
+    const fastResponse = await tryGetSimilarFromPublicCards(productId, limit, startTime);
+    if (fastResponse) return fastResponse;
+
+    const supabase = createPublicSupabaseClient();
 
     // First, fetch the source product to get its attributes
     const { data: sourceProduct, error: sourceError } = await supabase
@@ -158,9 +250,7 @@ export async function GET(
         products: [],
         count: 0 
       }, {
-        headers: {
-          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-        },
+        headers: cacheHeaders(startTime),
       });
     }
 
@@ -302,9 +392,7 @@ export async function GET(
         sourceSubcategory: sourceProduct.marketplace_subcategory,
       },
       {
-        headers: {
-          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-        },
+        headers: cacheHeaders(startTime),
       }
     );
 
@@ -350,4 +438,3 @@ function extractBrand(name: string | null | undefined): string | null {
   
   return null;
 }
-

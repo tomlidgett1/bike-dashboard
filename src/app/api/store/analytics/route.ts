@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveAnalyticsDeviceType } from "@/lib/tracking/resolve-analytics-device-type";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 
 type StoreAnalyticsEventType = "store_page_view" | "product_view" | "product_impression";
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
   const productId = body.productId;
   const visitorId = body.visitorId;
   const sessionId = body.sessionId;
+  const deviceType = resolveAnalyticsDeviceType(request, body.deviceType);
   const occurredAt = typeof body.occurredAt === "string" ? body.occurredAt : new Date().toISOString();
   const source = typeof body.source === "string" ? body.source.slice(0, 240) : null;
   const metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : {};
@@ -106,6 +108,7 @@ export async function POST(request: NextRequest) {
     user_id: user?.id || null,
     visitor_id: visitorId,
     session_id: sessionId,
+    device_type: deviceType,
     event_type: eventType,
     source,
     metadata,

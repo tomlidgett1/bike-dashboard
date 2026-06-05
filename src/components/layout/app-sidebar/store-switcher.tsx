@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
-import { Bike, ChevronsUpDown, ExternalLink, Settings, Store } from "lucide-react";
+import { ChevronsUpDown, ExternalLink, Settings, Store } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
+import { StoreSidebarLogo } from "./store-sidebar-logo";
 
 export function StoreSwitcher() {
   const { isMobile } = useSidebar();
@@ -25,34 +26,40 @@ export function StoreSwitcher() {
   const name = profile?.business_name || profile?.name || "Your store";
 
   return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
-              <div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-md bg-primary text-primary-foreground">
-                {profile?.logo_url ? (
-                  <Image
-                    src={profile.logo_url}
-                    alt={name}
-                    width={32}
-                    height={32}
-                    className="size-8 object-cover"
-                  />
-                ) : (
-                  <Bike className="size-4" />
+    <div
+      className={cn(
+        "rounded-md border border-gray-300 bg-white p-1 shadow-md",
+        "group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:w-full group-data-[collapsible=icon]:justify-center",
+        "group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:shadow-none"
+      )}
+    >
+      <SidebarMenu className="group-data-[collapsible=icon]:w-full group-data-[collapsible=icon]:items-center">
+        <SidebarMenuItem className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:w-full group-data-[collapsible=icon]:justify-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <SidebarMenuButton
+                size="lg"
+                tooltip={name}
+                className={cn(
+                  "h-11 bg-transparent hover:bg-gray-100 active:bg-gray-100 data-[state=open]:bg-gray-100 data-[state=open]:text-foreground",
+                  "group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0!"
                 )}
+              >
+              <div className="flex aspect-square size-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary text-primary-foreground group-data-[collapsible=icon]:hidden">
+                <StoreSidebarLogo logoUrl={profile?.logo_url} alt={name} />
               </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
+              <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
                 <span className="truncate font-semibold">{name}</span>
                 <span className="truncate text-xs text-muted-foreground">
                   Bike store
                 </span>
               </div>
-              <ChevronsUpDown className="ml-auto size-4 text-muted-foreground" />
+              <ChevronsUpDown
+                className={cn(
+                  "size-4 shrink-0 text-muted-foreground",
+                  "ml-auto group-data-[collapsible=icon]:ml-0"
+                )}
+              />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -91,8 +98,9 @@ export function StoreSwitcher() {
               </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
+          </DropdownMenu>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </div>
   );
 }

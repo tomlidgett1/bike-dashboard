@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
+import { refreshPublicMarketplaceAfterMutation } from "@/lib/server/refresh-public-marketplace";
 
 // ============================================================
 // GET /api/marketplace/listings/[id]
@@ -261,6 +262,13 @@ export async function PUT(
       }
     }
 
+    if (
+      Object.prototype.hasOwnProperty.call(updateData, "is_active") ||
+      Object.prototype.hasOwnProperty.call(updateData, "listing_status")
+    ) {
+      await refreshPublicMarketplaceAfterMutation();
+    }
+
     return NextResponse.json({ listing });
   } catch (error) {
     console.error("Error in PUT /api/marketplace/listings/[id]:", error);
@@ -332,6 +340,8 @@ export async function DELETE(
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
     }
+
+    await refreshPublicMarketplaceAfterMutation();
 
     return NextResponse.json({ success: true });
   } catch (error) {

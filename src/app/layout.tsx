@@ -8,14 +8,11 @@ import { AuthModalProvider } from "@/components/providers/auth-modal-provider";
 import { SellModalProvider } from "@/components/providers/sell-modal-provider";
 import { UploadProvider } from "@/components/providers/upload-provider";
 import { OrderNotificationsProvider } from "@/components/providers/order-notifications-provider";
-import { FloatingUploadBar } from "@/components/marketplace/floating-upload-bar";
 import { ConditionalLayout } from "@/components/layout";
 import { GenieProvider } from "@/components/providers/genie-provider";
-import { GeniePortal } from "@/components/genie/genie-portal";
 import { MessagesProvider } from "@/components/providers/messages-provider";
-import { MessagesPanel } from "@/components/messages/messages-panel";
 import { CartProvider } from "@/components/providers/cart-provider";
-import { CartDrawer } from "@/components/marketplace/cart-drawer";
+import { DeferredGlobalPanels } from "@/components/layout/deferred-global-panels";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
 import "./globals.css";
@@ -68,6 +65,8 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="format-detection" content="telephone=no" />
+        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://frjcluhuictnbimitvrm.supabase.co" />
       </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased touch-manipulation`}
@@ -88,13 +87,10 @@ export default async function RootLayout({
                       <MobileNavProvider>
                         <MessagesProvider>
                           <GenieProvider>
-                            <CartProvider>
-                              <ConditionalLayout>{children}</ConditionalLayout>
-                              <FloatingUploadBar />
+                              <CartProvider>
+                                <ConditionalLayout>{children}</ConditionalLayout>
                               <WebVitalsReporter />
-                              <MessagesPanel />
-                              <GeniePortal />
-                              <CartDrawer />
+                              <DeferredGlobalPanels />
                             </CartProvider>
                           </GenieProvider>
                         </MessagesProvider>

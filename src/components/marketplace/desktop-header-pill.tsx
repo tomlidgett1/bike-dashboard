@@ -4,7 +4,7 @@ import * as React from "react";
 import { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Mail,
   Settings,
@@ -12,6 +12,7 @@ import {
   Store,
   ShoppingBag,
   Home,
+  HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import { useUserProfile } from "@/components/providers/profile-provider";
 import { createClient } from "@/lib/supabase/client";
 import { useCombinedUnreadCount } from "@/lib/hooks/use-combined-unread-count";
 import { useMessages } from "@/components/providers/messages-provider";
+import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,7 +37,9 @@ import {
 
 function DesktopHeaderPillContent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
+  const spaceParam = searchParams.get("space");
   const { user } = useAuth();
   const { profile } = useUserProfile();
   const supabase = createClient();
@@ -54,6 +58,7 @@ function DesktopHeaderPillContent() {
   );
   const unreadCount = counts.total;
   const { open: openInbox } = useMessages();
+  const { openAuthModal } = useAuthModal();
 
   const isVerifiedStore =
     profile?.account_type === "bicycle_store" && profile?.bicycle_store === true;
@@ -234,13 +239,64 @@ function DesktopHeaderPillContent() {
           </>
         ) : (
           mounted && (
-            <Button
-              variant="ghost"
-              onClick={() => router.push("/login")}
-              className="rounded-full text-sm font-medium hover:bg-gray-100 h-9 px-4"
-            >
-              Sign In
-            </Button>
+            <>
+              {showNavLinks && (
+                <>
+                  <Link
+                    href="/marketplace"
+                    className={cn(
+                      "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                      pathname === "/marketplace" &&
+                        spaceParam !== "stores" &&
+                        spaceParam !== "uber"
+                        ? "text-gray-900 bg-gray-100"
+                        : "text-gray-700 hover:bg-gray-100"
+                    )}
+                  >
+                    Browse
+                  </Link>
+                  <Link
+                    href="/marketplace?space=stores"
+                    className={cn(
+                      "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                      pathname === "/marketplace" && spaceParam === "stores"
+                        ? "text-gray-900 bg-gray-100"
+                        : "text-gray-700 hover:bg-gray-100"
+                    )}
+                  >
+                    Bike stores
+                  </Link>
+                  <Link
+                    href="/marketplace/help"
+                    className={cn(
+                      "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                      pathname.startsWith("/marketplace/help")
+                        ? "text-gray-900 bg-gray-100"
+                        : "text-gray-700 hover:bg-gray-100"
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <HelpCircle className="h-3.5 w-3.5" />
+                      Help
+                    </span>
+                  </Link>
+                  <div className="w-px h-5 bg-gray-200 mx-1" aria-hidden />
+                </>
+              )}
+              <Button
+                variant="ghost"
+                onClick={() => openAuthModal({ mode: "signin" })}
+                className="rounded-full text-sm font-medium hover:bg-gray-100 h-9 px-4"
+              >
+                Sign in
+              </Button>
+              <Button
+                onClick={() => openAuthModal({ mode: "signup" })}
+                className="rounded-full bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-semibold h-9 px-4 text-sm shadow-sm hover:shadow-md transition-all"
+              >
+                Create account
+              </Button>
+            </>
           )
         )}
     </div>

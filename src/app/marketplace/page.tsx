@@ -2,10 +2,10 @@ import { Suspense } from "react";
 import { MarketplacePageContent } from "./marketplace-page-content";
 import { fetchInitialMarketplaceProducts } from "@/lib/server/fetch-initial-marketplace-products";
 
-// Cache the rendered output for 60 s, then revalidate in the background (ISR).
+// Cache the rendered output briefly, then revalidate in the background (ISR).
 // The layout is dynamic (reads auth cookies) but the page data itself — the
 // initial product grid — is public and safe to cache at this level.
-export const revalidate = 60;
+export const revalidate = 15;
 
 function LoadingFallback() {
   return (

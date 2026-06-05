@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search,
@@ -24,11 +25,11 @@ import {
   XCircle,
   Star,
   MoreHorizontal,
-  Plus,
   ListFilter,
   PackageX,
   TriangleAlert,
   X,
+  Zap,
 } from "lucide-react";
 import Image from "next/image";
 import NextDynamic from "next/dynamic";
@@ -57,8 +58,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { SyncProgressModal } from "@/components/lightspeed/sync-progress-modal";
+import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
+import { useLightspeedSseSync } from "@/lib/hooks/use-lightspeed-sse-sync";
+import {
+  formatCanonicalCategory,
+  formatLightspeedCategory,
+  isLightspeedProduct,
+  productSourceLabel,
+} from "@/lib/products/catalog-helpers";
 import {
   PageBody,
   PageContainer,
@@ -79,12 +89,15 @@ const ImageGallery = NextDynamic(() => import("@/components/products/image-galle
 
 interface Product {
   id: string;
-  lightspeed_item_id: string;
+  lightspeed_item_id: string | null;
   system_sku: string | null;
   custom_sku: string | null;
   description: string;
   category_name: string | null;
   full_category_path: string | null;
+  marketplace_category: string | null;
+  marketplace_subcategory: string | null;
+  marketplace_level_3_category: string | null;
   manufacturer_name: string | null;
   price: number;
   default_cost: number;
@@ -122,6 +135,8 @@ interface ProductStats {
   live: number;
   lowStock: number;
   needsImages: number;
+  lightspeed?: number;
+  manual?: number;
 }
 
 // ── Row helpers ──────────────────────────────────────────────────────────────
@@ -131,6 +146,26 @@ function hasImage(p: Product) {
 }
 
 function deriveStatus(p: Product): { label: string; tone: StatusTone } {
+  if (p.marketplace_readiness) {
+    if (p.marketplace_readiness.isLive) {
+      return { label: "Live", tone: "success" };
+    }
+    const primary = p.marketplace_readiness.blockers[0];
+    if (primary?.id === "no_approved_image") {
+      return { label: "Needs images", tone: "warning" };
+    }
+    if (primary?.id === "inactive") {
+      return { label: "Hidden", tone: "neutral" };
+    }
+    if (primary?.id === "out_of_stock") {
+      return { label: "Out of stock", tone: "warning" };
+    }
+    if (primary?.id === "listing_status") {
+      return { label: primary.label, tone: "neutral" };
+    }
+    return { label: "Not live", tone: "warning" };
+  }
+
   if (!p.is_active) return { label: "Hidden", tone: "neutral" };
   if (!hasImage(p)) return { label: "Needs images", tone: "warning" };
   if (p.listing_status === "draft") return { label: "Draft", tone: "neutral" };
@@ -222,7 +257,32 @@ function SortButton({
   );
 }
 
+function SourceBadge({ product }: { product: Product }) {
+  const isLs = isLightspeedProduct(product);
+  return (
+    <StatusBadge
+      label={productSourceLabel(product)}
+      tone={isLs ? "info" : "neutral"}
+      className="whitespace-nowrap"
+    />
+  );
+}
+
+function CategoryCell({ value }: { value: string | null }) {
+  if (!value) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <span className="line-clamp-2 text-xs leading-snug text-muted-foreground" title={value}>
+      {value}
+    </span>
+  );
+}
+
 export default function ProductsPage() {
+  const { isConnected: lightspeedConnected, isLoading: lightspeedLoading } =
+    useLightspeedConnection({ autoFetch: true, pollInterval: 60000 });
+
   const [products, setProducts] = React.useState<Product[]>([]);
   const [stats, setStats] = React.useState<ProductStats | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -238,6 +298,7 @@ export default function ProductsPage() {
   const [categoryFilter, setCategoryFilter] = React.useState<string>('');
   const [stockFilter, setStockFilter] = React.useState<string>('all');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
+  const [sourceFilter, setSourceFilter] = React.useState<string>('all');
   const [sortBy, setSortBy] = React.useState<string>('created_at');
   const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('desc');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -289,6 +350,7 @@ export default function ProductsPage() {
         category: categoryFilter,
         stock: stockFilter,
         status: statusFilter,
+        source: sourceFilter,
         sortBy: sortBy,
         sortOrder: sortOrder,
       });
@@ -306,12 +368,31 @@ export default function ProductsPage() {
       if (isInitialLoad) setLoading(false);
       setRefreshing(false);
     }
-  }, [pagination.pageSize, debouncedSearch, categoryFilter, stockFilter, statusFilter, sortBy, sortOrder]);
+  }, [pagination.pageSize, debouncedSearch, categoryFilter, stockFilter, statusFilter, sourceFilter, sortBy, sortOrder]);
+
+  const refreshCatalogue = React.useCallback(async () => {
+    await fetchStats();
+    await fetchProducts(paginationRef.current.page);
+  }, [fetchStats, fetchProducts]);
+
+  const {
+    modalOpen: syncModalOpen,
+    status: syncStatus,
+    progress: syncProgress,
+    phase: syncPhase,
+    message: syncMessage,
+    result: syncResult,
+    error: syncError,
+    runSync,
+    closeModal: closeSyncModal,
+  } = useLightspeedSseSync(refreshCatalogue);
+
+  const isSyncing = syncStatus === "syncing";
 
   // Initial + filter-change fetch
   React.useEffect(() => {
     fetchProducts(1, loading);
-  }, [debouncedSearch, categoryFilter, stockFilter, statusFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts, loading]);
+  }, [debouncedSearch, categoryFilter, stockFilter, statusFilter, sourceFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts, loading]);
 
   // Load stats once on mount
   React.useEffect(() => { fetchStats(); }, [fetchStats]);
@@ -341,11 +422,16 @@ export default function ProductsPage() {
     }
   }, []);
 
-  const handleRefresh = React.useCallback(() => {
+  const handleRefreshList = React.useCallback(() => {
     setRefreshing(true);
     fetchProducts(paginationRef.current.page);
     fetchStats();
   }, [fetchProducts, fetchStats]);
+
+  const handleSyncInventory = React.useCallback(() => {
+    if (!lightspeedConnected) return;
+    runSync({});
+  }, [lightspeedConnected, runSync]);
 
   const handlePageChange = React.useCallback((newPage: number) => {
     setSelected(new Set());
@@ -518,43 +604,107 @@ export default function ProductsPage() {
     return next;
   });
 
-  const hasFilters = search !== '' || categoryFilter !== '' || stockFilter !== 'all' || statusFilter !== 'all';
+  const hasFilters =
+    search !== '' ||
+    categoryFilter !== '' ||
+    stockFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    sourceFilter !== 'all';
   const clearFilters = () => {
     setSearch('');
     setCategoryFilter('');
     setStockFilter('all');
     setStatusFilter('all');
+    setSourceFilter('all');
   };
+
+  const totalCount = stats?.total ?? pagination.total;
+  const lightspeedHint =
+    stats?.lightspeed != null && stats?.manual != null
+      ? `${stats.lightspeed.toLocaleString()} Lightspeed · ${stats.manual.toLocaleString()} manual`
+      : undefined;
 
   const rangeStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
   const rangeEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
 
+  const tableColSpan = 10;
+
   return (
-    <PageContainer size="wide">
+    <PageContainer size="full">
       <PageHeader
         title="Products"
-        description="Your synced inventory from Lightspeed."
+        description="Manage inventory from Lightspeed and manual listings."
         actions={
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
-            <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-            Sync
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshList}
+              disabled={refreshing || loading || isSyncing}
+            >
+              <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+              Refresh
+            </Button>
+            {lightspeedLoading ? (
+              <Button variant="outline" size="sm" disabled>
+                <Loader2 className="size-4 animate-spin" />
+              </Button>
+            ) : lightspeedConnected ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncInventory}
+                disabled={isSyncing}
+              >
+                <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
+                Sync
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/connect-lightspeed">
+                  <Zap className="size-4" />
+                  Connect POS
+                </Link>
+              </Button>
+            )}
+          </div>
         }
       />
 
-      <PageBody>
-        {/* Stat cards */}
-        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-          <StatCard label="Total products" value={(stats?.total ?? pagination.total).toLocaleString()} icon={Package} hint={`${categories.length} categories`} />
-          <StatCard label="Live on marketplace" value={(stats?.live ?? 0).toLocaleString()} icon={Eye} hint={stats ? `${Math.round((stats.live / Math.max(stats.total, 1)) * 100)}% of catalogue` : undefined} />
-          <StatCard label="Low stock" value={(stats?.lowStock ?? 0).toLocaleString()} icon={TriangleAlert} hint="at or below reorder point" />
-          <StatCard label="Needs images" value={(stats?.needsImages ?? 0).toLocaleString()} icon={ImageOff} hint="hidden from marketplace" />
+      <PageBody className="space-y-0">
+        <div className="grid grid-cols-2 gap-4 pb-6 xl:grid-cols-4">
+          <StatCard
+            label="Total products"
+            value={totalCount.toLocaleString()}
+            icon={Package}
+            hint={lightspeedHint ?? `${categories.length} categories`}
+          />
+          <StatCard
+            label="Live on marketplace"
+            value={(stats?.live ?? 0).toLocaleString()}
+            icon={Eye}
+            hint={
+              stats
+                ? `${Math.round((stats.live / Math.max(stats.total, 1)) * 100)}% of catalogue · active with approved image`
+                : "Active with approved image"
+            }
+          />
+          <StatCard
+            label="Low stock"
+            value={(stats?.lowStock ?? 0).toLocaleString()}
+            icon={TriangleAlert}
+            hint="at or below reorder point"
+          />
+          <StatCard
+            label="Needs images"
+            value={(stats?.needsImages ?? 0).toLocaleString()}
+            icon={ImageOff}
+            hint="hidden from marketplace"
+          />
         </div>
 
-        {/* Table card */}
-        <Card className="gap-0 py-0">
-          {/* Toolbar */}
-          <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
+        <section className="-mx-4 w-auto border-t border-border/60 sm:-mx-6 lg:-mx-8">
+          <div className="flex flex-col gap-3 border-b border-border/60 py-4 lg:flex-row lg:items-center">
             <div className="relative w-full lg:max-w-xs">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -592,6 +742,17 @@ export default function ProductsPage() {
                 </SelectContent>
               </Select>
 
+              <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                <SelectTrigger size="sm" className="w-[150px]">
+                  <SelectValue placeholder="Source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sources</SelectItem>
+                  <SelectItem value="lightspeed">Lightspeed</SelectItem>
+                  <SelectItem value="manual">Manual / other</SelectItem>
+                </SelectContent>
+              </Select>
+
               {hasFilters ? (
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
                   <X className="size-4" />
@@ -603,11 +764,10 @@ export default function ProductsPage() {
                 </Button>
               )}
             </div>
-          </div>
+        </div>
 
-          {/* Bulk bar */}
-          {selected.size > 0 && (
-            <div className="flex items-center gap-3 border-b border-border/60 bg-primary/5 px-4 py-2.5">
+        {selected.size > 0 && (
+            <div className="flex items-center gap-3 border-b border-border/60 bg-primary/5 py-2.5">
               <span className="text-sm font-medium">{selected.size} selected</span>
               <div className="flex items-center gap-1.5">
                 <Button variant="outline" size="xs" onClick={() => handleBulkActive(true)}>
@@ -625,37 +785,38 @@ export default function ProductsPage() {
             </div>
           )}
 
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <Table>
+        <div className="w-full overflow-x-auto">
+            <Table className="w-full min-w-full">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-10 pl-4">
+                  <TableHead className="w-10 pl-3">
                     <Checkbox
                       checked={allChecked ? true : someChecked ? "indeterminate" : false}
                       onCheckedChange={toggleAll}
                       aria-label="Select all"
                     />
                   </TableHead>
-                  <TableHead><SortButton label="Product" column="description" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} /></TableHead>
-                  <TableHead className="hidden md:table-cell"><SortButton label="Category" column="category_name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} /></TableHead>
-                  <TableHead className="hidden lg:table-cell"><SortButton label="Brand" column="manufacturer_name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} /></TableHead>
+                  <TableHead className="w-[100px]">Source</TableHead>
+                  <TableHead className="min-w-[200px]"><SortButton label="Product" column="description" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} /></TableHead>
+                  <TableHead className="hidden min-w-[140px] md:table-cell">Lightspeed category</TableHead>
+                  <TableHead className="hidden min-w-[140px] lg:table-cell">Canonical category</TableHead>
                   <TableHead className="text-right"><SortButton label="Price" column="price" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" /></TableHead>
                   <TableHead className="text-right"><SortButton label="Stock" column="qoh" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" /></TableHead>
+                  <TableHead className="w-[72px] text-center">Active</TableHead>
                   <TableHead>Marketplace</TableHead>
-                  <TableHead className="w-10 pr-4" />
+                  <TableHead className="w-10 pr-3" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={8} className="h-64 text-center">
+                    <TableCell colSpan={tableColSpan} className="h-64 text-center">
                       <Loader2 className="mx-auto size-7 animate-spin text-muted-foreground" />
                     </TableCell>
                   </TableRow>
                 ) : products.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={8} className="h-64 text-center">
+                    <TableCell colSpan={tableColSpan} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <PackageX className="size-8" />
                         <p className="text-sm font-medium text-foreground">No products found</p>
@@ -682,24 +843,46 @@ export default function ProductsPage() {
                           data-state={checked ? "selected" : undefined}
                           className="group border-b border-border/50 transition-colors hover:bg-muted/40 data-[state=selected]:bg-muted/50"
                         >
-                          <TableCell className="pl-4">
+                          <TableCell className="pl-3">
                             <Checkbox checked={checked} onCheckedChange={() => toggleOne(product.id)} aria-label={`Select ${product.description}`} />
+                          </TableCell>
+                          <TableCell>
+                            <SourceBadge product={product} />
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <ProductThumb product={product} onDiscover={handleDiscoverImages} />
                               <div className="min-w-0">
                                 <p className="truncate font-medium text-foreground">{product.description}</p>
-                                <p className="font-mono text-xs text-muted-foreground">{product.custom_sku || product.system_sku || "—"}</p>
+                                <p className="font-mono text-xs text-muted-foreground">
+                                  {product.custom_sku || product.system_sku || "—"}
+                                  {product.manufacturer_name ? (
+                                    <span className="ml-2 font-sans text-muted-foreground">
+                                      · {product.manufacturer_name}
+                                    </span>
+                                  ) : null}
+                                </p>
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell className="hidden text-muted-foreground md:table-cell">{product.category_name || "—"}</TableCell>
-                          <TableCell className="hidden text-muted-foreground lg:table-cell">{product.manufacturer_name || "—"}</TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <CategoryCell value={formatLightspeedCategory(product)} />
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            <CategoryCell value={formatCanonicalCategory(product)} />
+                          </TableCell>
                           <TableCell className="text-right font-medium tabular-nums">${product.price.toFixed(2)}</TableCell>
                           <TableCell className="text-right tabular-nums"><StockCell qoh={product.qoh} reorder={product.reorder_point} /></TableCell>
+                          <TableCell className="text-center">
+                            <Switch
+                              size="sm"
+                              checked={product.is_active}
+                              onCheckedChange={() => handleToggleActive(product.id, product.is_active)}
+                              aria-label={product.is_active ? "Deactivate product" : "Activate product"}
+                            />
+                          </TableCell>
                           <TableCell><StatusBadge label={status.label} tone={status.tone} /></TableCell>
-                          <TableCell className="pr-4">
+                          <TableCell className="pr-3">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon-sm" className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100">
@@ -717,11 +900,6 @@ export default function ProductsPage() {
                                   <Sparkles className="size-4" />
                                   Discover images
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => handleToggleActive(product.id, product.is_active)}>
-                                  {product.is_active ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                                  {product.is_active ? "Set inactive" : "Set active"}
-                                </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>
@@ -732,10 +910,9 @@ export default function ProductsPage() {
                 )}
               </TableBody>
             </Table>
-          </div>
+        </div>
 
-          {/* Pagination footer */}
-          <div className="flex flex-col gap-3 border-t border-border/60 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-t border-border/60 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
             <p className="text-muted-foreground">
               {pagination.total > 0 ? (
                 <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{pagination.total.toLocaleString()}</span> products</>
@@ -763,8 +940,27 @@ export default function ProductsPage() {
               </div>
             </div>
           </div>
-        </Card>
+        </section>
       </PageBody>
+
+      <SyncProgressModal
+        isOpen={syncModalOpen}
+        onClose={closeSyncModal}
+        status={syncStatus}
+        progress={syncProgress}
+        phase={syncPhase}
+        message={syncMessage}
+        result={
+          syncResult
+            ? {
+                itemsSynced: syncResult.itemsSynced ?? 0,
+                itemsWithStock: syncResult.itemsWithStock ?? 0,
+                totalItems: syncResult.totalItems ?? 0,
+              }
+            : undefined
+        }
+        error={syncError}
+      />
 
       {/* Manage images dialog (controlled) */}
       <Dialog open={!!imageManageProduct} onOpenChange={(open: boolean) => !open && setImageManageProduct(null)}>

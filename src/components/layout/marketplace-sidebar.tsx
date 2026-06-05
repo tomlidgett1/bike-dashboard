@@ -4,7 +4,6 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { Package, Store, User, Clock, Settings, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle, LogOut } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -272,15 +271,11 @@ function MarketplaceSidebarContent() {
         
         {/* Text label with smooth fade */}
         {isExpanded && (
-          <motion.span
-            initial={{ opacity: 0, width: 0 }}
-            animate={{ opacity: 1, width: "auto" }}
-            exit={{ opacity: 0, width: 0 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="overflow-hidden whitespace-nowrap pl-1 pr-2.5 h-full flex items-center"
+          <span
+            className="overflow-hidden whitespace-nowrap pl-1 pr-2.5 h-full flex items-center animate-in fade-in duration-200"
           >
             {item.title}
-          </motion.span>
+          </span>
         )}
       </button>
     );
@@ -307,19 +302,12 @@ function MarketplaceSidebarContent() {
   
   return (
     <TooltipProvider>
-      <motion.aside
-        initial={false}
-        animate={{
-          width: isExpanded ? 200 : 56,
-        }}
-        transition={{
-          duration: 0.2,
-          ease: [0.04, 0.62, 0.23, 0.98],
-        }}
+      <aside
+        style={{ width: isExpanded ? 200 : 56 }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         className={cn(
-          "fixed left-0 top-16 z-[45] hidden h-[calc(100vh-4rem)] flex-col border-r border-t border-sidebar-border bg-sidebar lg:flex overflow-x-hidden"
+          "fixed left-0 top-16 z-[45] hidden h-[calc(100vh-4rem)] flex-col border-r border-t border-sidebar-border bg-sidebar lg:flex overflow-x-hidden transition-[width] duration-200 ease-out"
         )}
       >
         {/* Header with Collapse Button */}
@@ -328,15 +316,11 @@ function MarketplaceSidebarContent() {
           isExpanded ? "justify-between" : "justify-center"
         )}>
           {isExpanded && (
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="text-xs font-semibold text-gray-500 uppercase tracking-wider pl-2"
+            <span
+              className="text-xs font-semibold text-gray-500 uppercase tracking-wider pl-2 animate-in fade-in duration-200"
             >
               Browse
-            </motion.span>
+            </span>
           )}
           {mounted && (
             <Tooltip delayDuration={100}>
@@ -468,15 +452,11 @@ function MarketplaceSidebarContent() {
                       ) : (
                         <UserAvatar name={getDisplayName()} size="sm" className="h-9 w-9 border-gray-300" />
                       )}
-                      <motion.span
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="text-sm font-medium text-sidebar-foreground/80 truncate flex-1 min-w-0 text-left"
+                      <span
+                        className="text-sm font-medium text-sidebar-foreground/80 truncate flex-1 min-w-0 text-left animate-in fade-in duration-200"
                       >
                         {getDisplayName()}
-                      </motion.span>
+                      </span>
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent side="right" align="end" className="w-48 bg-white rounded-md">
@@ -538,7 +518,7 @@ function MarketplaceSidebarContent() {
             </button>
           )}
         </div>
-      </motion.aside>
+      </aside>
     </TooltipProvider>
   );
 }
@@ -553,4 +533,3 @@ export function MarketplaceSidebar() {
     </Suspense>
   );
 }
-

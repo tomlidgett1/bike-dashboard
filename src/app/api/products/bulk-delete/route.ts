@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { refreshPublicMarketplaceAfterMutation } from '@/lib/server/refresh-public-marketplace'
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -119,6 +120,10 @@ export async function DELETE(request: NextRequest) {
 
     console.log(`[Bulk Delete] ${hardDelete ? 'Deleted' : 'Deactivated'} ${deletedCount} products`)
 
+    if (deletedCount > 0) {
+      await refreshPublicMarketplaceAfterMutation()
+    }
+
     return NextResponse.json({
       success: true,
       deletedCount,
@@ -134,4 +139,3 @@ export async function DELETE(request: NextRequest) {
     )
   }
 }
-

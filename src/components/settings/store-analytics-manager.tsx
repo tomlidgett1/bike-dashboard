@@ -7,6 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { StoreAnalyticsByDeviceBreakdown } from "@/components/settings/store-analytics-by-device";
+import {
+  normaliseStoreAnalyticsByDevice,
+  type StoreAnalyticsByDevice,
+} from "@/lib/types/store-analytics";
+import {
+  formatStoreAnalyticsDate,
+  getStoreAnalyticsTimezoneShortLabel,
+} from "@/lib/utils/format-store-analytics-date";
 
 interface AnalyticsSummary {
   storeViews: number;
@@ -17,6 +26,7 @@ interface AnalyticsSummary {
   impressionDistinctUsers: number;
   totalViews: number;
   totalDistinctUsers: number;
+  byDevice?: StoreAnalyticsByDevice;
 }
 
 interface DailyPoint {
@@ -44,6 +54,7 @@ interface TopProduct {
 
 interface AnalyticsResponse {
   days: number;
+  timezone?: string;
   summary: AnalyticsSummary;
   daily: DailyPoint[];
   topProducts: TopProduct[];
@@ -62,10 +73,6 @@ const emptySummary: AnalyticsSummary = {
 
 function formatNumber(value: number | null | undefined) {
   return new Intl.NumberFormat("en-AU").format(value || 0);
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short" }).format(new Date(value));
 }
 
 function formatCurrency(value: number | null | undefined) {
@@ -103,13 +110,16 @@ function Metric({
 function TrendBars({ points }: { points: DailyPoint[] }) {
   const max = Math.max(1, ...points.map((point) => point.storeViews + point.productViews));
   const compactPoints = points.length > 45 ? points.filter((_, index) => index % 3 === 0) : points;
+  const analyticsTimezoneLabel = getStoreAnalyticsTimezoneShortLabel();
 
   return (
     <div className="rounded-md border border-border bg-background p-4">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-foreground">Views Over Time</h3>
-          <p className="text-xs text-muted-foreground">Store page views plus product page views.</p>
+          <p className="text-xs text-muted-foreground">
+            Store page views plus product page views ({analyticsTimezoneLabel}).
+          </p>
         </div>
       </div>
       <div className="flex h-44 items-end gap-1">
@@ -127,7 +137,7 @@ function TrendBars({ points }: { points: DailyPoint[] }) {
                   style={{ height: `${height}%` }}
                 />
                 <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs shadow-sm group-hover:block">
-                  {formatDate(point.date)}: {formatNumber(views)} views, {formatNumber(point.distinctUsers)} users
+                  {formatStoreAnalyticsDate(point.date)}: {formatNumber(views)} views, {formatNumber(point.distinctUsers)} users
                 </div>
               </div>
             </div>
@@ -135,8 +145,8 @@ function TrendBars({ points }: { points: DailyPoint[] }) {
         })}
       </div>
       <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{points[0] ? formatDate(points[0].date) : ""}</span>
-        <span>{points[points.length - 1] ? formatDate(points[points.length - 1].date) : ""}</span>
+        <span>{points[0] ? formatStoreAnalyticsDate(points[0].date) : ""}</span>
+        <span>{points[points.length - 1] ? formatStoreAnalyticsDate(points[points.length - 1].date) : ""}</span>
       </div>
     </div>
   );
@@ -184,7 +194,16 @@ export function StoreAnalyticsManager() {
   }, [loadAnalytics]);
 
   const summary = data?.summary || emptySummary;
+  const byDevice = React.useMemo(
+    () => normaliseStoreAnalyticsByDevice(summary.byDevice),
+    [summary.byDevice]
+  );
   const hasData = summary.totalViews > 0 || summary.productImpressions > 0;
+  const hasDeviceBreakdown =
+    byDevice.mobile.totalViews > 0 ||
+    byDevice.desktop.totalViews > 0 ||
+    byDevice.unknown.totalViews > 0;
+  const analyticsTimezoneLabel = getStoreAnalyticsTimezoneShortLabel();
 
   return (
     <div className="space-y-5">
@@ -192,7 +211,9 @@ export function StoreAnalyticsManager() {
         <div>
           <h2 className="text-base font-semibold text-foreground">Store Analytics</h2>
           <p className="text-sm text-muted-foreground">
-            Counts use signed-in users where available and anonymous browser visitors otherwise. IP addresses are not stored.
+            Daily charts use Melbourne calendar days ({analyticsTimezoneLabel}). Counts use signed-in
+            users where available and anonymous browser visitors otherwise. IP addresses are not
+            stored.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -255,6 +276,8 @@ export function StoreAnalyticsManager() {
           </div>
 
           <TrendBars points={data?.daily || []} />
+
+          {hasDeviceBreakdown && <StoreAnalyticsByDeviceBreakdown byDevice={byDevice} />}
 
           <Card className="rounded-md border-border">
             <CardContent className="p-0">
@@ -320,4 +343,3 @@ export function StoreAnalyticsManager() {
     </div>
   );
 }
-

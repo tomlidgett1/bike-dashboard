@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import {
+  createPublicSupabaseClient,
+  hasMissingPublicCardFeedError,
+} from '@/lib/marketplace/public-card-feed';
 
 // ============================================================
 // Marketplace Categories API - Public Endpoint
@@ -7,8 +10,8 @@ import { createClient } from '@/lib/supabase/server';
 // Supports filtering by listing type (stores, individuals)
 // ============================================================
 
-export const dynamic = 'force-dynamic';
 export const revalidate = 300; // ISR: Revalidate every 5 minutes (categories change less frequently)
+export const runtime = 'edge';
 
 interface CategoryHierarchy {
   level1: string;
@@ -23,15 +26,122 @@ interface CategoryHierarchy {
   totalProducts: number;
 }
 
+interface MarketplaceCategoryRow {
+  marketplace_category: string | null;
+  marketplace_subcategory: string | null;
+  marketplace_level_3_category: string | null;
+}
+
+function buildCategoryHierarchy(products: MarketplaceCategoryRow[]): {
+  categories: CategoryHierarchy[];
+  totalProducts: number;
+} {
+  const level1Categories = Array.from(
+    new Set(
+      products
+        .map((p) => p.marketplace_category)
+        .filter((cat): cat is string => cat != null && cat.trim() !== '')
+    )
+  ).sort();
+
+  const categories: CategoryHierarchy[] = level1Categories.map((level1) => {
+    const level1Products = products.filter((p) => p.marketplace_category === level1);
+
+    const level2Categories = Array.from(
+      new Set(
+        level1Products
+          .map((p) => p.marketplace_subcategory)
+          .filter((cat): cat is string => cat != null && cat.trim() !== '')
+      )
+    ).sort();
+
+    const level2Stats = level2Categories.map((level2) => {
+      const level2Products = level1Products.filter((p) => p.marketplace_subcategory === level2);
+
+      const level3Categories = Array.from(
+        new Set(
+          level2Products
+            .map((p) => p.marketplace_level_3_category)
+            .filter((cat): cat is string => cat != null && cat.trim() !== '')
+        )
+      ).sort();
+
+      return {
+        name: level2,
+        count: level2Products.length,
+        level3Categories: level3Categories.map((level3) => ({
+          name: level3,
+          count: level2Products.filter((p) => p.marketplace_level_3_category === level3).length,
+        })),
+      };
+    });
+
+    return {
+      level1,
+      level2Categories: level2Stats,
+      totalProducts: level1Products.length,
+    };
+  });
+
+  return {
+    categories,
+    totalProducts: products.length,
+  };
+}
+
+function jsonWithCategoryCache(
+  body: { categories: CategoryHierarchy[]; totalProducts: number },
+  totalTime: number,
+  feed: string,
+) {
+  return NextResponse.json(body, {
+    headers: {
+      'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+      'CDN-Cache-Control': 'public, s-maxage=300',
+      'Vercel-CDN-Cache-Control': 'public, s-maxage=300',
+      'X-Response-Time': `${totalTime}ms`,
+      'X-Marketplace-Feed': feed,
+    },
+  });
+}
+
 export async function GET(request: NextRequest) {
+  const startTime = Date.now();
+
   try {
-    const supabase = await createClient();
+    const supabase = createPublicSupabaseClient();
     
     // Get listing type filter from query params
     const { searchParams } = new URL(request.url);
     const listingType = searchParams.get('listingType'); // 'store_inventory' | 'private_listing' | null
 
-    // Build the query
+    let cardQuery = supabase
+      .from('public_marketplace_cards')
+      .select('marketplace_category, marketplace_subcategory, marketplace_level_3_category')
+      .not('marketplace_category', 'is', null);
+
+    if (listingType === 'store_inventory') {
+      cardQuery = cardQuery
+        .eq('listing_type', 'store_inventory')
+        .eq('is_verified_bike_store', true);
+    } else if (listingType === 'private_listing') {
+      cardQuery = cardQuery.eq('listing_type', 'private_listing');
+    }
+
+    const { data: cardProducts, error: cardError } = await cardQuery;
+
+    if (!cardError && cardProducts) {
+      return jsonWithCategoryCache(
+        buildCategoryHierarchy(cardProducts as MarketplaceCategoryRow[]),
+        Date.now() - startTime,
+        'public-cards',
+      );
+    }
+
+    if (cardError && !hasMissingPublicCardFeedError(cardError)) {
+      console.warn('Public card category feed failed, falling back:', cardError.message);
+    }
+
     let query = supabase
       .from('products')
       .select('marketplace_category, marketplace_subcategory, marketplace_level_3_category')
@@ -53,77 +163,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get distinct Level 1 categories
-    const level1Categories = Array.from(
-      new Set(
-        products
-          .map(p => p.marketplace_category)
-          .filter(cat => cat != null && cat.trim() !== '')
-      )
-    ).sort();
-
-    // Build hierarchical category structure
-    const categoryHierarchy: CategoryHierarchy[] = level1Categories.map(level1 => {
-      // Get all products in this Level 1 category
-      const level1Products = products.filter(p => p.marketplace_category === level1);
-
-      // Get distinct Level 2 categories for this Level 1
-      const level2Categories = Array.from(
-        new Set(
-          level1Products
-            .map(p => p.marketplace_subcategory)
-            .filter(cat => cat != null && cat.trim() !== '')
-        )
-      ).sort();
-
-      // Build Level 2 stats with Level 3 nested
-      const level2Stats = level2Categories.map(level2 => {
-        const level2Products = level1Products.filter(p => p.marketplace_subcategory === level2);
-
-        // Get distinct Level 3 categories for this Level 2
-        const level3Categories = Array.from(
-          new Set(
-            level2Products
-              .map(p => p.marketplace_level_3_category)
-              .filter(cat => cat != null && cat.trim() !== '')
-          )
-        ).sort();
-
-        const level3Stats = level3Categories.map(level3 => ({
-          name: level3,
-          count: level2Products.filter(p => p.marketplace_level_3_category === level3).length,
-        }));
-
-        return {
-          name: level2,
-          count: level2Products.length,
-          level3Categories: level3Stats,
-        };
-      });
-
-      return {
-        level1,
-        level2Categories: level2Stats,
-        totalProducts: level1Products.length,
-      };
-    });
-
-    // Calculate total products
-    const totalProducts = products.length;
-
-    const response = {
-      categories: categoryHierarchy,
-      totalProducts,
-    };
-
-    // Cache aggressively (5 minutes)
-    return NextResponse.json(response, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
-        'CDN-Cache-Control': 'public, s-maxage=300',
-        'Vercel-CDN-Cache-Control': 'public, s-maxage=300',
-      },
-    });
+    return jsonWithCategoryCache(
+      buildCategoryHierarchy((products || []) as MarketplaceCategoryRow[]),
+      Date.now() - startTime,
+      'products-fallback',
+    );
   } catch (error) {
     console.error('Unexpected error in categories API:', error);
     return NextResponse.json(
@@ -132,7 +176,6 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-
 
 
 

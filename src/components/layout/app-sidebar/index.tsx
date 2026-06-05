@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   ChevronRight,
   Database,
+  LayoutDashboard,
   LifeBuoy,
   Package,
   Settings,
@@ -39,11 +40,12 @@ import {
   SidebarMenuSubItem,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 import { StoreSwitcher } from "./store-switcher";
 import { NavUser } from "./nav-user";
 import { SidebarBranding } from "./sidebar-branding";
 
-type SubItem = { title: string; href: string };
+type SubItem = { title: string; href: string; exact?: boolean };
 type NavItem = {
   title: string;
   icon: LucideIcon;
@@ -59,12 +61,13 @@ const NAV: NavGroup[] = [
   {
     label: "Store",
     items: [
+      { title: "Home", href: "/settings/store/home", icon: LayoutDashboard, exact: true },
       { title: "Products", href: "/products", icon: Package },
       {
         title: "Storefront",
         icon: Store,
         items: [
-          { title: "Home page", href: "/settings/store/home" },
+          { title: "Landing page", href: "/settings/store/landing" },
           { title: "Carousels", href: "/settings/store/carousels" },
           { title: "Sections", href: "/settings/store/sections" },
           { title: "Brands", href: "/settings/store/brands" },
@@ -136,7 +139,10 @@ function CollapsibleNavItem({ item, pathname }: { item: NavItem; pathname: strin
           <SidebarMenuSub>
             {item.items!.map((sub) => (
               <SidebarMenuSubItem key={sub.href}>
-                <SidebarMenuSubButton asChild isActive={pathname.startsWith(sub.href)}>
+                <SidebarMenuSubButton
+                  asChild
+                  isActive={sub.exact ? pathname === sub.href : pathname.startsWith(sub.href)}
+                >
                   <Link href={sub.href}>{sub.title}</Link>
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
@@ -182,7 +188,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
+      <SidebarHeader
+        className={cn(
+          "gap-0 px-3 pb-2 pt-3",
+          "group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:py-2",
+          pathname.startsWith("/settings/store") && "bg-gray-100/80"
+        )}
+      >
         <StoreSwitcher />
       </SidebarHeader>
 

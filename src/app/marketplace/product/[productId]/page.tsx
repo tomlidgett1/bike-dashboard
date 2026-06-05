@@ -1,12 +1,19 @@
 import * as React from "react";
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
-import { createClient } from '@/lib/supabase/server';
 import { ProductPageClient } from "./product-page-client";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { getProductImages, toJsonbFormat } from "@/lib/services/product-images";
 import { resolveProductImage, getProductImageSlotUrl } from "@/lib/services/image-resolver";
 import { toCurrentHeroPublicId } from "@/lib/utils/cloudinary-transforms";
+import {
+  createPublicSupabaseClient,
+  hasMissingPublicCardFeedError,
+  PUBLIC_MARKETPLACE_CARD_FIELDS,
+  transformPublicMarketplaceCard,
+  type PublicMarketplaceCardRow,
+} from "@/lib/marketplace/public-card-feed";
 
 // ============================================================
 // Product Page - Server Component with Parallel Data Fetching
@@ -30,7 +37,7 @@ interface SellerInfo {
 // This is used when viewing purchased products from order history
 async function fetchProduct(productId: string, allowSoldProducts: boolean = false): Promise<MarketplaceProduct | null> {
   try {
-    const supabase = await createClient();
+    const supabase = createPublicSupabaseClient();
 
     let query = supabase
       .from('products')
@@ -106,16 +113,6 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
           logo_url,
           account_type,
           bicycle_store
-        ),
-        canonical_products!canonical_product_id (
-          id,
-          product_images!canonical_product_id (
-            storage_path,
-            is_primary,
-            variants,
-            approval_status,
-            is_downloaded
-          )
         )
       `)
       .eq('id', productId);
@@ -148,8 +145,10 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       order: number;
     }> = [];
     
-    // Fetch images from product_images table (NEW source of truth)
-    const productImages = await getProductImages(supabase, productId, product.canonical_product_id);
+    const [productImages, immersivePage] = await Promise.all([
+      getProductImages(supabase, productId, product.canonical_product_id),
+      fetchImmersivePageFlag(supabase, productId),
+    ]);
     
     if (productImages.length > 0) {
       // Convert to JSONB format for backwards compatibility with client
@@ -215,21 +214,6 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       }
     }
 
-    // Per-product opt-in to the Immersive layout. Read defensively in its own
-    // query so the page still renders if the immersive_page column hasn't been
-    // migrated yet (a missing column returns a PostgREST error, not a throw).
-    let immersivePage = false;
-    try {
-      const { data: flagRow } = await supabase
-        .from('products')
-        .select('immersive_page')
-        .eq('id', productId)
-        .maybeSingle();
-      immersivePage = !!(flagRow as any)?.immersive_page;
-    } catch {
-      immersivePage = false;
-    }
-
     return {
       ...product,
       primary_image_url: primaryImageUrl,
@@ -250,19 +234,108 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
   }
 }
 
+async function fetchImmersivePageFlag(
+  supabase: ReturnType<typeof createPublicSupabaseClient>,
+  productId: string,
+): Promise<boolean> {
+  // Read defensively so older databases without the immersive_page column still
+  // render the regular product page.
+  const { data, error } = await supabase
+    .from('products')
+    .select('immersive_page')
+    .eq('id', productId)
+    .maybeSingle();
+
+  if (error) return false;
+  return !!(data as any)?.immersive_page;
+}
+
+async function fetchPublicCardProducts(
+  buildQuery: (
+    supabase: ReturnType<typeof createPublicSupabaseClient>,
+  ) => PromiseLike<{ data: unknown; error: { message?: string; code?: string } | null }>,
+): Promise<MarketplaceProduct[] | null> {
+  const supabase = createPublicSupabaseClient();
+  const { data, error } = await buildQuery(supabase);
+
+  if (hasMissingPublicCardFeedError(error)) return null;
+  if (error) {
+    console.warn('[PRODUCT PAGE] Public-card carousel lookup failed:', error.message);
+    return null;
+  }
+
+  return ((data || []) as PublicMarketplaceCardRow[]).map(transformPublicMarketplaceCard);
+}
+
+async function fetchSimilarProductsFromPublicCards(product: MarketplaceProduct): Promise<MarketplaceProduct[] | null> {
+  if (!product.marketplace_category) return [];
+
+  return fetchPublicCardProducts((supabase) => {
+    let query = supabase
+      .from('public_marketplace_cards')
+      .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
+      .eq('marketplace_category', product.marketplace_category)
+      .neq('id', product.id);
+
+    if (product.marketplace_subcategory) {
+      query = query.eq('marketplace_subcategory', product.marketplace_subcategory);
+    }
+
+    return query
+      .order('created_at', { ascending: false })
+      .limit(12);
+  });
+}
+
+async function fetchBrandProductsFromPublicCards(productId: string, brand: string): Promise<MarketplaceProduct[] | null> {
+  const normalizedBrand = brand.trim();
+  if (!normalizedBrand) return [];
+
+  return fetchPublicCardProducts((supabase) =>
+    supabase
+      .from('public_marketplace_cards')
+      .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
+      .ilike('brand', normalizedBrand)
+      .neq('id', productId)
+      .order('created_at', { ascending: false })
+      .limit(12)
+  );
+}
+
+async function fetchSellerProductsFromPublicCards(
+  product: MarketplaceProduct,
+): Promise<{ products: MarketplaceProduct[]; seller: SellerInfo | null } | null> {
+  if (!product.user_id) return { products: [], seller: null };
+
+  const products = await fetchPublicCardProducts((supabase) =>
+    supabase
+      .from('public_marketplace_cards')
+      .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
+      .eq('user_id', product.user_id)
+      .neq('id', product.id)
+      .order('created_at', { ascending: false })
+      .limit(12)
+  );
+
+  if (!products) return null;
+
+  return {
+    products,
+    seller: {
+      id: product.user_id,
+      name: product.store_name || 'Unknown Seller',
+      logo_url: product.store_logo_url || null,
+      account_type: product.store_account_type || null,
+    },
+  };
+}
+
 // Helper function to fetch similar products - DIRECTLY from Supabase (no API call)
-async function fetchSimilarProducts(productId: string): Promise<MarketplaceProduct[]> {
+async function fetchSimilarProductsFallback(product: MarketplaceProduct): Promise<MarketplaceProduct[]> {
   try {
-    const supabase = await createClient();
+    const supabase = createPublicSupabaseClient();
     
-    // Get source product category
-    const { data: sourceProduct } = await supabase
-      .from('products')
-      .select('marketplace_category, marketplace_subcategory')
-      .eq('id', productId)
-      .single();
-    
-    if (!sourceProduct?.marketplace_category) return [];
+    if (!product.marketplace_category) return [];
     
     // Fetch similar ready products from same category
     const { data: products } = await supabase
@@ -272,8 +345,8 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
         marketplace_level_3_category, created_at, user_id,
         resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
-      .eq('marketplace_category', sourceProduct.marketplace_category)
-      .neq('id', productId)
+      .eq('marketplace_category', product.marketplace_category)
+      .neq('id', product.id)
       .limit(12);
 
     if (!products) return [];
@@ -326,10 +399,13 @@ async function fetchSimilarProducts(productId: string): Promise<MarketplaceProdu
 
 // Helper function to fetch products from the same brand
 async function fetchBrandProducts(productId: string, brand: string): Promise<MarketplaceProduct[]> {
+  const fastProducts = await fetchBrandProductsFromPublicCards(productId, brand);
+  if (fastProducts) return fastProducts;
+
   const normalizedBrand = brand.trim();
   if (!normalizedBrand) return [];
   try {
-    const supabase = await createClient();
+    const supabase = createPublicSupabaseClient();
 
     const { data: products } = await supabase
       .from('marketplace_ready_products')
@@ -393,24 +469,20 @@ async function fetchBrandProducts(productId: string, brand: string): Promise<Mar
 }
 
 // Helper function to fetch seller products - DIRECTLY from Supabase (no API call)
-async function fetchSellerProducts(productId: string): Promise<{ products: MarketplaceProduct[]; seller: SellerInfo | null }> {
+async function fetchSellerProducts(product: MarketplaceProduct): Promise<{ products: MarketplaceProduct[]; seller: SellerInfo | null }> {
+  const fastProducts = await fetchSellerProductsFromPublicCards(product);
+  if (fastProducts) return fastProducts;
+
   try {
-    const supabase = await createClient();
+    const supabase = createPublicSupabaseClient();
     
-    // Get seller ID from source product
-    const { data: sourceProduct } = await supabase
-      .from('products')
-      .select('user_id')
-      .eq('id', productId)
-      .single();
-    
-    if (!sourceProduct?.user_id) return { products: [], seller: null };
+    if (!product.user_id) return { products: [], seller: null };
     
     // Fetch seller info
     const { data: seller } = await supabase
       .from('users')
       .select('user_id, business_name, logo_url, account_type, seller_display_name, first_name, last_name')
-      .eq('user_id', sourceProduct.user_id)
+      .eq('user_id', product.user_id)
       .single();
     
     // Fetch seller's other ready products
@@ -421,8 +493,8 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
         created_at, user_id,
         resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
       `)
-      .eq('user_id', sourceProduct.user_id)
-      .neq('id', productId)
+      .eq('user_id', product.user_id)
+      .neq('id', product.id)
       .is('sold_at', null)
       .order('created_at', { ascending: false })
       .limit(12);
@@ -485,6 +557,34 @@ async function fetchSellerProducts(productId: string): Promise<{ products: Marke
   }
 }
 
+const fetchProductPageData = unstable_cache(
+  async (productId: string, allowSoldProducts: boolean) => {
+    const product = await fetchProduct(productId, allowSoldProducts);
+    if (!product) return null;
+
+    const productBrand = product.brand?.trim() || null;
+    const [similarProducts, sellerData, brandProducts] = await Promise.all([
+      fetchSimilarProductsFromPublicCards(product).then((fastProducts) =>
+        fastProducts ?? fetchSimilarProductsFallback(product)
+      ),
+      fetchSellerProducts(product),
+      productBrand ? fetchBrandProducts(productId, productBrand) : Promise.resolve([]),
+    ]);
+
+    return {
+      product,
+      similarProducts,
+      sellerData,
+      brandProducts,
+      productBrand,
+    };
+  },
+  ['marketplace-product-page-data-v1'],
+  {
+    revalidate: 60,
+  },
+);
+
 export default async function ProductPage({ 
   params,
   searchParams 
@@ -498,32 +598,22 @@ export default async function ProductPage({
   // Allow viewing sold products if coming from purchase history
   const allowSoldProducts = fromPurchase === 'true';
 
-  // Fetch product first so we can use its brand for the brand carousel
-  const product = await fetchProduct(productId, allowSoldProducts);
+  const data = await fetchProductPageData(productId, allowSoldProducts);
 
   // If product not found, show 404
-  if (!product) {
+  if (!data) {
     notFound();
   }
-
-  const productBrand = product.brand?.trim() || null;
-
-  // Fetch remaining data in parallel
-  const [similarProducts, sellerData, brandProducts] = await Promise.all([
-    fetchSimilarProducts(productId),
-    fetchSellerProducts(productId),
-    productBrand ? fetchBrandProducts(productId, productBrand) : Promise.resolve([]),
-  ]);
 
   // Pass all data to client component
   return (
     <ProductPageClient
-      product={product}
-      similarProducts={similarProducts}
-      sellerProducts={sellerData.products}
-      sellerInfo={sellerData.seller}
-      brandProducts={brandProducts}
-      brandName={productBrand ?? null}
+      product={data.product}
+      similarProducts={data.similarProducts}
+      sellerProducts={data.sellerData.products}
+      sellerInfo={data.sellerData.seller}
+      brandProducts={data.brandProducts}
+      brandName={data.productBrand ?? null}
       showUploadBanner={fromUpload === 'true'}
     />
   );

@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { CreateCategoryRequest, UpdateCategoryRequest } from '@/lib/types/store';
+import { fetchUberEnabledProductIds } from '@/lib/store/uber-carousel';
 
 /**
  * GET /api/store/categories
@@ -132,6 +133,9 @@ export async function POST(request: NextRequest) {
       displayOrder = (maxOrder?.display_order ?? -1) + 1;
     }
 
+    const uberProductIds =
+      body.source === 'uber' ? await fetchUberEnabledProductIds(supabase, user.id) : null;
+
     // Insert category
     const { data: category, error } = await supabase
       .from('store_categories')
@@ -141,7 +145,7 @@ export async function POST(request: NextRequest) {
         source: body.source,
         lightspeed_category_id: body.lightspeed_category_id,
         brand_name: body.brand_name ?? null,
-        product_ids: body.source === 'uber' ? [] : body.product_ids || [],
+        product_ids: uberProductIds ?? body.product_ids ?? [],
         display_order: displayOrder,
         is_active: true,
       })
@@ -216,6 +220,20 @@ export async function PUT(request: NextRequest) {
     if ('section_id' in body) updateData.section_id = body.section_id ?? null;
     if ('logo_url' in body) updateData.logo_url = body.logo_url ?? null;
     if ('hide_title' in body) updateData.hide_title = !!body.hide_title;
+
+    // Assigning an Uber carousel to a section: sync all Uber-enabled products
+    if ('section_id' in body && body.section_id != null) {
+      const { data: existing } = await supabase
+        .from('store_categories')
+        .select('source')
+        .eq('id', body.id)
+        .eq('user_id', user.id)
+        .single();
+
+      if (existing?.source === 'uber') {
+        updateData.product_ids = await fetchUberEnabledProductIds(supabase, user.id);
+      }
+    }
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(

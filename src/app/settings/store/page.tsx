@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 const VALID = [
   "home",
+  "landing",
   "carousels",
   "categories",
   "sections",

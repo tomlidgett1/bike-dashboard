@@ -91,6 +91,8 @@ export interface StoreProfile {
   social_links?: SocialLinks | null;
   /** Raw landing-page configuration (Home tab). Empty/undefined → defaults. */
   homepage_config?: StoreHomepageConfig | null;
+  /** False when the public homepage payload intentionally carries a trimmed product feed. */
+  product_feed_complete?: boolean;
 }
 
 export interface SocialLinks {

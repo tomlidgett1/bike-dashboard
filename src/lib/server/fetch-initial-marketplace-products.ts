@@ -1,8 +1,15 @@
-import { createClient } from '@supabase/supabase-js'
-import { resolveProductImage } from '@/lib/services/image-resolver'
-import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms'
 import type { MarketplaceProduct } from '@/lib/types/marketplace'
 import { MARKETPLACE_INITIAL_PAGE_SIZE } from '@/lib/marketplace-constants'
+import { resolveProductImage } from '@/lib/services/image-resolver'
+import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms'
+import {
+  createPublicSupabaseClient,
+  hasMissingPublicCardFeedError,
+  numberFromDb,
+  PUBLIC_MARKETPLACE_CARD_FIELDS,
+  transformPublicMarketplaceCard,
+  type PublicMarketplaceCardRow,
+} from '@/lib/marketplace/public-card-feed'
 
 // Uses the plain (cookie-free) Supabase client so this fetch is compatible
 // with ISR / static caching — no dynamic functions like cookies() are called.
@@ -72,18 +79,16 @@ interface InitialMarketplaceUserRow {
   last_name: string | null
 }
 
-function numberFromDb(value: string | number | null): number {
-  if (typeof value === 'number') return value
-  if (typeof value === 'string') return parseFloat(value) || 0
-  return 0
-}
-
 export interface InitialMarketplacePagination {
   page: number
   pageSize: number
   total: number
   totalPages: number
   hasMore: boolean
+  nextCursor?: {
+    createdAt: string
+    id: string
+  } | null
 }
 
 export interface InitialMarketplaceData {
@@ -104,15 +109,55 @@ const EMPTY: InitialMarketplaceData = {
 
 export async function fetchInitialMarketplaceProducts(): Promise<InitialMarketplaceData> {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    )
+    const supabase = createPublicSupabaseClient()
+
+    const { data: cardRows, error: cardError } = await supabase
+      .from('public_marketplace_cards')
+      .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
+      .eq('listing_type', 'private_listing')
+      .or('listing_status.is.null,listing_status.eq.active')
+      .not('resolved_image_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(MARKETPLACE_INITIAL_PAGE_SIZE + 1)
+
+    if (!cardError && cardRows) {
+      const rows = (cardRows as PublicMarketplaceCardRow[]).slice(0, MARKETPLACE_INITIAL_PAGE_SIZE)
+      const products = rows.map(transformPublicMarketplaceCard)
+      const { data: countData } = await supabase
+        .from('public_marketplace_space_counts')
+        .select('total')
+        .eq('space', 'marketplace')
+        .maybeSingle()
+      const total = Number(countData?.total ?? products.length + (cardRows.length > MARKETPLACE_INITIAL_PAGE_SIZE ? 1 : 0))
+
+      return {
+        products,
+        pagination: {
+          page: 1,
+          pageSize: MARKETPLACE_INITIAL_PAGE_SIZE,
+          total,
+          totalPages: Math.ceil(total / MARKETPLACE_INITIAL_PAGE_SIZE),
+          hasMore: cardRows.length > MARKETPLACE_INITIAL_PAGE_SIZE,
+          nextCursor: products.length > 0
+            ? {
+                createdAt: products[products.length - 1].created_at,
+                id: products[products.length - 1].id,
+              }
+            : null,
+        },
+      }
+    }
+
+    if (cardError && !hasMissingPublicCardFeedError(cardError)) {
+      console.warn('[initial-marketplace] public card feed failed, falling back:', cardError.message)
+    }
 
     const { data, error, count } = await supabase
       .from('marketplace_ready_products')
       .select(FAST_FIELDS, { count: 'exact', head: false })
       .eq('listing_type', 'private_listing')
+      .or('listing_status.is.null,listing_status.eq.active')
       .not('resolved_image_id', 'is', null)
       .order('created_at', { ascending: false })
       .range(0, MARKETPLACE_INITIAL_PAGE_SIZE - 1)

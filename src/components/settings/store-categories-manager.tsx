@@ -69,7 +69,7 @@ const PRODUCT_PICKER_DIALOG_CLASS =
 const BRAND_CAROUSEL_DIALOG_CLASS =
   "flex h-[min(26rem,85vh)] max-h-[min(26rem,85vh)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg";
 
-export function StoreCategoriesManager() {
+export function StoreCategoriesManager({ refreshKey }: { refreshKey?: number } = {}) {
   const [categories, setCategories] = React.useState<StoreCategory[]>([]);
   const [products, setProducts] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -232,7 +232,7 @@ export function StoreCategoriesManager() {
 
   React.useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, refreshKey]);
 
   // Scan Lightspeed categories
   const handleScanLightspeed = async () => {

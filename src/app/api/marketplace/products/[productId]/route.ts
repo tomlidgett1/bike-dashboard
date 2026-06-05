@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import type { MarketplaceProduct } from '@/lib/types/marketplace';
 import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
+import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed';
 
 // ============================================================
 // Individual Product API - Public Endpoint
 // Fetch a single product by ID
 // ============================================================
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 
 export async function GET(
   request: NextRequest,
@@ -28,8 +28,7 @@ export async function GET(
 
     console.log(`📦 [PRODUCT API] Fetching product: ${productId}`);
 
-    // Create Supabase client (public access, no auth required)
-    const supabase = await createClient();
+    const supabase = createPublicSupabaseClient();
 
     // Fetch product with all related data
     const { data: product, error: productError } = await supabase
@@ -96,16 +95,6 @@ export async function GET(
           logo_url,
           account_type,
           bicycle_store
-        ),
-        canonical_products!canonical_product_id (
-          id,
-          product_images!canonical_product_id (
-            storage_path,
-            is_primary,
-            variants,
-            approval_status,
-            is_downloaded
-          )
         )
       `)
       .eq('id', productId)
@@ -229,6 +218,10 @@ export async function GET(
         // Cache for 60 seconds, serve stale content for up to 5 minutes while revalidating
         // This dramatically improves performance for frequently viewed products
         'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+        'CDN-Cache-Control': 'public, s-maxage=60',
+        'Vercel-CDN-Cache-Control': 'public, s-maxage=60',
+        'Vary': 'Accept-Encoding',
+        'X-Response-Time': `${loadTime}ms`,
       },
     });
 

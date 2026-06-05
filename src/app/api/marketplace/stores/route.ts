@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed';
 
 // ============================================================
 // Marketplace Stores API - Public Endpoint
@@ -7,14 +7,13 @@ import { createClient } from '@/lib/supabase/server';
 // OPTIMISED: Single query with product counts (was 50+ queries, now 1)
 // ============================================================
 
-export const dynamic = 'force-dynamic';
 export const revalidate = 300; // ISR: Revalidate every 5 minutes
 
 export async function GET() {
   const startTime = performance.now();
   
   try {
-    const supabase = await createClient();
+    const supabase = createPublicSupabaseClient();
 
     // OPTIMISED: Single query using RPC function for stores with product counts
     const { data: stores, error: rpcError } = await supabase
@@ -156,4 +155,3 @@ export async function GET() {
     );
   }
 }
-

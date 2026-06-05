@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -30,7 +29,6 @@ import { resolveHomepageConfig } from "@/lib/marketplace/homepage-config";
 import { getHomepageIcon } from "@/components/marketplace/store-profile/homepage-icons";
 import { ServiceCard } from "@/components/marketplace/store-profile/service-card";
 import { ProductCard } from "@/components/marketplace/product-card";
-import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 
 // ============================================================
 // Store Home Tab — the public landing page for a bicycle store.
@@ -89,22 +87,15 @@ function openStatusFor(hours: OpeningHours | undefined): { open: boolean; label:
 function Reveal({
   children,
   className,
-  delay = 0,
 }: {
   children: React.ReactNode;
   className?: string;
   delay?: number;
 }) {
   return (
-    <motion.div
-      className={className}
-      initial={{ opacity: 0, y: 18 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }}
-    >
+    <div className={className}>
       {children}
-    </motion.div>
+    </div>
   );
 }
 
@@ -318,11 +309,7 @@ function Hero({
       <section className={cn(shell, "relative pt-10 sm:pt-14")}>
         {isOwnProfile && <EditButton />}
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-          >
+          <div>
             <h1 className="mt-4 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 leading-[1.05]">
               {hero.headline}
             </h1>
@@ -341,11 +328,8 @@ function Hero({
                 <HeroHoursCard store={store} status={status} onDark={false} onClick={onOpenHours} />
               </div>
             )}
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+          </div>
+          <div
             className="relative aspect-[4/3] rounded-3xl overflow-hidden bg-gray-100 ring-1 ring-gray-200/70 shadow-xl"
           >
             {heroImages.length > 0 ? (
@@ -353,7 +337,7 @@ function Hero({
             ) : (
               <HeroFallback store={store} accent={accent} />
             )}
-          </motion.div>
+          </div>
         </div>
       </section>
     );
@@ -369,10 +353,7 @@ function Hero({
           style={{ background: `linear-gradient(180deg, ${accent}14 0%, transparent 60%)` }}
         />
         <div className={cn(shell, "py-20 sm:py-28 text-center")}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          <div
             className="mx-auto max-w-3xl"
           >
             <h1 className="mt-5 text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-gray-900 leading-[1.04]">
@@ -393,7 +374,7 @@ function Hero({
                 <HeroHoursCard store={store} status={status} onDark={false} onClick={onOpenHours} />
               </div>
             )}
-          </motion.div>
+          </div>
         </div>
       </section>
     );
@@ -423,10 +404,7 @@ function Hero({
         </div>
 
         <div className={cn(shell, "w-full py-16")}>
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+          <div
             className={cn("max-w-2xl", alignCenter && "mx-auto text-center")}
           >
             <h1 className="mt-4 text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white leading-[1.04] drop-shadow-sm">
@@ -449,7 +427,7 @@ function Hero({
                 </button>
               )}
             </div>
-          </motion.div>
+          </div>
         </div>
 
         {/* Today's hours — bottom corner overlay */}
@@ -1139,18 +1117,17 @@ function FeaturedCarouselsSection({
     <section className={cn(shell, "space-y-8")}>
       {slots.map((cat) => {
         const shown = cat!.products.slice(0, perRow);
-        // Mobile: split all products across two independently-scrolling rows.
+        // Mobile: split the displayed slice across two independently-scrolling rows.
         // Interleaved so the first products fill the initial 2×2 view.
         const mobileRows = [
-          cat!.products.filter((_, i) => i % 2 === 0),
-          cat!.products.filter((_, i) => i % 2 === 1),
+          shown.filter((_, i) => i % 2 === 0),
+          shown.filter((_, i) => i % 2 === 1),
         ];
         return (
           <Reveal key={cat!.id}>
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  {cat!.source === "uber" && <UberCarouselLogo className="h-7 px-2.5" />}
                   <h3 className="text-lg font-semibold text-gray-900">{cat!.name}</h3>
                 </div>
                 <button

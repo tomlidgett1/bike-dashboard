@@ -11,13 +11,14 @@ import { cn } from "@/lib/utils";
  * Outer page wrapper. Controls horizontal rhythm + max reading width.
  * - "narrow"  → forms & settings (comfortable reading measure)
  * - "wide"    → data tables & dashboards (use the full canvas)
+ * - "full"    → edge-to-edge tables (no max width cap)
  */
 export function PageContainer({
   size = "narrow",
   className,
   children,
 }: {
-  size?: "narrow" | "wide";
+  size?: "narrow" | "wide" | "full";
   className?: string;
   children: React.ReactNode;
 }) {
@@ -25,7 +26,11 @@ export function PageContainer({
     <div
       className={cn(
         "mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8",
-        size === "narrow" ? "max-w-4xl" : "max-w-[1400px]",
+        size === "narrow"
+          ? "max-w-4xl"
+          : size === "full"
+            ? "max-w-none"
+            : "max-w-[1400px]",
         className
       )}
     >

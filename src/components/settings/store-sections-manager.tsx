@@ -479,9 +479,10 @@ export function StoreSectionsManager() {
                         : cat.source === "uber"
                           ? "Uber products"
                           : cat.source}
-                      {cat.source !== "uber" && (
-                        <>{" · "}{cat.product_ids.length} products</>
-                      )}
+                      {" · "}
+                      {cat.source === "uber"
+                        ? `${cat.product_ids.length} Uber products`
+                        : `${cat.product_ids.length} products`}
                     </p>
                   </div>
                   <Plus className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -548,6 +549,8 @@ function SectionPageItem({
   unassignedCount: number;
 }) {
   const isCollapsed = collapsed.has(section.id);
+  const hasUberCarousel = section.categoryRows.some((cat) => cat.source === "uber");
+
   return (
     <Reorder.Item value={item} className="rounded-lg border border-border bg-card overflow-hidden">
       {/* Section header */}
@@ -561,6 +564,7 @@ function SectionPageItem({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
+            {hasUberCarousel && <UberCarouselLogo className="h-7 px-2.5 flex-shrink-0" />}
             <span className="text-sm font-semibold text-foreground truncate">{section.name}</span>
             <Badge variant="secondary" className="text-xs font-normal flex-shrink-0">
               Section · {section.categoryRows.length} carousel{section.categoryRows.length !== 1 ? "s" : ""}
@@ -614,19 +618,15 @@ function SectionPageItem({
               ) : (
                 section.categoryRows.map((cat) => (
                   <div key={cat.id} className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-accent/50 group">
-                    {cat.source === "uber" ? (
-                      <UberCarouselLogo className="h-8 px-2.5" />
-                    ) : (
-                      <div className="flex-shrink-0 h-8 w-8 rounded-full overflow-hidden bg-muted border border-border flex items-center justify-center">
-                        {uploadingLogoId === cat.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                        ) : (cat as any).logo_url ? (
-                          <Image src={(cat as any).logo_url} alt="" width={32} height={32} className="h-full w-full object-contain" />
-                        ) : (
-                          <ImagePlus className="h-3.5 w-3.5 text-muted-foreground" />
-                        )}
-                      </div>
-                    )}
+                    <div className="flex-shrink-0 h-8 w-8 rounded-full overflow-hidden bg-muted border border-border flex items-center justify-center">
+                      {cat.source !== "uber" && uploadingLogoId === cat.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      ) : cat.source !== "uber" && (cat as any).logo_url ? (
+                        <Image src={(cat as any).logo_url} alt="" width={32} height={32} className="h-full w-full object-contain" />
+                      ) : (
+                        <ImagePlus className="h-3.5 w-3.5 text-muted-foreground" />
+                      )}
+                    </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -637,7 +637,7 @@ function SectionPageItem({
                       </div>
                       {cat.source === "uber" ? (
                         <p className="text-[11px] text-muted-foreground mt-0.5">
-                          Automatically shows every Uber-enabled product
+                          {cat.product_ids.length} Uber product{cat.product_ids.length !== 1 ? "s" : ""} added automatically
                         </p>
                       ) : (
                         <label className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer transition-colors mt-0.5">

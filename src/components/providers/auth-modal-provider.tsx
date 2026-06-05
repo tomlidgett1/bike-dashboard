@@ -2,35 +2,56 @@
 
 import * as React from "react";
 import { createContext, useContext, useState, useCallback } from "react";
-import { AuthModal } from "@/components/marketplace/auth-modal";
+import dynamic from "next/dynamic";
+
+const AuthModal = dynamic(
+  () => import("@/components/marketplace/auth-modal").then((mod) => mod.AuthModal),
+  { ssr: false }
+);
+
+export type AuthModalMode = "signin" | "signup";
 
 interface AuthModalContextType {
-  openAuthModal: () => void;
+  openAuthModal: (options?: { mode?: AuthModalMode }) => void;
   closeAuthModal: () => void;
   isOpen: boolean;
+  mode: AuthModalMode;
 }
 
 const AuthModalContext = createContext<AuthModalContextType>({
   openAuthModal: () => {},
   closeAuthModal: () => {},
   isOpen: false,
+  mode: "signin",
 });
 
 export function AuthModalProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [mode, setMode] = useState<AuthModalMode>("signin");
 
-  const openAuthModal = useCallback(() => {
+  const openAuthModal = useCallback((options?: { mode?: AuthModalMode }) => {
+    setMode(options?.mode ?? "signin");
     setIsOpen(true);
   }, []);
 
   const closeAuthModal = useCallback(() => {
     setIsOpen(false);
+    setMode("signin");
+  }, []);
+
+  const handleOpenChange = useCallback((open: boolean) => {
+    setIsOpen(open);
+    if (!open) {
+      setMode("signin");
+    }
   }, []);
 
   return (
-    <AuthModalContext.Provider value={{ openAuthModal, closeAuthModal, isOpen }}>
+    <AuthModalContext.Provider
+      value={{ openAuthModal, closeAuthModal, isOpen, mode }}
+    >
       {children}
-      <AuthModal open={isOpen} onOpenChange={setIsOpen} />
+      <AuthModal open={isOpen} onOpenChange={handleOpenChange} mode={mode} />
     </AuthModalContext.Provider>
   );
 }
@@ -42,4 +63,3 @@ export const useAuthModal = () => {
   }
   return context;
 };
-

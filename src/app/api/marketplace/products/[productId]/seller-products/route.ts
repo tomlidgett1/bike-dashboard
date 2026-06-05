@@ -1,15 +1,86 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import type { MarketplaceProduct } from '@/lib/types/marketplace';
 import { resolveProductImage, pickPrimaryImage } from '@/lib/services/image-resolver';
 import { extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms';
+import {
+  createPublicSupabaseClient,
+  hasMissingPublicCardFeedError,
+  PUBLIC_MARKETPLACE_CARD_FIELDS,
+  transformPublicMarketplaceCard,
+  type PublicMarketplaceCardRow,
+} from '@/lib/marketplace/public-card-feed';
 
 // ============================================================
 // Seller Products API
 // Fetch other products from the same seller
 // ============================================================
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
+
+function cacheHeaders(startTime: number, feed: string = 'fallback') {
+  return {
+    'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+    'CDN-Cache-Control': 'public, s-maxage=60',
+    'Vercel-CDN-Cache-Control': 'public, s-maxage=60',
+    'Vary': 'Accept-Encoding',
+    'X-Response-Time': `${Date.now() - startTime}ms`,
+    'X-Marketplace-Feed': feed,
+  };
+}
+
+async function tryGetSellerProductsFromPublicCards(productId: string, limit: number, startTime: number) {
+  const supabase = createPublicSupabaseClient();
+
+  const { data: sourceRow, error: sourceError } = await supabase
+    .from('public_marketplace_cards')
+    .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
+    .eq('id', productId)
+    .maybeSingle();
+
+  if (hasMissingPublicCardFeedError(sourceError)) return null;
+  if (sourceError || !sourceRow) return null;
+
+  const source = sourceRow as PublicMarketplaceCardRow;
+  if (!source.user_id) {
+    return NextResponse.json(
+      { products: [], count: 0, seller: null },
+      { headers: cacheHeaders(startTime, 'public-cards') },
+    );
+  }
+
+  const { data: rows, error } = await supabase
+    .from('public_marketplace_cards')
+    .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
+    .eq('user_id', source.user_id)
+    .neq('id', productId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (hasMissingPublicCardFeedError(error)) return null;
+  if (error) {
+    console.warn('[SELLER PRODUCTS API] Public-card fast path failed:', error.message);
+    return null;
+  }
+
+  const products = ((rows || []) as PublicMarketplaceCardRow[]).map(transformPublicMarketplaceCard);
+  const sellerName = source.store_name ||
+    (source.first_name && source.last_name ? `${source.first_name} ${source.last_name}`.trim() : null) ||
+    'Unknown Seller';
+
+  return NextResponse.json(
+    {
+      products,
+      count: products.length,
+      seller: {
+        id: source.user_id,
+        name: sellerName,
+        logo_url: source.store_logo_url || null,
+        account_type: source.store_account_type || null,
+      },
+    },
+    { headers: cacheHeaders(startTime, 'public-cards') },
+  );
+}
 
 export async function GET(
   request: NextRequest,
@@ -31,7 +102,10 @@ export async function GET(
 
     console.log(`🏪 [SELLER PRODUCTS API] Fetching seller products for: ${productId}`);
 
-    const supabase = await createClient();
+    const fastResponse = await tryGetSellerProductsFromPublicCards(productId, limit, startTime);
+    if (fastResponse) return fastResponse;
+
+    const supabase = createPublicSupabaseClient();
 
     // First, get the seller ID from the source product
     const { data: sourceProduct, error: sourceError } = await supabase
@@ -149,9 +223,7 @@ export async function GET(
         count: 0,
         seller: null,
       }, {
-        headers: {
-          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-        },
+        headers: cacheHeaders(startTime),
       });
     }
 
@@ -230,9 +302,7 @@ export async function GET(
         },
       },
       {
-        headers: {
-          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-        },
+        headers: cacheHeaders(startTime),
       }
     );
 
@@ -244,4 +314,3 @@ export async function GET(
     );
   }
 }
-
