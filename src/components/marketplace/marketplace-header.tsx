@@ -352,9 +352,9 @@ export function MarketplaceHeader({
   return (
     <>
       {/* Floating pill header wrapper */}
-      <div className="marketplace-top-header relative z-40 bg-white px-0 pt-0 sm:fixed sm:top-0 sm:left-0 sm:right-0 sm:bg-transparent sm:px-4 sm:pt-2">
+      <div className="marketplace-top-header relative z-40 bg-white px-0 pt-0 sm:fixed sm:top-0 sm:left-0 sm:right-0 sm:bg-gray-50 sm:px-4 sm:pt-2">
       <header
-        className="rounded-none border-x-0 border-t-0 border-b border-gray-200 bg-white sm:rounded-full sm:border sm:bg-white/95 sm:backdrop-blur-md"
+        className="overflow-hidden rounded-none border-x-0 border-t-0 border-b border-gray-200 bg-white sm:rounded-full sm:border sm:bg-white/95 sm:backdrop-blur-md"
       >
         {/* Navigation Loading Bar */}
         {isNavigating && (
@@ -368,14 +368,23 @@ export function MarketplaceHeader({
             {/* Left: Logo */}
             <button
               onClick={() => router.push('/marketplace')}
-              className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0 cursor-pointer translate-y-[1px]"
+              className="flex h-full max-h-full shrink-0 items-center hover:opacity-80 transition-opacity cursor-pointer"
             >
+              <Image
+                src="/yjsmall.svg"
+                alt="Yellow Jersey"
+                width={120}
+                height={24}
+                className="h-8 w-auto sm:hidden"
+                priority
+                unoptimized
+              />
               <Image
                 src="/yj.svg"
                 alt="Yellow Jersey"
                 width={220}
                 height={36}
-                className="h-20 w-auto sm:h-24"
+                className="hidden h-9 w-auto sm:block"
                 priority
                 unoptimized
               />
@@ -597,9 +606,9 @@ export function MarketplaceHeader({
                 <Image
                   src="/yj.svg"
                   alt="Yellow Jersey"
-                  width={280}
-                  height={56}
-                  className="h-24 w-auto ml-4"
+                  width={180}
+                  height={32}
+                  className="ml-4 h-9 w-auto max-h-full object-contain"
                   priority
                   unoptimized
                 />

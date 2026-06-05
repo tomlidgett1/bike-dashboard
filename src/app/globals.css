@@ -183,7 +183,8 @@
   --notion-red: #FF7369;
 }
 
-.dashboard-light-surface {
+.dashboard-light-surface,
+.marketplace-light-surface {
   color-scheme: light;
   --background: oklch(1 0 0);
   --foreground: oklch(0.147 0.004 49.25);
@@ -224,6 +225,25 @@
     font-feature-settings: "rlig" 1, "calt" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  html:has(.marketplace-light-surface),
+  html:has(.marketplace-light-surface) body {
+    background-color: #ffffff;
+    color-scheme: light;
+  }
+
+  @media (min-width: 640px) {
+    html:has(.marketplace-light-surface),
+    html:has(.marketplace-light-surface) body {
+      background-color: #f9fafb;
+    }
+  }
+
+  html:has(.dashboard-light-surface),
+  html:has(.dashboard-light-surface) body {
+    background-color: #ffffff;
+    color-scheme: light;
   }
 
   /* Custom scrollbar - Notion style */
