@@ -3,7 +3,6 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -13,7 +12,6 @@ import {
   MapPin,
   Palette,
   Phone,
-  Sparkles,
   Store,
   Upload,
   Wrench,
@@ -127,7 +125,7 @@ const STEP_META: Record<StoreSetupStepId, { title: string; description: string }
   },
   complete: {
     title: "You are ready to go",
-    description: "Your essentials are saved. View your storefront or keep customising.",
+    description: "",
   },
 };
 
@@ -159,7 +157,6 @@ function StoreTypeOption({
 }
 
 export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlowProps) {
-  const router = useRouter();
   const { profile, saveProfile } = useUserProfile();
   const { isConnected: lightspeedConnected } = useLightspeedConnection({
     autoFetch: true,
@@ -510,7 +507,7 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
 
   const continueLabel = () => {
     if (stepId === "welcome") return "Continue";
-    if (stepId === "complete") return "Done";
+    if (stepId === "complete") return "Get started";
     if (stepId === "logo") return logoFile ? "Save and continue" : "Skip for now";
     if (stepId === "header-image") {
       return headerImageFile || form.headerImageUrl ? "Save and continue" : "Skip for now";
@@ -589,6 +586,12 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
                 <p className="mt-3 max-w-[260px] text-[17px] leading-relaxed text-gray-500">
                   Set up your storefront in a few minutes.
                 </p>
+              </div>
+            ) : stepId === "complete" ? (
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 text-center">
+                <h2 className="text-[32px] font-semibold tracking-tight text-gray-900">
+                  You are ready to go
+                </h2>
               </div>
             ) : (
               <>
@@ -937,40 +940,6 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
                   </div>
                 )}
 
-                {stepId === "complete" && (
-                  <div className="space-y-4">
-                    <div className="flex justify-center">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#FFC72C]/20">
-                        <Sparkles className="h-7 w-7 text-gray-900" />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Button
-                        type="button"
-                        className="h-11 rounded-full bg-[#FFC72C] font-semibold text-gray-900 hover:bg-[#E6B328]"
-                        onClick={() => {
-                          if (profile?.user_id) {
-                            router.push(`/marketplace/store/${profile.user_id}`);
-                          }
-                          onClose();
-                        }}
-                      >
-                        View storefront
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-11 rounded-full border-gray-300"
-                        onClick={() => {
-                          router.push("/settings/store/landing");
-                          onClose();
-                        }}
-                      >
-                        Customise landing page
-                      </Button>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {error && (
@@ -1007,7 +976,7 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
                   onClick={handleContinue}
                   className="h-12 w-full rounded-full bg-[#FFC72C] text-base font-semibold text-gray-900 hover:bg-[#E6B328]"
                 >
-                  Done
+                  Get started
                 </Button>
               )}
 
