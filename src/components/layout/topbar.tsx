@@ -99,13 +99,15 @@ export function Topbar() {
             </div>
           ) : formattedLastSync && formattedLastSync !== "Never" ? (
             <div className={cn(topbarPillClass, "hidden sm:inline-flex")}>
-              <Image
-                src="/ls.png"
-                alt="Lightspeed"
-                width={14}
-                height={14}
-                className="h-3.5 w-3.5 object-contain"
-              />
+              <span className="flex h-3.5 w-3.5 shrink-0 overflow-hidden rounded-full">
+                <Image
+                  src="/ls.png"
+                  alt="Lightspeed"
+                  width={14}
+                  height={14}
+                  className="h-full w-full object-cover"
+                />
+              </span>
               <span className="text-gray-600">Synced {formattedLastSync}</span>
             </div>
           ) : null
