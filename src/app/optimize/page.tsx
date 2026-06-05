@@ -47,7 +47,7 @@ export default function OptimizePage() {
     <PageContainer size="wide">
       <PageHeader
         title="Optimise"
-        description="Add and approve catalogue photos, generate titles and descriptions, or import online products."
+        description="Add and approve catalogue photos, generate titles and descriptions, or import products from CSV or screenshots."
       />
 
       <div className="mt-6 min-w-0">

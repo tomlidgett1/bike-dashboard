@@ -37,6 +37,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { StatCard } from "@/components/dashboard";
 import { useAuth } from "@/components/providers/auth-provider";
+import { StoreSetupBanner } from "@/components/settings/store-setup-button";
 import {
   formatStoreAnalyticsDate,
   getStoreAnalyticsTimezoneShortLabel,
@@ -204,6 +205,8 @@ export function StoreOverviewDashboard() {
 
   return (
     <div className="space-y-6">
+      <StoreSetupBanner />
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm text-muted-foreground">

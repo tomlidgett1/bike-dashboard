@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Layers, Loader2, X } from "lucide-react";
+import { FileSpreadsheet, Layers, ListFilter, Loader2, X } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -13,6 +13,7 @@ import {
   buildSpeedSearchQuery,
   type SpeedWorkbenchProduct,
 } from "@/lib/admin/image-qa-speed";
+import { cn } from "@/lib/utils";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,8 @@ export interface OptimizerProduct {
   brand: string | null;
   upc: string | null;
   category_name: string | null;
+  marketplace_category?: string | null;
+  marketplace_subcategory?: string | null;
   listing_source: string | null;
   price: number;
   qoh: number;
@@ -130,10 +133,24 @@ export function hasImage(p: OptimizerProduct) {
   return !!(p.resolved_image_url || p.primary_image_url);
 }
 
+export function isLightspeedListing(p: OptimizerProduct) {
+  const source = p.listing_source;
+  if (source === "manual" || source === "online_catalog") return false;
+  return true;
+}
+
 export function hasSerperImage(p: OptimizerProduct) {
-  const isLightspeed = !p.listing_source || p.listing_source === "lightspeed";
-  if (!isLightspeed) return true;
   const allImages = [...(p.canonical_images ?? []), ...(p.product_images ?? [])];
+  const hasApprovedImage = allImages.some(
+    (img) =>
+      (img.approval_status === "approved" || img.approval_status === null) &&
+      (img.cloudinary_public_id || img.cloudinary_url || img.external_url),
+  );
+
+  if (!isLightspeedListing(p)) {
+    return hasApprovedImage || hasImage(p);
+  }
+
   return allImages.some(
     (img) =>
       img.source === "serper_workbench" &&
@@ -163,10 +180,10 @@ export function toSpeedProduct(p: OptimizerProduct): SpeedWorkbenchProduct {
     normalized_name: p.canonical_products?.normalized_name || p.description,
     display_name: p.display_name,
     upc: p.upc || p.canonical_products?.upc || null,
-    category: p.category_name,
+    category: p.category_name || p.marketplace_category || null,
     manufacturer: p.brand,
-    marketplace_category: null,
-    marketplace_subcategory: null,
+    marketplace_category: p.marketplace_category ?? null,
+    marketplace_subcategory: p.marketplace_subcategory ?? null,
     image_review_search_query: null,
     store_product_name: p.display_name || p.description,
   };
@@ -261,31 +278,135 @@ export function useOptimizerCategories() {
   return { categories, loadingCats: loading };
 }
 
-export function useOptimizerProducts(category: string) {
+export const OPTIMIZER_PRODUCT_LIMIT_OPTIONS = [
+  { value: "10", label: "10 products" },
+  { value: "20", label: "20 products" },
+  { value: "50", label: "50 products" },
+  { value: "100", label: "100 products" },
+  { value: "200", label: "200 products" },
+  { value: "500", label: "500 products" },
+  { value: "all", label: "All products" },
+] as const;
+
+export type OptimizerProductLimit =
+  (typeof OPTIMIZER_PRODUCT_LIMIT_OPTIONS)[number]["value"];
+
+export const DEFAULT_OPTIMIZER_PRODUCT_LIMIT: OptimizerProductLimit = "20";
+
+export type OptimizerProductScope = "catalogue" | "csv_image";
+
+export function optimizerLimitToPageSize(limit: OptimizerProductLimit): number {
+  return limit === "all" ? 1000 : Number.parseInt(limit, 10);
+}
+
+export function formatOptimizerProductCount(
+  loaded: number,
+  total: number | null,
+): string {
+  if (total != null && total > loaded) {
+    return `Showing ${loaded} of ${total}`;
+  }
+  return `Showing ${loaded}`;
+}
+
+export function useOptimizerProducts(
+  category: string,
+  limit: OptimizerProductLimit = DEFAULT_OPTIMIZER_PRODUCT_LIMIT,
+  scope: OptimizerProductScope = "catalogue",
+) {
   const [products, setProducts] = React.useState<OptimizerProduct[]>([]);
+  const [totalInCategory, setTotalInCategory] = React.useState<number | null>(null);
   const [loading, setLoading] = React.useState(false);
 
-  const loadProducts = React.useCallback(async (cat: string) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ pageSize: "1000", status: "active" });
-      if (cat && cat !== "all") params.set("ls_category_id", cat);
-      const res = await fetch(`/api/products?${params.toString()}`);
-      const data = await res.json();
-      const rows = (data.products ?? []) as ProductApiRow[];
-      setProducts(mapProductRows(rows));
-    } catch {
-      setProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const loadProducts = React.useCallback(
+    async (
+      cat: string,
+      productLimit: OptimizerProductLimit,
+      productScope: OptimizerProductScope = "catalogue",
+    ) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: "1",
+          pageSize: String(optimizerLimitToPageSize(productLimit)),
+          status: "active",
+        });
+        if (productScope === "csv_image") {
+          params.set("source", "manual");
+        } else if (cat && cat !== "all") {
+          params.set("ls_category_id", cat);
+        }
+        const res = await fetch(`/api/products?${params.toString()}`);
+        const data = await res.json();
+        const rows = (data.products ?? []) as ProductApiRow[];
+        setProducts(mapProductRows(rows));
+        setTotalInCategory(
+          typeof data.pagination?.total === "number" ? data.pagination.total : null,
+        );
+      } catch {
+        setProducts([]);
+        setTotalInCategory(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   React.useEffect(() => {
-    if (category) void loadProducts(category);
-  }, [category, loadProducts]);
+    if (scope === "csv_image") {
+      void loadProducts("", limit, scope);
+      return;
+    }
+    if (category) void loadProducts(category, limit, scope);
+  }, [category, limit, scope, loadProducts]);
 
-  return { products, setProducts, loading, loadProducts };
+  return { products, setProducts, loading, loadProducts, totalInCategory };
+}
+
+export function OptimizerScopeTabs({
+  scope,
+  disabled,
+  onChange,
+}: {
+  scope: OptimizerProductScope;
+  disabled?: boolean;
+  onChange: (scope: OptimizerProductScope) => void;
+}) {
+  return (
+    <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange("catalogue")}
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+          scope === "catalogue"
+            ? "text-gray-800 bg-white shadow-sm"
+            : "text-gray-600 hover:bg-gray-200/70",
+          disabled && "pointer-events-none opacity-60",
+        )}
+      >
+        <Layers size={15} />
+        Catalogue
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange("csv_image")}
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+          scope === "csv_image"
+            ? "text-gray-800 bg-white shadow-sm"
+            : "text-gray-600 hover:bg-gray-200/70",
+          disabled && "pointer-events-none opacity-60",
+        )}
+      >
+        <FileSpreadsheet size={15} />
+        CSV/Image
+      </button>
+    </div>
+  );
 }
 
 export function useLightbox() {
@@ -380,6 +501,40 @@ export function CategoryPicker({
                   {c.count} products
                 </span>
               )}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+export function ProductLimitPicker({
+  limit,
+  disabled,
+  onChange,
+  className,
+}: {
+  limit: OptimizerProductLimit;
+  disabled?: boolean;
+  onChange: (limit: OptimizerProductLimit) => void;
+  className?: string;
+}) {
+  return (
+    <Select
+      value={limit}
+      onValueChange={(value) => onChange(value as OptimizerProductLimit)}
+      disabled={disabled}
+    >
+      <SelectTrigger className={className ?? "h-9 w-[9.5rem] rounded-md"}>
+        <SelectValue placeholder="Limit" />
+      </SelectTrigger>
+      <SelectContent>
+        {OPTIMIZER_PRODUCT_LIMIT_OPTIONS.map((opt) => (
+          <SelectItem key={opt.value} value={opt.value}>
+            <span className="flex items-center gap-2 tabular-nums">
+              <ListFilter className="size-3.5 text-muted-foreground" />
+              {opt.label}
             </span>
           </SelectItem>
         ))}

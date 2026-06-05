@@ -35,12 +35,18 @@ import { OptimizerImageReview } from "@/components/optimize/optimizer-image-revi
 import {
   buildSpeedSearchQuery,
   CategoryPicker,
+  DEFAULT_OPTIMIZER_PRODUCT_LIMIT,
   EmptyCategoryPrompt,
+  formatOptimizerProductCount,
   hasSerperImage,
   IMAGE_CONCURRENCY,
   type ImageRun,
   type OptimizerProduct,
+  type OptimizerProductLimit,
+  type OptimizerProductScope,
   LightboxOverlay,
+  OptimizerScopeTabs,
+  ProductLimitPicker,
   productLabel,
   toSpeedProduct,
   useLightbox,
@@ -72,8 +78,13 @@ function photoStatus(
 
 export function PhotoQueue() {
   const { categories, loadingCats } = useOptimizerCategories();
+  const [scope, setScope] = React.useState<OptimizerProductScope>("catalogue");
   const [category, setCategory] = React.useState("");
-  const { products, setProducts, loading, loadProducts } = useOptimizerProducts(category);
+  const [productLimit, setProductLimit] = React.useState<OptimizerProductLimit>(
+    DEFAULT_OPTIMIZER_PRODUCT_LIMIT,
+  );
+  const { products, setProducts, loading, loadProducts, totalInCategory } =
+    useOptimizerProducts(category, productLimit, scope);
   const { rejectedIds, rejectProduct } = useRejectedProducts();
   const { lightbox, setLightbox } = useLightbox();
 
@@ -94,8 +105,23 @@ export function PhotoQueue() {
     productsRef.current = products;
   }, [products]);
 
+  const onScopeChange = (next: OptimizerProductScope) => {
+    setScope(next);
+    setCategory("");
+    setSelected(new Set());
+    setExpanded(new Set());
+    setRuns({});
+  };
+
   const onCategoryChange = (cat: string) => {
     setCategory(cat);
+    setSelected(new Set());
+    setExpanded(new Set());
+    setRuns({});
+  };
+
+  const onProductLimitChange = (limit: OptimizerProductLimit) => {
+    setProductLimit(limit);
     setSelected(new Set());
     setExpanded(new Set());
     setRuns({});
@@ -417,38 +443,62 @@ export function PhotoQueue() {
     }
   };
 
-  if (!category && !loadingCats) {
+  if (scope === "catalogue" && !category && !loadingCats) {
     return (
-      <EmptyCategoryPrompt
-        loadingCats={loadingCats}
-        category={category}
-        categories={categories}
-        onChange={onCategoryChange}
-        title="Photos for your catalogue"
-        description="Choose a category to find products that need photos, review AI picks, and approve them for your store."
-      />
+      <div className="space-y-6">
+        <OptimizerScopeTabs scope={scope} onChange={onScopeChange} />
+        <EmptyCategoryPrompt
+          loadingCats={loadingCats}
+          category={category}
+          categories={categories}
+          onChange={onCategoryChange}
+          title="Photos for your catalogue"
+          description="Choose a category to find products that need photos, review AI picks, and approve them for your store."
+        />
+      </div>
     );
   }
 
   const categoryMeta = categories.find((c) => c.id === category);
+  const showCataloguePicker = scope === "catalogue";
 
   return (
     <div>
       <OptimiseToolbar>
         <div className="flex flex-wrap items-center gap-3 min-w-0">
-          <CategoryPicker
-            category={category}
-            categories={categories}
-            loadingCats={loadingCats}
-            disabled={running}
-            onChange={onCategoryChange}
-            className="h-9 w-full rounded-md sm:w-[min(100%,280px)]"
-          />
-          {categoryMeta && category !== "all" && (
-            <span className="text-sm text-muted-foreground tabular-nums shrink-0">
-              {categoryMeta.count}
+          <OptimizerScopeTabs scope={scope} disabled={running} onChange={onScopeChange} />
+          {showCataloguePicker ? (
+            <CategoryPicker
+              category={category}
+              categories={categories}
+              loadingCats={loadingCats}
+              disabled={running}
+              onChange={onCategoryChange}
+              className="h-9 w-full rounded-md sm:w-[min(100%,280px)]"
+            />
+          ) : (
+            <span className="text-sm text-muted-foreground shrink-0">
+              Manual / CSV·image imports
             </span>
           )}
+          <ProductLimitPicker
+            limit={productLimit}
+            disabled={running || loading}
+            onChange={onProductLimitChange}
+          />
+          {!loading && products.length > 0 ? (
+            <span className="text-sm text-muted-foreground tabular-nums shrink-0">
+              {formatOptimizerProductCount(products.length, totalInCategory)}
+            </span>
+          ) : scope === "csv_image" && totalInCategory != null ? (
+            <span className="text-sm text-muted-foreground tabular-nums shrink-0">
+              {totalInCategory} manual listing{totalInCategory === 1 ? "" : "s"}
+            </span>
+          ) : categoryMeta && category !== "all" ? (
+            <span className="text-sm text-muted-foreground tabular-nums shrink-0">
+              {categoryMeta.count} in category
+            </span>
+          ) : null}
           <OptimiseSegmentedControl
             value={filter}
             onChange={setFilter}
@@ -462,7 +512,7 @@ export function PhotoQueue() {
         <OptimiseSearchInput value={search} onChange={setSearch} />
       </OptimiseToolbar>
 
-      {category && !loading && (
+      {(scope === "csv_image" || category) && !loading && (
         <OptimiseBulkBar>
           <div className="flex flex-wrap items-center gap-3">
             <Checkbox
@@ -485,7 +535,7 @@ export function PhotoQueue() {
               variant="outline"
               size="sm"
               disabled={loading || running}
-              onClick={() => void loadProducts(category)}
+              onClick={() => void loadProducts(category, productLimit, scope)}
             >
               <RefreshCw className={cn("size-4", loading && "animate-spin")} />
             </Button>
@@ -517,6 +567,14 @@ export function PhotoQueue() {
 
       {loading ? (
         <OptimiseLoadingState />
+      ) : products.length === 0 && scope === "csv_image" ? (
+        <OptimiseCenteredState>
+          <StatusBadge label="No CSV/Image products yet" tone="neutral" />
+          <p className="mt-3 max-w-md text-sm text-muted-foreground">
+            Import a CSV on the CSV/Image tab and create listings first. They will appear here as
+            manual products ready for photos.
+          </p>
+        </OptimiseCenteredState>
       ) : visible.length === 0 ? (
         <OptimiseCenteredState>
           <StatusBadge
@@ -525,7 +583,9 @@ export function PhotoQueue() {
           />
           <p className="mt-3 max-w-md text-sm text-muted-foreground">
             {filter === "in_progress"
-              ? "Every product in this category has a store photo, or check the Review tab."
+              ? scope === "csv_image"
+                ? "Every CSV/Image import in this batch has a store photo, or check the Review tab."
+                : "Every product in this category has a store photo, or check the Review tab."
               : filter === "review"
                 ? "Run Find photos first — products ready for approval appear here."
                 : "Nothing in this view."}
@@ -578,10 +638,18 @@ export function PhotoQueue() {
 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-foreground">{name}</p>
+                      <p
+                        className={cn(
+                          "text-sm font-semibold truncate max-w-full",
+                          status === "working"
+                            ? "text-optimise-finding-shimmer"
+                            : "text-foreground",
+                        )}
+                      >
+                        {name}
+                      </p>
                       {status === "needs" && <StatusBadge label="Needs photo" tone="danger" />}
                       {status === "review" && <StatusBadge label="Review" tone="warning" />}
-                      {status === "working" && <StatusBadge label="Finding…" tone="neutral" />}
                       {status === "done" && <StatusBadge label="On store" tone="success" />}
                       {status === "error" && <StatusBadge label="Failed" tone="danger" />}
                     </div>

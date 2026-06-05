@@ -44,7 +44,6 @@ import {
 import {
   OnlineOnlyBadgeToggle,
   StoreOnlineProductsCsvPanel,
-  type EnrichedFromCsv,
 } from "@/components/settings/store-online-products-csv-panel";
 import { OnlineProductsGenerationTooltip } from "@/components/settings/online-products-generation-guide";
 
@@ -658,12 +657,12 @@ export function StoreOnlineProductsManager() {
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
   const [lightbox, setLightbox] = React.useState<string | null>(null);
   const [imageBatchSize, setImageBatchSize] = React.useState<string>("10");
-  const [onlineOnlyBadge, setOnlineOnlyBadge] = React.useState(true);
+  const [onlineOnlyBadge, setOnlineOnlyBadge] = React.useState(false);
 
   React.useEffect(() => {
     try {
       const stored = localStorage.getItem(ONLINE_ONLY_BADGE_STORAGE_KEY);
-      if (stored === "0") setOnlineOnlyBadge(false);
+      if (stored === "1") setOnlineOnlyBadge(true);
     } catch {
       /* ignore */
     }
@@ -720,33 +719,6 @@ export function StoreOnlineProductsManager() {
     setImageStates({});
     setExpanded(new Set());
     setErrorMsg(null);
-  };
-
-  const applyEnrichedProducts = React.useCallback((items: EnrichedFromCsv[]) => {
-    const extracted: ExtractedProduct[] = items.map((p) => ({
-      id: p.csvRowId,
-      rowIndex: p.rowIndex,
-      name: p.name,
-      brand: p.brand,
-      price: p.price,
-      soh: p.soh,
-      category: p.category,
-      subcategory: p.subcategory,
-      description: p.description,
-      specs: p.specs,
-      isDuplicate: p.isDuplicate,
-      duplicateOfId: p.duplicateOfId,
-      duplicateOfName: p.duplicateOfName,
-    }));
-    setUploadKind("csv");
-    setProducts(extracted);
-    setImageStates(Object.fromEntries(extracted.map((p) => [p.id, emptyImageState()])));
-    setExpanded(new Set());
-    setPhase("review");
-  }, []);
-
-  const handleCsvEnriched = (items: EnrichedFromCsv[]) => {
-    applyEnrichedProducts(items);
   };
 
   const backToCsvTable = () => {
@@ -1071,12 +1043,7 @@ export function StoreOnlineProductsManager() {
       )}
 
       {intakeMode === "csv" && products.length === 0 && (
-        <StoreOnlineProductsCsvPanel
-          onEnriched={handleCsvEnriched}
-          onError={setErrorMsg}
-          onlineOnlyBadge={onlineOnlyBadge}
-          onOnlineOnlyBadgeChange={handleOnlineOnlyBadgeChange}
-        />
+        <StoreOnlineProductsCsvPanel onError={setErrorMsg} />
       )}
 
       {intakeMode === "screenshot" && products.length === 0 && (

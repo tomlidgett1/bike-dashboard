@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  getMarketplaceUserNavLabels,
   shouldShowMarketplaceSidebar,
 } from "@/lib/marketplace-nav";
 
@@ -81,6 +82,8 @@ function DesktopHeaderPillContent() {
   const getPurchasesRoute = () =>
     isVerifiedStore ? "/marketplace/purchases" : "/settings/purchases";
 
+  const navLabels = getMarketplaceUserNavLabels(profile?.account_type);
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push("/marketplace");
@@ -111,7 +114,7 @@ function DesktopHeaderPillContent() {
                   : "text-gray-700 hover:bg-gray-100"
               )}
             >
-              My Store
+              {navLabels.shopfront}
             </Link>
             <Link
               href={getPurchasesRoute()}
@@ -125,7 +128,7 @@ function DesktopHeaderPillContent() {
                   : "text-gray-700 hover:bg-gray-100"
               )}
             >
-              Order Management
+              {navLabels.orders}
             </Link>
             <Link
               href={getSettingsRoute()}
@@ -139,7 +142,7 @@ function DesktopHeaderPillContent() {
                   : "text-gray-700 hover:bg-gray-100"
               )}
             >
-              Settings
+              {navLabels.settings}
             </Link>
             <div className="w-px h-5 bg-gray-200 mx-1" aria-hidden />
           </>
@@ -210,21 +213,21 @@ function DesktopHeaderPillContent() {
                   className="cursor-pointer rounded-md"
                 >
                   <Store className="mr-2 h-4 w-4" />
-                  <span>My Store</span>
+                  <span>{navLabels.shopfront}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => router.push(getPurchasesRoute())}
                   className="cursor-pointer rounded-md"
                 >
                   <ShoppingBag className="mr-2 h-4 w-4" />
-                  <span>Order Management</span>
+                  <span>{navLabels.orders}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => router.push(getSettingsRoute())}
                   className="cursor-pointer rounded-md"
                 >
                   <Settings className="mr-2 h-4 w-4" />
-                  <span>Settings</span>
+                  <span>{navLabels.settings}</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

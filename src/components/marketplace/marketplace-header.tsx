@@ -8,6 +8,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
 import { DesktopHeaderPill } from "./desktop-header-pill";
+import { getMarketplaceUserNavLabels } from "@/lib/marketplace-nav";
 import { CartButton } from "./cart-button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -334,6 +335,8 @@ export function MarketplaceHeader({
     }
     return '/marketplace/settings'; // Individual user settings
   };
+
+  const navLabels = getMarketplaceUserNavLabels(profile?.account_type);
 
   // Show profile/store image whenever we have a logo URL (including Google avatars).
   const shouldShowLogo = () => {
@@ -728,7 +731,7 @@ export function MarketplaceHeader({
                       
                       <MobileNavItem
                         icon={Store}
-                        label="My Store"
+                        label={navLabels.shopfront}
                         onClick={() => {
                           router.push(`/marketplace/store/${profile?.user_id || user?.id}`);
                           setMobileMenuOpen(false);
@@ -736,15 +739,19 @@ export function MarketplaceHeader({
                       />
                       <MobileNavItem
                         icon={ShoppingBag}
-                        label="Order Management"
+                        label={navLabels.orders}
                         onClick={() => {
-                          router.push('/settings/purchases');
+                          router.push(
+                            profile?.account_type === 'bicycle_store' && profile?.bicycle_store
+                              ? '/marketplace/purchases'
+                              : '/settings/purchases',
+                          );
                           setMobileMenuOpen(false);
                         }}
                       />
                       <MobileNavItem
                         icon={Settings}
-                        label="Settings"
+                        label={navLabels.settings}
                         onClick={() => {
                           router.push(getSettingsRoute());
                           setMobileMenuOpen(false);

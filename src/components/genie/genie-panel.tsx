@@ -15,6 +15,11 @@ import { useUserProfile } from '@/components/providers/profile-provider';
 import AIMotionOrb from './ai-motion-orb';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type {
   GenieProposal,
   CarouselLayoutProposal,
@@ -165,13 +170,13 @@ function ShimmerStatus({ step }: { step: StatusStep }) {
     <motion.div key={`${step.phase}:${label}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.25 }} className="flex items-center gap-2 py-1">
       <span className="relative flex h-2 w-2 flex-shrink-0">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-60" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-yellow-500" />
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
       </span>
       <span className="relative overflow-hidden text-xs font-medium text-muted-foreground">
         {label}
         <span className="absolute inset-0 -translate-x-full animate-[shimmer_1.8s_ease-in-out_infinite]"
-          style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(250,204,21,0.5) 50%, transparent 100%)' }} />
+          style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,222,89,0.45) 50%, transparent 100%)' }} />
       </span>
     </motion.div>
   );
@@ -188,8 +193,8 @@ function SourcePill({ citation }: { citation: Citation }) {
   } catch {}
   return (
     <a href={citation.url} target="_blank" rel="noopener noreferrer"
-      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-medium text-muted-foreground hover:border-yellow-400 hover:text-foreground transition-all whitespace-nowrap max-w-[160px]">
-      <Globe className="h-2.5 w-2.5 flex-shrink-0 text-yellow-500" />
+      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[10px] font-medium text-muted-foreground hover:border-primary/50 hover:text-foreground transition-all whitespace-nowrap max-w-[160px]">
+      <Globe className="h-2.5 w-2.5 flex-shrink-0 text-primary" />
       <span className="truncate">{displayName}</span>
     </a>
   );
@@ -200,7 +205,7 @@ function SourcePill({ citation }: { citation: Citation }) {
 function ProductCard({ product }: { product: GenieProduct }) {
   return (
     <motion.a href={`/marketplace/product/${product.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-      className="flex-shrink-0 w-[152px] rounded-xl border border-border bg-background overflow-hidden shadow-sm hover:shadow-md hover:border-yellow-400/50 transition-all cursor-pointer">
+      className="flex-shrink-0 w-[152px] rounded-md border border-border bg-card overflow-hidden shadow-xs hover:shadow-sm hover:border-primary/40 transition-all cursor-pointer">
       <div className="relative h-[96px] bg-muted flex items-center justify-center overflow-hidden">
         {product.image
           ? <Image src={product.image} alt={product.name} fill className="object-cover" sizes="152px" />
@@ -211,7 +216,7 @@ function ProductCard({ product }: { product: GenieProduct }) {
       </div>
       <div className="p-2.5 space-y-0.5">
         <p className="text-xs font-medium leading-tight line-clamp-2 text-foreground">{product.name}</p>
-        {product.store_name && <p className="text-[10px] text-yellow-600 dark:text-yellow-400 font-medium truncate">{product.store_name}</p>}
+        {product.store_name && <p className="text-[10px] text-foreground/80 font-medium truncate">{product.store_name}</p>}
         {product.category && <p className="text-[10px] text-muted-foreground truncate">{product.category}</p>}
         <div className="pt-1">
           {product.price
@@ -315,9 +320,9 @@ function CarouselCreateDiff({ proposal }: { proposal: CarouselCreateProposal }) 
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="inline-flex items-center gap-1 rounded-md bg-yellow-400/20 px-1.5 py-0.5 text-[11px] font-semibold text-yellow-700 dark:text-yellow-300">
+        <Badge variant="secondary" className="rounded-md bg-primary/15 text-foreground">
           {proposal.name}
-        </span>
+        </Badge>
         <span className="text-[10px] text-muted-foreground">{SIZE_LABEL[proposal.carousel_size]}</span>
         <span className="text-xs text-muted-foreground">· {proposal.match_label}</span>
       </div>
@@ -338,9 +343,9 @@ function CarouselCreateDiff({ proposal }: { proposal: CarouselCreateProposal }) 
             {proposal.order_preview.map((row, i) => (
               <li key={i} className={cn('flex items-center gap-2 text-xs', !row.is_active && 'opacity-50')}>
                 <span className="text-muted-foreground tabular-nums w-4 text-right">{i + 1}.</span>
-                <span className={cn('font-medium text-foreground', row.is_new && 'text-yellow-700 dark:text-yellow-300')}>{row.name}</span>
+                <span className={cn('font-medium text-foreground', row.is_new && 'text-foreground')}>{row.name}</span>
                 <span className="text-[10px] text-muted-foreground">{SIZE_LABEL[row.carousel_size]}</span>
-                {row.is_new && <span className="rounded-full bg-yellow-400/20 px-1.5 py-0.5 text-[9px] font-semibold text-yellow-700 dark:text-yellow-300">New</span>}
+                {row.is_new && <Badge variant="secondary" className="rounded-md bg-primary/15 px-1.5 py-0 text-[9px] text-foreground">New</Badge>}
                 {!row.is_active && <EyeOff className="h-3 w-3 text-muted-foreground" />}
               </li>
             ))}
@@ -482,17 +487,17 @@ function ProposalCard({ proposal }: { proposal: GenieProposal }) {
   const { Icon } = meta;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-yellow-400/40 bg-yellow-50/40 dark:bg-yellow-400/[0.04] overflow-hidden">
-      <div className="flex items-center gap-2 px-3.5 pt-3 pb-2">
-        <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-yellow-400/20 text-yellow-600 dark:text-yellow-400">
-          <Icon className="h-3.5 w-3.5" />
-        </div>
-        <p className="text-xs font-semibold text-foreground flex-1">{meta.title}</p>
-        <span className="rounded-full bg-yellow-400/20 px-2 py-0.5 text-[10px] font-medium text-yellow-700 dark:text-yellow-300">Preview</span>
-      </div>
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+      <Card size="sm" className="gap-0 py-0 ring-primary/25 bg-primary/5">
+        <CardHeader className="grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-border/60 px-4 py-3">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md border bg-primary/15 text-foreground">
+            <Icon className="h-3.5 w-3.5" />
+          </div>
+          <CardTitle className="text-xs">{meta.title}</CardTitle>
+          <Badge variant="secondary" className="rounded-md bg-primary/15 text-foreground">Preview</Badge>
+        </CardHeader>
 
-      <div className="px-3.5 pb-3 space-y-2.5">
+        <CardContent className="px-4 py-3 space-y-2.5">
         {proposal.summary && <p className="text-xs text-muted-foreground leading-snug">{proposal.summary}</p>}
 
         {proposal.kind === 'carousel_layout' && <CarouselDiff proposal={proposal} />}
@@ -504,35 +509,31 @@ function ProposalCard({ proposal }: { proposal: GenieProposal }) {
 
         {/* Action / result */}
         {status === 'applied' ? (
-          <div className="flex items-center gap-2 rounded-xl bg-green-50 dark:bg-green-900/20 px-3 py-2.5 text-xs font-medium text-green-700 dark:text-green-400">
+          <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-medium text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-400">
             <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
             {resultMsg || 'Done.'}
           </div>
         ) : (
           <div className="space-y-1.5">
-            <button
+            <Button
               onClick={apply}
               disabled={status === 'applying'}
-              className={cn(
-                'w-full flex items-center justify-center gap-2 rounded-xl h-10 text-sm font-semibold transition-all',
-                status === 'applying'
-                  ? 'bg-muted text-muted-foreground cursor-wait'
-                  : 'bg-yellow-400 text-yellow-950 hover:bg-yellow-500 shadow-sm shadow-yellow-400/25',
-              )}
+              className="w-full"
             >
               {status === 'applying'
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Applying…</>
                 : <><Check className="h-4 w-4" /> {meta.cta}</>}
-            </button>
+            </Button>
             {status === 'error' && (
-              <div className="flex items-center gap-1.5 text-[11px] text-red-600 dark:text-red-400 px-1">
+              <div className="flex items-center gap-1.5 text-[11px] text-destructive px-1">
                 <AlertCircle className="h-3 w-3 flex-shrink-0" />
                 {resultMsg}
               </div>
             )}
           </div>
         )}
-      </div>
+        </CardContent>
+      </Card>
     </motion.div>
   );
 }
@@ -545,7 +546,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   if (isUser) {
     return (
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
-        <div className="max-w-[82%] rounded-2xl rounded-br-sm bg-yellow-400 px-4 py-2.5 text-sm font-medium text-yellow-950 shadow-sm">
+        <div className="max-w-[82%] rounded-md rounded-br-sm bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-xs">
           {message.content}
         </div>
       </motion.div>
@@ -594,12 +595,12 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.2 }}
-            className="max-w-full rounded-2xl rounded-bl-sm bg-muted/60 px-3.5 py-2.5 text-sm text-foreground"
+            className="max-w-full rounded-md rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm text-foreground ring-1 ring-border/60"
           >
             {message.isStreaming ? (
               <span style={{ whiteSpace: 'pre-wrap' }} className="leading-snug text-sm">
                 {message.content}
-                <span className="inline-block h-[1em] w-0.5 ml-0.5 bg-yellow-500 animate-pulse align-text-bottom" />
+                <span className="inline-block h-[1em] w-0.5 ml-0.5 bg-primary animate-pulse align-text-bottom" />
               </span>
             ) : message.content ? (
               <div
@@ -659,10 +660,9 @@ const AGENT_SUGGESTIONS = [
 
 function SuggestionPill({ text, onClick }: { text: string; onClick: () => void }) {
   return (
-    <button onClick={onClick}
-      className="rounded-full border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground hover:border-yellow-400 hover:text-foreground transition-all whitespace-nowrap">
+    <Button type="button" variant="outline" size="sm" onClick={onClick} className="whitespace-nowrap">
       {text}
-    </button>
+    </Button>
   );
 }
 
@@ -946,8 +946,8 @@ export function GeniePanel() {
         className={cn(
           'fixed right-3 top-[1.5%] z-50 flex flex-col',
           'max-w-[calc(100vw-24px)]',
-          'rounded-2xl overflow-hidden',
-          'shadow-2xl shadow-black/15 border border-border/50 bg-background',
+          'rounded-md overflow-hidden',
+          'shadow-xl border border-border bg-background',
         )}
         style={{
           height: '97vh',
@@ -969,7 +969,7 @@ export function GeniePanel() {
                   <AnimatePresence mode="wait">
                     {isLoading
                       ? <motion.p key="l" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                          className="text-[11px] text-yellow-600 dark:text-yellow-400 mt-0.5">Thinking...</motion.p>
+                          className="text-[11px] text-primary mt-0.5">Thinking...</motion.p>
                       : <motion.p key="i" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                           className="text-[11px] text-muted-foreground mt-0.5">{agentActive ? 'Store agent · acts on your store' : 'Elite cycling advisor'}</motion.p>}
                   </AnimatePresence>
@@ -978,47 +978,40 @@ export function GeniePanel() {
 
               <div className="flex items-center gap-1 flex-shrink-0">
                 {user && view === 'chat' && !agentActive && (
-                  <button onClick={() => setView('history')} title="History"
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                  <Button variant="ghost" size="icon-sm" onClick={() => setView('history')} title="History">
                     <Clock className="h-4 w-4" />
-                  </button>
+                  </Button>
                 )}
                 {view === 'history' && (
-                  <button onClick={() => setView('chat')}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                  <Button variant="ghost" size="icon-sm" onClick={() => setView('chat')}>
                     <ArrowLeft className="h-4 w-4" />
-                  </button>
+                  </Button>
                 )}
-                <button onClick={toggleExpand} title={isExpanded ? 'Collapse' : 'Expand'}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                <Button variant="ghost" size="icon-sm" onClick={toggleExpand} title={isExpanded ? 'Collapse' : 'Expand'}>
                   {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                </button>
-                <button onClick={close}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                </Button>
+                <Button variant="ghost" size="icon-sm" onClick={close}>
                   <X className="h-4 w-4" />
-                </button>
+                </Button>
               </div>
             </div>
 
             {/* ── Mode Toggle — verified bicycle stores only ──── */}
             {isStore && view === 'chat' && (
               <div className="flex-shrink-0 px-4 pt-2.5">
-                <div className="flex gap-1 rounded-xl bg-muted/60 p-1">
-                  <button onClick={() => switchMode('advisor')}
-                    className={cn(
-                      'flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-all',
-                      !agentActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-                    )}>
-                    <Sparkles className="h-3.5 w-3.5" /> Advisor
-                  </button>
-                  <button onClick={() => switchMode('agent')}
-                    className={cn(
-                      'flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-all',
-                      agentActive ? 'bg-yellow-400 text-yellow-950 shadow-sm' : 'text-muted-foreground hover:text-foreground',
-                    )}>
-                    <Store className="h-3.5 w-3.5" /> Agent
-                  </button>
-                </div>
+                <Tabs value={mode} onValueChange={(value) => switchMode(value as 'advisor' | 'agent')} className="w-full">
+                  <TabsList className="grid h-auto w-full grid-cols-2 p-0.5">
+                    <TabsTrigger value="advisor" className="gap-1.5 py-1.5 text-xs">
+                      <Sparkles className="h-3.5 w-3.5" /> Advisor
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="agent"
+                      className="gap-1.5 py-1.5 text-xs data-active:bg-primary data-active:text-primary-foreground dark:data-active:bg-primary dark:data-active:text-primary-foreground"
+                    >
+                      <Store className="h-3.5 w-3.5" /> Agent
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
               </div>
             )}
 
@@ -1027,11 +1020,10 @@ export function GeniePanel() {
               <div className="flex-1 overflow-y-auto">
                 <div className="px-4 pt-4 pb-2 flex items-center justify-between">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Past conversations</p>
-                  <button onClick={startNewChat}
-                    className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium bg-yellow-400 text-yellow-950 hover:bg-yellow-500 transition-colors">
+                  <Button size="sm" onClick={startNewChat}>
                     <MessageSquarePlus className="h-3.5 w-3.5" />
                     New chat
-                  </button>
+                  </Button>
                 </div>
                 {historyLoading ? (
                   <div className="flex items-center justify-center py-12">
@@ -1047,8 +1039,8 @@ export function GeniePanel() {
                   <div className="px-3 pb-4 space-y-1">
                     {conversations.map(conv => (
                       <button key={conv.id} onClick={() => loadConversation(conv.id)}
-                        className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-muted/60 transition-colors group">
-                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-yellow-400/20 text-yellow-600 dark:text-yellow-400">
+                        className="w-full flex items-center gap-3 rounded-md px-3 py-2.5 text-left hover:bg-muted/60 transition-colors group">
+                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border bg-primary/15 text-foreground">
                           <GenieLogo className="h-4 w-4" />
                         </div>
                         <div className="flex-1 min-w-0">
@@ -1112,10 +1104,12 @@ export function GeniePanel() {
                   </div>
                 )}
 
-                <div className="flex-shrink-0 bg-background/80 backdrop-blur px-4 py-3">
+                <div className="flex-shrink-0 border-t border-border bg-background px-4 py-3">
                   <form onSubmit={handleSubmit}>
                     <div className="relative">
-                      <textarea ref={inputRef} value={input}
+                      <Textarea
+                        ref={inputRef}
+                        value={input}
                         onChange={e => {
                           setInput(e.target.value);
                           e.target.style.height = 'auto';
@@ -1123,23 +1117,19 @@ export function GeniePanel() {
                         }}
                         onKeyDown={handleKeyDown}
                         placeholder={agentActive ? 'Tell the agent what to change…' : 'Ask anything about bikes...'}
-                        rows={2} disabled={isLoading}
-                        className={cn(
-                          'w-full resize-none rounded-2xl border border-border bg-muted/50',
-                          'px-4 py-3.5 pr-14 text-sm text-foreground placeholder:text-muted-foreground',
-                          'focus:outline-none focus:ring-2 focus:ring-yellow-400/40 focus:border-yellow-400/50',
-                          'disabled:opacity-50 disabled:cursor-not-allowed min-h-[84px] max-h-[180px] leading-relaxed',
-                        )}
-                        style={{ height: '84px' }} />
-                      <button type="submit" disabled={!input.trim() || isLoading}
-                        className={cn(
-                          'absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-xl transition-all duration-150',
-                          input.trim() && !isLoading
-                            ? 'bg-yellow-400 text-yellow-950 hover:bg-yellow-500 shadow-md shadow-yellow-400/25'
-                            : 'bg-muted/80 text-muted-foreground cursor-not-allowed',
-                        )}>
+                        rows={2}
+                        disabled={isLoading}
+                        className="min-h-[84px] max-h-[180px] resize-none pr-14 leading-relaxed"
+                        style={{ height: '84px' }}
+                      />
+                      <Button
+                        type="submit"
+                        size="icon-sm"
+                        disabled={!input.trim() || isLoading}
+                        className="absolute bottom-3 right-3"
+                      >
                         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      </button>
+                      </Button>
                     </div>
                   </form>
                   <p className="mt-1.5 text-center text-[10px] text-muted-foreground/50">

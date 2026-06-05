@@ -4,6 +4,10 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { Package, Store, User, Clock, Settings, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle, LogOut } from "lucide-react";
+import {
+  bicycleStoreNavLabels,
+  individualUserNavLabels,
+} from "@/lib/marketplace-nav";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -59,19 +63,19 @@ const individualUserItems: NavItem[] = [
   },
   {
     type: 'item',
-    title: "My Store",
+    title: individualUserNavLabels.shopfront,
     value: "my-store",
     icon: Store,
   },
   {
     type: 'item',
-    title: "Order Management",
+    title: individualUserNavLabels.orders,
     value: "purchases",
     icon: ShoppingBag,
   },
   {
     type: 'item',
-    title: "Settings",
+    title: individualUserNavLabels.settings,
     value: "settings",
     icon: Settings,
   },
@@ -84,19 +88,19 @@ const storeUserItems: NavItem[] = [
   },
   {
     type: 'item',
-    title: "My Store",
+    title: bicycleStoreNavLabels.shopfront,
     value: "my-store",
     icon: Store,
   },
   {
     type: 'item',
-    title: "Order Management",
+    title: bicycleStoreNavLabels.orders,
     value: "purchases",
     icon: ShoppingBag,
   },
   {
     type: 'item',
-    title: "Settings",
+    title: bicycleStoreNavLabels.settings,
     value: "settings",
     icon: Settings,
   },

@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   AlertCircle,
+  CheckCircle2,
   ChevronDown,
   FileSpreadsheet,
   Loader2,
@@ -10,8 +11,17 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -29,6 +39,9 @@ import {
 } from "@/components/optimize/optimize-layout";
 
 const HEADER_PREVIEW_MAX_ROWS = 20;
+
+const CSV_IMPORT_DIALOG_CLASS =
+  "animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out flex h-[min(90dvh,44rem)] max-h-[90dvh] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-md bg-white p-0 sm:max-w-5xl";
 
 export interface CsvImportMeta {
   id: string;
@@ -70,10 +83,38 @@ export interface EnrichedFromCsv {
 }
 
 interface Props {
-  onEnriched: (products: EnrichedFromCsv[]) => void;
   onError: (message: string | null) => void;
-  onlineOnlyBadge: boolean;
-  onOnlineOnlyBadgeChange: (value: boolean) => void;
+}
+
+interface ListingCreateSummary {
+  created: number;
+  skippedDuplicates: number;
+  errors: string[];
+}
+
+function enrichedRowToProduct(row: CsvImportTableRow): EnrichedFromCsv | null {
+  if (row.status !== "enriched" || !row.enriched || typeof row.enriched !== "object") {
+    return null;
+  }
+  const e = row.enriched as Record<string, unknown>;
+  const name = typeof e.name === "string" ? e.name.trim() : "";
+  if (!name) return null;
+  return {
+    csvRowId: row.id,
+    rowIndex: row.rowIndex,
+    name,
+    brand: typeof e.brand === "string" ? e.brand : "",
+    price: typeof e.price === "number" && Number.isFinite(e.price) ? e.price : null,
+    soh: typeof e.soh === "number" && Number.isFinite(e.soh) ? e.soh : null,
+    category: typeof e.category === "string" && e.category.trim() ? e.category : "Parts",
+    subcategory:
+      typeof e.subcategory === "string" && e.subcategory.trim() ? e.subcategory : "Other",
+    description: typeof e.description === "string" ? e.description : "",
+    specs: typeof e.specs === "string" ? e.specs : "",
+    isDuplicate: false,
+    duplicateOfId: null,
+    duplicateOfName: null,
+  };
 }
 
 export function OnlineOnlyBadgeToggle({
@@ -132,12 +173,8 @@ function statusLabel(status: string) {
   }
 }
 
-export function StoreOnlineProductsCsvPanel({
-  onEnriched,
-  onError,
-  onlineOnlyBadge,
-  onOnlineOnlyBadgeChange,
-}: Props) {
+export function StoreOnlineProductsCsvPanel({ onError }: Props) {
+  const router = useRouter();
   const [imports, setImports] = React.useState<CsvImportMeta[]>([]);
   const [activeImportId, setActiveImportId] = React.useState<string | null>(null);
   const [activeImport, setActiveImport] = React.useState<CsvImportMeta | null>(null);
@@ -145,7 +182,9 @@ export function StoreOnlineProductsCsvPanel({
   const [loading, setLoading] = React.useState(true);
   const [uploading, setUploading] = React.useState(false);
   const [enriching, setEnriching] = React.useState(false);
+  const [creatingListings, setCreatingListings] = React.useState(false);
   const [enrichProgress, setEnrichProgress] = React.useState<string | null>(null);
+  const [listingSummary, setListingSummary] = React.useState<ListingCreateSummary | null>(null);
   const [expandedRowId, setExpandedRowId] = React.useState<string | null>(null);
   const [rowViewTab, setRowViewTab] = React.useState<RowViewTab>("all");
   const [pendingUpload, setPendingUpload] = React.useState<{
@@ -286,6 +325,12 @@ export function StoreOnlineProductsCsvPanel({
     void handleUpload(pendingUpload.file, headerRowIndex);
   };
 
+  const dismissPendingUpload = () => {
+    if (uploading) return;
+    setPendingUpload(null);
+    onError(null);
+  };
+
   const handleDeleteImport = async () => {
     if (!activeImportId || !confirm("Delete this saved CSV import?")) return;
     try {
@@ -305,6 +350,52 @@ export function StoreOnlineProductsCsvPanel({
       onError(err instanceof Error ? err.message : "Delete failed");
     }
   };
+
+  const createListingsFromEnriched = React.useCallback(
+    async (items: EnrichedFromCsv[]) => {
+      if (items.length === 0) return null;
+
+      setCreatingListings(true);
+      onError(null);
+
+      try {
+        const res = await fetch("/api/store/online-products/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            products: items.map((p) => ({
+              name: p.name,
+              brand: p.brand || null,
+              price: p.price,
+              soh: p.soh,
+              description: p.description || null,
+              specs: p.specs || null,
+              category: p.category || "Parts",
+              subcategory: p.subcategory || "Other",
+              selectedCandidates: [],
+              primaryUrl: "",
+            })),
+            onlineOnly: false,
+            csvLinks: items.map((p) => ({ csvRowId: p.csvRowId })),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Failed to create listings");
+        }
+
+        return {
+          created: typeof data.created === "number" ? data.created : 0,
+          skippedDuplicates:
+            typeof data.skippedDuplicates === "number" ? data.skippedDuplicates : 0,
+          errors: Array.isArray(data.errors) ? (data.errors as string[]) : [],
+        } satisfies ListingCreateSummary;
+      } finally {
+        setCreatingListings(false);
+      }
+    },
+    [onError],
+  );
 
   const handleEnrich = async () => {
     if (!activeImportId) return;
@@ -357,7 +448,16 @@ export function StoreOnlineProductsCsvPanel({
         return;
       }
 
-      onEnriched(nonDuplicates);
+      const summary = await createListingsFromEnriched(nonDuplicates);
+      if (activeImportId) await loadImport(activeImportId);
+
+      if (summary) {
+        if (summary.created === 0 && summary.errors.length > 0) {
+          onError(summary.errors[0] ?? "No listings were created.");
+          return;
+        }
+        setListingSummary(summary);
+      }
     } catch (err) {
       onError(err instanceof Error ? err.message : "Enrichment failed");
     } finally {
@@ -366,7 +466,31 @@ export function StoreOnlineProductsCsvPanel({
     }
   };
 
+  const handleCreateListings = async () => {
+    const items = rows
+      .map(enrichedRowToProduct)
+      .filter((p): p is EnrichedFromCsv => p !== null);
+    if (items.length === 0) {
+      onError("No enriched rows ready to create as listings.");
+      return;
+    }
+    try {
+      const summary = await createListingsFromEnriched(items);
+      if (activeImportId) await loadImport(activeImportId);
+      if (summary) {
+        if (summary.created === 0 && summary.errors.length > 0) {
+          onError(summary.errors[0] ?? "No listings were created.");
+          return;
+        }
+        setListingSummary(summary);
+      }
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Failed to create listings");
+    }
+  };
+
   const selectedCount = rows.filter((r) => r.isSelected).length;
+  const readyToCreateCount = rows.filter((r) => r.status === "enriched").length;
   const pendingEnrichCount = rows.filter(
     (r) => r.isSelected && !["duplicate", "created", "skipped", "enriched"].includes(r.status),
   ).length;
@@ -392,13 +516,47 @@ export function StoreOnlineProductsCsvPanel({
     return <OptimiseLoadingState label="Loading saved CSV imports…" />;
   }
 
+  if (listingSummary) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 rounded-md border border-border/60 bg-white py-16 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
+          <CheckCircle2 className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
+        </div>
+        <div>
+          <p className="text-base font-semibold text-foreground">
+            {listingSummary.created} listing{listingSummary.created === 1 ? "" : "s"} created
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground max-w-md">
+            Saved as manual listings in Products. Optimise images in Photos and polish descriptions
+            in Copy when you are ready.
+          </p>
+          {listingSummary.skippedDuplicates > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {listingSummary.skippedDuplicates} skipped as duplicates of existing store products.
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button size="sm" onClick={() => router.push("/products?source=manual")}>
+            View products
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => router.push("/optimize?workflow=photos")}>
+            Optimise photos
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setListingSummary(null)}>
+            Back to CSV
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-0">
-      <OnlineOnlyBadgeToggle
-        value={onlineOnlyBadge}
-        onChange={onOnlineOnlyBadgeChange}
-        disabled={uploading || enriching}
-      />
+      <div className="rounded-md border border-border/60 bg-white px-4 py-3 text-sm text-muted-foreground">
+        CSV rows are saved as <span className="font-medium text-foreground">manual / other</span>{" "}
+        listings in Products. Use the Photos and Copy tabs to add images and polish descriptions.
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 py-3">
         <div className="flex flex-wrap items-center gap-2 min-w-0">
@@ -451,154 +609,192 @@ export function StoreOnlineProductsCsvPanel({
           <OnlineProductsGenerationTooltip />
         </div>
         {activeImport && (
-          <Button
-            size="sm"
-            onClick={() => void handleEnrich()}
-            disabled={enriching || pendingEnrichCount === 0}
-          >
-            {enriching ? (
-              <><Loader2 className="size-4 animate-spin" /> {enrichProgress ?? "Optimising…"}</>
-            ) : (
-              <><Sparkles className="size-4" /> Optimise selected with AI ({pendingEnrichCount || selectedCount})</>
+          <>
+            {readyToCreateCount > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleCreateListings()}
+                disabled={enriching || creatingListings}
+              >
+                {creatingListings ? (
+                  <><Loader2 className="size-4 animate-spin" /> Creating listings…</>
+                ) : (
+                  <>Create {readyToCreateCount} listing{readyToCreateCount === 1 ? "" : "s"}</>
+                )}
+              </Button>
             )}
-          </Button>
+            <Button
+              size="sm"
+              onClick={() => void handleEnrich()}
+              disabled={enriching || creatingListings || pendingEnrichCount === 0}
+            >
+              {enriching ? (
+                <><Loader2 className="size-4 animate-spin" /> {enrichProgress ?? "Optimising…"}</>
+              ) : (
+                <><Sparkles className="size-4" /> Optimise selected with AI ({pendingEnrichCount || selectedCount})</>
+              )}
+            </Button>
+          </>
         )}
       </div>
 
-      {pendingUpload && (
-        <div className="space-y-4 border-b border-border/60 py-4">
-          <div>
-            <p className="text-sm font-medium text-foreground">Choose header row</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Select the row that contains your column titles (e.g. Name, SKU, Price). Rows above it are
-              ignored. File: {pendingUpload.file.name}
-            </p>
-          </div>
+      <Dialog
+        open={Boolean(pendingUpload)}
+        onOpenChange={(open) => {
+          if (!open) dismissPendingUpload();
+        }}
+      >
+        <DialogContent
+          className={CSV_IMPORT_DIALOG_CLASS}
+          overlayClassName="duration-200 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0"
+          showCloseButton={!uploading}
+          onInteractOutside={(event) => {
+            if (uploading) event.preventDefault();
+          }}
+          onEscapeKeyDown={(event) => {
+            if (uploading) event.preventDefault();
+          }}
+        >
+          {pendingUpload ? (
+            <>
+              <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left">
+                <DialogTitle className="text-base">Import CSV</DialogTitle>
+                <DialogDescription className="text-left">
+                  Select the row with your column titles (e.g. Name, SKU, Price). Rows above it are
+                  ignored. File: <span className="font-medium text-foreground">{pendingUpload.file.name}</span>
+                </DialogDescription>
+              </DialogHeader>
 
-          <div className="overflow-hidden rounded-md border border-border/60">
-            <div className="max-h-[min(50vh,400px)] overflow-auto">
-              <table className="w-full min-w-max text-sm border-collapse">
-                <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm border-b border-border">
-                  <tr>
-                    <th className="sticky left-0 z-20 w-28 min-w-28 border-r border-border bg-muted/95 px-2 py-2 text-left text-xs font-medium text-muted-foreground">
-                      Header
-                    </th>
-                    <th className="w-12 min-w-12 px-2 py-2 text-left text-xs font-medium text-muted-foreground">
-                      #
-                    </th>
-                    {Array.from({ length: previewColumnCount }, (_, i) => (
-                      <th
-                        key={`col-${i}`}
-                        className="min-w-[100px] max-w-[200px] px-2 py-2 text-left text-xs font-medium text-muted-foreground"
-                      >
-                        Col {i + 1}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewRows.map((cells, rowIndex) => {
-                    const isHeader = rowIndex === headerRowIndex;
-                    const hasDataBelow = rowIndex < pendingUpload.parsedRows.length - 1;
-                    return (
-                      <tr
-                        key={rowIndex}
-                        className={cn(
-                          "border-b border-border/60",
-                          isHeader && "bg-primary/5",
-                        )}
-                      >
-                        <td className="sticky left-0 z-[1] border-r border-border/60 bg-white px-2 py-2 align-top">
-                          <button
-                            type="button"
-                            disabled={!hasDataBelow || uploading}
-                            onClick={() => setHeaderRowIndex(rowIndex)}
-                            className={cn(
-                              "w-full rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
-                              isHeader
-                                ? "bg-white text-gray-800 shadow-sm"
-                                : hasDataBelow
-                                  ? "text-gray-600 hover:bg-gray-100"
-                                  : "text-muted-foreground cursor-not-allowed opacity-50",
-                            )}
-                          >
-                            {isHeader ? "Header row" : "Use as header"}
-                          </button>
-                        </td>
-                        <td className="px-2 py-2 align-top text-xs text-muted-foreground tabular-nums">
-                          {rowIndex + 1}
-                        </td>
-                        {Array.from({ length: previewColumnCount }, (_, colIndex) => (
-                          <td
-                            key={`${rowIndex}-${colIndex}`}
-                            className="min-w-[100px] max-w-[200px] px-2 py-2 align-top text-xs text-foreground"
-                          >
-                            <span className="block break-words whitespace-pre-wrap">
-                              {cells[colIndex] ?? ""}
-                            </span>
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+              <div className="min-h-0 flex-1 overflow-hidden px-6 py-4">
+                <div className="flex h-full min-h-[12rem] flex-col overflow-hidden rounded-md border border-border/60 bg-white">
+                  <div className="min-h-0 flex-1 overflow-auto">
+                    <table className="w-full min-w-max text-sm border-collapse">
+                      <thead className="sticky top-0 z-10 border-b border-border bg-muted/80 backdrop-blur-sm">
+                        <tr>
+                          <th className="sticky left-0 z-20 w-28 min-w-28 border-r border-border bg-muted/95 px-2 py-2 text-left text-xs font-medium text-muted-foreground">
+                            Header
+                          </th>
+                          <th className="w-12 min-w-12 px-2 py-2 text-left text-xs font-medium text-muted-foreground">
+                            #
+                          </th>
+                          {Array.from({ length: previewColumnCount }, (_, i) => (
+                            <th
+                              key={`col-${i}`}
+                              className="min-w-[100px] max-w-[200px] px-2 py-2 text-left text-xs font-medium text-muted-foreground"
+                            >
+                              Col {i + 1}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewRows.map((cells, rowIndex) => {
+                          const isHeader = rowIndex === headerRowIndex;
+                          const hasDataBelow = rowIndex < pendingUpload.parsedRows.length - 1;
+                          return (
+                            <tr
+                              key={rowIndex}
+                              className={cn(
+                                "border-b border-border/60",
+                                isHeader && "bg-primary/5",
+                              )}
+                            >
+                              <td className="sticky left-0 z-[1] border-r border-border/60 bg-white px-2 py-2 align-top">
+                                <button
+                                  type="button"
+                                  disabled={!hasDataBelow || uploading}
+                                  onClick={() => setHeaderRowIndex(rowIndex)}
+                                  className={cn(
+                                    "w-full rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                                    isHeader
+                                      ? "bg-white text-gray-800 shadow-sm"
+                                      : hasDataBelow
+                                        ? "text-gray-600 hover:bg-gray-200/70"
+                                        : "text-muted-foreground cursor-not-allowed opacity-50",
+                                  )}
+                                >
+                                  {isHeader ? "Header row" : "Use as header"}
+                                </button>
+                              </td>
+                              <td className="px-2 py-2 align-top text-xs text-muted-foreground tabular-nums">
+                                {rowIndex + 1}
+                              </td>
+                              {Array.from({ length: previewColumnCount }, (_, colIndex) => (
+                                <td
+                                  key={`${rowIndex}-${colIndex}`}
+                                  className="min-w-[100px] max-w-[200px] px-2 py-2 align-top text-xs text-foreground"
+                                >
+                                  <span className="block break-words whitespace-pre-wrap">
+                                    {cells[colIndex] ?? ""}
+                                  </span>
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
 
-          {pendingUpload.parsedRows.length > HEADER_PREVIEW_MAX_ROWS && (
-            <p className="text-xs text-muted-foreground">
-              Showing first {HEADER_PREVIEW_MAX_ROWS} of {pendingUpload.parsedRows.length} non-empty rows.
-            </p>
-          )}
+                {pendingUpload.parsedRows.length > HEADER_PREVIEW_MAX_ROWS && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Showing first {HEADER_PREVIEW_MAX_ROWS} of {pendingUpload.parsedRows.length}{" "}
+                    non-empty rows.
+                  </p>
+                )}
+              </div>
 
-          <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">Columns: </span>
-            {previewHeaders.length > 0
-              ? previewHeaders.join(", ")
-              : "Select a header row"}
-            {previewDataRowCount > 0 && (
-              <span className="text-muted-foreground">
-                {" "}
-                · {previewDataRowCount} product row{previewDataRowCount === 1 ? "" : "s"} will be imported
-              </span>
-            )}
-          </p>
+              <div className="shrink-0 space-y-3 border-t border-border/60 bg-white px-6 py-4">
+                <div className="rounded-md border border-border/60 bg-white px-3 py-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Columns: </span>
+                  {previewHeaders.length > 0
+                    ? previewHeaders.join(", ")
+                    : "Select a header row"}
+                  {previewDataRowCount > 0 && (
+                    <span>
+                      {" "}
+                      · {previewDataRowCount} product row
+                      {previewDataRowCount === 1 ? "" : "s"} will be imported
+                    </span>
+                  )}
+                </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={uploading}
-              onClick={() => {
-                setPendingUpload(null);
-                onError(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={uploading || previewDataRowCount < 1}
-              onClick={() => confirmPendingUpload()}
-            >
-              {uploading ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Importing…
-                </>
-              ) : (
-                <>
-                  <Upload className="size-4" />
-                  Import {previewDataRowCount} row{previewDataRowCount === 1 ? "" : "s"}
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      )}
+                <DialogFooter className="gap-2 sm:justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={uploading}
+                    onClick={dismissPendingUpload}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={uploading || previewDataRowCount < 1}
+                    onClick={() => confirmPendingUpload()}
+                  >
+                    {uploading ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Importing…
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="size-4" />
+                        Import {previewDataRowCount} row{previewDataRowCount === 1 ? "" : "s"}
+                      </>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {activeImport ? (
         <div className="space-y-0">
@@ -615,7 +811,8 @@ export function StoreOnlineProductsCsvPanel({
                   {duplicateCount > 0 && <> · {duplicateCount} duplicates</>}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Select rows, then run AI optimisation. Your selection is saved automatically.
+                  Select rows, run AI optimisation, then listings are created automatically. Your
+                  selection is saved automatically.
                 </p>
               </div>
             </div>
@@ -695,8 +892,8 @@ export function StoreOnlineProductsCsvPanel({
                         colSpan={sheetHeaders.length + 3}
                         className="px-4 py-10 text-center text-sm text-muted-foreground"
                       >
-                        No duplicates in this import. Duplicates are flagged when a row matches your
-                        online catalog or another row in the same file.
+                        No duplicates in this import. Duplicates are flagged when a row matches an
+                        existing store product or another row in the same file.
                       </td>
                     </tr>
                   )}

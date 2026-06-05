@@ -31,6 +31,8 @@ export interface ServerProfile {
   marketing_emails?: boolean | null
   inventory_alerts?: boolean | null
   shipping_address?: ServerShippingAddress | null
+  bio?: string | null
+  preferences?: { store_setup_completed?: boolean } | null
 }
 
 /**
@@ -51,7 +53,7 @@ export const getUserProfile = cache(async (): Promise<ServerProfile | null> => {
     // Fetch user profile with only the fields needed for UI
     const { data, error } = await supabase
       .from('users')
-      .select('logo_url, business_name, name, first_name, last_name, account_type, bicycle_store, uber_notification_phones, opening_hours, phone, store_type, address, website, email_notifications, order_alerts, marketing_emails, inventory_alerts, shipping_address')
+      .select('logo_url, business_name, name, first_name, last_name, account_type, bicycle_store, uber_notification_phones, opening_hours, phone, store_type, address, website, email_notifications, order_alerts, marketing_emails, inventory_alerts, shipping_address, bio, preferences')
       .eq('user_id', user.id)
       .single()
     

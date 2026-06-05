@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Loader2, Zap } from "lucide-react";
 import {
@@ -27,6 +28,7 @@ const CRUMBS: Record<string, { section: string; page: string }> = {
   "/products": { section: "Store", page: "Products" },
   "/optimize": { section: "Store", page: "Optimise" },
   "/settings/store": { section: "Store", page: "Storefront" },
+  "/settings/store/nest": { section: "Store", page: "Nest" },
   "/settings/my-listings": { section: "Marketplace", page: "My listings" },
   "/settings/drafts": { section: "Marketplace", page: "Drafts" },
   "/settings/purchases": { section: "Marketplace", page: "Orders" },
@@ -87,8 +89,8 @@ export function Topbar() {
       </Breadcrumb>
 
       <div className="ml-auto flex items-center gap-2">
-        {showAgentInHeader ? <AgentHeaderButton /> : null}
         <TopbarNavPills />
+        {showAgentInHeader ? <AgentHeaderButton /> : null}
         {!lightspeedLoading && lightspeedConnected ? (
           isSyncing ? (
             <div className={cn(topbarPillClass, "hidden sm:inline-flex")}>
@@ -97,7 +99,13 @@ export function Topbar() {
             </div>
           ) : formattedLastSync && formattedLastSync !== "Never" ? (
             <div className={cn(topbarPillClass, "hidden sm:inline-flex")}>
-              <span className="size-1.5 rounded-full bg-emerald-500" />
+              <Image
+                src="/ls.png"
+                alt="Lightspeed"
+                width={14}
+                height={14}
+                className="h-3.5 w-3.5 object-contain"
+              />
               <span className="text-gray-600">Synced {formattedLastSync}</span>
             </div>
           ) : null

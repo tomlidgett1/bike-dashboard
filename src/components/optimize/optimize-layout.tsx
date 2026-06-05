@@ -5,7 +5,7 @@ import { Loader2, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-/** Underline workflow tabs (Photos / Copy / Online products). */
+/** Underline workflow tabs (Photos / Copy / CSV/Image). */
 export function OptimiseWorkflowTabs({
   items,
   activeId,

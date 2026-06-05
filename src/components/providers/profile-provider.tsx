@@ -42,6 +42,7 @@ export interface UserPreferences {
   experience_level?: string
   budget_range?: string
   interests?: string[]
+  store_setup_completed?: boolean
 }
 
 export interface SocialLinks {
@@ -205,10 +206,12 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
         address: serverProfile.address || '',
         website: serverProfile.website || '',
         logo_url: serverProfile.logo_url || googlePicture || undefined,
+        opening_hours: (serverProfile.opening_hours as OpeningHours | undefined) ?? undefined,
+        bio: serverProfile.bio || '',
         account_type: accountType,
         bicycle_store: serverProfile.bicycle_store ?? false,
         uber_notification_phones: serverProfile.uber_notification_phones ?? [],
-        preferences: {},
+        preferences: serverProfile.preferences ?? {},
         onboarding_completed: false,
         email_notifications: serverProfile.email_notifications ?? true,
         order_alerts: serverProfile.order_alerts ?? true,

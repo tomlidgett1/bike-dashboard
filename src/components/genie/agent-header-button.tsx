@@ -35,7 +35,7 @@ export function AgentHeaderButton() {
         )}
         aria-hidden
       />
-      <span className="text-gray-900">Agent</span>
+      <span className="text-yj-agent-shimmer font-semibold">Agent</span>
     </button>
   );
 }

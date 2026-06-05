@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   BadgeCheck,
@@ -10,7 +9,6 @@ import {
   LogOut,
   Settings,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,10 +37,6 @@ export function NavUser() {
     profile?.name ||
     "Account";
   const email = profile?.email ?? "";
-  const initials =
-    (`${profile?.first_name?.[0] ?? ""}${profile?.last_name?.[0] ?? ""}`.trim() ||
-      displayName[0] ||
-      "?").toUpperCase();
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -60,20 +54,6 @@ export function NavUser() {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <Avatar className="size-8 rounded-md">
-                {profile?.logo_url ? (
-                  <Image
-                    src={profile.logo_url}
-                    alt={displayName}
-                    width={32}
-                    height={32}
-                    className="size-8 rounded-md object-cover"
-                  />
-                ) : null}
-                <AvatarFallback className="rounded-md bg-muted text-xs font-semibold">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{displayName}</span>
                 <span className="truncate text-xs text-muted-foreground">
@@ -90,21 +70,7 @@ export function NavUser() {
             sideOffset={4}
           >
             <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="size-8 rounded-md">
-                  {profile?.logo_url ? (
-                    <Image
-                      src={profile.logo_url}
-                      alt={displayName}
-                      width={32}
-                      height={32}
-                      className="size-8 rounded-md object-cover"
-                    />
-                  ) : null}
-                  <AvatarFallback className="rounded-md bg-muted text-xs font-semibold">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
+              <div className="px-1 py-1.5 text-left text-sm">
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">{displayName}</span>
                   <span className="truncate text-xs text-muted-foreground">

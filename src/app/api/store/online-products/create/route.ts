@@ -29,10 +29,14 @@ interface CandidateImage {
   height?: number;
 }
 
+interface CsvRowLink {
+  csvRowId: string;
+}
+
 interface IncomingProduct {
   name: string;
   brand: string | null;
-  price: number;
+  price: number | null;
   soh?: number | null;
   description: string | null;
   specs: string | null;
@@ -109,6 +113,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const products: IncomingProduct[] = body.products || [];
+    const csvLinks: CsvRowLink[] = Array.isArray(body.csvLinks) ? body.csvLinks : [];
     const onlineOnly = body.onlineOnly !== false;
     const listingSource = onlineOnly ? 'online_catalog' : 'manual';
     const skuPrefix = onlineOnly ? 'ONLINE' : 'STORE';
@@ -141,6 +146,9 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      const resolvedPrice =
+        typeof product.price === 'number' && Number.isFinite(product.price) ? product.price : 0;
+
       // 1. Find or create canonical product
       const canonicalId = await ensureCanonical(supabase, product.name, product.brand);
 
@@ -157,7 +165,7 @@ export async function POST(request: NextRequest) {
           description: product.name,
           display_name: product.name,
           brand: product.brand,
-          price: product.price,
+          price: resolvedPrice,
           marketplace_category: product.category,
           marketplace_subcategory: product.subcategory,
           product_description: product.description || null,
@@ -177,6 +185,18 @@ export async function POST(request: NextRequest) {
       }
 
       createdIds.push(inserted.id);
+
+      const csvRowId = csvLinks[i]?.csvRowId;
+      if (csvRowId) {
+        await supabase
+          .from('online_product_csv_rows')
+          .update({
+            status: 'created',
+            created_product_id: inserted.id,
+            is_selected: false,
+          })
+          .eq('id', csvRowId);
+      }
 
       const matchKey = catalogMatchKey(product.name, product.brand);
       if (matchKey) {

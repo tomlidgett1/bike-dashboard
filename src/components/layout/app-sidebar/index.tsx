@@ -8,6 +8,7 @@ import {
   Database,
   LayoutDashboard,
   LifeBuoy,
+  MessageSquare,
   Package,
   Settings,
   ShieldCheck,
@@ -62,6 +63,7 @@ const NAV: NavGroup[] = [
     label: "Store",
     items: [
       { title: "Home", href: "/settings/store/home", icon: LayoutDashboard, exact: true },
+      { title: "Nest", href: "/settings/store/nest", icon: MessageSquare, exact: true },
       { title: "Products", href: "/products", icon: Package },
       {
         title: "Storefront",

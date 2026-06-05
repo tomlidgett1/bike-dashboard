@@ -30,13 +30,19 @@ import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/dashboard";
 import {
   CategoryPicker,
+  DEFAULT_OPTIMIZER_PRODUCT_LIMIT,
   EmptyCategoryPrompt,
+  formatOptimizerProductCount,
   hasDesc,
   hasSpecs,
   hasTitle,
   type CopyField,
   type OptimizerProduct,
+  type OptimizerProductLimit,
+  type OptimizerProductScope,
   type TextStep,
+  OptimizerScopeTabs,
+  ProductLimitPicker,
   productLabel,
   readSSE,
   useOptimizerCategories,
@@ -75,8 +81,13 @@ function rowStatus(run: RowRun | undefined): "idle" | "running" | "done" | "erro
 
 export function CopyQueue() {
   const { categories, loadingCats } = useOptimizerCategories();
+  const [scope, setScope] = React.useState<OptimizerProductScope>("catalogue");
   const [category, setCategory] = React.useState("");
-  const { products, setProducts, loading, loadProducts } = useOptimizerProducts(category);
+  const [productLimit, setProductLimit] = React.useState<OptimizerProductLimit>(
+    DEFAULT_OPTIMIZER_PRODUCT_LIMIT,
+  );
+  const { products, setProducts, loading, loadProducts, totalInCategory } =
+    useOptimizerProducts(category, productLimit, scope);
   const { rejectedIds, rejectProduct } = useRejectedProducts();
 
   const [search, setSearch] = React.useState("");
@@ -92,8 +103,21 @@ export function CopyQueue() {
 
   const abortRef = React.useRef<AbortController | null>(null);
 
+  const onScopeChange = (next: OptimizerProductScope) => {
+    setScope(next);
+    setCategory("");
+    setSelected(new Set());
+    setRuns({});
+  };
+
   const onCategoryChange = (cat: string) => {
     setCategory(cat);
+    setSelected(new Set());
+    setRuns({});
+  };
+
+  const onProductLimitChange = (limit: OptimizerProductLimit) => {
+    setProductLimit(limit);
     setSelected(new Set());
     setRuns({});
   };
@@ -276,43 +300,67 @@ export function CopyQueue() {
     setRunning(false);
   };
 
-  if (!category && !loadingCats) {
+  if (scope === "catalogue" && !category && !loadingCats) {
     return (
-      <EmptyCategoryPrompt
-        loadingCats={loadingCats}
-        category={category}
-        categories={categories}
-        onChange={onCategoryChange}
-        title="AI copy for your catalogue"
-        description="Choose a category, select products, and generate titles and descriptions in one batch."
-      />
+      <div className="space-y-6">
+        <OptimizerScopeTabs scope={scope} onChange={onScopeChange} />
+        <EmptyCategoryPrompt
+          loadingCats={loadingCats}
+          category={category}
+          categories={categories}
+          onChange={onCategoryChange}
+          title="AI copy for your catalogue"
+          description="Choose a category, select products, and generate titles and descriptions in one batch."
+        />
+      </div>
     );
   }
 
   const categoryMeta = categories.find((c) => c.id === category);
+  const showCataloguePicker = scope === "catalogue";
 
   return (
     <div>
       <OptimiseToolbar>
         <div className="flex flex-wrap items-center gap-3 min-w-0">
-          <CategoryPicker
-            category={category}
-            categories={categories}
-            loadingCats={loadingCats}
-            disabled={running}
-            onChange={onCategoryChange}
-            className="h-9 w-full rounded-md sm:w-[min(100%,280px)]"
-          />
-          {categoryMeta && category !== "all" && (
-            <span className="text-sm text-muted-foreground tabular-nums shrink-0">
-              {categoryMeta.count}
+          <OptimizerScopeTabs scope={scope} disabled={running} onChange={onScopeChange} />
+          {showCataloguePicker ? (
+            <CategoryPicker
+              category={category}
+              categories={categories}
+              loadingCats={loadingCats}
+              disabled={running}
+              onChange={onCategoryChange}
+              className="h-9 w-full rounded-md sm:w-[min(100%,280px)]"
+            />
+          ) : (
+            <span className="text-sm text-muted-foreground shrink-0">
+              Manual / CSV·image imports
             </span>
           )}
+          <ProductLimitPicker
+            limit={productLimit}
+            disabled={running || loading}
+            onChange={onProductLimitChange}
+          />
+          {!loading && products.length > 0 ? (
+            <span className="text-sm text-muted-foreground tabular-nums shrink-0">
+              {formatOptimizerProductCount(products.length, totalInCategory)}
+            </span>
+          ) : scope === "csv_image" && totalInCategory != null ? (
+            <span className="text-sm text-muted-foreground tabular-nums shrink-0">
+              {totalInCategory} manual listing{totalInCategory === 1 ? "" : "s"}
+            </span>
+          ) : categoryMeta && category !== "all" ? (
+            <span className="text-sm text-muted-foreground tabular-nums shrink-0">
+              {categoryMeta.count} in category
+            </span>
+          ) : null}
         </div>
         <OptimiseSearchInput value={search} onChange={setSearch} />
       </OptimiseToolbar>
 
-      {category && !loading && (
+      {(scope === "csv_image" || category) && !loading && (
         <>
           <OptimiseSubToolbar>
             <div className="min-w-0 space-y-2">
@@ -388,7 +436,7 @@ export function CopyQueue() {
                 variant="outline"
                 size="sm"
                 disabled={loading || running}
-                onClick={() => void loadProducts(category)}
+                onClick={() => void loadProducts(category, productLimit, scope)}
               >
                 <RefreshCw className={cn("size-4", loading && "animate-spin")} />
               </Button>
@@ -415,11 +463,21 @@ export function CopyQueue() {
 
       {loading ? (
         <OptimiseLoadingState />
+      ) : products.length === 0 && scope === "csv_image" ? (
+        <OptimiseCenteredState>
+          <StatusBadge label="No CSV/Image products yet" tone="neutral" />
+          <p className="mt-3 max-w-md text-sm text-muted-foreground">
+            Import a CSV on the CSV/Image tab and create listings first. They will appear here as
+            manual products ready for titles and descriptions.
+          </p>
+        </OptimiseCenteredState>
       ) : filtered.length === 0 ? (
         <OptimiseCenteredState>
           <StatusBadge label="Copy complete" tone="success" />
           <p className="mt-3 max-w-md text-sm text-muted-foreground">
-            Every product in this view already has the selected fields filled.
+            {scope === "csv_image"
+              ? "Every CSV/Image import in this batch already has the selected fields filled."
+              : "Every product in this view already has the selected fields filled."}
           </p>
         </OptimiseCenteredState>
       ) : (

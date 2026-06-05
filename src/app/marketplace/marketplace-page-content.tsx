@@ -16,7 +16,6 @@ import type { MarketplaceSpace } from "@/lib/types/marketplace";
 import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type AdvancedFiltersState } from "@/components/marketplace/advanced-filters";
 import { StoresGrid } from "@/components/marketplace/stores-grid";
 import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-modal";
-import { SplitSearchResults } from "@/components/marketplace/split-search-results";
 import { PromoBannerCarousel } from "@/components/marketplace/promo-banner-carousel";
 import { useUserVouchers } from "@/lib/hooks/use-user-vouchers";
 import { Button } from "@/components/ui/button";
@@ -114,6 +113,12 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const [searchQuery, setSearchQuery] = React.useState<string | null>(
     searchParams.get('search') || null
   );
+  const isProductSearchActive = Boolean(searchQuery?.trim());
+
+  React.useEffect(() => {
+    const urlSearch = searchParams.get('search');
+    setSearchQuery(urlSearch || null);
+  }, [searchParams]);
 
   // Category filter state (3 levels)
   const [selectedLevel1, setSelectedLevel1] = React.useState<string | null>(
@@ -416,19 +421,34 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     }
   }, [recentlyAdded]);
 
+  const resolvedListingType = React.useMemo((): 'store_inventory' | 'private_listing' | undefined => {
+    if (isProductSearchActive) {
+      if (isStoreInventoryView || isUberView) return 'store_inventory';
+      if (isMarketplaceView) return undefined;
+    }
+    if (listingTypeFilter === 'stores') return 'store_inventory';
+    if (listingTypeFilter === 'individuals') return 'private_listing';
+    return undefined;
+  }, [
+    isProductSearchActive,
+    isStoreInventoryView,
+    isUberView,
+    isMarketplaceView,
+    listingTypeFilter,
+  ]);
+
   // Create stable params object - DON'T include page in SWR key for pagination
   const marketplaceParams = React.useMemo(() => ({
     viewMode,
     page: 1,
     pageSize: MARKETPLACE_INITIAL_PAGE_SIZE,
     // Stores tab uses category_name (Lightspeed); marketplace tab uses marketplace_category
-    level1: isStoreInventoryView ? null : selectedLevel1,
-    level2: selectedLevel2,
-    level3: selectedLevel3,
-    lsCategory: isStoreInventoryView ? selectedLevel1 : null,
+    level1: isProductSearchActive ? null : isStoreInventoryView ? null : selectedLevel1,
+    level2: isProductSearchActive ? null : selectedLevel2,
+    level3: isProductSearchActive ? null : selectedLevel3,
+    lsCategory: isProductSearchActive ? null : isStoreInventoryView ? selectedLevel1 : null,
     search: searchQuery,
-    listingType: listingTypeFilter === 'stores' ? 'store_inventory' as const :
-                 listingTypeFilter === 'individuals' ? 'private_listing' as const : undefined,
+    listingType: resolvedListingType,
     storeId: selectedStoreId,
     minPrice: advancedFilters.minPrice || null,
     maxPrice: advancedFilters.maxPrice || null,
@@ -437,7 +457,20 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     brand: advancedFilters.brand || null,
     createdAfter: createdAfter,
     uberOnly: isUberView,
-  }), [isStoreInventoryView, isUberView, viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, listingTypeFilter, selectedStoreId, advancedFilters, createdAfter]);
+  }), [
+    isStoreInventoryView,
+    isUberView,
+    isProductSearchActive,
+    viewMode,
+    selectedLevel1,
+    selectedLevel2,
+    selectedLevel3,
+    searchQuery,
+    resolvedListingType,
+    selectedStoreId,
+    advancedFilters,
+    createdAfter,
+  ]);
 
   // Only seed SWR with server-prefetched products in the default public view.
   // We still revalidate on mount so recently deactivated listings disappear
@@ -520,6 +553,14 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const nextCursor = localNextCursor ?? pagination?.nextCursor ?? initialPagination?.nextCursor ?? null;
   const totalCount = pagination?.total ?? initialPagination?.total ?? 0;
 
+  React.useEffect(() => {
+    setCurrentPage(1);
+    setAccumulatedProducts([]);
+    processedDataRef.current = new Set();
+    setLocalHasMore(null);
+    setLocalNextCursor(null);
+  }, [searchQuery]);
+
   // Resolve the currently selected store object (for identity strip)
   const selectedStore = React.useMemo(
     () => (selectedStoreId ? stores.find(s => s.id === selectedStoreId) ?? null : null),
@@ -568,9 +609,11 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
   // Filter products by selected store category (client-side, instant)
   const displayProducts = React.useMemo(() => {
-    if (!selectedStoreCategory || !isStoresView) return products;
+    if (!selectedStoreCategory || !isStoresView || isProductSearchActive) return products;
     return products.filter(p => p.marketplace_category === selectedStoreCategory);
-  }, [products, selectedStoreCategory, isStoresView]);
+  }, [products, selectedStoreCategory, isStoresView, isProductSearchActive]);
+
+  const gridProducts = displayProducts;
 
   // Fetch stores when in stores view
   React.useEffect(() => {
@@ -743,7 +786,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   // Infinite scroll — re-observe whenever the ability to load more changes
   React.useEffect(() => {
     const el = bottomSentinelRef.current;
-    if (!el || !hasMore || isPaginating || isValidating || searchQuery) return;
+    if (!el || !hasMore || isPaginating || isValidating) return;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -1095,8 +1138,9 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               categoriesLoading={isStoreInventoryView ? storesViewCategoriesLoading : loading}
               mobileBrowseSheetOpen={mobileBrowseSheetOpen}
               onMobileBrowseSheetOpenChange={setMobileBrowseSheetOpen}
+              suppressCategoryBrowse={isProductSearchActive}
             />
-            {isStoresView && selectedStoreId && storeCategories.length > 0 && (
+            {isStoresView && selectedStoreId && storeCategories.length > 0 && !isProductSearchActive && (
               <div className="px-3 pt-2 pb-2.5">
                 <StoreCategoryPills
                   categories={storeCategories}
@@ -1156,6 +1200,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     onProductGridLayoutChange={setProductGridLayout}
                     dynamicCategories={storesViewCategories}
                     categoriesLoading={storesViewCategoriesLoading}
+                    suppressCategoryBrowse={isProductSearchActive}
                     additionalFilters={
                       <AdvancedFilters
                         filters={advancedFilters}
@@ -1168,7 +1213,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       />
                     }
                   />
-                  {selectedStoreId && storeCategories.length > 0 && (
+                  {selectedStoreId && storeCategories.length > 0 && !isProductSearchActive && (
                     <StoreCategoryPills
                       categories={storeCategories}
                       selectedCategory={selectedStoreCategory}
@@ -1285,6 +1330,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       onProductGridLayoutChange={setProductGridLayout}
                       dynamicCategories={isUberView ? storesViewCategories : marketplaceCategories}
                       categoriesLoading={isUberView ? storesViewCategoriesLoading : loading}
+                      suppressCategoryBrowse={isProductSearchActive}
                       additionalFilters={
                         <AdvancedFilters
                           filters={advancedFilters}
@@ -1301,7 +1347,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                 )}
 
                 {/* Active Advanced Filters Summary */}
-                {viewMode === 'all' && activeFilterCount > 0 && (
+                {viewMode === 'all' && activeFilterCount > 0 && !isProductSearchActive && (
                   <div className="flex items-center gap-2 flex-wrap animate-in fade-in slide-in-from-top-2 duration-200">
                     <span className="text-xs text-gray-500 font-medium">Active filters:</span>
                     {advancedFilters.minPrice && (
@@ -1385,24 +1431,38 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                 )}
 
                 <div className="space-y-4">
-                    {/* Split Search Results - Shows both Stores and Marketplace sections */}
-                    {searchQuery && (
-                      <SplitSearchResults
-                        searchQuery={searchQuery}
-                        onClearSearch={handleClearSearch}
-                        isAdmin={isAdmin}
-                        onNavigate={() => setIsNavigating(true)}
-                        onImageDiscoveryClick={(productId, productName) => {
-                          setImageDiscoveryModal({
-                            isOpen: true,
-                            productId,
-                            productName,
-                          });
-                        }}
-                      />
+                    {isProductSearchActive && (
+                      <div className="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Search className="h-4 w-4 flex-shrink-0 text-gray-400" />
+                          <p className="min-w-0 truncate text-sm text-gray-600">
+                            {loading && gridProducts.length === 0 ? (
+                              <>Searching for “{searchQuery?.trim()}”…</>
+                            ) : gridProducts.length === 0 ? (
+                              <>No results for “{searchQuery?.trim()}”</>
+                            ) : (
+                              <>
+                                <span className="font-semibold text-gray-900 tabular-nums">
+                                  {totalCount > 0 ? totalCount : gridProducts.length}
+                                </span>
+                                {" "}
+                                {totalCount === 1 || gridProducts.length === 1 ? "result" : "results"} for “
+                                {searchQuery?.trim()}”
+                              </>
+                            )}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleClearSearch}
+                          className="flex-shrink-0 rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                        >
+                          Clear
+                        </button>
+                      </div>
                     )}
 
-                    {!searchQuery && (loading || displayProducts.length > 0) && (
+                    {(loading || gridProducts.length > 0) && (
                       <div className="min-h-0">
                         {loading ? (
                           <div className="space-y-3">
@@ -1413,7 +1473,9 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                             )}
                             <div
                               className={
-                                productGridLayout === "grid8"
+                                isProductSearchActive
+                                  ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2 sm:gap-3 md:gap-4"
+                                  : productGridLayout === "grid8"
                                   ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
                                   : productGridLayout === "grid4"
                                   ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
@@ -1421,7 +1483,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                               }
                             >
                               {Array.from({
-                                length: isStoreInventoryView ? 12 : 36,
+                                length: isProductSearchActive ? 24 : isStoreInventoryView ? 12 : 36,
                               }).map((_, i) => (
                                 <ProductCardSkeleton key={i} layout="grid" />
                               ))}
@@ -1430,20 +1492,22 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                         ) : (
                           <div
                             className={cn(
-                              productGridLayout === "grid8"
+                              isProductSearchActive
+                                ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2 sm:gap-3 md:gap-4"
+                                : productGridLayout === "grid8"
                                 ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
                                 : productGridLayout === "grid4"
                                 ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
                                 : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3",
                             )}
                           >
-                            {displayProducts.map((product, index) => (
+                            {gridProducts.map((product, index) => (
                               <React.Fragment key={product.id}>
                                 <ProductCard
                                   product={product}
-                                  priority={index < 6}
+                                  priority={index < 8}
                                   layout="grid"
-                                  compact={productGridLayout === "grid8"}
+                                  compact={!isProductSearchActive && productGridLayout === "grid8"}
                                   isAdmin={isAdmin}
                                   onNavigate={() => setIsNavigating(true)}
                                   onImageDiscoveryClick={(productId) => {
@@ -1455,7 +1519,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                                     });
                                   }}
                                 />
-                                {MARKETPLACE_PROMO_BANNERS_ENABLED &&
+                                {!isProductSearchActive &&
+                                  MARKETPLACE_PROMO_BANNERS_ENABLED &&
                                   index === 11 &&
                                   isMarketplaceView && (
                                   <div>
@@ -1469,7 +1534,25 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       </div>
                     )}
 
-                    {!searchQuery && !loading && products.length === 0 && (
+                    {isProductSearchActive && !loading && gridProducts.length === 0 && (
+                      <div className="rounded-md border border-gray-200 bg-white p-12 text-center">
+                        <Search className="mx-auto mb-4 h-16 w-16 text-gray-300" />
+                        <h3 className="mb-2 text-xl font-semibold text-gray-900">
+                          No matching products
+                        </h3>
+                        <p className="mx-auto mb-6 max-w-md text-gray-600">
+                          Nothing matched “{searchQuery?.trim()}”. Try different keywords or clear the search.
+                        </p>
+                        <Button
+                          onClick={handleClearSearch}
+                          className="rounded-md bg-[#ffde59] font-medium text-gray-900 hover:bg-[#f0cf45]"
+                        >
+                          Clear search
+                        </Button>
+                      </div>
+                    )}
+
+                    {!isProductSearchActive && !loading && products.length === 0 && (
                       <div className="bg-white rounded-md border border-gray-200 p-12 text-center">
                         {isUberView ? (
                           <>
@@ -1597,7 +1680,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     <div ref={bottomSentinelRef} className="h-4" aria-hidden="true" />
 
                     {/* Skeleton cards while next page loads */}
-                    {!searchQuery && isPaginating && displayProducts.length > 0 && (
+                    {isPaginating && gridProducts.length > 0 && (
                       <div className={
                         productGridLayout === "grid8"
                           ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"

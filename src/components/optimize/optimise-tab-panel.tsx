@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FileText, Globe, ImageIcon } from "lucide-react";
+import { FileSpreadsheet, FileText, ImageIcon } from "lucide-react";
 import { PhotoQueue } from "@/components/optimize/photo-queue";
 import { CopyQueue } from "@/components/optimize/copy-queue";
 import { OptimiseWorkflowTabs } from "@/components/optimize/optimize-layout";
@@ -17,7 +17,7 @@ const WORKFLOWS: {
 }[] = [
   { id: "photos", label: "Photos", icon: ImageIcon },
   { id: "copy", label: "Copy", icon: FileText },
-  { id: "online", label: "Online products", icon: Globe },
+  { id: "online", label: "CSV/Image", icon: FileSpreadsheet },
 ];
 
 function parseWorkflow(param: string | null): OptimiseWorkflow {

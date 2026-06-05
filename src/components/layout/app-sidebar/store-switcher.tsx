@@ -28,7 +28,7 @@ export function StoreSwitcher() {
   return (
     <div
       className={cn(
-        "rounded-md border border-gray-300 bg-white p-1 shadow-md",
+        "rounded-full border border-gray-200 bg-white p-1 shadow-md",
         "group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:w-full group-data-[collapsible=icon]:justify-center",
         "group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:shadow-none"
       )}
@@ -41,11 +41,11 @@ export function StoreSwitcher() {
                 size="lg"
                 tooltip={name}
                 className={cn(
-                  "h-11 bg-transparent hover:bg-gray-100 active:bg-gray-100 data-[state=open]:bg-gray-100 data-[state=open]:text-foreground",
+                  "h-11 rounded-full bg-transparent hover:bg-gray-100 active:bg-gray-100 data-[state=open]:bg-gray-100 data-[state=open]:text-foreground",
                   "group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0!"
                 )}
               >
-              <div className="flex aspect-square size-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary text-primary-foreground group-data-[collapsible=icon]:hidden">
+              <div className="flex aspect-square size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-primary-foreground group-data-[collapsible=icon]:hidden">
                 <StoreSidebarLogo logoUrl={profile?.logo_url} alt={name} />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">

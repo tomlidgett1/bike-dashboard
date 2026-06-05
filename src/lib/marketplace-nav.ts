@@ -24,30 +24,84 @@ export const marketplaceBrowsingNavItems: MarketplaceNavItem[] = [
   },
 ];
 
+/** Bike-store header nav — labels match what each destination actually does. */
+export const bicycleStoreNavLabels = {
+  /** Public storefront customers see on the marketplace */
+  shopfront: "Shopfront",
+  /** Sales orders, listings, offers, and support claims */
+  orders: "Orders & Listings",
+  /** Account, business, payments, logo, hours, integrations */
+  settings: "Store Settings",
+} as const;
+
+export const individualUserNavLabels = {
+  shopfront: "My Store",
+  orders: "Order Management",
+  settings: "Settings",
+} as const;
+
+export type MarketplaceUserNavLabels =
+  | typeof bicycleStoreNavLabels
+  | typeof individualUserNavLabels;
+
+export function getMarketplaceUserNavLabels(
+  accountType: string | null | undefined,
+): MarketplaceUserNavLabels {
+  return accountType === "bicycle_store"
+    ? bicycleStoreNavLabels
+    : individualUserNavLabels;
+}
+
 export const marketplaceIndividualUserNavItems: MarketplaceNavItem[] = [
   { type: "separator" },
   {
     type: "item",
-    title: "My Store",
+    title: individualUserNavLabels.shopfront,
     value: "my-store",
     icon: Store,
   },
   {
     type: "item",
-    title: "Order Management",
+    title: individualUserNavLabels.orders,
     value: "purchases",
     icon: ShoppingBag,
   },
   {
     type: "item",
-    title: "Settings",
+    title: individualUserNavLabels.settings,
     value: "settings",
     icon: Settings,
   },
 ];
 
-export const marketplaceStoreUserNavItems: MarketplaceNavItem[] =
-  marketplaceIndividualUserNavItems;
+export const marketplaceStoreUserNavItems: MarketplaceNavItem[] = [
+  { type: "separator" },
+  {
+    type: "item",
+    title: bicycleStoreNavLabels.shopfront,
+    value: "my-store",
+    icon: Store,
+  },
+  {
+    type: "item",
+    title: bicycleStoreNavLabels.orders,
+    value: "purchases",
+    icon: ShoppingBag,
+  },
+  {
+    type: "item",
+    title: bicycleStoreNavLabels.settings,
+    value: "settings",
+    icon: Settings,
+  },
+];
+
+/** @deprecated Use getMarketplaceUserNavLabels(accountType).settings */
+export function getMarketplaceSettingsNavLabel(
+  accountType: string | null | undefined,
+): string {
+  return getMarketplaceUserNavLabels(accountType).settings;
+}
 
 export function getMarketplaceActiveView(
   pathname: string,

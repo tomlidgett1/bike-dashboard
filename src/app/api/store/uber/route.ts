@@ -178,6 +178,41 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true, notificationPhones: phones });
   }
 
+  if ('enableUberDelivery' in body) {
+    const enable = !!body.enableUberDelivery;
+
+    if (enable) {
+      if ('notificationPhones' in body) {
+        const phones = normaliseUberNotificationPhones(body.notificationPhones);
+        const { error: phoneError } = await supabase
+          .from('users')
+          .update({ uber_notification_phones: phones, updated_at: new Date().toISOString() })
+          .eq('user_id', user!.id);
+
+        if (phoneError) {
+          console.error('[Store Uber] Phone update error:', phoneError);
+          return NextResponse.json({ error: 'Failed to save phone numbers' }, { status: 500 });
+        }
+      }
+
+      const { error: productError } = await supabase
+        .from('products')
+        .update({
+          uber_delivery_enabled: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user!.id)
+        .eq('is_active', true);
+
+      if (productError) {
+        console.error('[Store Uber] Bulk enable error:', productError);
+        return NextResponse.json({ error: 'Failed to enable Uber delivery' }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ success: true, enableUberDelivery: enable });
+  }
+
   if ('productId' in body && 'uberDeliveryEnabled' in body) {
     const productId = String(body.productId || '');
     if (!productId) {

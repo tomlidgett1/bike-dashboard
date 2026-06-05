@@ -89,7 +89,6 @@ export async function POST(
       .from('products')
       .select('id, display_name, description, brand')
       .eq('user_id', user.id)
-      .eq('listing_source', 'online_catalog')
       .eq('listing_type', 'store_inventory');
 
     const enrichedProducts = markEnrichedDuplicates(products, (existingRows ?? []) as ExistingCatalogProduct[]);

@@ -261,7 +261,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
             <div
               key={product.id}
               data-analytics-product-id={product.id}
-              className="snap-start min-w-0 flex-none overflow-hidden"
+              className="snap-start flex-none overflow-hidden"
               style={{ width: colWidth, height: colHeight }}
             >
               <ProductCard
@@ -347,10 +347,10 @@ function CarouselRow({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // How many cards fit on screen — used only to decide when to show "See All" (grid expand).
+  // The horizontal carousel always includes every product so arrows can scroll the full set.
   const collapsedLimit = getCollapsedCarouselLimit(catSize, viewportWidth);
-  const displayedProducts = isExpanded
-    ? cat.products
-    : cat.products.slice(0, collapsedLimit);
+  const displayedProducts = cat.products;
   const showSeeAll = cat.products.length > collapsedLimit;
 
   const checkScroll = React.useCallback(() => {
@@ -360,27 +360,46 @@ function CarouselRow({
     setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
   }, []);
 
+  // Reset scroll position only when carousel content/mode changes — not on every
+  // checkScroll re-render (displayedProducts used to be a fresh .slice() each render).
+  React.useEffect(() => {
+    if (isExpanded) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = 0;
+    checkScroll();
+  }, [isExpanded, cat.id, cat.products.length, checkScroll]);
+
   React.useEffect(() => {
     const el = scrollRef.current;
     if (!el || isExpanded) return;
-    el.scrollLeft = 0;
+
     const t = setTimeout(checkScroll, 60);
     el.addEventListener("scroll", checkScroll, { passive: true });
     window.addEventListener("resize", checkScroll);
+
+    const resizeObserver = new ResizeObserver(() => checkScroll());
+    resizeObserver.observe(el);
+
     return () => {
       clearTimeout(t);
       el.removeEventListener("scroll", checkScroll);
       window.removeEventListener("resize", checkScroll);
+      resizeObserver.disconnect();
     };
-  }, [checkScroll, isExpanded, displayedProducts]);
+  }, [checkScroll, isExpanded, cat.id, cat.products.length]);
 
   const scrollCarousel = (dir: "left" | "right") => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollBy({
-      left: dir === "left" ? -(el.clientWidth * 0.75) : el.clientWidth * 0.75,
-      behavior: "smooth",
-    });
+    const scrollAmount = el.clientWidth * 0.75;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    const target =
+      dir === "left"
+        ? Math.max(0, el.scrollLeft - scrollAmount)
+        : Math.min(maxScroll, el.scrollLeft + scrollAmount);
+
+    el.scrollTo({ left: target, behavior: "smooth" });
   };
 
   const toggleExpanded = () => {
@@ -469,6 +488,90 @@ function CarouselRow({
         scrollRef={scrollRef}
       />
     </section>
+  );
+}
+
+function applyStoreProductFilters(
+  products: MarketplaceProduct[],
+  options: {
+    searchQuery: string;
+    showSaleOnly: boolean;
+    saleProductIds: Set<string>;
+    sort: SortKey;
+  },
+): MarketplaceProduct[] {
+  let filtered = [...products];
+  if (options.showSaleOnly) {
+    filtered = filtered.filter((p) => options.saleProductIds.has(p.id));
+  }
+  const q = options.searchQuery.trim().toLowerCase();
+  if (q) {
+    filtered = filtered.filter(
+      (p) =>
+        (p.display_name ?? p.description ?? "").toLowerCase().includes(q) ||
+        (p.description ?? "").toLowerCase().includes(q),
+    );
+  }
+  switch (options.sort) {
+    case "price-asc":
+      filtered.sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+      break;
+    case "price-desc":
+      filtered.sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+      break;
+    case "newest":
+      filtered.sort(
+        (a, b) =>
+          new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime(),
+      );
+      break;
+    default:
+      break;
+  }
+  return filtered;
+}
+
+// ── Flat grid shown while the store product search box has a query ───────────
+function ProductSearchResultsGrid({
+  products,
+  compact,
+  storeId,
+  trackAnalytics,
+}: {
+  products: MarketplaceProduct[];
+  compact: boolean;
+  storeId: string;
+  trackAnalytics?: boolean;
+}) {
+  const impressionRef = useProductImpressions(
+    trackAnalytics ? storeId : null,
+    products,
+    { expanded: true, carouselSize: compact ? "compact" : "normal", rowIndex: 0 },
+  );
+
+  const gridCls = cn(
+    "grid",
+    compact && "gap-2",
+    !compact && "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3 sm:gap-4",
+  );
+  const gridStyle = compact
+    ? { gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))" }
+    : undefined;
+
+  return (
+    <div ref={impressionRef} className={gridCls} style={gridStyle}>
+      {products.map((product, index) => (
+        <div key={product.id} data-analytics-product-id={product.id}>
+          <ProductCard
+            product={product}
+            priority={index < 8}
+            hideStoreMeta
+            compact={compact}
+            storeId={storeId}
+          />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -726,29 +829,44 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     [allProducts]
   );
 
+  const isProductSearchActive = storeSearch.trim().length > 0;
+
+  const filterOptions = React.useMemo(
+    () => ({ searchQuery: storeSearch, showSaleOnly, saleProductIds, sort }),
+    [storeSearch, showSaleOnly, saleProductIds, sort],
+  );
+
+  const searchedProducts = React.useMemo(() => {
+    const pool = selectedCategory
+      ? store.categories
+          .filter((c) => c.name === selectedCategory)
+          .flatMap((c) => c.products)
+      : allProducts;
+    const seen = new Set<string>();
+    const unique: MarketplaceProduct[] = [];
+    for (const p of pool) {
+      if (!seen.has(p.id)) {
+        seen.add(p.id);
+        unique.push(p);
+      }
+    }
+    return applyStoreProductFilters(unique, filterOptions);
+  }, [allProducts, selectedCategory, store.categories, filterOptions]);
+
   const sortedCategories = React.useMemo(() => {
     const cats = selectedCategory
       ? store.categories.filter((c) => c.name === selectedCategory)
       : store.categories;
-    const q = storeSearch.trim().toLowerCase();
-    return cats.map((cat) => {
-      let products = [...cat.products];
-      if (showSaleOnly) products = products.filter((p) => saleProductIds.has(p.id));
-      if (q) {
-        products = products.filter(
-          (p) =>
-            (p.display_name ?? p.description ?? "").toLowerCase().includes(q) ||
-            (p.description ?? "").toLowerCase().includes(q)
-        );
-      }
-      switch (sort) {
-        case "price-asc": products.sort((a, b) => (a.price ?? 0) - (b.price ?? 0)); break;
-        case "price-desc": products.sort((a, b) => (b.price ?? 0) - (a.price ?? 0)); break;
-        case "newest": products.sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()); break;
-      }
-      return { ...cat, products, logo_url: cat.logo_url ?? null };
-    });
-  }, [selectedCategory, showSaleOnly, saleProductIds, sort, store.categories, storeSearch]);
+    return cats.map((cat) => ({
+      ...cat,
+      products: applyStoreProductFilters(cat.products, filterOptions),
+      logo_url: cat.logo_url ?? null,
+    }));
+  }, [selectedCategory, store.categories, filterOptions]);
+
+  const visibleProductCount = isProductSearchActive
+    ? searchedProducts.length
+    : sortedCategories.reduce((n, c) => n + c.products.length, 0);
 
   const directionsUrl = store.address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`
@@ -1108,56 +1226,82 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
             storeContentShell
           )}>
             <div className="flex items-center gap-2 sm:gap-3">
-              {/* Category pills (scrollable) */}
-              <div className="flex items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide flex-1 min-w-0">
-                {/* Sale pill — only when discounted products exist */}
-                {saleProductIds.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowSaleOnly((v) => !v)}
-                    className={cn(
-                      "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
-                      showSaleOnly
-                        ? "bg-red-600 text-white border-red-600"
-                        : "bg-white text-red-600 border-red-200 hover:bg-red-50"
-                    )}
-                  >
-                    <Tag className="h-3.5 w-3.5 flex-shrink-0" />
-                    Sale
-                    <span className={cn(
-                      "text-[11px] font-semibold rounded-full px-1.5 py-0 leading-5",
-                      showSaleOnly ? "bg-white/20 text-white" : "bg-red-100 text-red-600"
-                    )}>
-                      {saleProductIds.size}
-                    </span>
-                  </button>
-                )}
-                {store.categories.map((cat) => {
-                  const CatIcon = getCategoryIcon(cat.name);
-                  return (
+              {isProductSearchActive ? (
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {saleProductIds.size > 0 && (
                     <button
-                      key={cat.id}
                       type="button"
-                      onClick={() => setSelectedCategory((cur) => (cur === cat.name ? null : cat.name))}
+                      onClick={() => setShowSaleOnly((v) => !v)}
                       className={cn(
                         "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
-                        selectedCategory === cat.name
-                          ? "bg-gray-900 text-white border-gray-900"
-                          : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                        showSaleOnly
+                          ? "bg-red-600 text-white border-red-600"
+                          : "bg-white text-red-600 border-red-200 hover:bg-red-50"
                       )}
                     >
-                      <CatIcon className="h-3.5 w-3.5 flex-shrink-0" />
-                      {cat.name}
+                      <Tag className="h-3.5 w-3.5 flex-shrink-0" />
+                      Sale
                     </button>
-                  );
-                })}
-              </div>
+                  )}
+                  <p className="min-w-0 text-sm text-gray-600 truncate">
+                    {visibleProductCount === 0
+                      ? `No results for “${storeSearch.trim()}”`
+                      : `${visibleProductCount} result${visibleProductCount === 1 ? "" : "s"} for “${storeSearch.trim()}”`}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide flex-1 min-w-0">
+                  {/* Sale pill — only when discounted products exist */}
+                  {saleProductIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSaleOnly((v) => !v)}
+                      className={cn(
+                        "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
+                        showSaleOnly
+                          ? "bg-red-600 text-white border-red-600"
+                          : "bg-white text-red-600 border-red-200 hover:bg-red-50"
+                      )}
+                    >
+                      <Tag className="h-3.5 w-3.5 flex-shrink-0" />
+                      Sale
+                      <span className={cn(
+                        "text-[11px] font-semibold rounded-full px-1.5 py-0 leading-5",
+                        showSaleOnly ? "bg-white/20 text-white" : "bg-red-100 text-red-600"
+                      )}>
+                        {saleProductIds.size}
+                      </span>
+                    </button>
+                  )}
+                  {store.categories.map((cat) => {
+                    const CatIcon = getCategoryIcon(cat.name);
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setSelectedCategory((cur) => (cur === cat.name ? null : cat.name))}
+                        className={cn(
+                          "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
+                          selectedCategory === cat.name
+                            ? "bg-gray-900 text-white border-gray-900"
+                            : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                        )}
+                      >
+                        <CatIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                        {cat.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Sort + density + count */}
               <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="hidden sm:inline text-sm text-gray-500 tabular-nums mr-1">
-                  {sortedCategories.reduce((n, c) => n + c.products.length, 0)} items
-                </span>
+                {!isProductSearchActive && (
+                  <span className="hidden sm:inline text-sm text-gray-500 tabular-nums mr-1">
+                    {visibleProductCount} items
+                  </span>
+                )}
                 {/* View density toggle */}
                 <div className="hidden sm:flex items-center rounded-md border border-gray-200 overflow-hidden">
                   <button
@@ -1230,17 +1374,34 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                   Loading products...
                 </div>
               ) : allProducts.length > 0 ? (
-                <ProductsTab
-                  sortedCategories={sortedCategories}
-                  sections={store.sections ?? []}
-                  pageLayout={store.homepage_config?.products_page_layout}
-                  expandedCategories={expandedCategories}
-                  setExpandedCategories={setExpandedCategories}
-                  compact={compact}
-                  isOwnProfile={viewAsOwner}
-                  storeId={store.id}
-                  trackAnalytics={!isOwnProfile}
-                />
+                isProductSearchActive ? (
+                  searchedProducts.length > 0 ? (
+                    <ProductSearchResultsGrid
+                      products={searchedProducts}
+                      compact={compact}
+                      storeId={store.id}
+                      trackAnalytics={!isOwnProfile}
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={Search}
+                      title="No matching products"
+                      body={`Nothing in this store matches “${storeSearch.trim()}”. Try a different term or clear the search.`}
+                    />
+                  )
+                ) : (
+                  <ProductsTab
+                    sortedCategories={sortedCategories}
+                    sections={store.sections ?? []}
+                    pageLayout={store.homepage_config?.products_page_layout}
+                    expandedCategories={expandedCategories}
+                    setExpandedCategories={setExpandedCategories}
+                    compact={compact}
+                    isOwnProfile={viewAsOwner}
+                    storeId={store.id}
+                    trackAnalytics={!isOwnProfile}
+                  />
+                )
               ) : (
                 <EmptyState
                   icon={Package}

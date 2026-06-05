@@ -70,6 +70,8 @@ interface UnifiedFilterBarProps {
   /** Mobile Browse: filter sheet open state (FAB lives in MarketplaceHeader). */
   mobileBrowseSheetOpen?: boolean;
   onMobileBrowseSheetOpenChange?: (open: boolean) => void;
+  /** Product search active — hide category browse rows (pills, breadcrumbs). */
+  suppressCategoryBrowse?: boolean;
 }
 
 function UberLogo({ active, className }: { active?: boolean; className?: string }) {
@@ -114,6 +116,7 @@ export function UnifiedFilterBar({
   categoriesLoading,
   mobileBrowseSheetOpen,
   onMobileBrowseSheetOpenChange,
+  suppressCategoryBrowse = false,
 }: UnifiedFilterBarProps) {
   // Mobile browse filter sheet (controlled from parent FAB or internal)
   const [uncontrolledBrowseOpen, setUncontrolledBrowseOpen] = React.useState(false);
@@ -285,7 +288,7 @@ export function UnifiedFilterBar({
           ════════════════════════════════════════ */}
 
       {/* Desktop: always shown */}
-      {showBrowseChrome && (
+      {showBrowseChrome && !suppressCategoryBrowse && (
         <div className="hidden sm:block">
           {breadcrumbs.length > 0 && (
             <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide mb-2">
@@ -348,7 +351,7 @@ export function UnifiedFilterBar({
       {/* Mobile: store picker (Stores tab only) + category pills on one compact row.
           The picker is pinned left; the pills scroll beside it.
           The advanced-filter sheet opens from the header's floating FAB. */}
-      {showBrowseChrome && (
+      {showBrowseChrome && !suppressCategoryBrowse && (
         <div className="sm:hidden">
           <div className="flex items-center gap-2 px-3 pb-2">
             {onStoreSelect && isStoresMode && (

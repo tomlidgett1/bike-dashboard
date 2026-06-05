@@ -241,6 +241,16 @@
   100% { transform: translateX(200%); }
 }
 
+@keyframes optimise-title-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes agent-text-shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
 @layer utilities {
   /* Skip rendering product cards below the fold until they're near the viewport */
   .product-card-root {
@@ -255,6 +265,54 @@
 
   .notion-hover:hover {
     @apply bg-accent;
+  }
+
+  /* Optimise photo queue — black/silver shimmer while finding images */
+  .text-optimise-finding-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      #0a0a0a 0%,
+      #262626 18%,
+      #737373 38%,
+      #d4d4d4 50%,
+      #737373 62%,
+      #262626 82%,
+      #0a0a0a 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: optimise-title-shimmer 2.2s ease-in-out infinite;
+  }
+
+  .dark .text-optimise-finding-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      #a3a3a3 0%,
+      #d4d4d4 18%,
+      #f5f5f5 38%,
+      #ffffff 50%,
+      #f5f5f5 62%,
+      #d4d4d4 82%,
+      #a3a3a3 100%
+    );
+  }
+
+  .text-yj-agent-shimmer {
+    background: linear-gradient(
+      90deg,
+      #c9a832 0%,
+      #ffde59 22%,
+      #fff6b8 50%,
+      #ffde59 78%,
+      #c9a832 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-text-shimmer 7s linear infinite;
   }
 
   /* Text selection - Notion style */

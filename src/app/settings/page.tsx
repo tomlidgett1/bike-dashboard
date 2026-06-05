@@ -59,6 +59,7 @@ import {
   SettingsField,
   StatusBadge,
 } from "@/components/dashboard";
+import { StoreSetupButton } from "@/components/settings/store-setup-button";
 
 type SectionId =
   | "account"
@@ -363,6 +364,7 @@ export default function SettingsPage() {
       <PageHeader
         title="Settings"
         description="Manage your account, store profile and preferences."
+        actions={<StoreSetupButton />}
       />
 
       {isFirstTime && (

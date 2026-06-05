@@ -1,52 +1,38 @@
-"use client";
-
-export const dynamic = "force-dynamic";
-
-import * as React from "react";
-import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
-import { useAuth } from "@/components/providers/auth-provider";
-import { useUserProfile } from "@/components/providers/profile-provider";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 
 /**
  * Shared auth guard for every Storefront sub-page. Only verified bicycle stores
  * may access /settings/store/*; others are redirected.
  */
-export default function StoreSettingsLayout({
+export default async function StoreSettingsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading: authLoading } = useAuth();
-  const { profile, loading: profileLoading } = useUserProfile();
-  const router = useRouter();
-  const [authorized, setAuthorized] = React.useState<boolean | null>(null);
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
 
-  React.useEffect(() => {
-    if (authLoading || profileLoading) return;
-    if (!user) {
-      router.replace("/marketplace");
-      return;
-    }
-    if (!profile) {
-      router.replace("/marketplace");
-      return;
-    }
-    const ok =
-      profile.account_type === "bicycle_store" && profile.bicycle_store === true;
-    if (!ok) {
-      router.replace("/marketplace/settings");
-      return;
-    }
-    setAuthorized(true);
-  }, [profile, profileLoading, authLoading, user, router]);
+  if (authError || !user) {
+    redirect("/marketplace");
+  }
 
-  if (authLoading || profileLoading || authorized === null) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="size-8 animate-spin text-muted-foreground" />
-      </div>
-    );
+  const { data: profile, error: profileError } = await supabase
+    .from("users")
+    .select("account_type, bicycle_store")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (
+    profileError ||
+    !profile ||
+    profile.account_type !== "bicycle_store" ||
+    profile.bicycle_store !== true
+  ) {
+    redirect("/marketplace/settings");
   }
 
   return <>{children}</>;
