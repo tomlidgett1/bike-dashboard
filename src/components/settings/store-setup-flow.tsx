@@ -8,7 +8,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
   Building2,
-  Check,
   ImageIcon,
   Loader2,
   MapPin,
@@ -74,8 +73,7 @@ type FormState = {
 const STEP_META: Record<StoreSetupStepId, { title: string; description: string }> = {
   welcome: {
     title: "Welcome to Yellow Jersey",
-    description:
-      "Let’s set up your storefront — one step at a time — so customers can find and trust your shop.",
+    description: "Set up your storefront in a few minutes.",
   },
   "store-name": {
     title: "What is your store called?",
@@ -511,7 +509,7 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
   };
 
   const continueLabel = () => {
-    if (stepId === "welcome") return "Get started";
+    if (stepId === "welcome") return "Continue";
     if (stepId === "complete") return "Done";
     if (stepId === "logo") return logoFile ? "Save and continue" : "Skip for now";
     if (stepId === "header-image") {
@@ -543,7 +541,7 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
       </button>
 
       <div className="flex h-full flex-col px-9 pb-8 pt-10">
-        {stepId !== "complete" && (
+        {stepId !== "complete" && stepId !== "welcome" && (
           <div className="mb-5 h-[42px] shrink-0 pr-12">
             <div className="mb-2 flex items-center justify-between text-xs font-medium text-gray-500">
               <span>
@@ -562,7 +560,9 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
           </div>
         )}
 
-        {stepId === "complete" && <div className="mb-5 h-[42px] shrink-0 pr-12" />}
+        {(stepId === "complete" || stepId === "welcome") && (
+          <div className="mb-5 h-[42px] shrink-0 pr-12" />
+        )}
 
         <AnimatePresence mode="wait">
           <motion.div
@@ -573,6 +573,25 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
             transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
             className="flex min-h-0 flex-1 flex-col"
           >
+            {stepId === "welcome" ? (
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 text-center">
+                <Image
+                  src="/yjlogo.svg"
+                  alt="Yellow Jersey"
+                  width={128}
+                  height={40}
+                  className="h-9 w-auto"
+                  priority
+                />
+                <h2 className="mt-12 text-[32px] font-semibold tracking-tight text-gray-900">
+                  Welcome to Yellow Jersey
+                </h2>
+                <p className="mt-3 max-w-[260px] text-[17px] leading-relaxed text-gray-500">
+                  Set up your storefront in a few minutes.
+                </p>
+              </div>
+            ) : (
+              <>
             <div className="h-[108px] shrink-0 pr-10">
               <h2 className="text-2xl font-bold leading-tight text-gray-900 sm:text-[28px]">
                 {meta.title}
@@ -584,31 +603,6 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
 
             <div className="mt-5 flex h-[300px] shrink-0 flex-col">
               <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                {stepId === "welcome" && (
-                  <div className="flex flex-col items-center gap-5">
-                    <Image
-                      src="/yjlogo.svg"
-                      alt="Yellow Jersey"
-                      width={160}
-                      height={48}
-                      className="h-12 w-auto"
-                      priority
-                    />
-                    <div className="w-full space-y-3 rounded-md border border-gray-200 bg-white p-4">
-                      {[
-                        "Store name, location and contact",
-                        "Custom opening hours and header image",
-                        "Storefront theme, services and integrations",
-                      ].map((item) => (
-                        <div key={item} className="flex items-center gap-2.5 text-sm text-gray-600">
-                          <Check className="h-4 w-4 shrink-0 text-gray-900" />
-                          {item}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {stepId === "store-name" && (
                   <div className="space-y-2">
                     <Label htmlFor="store-name" className="text-sm font-medium text-gray-700">
@@ -985,6 +979,8 @@ export function StoreSetupFlow({ className, onClose, onComplete }: StoreSetupFlo
                 </div>
               )}
             </div>
+              </>
+            )}
 
             <div className="mt-5 h-[108px] shrink-0">
               {stepId !== "complete" && (
