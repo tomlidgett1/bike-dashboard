@@ -669,7 +669,7 @@ function SuggestionPill({ text, onClick }: { text: string; onClick: () => void }
 // ─── Genie Panel ──────────────────────────────────────────────────────────────
 
 export function GeniePanel() {
-  const { isOpen, isExpanded, close, toggleExpand } = useGenie();
+  const { isOpen, isExpanded, close, toggleExpand, launchAsAgent, acknowledgeAgentLaunch } = useGenie();
   const { user } = useAuth();
   const { profile } = useUserProfile();
 
@@ -747,6 +747,20 @@ export function GeniePanel() {
     setLastMsgMinHeight(undefined);
     setView('chat');
   };
+
+  // Opened from the bike store header — land directly in agent mode.
+  React.useEffect(() => {
+    if (!isOpen || !launchAsAgent) return;
+    if (isStore) {
+      abortRef.current?.abort();
+      setMode('agent');
+      setMessages([]);
+      setConversationId(null);
+      setLastMsgMinHeight(undefined);
+      setView('chat');
+    }
+    acknowledgeAgentLaunch();
+  }, [isOpen, launchAsAgent, isStore, acknowledgeAgentLaunch]);
 
   const saveConversation = useCallback(async (msgs: ChatMessage[], currentId: string | null) => {
     if (!user) return null;
@@ -1002,7 +1016,7 @@ export function GeniePanel() {
                       'flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-all',
                       agentActive ? 'bg-yellow-400 text-yellow-950 shadow-sm' : 'text-muted-foreground hover:text-foreground',
                     )}>
-                    <Store className="h-3.5 w-3.5" /> Store Agent
+                    <Store className="h-3.5 w-3.5" /> Agent
                   </button>
                 </div>
               </div>
@@ -1062,7 +1076,7 @@ export function GeniePanel() {
                       <div className="mb-5">
                         <AIMotionOrb size={72} />
                       </div>
-                      <h3 className="text-base font-bold text-foreground mb-1.5">{agentActive ? 'Store Agent' : 'Yellow Jersey Genius'}</h3>
+                      <h3 className="text-base font-bold text-foreground mb-1.5">{agentActive ? 'Agent' : 'Yellow Jersey Genius'}</h3>
                       <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-[270px]">
                         {agentActive
                           ? 'Reorder your store carousels and run discounts just by asking. I’ll show a preview before anything changes.'

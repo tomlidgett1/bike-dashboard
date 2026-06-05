@@ -13,6 +13,7 @@ import {
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "./theme-toggle";
 import { TopbarNavPills, topbarPillClass } from "./topbar-nav-pills";
+import { AgentHeaderButton } from "@/components/genie/agent-header-button";
 import { NotificationsDropdown } from "./notifications-dropdown";
 import { MessagesDropdown } from "./messages-dropdown";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -62,6 +63,7 @@ function useCrumb(pathname: string) {
 
 export function Topbar() {
   const pathname = usePathname() ?? "/products";
+  const isStoreSettings = pathname.startsWith("/settings/store");
   const crumb = useCrumb(pathname);
   const { user } = useAuth();
   const { isSyncing, formattedLastSync } = useSyncStatus();
@@ -84,6 +86,7 @@ export function Topbar() {
       </Breadcrumb>
 
       <div className="ml-auto flex items-center gap-2">
+        {isStoreSettings ? <AgentHeaderButton /> : null}
         <TopbarNavPills />
         {!lightspeedLoading && lightspeedConnected ? (
           isSyncing ? (
