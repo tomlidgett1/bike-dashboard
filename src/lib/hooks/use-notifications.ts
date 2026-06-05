@@ -11,16 +11,21 @@ import type {
   GetNotificationsResponse,
 } from '@/lib/types/message';
 
-export function useNotifications(limit: number = 20, unreadOnly: boolean = false) {
+export function useNotifications(limit: number = 20, unreadOnly: boolean = false, enabled: boolean = true) {
   const [notifications, setNotifications] = useState<NotificationWithDetails[]>(
     []
   );
   const [total, setTotal] = useState(0);
   const [unread, setUnread] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   const fetchNotifications = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -48,11 +53,16 @@ export function useNotifications(limit: number = 20, unreadOnly: boolean = false
     } finally {
       setLoading(false);
     }
-  }, [limit, unreadOnly]);
+  }, [limit, unreadOnly, enabled]);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+
     fetchNotifications();
-  }, [fetchNotifications]);
+  }, [fetchNotifications, enabled]);
 
   const markAsRead = useCallback(
     async (notificationId: string) => {
@@ -99,7 +109,6 @@ export function useNotifications(limit: number = 20, unreadOnly: boolean = false
     refresh,
   };
 }
-
 
 
 

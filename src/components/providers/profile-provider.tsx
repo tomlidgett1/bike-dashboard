@@ -113,10 +113,43 @@ interface ProfileProviderProps {
   children: React.ReactNode
 }
 
+function profileFromServerProfile(serverProfile: ServerProfile): UserProfile {
+  const hasBusinessName = serverProfile.business_name && serverProfile.business_name.trim().length > 0
+  const accountType = serverProfile.account_type || (hasBusinessName ? 'bicycle_store' : 'individual')
+
+  return {
+    user_id: serverProfile.user_id || '',
+    name: serverProfile.name || '',
+    email: serverProfile.email || '',
+    phone: serverProfile.phone || '',
+    first_name: serverProfile.first_name || '',
+    last_name: serverProfile.last_name || '',
+    business_name: serverProfile.business_name || '',
+    store_type: serverProfile.store_type || '',
+    address: serverProfile.address || '',
+    website: serverProfile.website || '',
+    logo_url: serverProfile.logo_url || undefined,
+    opening_hours: (serverProfile.opening_hours as OpeningHours | undefined) ?? undefined,
+    bio: serverProfile.bio || '',
+    account_type: accountType,
+    bicycle_store: serverProfile.bicycle_store ?? false,
+    uber_notification_phones: serverProfile.uber_notification_phones ?? [],
+    preferences: serverProfile.preferences ?? {},
+    onboarding_completed: false,
+    email_notifications: serverProfile.email_notifications ?? true,
+    order_alerts: serverProfile.order_alerts ?? true,
+    inventory_alerts: serverProfile.inventory_alerts ?? true,
+    marketing_emails: serverProfile.marketing_emails ?? false,
+    shipping_address: serverProfile.shipping_address ?? null,
+  }
+}
+
 export function ProfileProvider({ serverProfile, children }: ProfileProviderProps) {
   const { user, loading: authLoading } = useAuth()
-  const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [profile, setProfile] = useState<UserProfile | null>(() =>
+    serverProfile ? profileFromServerProfile(serverProfile) : null
+  )
+  const [loading, setLoading] = useState(!serverProfile)
   const [saving, setSaving] = useState(false)
   const [isFirstTime, setIsFirstTime] = useState(false)
 
@@ -171,53 +204,35 @@ export function ProfileProvider({ serverProfile, children }: ProfileProviderProp
   }, [user])
 
   // Track if we've already initialized from server profile
-  const [initializedFromServer, setInitializedFromServer] = useState(false)
+  const [initializedFromServer, setInitializedFromServer] = useState(Boolean(serverProfile))
 
   // Initialize with server profile data - NO duplicate fetches
   useEffect(() => {
     if (authLoading) {
-      setLoading(true)
+      if (!serverProfile) {
+        setLoading(true)
+      }
       return
     }
 
     if (!user) {
-      setProfile(null)
+      if (!serverProfile) {
+        setProfile(null)
+      }
       setLoading(false)
       return
     }
 
     if (serverProfile && user && !initializedFromServer) {
-      // Use account_type from serverProfile if available, otherwise infer from business_name
-      const hasBusinessName = serverProfile.business_name && serverProfile.business_name.trim().length > 0;
-      const accountType = serverProfile.account_type || (hasBusinessName ? 'bicycle_store' : 'individual');
       const googlePicture = getGooglePictureFromUser(user)
       
       // We have server data - use it directly WITHOUT refetching
       // Server already fetched with proper caching, no need to hit DB again
       setProfile({
+        ...profileFromServerProfile(serverProfile),
         user_id: user.id,
-        name: serverProfile.name || '',
-        email: user.email || '',
-        phone: serverProfile.phone || '',
-        first_name: serverProfile.first_name || '',
-        last_name: serverProfile.last_name || '',
-        business_name: serverProfile.business_name || '',
-        store_type: serverProfile.store_type || '',
-        address: serverProfile.address || '',
-        website: serverProfile.website || '',
+        email: user.email || serverProfile.email || '',
         logo_url: serverProfile.logo_url || googlePicture || undefined,
-        opening_hours: (serverProfile.opening_hours as OpeningHours | undefined) ?? undefined,
-        bio: serverProfile.bio || '',
-        account_type: accountType,
-        bicycle_store: serverProfile.bicycle_store ?? false,
-        uber_notification_phones: serverProfile.uber_notification_phones ?? [],
-        preferences: serverProfile.preferences ?? {},
-        onboarding_completed: false,
-        email_notifications: serverProfile.email_notifications ?? true,
-        order_alerts: serverProfile.order_alerts ?? true,
-        inventory_alerts: serverProfile.inventory_alerts ?? true,
-        marketing_emails: serverProfile.marketing_emails ?? false,
-        shipping_address: serverProfile.shipping_address ?? null,
       })
       setInitializedFromServer(true)
       setLoading(false)

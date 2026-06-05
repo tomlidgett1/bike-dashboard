@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import Image from "next/image";
+import * as React from "react";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { Loader2, Zap } from "lucide-react";
+import { AgentHeaderButton } from "@/components/genie/agent-header-button";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -13,15 +13,24 @@ import {
 } from "@/components/ui/breadcrumb";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "./theme-toggle";
-import { TopbarNavPills, topbarPillClass } from "./topbar-nav-pills";
-import { AgentHeaderButton } from "@/components/genie/agent-header-button";
-import { NotificationsDropdown } from "./notifications-dropdown";
-import { MessagesDropdown } from "./messages-dropdown";
+import { TopbarNavPills } from "./topbar-nav-pills";
 import { useAuth } from "@/components/providers/auth-provider";
-import { useSyncStatus } from "@/lib/hooks/use-sync-status";
-import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
-import { cn } from "@/lib/utils";
 import { isStoreDashboardPath } from "@/lib/routes/store-dashboard";
+
+const LazyNotificationsDropdown = dynamic(
+  () => import("./notifications-dropdown").then((mod) => mod.NotificationsDropdown),
+  { ssr: false }
+);
+
+const LazyMessagesDropdown = dynamic(
+  () => import("./messages-dropdown").then((mod) => mod.MessagesDropdown),
+  { ssr: false }
+);
+
+const LazyTopbarLightspeedStatus = dynamic(
+  () => import("./topbar-lightspeed-status").then((mod) => mod.TopbarLightspeedStatus),
+  { ssr: false }
+);
 
 // Route → breadcrumb labels. Falls back to a title-cased last segment.
 const CRUMBS: Record<string, { section: string; page: string }> = {
@@ -64,14 +73,33 @@ function useCrumb(pathname: string) {
   return { section, page };
 }
 
+function useDeferredTopbarActions() {
+  const [ready, setReady] = React.useState(false);
+
+  React.useEffect(() => {
+    const win = window as Window & {
+      requestIdleCallback?: (cb: IdleRequestCallback, options?: IdleRequestOptions) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+
+    if (win.requestIdleCallback) {
+      const id = win.requestIdleCallback(() => setReady(true), { timeout: 1200 });
+      return () => win.cancelIdleCallback?.(id);
+    }
+
+    const id = window.setTimeout(() => setReady(true), 800);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  return ready;
+}
+
 export function Topbar() {
   const pathname = usePathname() ?? "/products";
   const showAgentInHeader = isStoreDashboardPath(pathname);
   const crumb = useCrumb(pathname);
   const { user } = useAuth();
-  const { isSyncing, formattedLastSync } = useSyncStatus();
-  const { isConnected: lightspeedConnected, isLoading: lightspeedLoading } =
-    useLightspeedConnection({ autoFetch: true, pollInterval: 60000 });
+  const showDeferredActions = useDeferredTopbarActions();
 
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border/60 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -91,38 +119,13 @@ export function Topbar() {
       <div className="ml-auto flex items-center gap-2">
         <TopbarNavPills />
         {showAgentInHeader ? <AgentHeaderButton /> : null}
-        {!lightspeedLoading && lightspeedConnected ? (
-          isSyncing ? (
-            <div className={cn(topbarPillClass, "hidden sm:inline-flex")}>
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-500" />
-              Syncing…
-            </div>
-          ) : formattedLastSync && formattedLastSync !== "Never" ? (
-            <div className={cn(topbarPillClass, "hidden sm:inline-flex")}>
-              <span className="flex h-4 w-4 shrink-0 overflow-hidden rounded-full">
-                <Image
-                  src="/ls.png"
-                  alt="Lightspeed"
-                  width={16}
-                  height={16}
-                  className="h-full w-full object-cover"
-                />
-              </span>
-              <span className="text-gray-600">Synced {formattedLastSync}</span>
-            </div>
-          ) : null
-        ) : !lightspeedLoading ? (
-          <Link
-            href="/connect-lightspeed"
-            className={cn(topbarPillClass, "hidden sm:inline-flex")}
-          >
-            <Zap className="h-3.5 w-3.5 text-gray-500" />
-            Connect POS
-          </Link>
+        {showDeferredActions ? (
+          <>
+            <LazyTopbarLightspeedStatus />
+            {user ? <LazyNotificationsDropdown /> : null}
+            {user ? <LazyMessagesDropdown /> : null}
+          </>
         ) : null}
-
-        {user ? <NotificationsDropdown /> : null}
-        {user ? <MessagesDropdown /> : null}
         <ThemeToggle />
       </div>
     </header>

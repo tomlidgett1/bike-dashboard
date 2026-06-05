@@ -2,9 +2,15 @@
 
 export const dynamic = "force-dynamic";
 
+import nextDynamic from "next/dynamic";
 import { Layers } from "lucide-react";
 import { PageContainer, PageHeader, PageBody, SettingsSection } from "@/components/dashboard";
-import { StoreSectionsManager } from "@/components/settings/store-sections-manager";
+import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
+
+const StoreSectionsManager = nextDynamic(
+  () => import("@/components/settings/store-sections-manager").then((mod) => mod.StoreSectionsManager),
+  { ssr: false, loading: () => <SettingsManagerLoading className="min-h-64" /> }
+);
 
 export default function StoreSectionsPage() {
   return (

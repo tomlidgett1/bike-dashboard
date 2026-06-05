@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getUserProfile } from "@/lib/server/get-user-profile";
 
 /**
  * Shared auth guard for every Storefront sub-page. Only verified bicycle stores
@@ -10,25 +10,13 @@ export default async function StoreSettingsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  const profile = await getUserProfile();
 
-  if (authError || !user) {
+  if (!profile) {
     redirect("/marketplace");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("users")
-    .select("account_type, bicycle_store")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
   if (
-    profileError ||
-    !profile ||
     profile.account_type !== "bicycle_store" ||
     profile.bicycle_store !== true
   ) {

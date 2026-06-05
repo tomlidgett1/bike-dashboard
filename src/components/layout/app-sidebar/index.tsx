@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ChevronRight,
   Database,
@@ -45,6 +45,7 @@ import { cn } from "@/lib/utils";
 import { StoreSwitcher } from "./store-switcher";
 import { NavUser } from "./nav-user";
 import { SidebarBranding } from "./sidebar-branding";
+import { SidebarYjLogo } from "./sidebar-yj-logo";
 
 type SubItem = { title: string; href: string; exact?: boolean };
 type NavItem = {
@@ -125,7 +126,15 @@ function groupActive(pathname: string, item: NavItem) {
   return !!item.items?.some((sub) => pathname.startsWith(sub.href));
 }
 
-function CollapsibleNavItem({ item, pathname }: { item: NavItem; pathname: string }) {
+function CollapsibleNavItem({
+  item,
+  pathname,
+  onPrefetch,
+}: {
+  item: NavItem;
+  pathname: string;
+  onPrefetch: (href: string) => void;
+}) {
   const open = groupActive(pathname, item);
   return (
     <Collapsible asChild defaultOpen={open} className="group/collapsible">
@@ -145,7 +154,13 @@ function CollapsibleNavItem({ item, pathname }: { item: NavItem; pathname: strin
                   asChild
                   isActive={sub.exact ? pathname === sub.href : pathname.startsWith(sub.href)}
                 >
-                  <Link href={sub.href}>{sub.title}</Link>
+                  <Link
+                    href={sub.href}
+                    onFocus={() => onPrefetch(sub.href)}
+                    onPointerEnter={() => onPrefetch(sub.href)}
+                  >
+                    {sub.title}
+                  </Link>
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
             ))}
@@ -156,7 +171,15 @@ function CollapsibleNavItem({ item, pathname }: { item: NavItem; pathname: strin
   );
 }
 
-function FlatNavItem({ item, pathname }: { item: NavItem; pathname: string }) {
+function FlatNavItem({
+  item,
+  pathname,
+  onPrefetch,
+}: {
+  item: NavItem;
+  pathname: string;
+  onPrefetch: (href: string) => void;
+}) {
   if (item.disabled) {
     return (
       <SidebarMenuItem>
@@ -175,7 +198,11 @@ function FlatNavItem({ item, pathname }: { item: NavItem; pathname: string }) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild tooltip={item.title} isActive={flatActive(pathname, item)}>
-        <Link href={item.href!}>
+        <Link
+          href={item.href!}
+          onFocus={() => onPrefetch(item.href!)}
+          onPointerEnter={() => onPrefetch(item.href!)}
+        >
           <item.icon />
           <span>{item.title}</span>
         </Link>
@@ -187,16 +214,27 @@ function FlatNavItem({ item, pathname }: { item: NavItem; pathname: string }) {
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname() ?? "/products";
+  const router = useRouter();
+
+  const prefetch = React.useCallback(
+    (href: string) => {
+      router.prefetch(href);
+    },
+    [router]
+  );
 
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader
         className={cn(
-          "gap-0 px-3 pb-2 pt-3",
-          "group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:py-2",
+          "flex flex-col gap-0.5 px-3 pb-2 pt-0",
+          "group-data-[collapsible=icon]:gap-0.5 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:pb-2 group-data-[collapsible=icon]:pt-0",
           pathname.startsWith("/settings/store") && "bg-gray-100/80"
         )}
       >
+        <div className="flex h-14 shrink-0 items-center">
+          <SidebarYjLogo />
+        </div>
         <StoreSwitcher />
       </SidebarHeader>
 
@@ -209,9 +247,19 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenu>
               {group.items.map((item) =>
                 item.items ? (
-                  <CollapsibleNavItem key={item.title} item={item} pathname={pathname} />
+                  <CollapsibleNavItem
+                    key={item.title}
+                    item={item}
+                    pathname={pathname}
+                    onPrefetch={prefetch}
+                  />
                 ) : (
-                  <FlatNavItem key={item.title} item={item} pathname={pathname} />
+                  <FlatNavItem
+                    key={item.title}
+                    item={item}
+                    pathname={pathname}
+                    onPrefetch={prefetch}
+                  />
                 )
               )}
             </SidebarMenu>
@@ -221,7 +269,12 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <SidebarGroup className="mt-auto px-2 py-1">
           <SidebarMenu>
             {FOOTER_ITEMS.map((item) => (
-              <FlatNavItem key={item.title} item={item} pathname={pathname} />
+              <FlatNavItem
+                key={item.title}
+                item={item}
+                pathname={pathname}
+                onPrefetch={prefetch}
+              />
             ))}
           </SidebarMenu>
         </SidebarGroup>

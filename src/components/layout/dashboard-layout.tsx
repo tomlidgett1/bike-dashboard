@@ -24,11 +24,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <TooltipProvider delayDuration={0}>
-      <SidebarProvider>
+      <SidebarProvider className="dashboard-light-surface h-svh overflow-hidden bg-background text-foreground">
         <AppSidebar />
-        <SidebarInset className="min-w-0">
+        <SidebarInset className="h-svh min-w-0 overflow-hidden bg-background">
           <Topbar />
-          {children}
+          <div className="min-h-0 flex-1 overflow-y-auto bg-background">
+            {children}
+          </div>
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>

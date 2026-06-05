@@ -2,10 +2,20 @@
 
 export const dynamic = "force-dynamic";
 
+import nextDynamic from "next/dynamic";
 import { FileText, Sparkles } from "lucide-react";
 import { PageContainer, PageHeader, PageBody, SettingsSection } from "@/components/dashboard";
-import { StoreProductDescriptionsManager } from "@/components/settings/store-product-descriptions-manager";
-import { StoreImmersiveProductsManager } from "@/components/settings/store-immersive-products-manager";
+import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
+
+const StoreProductDescriptionsManager = nextDynamic(
+  () => import("@/components/settings/store-product-descriptions-manager").then((mod) => mod.StoreProductDescriptionsManager),
+  { ssr: false, loading: () => <SettingsManagerLoading className="min-h-56" /> }
+);
+
+const StoreImmersiveProductsManager = nextDynamic(
+  () => import("@/components/settings/store-immersive-products-manager").then((mod) => mod.StoreImmersiveProductsManager),
+  { ssr: false, loading: () => <SettingsManagerLoading className="min-h-40" /> }
+);
 
 export default function StoreProductContentPage() {
   return (

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
@@ -45,11 +46,8 @@ import { cn } from "@/lib/utils";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/auth-provider";
-import { OpeningHoursEditor } from "@/components/opening-hours-editor";
 import type { OpeningHours } from "@/components/providers/profile-provider";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
-import { StripeConnectCard } from "@/components/settings/stripe-connect-card";
-import { DeleteAccountDialog } from "@/components/settings/delete-account-dialog";
 import {
   PageContainer,
   PageHeader,
@@ -59,7 +57,47 @@ import {
   SettingsField,
   StatusBadge,
 } from "@/components/dashboard";
-import { StoreSetupButton } from "@/components/settings/store-setup-button";
+import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
+
+const OpeningHoursEditor = dynamic(
+  () => import("@/components/opening-hours-editor").then((mod) => mod.OpeningHoursEditor),
+  {
+    ssr: false,
+    loading: () => <SettingsManagerLoading className="min-h-56 rounded-lg" />,
+  }
+);
+
+const StripeConnectCard = dynamic(
+  () => import("@/components/settings/stripe-connect-card").then((mod) => mod.StripeConnectCard),
+  {
+    ssr: false,
+    loading: () => <SettingsManagerLoading className="min-h-40 rounded-lg" />,
+  }
+);
+
+const DeleteAccountDialog = dynamic(
+  () => import("@/components/settings/delete-account-dialog").then((mod) => mod.DeleteAccountDialog),
+  {
+    ssr: false,
+    loading: () => (
+      <Button type="button" variant="outline" size="sm" disabled>
+        Delete account
+      </Button>
+    ),
+  }
+);
+
+const StoreSetupButton = dynamic(
+  () => import("@/components/settings/store-setup-button").then((mod) => mod.StoreSetupButton),
+  {
+    ssr: false,
+    loading: () => (
+      <Button type="button" variant="outline" size="sm" disabled>
+        Store setup
+      </Button>
+    ),
+  }
+);
 
 type SectionId =
   | "account"
@@ -92,7 +130,6 @@ export default function SettingsPage() {
   const [logoFile, setLogoFile] = React.useState<File | null>(null);
   const [logoPreview, setLogoPreview] = React.useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = React.useState(false);
-  const [isAuthorized, setIsAuthorized] = React.useState<boolean | null>(null);
   const [section, setSection] = React.useState<SectionId>("account");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const logoPreviewObjectUrlRef = React.useRef<string | null>(null);
@@ -114,7 +151,13 @@ export default function SettingsPage() {
     accountInfo: lightspeedAccount,
     lastSync: lightspeedLastSync,
     formatLastSync,
-  } = useLightspeedConnection({ autoFetch: true, pollInterval: 60000 });
+  } = useLightspeedConnection({
+    autoFetch: section === "integrations",
+    pollInterval: section === "integrations" ? 60000 : 0,
+  });
+
+  const isVerifiedStore =
+    profile?.account_type === "bicycle_store" && profile.bicycle_store === true;
 
   const [formData, setFormData] = React.useState({
     name: "",
@@ -148,21 +191,17 @@ export default function SettingsPage() {
   }, []);
 
   React.useEffect(() => {
-    if (authLoading || profileLoading) return;
+    if (profileLoading || (authLoading && !profile)) return;
 
-    if (!user || !profile) {
+    if (!profile) {
       router.replace('/marketplace');
       return;
     }
 
-    const authorized = profile.account_type === 'bicycle_store' && profile.bicycle_store === true;
-
-    if (!authorized) {
+    if (!isVerifiedStore) {
       router.replace('/marketplace/settings');
-    } else {
-      setIsAuthorized(true);
     }
-  }, [profile, profileLoading, authLoading, user, router]);
+  }, [profile, profileLoading, authLoading, isVerifiedStore, router]);
 
   React.useEffect(() => {
     if (profile) {
@@ -323,7 +362,7 @@ export default function SettingsPage() {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  if (isAuthorized === null) {
+  if (profileLoading || (authLoading && !profile) || !profile || !isVerifiedStore) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

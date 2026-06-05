@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
 import { Loader2, Search, Package, Sparkles, ExternalLink, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { SafeProductImage } from "@/components/settings/safe-product-image";
 
 interface ImmersiveProduct {
   id: string;
@@ -171,7 +171,7 @@ export function StoreImmersiveProductsManager() {
                 {/* Image */}
                 <div className="h-10 w-10 rounded bg-muted flex-shrink-0 overflow-hidden">
                   {imageUrl ? (
-                    <Image src={imageUrl} alt={title} width={40} height={40} className="h-full w-full object-cover" />
+                    <SafeProductImage src={imageUrl} alt={title} width={40} height={40} className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
                       <Package className="h-4 w-4 text-muted-foreground" />

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
@@ -21,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { SafeProductImage } from "@/components/settings/safe-product-image";
 
 interface TitleProduct {
   id: string;
@@ -463,7 +463,7 @@ export function StoreProductTitlesManager() {
                   {/* Image */}
                   <div className="h-9 w-9 rounded bg-muted flex-shrink-0 overflow-hidden mt-0.5">
                     {imageUrl ? (
-                      <Image src={imageUrl} alt={liveTitle} width={36} height={36} className="h-full w-full object-cover" />
+                      <SafeProductImage src={imageUrl} alt={liveTitle} width={36} height={36} className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center">
                         <Package className="h-3.5 w-3.5 text-muted-foreground" />

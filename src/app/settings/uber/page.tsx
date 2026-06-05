@@ -3,37 +3,40 @@
 export const dynamic = "force-dynamic";
 
 import * as React from "react";
+import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
-import { StoreUberManager } from "@/components/settings/store-uber-manager";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
+import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
+
+const StoreUberManager = nextDynamic(
+  () => import("@/components/settings/store-uber-manager").then((mod) => mod.StoreUberManager),
+  { ssr: false, loading: () => <SettingsManagerLoading className="min-h-64" /> }
+);
 
 export default function UberSettingsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { loading: authLoading } = useAuth();
   const { profile, loading: profileLoading } = useUserProfile();
   const router = useRouter();
-  const [isAuthorized, setIsAuthorized] = React.useState<boolean | null>(null);
+  const isAuthorized =
+    profile?.account_type === "bicycle_store" && profile.bicycle_store === true;
 
   React.useEffect(() => {
-    if (authLoading || profileLoading) return;
+    if (profileLoading || (authLoading && !profile)) return;
 
-    if (!user || !profile) {
+    if (!profile) {
       router.replace("/marketplace");
       return;
     }
 
-    const authorized = profile.account_type === "bicycle_store" && profile.bicycle_store === true;
-    if (!authorized) {
+    if (!isAuthorized) {
       router.replace("/marketplace/settings");
-      return;
     }
+  }, [authLoading, profileLoading, profile, isAuthorized, router]);
 
-    setIsAuthorized(true);
-  }, [authLoading, profileLoading, profile, router, user]);
-
-  if (authLoading || profileLoading || isAuthorized === null) {
+  if (profileLoading || (authLoading && !profile) || !profile || !isAuthorized) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="size-8 animate-spin text-muted-foreground" />

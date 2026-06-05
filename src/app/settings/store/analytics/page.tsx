@@ -2,9 +2,15 @@
 
 export const dynamic = "force-dynamic";
 
+import nextDynamic from "next/dynamic";
 import { BarChart3 } from "lucide-react";
 import { PageContainer, PageHeader, PageBody, SettingsSection } from "@/components/dashboard";
-import { StoreAnalyticsManager } from "@/components/settings/store-analytics-manager";
+import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
+
+const StoreAnalyticsManager = nextDynamic(
+  () => import("@/components/settings/store-analytics-manager").then((mod) => mod.StoreAnalyticsManager),
+  { ssr: false, loading: () => <SettingsManagerLoading className="min-h-64" /> }
+);
 
 export default function StoreAnalyticsPage() {
   return (

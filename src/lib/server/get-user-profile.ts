@@ -13,6 +13,8 @@ export interface ServerShippingAddress {
 }
 
 export interface ServerProfile {
+  user_id?: string | null
+  email?: string | null
   logo_url?: string | null
   business_name?: string | null
   name?: string | null
@@ -33,6 +35,15 @@ export interface ServerProfile {
   shipping_address?: ServerShippingAddress | null
   bio?: string | null
   preferences?: { store_setup_completed?: boolean } | null
+}
+
+function isDynamicServerUsageError(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'digest' in error &&
+    (error as { digest?: unknown }).digest === 'DYNAMIC_SERVER_USAGE'
+  )
 }
 
 /**
@@ -62,8 +73,15 @@ export const getUserProfile = cache(async (): Promise<ServerProfile | null> => {
       return null
     }
     
-    return data
+    return {
+      ...data,
+      user_id: user.id,
+      email: user.email ?? null,
+    }
   } catch (error) {
+    if (isDynamicServerUsageError(error)) {
+      throw error
+    }
     console.error('Error fetching server profile:', error)
     return null
   }

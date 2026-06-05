@@ -20,12 +20,11 @@ export function MessagesDropdown() {
   const [open, setOpen] = useState(false);
   const { counts, refresh: refreshCount } = useCombinedUnreadCount();
   const count = counts.messages;
-  const { notifications, markAsRead, refresh: refreshNotifications } = useNotifications(5, true);
+  const { notifications, markAsRead } = useNotifications(5, true, open);
   const { open: openPanel, openConversation } = useMessages();
 
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
-    if (isOpen) refreshNotifications();
   };
 
   const handleNotificationClick = async (notificationId: string, conversationId: string) => {
