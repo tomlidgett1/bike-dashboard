@@ -176,8 +176,11 @@ export interface LightspeedItemsResponse {
   Item: LightspeedItem | LightspeedItem[]
   '@attributes'?: {
     count: string
-    offset: string
+    offset?: string
     limit: string
+    /** Cursor-based pagination: full URL for the next page */
+    next?: string
+    previous?: string
   }
 }
 
@@ -319,8 +322,11 @@ export interface LightspeedSalesResponse {
   Sale: LightspeedSale | LightspeedSale[]
   '@attributes'?: {
     count: string
-    offset: string
+    offset?: string
     limit: string
+    /** Cursor-based pagination: full URL for the next page */
+    next?: string
+    previous?: string
   }
 }
 
@@ -437,9 +443,12 @@ export interface LightspeedContactWebsite {
 export interface LightspeedCustomersResponse {
   Customer: LightspeedCustomer | LightspeedCustomer[]
   '@attributes'?: {
-    count: string
-    offset: string
-    limit: string
+    count?: string
+    offset?: string
+    limit?: string
+    /** Cursor-based pagination: full URL for the next page */
+    next?: string
+    previous?: string
   }
 }
 
@@ -464,7 +473,7 @@ export interface LightspeedItemShopsResponse {
   ItemShop: LightspeedItemShop | LightspeedItemShop[]
   '@attributes'?: {
     count: string
-    offset: string
+    offset?: string
     limit: string
     next?: string
     previous?: string
@@ -610,8 +619,6 @@ export interface SyncOption {
   description: string
   enabled: boolean
 }
-
-
 
 
 

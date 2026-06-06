@@ -283,8 +283,8 @@ export function StoreOverviewDashboard() {
               <CardDescription>
                 Store and product page views over the last {data.chartDays} days, grouped by
                 Melbourne calendar day ({analyticsTimezoneLabel}). Distinct visitors are counted
-                per browser (anonymous visitor ID) and signed-in account — IP addresses are not
-                stored.
+                per browser (anonymous visitor ID) and signed-in account. Your own authenticated
+                visits are excluded, and IP addresses are not stored.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-8">
@@ -310,7 +310,8 @@ export function StoreOverviewDashboard() {
                 </div>
                 <p className="text-sm font-semibold text-foreground">No view data yet</p>
                 <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                  Traffic will appear here once customers browse your public store.
+                  Customer traffic will appear here once people browse your public store.
+                  Your own visits from the dashboard are intentionally excluded.
                 </p>
                 <Button variant="outline" size="sm" className="mt-4" asChild>
                   <Link href="/settings/store/analytics">Open analytics</Link>

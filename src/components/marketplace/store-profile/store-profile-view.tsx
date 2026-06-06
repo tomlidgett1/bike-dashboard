@@ -1359,6 +1359,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
               <StoreHomeTab
                 store={store}
                 isOwnProfile={viewAsOwner}
+                trackAnalytics={!isOwnProfile}
                 contentShell={storeContentShell}
                 onNavigate={handleHomeNavigate}
                 onOpenCollection={handleOpenCollection}

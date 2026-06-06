@@ -6,9 +6,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Send, Bike, Loader2, AlertCircle, Globe, Maximize2, Minimize2,
   Clock, Trash2, ArrowLeft, MessageSquarePlus,
-  Store, Sparkles, Tag, LayoutGrid, ArrowRight, Check, CheckCircle2, Eye, EyeOff,
-  FolderPlus, Pencil, DollarSign,
+  Store, Sparkles, CheckCircle2, BarChart3, LineChart as LineChartIcon, Table2, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { useGenie } from '@/components/providers/genie-provider';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useUserProfile } from '@/components/providers/profile-provider';
@@ -16,21 +16,16 @@ import AIMotionOrb from './ai-motion-orb';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type {
-  GenieProposal,
-  CarouselLayoutProposal,
-  CarouselCreateProposal,
-  CarouselRenameProposal,
-  DiscountApplyProposal,
-  DiscountRemoveProposal,
-  PriceUpdateProposal,
-  ApplyResult,
-  CarouselSizeOption,
-} from '@/lib/types/genie-agent';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
+import type { GenieProposal } from '@/lib/types/genie-agent';
+import { GenieProposalCard } from '@/components/genie/genie-proposal-card';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,10 +35,20 @@ type StatusPhase =
   | 'web_search'
   | 'web_search_done'
   | 'product_search'
+  | 'lightspeed_sales'
+  | 'lightspeed_inventory'
+  | 'lightspeed_customers'
   | 'tool'
   | 'responding';
 
 interface StatusStep { phase: StatusPhase; text: string }
+interface ProcessStep {
+  id: string;
+  phase: string;
+  text: string;
+  kind: 'status' | 'reasoning';
+  at: string;
+}
 interface Citation { url: string; title: string }
 
 interface GenieProduct {
@@ -58,11 +63,59 @@ interface GenieProduct {
   store_name?: string | null;
 }
 
+type VisualValueFormat = 'currency' | 'number' | 'percent';
+
+interface GenieChartSeries {
+  key: string;
+  label: string;
+  color?: string;
+}
+
+interface GenieChartPoint {
+  label: string;
+  [key: string]: string | number | null;
+}
+
+interface GenieChartPayload {
+  kind: 'bar' | 'line';
+  title: string;
+  subtitle?: string;
+  xKey: 'label';
+  series: GenieChartSeries[];
+  data: GenieChartPoint[];
+  valueFormatter?: VisualValueFormat;
+}
+
+interface GenieTableColumn {
+  key: string;
+  label: string;
+  align?: 'left' | 'right';
+  format?: VisualValueFormat;
+}
+
+interface GenieTablePayload {
+  title: string;
+  subtitle?: string;
+  columns: GenieTableColumn[];
+  rows: Array<Record<string, string | number | null>>;
+}
+
+type SortDirection = 'asc' | 'desc';
+
+interface TableSortState {
+  key: string;
+  direction: SortDirection;
+}
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   currentStatus?: StatusStep;
+  reasoningSummary?: string;
+  processSteps?: ProcessStep[];
+  charts?: GenieChartPayload[];
+  tables?: GenieTablePayload[];
   products?: GenieProduct[];
   sources?: Citation[];
   proposals?: GenieProposal[];
@@ -77,11 +130,106 @@ interface SavedConversation {
   updated_at: string;
 }
 
+interface SavedMessage {
+  role: ChatMessage['role'];
+  content?: string;
+  charts?: GenieChartPayload[];
+  tables?: GenieTablePayload[];
+  products?: GenieProduct[];
+  sources?: Citation[];
+}
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function formatPrice(price: number | null | undefined): string {
   if (!price) return '';
   return `$${price.toFixed(2)}`;
+}
+
+function formatVisualValue(value: string | number | null | undefined, format?: VisualValueFormat): string {
+  if (value == null || value === '') return '—';
+  const numeric = typeof value === 'number' ? value : Number(value);
+
+  if (format === 'currency' && Number.isFinite(numeric)) {
+    return new Intl.NumberFormat('en-AU', {
+      style: 'currency',
+      currency: 'AUD',
+      maximumFractionDigits: 2,
+    }).format(numeric);
+  }
+
+  if (format === 'number' && Number.isFinite(numeric)) {
+    return new Intl.NumberFormat('en-AU', { maximumFractionDigits: 2 }).format(numeric);
+  }
+
+  if (format === 'percent' && Number.isFinite(numeric)) {
+    return `${new Intl.NumberFormat('en-AU', { maximumFractionDigits: 1 }).format(numeric)}%`;
+  }
+
+  return String(value);
+}
+
+function formatVisualAxisValue(value: string | number | null | undefined, format?: VisualValueFormat): string {
+  if (value == null || value === '') return '';
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) return String(value);
+
+  if (format === 'currency') {
+    return new Intl.NumberFormat('en-AU', {
+      style: 'currency',
+      currency: 'AUD',
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(numeric);
+  }
+
+  if (format === 'percent') {
+    return `${new Intl.NumberFormat('en-AU', {
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(numeric)}%`;
+  }
+
+  return new Intl.NumberFormat('en-AU', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(numeric);
+}
+
+function truncateChartLabel(value: string, max = 18): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function compareTableValues(
+  a: string | number | null | undefined,
+  b: string | number | null | undefined,
+  format?: VisualValueFormat,
+): number {
+  const aEmpty = a == null || a === '';
+  const bEmpty = b == null || b === '';
+  if (aEmpty && bEmpty) return 0;
+  if (aEmpty) return 1;
+  if (bEmpty) return -1;
+
+  const aNumber = typeof a === 'number' ? a : Number(String(a).replace(/[$,%]/g, ''));
+  const bNumber = typeof b === 'number' ? b : Number(String(b).replace(/[$,%]/g, ''));
+  if ((format === 'currency' || format === 'number' || format === 'percent' || (Number.isFinite(aNumber) && Number.isFinite(bNumber))) && Number.isFinite(aNumber) && Number.isFinite(bNumber)) {
+    return aNumber - bNumber;
+  }
+
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function sortedTableRows(table: GenieTablePayload, sort: TableSortState | null) {
+  if (!sort) return table.rows;
+  const column = table.columns.find(col => col.key === sort.key);
+  if (!column) return table.rows;
+
+  return [...table.rows].sort((a, b) => {
+    const result = compareTableValues(a[column.key], b[column.key], column.format);
+    return sort.direction === 'asc' ? result : -result;
+  });
 }
 
 function stripUrlsAndLinks(s: string): string {
@@ -92,42 +240,117 @@ function stripUrlsAndLinks(s: string): string {
     .replace(/https?:\/\/[^\s<>"')\]]+/g, '');
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function parseMarkdown(text: string): string {
   const inline = (s: string) =>
-    stripUrlsAndLinks(s)
-     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-     .replace(/\*(.+?)\*/g, '<em>$1</em>');
+    escapeHtml(stripUrlsAndLinks(s))
+      .replace(/`([^`]+?)`/g, '<code class="rounded bg-background px-1 py-0.5 text-[0.85em] font-medium">$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>');
 
   const lines = text.split('\n');
   const out: string[] = [];
   let inList = false;
   let listType = 'ul';
+  let i = 0;
 
-  for (let i = 0; i < lines.length; i++) {
+  const isTableRow = (line: string) => {
+    const trimmed = line.trim();
+    return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.slice(1, -1).includes('|');
+  };
+
+  const splitTableRow = (line: string) =>
+    line
+      .trim()
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
+      .split('|')
+      .map(cell => cell.trim());
+
+  const isTableSeparator = (line: string) =>
+    isTableRow(line) && splitTableRow(line).every(cell => /^:?-{3,}:?$/.test(cell));
+
+  const closeList = () => {
+    if (!inList) return;
+    out.push(`</${listType}>`);
+    inList = false;
+  };
+
+  const renderTable = (rows: string[][]) => {
+    const [head, ...body] = rows;
+    if (!head || body.length === 0) return '';
+
+    return [
+      '<div class="my-2 overflow-x-auto rounded-md border border-border/70 bg-background/60">',
+      '<table class="w-full border-collapse text-xs">',
+      '<thead><tr>',
+      ...head.map(cell => `<th class="border-b border-border/70 px-2 py-1.5 text-left font-semibold text-foreground">${inline(cell)}</th>`),
+      '</tr></thead>',
+      '<tbody>',
+      ...body.map(row => [
+        '<tr class="border-t border-border/50">',
+        ...row.map(cell => `<td class="px-2 py-1.5 align-top text-muted-foreground">${inline(cell)}</td>`),
+        '</tr>',
+      ].join('')),
+      '</tbody></table></div>',
+    ].join('');
+  };
+
+  while (i < lines.length) {
     const line = lines[i];
     const trimmed = line.trimStart();
     const isUnordered = /^[•\-*]\s+/.test(trimmed);
     const isOrdered = /^\d+\.\s+/.test(trimmed);
     const isItem = isUnordered || isOrdered;
 
+    if (isTableRow(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      closeList();
+      const rows = [splitTableRow(line)];
+      i += 2;
+      while (i < lines.length && isTableRow(lines[i])) {
+        rows.push(splitTableRow(lines[i]));
+        i++;
+      }
+      out.push(renderTable(rows));
+      continue;
+    }
+
     if (isItem) {
       const newType = isOrdered ? 'ol' : 'ul';
-      if (!inList) { out.push(`<${newType} class="pl-4 my-0.5 space-y-0">`); inList = true; listType = newType; }
+      if (!inList || listType !== newType) {
+        closeList();
+        out.push(`<${newType} class="pl-4 my-0.5 space-y-0">`);
+        inList = true;
+        listType = newType;
+      }
       const content = inline(trimmed.replace(/^[•\-*]\s+/, '').replace(/^\d+\.\s+/, ''));
       out.push(`<li class="${isOrdered ? 'list-decimal' : 'list-disc'} leading-snug text-sm">${content}</li>`);
     } else {
-      if (inList) { out.push(`</${listType}>`); inList = false; }
+      closeList();
       if (trimmed === '') {
         if (i < lines.length - 1 && lines[i + 1]?.trim() !== '') out.push('<div class="h-1"></div>');
-      } else if (/^###?\s/.test(trimmed)) {
-        out.push(`<p class="font-semibold text-sm leading-snug mt-1">${inline(trimmed.replace(/^###?\s+/, ''))}</p>`);
+      } else if (/^#{1,4}\s/.test(trimmed)) {
+        const headingText = trimmed.replace(/^#{1,4}\s+/, '');
+        out.push(`<p class="font-semibold text-sm leading-snug mt-1.5 first:mt-0">${inline(headingText)}</p>`);
+      } else if (/^---+$/.test(trimmed)) {
+        out.push('<hr class="my-2 border-border/70" />');
       } else {
         out.push(`<p class="leading-snug text-sm">${inline(trimmed)}</p>`);
       }
     }
+
+    i++;
   }
 
-  if (inList) out.push(`</${listType}>`);
+  closeList();
   return out.join('');
 }
 
@@ -155,29 +378,198 @@ function GenieLogo({ className }: { className?: string }) {
 // ─── Shimmer Status ───────────────────────────────────────────────────────────
 
 const PHASE_LABELS: Partial<Record<StatusPhase, string>> = {
-  planning: 'Thinking...',
+  planning: 'Planning...',
   thinking: 'Thinking...',
   web_search: 'Searching the web...',
   web_search_done: 'Web research done',
   product_search: 'Searching the marketplace...',
-  responding: 'Composing answer...',
+  lightspeed_sales: 'Looking at Lightspeed sales...',
+  lightspeed_inventory: 'Searching Lightspeed inventory...',
+  lightspeed_customers: 'Searching Lightspeed customers...',
+  responding: 'Answering...',
 };
 
+function processTimestamp(): string {
+  return new Intl.DateTimeFormat('en-AU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date());
+}
+
+function processStepId() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createProcessStep(
+  phase: string,
+  text: string,
+  kind: ProcessStep['kind'] = 'status',
+): ProcessStep {
+  return {
+    id: processStepId(),
+    phase,
+    text: text.trim(),
+    kind,
+    at: processTimestamp(),
+  };
+}
+
+function appendProcessStep(steps: ProcessStep[] | undefined, step: ProcessStep): ProcessStep[] {
+  if (!step.text) return steps ?? [];
+  const current = steps ?? [];
+  const last = current[current.length - 1];
+  if (last?.kind === step.kind && last.phase === step.phase && last.text === step.text) return current;
+  return [...current, step].slice(-80);
+}
+
+function upsertLiveReasoningStep(steps: ProcessStep[] | undefined, step: ProcessStep): ProcessStep[] {
+  if (!step.text) return steps ?? [];
+  const current = steps ?? [];
+  const last = current[current.length - 1];
+  if (last?.kind === 'reasoning' && last.phase === step.phase) {
+    return [...current.slice(0, -1), { ...last, text: step.text, at: step.at }];
+  }
+  return appendProcessStep(current, step);
+}
+
 function ShimmerStatus({ step }: { step: StatusStep }) {
-  // Known phases get a friendly label; agent tool phases carry their own text.
-  const label = PHASE_LABELS[step.phase] ?? step.text ?? 'Working...';
+  const label = step.text || PHASE_LABELS[step.phase] || 'Working...';
+  const isLightspeed = step.phase === 'lightspeed_sales' || step.phase === 'lightspeed_inventory' || step.phase === 'lightspeed_customers';
   return (
     <motion.div key={`${step.phase}:${label}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.25 }} className="flex items-center gap-2 py-1">
-      <span className="relative flex h-2 w-2 flex-shrink-0">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-      </span>
-      <span className="relative overflow-hidden text-xs font-medium text-muted-foreground">
+      {isLightspeed ? (
+        <span className="flex h-4 w-4 shrink-0 overflow-hidden rounded-full">
+          <Image src="/ls.png" alt="Lightspeed" width={16} height={16} className="h-full w-full object-cover" />
+        </span>
+      ) : null}
+      <span
+        className="text-xs font-medium text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]"
+        style={{
+          backgroundImage: 'linear-gradient(90deg, var(--muted-foreground) 0%, var(--muted-foreground) 38%, var(--primary) 50%, var(--muted-foreground) 62%, var(--muted-foreground) 100%)',
+          backgroundSize: '220% 100%',
+        }}
+      >
         {label}
-        <span className="absolute inset-0 -translate-x-full animate-[shimmer_1.8s_ease-in-out_infinite]"
-          style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,222,89,0.45) 50%, transparent 100%)' }} />
       </span>
+    </motion.div>
+  );
+}
+
+function ProcessTimelineBox({ steps, live }: { steps: ProcessStep[]; live?: boolean }) {
+  const [manualExpanded, setManualExpanded] = useState(false);
+  const [collapsedDuringLive, setCollapsedDuringLive] = useState(false);
+  const visibleSteps = steps
+    .filter(step => step.phase !== 'responding' && !/composing.*answer/i.test(step.text))
+    .slice(-16);
+  const expanded = live ? !collapsedDuringLive : manualExpanded;
+
+  if (visibleSteps.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className="max-w-3xl rounded-2xl border border-border/70 bg-background/75 px-3.5 py-3 shadow-xs"
+    >
+      <button
+        type="button"
+        className={cn(
+          'flex w-full items-start justify-between gap-3 text-left',
+          expanded ? 'mb-2' : '',
+        )}
+        onClick={() => {
+          if (live) setCollapsedDuringLive(value => !value);
+          else setManualExpanded(value => !value);
+        }}
+        aria-expanded={expanded}
+      >
+        <span className="min-w-0">
+          <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {live ? (
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+            ) : (
+              <CheckCircle2 className="h-3 w-3 text-green-500" />
+            )}
+            Thinking process
+          </span>
+        </span>
+        <ChevronDown className={cn('mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded ? 'rotate-180' : '')} />
+      </button>
+      <AnimatePresence initial={false}>
+        {expanded ? (
+          <motion.div
+            key="process-steps"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="max-h-60 overflow-y-auto pr-1">
+        {visibleSteps.map((step, index) => {
+          const isLast = index === visibleSteps.length - 1;
+          const isLightspeed = step.phase === 'lightspeed_sales' || step.phase === 'lightspeed_inventory' || step.phase === 'lightspeed_customers';
+          return (
+            <div key={step.id} className="grid grid-cols-[18px_1fr] gap-2">
+              <div className="relative flex justify-center">
+                <span className={cn(
+                  'mt-1.5 h-2 w-2 rounded-full ring-2 ring-background',
+                  step.kind === 'reasoning' ? 'bg-amber-500' : isLightspeed ? 'bg-green-500' : 'bg-primary',
+                  live && isLast ? 'animate-pulse' : '',
+                )} />
+                {!isLast ? <span className="absolute top-4 bottom-0 w-px bg-border" /> : null}
+              </div>
+              <div className="pb-2">
+                <div className="mb-0.5 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <span>{step.kind === 'reasoning' ? 'Reasoning' : (PHASE_LABELS[step.phase as StatusPhase] ?? step.phase).replace(/\.\.\.$/, '')}</span>
+                  <span className="text-muted-foreground/60">{step.at}</span>
+                </div>
+                <div
+                  className={cn(
+                    'text-xs leading-snug text-muted-foreground [&_strong]:text-foreground [&_ul]:my-1 [&_li]:my-0.5',
+                    live && isLast ? 'text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]' : '',
+                  )}
+                  style={live && isLast ? {
+                    backgroundImage: 'linear-gradient(90deg, var(--muted-foreground) 0%, var(--muted-foreground) 38%, var(--primary) 50%, var(--muted-foreground) 62%, var(--muted-foreground) 100%)',
+                    backgroundSize: '220% 100%',
+                  } : undefined}
+                  dangerouslySetInnerHTML={{ __html: parseMarkdown(step.text) }}
+                />
+              </div>
+            </div>
+          );
+        })}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function ReasoningSummaryBox({ text }: { text: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -4 }}
+      transition={{ duration: 0.2 }}
+      className="max-w-full rounded-md border border-border/70 bg-background/70 px-3 py-2 shadow-xs"
+    >
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <Sparkles className="h-3 w-3 text-primary" />
+        Thinking
+      </div>
+      <div
+        className="max-h-24 overflow-hidden text-xs text-muted-foreground [&>p]:leading-snug [&>p+p]:mt-1 [&_strong]:text-foreground"
+        dangerouslySetInnerHTML={{ __html: parseMarkdown(text) }}
+      />
     </motion.div>
   );
 }
@@ -228,312 +620,216 @@ function ProductCard({ product }: { product: GenieProduct }) {
   );
 }
 
-// ─── Proposal Card (Store Agent — preview then confirm) ─────────────────────────
+// ─── Lightspeed Visuals ──────────────────────────────────────────────────────
 
-const SIZE_LABEL: Record<CarouselSizeOption, string> = {
-  featured: 'Featured',
-  normal: 'Normal',
-  compact: 'Compact',
-};
+function GenieBarChartCard({ chart }: { chart: GenieChartPayload }) {
+  const isLineChart = chart.kind === 'line';
+  const ChartIcon = isLineChart ? LineChartIcon : BarChart3;
+  const config = chart.series.reduce<ChartConfig>((acc, series, index) => {
+    acc[series.key] = {
+      label: series.label,
+      color: series.color ?? `var(--chart-${(index % 5) + 1})`,
+    };
+    return acc;
+  }, {});
 
-function money(v: number): string {
-  const hasCents = Math.round(v * 100) % 100 !== 0;
-  return `$${v.toLocaleString('en-AU', { minimumFractionDigits: hasCents ? 2 : 0, maximumFractionDigits: 2 })}`;
-}
-
-function fmtDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
-  } catch {
-    return iso;
-  }
-}
-
-/** Small "before → after" chip used in the carousel diff. */
-function DiffChip({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-      {children}
-    </span>
-  );
-}
-
-function CarouselDiff({ proposal }: { proposal: CarouselLayoutProposal }) {
-  return (
-    <div className="space-y-2.5">
-      {proposal.changes.length > 0 && (
-        <div className="space-y-1.5">
-          {proposal.changes.map(ch => {
-            const orderChanged = ch.prev_display_order !== ch.display_order;
-            const activeChanged = ch.prev_is_active !== ch.is_active;
-            const sizeChanged = ch.prev_carousel_size !== ch.carousel_size;
-            return (
-              <div key={ch.id} className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs font-medium text-foreground">{ch.name}</span>
-                {orderChanged && (
-                  <DiffChip>
-                    #{ch.prev_display_order} <ArrowRight className="h-2.5 w-2.5" /> #{ch.display_order}
-                  </DiffChip>
-                )}
-                {activeChanged && (
-                  <DiffChip>
-                    {ch.prev_is_active ? <Eye className="h-2.5 w-2.5" /> : <EyeOff className="h-2.5 w-2.5" />}
-                    <ArrowRight className="h-2.5 w-2.5" />
-                    {ch.is_active
-                      ? <span className="text-green-600 dark:text-green-400">Shown</span>
-                      : <span className="text-muted-foreground">Hidden</span>}
-                  </DiffChip>
-                )}
-                {sizeChanged && (
-                  <DiffChip>
-                    {SIZE_LABEL[ch.prev_carousel_size]} <ArrowRight className="h-2.5 w-2.5" /> {SIZE_LABEL[ch.carousel_size]}
-                  </DiffChip>
-                )}
-              </div>
-            );
-          })}
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="max-w-full rounded-md border border-border/70 bg-background px-3 py-3 shadow-xs"
+    >
+      <div className="mb-2 flex items-start gap-2">
+        <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
+          <ChartIcon className="h-3.5 w-3.5" />
         </div>
-      )}
-
-      {proposal.order_preview.length > 0 && (
-        <div className="rounded-lg bg-muted/50 p-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Your page will show</p>
-          <ol className="space-y-0.5">
-            {proposal.order_preview.map((row, i) => (
-              <li key={i} className={cn('flex items-center gap-2 text-xs', !row.is_active && 'opacity-50')}>
-                <span className="text-muted-foreground tabular-nums w-4 text-right">{i + 1}.</span>
-                <span className="font-medium text-foreground">{row.name}</span>
-                <span className="text-[10px] text-muted-foreground">{SIZE_LABEL[row.carousel_size]}</span>
-                {!row.is_active && <EyeOff className="h-3 w-3 text-muted-foreground" />}
-              </li>
-            ))}
-          </ol>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-tight text-foreground">{chart.title}</p>
+          {chart.subtitle && <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{chart.subtitle}</p>}
         </div>
-      )}
-    </div>
-  );
-}
-
-function CarouselCreateDiff({ proposal }: { proposal: CarouselCreateProposal }) {
-  const preview = proposal.products_preview.slice(0, 6);
-  const extra = proposal.product_ids.length - preview.length;
-  return (
-    <div className="space-y-2.5">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant="secondary" className="rounded-md bg-primary/15 text-foreground">
-          {proposal.name}
-        </Badge>
-        <span className="text-[10px] text-muted-foreground">{SIZE_LABEL[proposal.carousel_size]}</span>
-        <span className="text-xs text-muted-foreground">· {proposal.match_label}</span>
       </div>
 
-      {preview.length > 0 && (
-        <div className="rounded-lg bg-muted/50 p-2.5 space-y-1">
-          {preview.map(p => (
-            <div key={p.id} className="text-xs font-medium text-foreground truncate">{p.name}</div>
-          ))}
-          {extra > 0 && <p className="text-[10px] text-muted-foreground pt-0.5">+{extra} more product{extra === 1 ? '' : 's'}</p>}
-        </div>
-      )}
-
-      {proposal.order_preview.length > 0 && (
-        <div className="rounded-lg bg-muted/50 p-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Your page will show</p>
-          <ol className="space-y-0.5">
-            {proposal.order_preview.map((row, i) => (
-              <li key={i} className={cn('flex items-center gap-2 text-xs', !row.is_active && 'opacity-50')}>
-                <span className="text-muted-foreground tabular-nums w-4 text-right">{i + 1}.</span>
-                <span className={cn('font-medium text-foreground', row.is_new && 'text-foreground')}>{row.name}</span>
-                <span className="text-[10px] text-muted-foreground">{SIZE_LABEL[row.carousel_size]}</span>
-                {row.is_new && <Badge variant="secondary" className="rounded-md bg-primary/15 px-1.5 py-0 text-[9px] text-foreground">New</Badge>}
-                {!row.is_active && <EyeOff className="h-3 w-3 text-muted-foreground" />}
-              </li>
+      <ChartContainer config={config} className="aspect-auto h-[220px] w-full">
+        {isLineChart ? (
+          <LineChart accessibilityLayer data={chart.data} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey={chart.xKey}
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              interval={chart.data.length > 6 ? 'preserveStartEnd' : 0}
+              tickFormatter={(value) => truncateChartLabel(String(value))}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={6}
+              width={56}
+              tickFormatter={(value) => formatVisualAxisValue(Number(value), chart.valueFormatter)}
+            />
+            <ChartTooltip
+              cursor={false}
+              content={
+                <ChartTooltipContent
+                  labelFormatter={(value) => String(value)}
+                  formatter={(value, name) => (
+                    <>
+                      <span className="text-muted-foreground">{config[String(name)]?.label ?? String(name)}</span>
+                      <span className="ml-auto font-mono font-medium text-foreground tabular-nums">
+                        {formatVisualValue(Number(value), chart.valueFormatter)}
+                      </span>
+                    </>
+                  )}
+                />
+              }
+            />
+            {chart.series.map(series => (
+              <Line
+                key={series.key}
+                type="monotone"
+                dataKey={series.key}
+                stroke={`var(--color-${series.key})`}
+                strokeWidth={2.25}
+                dot={chart.data.length <= 18 ? { r: 3 } : false}
+                activeDot={{ r: 4 }}
+                connectNulls
+              />
             ))}
-          </ol>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CarouselRenameDiff({ proposal }: { proposal: CarouselRenameProposal }) {
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-xs font-medium text-muted-foreground line-through">{proposal.prev_name}</span>
-      <ArrowRight className="h-3 w-3 text-muted-foreground" />
-      <span className="text-xs font-semibold text-foreground">{proposal.name}</span>
-    </div>
-  );
-}
-
-function DiscountApplyDiff({ proposal }: { proposal: DiscountApplyProposal }) {
-  const preview = proposal.products_preview.slice(0, 6);
-  const extra = proposal.products_preview.length - preview.length;
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="inline-flex items-center rounded-md bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
-          -{Math.round(proposal.discount_percent)}%
-        </span>
-        <span className="text-xs text-muted-foreground">{proposal.match_label}</span>
-        {proposal.ends_at && (
-          <span className="text-[10px] text-muted-foreground">· ends {fmtDate(proposal.ends_at)}</span>
+          </LineChart>
+        ) : (
+          <BarChart accessibilityLayer data={chart.data} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey={chart.xKey}
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              interval={chart.data.length > 6 ? 'preserveStartEnd' : 0}
+              tickFormatter={(value) => truncateChartLabel(String(value))}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={6}
+              width={56}
+              tickFormatter={(value) => formatVisualAxisValue(Number(value), chart.valueFormatter)}
+            />
+            <ChartTooltip
+              cursor={false}
+              content={
+                <ChartTooltipContent
+                  labelFormatter={(value) => String(value)}
+                  formatter={(value, name) => (
+                    <>
+                      <span className="text-muted-foreground">{config[String(name)]?.label ?? String(name)}</span>
+                      <span className="ml-auto font-mono font-medium text-foreground tabular-nums">
+                        {formatVisualValue(Number(value), chart.valueFormatter)}
+                      </span>
+                    </>
+                  )}
+                />
+              }
+            />
+            {chart.series.map(series => (
+              <Bar
+                key={series.key}
+                dataKey={series.key}
+                fill={`var(--color-${series.key})`}
+                radius={[4, 4, 0, 0]}
+              />
+            ))}
+          </BarChart>
         )}
-      </div>
-      {preview.length > 0 && (
-        <div className="rounded-lg bg-muted/50 p-2.5 space-y-1">
-          {preview.map(p => (
-            <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
-              <span className="font-medium text-foreground truncate">{p.name}</span>
-              <span className="flex-shrink-0 whitespace-nowrap">
-                <span className="text-muted-foreground line-through">{money(p.price)}</span>
-                <span className="ml-1.5 font-semibold text-red-600 dark:text-red-400">{money(p.sale_price)}</span>
-              </span>
-            </div>
-          ))}
-          {extra > 0 && <p className="text-[10px] text-muted-foreground pt-0.5">+{extra} more product{extra === 1 ? '' : 's'}</p>}
-        </div>
-      )}
-    </div>
+      </ChartContainer>
+    </motion.div>
   );
 }
 
-function DiscountRemoveDiff({ proposal }: { proposal: DiscountRemoveProposal }) {
-  const preview = proposal.products_preview.slice(0, 6);
-  const extra = proposal.products_preview.length - preview.length;
-  return (
-    <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">{proposal.match_label}</p>
-      {preview.length > 0 && (
-        <div className="rounded-lg bg-muted/50 p-2.5 space-y-1">
-          {preview.map(p => (
-            <div key={p.id} className="text-xs font-medium text-foreground truncate">{p.name}</div>
-          ))}
-          {extra > 0 && <p className="text-[10px] text-muted-foreground pt-0.5">+{extra} more product{extra === 1 ? '' : 's'}</p>}
-        </div>
-      )}
-    </div>
-  );
-}
+function GenieDataTable({ table }: { table: GenieTablePayload }) {
+  const [sort, setSort] = useState<TableSortState | null>(null);
+  const rows = sortedTableRows(table, sort);
 
-function PriceUpdateDiff({ proposal }: { proposal: PriceUpdateProposal }) {
-  const preview = proposal.products_preview.slice(0, 8);
-  const extra = proposal.products_preview.length - preview.length;
-  const fmt = (v: number) => `$${v.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  return (
-    <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">{proposal.match_label}</p>
-      {preview.length > 0 && (
-        <div className="rounded-lg bg-muted/50 p-2.5 space-y-1.5">
-          {preview.map(p => (
-            <div key={p.id} className="flex items-center gap-2">
-              <span className="text-xs text-foreground truncate flex-1 min-w-0">{p.name}</span>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <span className="text-[10px] text-muted-foreground line-through">{fmt(p.current_price)}</span>
-                <ArrowRight className="h-2.5 w-2.5 text-muted-foreground" />
-                <span className="text-[10px] font-semibold text-foreground">{fmt(p.new_price)}</span>
-                {p.margin_percent !== null && (
-                  <span className="text-[9px] text-emerald-600 font-medium ml-0.5">{p.margin_percent}%</span>
-                )}
-              </div>
-            </div>
-          ))}
-          {extra > 0 && <p className="text-[10px] text-muted-foreground pt-0.5">+{extra} more product{extra === 1 ? '' : 's'}</p>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ProposalCard({ proposal }: { proposal: GenieProposal }) {
-  const [status, setStatus] = useState<'idle' | 'applying' | 'applied' | 'error'>('idle');
-  const [resultMsg, setResultMsg] = useState('');
-
-  const apply = async () => {
-    setStatus('applying');
-    setResultMsg('');
-    try {
-      const res = await fetch('/api/genie/agent/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ proposal }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
-        setStatus('error');
-        setResultMsg(data?.error || 'Could not apply the change. Please try again.');
-        return;
-      }
-      setStatus('applied');
-      setResultMsg((data as ApplyResult).message);
-    } catch {
-      setStatus('error');
-      setResultMsg('Connection error. Please try again.');
-    }
+  const toggleSort = (key: string) => {
+    setSort(prev =>
+      prev?.key === key
+        ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: 'asc' },
+    );
   };
 
-  const meta =
-    proposal.kind === 'carousel_layout'
-      ? { Icon: LayoutGrid, title: 'Carousel layout', cta: 'Apply layout' }
-      : proposal.kind === 'carousel_create'
-      ? { Icon: FolderPlus, title: 'New carousel', cta: `Create "${proposal.name}"` }
-      : proposal.kind === 'carousel_rename'
-      ? { Icon: Pencil, title: 'Rename carousel', cta: 'Apply rename' }
-      : proposal.kind === 'discount_apply'
-      ? { Icon: Tag, title: 'Apply discount', cta: `Apply ${Math.round(proposal.discount_percent)}% discount` }
-      : proposal.kind === 'price_update'
-      ? { Icon: DollarSign, title: 'Price update', cta: `Update ${proposal.product_ids.length} price${proposal.product_ids.length === 1 ? '' : 's'}` }
-      : { Icon: Tag, title: 'Remove discount', cta: 'Remove discount' };
-  const { Icon } = meta;
-
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      <Card size="sm" className="gap-0 py-0 ring-primary/25 bg-primary/5">
-        <CardHeader className="grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-border/60 px-4 py-3">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md border bg-primary/15 text-foreground">
-            <Icon className="h-3.5 w-3.5" />
-          </div>
-          <CardTitle className="text-xs">{meta.title}</CardTitle>
-          <Badge variant="secondary" className="rounded-md bg-primary/15 text-foreground">Preview</Badge>
-        </CardHeader>
-
-        <CardContent className="px-4 py-3 space-y-2.5">
-        {proposal.summary && <p className="text-xs text-muted-foreground leading-snug">{proposal.summary}</p>}
-
-        {proposal.kind === 'carousel_layout' && <CarouselDiff proposal={proposal} />}
-        {proposal.kind === 'carousel_create' && <CarouselCreateDiff proposal={proposal} />}
-        {proposal.kind === 'carousel_rename' && <CarouselRenameDiff proposal={proposal} />}
-        {proposal.kind === 'discount_apply' && <DiscountApplyDiff proposal={proposal} />}
-        {proposal.kind === 'discount_remove' && <DiscountRemoveDiff proposal={proposal} />}
-        {proposal.kind === 'price_update' && <PriceUpdateDiff proposal={proposal} />}
-
-        {/* Action / result */}
-        {status === 'applied' ? (
-          <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-medium text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-400">
-            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-            {resultMsg || 'Done.'}
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            <Button
-              onClick={apply}
-              disabled={status === 'applying'}
-              className="w-full"
-            >
-              {status === 'applying'
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Applying…</>
-                : <><Check className="h-4 w-4" /> {meta.cta}</>}
-            </Button>
-            {status === 'error' && (
-              <div className="flex items-center gap-1.5 text-[11px] text-destructive px-1">
-                <AlertCircle className="h-3 w-3 flex-shrink-0" />
-                {resultMsg}
-              </div>
-            )}
-          </div>
-        )}
-        </CardContent>
-      </Card>
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="max-w-full rounded-md border border-border/70 bg-background shadow-xs"
+    >
+      <div className="flex items-start gap-2 px-3 py-3">
+        <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
+          <Table2 className="h-3.5 w-3.5" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-tight text-foreground">{table.title}</p>
+          {table.subtitle && <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{table.subtitle}</p>}
+        </div>
+      </div>
+      <div className="overflow-x-auto border-t border-border/70">
+        <table className="w-full min-w-[420px] border-collapse text-xs">
+          <thead>
+            <tr className="bg-muted/45">
+              {table.columns.map(column => (
+                <th
+                  key={column.key}
+                  aria-sort={
+                    sort?.key === column.key
+                      ? sort.direction === 'asc' ? 'ascending' : 'descending'
+                      : 'none'
+                  }
+                  className={cn(
+                    'border-b border-border/70 px-3 py-2 font-semibold text-foreground',
+                    column.align === 'right' ? 'text-right' : 'text-left',
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleSort(column.key)}
+                    className={cn(
+                      'inline-flex w-full items-center gap-1.5 rounded-sm text-left outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/30',
+                      column.align === 'right' ? 'justify-end' : 'justify-start',
+                    )}
+                  >
+                    <span className="truncate">{column.label}</span>
+                    {sort?.key === column.key ? (
+                      sort.direction === 'asc'
+                        ? <ArrowUp className="h-3 w-3 shrink-0" />
+                        : <ArrowDown className="h-3 w-3 shrink-0" />
+                    ) : (
+                      <ArrowUpDown className="h-3 w-3 shrink-0 opacity-45" />
+                    )}
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr key={rowIndex} className="border-t border-border/50">
+                {table.columns.map(column => (
+                  <td
+                    key={column.key}
+                    className={cn(
+                      'px-3 py-2 align-top text-muted-foreground',
+                      column.align === 'right' && 'text-right font-mono tabular-nums',
+                    )}
+                  >
+                    {formatVisualValue(row[column.key], column.format)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </motion.div>
   );
 }
@@ -554,20 +850,37 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   }
 
   const noProposals = !message.proposals || message.proposals.length === 0;
-  const showShimmer = message.isStreaming && message.currentStatus && !message.content && (!message.products || message.products.length === 0) && noProposals;
-  const showSpinner = message.isStreaming && !message.content && !message.currentStatus && (!message.products || message.products.length === 0) && noProposals;
+  const noProducts = !message.products || message.products.length === 0;
+  const noCharts = !message.charts || message.charts.length === 0;
+  const noTables = !message.tables || message.tables.length === 0;
+  const showProcessTimeline = Boolean(message.processSteps?.length);
+  const showShimmer = message.isStreaming && message.currentStatus && !showProcessTimeline;
+  const showSpinner = message.isStreaming && !message.content && !message.currentStatus && noProducts && noCharts && noTables && noProposals;
+  const showReasoning = message.isStreaming && !!message.reasoningSummary?.trim() && !showProcessTimeline;
 
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-2">
 
       {/* 1. Shimmer / spinner — shown while waiting for first content */}
       <AnimatePresence mode="wait">
-        {showShimmer && message.currentStatus && <ShimmerStatus key={message.currentStatus.phase} step={message.currentStatus} />}
+        {showShimmer && message.currentStatus && (
+          <ShimmerStatus key={`${message.currentStatus.phase}:${message.currentStatus.text}`} step={message.currentStatus} />
+        )}
         {showSpinner && (
           <motion.div key="spinner" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
           </motion.div>
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showReasoning && <ReasoningSummaryBox text={message.reasoningSummary ?? ''} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {message.processSteps?.length ? (
+          <ProcessTimelineBox steps={message.processSteps} live={message.isStreaming} />
+        ) : null}
       </AnimatePresence>
 
       {/* 2. Products — rendered first so text reveals below without pushing them */}
@@ -587,7 +900,24 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       </AnimatePresence>
 
-      {/* 3. Text content — word-by-word reveal, then switches to parsed markdown */}
+      {/* 3. Lightspeed visuals */}
+      <AnimatePresence>
+        {message.charts && message.charts.length > 0 && (
+          <motion.div key="charts" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
+            {message.charts.map((chart, index) => <GenieBarChartCard key={`${chart.title}-${index}`} chart={chart} />)}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {message.tables && message.tables.length > 0 && (
+          <motion.div key="tables" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
+            {message.tables.map((table, index) => <GenieDataTable key={`${table.title}-${index}`} table={table} />)}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 4. Text content — word-by-word reveal, then switches to parsed markdown */}
       <AnimatePresence>
         {(message.content || (!showShimmer && !showSpinner && message.isStreaming)) && (
           <motion.div
@@ -614,14 +944,14 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       </AnimatePresence>
 
-      {/* 3b. Proposals — Store Agent action cards (preview → confirm) */}
+      {/* 4b. Proposals — Store Agent action cards (preview → confirm) */}
       {message.proposals && message.proposals.length > 0 && (
         <div className="space-y-2">
-          {message.proposals.map((p, i) => <ProposalCard key={i} proposal={p} />)}
+          {message.proposals.map((p, i) => <GenieProposalCard key={i} proposal={p} />)}
         </div>
       )}
 
-      {/* 4. Error */}
+      {/* 5. Error */}
       {message.error && (
         <div className="flex items-center gap-2 rounded-xl bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-600 dark:text-red-400">
           <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
@@ -629,7 +959,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         </div>
       )}
 
-      {/* 5. Sources */}
+      {/* 6. Sources */}
       {message.sources && message.sources.length > 0 && (
         <div className="space-y-1">
           <p className="text-[10px] font-medium text-muted-foreground/70 px-0.5">Sources</p>
@@ -652,10 +982,10 @@ const SUGGESTIONS = [
 ];
 
 const AGENT_SUGGESTIONS = [
+  "What were sales last month?",
+  "Most sold product last 30 days",
+  "How many General Services in stock?",
   "Show my carousels",
-  "Put Road Bikes first and feature it",
-  "50% off all Clif bars",
-  "Show my active discounts",
 ];
 
 function SuggestionPill({ text, onClick }: { text: string; onClick: () => void }) {
@@ -717,9 +1047,10 @@ export function GeniePanel() {
       const res = await fetch(`/api/genie/conversations/${id}`);
       if (!res.ok) return;
       const data = await res.json();
-      const loaded: ChatMessage[] = (data.messages ?? []).map((m: any) => ({
+      const savedMessages = (data.messages ?? []) as SavedMessage[];
+      const loaded: ChatMessage[] = savedMessages.map(m => ({
         id: crypto.randomUUID(), role: m.role, content: m.content ?? '',
-        products: m.products, sources: m.sources,
+        charts: m.charts, tables: m.tables, products: m.products, sources: m.sources,
       }));
       setMessages(loaded);
       setConversationId(id);
@@ -770,7 +1101,14 @@ export function GeniePanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: currentId ?? undefined,
-          messages: msgs.map(m => ({ role: m.role, content: m.content, products: m.products, sources: m.sources })),
+          messages: msgs.map(m => ({
+            role: m.role,
+            content: m.content,
+            charts: m.charts,
+            tables: m.tables,
+            products: m.products,
+            sources: m.sources,
+          })),
         }),
       });
       if (res.ok) return (await res.json()).id as string;
@@ -797,7 +1135,13 @@ export function GeniePanel() {
     suppressScrollUntilRef.current = Date.now() + 120_000; // suppress for 2 min — cleared on next send
     flushSync(() => {
       setLastMsgMinHeight(containerH);
-      setMessages(prev => [...prev, userMsg, { id: assistantId, role: 'assistant', content: '', isStreaming: true }]);
+      setMessages(prev => [...prev, userMsg, {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+        isStreaming: true,
+        processSteps: [createProcessStep('thinking', 'Waiting for Genie to start...')],
+      }]);
       setInput('');
     });
     setIsLoading(true);
@@ -855,16 +1199,68 @@ export function GeniePanel() {
           try {
             const parsed = JSON.parse(raw);
             if (parsed.event === 'status') {
+              const step = createProcessStep(String(parsed.phase ?? 'tool'), String(parsed.text ?? 'Working...'));
               setMessages(prev => prev.map(m =>
-                m.id === assistantId ? { ...m, currentStatus: { phase: parsed.phase, text: parsed.text } } : m
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      currentStatus: { phase: parsed.phase, text: parsed.text },
+                      processSteps: appendProcessStep(m.processSteps, step),
+                    }
+                  : m
               ));
             }
             if (parsed.event === 'text_delta') {
               ss.pending += parsed.text ?? '';
               if (ss.rafId === null) ss.rafId = requestAnimationFrame(flushText);
             }
+            if (parsed.event === 'reasoning_delta') {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? (() => {
+                      const reasoningSummary = `${m.reasoningSummary ?? ''}${parsed.text ?? ''}`;
+                      return {
+                        ...m,
+                        reasoningSummary,
+                        processSteps: upsertLiveReasoningStep(
+                          m.processSteps,
+                          createProcessStep('thinking', reasoningSummary, 'reasoning'),
+                        ),
+                      };
+                    })()
+                  : m
+              ));
+            }
+            if (parsed.event === 'reasoning_done') {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? (() => {
+                      const reasoningSummary = parsed.text ?? m.reasoningSummary ?? '';
+                      const phase = reasoningSummary.trim().startsWith('- ') ? 'planning' : 'thinking';
+                      return {
+                        ...m,
+                        reasoningSummary,
+                        processSteps: upsertLiveReasoningStep(
+                          m.processSteps,
+                          createProcessStep(phase, reasoningSummary, 'reasoning'),
+                        ),
+                      };
+                    })()
+                  : m
+              ));
+            }
             if (parsed.event === 'products') {
               setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, products: parsed.products } : m));
+            }
+            if (parsed.event === 'chart' && parsed.chart) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId ? { ...m, charts: [...(m.charts ?? []), parsed.chart as GenieChartPayload] } : m
+              ));
+            }
+            if (parsed.event === 'table' && parsed.table) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId ? { ...m, tables: [...(m.tables ?? []), parsed.table as GenieTablePayload] } : m
+              ));
             }
             if (parsed.event === 'proposal' && parsed.proposal) {
               setMessages(prev => prev.map(m =>
@@ -878,7 +1274,7 @@ export function GeniePanel() {
               if (ss.rafId !== null) { cancelAnimationFrame(ss.rafId); flushText(); }
               setMessages(prev => {
                 const updated = prev.map(m =>
-                  m.id === assistantId ? { ...m, isStreaming: false, currentStatus: undefined } : m
+                  m.id === assistantId ? { ...m, isStreaming: false, currentStatus: undefined, reasoningSummary: undefined } : m
                 );
                 if (!agentMode) {
                   saveConversation(updated, conversationId).then(newId => {
@@ -891,7 +1287,7 @@ export function GeniePanel() {
             if (parsed.event === 'error') {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
-                  ? { ...m, isStreaming: false, currentStatus: undefined, error: 'Something went wrong. Please try again.' }
+                  ? { ...m, isStreaming: false, currentStatus: undefined, reasoningSummary: undefined, error: 'Something went wrong. Please try again.' }
                   : m
               ));
             }
@@ -903,7 +1299,7 @@ export function GeniePanel() {
       if (ss.rafId !== null) { cancelAnimationFrame(ss.rafId); flushText(); }
       setMessages(prev => prev.map(m =>
         m.id === assistantId && m.isStreaming
-          ? { ...m, isStreaming: false, currentStatus: undefined }
+          ? { ...m, isStreaming: false, currentStatus: undefined, reasoningSummary: undefined }
           : m
       ));
     } catch (err) {
@@ -911,7 +1307,7 @@ export function GeniePanel() {
       if ((err as Error).name !== 'AbortError') {
         setMessages(prev => prev.map(m =>
           m.id === assistantId
-            ? { ...m, isStreaming: false, currentStatus: undefined, error: 'Connection error. Please try again.' }
+            ? { ...m, isStreaming: false, currentStatus: undefined, reasoningSummary: undefined, error: 'Connection error. Please try again.' }
             : m
         ));
       }

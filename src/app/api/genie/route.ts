@@ -262,7 +262,6 @@ export async function POST(request: NextRequest) {
           const MAX_ITERATIONS = 4
           let previousResponseId: string | null = null
           let nextInput: any = inputMessages
-          let hasSignalledResponding = false
           const citations: Citation[] = []
 
           for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
@@ -315,10 +314,6 @@ export async function POST(request: NextRequest) {
               }
 
               if (type === 'response.output_text.delta') {
-                if (!hasSignalledResponding) {
-                  hasSignalledResponding = true
-                  emit({ event: 'status', phase: 'responding', text: 'Composing answer...' })
-                }
                 emit({ event: 'text_delta', text: (event as any).delta ?? '' })
               }
 

@@ -44,6 +44,7 @@ export function OptimizerImageReview({
   onApprove,
   onLightbox,
   saving,
+  hideApproveAction = false,
 }: {
   img: ImageRun;
   hasCanonical: boolean;
@@ -55,6 +56,7 @@ export function OptimizerImageReview({
   onApprove: () => void;
   onLightbox: (url: string) => void;
   saving: boolean;
+  hideApproveAction?: boolean;
 }) {
   const editable = img.phase === "ready";
   const done = img.phase === "done";
@@ -113,14 +115,16 @@ export function OptimizerImageReview({
               )}
               {img.showAdditional ? "Hide more" : "More images"}
             </button>
-            <Button type="button" size="sm" disabled={saving || !hasCanonical} onClick={onApprove}>
-              {saving ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="size-4" />
-              )}
-              Approve ({img.selectedUrls.length})
-            </Button>
+            {!hideApproveAction && (
+              <Button type="button" size="sm" disabled={saving || !hasCanonical} onClick={onApprove}>
+                {saving ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="size-4" />
+                )}
+                Approve ({img.selectedUrls.length})
+              </Button>
+            )}
           </div>
         )}
       </div>

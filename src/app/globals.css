@@ -308,6 +308,11 @@
   100% { background-position: -200% center; }
 }
 
+@keyframes thinking-bar-sweep {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(420%); }
+}
+
 @layer utilities {
   /* Skip rendering product cards below the fold until they're near the viewport */
   .product-card-root {

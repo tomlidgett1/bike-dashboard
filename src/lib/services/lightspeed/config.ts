@@ -75,13 +75,6 @@ export function getEncryptionKey(): Buffer {
     throw new Error('TOKEN_ENCRYPTION_KEY environment variable is required')
   }
 
-  // Log key details for debugging (without exposing the key)
-  console.log('[Encryption] Key length:', key.length, 'Expected: 64')
-  console.log('[Encryption] First 4 chars:', key.substring(0, 4))
-  console.log('[Encryption] Last 4 chars:', key.substring(key.length - 4))
-  console.log('[Encryption] Has whitespace:', /\s/.test(key))
-  console.log('[Encryption] Has quotes:', key.includes('"') || key.includes("'"))
-
   if (key.length !== 64) {
     console.error('[Encryption] Invalid key length. Actual:', key.length, 'Expected: 64')
     throw new Error(`TOKEN_ENCRYPTION_KEY must be a 64-character hex string (32 bytes). Current length: ${key.length}`)
@@ -106,4 +99,3 @@ export function buildAuthUrl(state: string, scopes: readonly string[] = LIGHTSPE
 
   return `${LIGHTSPEED_CONFIG.AUTH_URL}?${params.toString()}`
 }
-

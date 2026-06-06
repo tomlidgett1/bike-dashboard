@@ -25,6 +25,7 @@ import type {
   LightspeedEmployeesResponse,
   LightspeedQueryParams,
   LightspeedItem,
+  LightspeedItemShop,
   LightspeedCategory,
   LightspeedSale,
   LightspeedCustomer,
@@ -34,6 +35,20 @@ import type {
   LightspeedWorkorderStatus,
   LightspeedWorkorderStatusesResponse,
 } from './types'
+
+interface CursorPageProgress {
+  pagesFetched: number
+  pageCount: number
+  totalCount: number
+  hasNextPage: boolean
+  hitPageLimit: boolean
+}
+
+interface CursorOptions {
+  maxPages?: number
+  limit?: number
+  onPage?: (progress: CursorPageProgress) => void
+}
 
 // ============================================================
 // Rate Limiter
@@ -79,11 +94,35 @@ class RateLimiter {
 export class LightspeedClient {
   private userId: string
   private rateLimiter: RateLimiter
+  private accessToken: string | null = null
+  private accessTokenPromise: Promise<string | null> | null = null
   private accountId: string | null = null
+  private accountIdPromise: Promise<string> | null = null
 
   constructor(userId: string) {
     this.userId = userId
     this.rateLimiter = new RateLimiter(LIGHTSPEED_CONFIG.RATE_LIMIT_REQUESTS_PER_SECOND)
+  }
+
+  private async getCachedAccessToken(): Promise<string | null> {
+    if (this.accessToken) return this.accessToken
+    if (!this.accessTokenPromise) {
+      this.accessTokenPromise = getValidAccessToken(this.userId)
+        .then(token => {
+          this.accessToken = token
+          return token
+        })
+        .finally(() => {
+          this.accessTokenPromise = null
+        })
+    }
+    return this.accessTokenPromise
+  }
+
+  private async refreshCachedAccessToken(): Promise<string | null> {
+    const refreshed = await refreshAccessToken(this.userId)
+    this.accessToken = refreshed?.accessToken ?? null
+    return this.accessToken
   }
 
   /**
@@ -96,7 +135,7 @@ export class LightspeedClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    let accessToken = await getValidAccessToken(this.userId)
+    let accessToken = await this.getCachedAccessToken()
 
     if (!accessToken) {
       throw new Error('No valid access token available. Please reconnect your Lightspeed account.')
@@ -128,9 +167,9 @@ export class LightspeedClient {
         if (response.status === 401 && !tokenRefreshed) {
           tokenRefreshed = true
           console.log('[Lightspeed] 401 received, refreshing access token...')
-          const refreshed = await refreshAccessToken(this.userId)
-          if (refreshed) {
-            accessToken = refreshed.accessToken
+          const refreshedAccessToken = await this.refreshCachedAccessToken()
+          if (refreshedAccessToken) {
+            accessToken = refreshedAccessToken
             attempt-- // don't count this as a retry attempt
             continue
           }
@@ -228,10 +267,15 @@ export class LightspeedClient {
    * Get the account ID (fetches if not cached)
    */
   async getAccountId(): Promise<string> {
-    if (!this.accountId) {
-      const account = await this.getAccount()
-      this.accountId = account.Account.accountID
+    if (this.accountId) return this.accountId
+    if (!this.accountIdPromise) {
+      this.accountIdPromise = this.getAccount()
+        .then(account => account.Account.accountID)
+        .finally(() => {
+          this.accountIdPromise = null
+        })
     }
+    this.accountId = await this.accountIdPromise
     return this.accountId
   }
 
@@ -316,6 +360,57 @@ export class LightspeedClient {
     }
     
     return allItems
+  }
+
+  /**
+   * Get items with cursor pagination.
+   *
+   * Newer Lightspeed endpoints reject offset pagination and return a full
+   * @attributes.next URL instead. Use this for live agent/search workflows.
+   */
+  async getAllItemsCursor(
+    additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>,
+    options?: CursorOptions
+  ): Promise<{ items: LightspeedItem[]; pagesFetched: number; hitPageLimit: boolean }> {
+    const allItems: LightspeedItem[] = []
+    const limit = Math.min(Math.max(options?.limit ?? 100, 1), 100)
+    const maxPages = Math.max(options?.maxPages ?? 50, 1)
+    const accountId = await this.getAccountId()
+
+    let endpoint: string | null = `/Account/${accountId}/Item.json${this.buildQueryString({
+      ...additionalParams,
+      limit,
+    })}`
+    let pagesFetched = 0
+
+    while (endpoint && pagesFetched < maxPages) {
+      const response: LightspeedItemsResponse = await this.request<LightspeedItemsResponse>(endpoint)
+      const page = this.ensureArray(response.Item)
+      allItems.push(...page)
+      pagesFetched++
+
+      const next: string | undefined = response['@attributes']?.next
+      const hasNextPage = Boolean(next && page.length >= limit)
+      const hitPageLimit = hasNextPage && pagesFetched >= maxPages
+      options?.onPage?.({
+        pagesFetched,
+        pageCount: page.length,
+        totalCount: allItems.length,
+        hasNextPage,
+        hitPageLimit,
+      })
+      if (!next || page.length < limit) {
+        endpoint = null
+      } else {
+        endpoint = next
+      }
+    }
+
+    return {
+      items: allItems,
+      pagesFetched,
+      hitPageLimit: Boolean(endpoint),
+    }
   }
 
   // ============================================================
@@ -452,11 +547,14 @@ export class LightspeedClient {
   /**
    * Get all manufacturers (brands) with pagination
    */
-  async getAllManufacturers(): Promise<Array<{ manufacturerID: string; name: string }>> {
+  async getAllManufacturers(additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>): Promise<Array<{ manufacturerID: string; name: string }>> {
     const allManufacturers: Array<{ manufacturerID: string; name: string }> = []
     const accountId = await this.getAccountId()
     const limit = 100
-    let nextUrl: string = `/Account/${accountId}/Manufacturer.json?limit=${limit}`
+    let nextUrl: string = `/Account/${accountId}/Manufacturer.json${this.buildQueryString({
+      ...additionalParams,
+      limit,
+    })}`
 
     for (let page = 0; page < 50; page++) {
       const response = await this.request<{
@@ -498,6 +596,54 @@ export class LightspeedClient {
       `/Account/${accountId}/Sale/${saleId}.json`
     )
     return response.Sale
+  }
+
+  /**
+   * Get sales with cursor pagination.
+   */
+  async getAllSalesCursor(
+    additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>,
+    options?: CursorOptions
+  ): Promise<{ sales: LightspeedSale[]; pagesFetched: number; hitPageLimit: boolean }> {
+    const allSales: LightspeedSale[] = []
+    const limit = Math.min(Math.max(options?.limit ?? 100, 1), 100)
+    const maxPages = Math.max(options?.maxPages ?? 50, 1)
+    const accountId = await this.getAccountId()
+
+    let endpoint: string | null = `/Account/${accountId}/Sale.json${this.buildQueryString({
+      ...additionalParams,
+      limit,
+    })}`
+    let pagesFetched = 0
+
+    while (endpoint && pagesFetched < maxPages) {
+      const response: LightspeedSalesResponse = await this.request<LightspeedSalesResponse>(endpoint)
+      const page = this.ensureArray(response.Sale)
+      allSales.push(...page)
+      pagesFetched++
+
+      const next: string | undefined = response['@attributes']?.next
+      const hasNextPage = Boolean(next && page.length >= limit)
+      const hitPageLimit = hasNextPage && pagesFetched >= maxPages
+      options?.onPage?.({
+        pagesFetched,
+        pageCount: page.length,
+        totalCount: allSales.length,
+        hasNextPage,
+        hitPageLimit,
+      })
+      if (!next || page.length < limit) {
+        endpoint = null
+      } else {
+        endpoint = next
+      }
+    }
+
+    return {
+      sales: allSales,
+      pagesFetched,
+      hitPageLimit: Boolean(endpoint),
+    }
   }
 
   // ============================================================
@@ -694,6 +840,54 @@ export class LightspeedClient {
   }
 
   /**
+   * Get customers with cursor pagination.
+   */
+  async getAllCustomersCursor(
+    additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>,
+    options?: CursorOptions
+  ): Promise<{ customers: LightspeedCustomer[]; pagesFetched: number; hitPageLimit: boolean }> {
+    const allCustomers: LightspeedCustomer[] = []
+    const limit = Math.min(Math.max(options?.limit ?? 100, 1), 100)
+    const maxPages = Math.max(options?.maxPages ?? 50, 1)
+    const accountId = await this.getAccountId()
+
+    let endpoint: string | null = `/Account/${accountId}/Customer.json${this.buildQueryString({
+      ...additionalParams,
+      limit,
+    })}`
+    let pagesFetched = 0
+
+    while (endpoint && pagesFetched < maxPages) {
+      const response: LightspeedCustomersResponse = await this.request<LightspeedCustomersResponse>(endpoint)
+      const page = this.ensureArray(response.Customer)
+      allCustomers.push(...page)
+      pagesFetched++
+
+      const next: string | undefined = response['@attributes']?.next
+      const hasNextPage = Boolean(next && page.length >= limit)
+      const hitPageLimit = hasNextPage && pagesFetched >= maxPages
+      options?.onPage?.({
+        pagesFetched,
+        pageCount: page.length,
+        totalCount: allCustomers.length,
+        hasNextPage,
+        hitPageLimit,
+      })
+      if (!next || page.length < limit) {
+        endpoint = null
+      } else {
+        endpoint = next
+      }
+    }
+
+    return {
+      customers: allCustomers,
+      pagesFetched,
+      hitPageLimit: Boolean(endpoint),
+    }
+  }
+
+  /**
    * Find (or create) the dedicated "YELLOW JERSEY" customer that every
    * marketplace-sale workorder is attached to. This makes the workorder's
    * Customer read "YELLOW JERSEY" so the store immediately knows the sale came
@@ -724,10 +918,11 @@ export class LightspeedClient {
   /**
    * Get a single customer by ID
    */
-  async getCustomer(customerId: string): Promise<LightspeedCustomer> {
+  async getCustomer(customerId: string, params?: LightspeedQueryParams): Promise<LightspeedCustomer> {
     const accountId = await this.getAccountId()
+    const queryString = this.buildQueryString(params)
     const response = await this.request<{ Customer: LightspeedCustomer }>(
-      `/Account/${accountId}/Customer/${customerId}.json`
+      `/Account/${accountId}/Customer/${customerId}.json${queryString}`
     )
     return response.Customer
   }
@@ -745,6 +940,107 @@ export class LightspeedClient {
     return this.request<LightspeedItemShopsResponse>(
       `/Account/${accountId}/ItemShop.json${queryString}`
     )
+  }
+
+  /**
+   * Get ItemShop rows with cursor pagination.
+   */
+  async getAllItemShopsCursor(
+    additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>,
+    options?: CursorOptions
+  ): Promise<{ itemShops: LightspeedItemShop[]; pagesFetched: number; hitPageLimit: boolean }> {
+    const allItemShops: LightspeedItemShop[] = []
+    const limit = Math.min(Math.max(options?.limit ?? 100, 1), 100)
+    const maxPages = Math.max(options?.maxPages ?? 20, 1)
+    const accountId = await this.getAccountId()
+
+    let endpoint: string | null = `/Account/${accountId}/ItemShop.json${this.buildQueryString({
+      ...additionalParams,
+      limit,
+    })}`
+    let pagesFetched = 0
+
+    while (endpoint && pagesFetched < maxPages) {
+      const response: LightspeedItemShopsResponse = await this.request<LightspeedItemShopsResponse>(endpoint)
+      const page = this.ensureArray(response.ItemShop)
+      allItemShops.push(...page)
+      pagesFetched++
+
+      const next: string | undefined = response['@attributes']?.next
+      const hasNextPage = Boolean(next && page.length >= limit)
+      const hitPageLimit = hasNextPage && pagesFetched >= maxPages
+      options?.onPage?.({
+        pagesFetched,
+        pageCount: page.length,
+        totalCount: allItemShops.length,
+        hasNextPage,
+        hitPageLimit,
+      })
+      if (!next || page.length < limit) {
+        endpoint = null
+      } else {
+        endpoint = next
+      }
+    }
+
+    return {
+      itemShops: allItemShops,
+      pagesFetched,
+      hitPageLimit: Boolean(endpoint),
+    }
+  }
+
+  /**
+   * Get ItemShop rows for many items using Lightspeed's IN query operator.
+   * This avoids one ItemShop request per inventory candidate in agent lookups.
+   */
+  async getAllItemShopsForItemIdsCursor(
+    itemIds: string[],
+    options?: {
+      batchSize?: number
+      maxPagesPerBatch?: number
+      limit?: number
+      onPage?: (progress: CursorPageProgress & { batchIndex: number; batchCount: number }) => void
+    }
+  ): Promise<{ itemShops: LightspeedItemShop[]; pagesFetched: number; hitPageLimit: boolean; batchesFetched: number }> {
+    const uniqueItemIds = Array.from(new Set(itemIds.map(id => String(id).trim()).filter(Boolean)))
+    const batchSize = Math.min(Math.max(options?.batchSize ?? 50, 1), 100)
+    const allItemShops: LightspeedItemShop[] = []
+    let pagesFetched = 0
+    let hitPageLimit = false
+    let batchesFetched = 0
+    const batchCount = Math.ceil(uniqueItemIds.length / batchSize)
+
+    for (let index = 0; index < uniqueItemIds.length; index += batchSize) {
+      const batch = uniqueItemIds.slice(index, index + batchSize)
+      if (batch.length === 0) continue
+      const batchIndex = Math.floor(index / batchSize) + 1
+
+      const result = await this.getAllItemShopsCursor({
+        itemID: `IN,[${batch.join(',')}]`,
+      }, {
+        maxPages: options?.maxPagesPerBatch ?? 5,
+        limit: options?.limit ?? 100,
+        onPage: progress => options?.onPage?.({
+          ...progress,
+          totalCount: allItemShops.length + progress.totalCount,
+          batchIndex,
+          batchCount,
+        }),
+      })
+
+      allItemShops.push(...result.itemShops)
+      pagesFetched += result.pagesFetched
+      hitPageLimit ||= result.hitPageLimit
+      batchesFetched++
+    }
+
+    return {
+      itemShops: allItemShops,
+      pagesFetched,
+      hitPageLimit,
+      batchesFetched,
+    }
   }
 
   // ============================================================
@@ -863,13 +1159,4 @@ export class LightspeedClient {
 export function createLightspeedClient(userId: string): LightspeedClient {
   return new LightspeedClient(userId)
 }
-
-
-
-
-
-
-
-
-
 

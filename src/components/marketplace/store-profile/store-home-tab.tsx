@@ -29,6 +29,7 @@ import { resolveHomepageConfig } from "@/lib/marketplace/homepage-config";
 import { getHomepageIcon } from "@/components/marketplace/store-profile/homepage-icons";
 import { ServiceCard } from "@/components/marketplace/store-profile/service-card";
 import { ProductCard } from "@/components/marketplace/product-card";
+import { useProductImpressions } from "@/lib/tracking/store-analytics";
 
 // ============================================================
 // Store Home Tab — the public landing page for a bicycle store.
@@ -39,6 +40,7 @@ import { ProductCard } from "@/components/marketplace/product-card";
 interface StoreHomeTabProps {
   store: StoreProfile;
   isOwnProfile?: boolean;
+  trackAnalytics?: boolean;
   contentShell?: string;
   /** Navigate by CTA href (tab key, 'call', 'directions', or absolute URL). */
   onNavigate: (href: string) => void;
@@ -107,7 +109,15 @@ function useStoreHomeShell() {
   return React.useContext(StoreHomeShellContext);
 }
 
-export function StoreHomeTab({ store, isOwnProfile, contentShell = DEFAULT_CONTENT_SHELL, onNavigate, onOpenCollection, onOpenHours }: StoreHomeTabProps) {
+export function StoreHomeTab({
+  store,
+  isOwnProfile,
+  trackAnalytics,
+  contentShell = DEFAULT_CONTENT_SHELL,
+  onNavigate,
+  onOpenCollection,
+  onOpenHours,
+}: StoreHomeTabProps) {
   const [messageOpen, setMessageOpen] = React.useState(false);
   const handleCloseMessage = React.useCallback(() => setMessageOpen(false), []);
   const config = React.useMemo<StoreHomepageConfig>(
@@ -138,7 +148,13 @@ export function StoreHomeTab({ store, isOwnProfile, contentShell = DEFAULT_CONTE
     carousels: () =>
       config.featured_carousels.enabled &&
       (config.featured_carousels.slot1 || config.featured_carousels.slot2) ? (
-        <FeaturedCarouselsSection key="carousels" store={store} config={config} onOpenCollection={onOpenCollection} />
+        <FeaturedCarouselsSection
+          key="carousels"
+          store={store}
+          config={config}
+          trackAnalytics={trackAnalytics}
+          onOpenCollection={onOpenCollection}
+        />
       ) : null,
     story: () =>
       config.story.enabled ? (
@@ -1093,10 +1109,12 @@ function GallerySection({ config }: { config: StoreHomepageConfig }) {
 function FeaturedCarouselsSection({
   store,
   config,
+  trackAnalytics,
   onOpenCollection,
 }: {
   store: StoreProfile;
   config: StoreHomepageConfig;
+  trackAnalytics?: boolean;
   onOpenCollection: (categoryName: string) => void;
 }) {
   const shell = useStoreHomeShell();
@@ -1117,67 +1135,129 @@ function FeaturedCarouselsSection({
     <section className={cn(shell, "space-y-8")}>
       {slots.map((cat) => {
         const shown = cat!.products.slice(0, perRow);
-        // Mobile: split the displayed slice across two independently-scrolling rows.
-        // Interleaved so the first products fill the initial 2×2 view.
-        const mobileRows = [
-          shown.filter((_, i) => i % 2 === 0),
-          shown.filter((_, i) => i % 2 === 1),
-        ];
         return (
-          <Reveal key={cat!.id}>
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-lg font-semibold text-gray-900">{cat!.name}</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onOpenCollection(cat!.name)}
-                  className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
-                >
-                  View all {cat!.products.length}
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              {/* Desktop / tablet grid */}
-              <div className={cn("hidden sm:grid gap-3 sm:gap-4", gridCols)}>
-                {shown.map((product, i) => (
-                  <ProductCard key={product.id} product={product} priority={i < 4} hideStoreMeta />
-                ))}
-              </div>
-
-              {/* Mobile: two independently-scrolling rows (~2 cards visible, all products).
-                  items-start + hideStoreMeta keep every card the same height so no card
-                  leaves dead space when its neighbours are still loading. */}
-              <div className="sm:hidden space-y-3">
-                {mobileRows.map((row, ri) => (
-                  <div
-                    key={ri}
-                    className="-mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-pl-5"
-                  >
-                    <div className="flex items-start gap-3" style={{ minWidth: "min-content" }}>
-                      <div className="w-5 flex-shrink-0" aria-hidden />
-                      {row.map((product, i) => (
-                        // Fixed slot height (square image + info row) so off-screen cards
-                        // that are still lazy-loading can't stretch the row and leave gaps.
-                        <div
-                          key={product.id}
-                          className="w-[42vw] h-[calc(42vw_+_40px)] overflow-hidden flex-shrink-0 snap-start"
-                        >
-                          <ProductCard product={product} priority={ri === 0 && i < 2} hideStoreMeta />
-                        </div>
-                      ))}
-                      <div className="w-5 flex-shrink-0" aria-hidden />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Reveal>
+          <FeaturedCarouselBlock
+            key={cat!.id}
+            category={cat!}
+            products={shown}
+            gridCols={gridCols}
+            storeId={store.id}
+            perRow={perRow}
+            trackAnalytics={trackAnalytics}
+            onOpenCollection={onOpenCollection}
+          />
         );
       })}
     </section>
+  );
+}
+
+function FeaturedCarouselBlock({
+  category,
+  products,
+  gridCols,
+  storeId,
+  perRow,
+  trackAnalytics,
+  onOpenCollection,
+}: {
+  category: StoreProfile["categories"][number];
+  products: StoreProfile["categories"][number]["products"];
+  gridCols: string;
+  storeId: string;
+  perRow: number;
+  trackAnalytics?: boolean;
+  onOpenCollection: (categoryName: string) => void;
+}) {
+  const impressionContext = React.useMemo(
+    () => ({
+      section: "home_featured_carousel",
+      categoryId: category.id,
+      categoryName: category.name,
+      perRow,
+    }),
+    [category.id, category.name, perRow],
+  );
+  const impressionRef = useProductImpressions(
+    trackAnalytics ? storeId : null,
+    products,
+    impressionContext,
+  );
+  // Mobile: split the displayed slice across two independently-scrolling rows.
+  // Interleaved so the first products fill the initial 2x2 view.
+  const mobileRows = React.useMemo(
+    () => [
+      products.filter((_, i) => i % 2 === 0),
+      products.filter((_, i) => i % 2 === 1),
+    ],
+    [products],
+  );
+
+  return (
+    <Reveal>
+      <div ref={impressionRef}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <h3 className="text-lg font-semibold text-gray-900">{category.name}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenCollection(category.name)}
+            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
+          >
+            View all {category.products.length}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {/* Desktop / tablet grid */}
+        <div className={cn("hidden sm:grid gap-3 sm:gap-4", gridCols)}>
+          {products.map((product, i) => (
+            <div key={product.id} data-analytics-product-id={product.id}>
+              <ProductCard
+                product={product}
+                priority={i < 4}
+                hideStoreMeta
+                storeId={storeId}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Mobile: two independently-scrolling rows (~2 cards visible, all products).
+            items-start + hideStoreMeta keep every card the same height so no card
+            leaves dead space when its neighbours are still loading. */}
+        <div className="sm:hidden space-y-3">
+          {mobileRows.map((row, ri) => (
+            <div
+              key={ri}
+              className="-mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-pl-5"
+            >
+              <div className="flex items-start gap-3" style={{ minWidth: "min-content" }}>
+                <div className="w-5 flex-shrink-0" aria-hidden />
+                {row.map((product, i) => (
+                  // Fixed slot height (square image + info row) so off-screen cards
+                  // that are still lazy-loading can't stretch the row and leave gaps.
+                  <div
+                    key={product.id}
+                    data-analytics-product-id={product.id}
+                    className="w-[42vw] h-[calc(42vw_+_40px)] overflow-hidden flex-shrink-0 snap-start"
+                  >
+                    <ProductCard
+                      product={product}
+                      priority={ri === 0 && i < 2}
+                      hideStoreMeta
+                      storeId={storeId}
+                    />
+                  </div>
+                ))}
+                <div className="w-5 flex-shrink-0" aria-hidden />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Reveal>
   );
 }
 
