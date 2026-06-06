@@ -1,7 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -39,8 +49,45 @@ type CategoryAdjustmentsPanelProps = {
   onCategoriesChanged?: () => void | Promise<void>;
 };
 
+type SortColumn = "name" | "fullPathName" | "productCount";
+type SortOrder = "asc" | "desc";
+
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-AU").format(value);
+}
+
+function SortButton({
+  label,
+  column,
+  sortBy,
+  sortOrder,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  column: SortColumn;
+  sortBy: SortColumn;
+  sortOrder: SortOrder;
+  onSort: (column: SortColumn) => void;
+  align?: "left" | "center" | "right";
+}) {
+  const active = sortBy === column;
+  const Icon = !active ? ArrowUpDown : sortOrder === "asc" ? ArrowUp : ArrowDown;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column)}
+      className={cn(
+        "-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground",
+        align === "center" && "mx-auto",
+        align === "right" && "ml-auto flex-row-reverse"
+      )}
+    >
+      {label}
+      <Icon className={cn("size-3", active ? "opacity-100" : "opacity-40")} />
+    </button>
+  );
 }
 
 export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjustmentsPanelProps) {
@@ -65,6 +112,8 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
   const [deleteTarget, setDeleteTarget] = React.useState<ManagedLightspeedCategory | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
   const [bulkDeleting, setBulkDeleting] = React.useState(false);
+  const [sortBy, setSortBy] = React.useState<SortColumn>("fullPathName");
+  const [sortOrder, setSortOrder] = React.useState<SortOrder>("asc");
 
   const loadCategories = React.useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -333,6 +382,32 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
     0
   );
 
+  const handleSort = (column: SortColumn) => {
+    if (sortBy === column) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortBy(column);
+    setSortOrder("asc");
+  };
+
+  const sortedCategories = React.useMemo(() => {
+    const sorted = [...categories];
+    const direction = sortOrder === "asc" ? 1 : -1;
+
+    sorted.sort((a, b) => {
+      if (sortBy === "productCount") {
+        return (a.productCount - b.productCount) * direction;
+      }
+
+      const left = sortBy === "name" ? a.name : a.fullPathName || a.name;
+      const right = sortBy === "name" ? b.name : b.fullPathName || b.name;
+      return left.localeCompare(right, undefined, { sensitivity: "base" }) * direction;
+    });
+
+    return sorted;
+  }, [categories, sortBy, sortOrder]);
+
   const parentCategoryOptions = categories;
 
   if (loading) {
@@ -438,14 +513,33 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
                     aria-label="Select all categories"
                   />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Category
+                <th className="px-4 py-3 text-left">
+                  <SortButton
+                    label="Category"
+                    column="name"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Path
+                <th className="px-4 py-3 text-left">
+                  <SortButton
+                    label="Path"
+                    column="fullPathName"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Products
+                <th className="px-4 py-3 text-center">
+                  <SortButton
+                    label="Products"
+                    column="productCount"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                    align="center"
+                  />
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Actions
@@ -460,7 +554,7 @@ export function CategoryAdjustmentsPanel({ onCategoriesChanged }: CategoryAdjust
                   </td>
                 </tr>
               ) : (
-                categories.map((category) => {
+                sortedCategories.map((category) => {
                   const isEditing = editingId === category.categoryID;
                   const isSaving = savingId === category.categoryID;
                   const isDeleting = deletingId === category.categoryID;

@@ -5,15 +5,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  buildExistingCatalogIndex,
-  catalogMatchKey,
-  csvRowFingerprint,
-  findDuplicateForProduct,
+  computeImportRowDuplicates,
+  valueForHeader,
+  type DuplicateReferenceValue,
   type ExistingCatalogProduct,
 } from '@/lib/store/online-products-csv';
 import {
   CSV_MAX_BYTES,
-  inferNameBrand,
   inferRowLabel,
   isCsvFile,
   parseCsvText,
@@ -34,12 +32,54 @@ async function fetchExistingCatalog(
 ): Promise<ExistingCatalogProduct[]> {
   const { data } = await supabase
     .from('products')
-    .select('id, display_name, description, brand')
+    .select('id, display_name, description, brand, system_sku, custom_sku')
     .eq('user_id', userId)
-    .eq('listing_source', 'online_catalog')
     .eq('listing_type', 'store_inventory');
 
   return (data ?? []) as ExistingCatalogProduct[];
+}
+
+async function fetchPriorCsvDuplicateReferences(
+  supabase: BicycleStoreSupabase,
+  userId: string,
+  duplicateColumn: string | null,
+): Promise<DuplicateReferenceValue[]> {
+  if (!duplicateColumn?.trim()) return [];
+
+  const { data: imports } = await supabase
+    .from('online_product_csv_imports')
+    .select('id, file_name, duplicate_column')
+    .eq('user_id', userId)
+    .not('duplicate_column', 'is', null);
+
+  const importRows = imports ?? [];
+  if (importRows.length === 0) return [];
+
+  const columnByImportId = new Map(
+    importRows.map((row) => [row.id as string, row.duplicate_column as string | null]),
+  );
+
+  const { data: csvRows } = await supabase
+    .from('online_product_csv_rows')
+    .select('import_id, row_index, display_label, raw_values, status, created_product_id')
+    .in('import_id', importRows.map((row) => row.id as string))
+    .in('status', ['pending', 'selected', 'enriched', 'created']);
+
+  return (csvRows ?? [])
+    .map((row) => {
+      const priorColumn = columnByImportId.get(row.import_id as string);
+      const value = valueForHeader(row.raw_values as Record<string, string>, priorColumn);
+      if (!value) return null;
+
+      return {
+        value,
+        duplicateOfId: (row.created_product_id as string | null) ?? null,
+        duplicateOfName:
+          (row.display_label as string | null) ||
+          `Previous CSV row ${row.row_index as number}`,
+      } satisfies DuplicateReferenceValue;
+    })
+    .filter((row): row is DuplicateReferenceValue => row !== null);
 }
 
 function serialiseImport(row: Record<string, unknown>) {
@@ -49,6 +89,7 @@ function serialiseImport(row: Record<string, unknown>) {
     headers: row.headers as string[],
     sohColumn: (row.soh_column as string | null) ?? null,
     searchColumn: (row.search_column as string | null) ?? null,
+    duplicateColumn: (row.duplicate_column as string | null) ?? null,
     imageSearchBicycleContext: Boolean(row.image_search_bicycle_context),
     rowCount: row.row_count as number,
     createdAt: row.created_at as string,
@@ -83,7 +124,7 @@ export async function GET() {
 
     const { data: imports, error } = await supabase
       .from('online_product_csv_imports')
-      .select('id, file_name, headers, soh_column, search_column, image_search_bicycle_context, row_count, created_at, updated_at')
+      .select('id, file_name, headers, soh_column, search_column, duplicate_column, image_search_bicycle_context, row_count, created_at, updated_at')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false })
       .limit(30);
@@ -150,6 +191,12 @@ export async function POST(request: NextRequest) {
     const imageSearchBicycleContext =
       bicycleContextRaw != null && String(bicycleContextRaw) === 'true';
 
+    const duplicateColumnRaw = formData.get('duplicateColumn');
+    const duplicateColumn =
+      duplicateColumnRaw != null && String(duplicateColumnRaw).trim()
+        ? String(duplicateColumnRaw).trim()
+        : null;
+
     const { headers, rows, totalDataRows } = parseCsvText(
       await csvFile.text(),
       headerRowIndex,
@@ -159,9 +206,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No product rows found in CSV' }, { status: 400 });
     }
 
-    const existingCatalog = await fetchExistingCatalog(supabase, user.id);
-    const catalogIndex = buildExistingCatalogIndex(existingCatalog);
-    const seenRawFingerprints = new Map<string, { rowIndex: number; label: string }>();
+    const [existingCatalog, priorReferences] = await Promise.all([
+      fetchExistingCatalog(supabase, user.id),
+      fetchPriorCsvDuplicateReferences(supabase, user.id, duplicateColumn),
+    ]);
+
+    const duplicateResults = computeImportRowDuplicates({
+      headers,
+      duplicateColumn,
+      rows: rows.map((row) => ({ rowIndex: row.rowIndex, values: row.values })),
+      existingCatalog,
+      priorReferences,
+    });
+    const duplicateByRowIndex = new Map(
+      duplicateResults.map((result) => [result.rowIndex, result]),
+    );
 
     const { data: importRow, error: importError } = await supabase
       .from('online_product_csv_imports')
@@ -171,10 +230,11 @@ export async function POST(request: NextRequest) {
         headers,
         soh_column: sohColumn,
         search_column: searchColumn,
+        duplicate_column: duplicateColumn,
         image_search_bicycle_context: imageSearchBicycleContext,
         row_count: rows.length,
       })
-      .select('id, file_name, headers, soh_column, search_column, image_search_bicycle_context, row_count, created_at, updated_at')
+      .select('id, file_name, headers, soh_column, search_column, duplicate_column, image_search_bicycle_context, row_count, created_at, updated_at')
       .single();
 
     if (importError || !importRow) {
@@ -183,46 +243,17 @@ export async function POST(request: NextRequest) {
 
     const rowPayloads = rows.map((row) => {
       const label = inferRowLabel(row.values, headers);
-      const { name, brand } = inferNameBrand(row.values, headers);
-      const catalogDup = name ? findDuplicateForProduct(name, brand, catalogIndex) : null;
-      const fingerprint = csvRowFingerprint(row.values);
-      const fileDup = fingerprint ? seenRawFingerprints.get(fingerprint) : undefined;
-
-      let status: 'pending' | 'duplicate' = 'pending';
-      let duplicateOfId: string | null = null;
-      let duplicateOfName: string | null = null;
-
-      if (catalogDup) {
-        status = 'duplicate';
-        duplicateOfId = catalogDup.existingProductId;
-        duplicateOfName = catalogDup.existingProductName;
-      } else if (fileDup) {
-        status = 'duplicate';
-        duplicateOfName = `Duplicate of row ${fileDup.rowIndex} (${fileDup.label})`;
-      } else if (fingerprint) {
-        seenRawFingerprints.set(fingerprint, { rowIndex: row.rowIndex, label });
-      }
-
-      const catalogKey = catalogMatchKey(name, brand);
-      if (status === 'pending' && catalogKey) {
-        const priorCatalog = seenRawFingerprints.get(`catalog:${catalogKey}`);
-        if (priorCatalog) {
-          status = 'duplicate';
-          duplicateOfName = `Duplicate of row ${priorCatalog.rowIndex} (${priorCatalog.label})`;
-        } else {
-          seenRawFingerprints.set(`catalog:${catalogKey}`, { rowIndex: row.rowIndex, label: name || label });
-        }
-      }
+      const duplicate = duplicateByRowIndex.get(row.rowIndex);
 
       return {
         import_id: importRow.id,
         row_index: row.rowIndex,
         display_label: label,
         raw_values: row.values,
-        is_selected: status === 'pending',
-        status,
-        duplicate_of_id: duplicateOfId,
-        duplicate_of_name: duplicateOfName,
+        is_selected: duplicate?.isSelected ?? true,
+        status: duplicate?.status ?? 'pending',
+        duplicate_of_id: duplicate?.duplicateOfId ?? null,
+        duplicate_of_name: duplicate?.duplicateOfName ?? null,
       };
     });
 

@@ -39,6 +39,7 @@ import {
   parseSohFromColumn,
   parseSohFromValues,
   sampleValueFromColumn,
+  suggestDuplicateColumn,
   suggestSearchColumn,
   suggestSohColumn,
 } from "@/lib/store/online-products-csv-parse";
@@ -60,6 +61,7 @@ export interface CsvImportMeta {
   headers: string[];
   sohColumn: string | null;
   searchColumn: string | null;
+  duplicateColumn: string | null;
   imageSearchBicycleContext: boolean;
   rowCount: number;
   createdAt: string;
@@ -101,6 +103,7 @@ export interface CsvPhotosPayload {
   headers: string[];
   sohColumn: string | null;
   searchColumn: string | null;
+  duplicateColumn: string | null;
   imageSearchBicycleContext: boolean;
   items: EnrichedFromCsv[];
   rows: CsvImportTableRow[];
@@ -227,10 +230,11 @@ export function StoreOnlineProductsCsvPanel({
     file: File;
     parsedRows: string[][];
   } | null>(null);
-  const [headerRowIndex, setHeaderRowIndex] = React.useState(0);
+  const [headerRowIndex, setHeaderRowIndex] = React.useState<number | null>(null);
   const [importDialogStep, setImportDialogStep] = React.useState<"header" | "columns">("header");
   const [sohColumn, setSohColumn] = React.useState<string>("");
   const [searchColumn, setSearchColumn] = React.useState<string>("");
+  const [duplicateColumn, setDuplicateColumn] = React.useState<string>("");
   const [imageSearchBicycleContext, setImageSearchBicycleContext] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -328,11 +332,11 @@ export function StoreOnlineProductsCsvPanel({
         onError("CSV needs at least two non-empty rows (a header row and product data).");
         return;
       }
-      setHeaderRowIndex(0);
+      setHeaderRowIndex(null);
       setImportDialogStep("header");
-      const headers = headersAtRow(parsedRows, 0);
-      setSohColumn(suggestSohColumn(headers) ?? "");
-      setSearchColumn(suggestSearchColumn(headers) ?? "");
+      setSohColumn("");
+      setSearchColumn("");
+      setDuplicateColumn("");
       setImageSearchBicycleContext(false);
       setPendingUpload({ file, parsedRows });
     } catch (err) {
@@ -345,6 +349,7 @@ export function StoreOnlineProductsCsvPanel({
     headerIndex: number,
     sohCol: string,
     searchCol: string,
+    duplicateCol: string,
     bicycleContext: boolean,
   ) => {
     setUploading(true);
@@ -355,14 +360,28 @@ export function StoreOnlineProductsCsvPanel({
       fd.append("headerRowIndex", String(headerIndex));
       if (sohCol.trim()) fd.append("sohColumn", sohCol.trim());
       if (searchCol.trim()) fd.append("searchColumn", searchCol.trim());
+      if (duplicateCol.trim()) fd.append("duplicateColumn", duplicateCol.trim());
       fd.append("imageSearchBicycleContext", bicycleContext ? "true" : "false");
       const res = await fetch("/api/store/online-products/csv-imports", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Upload failed");
+
+      const checkRes = await fetch(
+        `/api/store/online-products/csv-imports/${data.import.id}/check-duplicates`,
+        { method: "POST" },
+      );
+      const checkData = await checkRes.json();
+      if (!checkRes.ok || !checkData.success) {
+        throw new Error(checkData.error || "Duplicate check failed");
+      }
+
       await loadImports();
-      setActiveImportId(data.import.id);
-      setActiveImport(data.import);
-      setRows(data.rows ?? []);
+      await loadImport(data.import.id);
+      if (typeof checkData.stats?.duplicateRows === "number" && checkData.stats.duplicateRows > 0) {
+        setRowViewTab("duplicates");
+      } else {
+        setRowViewTab("all");
+      }
       setPendingUpload(null);
       if (wizardMode) onImportComplete?.();
     } catch (err) {
@@ -373,10 +392,14 @@ export function StoreOnlineProductsCsvPanel({
   };
 
   const confirmPendingUpload = () => {
-    if (!pendingUpload) return;
+    if (!pendingUpload || headerRowIndex === null) return;
     const dataRowCount = pendingUpload.parsedRows.length - headerRowIndex - 1;
     if (dataRowCount < 1) {
       onError("Pick a header row that has at least one product row beneath it.");
+      return;
+    }
+    if (!duplicateColumn.trim()) {
+      onError("Choose a column to use for duplicate detection.");
       return;
     }
     void handleUpload(
@@ -384,6 +407,7 @@ export function StoreOnlineProductsCsvPanel({
       headerRowIndex,
       sohColumn,
       searchColumn,
+      duplicateColumn,
       imageSearchBicycleContext,
     );
   };
@@ -391,6 +415,7 @@ export function StoreOnlineProductsCsvPanel({
   const dismissPendingUpload = () => {
     if (uploading) return;
     setPendingUpload(null);
+    setHeaderRowIndex(null);
     setImportDialogStep("header");
     onError(null);
   };
@@ -540,6 +565,7 @@ export function StoreOnlineProductsCsvPanel({
           headers: importMeta.headers,
           sohColumn: importMeta.sohColumn ?? (sohColumn.trim() || null),
           searchColumn: importMeta.searchColumn ?? (searchColumn.trim() || null),
+          duplicateColumn: importMeta.duplicateColumn ?? (duplicateColumn.trim() || null),
           imageSearchBicycleContext:
             importMeta.imageSearchBicycleContext ?? imageSearchBicycleContext,
           items: enrichedItems,
@@ -580,6 +606,7 @@ export function StoreOnlineProductsCsvPanel({
       headers: activeImport.headers,
       sohColumn: activeImport.sohColumn ?? (sohColumn.trim() || null),
       searchColumn: activeImport.searchColumn ?? (searchColumn.trim() || null),
+      duplicateColumn: activeImport.duplicateColumn ?? (duplicateColumn.trim() || null),
       imageSearchBicycleContext:
         activeImport.imageSearchBicycleContext ?? imageSearchBicycleContext,
       items: enrichedItems,
@@ -626,18 +653,22 @@ export function StoreOnlineProductsCsvPanel({
     (max, row) => Math.max(max, row.length),
     0,
   );
-  const previewHeaders = pendingUpload
-    ? headersAtRow(pendingUpload.parsedRows, headerRowIndex)
-    : [];
-  const previewDataRowCount = pendingUpload
-    ? Math.max(0, pendingUpload.parsedRows.length - headerRowIndex - 1)
-    : 0;
+  const headerRowSelected = headerRowIndex !== null;
+  const previewHeaders =
+    pendingUpload && headerRowIndex !== null
+      ? headersAtRow(pendingUpload.parsedRows, headerRowIndex)
+      : [];
+  const previewDataRowCount =
+    pendingUpload && headerRowIndex !== null
+      ? Math.max(0, pendingUpload.parsedRows.length - headerRowIndex - 1)
+      : 0;
 
   React.useEffect(() => {
-    if (!pendingUpload) return;
+    if (!pendingUpload || headerRowIndex === null) return;
     const headers = headersAtRow(pendingUpload.parsedRows, headerRowIndex);
     const suggestedSoh = suggestSohColumn(headers);
     const suggestedSearch = suggestSearchColumn(headers);
+    const suggestedDuplicate = suggestDuplicateColumn(headers);
     setSohColumn((prev) => {
       if (prev && headers.includes(prev)) return prev;
       return suggestedSoh ?? "";
@@ -646,15 +677,26 @@ export function StoreOnlineProductsCsvPanel({
       if (prev && headers.includes(prev)) return prev;
       return suggestedSearch ?? "";
     });
+    setDuplicateColumn((prev) => {
+      if (prev && headers.includes(prev)) return prev;
+      return suggestedDuplicate ?? "";
+    });
   }, [pendingUpload, headerRowIndex]);
 
-  const sohSample = pendingUpload
-    ? sampleValueFromColumn(pendingUpload.parsedRows, headerRowIndex, sohColumn)
-    : null;
-  const searchSample = pendingUpload
-    ? sampleValueFromColumn(pendingUpload.parsedRows, headerRowIndex, searchColumn)
-    : null;
-  const previewNameSample = pendingUpload
+  const sohSample =
+    pendingUpload && headerRowIndex !== null
+      ? sampleValueFromColumn(pendingUpload.parsedRows, headerRowIndex, sohColumn)
+      : null;
+  const searchSample =
+    pendingUpload && headerRowIndex !== null
+      ? sampleValueFromColumn(pendingUpload.parsedRows, headerRowIndex, searchColumn)
+      : null;
+  const duplicateSample =
+    pendingUpload && headerRowIndex !== null
+      ? sampleValueFromColumn(pendingUpload.parsedRows, headerRowIndex, duplicateColumn)
+      : null;
+  const previewNameSample =
+    pendingUpload && headerRowIndex !== null
     ? (() => {
         const dataRow = pendingUpload.parsedRows[headerRowIndex + 1];
         if (!dataRow || previewHeaders.length === 0) return null;
@@ -665,6 +707,7 @@ export function StoreOnlineProductsCsvPanel({
         return inferRowLabel(values, previewHeaders);
       })()
     : null;
+  const canContinueFromHeader = headerRowSelected && previewDataRowCount >= 1;
   const previewSerperQuery = pendingUpload
     ? buildCsvSerperSearchQuery({
         searchColumnValue: searchSample,
@@ -795,6 +838,9 @@ export function StoreOnlineProductsCsvPanel({
                 {activeImport.fileName} · {activeImport.rowCount} rows
                 {activeImport.sohColumn ? ` · SOH: ${activeImport.sohColumn}` : ""}
                 {activeImport.searchColumn ? ` · Search: ${activeImport.searchColumn}` : ""}
+                {activeImport.duplicateColumn
+                  ? ` · Duplicates: ${activeImport.duplicateColumn}`
+                  : ""}
               </span>
             )}
             {!wizardMode && <OnlineProductsGenerationTooltip />}
@@ -867,9 +913,11 @@ export function StoreOnlineProductsCsvPanel({
                   <div>
                     <DialogTitle className="text-base">Import CSV</DialogTitle>
                     <DialogDescription className="text-left">
-                      {importDialogStep === "header"
-                        ? "Step 1 — pick the row that contains your column titles."
-                        : "Step 2 — map columns used for stock and image search."}
+                      {uploading
+                        ? "We are importing your file and checking each row against your catalogue."
+                        : importDialogStep === "header"
+                          ? "Step 1 — select which row has your column names."
+                          : "Step 2 — confirm which columns to use."}
                       {" "}
                       <span className="font-medium text-foreground">{pendingUpload.file.name}</span>
                     </DialogDescription>
@@ -890,13 +938,13 @@ export function StoreOnlineProductsCsvPanel({
                     </button>
                     <button
                       type="button"
-                      disabled={uploading || previewDataRowCount < 1}
+                      disabled={uploading || !canContinueFromHeader}
                       onClick={() => setImportDialogStep("columns")}
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
                         importDialogStep === "columns"
                           ? "text-gray-800 bg-white shadow-sm"
-                          : previewDataRowCount < 1
+                          : !canContinueFromHeader
                             ? "text-muted-foreground cursor-not-allowed opacity-50"
                             : "text-gray-600 hover:bg-gray-200/70",
                       )}
@@ -908,14 +956,62 @@ export function StoreOnlineProductsCsvPanel({
               </DialogHeader>
 
               <div className="min-h-0 flex-1 overflow-hidden px-6 py-4">
-                {importDialogStep === "columns" ? (
+                {uploading ? (
+                  <div className="flex h-full min-h-[14rem] flex-col items-center justify-center gap-4 rounded-md border border-border/60 bg-white px-6 py-12 text-center">
+                    <Loader2 className="h-9 w-9 animate-spin text-foreground/70" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-foreground">
+                        Checking for duplicates…
+                      </p>
+                      <p className="text-xs text-muted-foreground max-w-sm">
+                        Importing {previewDataRowCount} row
+                        {previewDataRowCount === 1 ? "" : "s"} and matching against your store
+                        catalogue.
+                      </p>
+                    </div>
+                  </div>
+                ) : importDialogStep === "columns" ? (
                   <div className="flex h-full min-h-[12rem] flex-col gap-4 overflow-auto">
                     <div className="rounded-md border border-border/60 bg-white p-4 space-y-3">
                       <div>
-                        <p className="text-sm font-medium text-foreground">Stock on hand (SOH)</p>
+                        <p className="text-sm font-medium text-foreground">
+                          Duplicate check <span className="text-muted-foreground font-normal">(required)</span>
+                        </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          Quantity available when each listing is created. Leave unset if your file
-                          has no stock column.
+                          Same value in this column = duplicate. Usually SKU or product name.
+                        </p>
+                      </div>
+                      <Select
+                        value={duplicateColumn || undefined}
+                        onValueChange={setDuplicateColumn}
+                        disabled={uploading}
+                      >
+                        <SelectTrigger className="h-9 w-full rounded-md text-sm">
+                          <SelectValue placeholder="Choose duplicate reference column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {previewHeaders.map((header) => (
+                            <SelectItem key={`dup-${header}`} value={header}>
+                              {header}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {duplicateColumn && (
+                        <p className="text-xs text-muted-foreground">
+                          Example from first row:{" "}
+                          <span className="font-medium text-foreground">
+                            {duplicateSample ?? "—"}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="rounded-md border border-border/60 bg-white p-4 space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Stock on hand (optional)</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Which column has quantity available?
                         </p>
                       </div>
                       <Select
@@ -950,11 +1046,10 @@ export function StoreOnlineProductsCsvPanel({
                     <div className="rounded-md border border-border/60 bg-white p-4 space-y-3">
                       <div>
                         <p className="text-sm font-medium text-foreground">
-                          Part number / search key
+                          Image search key (optional)
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          Serper uses this value first when finding product images — ideal for SKU,
-                          MPN, UPC, or catalogue numbers. Works for non-bicycle catalogues too.
+                          Used to find product photos. SKU or part number works best.
                         </p>
                       </div>
                       <Select
@@ -1019,6 +1114,29 @@ export function StoreOnlineProductsCsvPanel({
                   </div>
                 ) : (
                 <>
+                <div className="mb-3 rounded-md border border-border/60 bg-white px-4 py-3">
+                  {!headerRowSelected ? (
+                    <p className="text-sm text-foreground">
+                      <span className="font-medium">Select your header row.</span>{" "}
+                      Click <span className="font-medium">Select as header</span> on the row that
+                      contains column names such as SKU, Name, or Price. You need at least one
+                      product row below it.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-foreground">
+                      <span className="font-medium">Header set on row {headerRowIndex + 1}.</span>{" "}
+                      {previewHeaders.length} column{previewHeaders.length === 1 ? "" : "s"},{" "}
+                      {previewDataRowCount} product row{previewDataRowCount === 1 ? "" : "s"} to
+                      import.
+                      {previewDataRowCount < 1 && (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          Pick a different row — there must be data beneath the header.
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
                 <div className="flex h-full min-h-[12rem] flex-col overflow-hidden rounded-md border border-border/60 bg-white">
                   <div className="min-h-0 flex-1 overflow-auto">
                     <table className="w-full min-w-max text-sm border-collapse">
@@ -1042,14 +1160,15 @@ export function StoreOnlineProductsCsvPanel({
                       </thead>
                       <tbody>
                         {previewRows.map((cells, rowIndex) => {
-                          const isHeader = rowIndex === headerRowIndex;
+                          const isHeader =
+                            headerRowIndex !== null && rowIndex === headerRowIndex;
                           const hasDataBelow = rowIndex < pendingUpload.parsedRows.length - 1;
                           return (
                             <tr
                               key={rowIndex}
                               className={cn(
                                 "border-b border-border/60",
-                                isHeader && "bg-primary/5",
+                                isHeader && "bg-gray-100/80",
                               )}
                             >
                               <td className="sticky left-0 z-[1] border-r border-border/60 bg-white px-2 py-2 align-top">
@@ -1066,7 +1185,7 @@ export function StoreOnlineProductsCsvPanel({
                                         : "text-muted-foreground cursor-not-allowed opacity-50",
                                   )}
                                 >
-                                  {isHeader ? "Header row" : "Use as header"}
+                                  {isHeader ? "Selected" : "Select as header"}
                                 </button>
                               </td>
                               <td className="px-2 py-2 align-top text-xs text-muted-foreground tabular-nums">
@@ -1101,16 +1220,25 @@ export function StoreOnlineProductsCsvPanel({
               </div>
 
               <div className="shrink-0 border-t border-border/60 bg-white px-6 py-4">
-                <DialogFooter className="gap-2 sm:justify-between">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={uploading}
-                    onClick={dismissPendingUpload}
-                  >
-                    Cancel
-                  </Button>
+                <DialogFooter className="gap-2 sm:items-center sm:justify-between">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={uploading}
+                      onClick={dismissPendingUpload}
+                    >
+                      Cancel
+                    </Button>
+                    {!uploading && importDialogStep === "header" && !canContinueFromHeader && (
+                      <p className="text-xs text-muted-foreground">
+                        {headerRowSelected
+                          ? "Choose a header row with at least one product row below it."
+                          : "Select a header row to continue."}
+                      </p>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {importDialogStep === "columns" && (
                       <Button
@@ -1127,7 +1255,7 @@ export function StoreOnlineProductsCsvPanel({
                       <Button
                         type="button"
                         size="sm"
-                        disabled={uploading || previewDataRowCount < 1}
+                        disabled={uploading || !canContinueFromHeader}
                         onClick={() => setImportDialogStep("columns")}
                       >
                         Continue
@@ -1136,20 +1264,13 @@ export function StoreOnlineProductsCsvPanel({
                       <Button
                         type="button"
                         size="sm"
-                        disabled={uploading || previewDataRowCount < 1}
+                        disabled={
+                          uploading || previewDataRowCount < 1 || !duplicateColumn.trim()
+                        }
                         onClick={() => confirmPendingUpload()}
                       >
-                        {uploading ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" />
-                            Importing…
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="size-4" />
-                            Import {previewDataRowCount} row{previewDataRowCount === 1 ? "" : "s"}
-                          </>
-                        )}
+                        <Upload className="size-4" />
+                        Import {previewDataRowCount} row{previewDataRowCount === 1 ? "" : "s"}
                       </Button>
                     )}
                   </div>

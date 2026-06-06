@@ -300,6 +300,18 @@ export function suggestSearchColumn(headers: string[]): string | null {
   return null;
 }
 
+/** Pick the best default duplicate-detection column (SKU / part number, then product title). */
+export function suggestDuplicateColumn(headers: string[]): string | null {
+  const searchLike = suggestSearchColumn(headers);
+  if (searchLike) return searchLike;
+
+  for (const header of headers) {
+    if (NAME_HEADER.test(header)) return header;
+  }
+
+  return headers[0] ?? null;
+}
+
 export function valueFromColumn(
   values: Record<string, string>,
   columnName: string | null | undefined,

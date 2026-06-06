@@ -19,6 +19,7 @@ function serialiseImport(row: Record<string, unknown>) {
     headers: row.headers as string[],
     sohColumn: (row.soh_column as string | null) ?? null,
     searchColumn: (row.search_column as string | null) ?? null,
+    duplicateColumn: (row.duplicate_column as string | null) ?? null,
     imageSearchBicycleContext: Boolean(row.image_search_bicycle_context),
     rowCount: row.row_count as number,
     createdAt: row.created_at as string,
@@ -49,7 +50,7 @@ async function loadImport(
 ) {
   const { data: importRow, error } = await supabase
     .from('online_product_csv_imports')
-    .select('id, file_name, headers, soh_column, search_column, image_search_bicycle_context, row_count, created_at, updated_at')
+    .select('id, file_name, headers, soh_column, search_column, duplicate_column, image_search_bicycle_context, row_count, created_at, updated_at')
     .eq('id', importId)
     .eq('user_id', userId)
     .single();

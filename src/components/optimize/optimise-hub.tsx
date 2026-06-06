@@ -42,11 +42,6 @@ export function OptimiseHub({
 }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-md border border-border/60 bg-white px-4 py-3 text-sm text-muted-foreground">
-        Choose where your products come from. Each path walks you through copy optimisation and
-        photos in a simple step-by-step flow.
-      </div>
-
       <div className="grid gap-4 sm:grid-cols-3">
         {SOURCES.map((source) => {
           const Icon = source.icon;

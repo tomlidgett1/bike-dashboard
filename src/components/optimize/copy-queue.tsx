@@ -302,7 +302,16 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
 
   const showScopeTabs = !fixedScope;
 
-  if (scope === "catalogue" && !category && !loadingCats) {
+  if (scope === "catalogue" && !category) {
+    if (loadingCats) {
+      return (
+        <div className="space-y-6">
+          {showScopeTabs && <OptimizerScopeTabs scope={scope} onChange={onScopeChange} />}
+          <OptimiseLoadingState label="Loading categories…" />
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-6">
         {showScopeTabs && <OptimizerScopeTabs scope={scope} onChange={onScopeChange} />}
