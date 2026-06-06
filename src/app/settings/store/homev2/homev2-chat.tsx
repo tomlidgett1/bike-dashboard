@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/chart";
 import { cn } from "@/lib/utils";
 import { GenieProposalCard } from "@/components/genie/genie-proposal-card";
+import { LightspeedWorkorderCards } from "@/components/genie/lightspeed-workorder-cards";
 import { GenieStoreProductCards } from "@/components/genie/genie-store-product-cards";
 import {
   GenieRawLogsViewer,
@@ -29,6 +30,7 @@ import type {
   GenieAnalysisQueryPayload,
   GenieProposal,
   GenieRawDebugLogEntry,
+  GenieWorkorderCardsPayload,
 } from "@/lib/types/genie-agent";
 import { downloadChartCardAsPng, downloadTableCsv } from "@/lib/utils/genie-visual-export";
 import { compactGenieProgressText, liveGenieProgressPreview } from "@/lib/genie/progress-text";
@@ -94,6 +96,7 @@ interface ChatMessage {
   tables?: GenieTablePayload[];
   proposals?: GenieProposal[];
   products?: GenieStoreProductPreview[];
+  workorders?: GenieWorkorderCardsPayload;
   status?: string;
   statusPhase?: string;
   reasoningSummary?: string;
@@ -1504,6 +1507,18 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             ));
           }
 
+          if (event.event === "workorders" && event.workorders) {
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    workorders: event.workorders as GenieWorkorderCardsPayload,
+                    status: undefined,
+                  }
+                : message
+            ));
+          }
+
           if (event.event === "done") {
             flushPendingText();
             setMessages((current) => current.map((message) =>
@@ -1642,6 +1657,9 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 		                          ) : null}
 	                          {message.products?.length ? (
 	                            <GenieStoreProductCards products={message.products} />
+	                          ) : null}
+	                          {message.workorders?.workorders.length ? (
+	                            <LightspeedWorkorderCards payload={message.workorders} />
 	                          ) : null}
 	                          {message.charts?.map((chart, index) => <GenieChart key={`${chart.title}-${index}`} chart={chart} />)}
 	                          {message.tables?.map((table, index) => <GenieTable key={`${table.title}-${index}`} table={table} />)}

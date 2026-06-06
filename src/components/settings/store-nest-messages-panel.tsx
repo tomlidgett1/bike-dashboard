@@ -11,10 +11,23 @@ import {
   Send,
   Settings,
   Sparkles,
-  X,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { SettingsSection } from "@/components/dashboard/settings-primitives";
 import {
   formatNestOutboundMessage,
@@ -38,22 +51,8 @@ const QUICK_REPLIES = [
   "Could you share a bit more detail?",
 ] as const;
 
-/** Matches Nest business portal inbox (`PortalConversationsPanel`). */
-const INBOX_INPUT_CLASS = cn(
-  "w-full rounded-md border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-900",
-  "outline-none transition-colors shadow-none",
-  "focus:border-gray-400 focus:ring-2 focus:ring-gray-100",
-  "placeholder:text-gray-400",
-);
-
-const INBOX_SECTION_HEADER_CLASS =
-  "border-b border-gray-200 bg-gray-100 px-3.5 py-2.5 md:px-4";
-
-const NEST_INBOX_BADGE_CLASS =
-  "rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-600";
-
-const NEST_INBOX_ICON_BUTTON_CLASS =
-  "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50";
+const INBOX_CARD =
+  "overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm";
 
 const LAST_READ_KEY = "yj_nest_last_read";
 
@@ -257,47 +256,46 @@ function ConversationRow({
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full rounded-md px-2.5 py-2 text-left transition-colors",
-        active ? "bg-gray-100" : unread ? "bg-white hover:bg-gray-50" : "hover:bg-gray-50",
+        "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
+        active
+          ? "border-gray-300 bg-muted/50"
+          : "border-transparent hover:border-gray-200 hover:bg-muted/30",
       )}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start gap-2.5">
         <div
           className={cn(
-            "flex min-w-0 flex-1 gap-2",
-            unread && !active ? "items-start" : "items-center",
+            "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+            unread && !active ? "bg-primary" : "bg-transparent",
           )}
-        >
-          {unread && !active ? (
-            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gray-900" aria-label="Unread" />
-          ) : null}
-          <div className="min-w-0 flex-1">
+          aria-hidden={!unread || active}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
             <p
               className={cn(
-                "truncate text-[13px] text-gray-900",
+                "truncate text-sm text-foreground",
                 unread && !active ? "font-medium" : "font-normal",
               )}
             >
               {displayTitle}
             </p>
-            {displayTitle !== chat.participantHandle && chat.participantHandle ? (
-              <p className="mt-0.5 truncate text-xs text-gray-500">{chat.participantHandle}</p>
-            ) : null}
-            {unread && !active && chat.preview ? (
-              <p className="mt-1 line-clamp-2 text-xs leading-snug text-gray-500">{chat.preview}</p>
-            ) : null}
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              {formatListTime(chat.lastMessageAt)}
+            </span>
           </div>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <div className="flex items-center gap-2">
-            {chat.hasManualMessages ? (
-              <span className={NEST_INBOX_BADGE_CLASS}>Manual</span>
-            ) : null}
-            {unread && !active ? (
-              <span className={cn(NEST_INBOX_BADGE_CLASS, "text-gray-900")}>New</span>
-            ) : null}
-            <span className="text-xs text-gray-500">{formatListTime(chat.lastMessageAt)}</span>
-          </div>
+          {chat.preview ? (
+            <p
+              className={cn(
+                "mt-0.5 truncate text-xs text-muted-foreground",
+                unread && !active && "text-foreground/80",
+              )}
+            >
+              {chat.preview}
+            </p>
+          ) : displayTitle !== chat.participantHandle && chat.participantHandle ? (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{chat.participantHandle}</p>
+          ) : null}
         </div>
       </div>
     </button>
@@ -305,54 +303,58 @@ function ConversationRow({
 }
 
 function ThreadMessage({ message }: { message: NestConversationMessage }) {
-  const isStaff = typeof message.handle === "string" && message.handle.startsWith("staff@");
-  const isManual = isManualMessage(message);
-  const kind =
-    message.role === "system" ? "system" : message.role === "user" ? "user" : "assistant";
+  const isStaff =
+    (typeof message.handle === "string" && message.handle.startsWith("staff@")) ||
+    isManualMessage(message);
+  const isCustomer = message.role === "user";
+  const isSystem = message.role === "system";
+  const isAi = message.role === "assistant" && !isStaff;
+  const isOutgoing = isStaff;
   const bubbles =
-    kind === "assistant" ? splitAssistantBubbles(message.content) : [message.content];
+    message.role === "assistant" ? splitAssistantBubbles(message.content) : [message.content];
 
   return (
     <div
       className={cn(
-        "flex",
-        kind === "user" ? "justify-end" : kind === "system" ? "justify-center" : "justify-start",
+        "flex px-1",
+        isSystem ? "justify-center" : isOutgoing ? "justify-end" : "justify-start",
       )}
     >
-      <div className={cn("max-w-[88%] space-y-1.5", kind === "user" && "items-end")}>
+      <div className={cn("max-w-[min(78%,28rem)] space-y-1", isOutgoing && "items-end")}>
+        {isAi ? (
+          <p className="px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Nest
+          </p>
+        ) : null}
         {bubbles.map((bubble, index) => (
           <div
             key={`${message.id}-${index}`}
             className={cn(
-              "rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed",
-              kind === "user" && "rounded-br-md bg-[#37A9FD] text-white",
-              kind === "assistant" &&
-                !isStaff &&
-                "rounded-bl-md border border-gray-200 bg-white text-gray-900",
-              kind === "assistant" &&
-                isStaff &&
-                "rounded-bl-md border border-gray-200 bg-[#f0fdf4] text-gray-900",
-              kind === "system" &&
-                "rounded-md border border-gray-200 bg-white text-center text-gray-500",
+              "text-sm leading-snug",
+              isOutgoing &&
+                "rounded-[24px] bg-primary px-4 py-2 text-primary-foreground shadow-sm",
+              isCustomer &&
+                "rounded-[24px] border border-gray-200 bg-white px-4 py-2 text-foreground shadow-sm",
+              isAi &&
+                "rounded-[24px] border border-gray-200 bg-muted/50 px-4 py-2 text-foreground",
+              isSystem &&
+                "rounded-full bg-muted px-4 py-1.5 text-center text-xs text-muted-foreground",
             )}
           >
             <RichText text={bubble} />
           </div>
         ))}
-        <div
-          className={cn(
-            "flex items-center gap-1.5 px-1",
-            kind === "user" ? "justify-end" : "justify-start",
-          )}
-        >
-          {isStaff ? (
-            <span className={cn(NEST_INBOX_BADGE_CLASS, "text-gray-500")}>You</span>
-          ) : null}
-          {isManual ? (
-            <span className={cn(NEST_INBOX_BADGE_CLASS, "text-gray-500")}>Manual</span>
-          ) : null}
-          <p className="text-[11px] text-gray-500">{formatMessageTime(message.createdAt)}</p>
-        </div>
+        {!isSystem ? (
+          <p
+            className={cn(
+              "px-1 text-[11px] text-muted-foreground",
+              isOutgoing ? "text-right" : "text-left",
+            )}
+          >
+            {formatMessageTime(message.createdAt)}
+            {isStaff ? " · You" : null}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -395,63 +397,70 @@ function ComposeBox({
   }
 
   return (
-    <div className="shrink-0 border-t border-gray-200 bg-white px-3.5 py-3 md:px-4">
-      {sendErr ? <p className="mb-2 text-xs text-red-600">{sendErr}</p> : null}
-      <div className="mb-2 flex flex-wrap gap-1.5">
+    <div className="shrink-0 border-t border-border/60 bg-background/80 px-4 py-4 backdrop-blur-sm">
+      {sendErr ? (
+        <div className="mb-3 rounded-md border border-destructive/20 bg-white px-3 py-2 text-sm text-destructive">
+          {sendErr}
+        </div>
+      ) : null}
+      <div className="mb-3 flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]">
         {QUICK_REPLIES.map((snippet) => (
-          <button
+          <Button
             key={snippet}
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => {
               setText((prev) => (prev.trim() ? `${prev.trim()}\n\n${snippet}` : snippet));
               requestAnimationFrame(() => textareaRef.current?.focus());
             }}
             disabled={sending}
-            className="inline-flex max-w-full items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-left text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-7 shrink-0 rounded-full px-3 text-xs font-normal"
           >
-            <span className="truncate">{snippet}</span>
-          </button>
+            {snippet}
+          </Button>
         ))}
       </div>
-      <div className="flex items-end gap-2">
-        <textarea
-          ref={textareaRef}
-          rows={1}
-          value={text}
-          onChange={onInput}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              void send();
-            }
-          }}
-          placeholder="Reply as the business"
-          className={cn(INBOX_INPUT_CLASS, "min-h-[40px] flex-1 resize-none overflow-hidden leading-relaxed")}
-          style={{ height: "auto" }}
-          disabled={sending}
-        />
-        <button
-          type="button"
-          onClick={() => void send()}
-          disabled={!text.trim() || sending}
-          className={cn(
-            "inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors",
-            text.trim() && !sending
-              ? "bg-gray-900 text-white hover:bg-gray-800"
-              : "cursor-not-allowed bg-gray-100 text-gray-400",
-          )}
-          aria-label="Send"
-        >
-          {sending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <>
-              <Send className="h-3.5 w-3.5" />
-              Send
-            </>
-          )}
-        </button>
-      </div>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+        className="w-full"
+      >
+        <div className="flex w-full items-end gap-1 rounded-full border border-gray-200 bg-white px-2 py-2 shadow-sm">
+          <Textarea
+            ref={textareaRef}
+            rows={1}
+            value={text}
+            onChange={onInput}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                void send();
+              }
+            }}
+            placeholder="Message"
+            className="max-h-[132px] min-h-[36px] flex-1 resize-none border-0 bg-transparent px-2 py-2 text-[15px] leading-snug shadow-none focus-visible:ring-0"
+            style={{ height: "auto" }}
+            disabled={sending}
+          />
+          <Button
+            type="submit"
+            size="icon"
+            disabled={!text.trim() || sending}
+            className="mb-0.5 h-9 w-9 shrink-0 rounded-full"
+            aria-label="Send message"
+          >
+            {sending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+        <p className="mt-2 text-center text-[11px] text-muted-foreground">⌘↵ to send</p>
+      </form>
     </div>
   );
 }
@@ -561,9 +570,10 @@ function NestMessageTemplatesSettings() {
           <p className="text-xs text-gray-500">{NEST_MESSAGE_PLACEHOLDER_HINT}</p>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-gray-900">Intro</span>
-              <input
+            <div className="space-y-2">
+              <Label htmlFor="nest-intro">Intro</Label>
+              <Input
+                id="nest-intro"
                 type="text"
                 value={intro}
                 onChange={(event) => {
@@ -571,13 +581,13 @@ function NestMessageTemplatesSettings() {
                   setSaved(false);
                 }}
                 placeholder="Hi {name},"
-                className={INBOX_INPUT_CLASS}
                 disabled={saving}
               />
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-gray-900">Signoff</span>
-              <input
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nest-signoff">Signoff</Label>
+              <Input
+                id="nest-signoff"
                 type="text"
                 value={signoff}
                 onChange={(event) => {
@@ -585,30 +595,21 @@ function NestMessageTemplatesSettings() {
                   setSaved(false);
                 }}
                 placeholder="— {store}"
-                className={INBOX_INPUT_CLASS}
                 disabled={saving}
               />
-            </label>
+            </div>
           </div>
 
           <div className="rounded-md border border-gray-200 bg-white px-3 py-2.5">
-            <p className="text-xs font-medium text-gray-500">Preview</p>
-            <p className="mt-1 text-sm text-gray-800">{preview}</p>
+            <p className="text-xs font-medium text-muted-foreground">Preview</p>
+            <p className="mt-1 text-sm text-foreground">{preview}</p>
           </div>
 
           <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={saving}
-              className={cn(
-                NEST_INBOX_ICON_BUTTON_CLASS,
-                "bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-400",
-              )}
-            >
+            <Button type="button" onClick={() => void save()} disabled={saving}>
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
               Save
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -692,56 +693,45 @@ function StartMessageDialog({
     }
   }
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 py-6 animate-in fade-in duration-200 sm:items-center">
-      <div className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
-        <div className={cn("flex items-start justify-between gap-4", INBOX_SECTION_HEADER_CLASS)}>
-          <div>
-            <h3 className="text-[13px] font-medium text-gray-900">New message</h3>
-            <p className="mt-1 text-xs text-gray-500">
-              Send a manual iMessage from your store. AI replies pause until the customer switches
-              modes.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            disabled={sending}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:opacity-50"
-            aria-label="Close new message"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-w-lg rounded-md bg-white p-0 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:rounded-md"
+        overlayClassName="animate-in fade-in duration-200"
+        showCloseButton={false}
+      >
+        <DialogHeader className="border-b border-border/60 px-5 py-5 text-left">
+          <DialogTitle>New message</DialogTitle>
+          <DialogDescription>Send a manual iMessage from your store.</DialogDescription>
+        </DialogHeader>
 
-        <div className="space-y-4 px-4 py-4">
+        <div className="space-y-4 px-5 py-5">
           {error ? (
-            <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-red-600">
+            <div className="rounded-md border border-destructive/20 bg-white px-3 py-2 text-xs text-destructive">
               {error}
             </div>
           ) : null}
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-gray-900">Search Lightspeed customers</span>
+          <div className="space-y-2">
+            <Label htmlFor="nest-customer-search">Search Lightspeed customers</Label>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-              <input
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="nest-customer-search"
                 type="search"
                 value={customerQuery}
                 onChange={(event) => setCustomerQuery(event.target.value)}
                 placeholder="Search name or mobile"
-                className={cn(INBOX_INPUT_CLASS, "pl-9")}
+                className="pl-9"
                 disabled={sending}
               />
             </div>
-          </label>
+          </div>
 
           {customerLoading || customers.length > 0 ? (
             <div className="rounded-md border border-gray-200 bg-white p-2">
               {customerLoading ? (
-                <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-gray-500">
+                <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Searching Lightspeed…
                 </div>
@@ -756,15 +746,17 @@ function StartMessageDialog({
                         setSelectedCustomerName(customer.name);
                         setCustomerQuery(customer.name);
                       }}
-                      className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-gray-50"
+                      className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/50"
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-gray-900">
+                        <span className="block truncate text-sm font-medium text-foreground">
                           {customer.name}
                         </span>
-                        <span className="block truncate text-xs text-gray-500">{customer.phone}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {customer.phone}
+                        </span>
                       </span>
-                      <span className={NEST_INBOX_BADGE_CLASS}>Use</span>
+                      <span className="text-xs font-medium text-muted-foreground">Use</span>
                     </button>
                   ))}
                 </div>
@@ -772,9 +764,10 @@ function StartMessageDialog({
             </div>
           ) : null}
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-gray-900">Mobile number</span>
-            <input
+          <div className="space-y-2">
+            <Label htmlFor="nest-mobile">Mobile number</Label>
+            <Input
+              id="nest-mobile"
               type="tel"
               value={mobile}
               onChange={(event) => {
@@ -782,50 +775,39 @@ function StartMessageDialog({
                 setSelectedCustomerName("");
               }}
               placeholder="0412 345 678"
-              className={INBOX_INPUT_CLASS}
               disabled={sending}
             />
-          </label>
+          </div>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-gray-900">Message</span>
-            <textarea
+          <div className="space-y-2">
+            <Label htmlFor="nest-opening-message">Message</Label>
+            <Textarea
+              id="nest-opening-message"
               value={text}
               onChange={(event) => setText(event.target.value)}
               placeholder="Write your opening message"
               rows={4}
-              className={cn(INBOX_INPUT_CLASS, "min-h-[120px] resize-none leading-relaxed")}
+              className="min-h-[120px] resize-none"
               disabled={sending}
             />
-          </label>
+          </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-gray-200 bg-gray-50 px-4 py-3">
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            disabled={sending}
-            className={NEST_INBOX_ICON_BUTTON_CLASS}
-          >
+        <DialogFooter className="border-t border-border/60 px-5 py-4">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={() => void send()}
             disabled={!mobile.trim() || !text.trim() || sending}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors",
-              mobile.trim() && text.trim() && !sending
-                ? "bg-gray-900 text-white hover:bg-gray-800"
-                : "cursor-not-allowed bg-gray-100 text-gray-400",
-            )}
           >
-            {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            Send message
-          </button>
-        </div>
-      </div>
-    </div>
+            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Send
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -843,7 +825,26 @@ export function StoreNestMessagesPanel() {
   const [threadLoading, setThreadLoading] = React.useState(false);
   const [showMobileThread, setShowMobileThread] = React.useState(false);
   const [newMessageOpen, setNewMessageOpen] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState("");
   const threadRef = React.useRef<HTMLDivElement>(null);
+
+  const filteredChats = React.useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return chats;
+    return chats.filter((chat) => {
+      const haystack = [
+        chat.displayName,
+        chat.title,
+        chat.participantHandle,
+        chat.preview,
+        chat.chatId,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [chats, searchQuery]);
 
   const loadList = React.useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -996,67 +997,61 @@ export function StoreNestMessagesPanel() {
 
   const unreadCount = chats.filter(isConversationUnread).length;
 
-  const tabDescription =
-    activeTab === "inbox"
-      ? "Customer iMessage conversations for your store. View threads, reply manually, or start a new message."
-      : activeTab === "auto"
-        ? "Customers due for a general or full service based on Lightspeed sales history."
-        : "Message templates and dismissed pickup suggestions.";
-
   return (
-    <>
-      <div className="mb-6 space-y-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-2.5">
-            <Image
-              src="/nest-logo.png"
-              alt="Nest"
-              width={28}
-              height={28}
-              className="h-7 w-7 rounded-md object-contain"
-            />
-            <div>
-              <h2 className="text-base font-medium text-gray-900">Nest</h2>
-              <p className="mt-0.5 text-sm text-gray-500">{tabDescription}</p>
-            </div>
+    <div className="mx-auto flex h-[calc(100svh-57px)] w-full max-w-6xl flex-col px-5 py-6">
+      <div className="mb-5 flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Image
+            src="/nest-logo.png"
+            alt="Nest"
+            width={32}
+            height={32}
+            className="h-8 w-8 rounded-md object-contain"
+          />
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">Nest</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {activeTab === "inbox"
+                ? "Customer messages"
+                : activeTab === "auto"
+                  ? "Service reminders"
+                  : "Templates and preferences"}
+            </p>
           </div>
-
-          {activeTab === "inbox" ? (
-            <div className="flex items-center gap-2">
-              {unreadCount > 0 ? (
-                <span className={cn(NEST_INBOX_BADGE_CLASS, "px-2 py-1 text-xs text-gray-900")}>
-                  {unreadCount} unread
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void refreshAll()}
-                disabled={refreshing}
-                className={NEST_INBOX_ICON_BUTTON_CLASS}
-              >
-                {refreshing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewMessageOpen(true)}
-                disabled={configured === false}
-                className={cn(
-                  NEST_INBOX_ICON_BUTTON_CLASS,
-                  "bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-400",
-                )}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                New message
-              </button>
-            </div>
-          ) : null}
         </div>
 
+        {activeTab === "inbox" ? (
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void refreshAll()}
+              disabled={refreshing}
+              className="h-8 rounded-full px-3 text-xs font-medium"
+            >
+              {refreshing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              Refresh
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setNewMessageOpen(true)}
+              disabled={configured === false}
+              className="h-8 rounded-full px-3 text-xs font-medium"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New message
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mb-5 shrink-0">
         <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
           <button
             type="button"
@@ -1071,9 +1066,9 @@ export function StoreNestMessagesPanel() {
             <Inbox size={15} />
             Inbox
             {unreadCount > 0 ? (
-              <span className="rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+              <Badge variant="outline" className="rounded-md px-1.5 py-0 text-[10px] font-medium">
                 {unreadCount}
-              </span>
+              </Badge>
             ) : null}
           </button>
           <button
@@ -1105,98 +1100,119 @@ export function StoreNestMessagesPanel() {
         </div>
       </div>
 
+      <div className="min-h-0 flex-1">
       {activeTab === "inbox" ? (
-        <SettingsSection title="Messages" contentClassName="p-0">
+        <>
           {configured === false ? (
-            <div className="rounded-md border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
-              Nest messaging is not configured for this environment yet. Add Nest Supabase and portal
-              API environment variables to enable the inbox.
+            <div className={cn(INBOX_CARD, "px-6 py-10 text-center text-sm text-muted-foreground")}>
+              Nest messaging is not configured for this environment yet.
             </div>
           ) : loading && chats.length === 0 ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            <div className={cn(INBOX_CARD, "flex items-center justify-center py-24")}>
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : error ? (
-            <div className="rounded-md border border-gray-200 bg-white px-4 py-6 text-sm text-red-600">
+            <div className={cn(INBOX_CARD, "px-6 py-10 text-center text-sm text-destructive")}>
               {error}
             </div>
           ) : (
-            <div className="flex h-[min(70vh,640px)] min-h-[480px] flex-col overflow-hidden rounded-md border border-gray-200 bg-white md:flex-row">
+            <div
+              className={cn(
+                INBOX_CARD,
+                "flex h-full min-h-[520px] flex-col md:flex-row",
+              )}
+            >
               <aside
                 className={cn(
-                  "flex h-full min-h-0 w-full shrink-0 flex-col border-gray-200 bg-white md:w-[300px] md:border-r",
+                  "flex h-full min-h-0 w-full shrink-0 flex-col border-border/60 md:w-[300px] md:border-r",
                   showMobileThread ? "hidden md:flex" : "flex",
                 )}
               >
-                <div className={cn("shrink-0", INBOX_SECTION_HEADER_CLASS)}>
-                  <p className="text-[13px] font-medium text-gray-900">Threads</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {chats.length} conversation{chats.length === 1 ? "" : "s"}
-                  </p>
+                <div className="shrink-0 border-b border-border/60 px-4 py-4">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="search"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder="Search conversations"
+                      className="pl-9"
+                    />
+                  </div>
+                  {unreadCount > 0 ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {unreadCount} unread conversation{unreadCount === 1 ? "" : "s"}
+                    </p>
+                  ) : null}
                 </div>
-                <div
-                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2"
-                  style={{ WebkitOverflowScrolling: "touch" }}
-                >
-                  {chats.length === 0 ? (
-                    <div className="flex h-full flex-col items-center justify-center px-4 py-8 text-center">
-                      <p className="text-[13px] font-medium text-gray-900">No conversations yet</p>
-                      <p className="mt-1 text-xs text-gray-500">
-                        When messages land for your store, they will appear here.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-0.5">
-                      {chats.map((chat) => (
+                <ScrollArea className="min-h-0 flex-1">
+                  <div className="space-y-1 p-2">
+                    {filteredChats.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+                        <Inbox className="mb-3 h-8 w-8 text-muted-foreground/40" strokeWidth={1.5} />
+                        <p className="text-sm font-medium text-foreground">
+                          {searchQuery.trim() ? "No matches" : "No conversations"}
+                        </p>
+                        <p className="mt-1.5 max-w-[220px] text-xs leading-relaxed text-muted-foreground">
+                          {searchQuery.trim()
+                            ? "Try a different name, number, or message."
+                            : "When customers message your store, conversations appear here."}
+                        </p>
+                      </div>
+                    ) : (
+                      filteredChats.map((chat) => (
                         <ConversationRow
                           key={chat.chatId}
                           chat={chat}
                           active={chat.chatId === selectedChatId}
                           onClick={() => openConversation(chat)}
                         />
-                      ))}
-                    </div>
-                  )}
-                </div>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
               </aside>
 
               <section
                 className={cn(
-                  "flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white",
+                  "flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background",
                   showMobileThread ? "flex" : "hidden md:flex",
                 )}
               >
                 {!selectedChatId || !conversation ? (
-                  <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
-                    <div>
-                      <p className="text-[13px] font-medium text-gray-900">Select a conversation</p>
-                      <p className="mt-1 text-xs text-gray-500">
-                        Choose a thread to view messages and reply.
-                      </p>
-                    </div>
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-8 text-center">
+                    <Inbox className="mb-3 h-10 w-10 text-muted-foreground/40" strokeWidth={1.5} />
+                    <p className="text-base font-semibold tracking-tight text-foreground">
+                      Select a message
+                    </p>
+                    <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
+                      Choose a conversation from the list to read and reply.
+                    </p>
                   </div>
                 ) : (
                   <>
-                    <div className={cn("shrink-0", INBOX_SECTION_HEADER_CLASS)}>
-                      <div className="flex items-start gap-2">
-                        <button
+                    <div className="shrink-0 border-b border-border/60 px-4 py-4 md:px-5">
+                      <div className="flex items-center gap-2">
+                        <Button
                           type="button"
-                          className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 md:hidden"
+                          variant="ghost"
+                          size="icon"
+                          className="md:hidden"
                           onClick={() => setShowMobileThread(false)}
                           aria-label="Back to inbox"
                         >
-                          <ChevronLeft className="h-4 w-4" />
-                        </button>
+                          <ChevronLeft className="h-5 w-5" />
+                        </Button>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] font-medium text-gray-900">
-                            {conversation.title}
+                          <p className="truncate text-base font-semibold tracking-tight text-foreground">
+                            {conversation.displayName || conversation.title}
                           </p>
-                          <p className="mt-1 truncate text-xs text-gray-500">
+                          <p className="mt-0.5 truncate text-sm text-muted-foreground">
                             {conversation.participantHandle ?? conversation.chatId}
                           </p>
                           {formatLastSeen(conversation.lastSeen) ? (
-                            <p className="mt-1 text-xs text-gray-500">
-                              Last seen {formatLastSeen(conversation.lastSeen)}
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Active {formatLastSeen(conversation.lastSeen)}
                             </p>
                           ) : null}
                         </div>
@@ -1205,15 +1221,12 @@ export function StoreNestMessagesPanel() {
 
                     <div
                       ref={threadRef}
-                      className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3.5 py-4 md:px-4"
+                      className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-muted/20 px-4 py-5 md:px-6"
                       style={{ WebkitOverflowScrolling: "touch" }}
                     >
                       {threadLoading && conversation.messages.length === 0 ? (
-                        <div className="flex h-full items-center justify-center py-12">
-                          <div className="flex items-center gap-2 text-xs text-gray-500">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Loading conversation…
-                          </div>
+                        <div className="flex h-full items-center justify-center py-16">
+                          <Loader2 className="h-5 w-5 animate-spin text-gray-300" />
                         </div>
                       ) : (
                         conversation.messages.map((message) => (
@@ -1228,23 +1241,24 @@ export function StoreNestMessagesPanel() {
               </section>
             </div>
           )}
-        </SettingsSection>
+        </>
       ) : null}
 
       {activeTab === "auto" ? <NestAutoServicePanel /> : null}
 
       {activeTab === "settings" ? (
-        <>
+        <div className="space-y-6">
           <NestMessageTemplatesSettings />
           <NestHiddenPickupSuggestionsPanel />
-        </>
+        </div>
       ) : null}
+      </div>
 
       <StartMessageDialog
         open={newMessageOpen}
         onOpenChange={setNewMessageOpen}
         onStarted={handleStarted}
       />
-    </>
+    </div>
   );
 }

@@ -172,7 +172,7 @@ WHAT YOU CAN DO
 HOW TO WORK
 - Read first: call get_store_carousels / search_store_products / get_product_costs / list_active_discounts to ground yourself in the store's ACTUAL data before proposing anything.
 - Then propose: call exactly one propose_* tool to stage the change. You never apply changes yourself — the store reviews a preview and clicks Apply.
-- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, search_lightspeed_inventory is also available. For work orders / repairs / service jobs: use list_lightspeed_workorders (scope open for active jobs, finished for completed/pickup-ready, all if unclear) with include_details:true, or get_lightspeed_workorder for one ID. The UI renders detailed Lightspeed work order cards automatically — keep your text answer brief (counts, highlights, next steps) and do not repeat every line item in prose. Use record_lightspeed_plan only for broad, complex, multi-pass Lightspeed analysis. If a lookup returns no, weak, ambiguous, partial, or non-answering results, call record_lightspeed_recheck and try one materially different SQL strategy before asking the user to clarify. These are answer-only tools; do not create proposals for Lightspeed reporting.
+- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, search_lightspeed_inventory is also available. For work orders / repairs / service jobs: use list_lightspeed_workorders (scope open for active jobs, finished for completed/pickup-ready, all if unclear) with include_details:true, or get_lightspeed_workorder for one ID. For "due today", "due tomorrow", or any ETA date question, pass due_on as YYYY-MM-DD in ${STORE_TIME_ZONE} (today is ${today}) — do not load every open work order without a date filter. Always include a brief text summary even when work order cards render. The UI renders detailed Lightspeed work order cards automatically — keep your text answer brief (counts, highlights, next steps) and do not repeat every line item in prose. Use record_lightspeed_plan only for broad, complex, multi-pass Lightspeed analysis. If a lookup returns no, weak, ambiguous, partial, or non-answering results, call record_lightspeed_recheck and try one materially different SQL strategy before asking the user to clarify. These are answer-only tools; do not create proposals for Lightspeed reporting.
 - For broad business questions such as "how can we make more money", do not give generic advice. Run a multi-pass analysis with several targeted SQL queries before answering. Cover revenue trend, gross profit/margin trend, category/product profit drivers, discount leakage, average sale/basket indicators, top/repeat customers, low-margin/high-volume products, and inventory cash tied up. State data limitations clearly when customer-contact tables are not available.
 - For current external questions, use web_search. Use it for public information only. Never use web search instead of Lightspeed tools for store sales, sale lines, inventory, stock-on-hand, or private store activity.
 - For "our pricing vs other stores/competitors/market" questions, do not refuse. First use store pricing/product tools such as get_product_costs, search_store_products, or search_lightspeed_products to identify the store's relevant products and prices; then use web_search for public comparable prices. Answer with matched examples, confidence/limitations, and where the store appears high, low, or in line.
@@ -8541,18 +8541,29 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
     }),
     tool({
       name: 'list_lightspeed_workorders',
-      description: 'List live Lightspeed repair/service work orders with full details. Use scope "open" for active/in-progress jobs, "finished" for completed or pickup-ready, or "all". Returns customer contact, status, dates, notes, labour lines, and parts. Answer-only — never create proposals.',
+      description: 'List live Lightspeed repair/service work orders with full details. Use scope "open" for active/in-progress jobs, "finished" for completed or pickup-ready, or "all". For due-date questions ("due today", ETA on a date), pass due_on as YYYY-MM-DD in the store timezone. Returns customer contact, status, dates, notes, labour lines, and parts. Answer-only — never create proposals.',
       parameters: z.object({
         scope: z.enum(['open', 'finished', 'all']).optional().describe('Defaults to open for active work orders.'),
+        due_on: z.string().optional().describe('Filter by ETA out date (YYYY-MM-DD, store timezone). Use for "due today" and similar questions.'),
         query: z.string().optional().describe('Optional filter on customer name, phone, work order ID, notes, or part descriptions.'),
         limit: z.number().int().min(1).max(100).optional(),
         include_details: z.boolean().optional().describe('Include lines, parts, and customer contact. Defaults to true.'),
       }),
       async execute(args) {
         const scope = args.scope ?? 'open'
-        emitStatus(emit, 'lightspeed_workorders', scope === 'open' ? 'Loading open work orders' : 'Loading work orders')
+        const dueOn = args.due_on?.trim() || ''
+        emitStatus(
+          emit,
+          'lightspeed_workorders',
+          dueOn
+            ? `Loading work orders due ${dueOn}`
+            : scope === 'open'
+              ? 'Loading open work orders'
+              : 'Loading work orders',
+        )
         const result = await listGenieWorkorders(userId, {
           scope,
+          due_on: dueOn || undefined,
           query: args.query,
           limit: args.limit,
           include_details: args.include_details,
@@ -8563,6 +8574,7 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
             scope,
             workorders: result.workorders,
             truncated: result.truncated,
+            title: dueOn ? `Work orders due ${dueOn}` : undefined,
           }),
         )
         return {

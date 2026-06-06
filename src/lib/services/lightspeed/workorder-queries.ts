@@ -9,6 +9,49 @@ import type {
 } from './types'
 
 const FINISHED_SYSTEM_VALUES = new Set(['finished', 'paid', 'complete', 'done'])
+const STORE_TIME_ZONE = 'Australia/Brisbane'
+const ENRICH_CONCURRENCY = 6
+
+function storeDateFromIso(value: string): string | null {
+  const parsed = Date.parse(value)
+  if (Number.isNaN(parsed)) return null
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: STORE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(parsed))
+}
+
+function customerHasContact(customer: LightspeedCustomer | undefined): boolean {
+  if (!customer?.Contact) return false
+  const phones = ensureArray(customer.Contact?.Phones?.ContactPhone)
+  const emails = ensureArray(customer.Contact?.Emails?.ContactEmail)
+  return phones.some(phone => phone.number?.trim()) || emails.some(email => email.address?.trim())
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return []
+  const results = new Array<R>(items.length)
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await fn(items[index])
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(Math.max(concurrency, 1), items.length) }, () => worker()),
+  )
+  return results
+}
 
 export type GenieWorkorderScope = 'open' | 'finished' | 'all'
 
@@ -56,6 +99,8 @@ export type GenieWorkorderDetail = {
 export type ListGenieWorkordersOptions = {
   scope?: GenieWorkorderScope
   query?: string
+  /** ISO date (YYYY-MM-DD) in the store timezone — matches work order ETA out date. */
+  due_on?: string
   limit?: number
   include_details?: boolean
   max_pages_per_status?: number
@@ -198,8 +243,9 @@ async function enrichWorkorder(
   let items = workorderItemsFromRelation(workorder)
 
   if (includeDetails) {
+    const needsCustomerFetch = Boolean(customerId && customerId !== '0' && !customerHasContact(customer))
     const [profileResult, itemsResult] = await Promise.allSettled([
-      customerId && customerId !== '0'
+      needsCustomerFetch
         ? client.getCustomer(customerId, { load_relations: '["Contact"]' })
         : Promise.resolve(customer),
       items.length === 0 ? client.getWorkorderItems(workorderId) : Promise.resolve(items),
@@ -282,6 +328,41 @@ async function fetchWorkordersByStatusIds(
   return [...byId.values()].sort((a, b) => parseTimestamp(b.timeStamp) - parseTimestamp(a.timeStamp))
 }
 
+async function fetchRecentWorkordersUnscoped(
+  userId: string,
+  options?: { targetCount?: number; maxPages?: number },
+): Promise<LightspeedWorkorderWithRelations[]> {
+  const client = createLightspeedClient(userId)
+  const loadRelations = '["Customer","WorkorderLines","WorkorderStatus"]'
+  const targetCount = Math.max(options?.targetCount ?? 160, 1)
+  const maxPages = Math.max(options?.maxPages ?? 4, 1)
+
+  return client.getRecentWorkorders(
+    {
+      archived: 'false',
+      sort: '-timeStamp',
+      load_relations: loadRelations,
+    },
+    {
+      targetCount,
+      limit: 100,
+      maxPages,
+    },
+  )
+}
+
+function workorderMatchesScope(
+  workorder: LightspeedWorkorderWithRelations,
+  scope: GenieWorkorderScope,
+  statusById: Map<string, LightspeedWorkorderStatus>,
+): boolean {
+  const status = statusForWorkorder(workorder, statusById)
+  const finished = isFinishedWorkorderStatus(status)
+  if (scope === 'open') return !finished
+  if (scope === 'finished') return finished
+  return true
+}
+
 export async function listGenieWorkorders(
   userId: string,
   options: ListGenieWorkordersOptions = {},
@@ -293,7 +374,8 @@ export async function listGenieWorkorders(
   truncated: boolean
 }> {
   const scope = options.scope ?? 'open'
-  const limit = Math.min(Math.max(options.limit ?? 40, 1), 100)
+  const dueOn = options.due_on?.trim() || ''
+  const limit = Math.min(Math.max(options.limit ?? (dueOn ? 30 : 40), 1), 100)
   const includeDetails = options.include_details !== false
   const query = options.query ? normalizeText(options.query) : ''
 
@@ -308,33 +390,40 @@ export async function listGenieWorkorders(
     is_finished: isFinishedWorkorderStatus(status),
   }))
 
-  const targetStatusIds = statuses
-    .filter(status => {
-      const finished = isFinishedWorkorderStatus(status)
-      if (scope === 'open') return !finished
-      if (scope === 'finished') return finished
-      return true
+  let rawWorkorders: LightspeedWorkorderWithRelations[]
+  if (dueOn) {
+    rawWorkorders = await fetchRecentWorkordersUnscoped(userId, {
+      targetCount: Math.max(limit * 8, 120),
+      maxPages: options.max_pages_per_status ?? 4,
     })
-    .map(status => String(status.workorderStatusID))
+  } else {
+    const targetStatusIds = statuses
+      .filter(status => {
+        const finished = isFinishedWorkorderStatus(status)
+        if (scope === 'open') return !finished
+        if (scope === 'finished') return finished
+        return true
+      })
+      .map(status => String(status.workorderStatusID))
 
-  const perStatusLimit = Math.max(Math.ceil(limit / Math.max(targetStatusIds.length, 1)) + 4, 8)
-  const rawWorkorders = await fetchWorkordersByStatusIds(userId, targetStatusIds, {
-    limitPerStatus: perStatusLimit,
-    maxPagesPerStatus: options.max_pages_per_status ?? 2,
-  })
+    const perStatusLimit = Math.max(Math.ceil(limit / Math.max(targetStatusIds.length, 1)) + 4, 8)
+    rawWorkorders = await fetchWorkordersByStatusIds(userId, targetStatusIds, {
+      limitPerStatus: perStatusLimit,
+      maxPagesPerStatus: options.max_pages_per_status ?? 2,
+    })
+  }
 
-  const scoped = rawWorkorders.filter(workorder => {
-    const status = statusForWorkorder(workorder, statusById)
-    const finished = isFinishedWorkorderStatus(status)
-    if (scope === 'open') return !finished
-    if (scope === 'finished') return finished
-    return true
-  })
+  let scoped = rawWorkorders.filter(workorder => workorderMatchesScope(workorder, scope, statusById))
 
-  const enriched = await Promise.all(
-    scoped.slice(0, limit + (query ? perStatusLimit : 0)).map(workorder =>
-      enrichWorkorder(userId, workorder, statusById, includeDetails),
-    ),
+  if (dueOn) {
+    scoped = scoped.filter(workorder => storeDateFromIso(String(workorder.etaOut ?? '')) === dueOn)
+  }
+
+  const enrichmentPool = scoped.slice(0, limit + (query ? limit : 0))
+  const enriched = await mapWithConcurrency(
+    enrichmentPool,
+    ENRICH_CONCURRENCY,
+    workorder => enrichWorkorder(userId, workorder, statusById, includeDetails),
   )
 
   const filtered = query
