@@ -3,11 +3,84 @@
  * 
  * GET /api/lightspeed/inventory-overview
  * 
- * Fetches products from products_all_ls table organized by categories
+ * Fetches products from the Lightspeed inventory mirror organized by categories.
  */
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+
+interface MirrorProductRow {
+  id: string
+  lightspeed_item_id: string
+  system_sku: string | null
+  description: string | null
+  model_year: string | null
+  upc: string | null
+  category_id: string | null
+  category_name: string | null
+  category_path: string | null
+  brand_id: string | null
+  default_price: number | string | null
+  total_qoh: number | string | null
+  total_sellable: number | string | null
+  stock_data: unknown
+}
+
+interface SyncedProductRow {
+  lightspeed_item_id: string | null
+}
+
+interface CategoryPreferenceRow {
+  category_id: string
+  is_enabled: boolean
+  last_synced_at: string | null
+}
+
+interface OverviewProduct {
+  id: string
+  itemId: string
+  name: string | null
+  sku: string | null
+  modelYear: string | null
+  upc: string | null
+  categoryId: string | null
+  categoryName: string
+  manufacturerId: string | null
+  price: number
+  totalQoh: number
+  totalSellable: number
+  stockData: unknown
+  isSynced: boolean
+}
+
+interface OverviewCategoryBucket {
+  categoryId: string
+  name: string
+  productCount: number
+  syncedCount?: number
+  products: OverviewProduct[]
+}
+
+type CategorySyncStatus = 'not_synced' | 'partial' | 'fully_synced'
+
+interface OverviewCategory {
+  categoryId: string
+  name: string
+  totalProducts: number
+  syncedProducts: number
+  notSyncedProducts: number
+  products: OverviewProduct[]
+  syncStatus: CategorySyncStatus
+  autoSyncEnabled: boolean
+  lastSyncedAt: string | null
+}
+
+function toNumber(value: number | string | null | undefined): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value !== 'string') return 0
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
 
 export async function GET() {
   try {
@@ -22,8 +95,8 @@ export async function GET() {
       )
     }
 
-    // Fetch ALL products from products_all_ls (paginate to get beyond 1000 limit)
-    let allLsProducts: any[] = []
+    // Fetch all active products from the inventory mirror (paginate beyond the Supabase default limit).
+    let allLsProducts: MirrorProductRow[] = []
     const pageSize = 1000
     let page = 0
     let hasMore = true
@@ -33,9 +106,10 @@ export async function GET() {
       const to = from + pageSize - 1
 
       const { data, error: productsError } = await supabase
-        .from('products_all_ls')
+        .from('lightspeed_inventory')
         .select('*')
         .eq('user_id', user.id)
+        .eq('archived', false)
         .order('description', { ascending: true })
         .range(from, to)
 
@@ -48,7 +122,7 @@ export async function GET() {
       }
 
       if (data && data.length > 0) {
-        allLsProducts = [...allLsProducts, ...data]
+        allLsProducts = [...allLsProducts, ...(data as MirrorProductRow[])]
         page++
         hasMore = data.length === pageSize
       } else {
@@ -56,11 +130,11 @@ export async function GET() {
       }
     }
 
-    console.log(`[Inventory Overview] Fetched ${allLsProducts.length} products from products_all_ls`)
+    console.log(`[Inventory Overview] Fetched ${allLsProducts.length} products from lightspeed_inventory`)
 
     // Fetch synced products from products table to determine sync status
     // Also need to paginate this
-    let syncedProducts: any[] = []
+    let syncedProducts: SyncedProductRow[] = []
     page = 0
     hasMore = true
 
@@ -76,7 +150,7 @@ export async function GET() {
         .range(from, to)
 
       if (data && data.length > 0) {
-        syncedProducts = [...syncedProducts, ...data]
+        syncedProducts = [...syncedProducts, ...(data as SyncedProductRow[])]
         page++
         hasMore = data.length === pageSize
       } else {
@@ -86,11 +160,10 @@ export async function GET() {
 
     console.log(`[Inventory Overview] Fetched ${syncedProducts.length} synced products from products table`)
 
-    const syncedItemIds = new Set(syncedProducts.map(p => p.lightspeed_item_id))
+    const syncedItemIds = new Set(syncedProducts.map(p => p.lightspeed_item_id).filter(Boolean))
 
-    // Fetch category names and preferences from Lightspeed
-    let categoryNamesMap = new Map<string, string>()
-    let categoryPreferencesMap = new Map<string, { isEnabled: boolean, lastSyncedAt: string | null }>()
+    // Fetch category preferences for auto-sync status.
+    const categoryPreferencesMap = new Map<string, { isEnabled: boolean, lastSyncedAt: string | null }>()
 
     try {
       // Fetch category preferences
@@ -99,7 +172,7 @@ export async function GET() {
         .select('category_id, is_enabled, last_synced_at')
         .eq('user_id', user.id)
 
-      prefs?.forEach(pref => {
+      ;(prefs as CategoryPreferenceRow[] | null)?.forEach(pref => {
         categoryPreferencesMap.set(pref.category_id, {
           isEnabled: pref.is_enabled,
           lastSyncedAt: pref.last_synced_at,
@@ -107,25 +180,14 @@ export async function GET() {
       })
 
       console.log(`[Inventory Overview] Fetched ${prefs?.length || 0} category preferences`)
-
-      // Use the Lightspeed client to fetch categories
-      const { createLightspeedClient } = await import('@/lib/services/lightspeed')
-      const client = createLightspeedClient(user.id)
-      const categories = await client.getAllCategories({ archived: 'false' })
-
-      console.log(`[Inventory Overview] Fetched ${categories.length} category names from Lightspeed`)
-
-      categories.forEach((cat: any) => {
-        categoryNamesMap.set(String(cat.categoryID), cat.fullPathName || cat.name)
-      })
     } catch (error) {
-      console.error('[Inventory Overview] Error fetching category names:', error)
-      // Continue without category names - will show IDs instead
+      console.error('[Inventory Overview] Error fetching category preferences:', error)
+      // Continue without preferences.
     }
 
     // Separate products into synced and not synced
-    const notSyncedProducts: any[] = []
-    const syncedProductsList: any[] = []
+    const notSyncedProducts: OverviewProduct[] = []
+    const syncedProductsList: OverviewProduct[] = []
 
     console.log(`[Inventory Overview] Processing ${allLsProducts.length} products...`)
 
@@ -139,11 +201,11 @@ export async function GET() {
         modelYear: product.model_year,
         upc: product.upc,
         categoryId: product.category_id,
-        categoryName: categoryNamesMap.get(String(product.category_id ?? '')) || `Category ${product.category_id || 'Unknown'}`,
-        manufacturerId: product.manufacturer_id,
-        price: parseFloat(product.price) || 0,
-        totalQoh: product.total_qoh,
-        totalSellable: product.total_sellable,
+        categoryName: product.category_path || product.category_name || `Category ${product.category_id || 'Unknown'}`,
+        manufacturerId: product.brand_id,
+        price: toNumber(product.default_price),
+        totalQoh: toNumber(product.total_qoh),
+        totalSellable: toNumber(product.total_sellable),
         stockData: product.stock_data,
         isSynced,
       }
@@ -156,13 +218,7 @@ export async function GET() {
     })
 
     // Group not synced products by category
-    const notSyncedCategoryMap = new Map<string, {
-      categoryId: string
-      name: string
-      productCount: number
-      syncedCount: number
-      products: any[]
-    }>()
+    const notSyncedCategoryMap = new Map<string, OverviewCategoryBucket & { syncedCount: number }>()
 
     notSyncedProducts.forEach(product => {
       const categoryId = product.categoryId || 'uncategorized'
@@ -192,12 +248,7 @@ export async function GET() {
     })
 
     // Group synced products by category
-    const syncedCategoryMap = new Map<string, {
-      categoryId: string
-      name: string
-      productCount: number
-      products: any[]
-    }>()
+    const syncedCategoryMap = new Map<string, OverviewCategoryBucket>()
 
     syncedProductsList.forEach(product => {
       const categoryId = product.categoryId || 'uncategorized'
@@ -220,7 +271,7 @@ export async function GET() {
     const syncedCategories = Array.from(syncedCategoryMap.values())
 
     // Build unified category list with sync status
-    const allCategoriesMap = new Map<string, any>()
+    const allCategoriesMap = new Map<string, OverviewCategory>()
 
     // Add not synced categories
     notSyncedCategories.forEach(cat => {
@@ -274,8 +325,8 @@ export async function GET() {
     })
 
     // Calculate totals
-    const totalProducts = allLsProducts?.length || 0
-    const totalStock = allLsProducts?.reduce((sum, p) => sum + (p.total_qoh || 0), 0) || 0
+    const totalProducts = allLsProducts.length
+    const totalStock = allLsProducts.reduce((sum, product) => sum + toNumber(product.total_qoh), 0)
 
     return NextResponse.json({
       success: true,
@@ -305,4 +356,3 @@ export async function GET() {
     )
   }
 }
-

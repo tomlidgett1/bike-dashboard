@@ -10,6 +10,7 @@ import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import { ListItemBanner } from "@/components/marketplace/list-item-banner";
 import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
+import { BrowseSortButton } from "@/components/marketplace/browse-filters-toolbar";
 import { SpaceNavigator, useMarketplaceSpace } from "@/components/marketplace/space-navigator";
 import { StoreCategoryPills } from "@/components/marketplace/store-category-pills";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
@@ -553,6 +554,23 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const nextCursor = localNextCursor ?? pagination?.nextCursor ?? initialPagination?.nextCursor ?? null;
   const totalCount = pagination?.total ?? initialPagination?.total ?? 0;
 
+  const productGridClassName = React.useMemo(() => {
+    if (isProductSearchActive) {
+      return "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2 sm:gap-3 md:gap-4";
+    }
+    if (productGridLayout === "grid8") {
+      return "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5";
+    }
+    if (productGridLayout === "grid4") {
+      return isStoresView
+        ? "grid grid-cols-2 md:grid-cols-4 gap-1.5 md:gap-4"
+        : "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4";
+    }
+    return isStoresView
+      ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1 sm:gap-2.5"
+      : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3";
+  }, [isProductSearchActive, productGridLayout, isStoresView]);
+
   React.useEffect(() => {
     setCurrentPage(1);
     setAccumulatedProducts([]);
@@ -983,6 +1001,17 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         showMobileBrowseFiltersFab={(isMarketplaceView || isStoreInventoryView) && viewMode === "all"}
         mobileBrowseFiltersBadge={activeFilterCount}
         onOpenMobileBrowseFilters={() => setMobileBrowseSheetOpen(true)}
+        mobileBrowseSort={
+          (isMarketplaceView || isStoreInventoryView) && viewMode === "all" ? (
+            <BrowseSortButton
+              sortBy={advancedFilters.sortBy}
+              onSortChange={(sortBy) =>
+                setAdvancedFilters((prev) => ({ ...prev, sortBy }))
+              }
+              onApply={handleAdvancedFiltersApply}
+            />
+          ) : undefined
+        }
       />
 
       {/* Sticky Filter Header - Mobile Only (appears when category pills scroll out) */}
@@ -1186,7 +1215,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     onLevel3Change={handleLevel3Change}
                     listingTypeFilter={listingTypeFilter}
                     onListingTypeChange={handleListingTypeChange}
-                    productCount={!searchQuery ? totalCount : undefined}
                     categoryPillsRef={categoryPillsRef}
                     onNavigateToStores={handleNavigateToAllStores}
                     onNavigateToUber={handleNavigateToUber}
@@ -1246,9 +1274,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       )}
                       <div className="min-w-0 text-left">
                         <p className="text-sm font-semibold text-gray-900 truncate group-hover:underline">{selectedStore.store_name}</p>
-                        {totalCount > 0 && (
-                          <p className="text-xs text-gray-500">{totalCount.toLocaleString()} products</p>
-                        )}
                       </div>
                     </button>
                     <button
@@ -1288,11 +1313,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     <span className="truncate text-sm font-medium text-gray-700 group-hover:underline">
                       {featuredStore.store_name}
                     </span>
-                    {featuredStore.product_count > 0 && (
-                      <span className="flex-shrink-0 text-xs text-gray-400">
-                        · {featuredStore.product_count.toLocaleString()}
-                      </span>
-                    )}
                   </button>
                 )}
               </div>
@@ -1471,17 +1491,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                                 Loading {selectedStore.store_name}…
                               </p>
                             )}
-                            <div
-                              className={
-                                isProductSearchActive
-                                  ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2 sm:gap-3 md:gap-4"
-                                  : productGridLayout === "grid8"
-                                  ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
-                                  : productGridLayout === "grid4"
-                                  ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
-                                  : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 sm:gap-3"
-                              }
-                            >
+                            <div className={productGridClassName}>
                               {Array.from({
                                 length: isProductSearchActive ? 24 : isStoreInventoryView ? 12 : 36,
                               }).map((_, i) => (
@@ -1490,17 +1500,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                             </div>
                           </div>
                         ) : (
-                          <div
-                            className={cn(
-                              isProductSearchActive
-                                ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2 sm:gap-3 md:gap-4"
-                                : productGridLayout === "grid8"
-                                ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
-                                : productGridLayout === "grid4"
-                                ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
-                                : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3",
-                            )}
-                          >
+                          <div className={productGridClassName}>
                             {gridProducts.map((product, index) => (
                               <React.Fragment key={product.id}>
                                 <ProductCard
@@ -1681,13 +1681,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
                     {/* Skeleton cards while next page loads */}
                     {isPaginating && gridProducts.length > 0 && (
-                      <div className={
-                        productGridLayout === "grid8"
-                          ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5"
-                          : productGridLayout === "grid4"
-                          ? "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4"
-                          : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3"
-                      }>
+                      <div className={productGridClassName}>
                         {Array.from({ length: 6 }).map((_, i) => (
                           <ProductCardSkeleton key={i} layout="grid" />
                         ))}

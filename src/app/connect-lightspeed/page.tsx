@@ -3,8 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
-import { Loader2, Zap, AlertCircle, SlidersHorizontal, X, RotateCcw } from "lucide-react";
+import { AlertCircle, CheckCircle2, Database, Loader2, Play, RefreshCw, RotateCcw, SlidersHorizontal, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -39,13 +38,38 @@ interface SyncFilters {
   inStockOnly: boolean;
 }
 
+interface InventoryProduct {
+  id: string;
+  itemId: string;
+  name: string | null;
+  sku: string | null;
+  modelYear: string | null;
+  upc?: string | null;
+  categoryId: string | null;
+  categoryName?: string;
+  manufacturerId?: string | null;
+  price: number;
+  totalQoh: number;
+  totalSellable: number;
+  stockData?: unknown;
+  isSynced: boolean;
+}
+
+interface InventoryCategoryGroup {
+  categoryId: string;
+  name: string;
+  productCount: number;
+  syncedCount?: number;
+  products: InventoryProduct[];
+}
+
 interface Category {
   categoryId: string;
   name: string;
   totalProducts: number;
   syncedProducts: number;
   notSyncedProducts: number;
-  products: any[];
+  products: InventoryProduct[];
   syncStatus: 'not_synced' | 'partial' | 'fully_synced';
   autoSyncEnabled: boolean;
   lastSyncedAt: string | null;
@@ -54,12 +78,12 @@ interface Category {
 interface InventoryData {
   categories: Category[];
   notSynced: {
-    categories: any[];
-    products: any[];
+    categories: InventoryCategoryGroup[];
+    products: InventoryProduct[];
   };
   synced: {
-    categories: any[];
-    products: any[];
+    categories: InventoryCategoryGroup[];
+    products: InventoryProduct[];
   };
   totals: {
     totalProducts: number;
@@ -69,11 +93,148 @@ interface InventoryData {
   };
 }
 
+interface SyncResult {
+  itemsSynced: number;
+  itemsWithStock: number;
+  totalItems: number;
+}
+
+interface SyncSsePayload {
+  totalItems?: number;
+  totalItemsInCategories?: number;
+  itemsSynced?: number;
+  itemsWithStock?: number;
+  error?: string;
+  phase?: string;
+  message?: string;
+  progress?: number;
+  details?: {
+    itemsFetched?: number;
+    itemsToSync?: number;
+    itemsSynced?: number;
+  };
+}
+
+interface SalesReportBackfillState {
+  status: 'idle' | 'running' | 'complete' | 'error';
+  oldest_sale_at: string | null;
+  next_before: string | null;
+  last_synced_at: string | null;
+  last_complete_time: string | null;
+  sales_processed: number;
+  lines_upserted: number;
+  pages_fetched: number;
+  last_error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  lease_owner?: string | null;
+  lease_expires_at?: string | null;
+  last_heartbeat_at?: string | null;
+}
+
+interface SalesReportBackfillStatus {
+  success: boolean;
+  state: SalesReportBackfillState | null;
+  row_count: number;
+  oldest_complete_time: string | null;
+  latest_complete_time: string | null;
+  chunk?: {
+    sales_fetched: number;
+    lines_upserted: number;
+    pages_fetched: number;
+    hit_page_limit: boolean;
+    complete: boolean;
+  };
+  chunks_run?: number;
+  locked?: boolean;
+  timed_out?: boolean;
+  retry_after_ms?: number | null;
+  error?: string;
+}
+
+interface InventoryMirrorSyncRun {
+  id?: string;
+  sync_batch_id: string;
+  sync_type: string;
+  sync_mode?: 'full' | 'incremental';
+  status: string;
+  incremental_since?: string | null;
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  total_item_shop_rows: number;
+  total_unique_items: number;
+  rows_upserted: number;
+  rows_created: number;
+  rows_changed: number;
+  rows_unchanged: number;
+  rows_marked_out_of_stock: number;
+  stock_changed: number;
+  price_changed: number;
+  pages_fetched: number;
+  hit_page_limit: boolean;
+  error_message: string | null;
+}
+
+interface InventoryMirrorStatus {
+  success: boolean;
+  total_rows: number;
+  in_stock_rows: number;
+  latest_run: InventoryMirrorSyncRun | null;
+  error?: string;
+}
+
+function formatBackfillDate(value: string | null | undefined): string {
+  if (!value) return 'Not synced';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat('en-AU', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function backfillStatusLabel(state: SalesReportBackfillState | null): string {
+  if (!state) return 'Not started';
+  if (state.status === 'complete') return 'Complete';
+  if (state.status === 'running') return 'Running';
+  if (state.status === 'error') return 'Needs attention';
+  return 'Idle';
+}
+
+const SALES_REPORT_BACKFILL_PAGES_PER_CHUNK = 5;
+const SALES_REPORT_BACKFILL_MAX_CHUNKS_PER_REQUEST = 25;
+const SALES_REPORT_BACKFILL_REQUEST_TIME_BUDGET_MS = 45_000;
+const SALES_REPORT_BACKFILL_CHUNK_DELAY_MS = 500;
+const SALES_REPORT_BACKFILL_RETRY_LIMIT = 12;
+const SALES_REPORT_BACKFILL_RETRY_BASE_DELAY_MS = 2500;
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isPermanentBackfillError(message: string): boolean {
+  return /unauthori[sz]ed|no valid access token|session expired|please reconnect|not currently connected/i.test(message);
+}
+
 export default function ConnectLightspeedPage() {
-  const router = useRouter();
   const [viewMode, setViewMode] = React.useState<ViewMode>('categories');
   const [inventoryData, setInventoryData] = React.useState<InventoryData | null>(null);
   const [loadingInventory, setLoadingInventory] = React.useState(false);
+  const [salesReportStatus, setSalesReportStatus] = React.useState<SalesReportBackfillStatus | null>(null);
+  const [loadingSalesReportStatus, setLoadingSalesReportStatus] = React.useState(false);
+  const [salesReportBackfillRunning, setSalesReportBackfillRunning] = React.useState(false);
+  const [salesReportBackfillMessage, setSalesReportBackfillMessage] = React.useState('');
+  const [salesReportBackfillError, setSalesReportBackfillError] = React.useState('');
+  const [inventoryMirrorStatus, setInventoryMirrorStatus] = React.useState<InventoryMirrorStatus | null>(null);
+  const [loadingInventoryMirrorStatus, setLoadingInventoryMirrorStatus] = React.useState(false);
+  const [inventoryMirrorSyncing, setInventoryMirrorSyncing] = React.useState(false);
+  const [inventoryMirrorMessage, setInventoryMirrorMessage] = React.useState('');
+  const [inventoryMirrorError, setInventoryMirrorError] = React.useState('');
   
   // Synced / Not Synced filter per view
   const [productSyncFilter, setProductSyncFilter] = React.useState<'not_synced' | 'synced'>('not_synced');
@@ -92,7 +253,7 @@ export default function ConnectLightspeedPage() {
   const [syncProgress, setSyncProgress] = React.useState(0);
   const [syncPhase, setSyncPhase] = React.useState('');
   const [syncMessage, setSyncMessage] = React.useState('');
-  const [syncResult, setSyncResult] = React.useState<any>(null);
+  const [syncResult, setSyncResult] = React.useState<SyncResult | null>(null);
   const [syncError, setSyncError] = React.useState('');
 
   // Sync filter state — applied filters vs in-sheet draft
@@ -117,18 +278,11 @@ export default function ConnectLightspeedPage() {
     disconnect,
   } = useLightspeedConnection({ autoFetch: true });
 
-  // Fetch inventory data when connected
-  React.useEffect(() => {
-    if (isConnected) {
-      fetchInventoryData();
-    }
-  }, [isConnected]);
-
-  const fetchInventoryData = async () => {
+  const fetchInventoryData = React.useCallback(async () => {
     setLoadingInventory(true);
     try {
       const response = await fetch('/api/lightspeed/inventory-overview');
-      const data = await response.json();
+      const data = await response.json() as InventoryData & { success?: boolean };
       
       if (data.success) {
         setInventoryData(data);
@@ -137,6 +291,216 @@ export default function ConnectLightspeedPage() {
       console.error('Error fetching inventory:', error);
     } finally {
       setLoadingInventory(false);
+    }
+  }, []);
+
+  const loadSalesReportBackfillStatus = React.useCallback(async (): Promise<SalesReportBackfillStatus> => {
+    const response = await fetch('/api/lightspeed/sales-report-backfill', { cache: 'no-store' });
+    const data = await response.json().catch(() => ({})) as SalesReportBackfillStatus;
+
+    if (!response.ok || data.success === false) {
+      throw new Error(data.error || `Sales report status failed (${response.status})`);
+    }
+
+    return data;
+  }, []);
+
+  const fetchSalesReportBackfillStatus = React.useCallback(async () => {
+    setLoadingSalesReportStatus(true);
+    try {
+      const data = await loadSalesReportBackfillStatus();
+      setSalesReportStatus(data);
+      setSalesReportBackfillError('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load sales report backfill status';
+      console.error('[Lightspeed Sales Report] Status error:', error);
+      setSalesReportBackfillError(message);
+    } finally {
+      setLoadingSalesReportStatus(false);
+    }
+  }, [loadSalesReportBackfillStatus]);
+
+  const fetchInventoryMirrorStatus = React.useCallback(async () => {
+    setLoadingInventoryMirrorStatus(true);
+    try {
+      const response = await fetch('/api/lightspeed/inventory-mirror-sync', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({})) as InventoryMirrorStatus;
+
+      if (!response.ok || data.success === false) {
+        throw new Error(data.error || `Inventory mirror status failed (${response.status})`);
+      }
+
+      setInventoryMirrorStatus(data);
+      setInventoryMirrorError('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load inventory mirror status';
+      console.error('[Lightspeed Inventory Mirror] Status error:', error);
+      setInventoryMirrorError(message);
+    } finally {
+      setLoadingInventoryMirrorStatus(false);
+    }
+  }, []);
+
+  // Fetch inventory data when connected
+  React.useEffect(() => {
+    if (isConnected) {
+      fetchInventoryData();
+      fetchSalesReportBackfillStatus();
+      fetchInventoryMirrorStatus();
+    }
+  }, [fetchInventoryData, fetchInventoryMirrorStatus, fetchSalesReportBackfillStatus, isConnected]);
+
+  const runInventoryMirrorSync = async () => {
+    if (inventoryMirrorSyncing) return;
+
+    setInventoryMirrorSyncing(true);
+    setInventoryMirrorError('');
+    setInventoryMirrorMessage('Syncing the Lightspeed inventory table...');
+
+    try {
+      const response = await fetch('/api/lightspeed/inventory-mirror-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({})) as {
+        success?: boolean;
+        result?: InventoryMirrorSyncRun;
+        status?: InventoryMirrorStatus;
+        error?: string;
+      };
+
+      if (!response.ok || data.success === false || !data.result) {
+        throw new Error(data.error || `Inventory sync failed (${response.status})`);
+      }
+
+      const result = data.result;
+      setInventoryMirrorStatus(data.status ?? null);
+      const syncVerb = result.sync_mode === 'incremental' ? 'Checked inventory diffs' : 'Synced inventory table';
+      setInventoryMirrorMessage(
+        `${syncVerb}: ${result.rows_upserted.toLocaleString()} rows processed, ${result.rows_created.toLocaleString()} new, ${result.rows_changed.toLocaleString()} changed, ${result.stock_changed.toLocaleString()} stock diffs, ${result.rows_marked_out_of_stock.toLocaleString()} marked out of stock.`,
+      );
+      await Promise.all([
+        fetchInventoryMirrorStatus(),
+        fetchInventoryData(),
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Inventory table sync failed';
+      console.error('[Lightspeed Inventory Mirror] Sync error:', error);
+      setInventoryMirrorError(message);
+      setInventoryMirrorMessage('');
+    } finally {
+      setInventoryMirrorSyncing(false);
+    }
+  };
+
+  const runSalesReportBackfill = async (initialAction: 'start' | 'continue' | 'restart') => {
+    if (salesReportBackfillRunning) return;
+
+    setSalesReportBackfillRunning(true);
+    setSalesReportBackfillError('');
+    setSalesReportBackfillMessage(
+      initialAction === 'restart'
+        ? 'Restarting full sales backfill...'
+        : 'Finding the oldest completed Lightspeed sale...',
+    );
+
+    let action: 'start' | 'continue' | 'restart' = initialAction;
+    let latestStatus: SalesReportBackfillStatus | null = null;
+    let consecutiveFailures = 0;
+    let chunksRun = 0;
+
+    try {
+      while (true) {
+        let data: SalesReportBackfillStatus | null = null;
+
+        try {
+          const response = await fetch('/api/lightspeed/sales-report-backfill', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action,
+              maxPagesPerChunk: SALES_REPORT_BACKFILL_PAGES_PER_CHUNK,
+              maxChunks: SALES_REPORT_BACKFILL_MAX_CHUNKS_PER_REQUEST,
+              timeBudgetMs: SALES_REPORT_BACKFILL_REQUEST_TIME_BUDGET_MS,
+            }),
+          });
+          data = await response.json().catch(() => ({})) as SalesReportBackfillStatus;
+
+          if (data.state) {
+            setSalesReportStatus(data);
+            latestStatus = data;
+          }
+
+          if (!response.ok || data.success === false) {
+            throw new Error(data.state?.last_error || data.error || `Sales report backfill failed (${response.status})`);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Sales report backfill chunk failed';
+          const status = await loadSalesReportBackfillStatus().catch(() => null);
+
+          if (status?.state) {
+            setSalesReportStatus(status);
+            latestStatus = status;
+          }
+
+          if (status?.state?.status === 'complete') {
+            data = status;
+          } else if (
+            !isPermanentBackfillError(message) &&
+            consecutiveFailures < SALES_REPORT_BACKFILL_RETRY_LIMIT
+          ) {
+            consecutiveFailures += 1;
+            action = 'continue';
+            setSalesReportBackfillError('');
+            setSalesReportBackfillMessage(
+              `Still running. Retrying from the saved checkpoint (${consecutiveFailures}/${SALES_REPORT_BACKFILL_RETRY_LIMIT})...`,
+            );
+            await wait(SALES_REPORT_BACKFILL_RETRY_BASE_DELAY_MS * consecutiveFailures);
+            continue;
+          } else {
+            throw error;
+          }
+        }
+
+        if (!data) {
+          throw new Error('Sales report backfill returned no status.');
+        }
+
+        consecutiveFailures = 0;
+        chunksRun += 1;
+        const rows = (data.row_count ?? 0).toLocaleString();
+        const chunkLines = data.chunk?.lines_upserted ?? 0;
+        const chunkSales = data.chunk?.sales_fetched ?? 0;
+        const serverChunks = data.chunks_run ?? 0;
+        setSalesReportBackfillMessage(
+          data.state?.status === 'complete'
+            ? `Complete. ${rows} sale-line rows are stored.`
+            : data.locked
+              ? `Backfill worker is already running from another request. ${rows} rows are stored; checking the saved checkpoint again shortly.`
+              : `Backfilling until complete: ${rows} rows stored, ${chunksRun.toLocaleString()} requests run, ${serverChunks.toLocaleString()} chunks processed in this request, ${chunkSales.toLocaleString()} sales scanned, ${chunkLines.toLocaleString()} rows upserted. You can leave this page; background workers will keep moving until complete.`,
+        );
+
+        if (data.state?.status === 'complete' || data.chunk?.complete) {
+          latestStatus = data;
+          break;
+        }
+
+        action = 'continue';
+        await wait(data.retry_after_ms ?? SALES_REPORT_BACKFILL_CHUNK_DELAY_MS);
+      }
+
+      if (latestStatus?.state?.status !== 'complete') {
+        setSalesReportBackfillMessage('Backfill is still running. Background workers will keep processing older sales until complete.');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Sales report backfill failed';
+      console.error('[Lightspeed Sales Report] Backfill error:', error);
+      setSalesReportBackfillError(message);
+      setSalesReportBackfillMessage('');
+    } finally {
+      setSalesReportBackfillRunning(false);
+      await fetchSalesReportBackfillStatus();
     }
   };
 
@@ -164,7 +528,7 @@ export default function ConnectLightspeedPage() {
   };
 
   // Returns true if the product passes the active sync filters
-  const productPassesFilters = (product: any): boolean => {
+  const productPassesFilters = (product: InventoryProduct): boolean => {
     const minSoh = syncFilters.inStockOnly ? 1 : (syncFilters.minSoh !== '' ? parseFloat(syncFilters.minSoh) : null);
     const maxSoh = syncFilters.maxSoh !== '' ? parseFloat(syncFilters.maxSoh) : null;
     const minPrice = syncFilters.minPrice !== '' ? parseFloat(syncFilters.minPrice) : null;
@@ -192,7 +556,7 @@ export default function ConnectLightspeedPage() {
     const allNotSynced = inventoryData.categories.flatMap(cat =>
       cat.notSyncedProducts > 0 ? cat.products : []
     );
-    const passesDraft = (product: any): boolean => {
+    const passesDraft = (product: InventoryProduct): boolean => {
       const minSoh = draftFilters.inStockOnly ? 1 : (draftFilters.minSoh !== '' ? parseFloat(draftFilters.minSoh) : null);
       const maxSoh = draftFilters.maxSoh !== '' ? parseFloat(draftFilters.maxSoh) : null;
       const minPrice = draftFilters.minPrice !== '' ? parseFloat(draftFilters.minPrice) : null;
@@ -261,14 +625,15 @@ export default function ConnectLightspeedPage() {
           if (!dataMatch) continue;
 
           try {
-            const data = JSON.parse(dataMatch[1]);
+            const data = JSON.parse(dataMatch[1]) as SyncSsePayload;
             if (eventMatch?.[1] === 'complete') {
               setSyncProgress(100);
               setSyncStatus('success');
               // Normalise field name — edge function returns totalItemsInCategories,
               // but SyncProgressModal expects totalItems.
               setSyncResult({
-                ...data,
+                itemsSynced: data.itemsSynced ?? 0,
+                itemsWithStock: data.itemsWithStock ?? 0,
                 totalItems: data.totalItems ?? data.totalItemsInCategories ?? 0,
               });
               setSelectedCategories(new Set());
@@ -283,7 +648,7 @@ export default function ConnectLightspeedPage() {
               if (typeof data.progress === 'number') setSyncProgress(Math.min(data.progress, 99));
               if (data.details) {
                 const d = data.details;
-                let detailText = data.message;
+                let detailText = data.message ?? '';
                 if (d.itemsFetched) detailText += ` • ${d.itemsFetched} items fetched`;
                 if (d.itemsToSync) detailText += ` • ${d.itemsToSync} to sync`;
                 if (d.itemsSynced) detailText += ` • ${d.itemsSynced} synced`;
@@ -312,9 +677,9 @@ export default function ConnectLightspeedPage() {
     if (activeFilterCount > 0) {
       const productsInSelection = categoriesToSync.flatMap(catId => {
         const cat = inventoryData?.categories.find(c => c.categoryId === catId);
-        return (cat?.products ?? []).filter((p: any) => !p.isSynced);
+        return (cat?.products ?? []).filter((p) => !p.isSynced);
       });
-      const filteredItemIds = productsInSelection.filter(productPassesFilters).map((p: any) => p.itemId);
+      const filteredItemIds = productsInSelection.filter(productPassesFilters).map((p) => p.itemId);
       if (filteredItemIds.length === 0) return;
       await runSseSync({ itemIds: filteredItemIds });
     } else {
@@ -347,7 +712,7 @@ export default function ConnectLightspeedPage() {
 
     setIsDeleting(true);
     try {
-      const body: any = {};
+      const body: { categoryIds?: string[]; productIds?: string[] } = {};
       
       if (deleteTarget.type === 'categories') {
         body.categoryIds = deleteTarget.ids;
@@ -399,7 +764,7 @@ export default function ConnectLightspeedPage() {
     const source = productSyncFilter === 'synced'
       ? inventoryData?.synced.products
       : inventoryData?.notSynced.products;
-    setSelectedProducts(new Set((source || []).map((p: any) => p.itemId)));
+    setSelectedProducts(new Set((source || []).map((p) => p.itemId)));
   };
 
   const handleClearAllProducts = () => {
@@ -418,6 +783,24 @@ export default function ConnectLightspeedPage() {
   
   const hasNotSyncedSelected = selectedWithProducts.some(cat => cat && cat.notSyncedProducts > 0);
   const hasSyncedSelected = selectedWithProducts.some(cat => cat && cat.syncedProducts > 0);
+  const inventoryMirrorRun = inventoryMirrorStatus?.latest_run ?? null;
+  const inventoryMirrorErrorText = inventoryMirrorError || inventoryMirrorRun?.error_message || '';
+  const salesReportState = salesReportStatus?.state ?? null;
+  const salesReportPrimaryAction: 'start' | 'continue' | 'restart' =
+    salesReportState?.status === 'complete'
+      ? 'restart'
+      : salesReportState
+        ? 'continue'
+        : 'start';
+  const salesReportPrimaryLabel =
+    salesReportState?.status === 'complete'
+      ? 'Re-run full backfill'
+      : salesReportState?.status === 'running'
+        ? 'Continue backfill'
+        : salesReportState?.status === 'error'
+          ? 'Retry backfill'
+          : 'Run sales backfill';
+  const salesReportError = salesReportBackfillError || salesReportState?.last_error || '';
 
   // Loading state
   if (isLoading) {
@@ -495,6 +878,192 @@ export default function ConnectLightspeedPage() {
         onRefresh={fetchInventoryData}
         onDisconnect={disconnect}
       />
+
+      <div className="space-y-3 border-b border-border bg-background px-6 py-3">
+        <div className="rounded-md border border-border bg-card px-4 py-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                <Database className="h-4 w-4 text-foreground" />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-semibold">Inventory table</h2>
+                  <Badge
+                    variant={inventoryMirrorRun?.status === 'completed' ? 'default' : 'secondary'}
+                    className="rounded-md"
+                  >
+                    {inventoryMirrorRun?.status === 'completed' && <CheckCircle2 className="mr-1 h-3 w-3" />}
+                    {inventoryMirrorRun?.status ? inventoryMirrorRun.status.replace(/_/g, ' ') : 'Not synced'}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                  <span>
+                    Rows:{' '}
+                    <span className="font-medium text-foreground">
+                      {(inventoryMirrorStatus?.total_rows ?? 0).toLocaleString()}
+                    </span>
+                  </span>
+                  <span>
+                    In stock:{' '}
+                    <span className="font-medium text-foreground">
+                      {(inventoryMirrorStatus?.in_stock_rows ?? 0).toLocaleString()}
+                    </span>
+                  </span>
+                  <span>
+                    Last sync:{' '}
+                    <span className="font-medium text-foreground">
+                      {formatBackfillDate(inventoryMirrorRun?.completed_at || inventoryMirrorRun?.started_at)}
+                    </span>
+                  </span>
+                  <span>
+                    Last diffs:{' '}
+                    <span className="font-medium text-foreground">
+                      {inventoryMirrorRun
+                        ? `${inventoryMirrorRun.rows_changed.toLocaleString()} changed, ${inventoryMirrorRun.stock_changed.toLocaleString()} stock, ${inventoryMirrorRun.price_changed.toLocaleString()} price`
+                        : 'None yet'}
+                    </span>
+                  </span>
+                  <span>
+                    Background:{' '}
+                    <span className="font-medium text-foreground">every 10 min</span>
+                  </span>
+                </div>
+                {(inventoryMirrorMessage || inventoryMirrorErrorText) && (
+                  <p className={cn(
+                    "text-xs",
+                    inventoryMirrorErrorText ? "text-red-600 dark:text-red-400" : "text-muted-foreground",
+                  )}>
+                    {inventoryMirrorErrorText || inventoryMirrorMessage}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                className="rounded-md"
+                onClick={runInventoryMirrorSync}
+                disabled={inventoryMirrorSyncing || loadingInventoryMirrorStatus}
+              >
+                {inventoryMirrorSyncing ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                {inventoryMirrorSyncing ? 'Syncing...' : 'Sync inventory table'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-md"
+                onClick={fetchInventoryMirrorStatus}
+                disabled={inventoryMirrorSyncing || loadingInventoryMirrorStatus}
+              >
+                {loadingInventoryMirrorStatus ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                Refresh
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-md border border-border bg-card px-4 py-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                <Database className="h-4 w-4 text-foreground" />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-semibold">Sales report data</h2>
+                  <Badge
+                    variant={salesReportState?.status === 'complete' ? 'default' : 'secondary'}
+                    className="rounded-md"
+                  >
+                    {salesReportState?.status === 'complete' && <CheckCircle2 className="mr-1 h-3 w-3" />}
+                    {backfillStatusLabel(salesReportState)}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                  <span>
+                    Rows:{' '}
+                    <span className="font-medium text-foreground">
+                      {(salesReportStatus?.row_count ?? 0).toLocaleString()}
+                    </span>
+                  </span>
+                  <span>
+                    Oldest stored:{' '}
+                    <span className="font-medium text-foreground">
+                      {formatBackfillDate(salesReportStatus?.oldest_complete_time)}
+                    </span>
+                  </span>
+                  <span>
+                    Latest stored:{' '}
+                    <span className="font-medium text-foreground">
+                      {formatBackfillDate(salesReportStatus?.latest_complete_time)}
+                    </span>
+                  </span>
+                  <span>
+                    Oldest Lightspeed sale:{' '}
+                    <span className="font-medium text-foreground">
+                      {formatBackfillDate(salesReportState?.oldest_sale_at)}
+                    </span>
+                  </span>
+                  <span>
+                    Background:{' '}
+                    <span className="font-medium text-foreground">
+                      backfill every minute, recent sales every 10 min
+                    </span>
+                  </span>
+                </div>
+                {(salesReportBackfillMessage || salesReportError) && (
+                  <p className={cn(
+                    "text-xs",
+                    salesReportError ? "text-red-600 dark:text-red-400" : "text-muted-foreground",
+                  )}>
+                    {salesReportError || salesReportBackfillMessage}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                className="rounded-md"
+                onClick={() => runSalesReportBackfill(salesReportPrimaryAction)}
+                disabled={salesReportBackfillRunning || loadingSalesReportStatus}
+              >
+                {salesReportBackfillRunning ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="mr-2 h-4 w-4" />
+                )}
+                {salesReportBackfillRunning ? 'Backfilling...' : salesReportPrimaryLabel}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-md"
+                onClick={fetchSalesReportBackfillStatus}
+                disabled={salesReportBackfillRunning || loadingSalesReportStatus}
+              >
+                {loadingSalesReportStatus ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                Refresh
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Main Content - Full width container */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -685,17 +1254,17 @@ export default function ConnectLightspeedPage() {
                     (productSyncFilter === 'synced'
                       ? (inventoryData?.synced.products ?? [])
                       : (inventoryData?.notSynced.products ?? [])
-                    ).map((p: any) => ({
-                      id: p.id,
-                      itemId: p.itemId,
-                      name: p.name,
-                      sku: p.sku,
-                      modelYear: p.modelYear,
-                      categoryId: p.categoryId,
-                      price: p.price ?? 0,
-                      totalQoh: p.totalQoh,
-                      totalSellable: p.totalSellable,
-                      isSynced: productSyncFilter === 'synced',
+                    ).map((p) => ({
+	                      id: p.id,
+	                      itemId: p.itemId,
+	                      name: p.name ?? 'Unnamed product',
+	                      sku: p.sku ?? '',
+	                      modelYear: p.modelYear ?? '',
+	                      categoryId: p.categoryId ?? '',
+	                      price: p.price ?? 0,
+	                      totalQoh: p.totalQoh ?? 0,
+	                      totalSellable: p.totalSellable ?? 0,
+	                      isSynced: productSyncFilter === 'synced',
                     }))
                   }
                   selectedProducts={selectedProducts}
@@ -725,7 +1294,7 @@ export default function ConnectLightspeedPage() {
         progress={syncProgress}
         phase={syncPhase}
         message={syncMessage}
-        result={syncResult}
+        result={syncResult ?? undefined}
         error={syncError}
       />
 
@@ -827,7 +1396,7 @@ export default function ConnectLightspeedPage() {
               <div>
                 <h3 className="text-sm font-semibold">Price Range</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Filter by the product's sell price from Lightspeed.
+                  Filter by the product sell price from Lightspeed.
                 </p>
               </div>
 
@@ -908,4 +1477,3 @@ export default function ConnectLightspeedPage() {
     </>
   );
 }
-

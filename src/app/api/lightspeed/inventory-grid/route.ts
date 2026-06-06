@@ -9,15 +9,28 @@ interface InventoryRow {
   user_id: string
   lightspeed_item_id: string
   lightspeed_account_id: string | null
+  product_uuid: string | null
   system_sku: string | null
+  custom_sku: string | null
+  manufacturer_sku: string | null
   description: string | null
   model_year: string | null
   upc: string | null
+  ean: string | null
   category_id: string | null
-  manufacturer_id: string | null
+  category_name: string | null
+  category_path: string | null
+  brand_id: string | null
+  brand_name: string | null
+  supplier_id: string | null
+  supplier_name: string | null
   stock_data: unknown
   total_qoh: number | null
   total_sellable: number | null
+  backorder: number | null
+  reorder_point: number | null
+  reorder_level: number | null
+  is_in_stock: boolean | null
   last_synced_at: string | null
   sync_batch_id: string | null
   created_at: string | null
@@ -33,17 +46,39 @@ interface InventoryRow {
 const INVENTORY_COLUMNS = [
   'lightspeed_item_id',
   'lightspeed_account_id',
+  'product_uuid',
   'system_sku',
+  'custom_sku',
+  'manufacturer_sku',
   'description',
   'model_year',
   'upc',
+  'ean',
+  'brand_name',
+  'brand_id',
+  'supplier_name',
+  'supplier_id',
+  'category_path',
+  'category_name',
   'category_id',
-  'manufacturer_id',
-  'price',
+  'default_price',
+  'online_price',
+  'msrp',
   'default_cost',
   'avg_cost',
   'total_qoh',
   'total_sellable',
+  'backorder',
+  'reorder_point',
+  'reorder_level',
+  'on_layaway',
+  'on_special_order',
+  'on_workorder',
+  'on_transfer_in',
+  'on_transfer_out',
+  'is_in_stock',
+  'archived',
+  'publish_to_ecom',
   'stock_data',
   'images',
   'primary_image_url',
@@ -58,7 +93,7 @@ const EDITABLE_FIELD_MAP = {
   model_year: 'modelYear',
   upc: 'upc',
   category_id: 'categoryID',
-  manufacturer_id: 'manufacturerID',
+  brand_id: 'manufacturerID',
   default_cost: 'defaultCost',
 } as const
 
@@ -84,7 +119,7 @@ function toLightspeedValue(field: EditableField, value: unknown): string {
     throw new Error('UPC must be 11 to 14 digits')
   }
 
-  if ((field === 'category_id' || field === 'manufacturer_id') && text && !/^\d+$/.test(text)) {
+  if ((field === 'category_id' || field === 'brand_id') && text && !/^\d+$/.test(text)) {
     throw new Error(`${field} must be a numeric Lightspeed ID`)
   }
 
@@ -120,7 +155,7 @@ export async function GET(request: NextRequest) {
     const to = from + pageSize - 1
 
     let query = supabase
-      .from('products_all_ls')
+      .from('lightspeed_inventory')
       .select('*', { count: 'exact' })
       .eq('user_id', user.id)
       .order('description', { ascending: true, nullsFirst: false })
@@ -131,10 +166,18 @@ export async function GET(request: NextRequest) {
         [
           `description.ilike.%${search}%`,
           `system_sku.ilike.%${search}%`,
+          `custom_sku.ilike.%${search}%`,
+          `manufacturer_sku.ilike.%${search}%`,
           `lightspeed_item_id.ilike.%${search}%`,
           `upc.ilike.%${search}%`,
+          `ean.ilike.%${search}%`,
           `category_id.ilike.%${search}%`,
-          `manufacturer_id.ilike.%${search}%`,
+          `category_name.ilike.%${search}%`,
+          `category_path.ilike.%${search}%`,
+          `brand_id.ilike.%${search}%`,
+          `brand_name.ilike.%${search}%`,
+          `supplier_id.ilike.%${search}%`,
+          `supplier_name.ilike.%${search}%`,
         ].join(',')
       )
     }
@@ -203,7 +246,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const { data: existing, error: existingError } = await supabase
-      .from('products_all_ls')
+      .from('lightspeed_inventory')
       .select('id, lightspeed_item_id')
       .eq('user_id', user.id)
       .eq('lightspeed_item_id', itemId)
@@ -227,7 +270,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const { error: cacheError } = await supabase
-      .from('products_all_ls')
+      .from('lightspeed_inventory')
       .update(cachePatch)
       .eq('user_id', user.id)
       .eq('lightspeed_item_id', itemId)
@@ -241,7 +284,7 @@ export async function PATCH(request: NextRequest) {
     if (field === 'model_year') productPatch.model_year = cacheValue
     if (field === 'upc') productPatch.upc = cacheValue
     if (field === 'category_id') productPatch.lightspeed_category_id = cacheValue
-    if (field === 'manufacturer_id') productPatch.manufacturer_id = cacheValue
+    if (field === 'brand_id') productPatch.manufacturer_id = cacheValue
     if (field === 'default_cost') productPatch.default_cost = cacheValue
 
     if (Object.keys(productPatch).length > 1) {

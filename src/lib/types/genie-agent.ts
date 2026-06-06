@@ -124,13 +124,140 @@ export interface PriceUpdateProposal {
   products_preview: PriceUpdateProductPreview[];
 }
 
+/** One product whose brand and/or category will be written back to Lightspeed. */
+export interface ProductBrandCategoryChange {
+  lightspeed_item_id: string;
+  product_name: string;
+  sku: string | null;
+  image_url: string | null;
+  prev_brand_id: string | null;
+  prev_brand_name: string | null;
+  next_brand_id: string | null;
+  next_brand_name: string | null;
+  /** When true, Lightspeed manufacturer is created on apply before assigning. */
+  create_brand?: boolean;
+  /** When true, clears the product brand in Lightspeed (manufacturerID 0). */
+  clear_brand?: boolean;
+  prev_category_id: string | null;
+  prev_category_name: string | null;
+  prev_category_path: string | null;
+  next_category_id: string | null;
+  next_category_name: string | null;
+  next_category_path: string | null;
+  /** Parent Lightspeed category id when creating a nested category. */
+  next_category_parent_id?: string | null;
+  /** When true, Lightspeed category is created on apply before assigning. */
+  create_category?: boolean;
+  /** When true, clears the product category in Lightspeed (categoryID 0). */
+  clear_category?: boolean;
+}
+
+/** Stage brand/category changes for human approval before Lightspeed write-back. */
+export interface ProductBrandCategoryUpdateProposal {
+  kind: 'product_brand_category_update';
+  summary: string;
+  match_label: string;
+  changes: ProductBrandCategoryChange[];
+}
+
+/** Stage a new Lightspeed category (no product assignment). */
+export interface LightspeedCategoryCreateProposal {
+  kind: 'lightspeed_category_create';
+  summary: string;
+  name: string;
+  path: string;
+  parent_category_id: string | null;
+  parent_category_name: string | null;
+}
+
 export type GenieProposal =
   | CarouselLayoutProposal
   | CarouselCreateProposal
   | CarouselRenameProposal
   | DiscountApplyProposal
   | DiscountRemoveProposal
-  | PriceUpdateProposal;
+  | PriceUpdateProposal
+  | ProductBrandCategoryUpdateProposal
+  | LightspeedCategoryCreateProposal;
+
+/** Read-only Lightspeed work order row streamed to the Genie UI. */
+export interface GenieWorkorderLineCard {
+  line_id: string;
+  note: string;
+  done: boolean;
+}
+
+export interface GenieWorkorderItemCard {
+  item_id: string;
+  description: string | null;
+  sku: string | null;
+  note: string;
+  quantity: number | null;
+  unit_price: number | null;
+  line_total: number | null;
+}
+
+export interface GenieWorkorderCard {
+  workorder_id: string;
+  status_id: string;
+  status_name: string;
+  status_system_value: string | null;
+  is_finished: boolean;
+  archived: boolean;
+  time_in: string;
+  eta_out: string;
+  updated_at: string;
+  note: string;
+  internal_note: string;
+  warranty: string;
+  customer_id: string;
+  customer_name: string;
+  customer_phone: string | null;
+  customer_email: string | null;
+  employee_id: string;
+  shop_id: string;
+  sale_id: string | null;
+  lines: GenieWorkorderLineCard[];
+  items: GenieWorkorderItemCard[];
+  items_subtotal: number | null;
+}
+
+export interface GenieWorkorderCardsPayload {
+  title: string;
+  scope: 'open' | 'finished' | 'all' | 'single';
+  truncated?: boolean;
+  workorders: GenieWorkorderCard[];
+}
+
+/** Structured analysis plan streamed to the thinking/progress panel. */
+export interface GenieAnalysisPlanPayload {
+  source: 'planner' | 'agent';
+  user_intent?: string | null;
+  execution_steps: string[];
+  primary_tools?: string[];
+  sql_strategy_summary?: string | null;
+  date_range_label?: string | null;
+  recheck_strategy?: string | null;
+}
+
+/** SQL or lookup executed during analysis, shown in the queries dropdown. */
+export interface GenieAnalysisQueryPayload {
+  id: string;
+  tool_name: string;
+  purpose: string;
+  sql: string | null;
+  status: 'running' | 'ok' | 'error' | 'rejected';
+  at: string;
+  row_count?: number | null;
+  error?: string | null;
+}
+
+/** One captured SSE / client debug event for the raw logs panel. */
+export interface GenieRawDebugLogEntry {
+  seq: number;
+  at: string;
+  payload: Record<string, unknown>;
+}
 
 /** Result returned by /api/genie/agent/apply after a successful mutation. */
 export interface ApplyResult {
@@ -138,4 +265,6 @@ export interface ApplyResult {
   kind: GenieProposal['kind'];
   affected: number;
   message: string;
+  /** Resolved Lightspeed values written for brand/category updates (for undo). */
+  applied_changes?: ProductBrandCategoryChange[];
 }

@@ -44,7 +44,7 @@ import {
 import { cn } from "@/lib/utils";
 import { StoreSwitcher } from "./store-switcher";
 import { NavUser } from "./nav-user";
-import { SidebarBranding } from "./sidebar-branding";
+import { SidebarLightspeedStatus } from "./sidebar-lightspeed-status";
 import { SidebarYjLogo } from "./sidebar-yj-logo";
 
 type SubItem = { title: string; href: string; exact?: boolean };
@@ -282,8 +282,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
 
       <SidebarSeparator />
-      <SidebarFooter>
-        <SidebarBranding />
+      <SidebarFooter className="gap-1">
+        <SidebarLightspeedStatus />
         <NavUser />
       </SidebarFooter>
     </Sidebar>

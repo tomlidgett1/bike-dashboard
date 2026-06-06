@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { MapPin, Grid2x2, Grid3x2, Grid3X3 } from "lucide-react";
+import { MapPin, Grid2x2, Grid3x2, Grid3X3, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 import {
@@ -51,12 +51,57 @@ const CONDITION_ITEMS: { value: ConditionFilter; label: string }[] = [
   { value: "Well Used", label: "Well Used" },
 ];
 
-const SORT_ITEMS: { value: SortOption; label: string }[] = [
+export const BROWSE_SORT_ITEMS: { value: SortOption; label: string }[] = [
   { value: "newest",     label: "Newest" },
   { value: "oldest",     label: "Oldest" },
   { value: "price_asc",  label: "Price ↑" },
   { value: "price_desc", label: "Price ↓" },
 ];
+
+const SORT_ITEMS = BROWSE_SORT_ITEMS;
+
+export function BrowseSortButton({
+  sortBy,
+  onSortChange,
+  onApply,
+  className,
+}: {
+  sortBy: SortOption;
+  onSortChange: (value: SortOption) => void;
+  onApply?: () => void;
+  className?: string;
+}) {
+  const sortLabel = SORT_ITEMS.find((s) => s.value === sortBy)?.label ?? "Newest";
+
+  return (
+    <Select
+      value={sortBy}
+      onValueChange={(v) => {
+        onSortChange(v as SortOption);
+        onApply?.();
+      }}
+    >
+      <SelectTrigger
+        aria-label={`Sort: ${sortLabel}`}
+        className={cn(
+          "flex h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white p-0 shadow-none ring-0 transition-colors cursor-pointer [&>svg:last-child]:hidden",
+          sortBy !== "newest" ? "text-gray-900" : "text-gray-500 hover:text-gray-700",
+          className
+        )}
+      >
+        <ArrowUpDown className="h-4 w-4" />
+        <SelectValue className="sr-only" />
+      </SelectTrigger>
+      <SelectContent className="rounded-lg">
+        {SORT_ITEMS.map((s) => (
+          <SelectItem key={s.value} value={s.value} className="rounded-md">
+            {s.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 const PRICE_ITEMS: { value: string; label: string; min: string; max: string }[] = [
   { value: "any",   label: "Price",      min: "",     max: "" },
@@ -362,28 +407,19 @@ export function BrowseFiltersToolbar({
 
           <PillDivider />
 
-          {/* Sort */}
-          <Select
-            value={filters.sortBy}
-            onValueChange={(v) => {
-              onFiltersChange({ ...filters, sortBy: v as SortOption });
-              onFiltersApply();
-            }}
-          >
-            <SelectTrigger className={cn(pillTriggerClass, "min-w-[6rem]")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="rounded-lg">
-              {SORT_ITEMS.map((s) => (
-                <SelectItem key={s.value} value={s.value} className="rounded-md">{s.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <PillDivider />
-
-          {/* Layout toggle */}
+          {/* Sort + layout */}
           <div className="flex items-center px-1.5 gap-0.5">
+            <BrowseSortButton
+              sortBy={filters.sortBy}
+              onSortChange={(sortBy) => onFiltersChange({ ...filters, sortBy })}
+              onApply={onFiltersApply}
+              className={cn(
+                "h-8 w-8 min-w-8 rounded-full border-0",
+                filters.sortBy !== "newest"
+                  ? "text-yellow-500"
+                  : "text-gray-400 hover:text-gray-600"
+              )}
+            />
             <button type="button" aria-label="4 per row" onClick={() => onGridLayoutChange("grid4")}
               className={cn(
                 "flex h-8 w-8 items-center justify-center rounded-full transition-colors",

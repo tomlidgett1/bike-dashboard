@@ -3,16 +3,24 @@
 import * as React from "react";
 import {
   ChevronLeft,
+  Inbox,
   Loader2,
   Plus,
   RefreshCw,
   Search,
   Send,
+  Settings,
+  Sparkles,
   X,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { SettingsSection } from "@/components/dashboard/settings-primitives";
+import {
+  formatNestOutboundMessage,
+  NEST_MESSAGE_PLACEHOLDER_HINT,
+  type NestMessageTemplateSettings,
+} from "@/lib/nest/message-format";
 import {
   sanitiseNestConversationsResponse,
   type NestConversationDetail,
@@ -21,6 +29,8 @@ import {
   type NestConversationsResponse,
   type NestLightspeedCustomer,
 } from "@/lib/nest/types";
+import { NestAutoServicePanel } from "@/components/settings/nest-auto-service-panel";
+import { NestHiddenPickupSuggestionsPanel } from "@/components/settings/nest-hidden-pickup-suggestions";
 
 const QUICK_REPLIES = [
   "Thanks, we'll get back to you shortly.",
@@ -446,6 +456,166 @@ function ComposeBox({
   );
 }
 
+async function fetchNestMessageTemplates(): Promise<{
+  templates: NestMessageTemplateSettings;
+  storeName: string | null;
+}> {
+  const res = await fetch("/api/store/nest-settings", { cache: "no-store" });
+  const data = (await res.json()) as {
+    templates?: NestMessageTemplateSettings;
+    storeName?: string | null;
+    error?: string;
+  };
+  if (!res.ok) throw new Error(data.error || "Could not load message settings.");
+  return {
+    templates: data.templates ?? { intro: "Hi {name},", signoff: "— {store}" },
+    storeName: data.storeName ?? null,
+  };
+}
+
+async function saveNestMessageTemplates(templates: NestMessageTemplateSettings): Promise<void> {
+  const res = await fetch("/api/store/nest-settings", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(templates),
+  });
+  const data = (await res.json()) as { error?: string };
+  if (!res.ok) throw new Error(data.error || "Could not save message settings.");
+}
+
+function NestMessageTemplatesSettings() {
+  const [intro, setIntro] = React.useState("Hi {name},");
+  const [signoff, setSignoff] = React.useState("— {store}");
+  const [storeName, setStoreName] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [saved, setSaved] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetchNestMessageTemplates()
+      .then((data) => {
+        if (cancelled) return;
+        setIntro(data.templates.intro);
+        setSignoff(data.templates.signoff);
+        setStoreName(data.storeName);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load message settings.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const preview = formatNestOutboundMessage("Your wheel true is ready for pickup.", {
+    firstName: "Tom",
+    storeName,
+    templates: { intro, signoff },
+  });
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await saveNestMessageTemplates({ intro: intro.trim(), signoff: signoff.trim() });
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save message settings.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <SettingsSection
+      title="Message intro and signoff"
+      description="Used for outbound Nest texts such as work order pickup messages. Keep it short."
+      className="mb-6"
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading message settings…
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {error ? (
+            <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-red-600">
+              {error}
+            </div>
+          ) : null}
+          {saved ? (
+            <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+              Message settings saved.
+            </div>
+          ) : null}
+
+          <p className="text-xs text-gray-500">{NEST_MESSAGE_PLACEHOLDER_HINT}</p>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-gray-900">Intro</span>
+              <input
+                type="text"
+                value={intro}
+                onChange={(event) => {
+                  setIntro(event.target.value);
+                  setSaved(false);
+                }}
+                placeholder="Hi {name},"
+                className={INBOX_INPUT_CLASS}
+                disabled={saving}
+              />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-gray-900">Signoff</span>
+              <input
+                type="text"
+                value={signoff}
+                onChange={(event) => {
+                  setSignoff(event.target.value);
+                  setSaved(false);
+                }}
+                placeholder="— {store}"
+                className={INBOX_INPUT_CLASS}
+                disabled={saving}
+              />
+            </label>
+          </div>
+
+          <div className="rounded-md border border-gray-200 bg-white px-3 py-2.5">
+            <p className="text-xs font-medium text-gray-500">Preview</p>
+            <p className="mt-1 text-sm text-gray-800">{preview}</p>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving}
+              className={cn(
+                NEST_INBOX_ICON_BUTTON_CLASS,
+                "bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-400",
+              )}
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+    </SettingsSection>
+  );
+}
+
 function StartMessageDialog({
   open,
   onOpenChange,
@@ -659,7 +829,10 @@ function StartMessageDialog({
   );
 }
 
+type NestPanelTab = "inbox" | "auto" | "settings";
+
 export function StoreNestMessagesPanel() {
+  const [activeTab, setActiveTab] = React.useState<NestPanelTab>("inbox");
   const [configured, setConfigured] = React.useState<boolean | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -719,19 +892,20 @@ export function StoreNestMessagesPanel() {
   }, [selectedChatId, loadThread]);
 
   React.useEffect(() => {
+    if (activeTab !== "inbox") return;
     const listInterval = window.setInterval(() => {
       void loadList(true);
     }, 20_000);
     return () => window.clearInterval(listInterval);
-  }, [loadList]);
+  }, [activeTab, loadList]);
 
   React.useEffect(() => {
-    if (!selectedChatId) return;
+    if (activeTab !== "inbox" || !selectedChatId) return;
     const threadInterval = window.setInterval(() => {
       void loadThread(selectedChatId, true);
     }, 5_000);
     return () => window.clearInterval(threadInterval);
-  }, [selectedChatId, loadThread]);
+  }, [activeTab, selectedChatId, loadThread]);
 
   React.useEffect(() => {
     if (!conversation || !threadRef.current) return;
@@ -822,11 +996,18 @@ export function StoreNestMessagesPanel() {
 
   const unreadCount = chats.filter(isConversationUnread).length;
 
+  const tabDescription =
+    activeTab === "inbox"
+      ? "Customer iMessage conversations for your store. View threads, reply manually, or start a new message."
+      : activeTab === "auto"
+        ? "Customers due for a general or full service based on Lightspeed sales history."
+        : "Message templates and dismissed pickup suggestions.";
+
   return (
     <>
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2.5">
+      <div className="mb-6 space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-2.5">
             <Image
               src="/nest-logo.png"
               alt="Nest"
@@ -834,168 +1015,230 @@ export function StoreNestMessagesPanel() {
               height={28}
               className="h-7 w-7 rounded-md object-contain"
             />
-            Nest messages
-          </span>
-        }
-        description="Customer iMessage conversations for your store. View threads, reply manually, or start a new message."
-        headerAction={
-          <div className="flex items-center gap-2">
+            <div>
+              <h2 className="text-base font-medium text-gray-900">Nest</h2>
+              <p className="mt-0.5 text-sm text-gray-500">{tabDescription}</p>
+            </div>
+          </div>
+
+          {activeTab === "inbox" ? (
+            <div className="flex items-center gap-2">
+              {unreadCount > 0 ? (
+                <span className={cn(NEST_INBOX_BADGE_CLASS, "px-2 py-1 text-xs text-gray-900")}>
+                  {unreadCount} unread
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void refreshAll()}
+                disabled={refreshing}
+                className={NEST_INBOX_ICON_BUTTON_CLASS}
+              >
+                {refreshing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewMessageOpen(true)}
+                disabled={configured === false}
+                className={cn(
+                  NEST_INBOX_ICON_BUTTON_CLASS,
+                  "bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-400",
+                )}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New message
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+          <button
+            type="button"
+            onClick={() => setActiveTab("inbox")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              activeTab === "inbox"
+                ? "text-gray-800 bg-white shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70",
+            )}
+          >
+            <Inbox size={15} />
+            Inbox
             {unreadCount > 0 ? (
-              <span className={cn(NEST_INBOX_BADGE_CLASS, "px-2 py-1 text-xs text-gray-900")}>
-                {unreadCount} unread
+              <span className="rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+                {unreadCount}
               </span>
             ) : null}
-            <button
-              type="button"
-              onClick={() => void refreshAll()}
-              disabled={refreshing}
-              className={NEST_INBOX_ICON_BUTTON_CLASS}
-            >
-              {refreshing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
-              )}
-              Refresh
-            </button>
-            <button
-              type="button"
-              onClick={() => setNewMessageOpen(true)}
-              disabled={configured === false}
-              className={cn(
-                NEST_INBOX_ICON_BUTTON_CLASS,
-                "bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-400",
-              )}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New message
-            </button>
-          </div>
-        }
-        contentClassName="p-0"
-      >
-        {configured === false ? (
-          <div className="rounded-md border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
-            Nest messaging is not configured for this environment yet. Add Nest Supabase and portal
-            API environment variables to enable the inbox.
-          </div>
-        ) : loading && chats.length === 0 ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-          </div>
-        ) : error ? (
-          <div className="rounded-md border border-gray-200 bg-white px-4 py-6 text-sm text-red-600">
-            {error}
-          </div>
-        ) : (
-          <div className="flex h-[min(70vh,640px)] min-h-[480px] flex-col overflow-hidden rounded-md border border-gray-200 bg-white md:flex-row">
-            <aside
-              className={cn(
-                "flex h-full min-h-0 w-full shrink-0 flex-col border-gray-200 bg-white md:w-[300px] md:border-r",
-                showMobileThread ? "hidden md:flex" : "flex",
-              )}
-            >
-              <div className={cn("shrink-0", INBOX_SECTION_HEADER_CLASS)}>
-                <p className="text-[13px] font-medium text-gray-900">Threads</p>
-                <p className="mt-1 text-xs text-gray-500">
-                  {chats.length} conversation{chats.length === 1 ? "" : "s"}
-                </p>
-              </div>
-              <div
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2"
-                style={{ WebkitOverflowScrolling: "touch" }}
-              >
-                {chats.length === 0 ? (
-                  <div className="flex h-full flex-col items-center justify-center px-4 py-8 text-center">
-                    <p className="text-[13px] font-medium text-gray-900">No conversations yet</p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      When messages land for your store, they will appear here.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-0.5">
-                    {chats.map((chat) => (
-                      <ConversationRow
-                        key={chat.chatId}
-                        chat={chat}
-                        active={chat.chatId === selectedChatId}
-                        onClick={() => openConversation(chat)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </aside>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("auto")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              activeTab === "auto"
+                ? "text-gray-800 bg-white shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70",
+            )}
+          >
+            <Sparkles size={15} />
+            Auto
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("settings")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              activeTab === "settings"
+                ? "text-gray-800 bg-white shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70",
+            )}
+          >
+            <Settings size={15} />
+            Settings
+          </button>
+        </div>
+      </div>
 
-            <section
-              className={cn(
-                "flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white",
-                showMobileThread ? "flex" : "hidden md:flex",
-              )}
-            >
-              {!selectedChatId || !conversation ? (
-                <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
-                  <div>
-                    <p className="text-[13px] font-medium text-gray-900">Select a conversation</p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Choose a thread to view messages and reply.
-                    </p>
-                  </div>
+      {activeTab === "inbox" ? (
+        <SettingsSection title="Messages" contentClassName="p-0">
+          {configured === false ? (
+            <div className="rounded-md border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
+              Nest messaging is not configured for this environment yet. Add Nest Supabase and portal
+              API environment variables to enable the inbox.
+            </div>
+          ) : loading && chats.length === 0 ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            </div>
+          ) : error ? (
+            <div className="rounded-md border border-gray-200 bg-white px-4 py-6 text-sm text-red-600">
+              {error}
+            </div>
+          ) : (
+            <div className="flex h-[min(70vh,640px)] min-h-[480px] flex-col overflow-hidden rounded-md border border-gray-200 bg-white md:flex-row">
+              <aside
+                className={cn(
+                  "flex h-full min-h-0 w-full shrink-0 flex-col border-gray-200 bg-white md:w-[300px] md:border-r",
+                  showMobileThread ? "hidden md:flex" : "flex",
+                )}
+              >
+                <div className={cn("shrink-0", INBOX_SECTION_HEADER_CLASS)}>
+                  <p className="text-[13px] font-medium text-gray-900">Threads</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {chats.length} conversation{chats.length === 1 ? "" : "s"}
+                  </p>
                 </div>
-              ) : (
-                <>
-                  <div className={cn("shrink-0", INBOX_SECTION_HEADER_CLASS)}>
-                    <div className="flex items-start gap-2">
-                      <button
-                        type="button"
-                        className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 md:hidden"
-                        onClick={() => setShowMobileThread(false)}
-                        aria-label="Back to inbox"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium text-gray-900">
-                          {conversation.title}
-                        </p>
-                        <p className="mt-1 truncate text-xs text-gray-500">
-                          {conversation.participantHandle ?? conversation.chatId}
-                        </p>
-                        {formatLastSeen(conversation.lastSeen) ? (
-                          <p className="mt-1 text-xs text-gray-500">
-                            Last seen {formatLastSeen(conversation.lastSeen)}
-                          </p>
-                        ) : null}
-                      </div>
+                <div
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2"
+                  style={{ WebkitOverflowScrolling: "touch" }}
+                >
+                  {chats.length === 0 ? (
+                    <div className="flex h-full flex-col items-center justify-center px-4 py-8 text-center">
+                      <p className="text-[13px] font-medium text-gray-900">No conversations yet</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        When messages land for your store, they will appear here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-0.5">
+                      {chats.map((chat) => (
+                        <ConversationRow
+                          key={chat.chatId}
+                          chat={chat}
+                          active={chat.chatId === selectedChatId}
+                          onClick={() => openConversation(chat)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </aside>
+
+              <section
+                className={cn(
+                  "flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white",
+                  showMobileThread ? "flex" : "hidden md:flex",
+                )}
+              >
+                {!selectedChatId || !conversation ? (
+                  <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
+                    <div>
+                      <p className="text-[13px] font-medium text-gray-900">Select a conversation</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Choose a thread to view messages and reply.
+                      </p>
                     </div>
                   </div>
-
-                  <div
-                    ref={threadRef}
-                    className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3.5 py-4 md:px-4"
-                    style={{ WebkitOverflowScrolling: "touch" }}
-                  >
-                    {threadLoading && conversation.messages.length === 0 ? (
-                      <div className="flex h-full items-center justify-center py-12">
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Loading conversation…
+                ) : (
+                  <>
+                    <div className={cn("shrink-0", INBOX_SECTION_HEADER_CLASS)}>
+                      <div className="flex items-start gap-2">
+                        <button
+                          type="button"
+                          className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 md:hidden"
+                          onClick={() => setShowMobileThread(false)}
+                          aria-label="Back to inbox"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-medium text-gray-900">
+                            {conversation.title}
+                          </p>
+                          <p className="mt-1 truncate text-xs text-gray-500">
+                            {conversation.participantHandle ?? conversation.chatId}
+                          </p>
+                          {formatLastSeen(conversation.lastSeen) ? (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Last seen {formatLastSeen(conversation.lastSeen)}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
-                    ) : (
-                      conversation.messages.map((message) => (
-                        <ThreadMessage key={message.id} message={message} />
-                      ))
-                    )}
-                  </div>
+                    </div>
 
-                  <ComposeBox chatId={selectedChatId} onSent={handleSent} />
-                </>
-              )}
-            </section>
-          </div>
-        )}
-      </SettingsSection>
+                    <div
+                      ref={threadRef}
+                      className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3.5 py-4 md:px-4"
+                      style={{ WebkitOverflowScrolling: "touch" }}
+                    >
+                      {threadLoading && conversation.messages.length === 0 ? (
+                        <div className="flex h-full items-center justify-center py-12">
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Loading conversation…
+                          </div>
+                        </div>
+                      ) : (
+                        conversation.messages.map((message) => (
+                          <ThreadMessage key={message.id} message={message} />
+                        ))
+                      )}
+                    </div>
+
+                    <ComposeBox chatId={selectedChatId} onSent={handleSent} />
+                  </>
+                )}
+              </section>
+            </div>
+          )}
+        </SettingsSection>
+      ) : null}
+
+      {activeTab === "auto" ? <NestAutoServicePanel /> : null}
+
+      {activeTab === "settings" ? (
+        <>
+          <NestMessageTemplatesSettings />
+          <NestHiddenPickupSuggestionsPanel />
+        </>
+      ) : null}
 
       <StartMessageDialog
         open={newMessageOpen}

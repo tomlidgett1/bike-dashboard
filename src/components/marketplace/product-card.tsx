@@ -105,13 +105,13 @@ function CartOverlayButton({ product }: { product: ProductCardData }) {
       aria-label={inCart ? "View cart" : "Add to cart"}
       title={inCart ? "View cart" : "Add to cart"}
       className={cn(
-        "w-7 h-7 rounded-full bg-white shadow-md flex items-center justify-center transition-all duration-200 cursor-pointer hover:scale-110",
+        "w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-white shadow-sm sm:shadow-md flex items-center justify-center transition-all duration-200 cursor-pointer hover:scale-110",
         inCart ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
       )}
     >
       {inCart
-        ? <Check className="h-3.5 w-3.5 text-green-600" />
-        : <Plus className="h-3.5 w-3.5 text-gray-700" />
+        ? <Check className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-green-600" />
+        : <Plus className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-gray-700" />
       }
     </button>
   );
@@ -150,10 +150,10 @@ function BuyNowOverlayButton({ product }: { product: ProductCardData }) {
       onClick={handleClick}
       aria-label={`Buy now: ${product.display_name || product.description}`}
       title="Buy now"
-      className="h-7 rounded-full bg-gray-900/95 px-2.5 text-[11px] font-semibold text-white shadow-md flex items-center gap-1.5 transition-all duration-200 cursor-pointer hover:scale-105 hover:bg-black opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+      className="h-6 w-6 sm:h-7 sm:w-auto sm:px-2.5 rounded-full bg-gray-900/95 text-[10px] sm:text-[11px] font-semibold text-white shadow-sm sm:shadow-md flex items-center justify-center sm:justify-start gap-0 sm:gap-1.5 transition-all duration-200 cursor-pointer hover:scale-105 hover:bg-black opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
     >
-      <ShoppingBag className="h-3.5 w-3.5" />
-      <span className="leading-none">Buy now</span>
+      <ShoppingBag className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+      <span className="hidden sm:inline leading-none">Buy now</span>
     </button>
   );
 }
@@ -386,7 +386,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
           )}
 
           {/* Quick action overlays */}
-          <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+          <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-10 flex items-center gap-1 sm:gap-1.5">
             <CartOverlayButton product={productData} />
             <BuyNowOverlayButton product={productData} />
           </div>
@@ -429,7 +429,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 	        <div
 	          className={cn(
 	            isList && "flex flex-1 flex-col justify-center min-w-0 py-0",
-	            !isList && (featuredMobile ? "px-0.5 pt-1 mb-3" : "px-0.5 mb-2"),
+	            !isList && (featuredMobile ? "px-0.5 pt-1 mb-2 sm:mb-3" : "px-0.5 mb-1 sm:mb-2"),
 	            !isList && hideStoreMeta && (featuredMobile ? "h-11 overflow-hidden" : "h-9 overflow-hidden mb-0.5")
 	          )}
 	        >

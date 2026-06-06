@@ -164,7 +164,6 @@ export function CatalogueOptimiseModal({
   const [copyRuns, setCopyRuns] = React.useState<Record<string, CopyRun>>({});
   const [imageRuns, setImageRuns] = React.useState<Record<string, ImageRun>>({});
   const [copyRunning, setCopyRunning] = React.useState(false);
-  const [imageRunning, setImageRunning] = React.useState(false);
   const [lightbox, setLightbox] = React.useState<string | null>(null);
 
   const { products, setProducts, loading } = useOptimizerProducts(
@@ -201,7 +200,6 @@ export function CatalogueOptimiseModal({
     setCopyRuns({});
     setImageRuns({});
     setCopyRunning(false);
-    setImageRunning(false);
     setLightbox(null);
     copyAbortRef.current?.abort();
     imageAbortRef.current?.abort();
@@ -527,9 +525,6 @@ export function CatalogueOptimiseModal({
         return false;
       }
 
-      if (!background) {
-        setImageRunning(true);
-      }
       imageCancelledRef.current = false;
       const controller = new AbortController();
       if (!background) {
@@ -596,7 +591,6 @@ export function CatalogueOptimiseModal({
         return false;
       } finally {
         if (!background) {
-          setImageRunning(false);
           imageAbortRef.current = null;
         }
       }
@@ -632,13 +626,12 @@ export function CatalogueOptimiseModal({
   };
 
   const approveImages = React.useCallback(
-    async (product: OptimizerProduct) => {
-      const run = imageRuns[product.id] ?? emptyImageRun();
+    async (product: OptimizerProduct, snapshot?: ImageRun) => {
+      const run = snapshot ?? imageRuns[product.id] ?? emptyImageRun();
       if (!product.canonical_product_id || run.phase !== "ready" || !run.primaryUrl) {
         return false;
       }
 
-      setImageRunning(true);
       patchImageRun(product.id, { phase: "saving", error: undefined });
 
       try {
@@ -676,6 +669,7 @@ export function CatalogueOptimiseModal({
             source: "serper_workbench",
           })),
         });
+        setCompletedIds((prev) => new Set([...prev, product.id]));
         return true;
       } catch (error) {
         patchImageRun(product.id, {
@@ -684,11 +678,20 @@ export function CatalogueOptimiseModal({
         });
         setFailedIds((prev) => new Set([...prev, product.id]));
         return false;
-      } finally {
-        setImageRunning(false);
       }
     },
     [imageRuns, patchImageRun, patchProduct],
+  );
+
+  const approveAndAdvance = React.useCallback(
+    (product: OptimizerProduct) => {
+      const run = imageRuns[product.id] ?? emptyImageRun();
+      if (product.canonical_product_id && run.phase === "ready" && run.primaryUrl) {
+        void approveImages(product, { ...run });
+      }
+      advance(product.id);
+    },
+    [advance, approveImages, imageRuns],
   );
 
   const updateImageRun = React.useCallback(
@@ -703,7 +706,6 @@ export function CatalogueOptimiseModal({
     imageCancelledRef.current = true;
     imageAbortRef.current?.abort();
     setCopyRunning(false);
-    setImageRunning(false);
   };
 
   const activeCopyFields = React.useMemo(
@@ -735,7 +737,7 @@ export function CatalogueOptimiseModal({
     });
   };
 
-  const handlePrimary = async () => {
+  const handlePrimary = () => {
     if (!currentProduct || step !== "photos") return;
 
     const run = imageRuns[currentProduct.id] ?? emptyImageRun();
@@ -744,32 +746,34 @@ export function CatalogueOptimiseModal({
       return;
     }
     if (run.phase === "ready") {
-      const ok = await approveImages(currentProduct);
-      if (ok) advance(currentProduct.id);
+      approveAndAdvance(currentProduct);
       return;
     }
     if (run.phase === "idle" || run.phase === "error" || run.phase === "no_results") {
-      await runImageSearch(currentProduct);
+      void runImageSearch(currentProduct, { background: true });
       return;
+    }
+    if (IMG_BUSY.includes(run.phase)) {
+      advance(currentProduct.id, "skipped");
     }
   };
 
+  const currentImageRun = currentProduct
+    ? imageRuns[currentProduct.id] ?? emptyImageRun()
+    : emptyImageRun();
+
   const primaryLabel = (() => {
-    if (copyRunning || imageRunning) return "Stop";
+    if (copyRunning) return "Stop";
     if (!currentProduct || step !== "photos") return "Continue";
 
-    const run = imageRuns[currentProduct.id] ?? emptyImageRun();
-    if (!needsPhotos(currentProduct) || run.phase === "done") return "Save & next";
+    const run = currentImageRun;
+    if (!needsPhotos(currentProduct) || run.phase === "done") return "Next";
     if (run.phase === "ready") return "Approve & next";
-    if (run.phase === "searching" || run.phase === "selecting") return "Finding photos…";
+    if (IMG_BUSY.includes(run.phase)) return "Next";
     return "Find photos";
   })();
 
-  const primaryDisabled =
-    step === "photos" &&
-    !!currentProduct &&
-    !imageRunning &&
-    IMG_BUSY.includes((imageRuns[currentProduct.id] ?? emptyImageRun()).phase);
+  const primaryDisabled = step === "photos" && !currentProduct;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -777,49 +781,23 @@ export function CatalogueOptimiseModal({
         showCloseButton={false}
         className={cn(
           "grid h-[min(820px,calc(100vh-1.5rem))] max-w-[calc(100vw-1.5rem)] grid-rows-[auto_1fr_auto] gap-0 overflow-hidden rounded-lg p-0",
-          step === "copy_batch" ? "sm:max-w-6xl" : "sm:max-w-5xl",
+          step === "copy_batch" || step === "photos" ? "sm:max-w-6xl" : "sm:max-w-5xl",
         )}
       >
-        <div className="border-b border-border bg-popover px-5 py-4">
-          <div className="flex items-start justify-between gap-4">
-            <DialogHeader className="min-w-0 gap-1">
-              <DialogTitle className="flex items-center gap-2 text-base">
-                <Sparkles className="size-4 text-primary" />
-                Catalogue optimise
-              </DialogTitle>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <StepPill active={step === "category"} done={step !== "category"} label="Category" />
-                <StepPill
-                  active={step === "goal"}
-                  done={!["category", "goal"].includes(step)}
-                  label={goalLabel(goal)}
-                />
-                <StepPill
-                  active={step === "batch"}
-                  done={!["category", "goal", "batch"].includes(step)}
-                  label="Batch size"
-                />
-                {needsCopyStep(goal) && (
-                  <StepPill
-                    active={step === "copy_batch"}
-                    done={step === "photos" || step === "done"}
-                    label="Copy"
-                  />
-                )}
-                {(goal === "photos" || goal === "both") && (
-                  <StepPill active={step === "photos"} done={step === "done"} label="Photos" />
-                )}
-              </div>
-            </DialogHeader>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onOpenChange(false)}
-              aria-label="Close"
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
+        <div className="flex items-center justify-between border-b border-border bg-background px-5 py-3.5">
+          <DialogHeader className="gap-0 p-0 text-left">
+            <DialogTitle className="text-lg font-semibold text-foreground">
+              Catalogue optimise
+            </DialogTitle>
+          </DialogHeader>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => onOpenChange(false)}
+            aria-label="Close"
+          >
+            <X className="size-4" />
+          </Button>
         </div>
 
         <div className="min-h-0 overflow-y-auto">
@@ -874,14 +852,16 @@ export function CatalogueOptimiseModal({
               loading={loading}
               index={currentIndex}
               total={photoQueueIds.length}
-              imageRunning={imageRunning}
+              imageRunning={IMG_BUSY.includes(currentImageRun.phase)}
               preloadingImages={preloadingImages}
               preloadProgress={preloadProgress}
-              onRunImages={() => currentProduct && void runImageSearch(currentProduct)}
+              onRunImages={() =>
+                currentProduct && void runImageSearch(currentProduct, { background: true })
+              }
               onImageUpdate={
                 currentProduct ? updateImageRun(currentProduct.id) : () => undefined
               }
-              onApproveImages={() => currentProduct && void approveImages(currentProduct)}
+              onApproveImages={() => currentProduct && approveAndAdvance(currentProduct)}
               onLightbox={setLightbox}
             />
           )}
@@ -915,7 +895,7 @@ export function CatalogueOptimiseModal({
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={copyRunning || imageRunning}
+                disabled={copyRunning}
                 onClick={() => {
                   if (step === "photos") {
                     setStep(needsCopyStep(goal) ? "copy_batch" : "batch");
@@ -933,7 +913,7 @@ export function CatalogueOptimiseModal({
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={copyRunning || imageRunning}
+                disabled={copyRunning}
                 onClick={() => advance(currentProduct.id, "skipped")}
               >
                 Skip
@@ -1002,13 +982,13 @@ export function CatalogueOptimiseModal({
               <Button
                 type="button"
                 size="sm"
-                disabled={!currentProduct || primaryDisabled}
-                onClick={copyRunning || imageRunning ? stopCurrent : () => void handlePrimary()}
+                disabled={primaryDisabled}
+                onClick={() => handlePrimary()}
               >
-                {copyRunning || imageRunning ? (
-                  <StopCircle className="size-4" />
+                {currentImageRun.phase === "ready" ? (
+                  <CheckCircle2 className="size-4" />
                 ) : (
-                  <Sparkles className="size-4" />
+                  <ChevronRight className="size-4" />
                 )}
                 {primaryLabel}
               </Button>
@@ -1019,30 +999,6 @@ export function CatalogueOptimiseModal({
         <LightboxOverlay url={lightbox} onClose={() => setLightbox(null)} />
       </DialogContent>
     </Dialog>
-  );
-}
-
-function StepPill({
-  label,
-  active,
-  done,
-}: {
-  label: string;
-  active: boolean;
-  done: boolean;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium",
-        active && "bg-foreground text-background",
-        done && !active && "bg-emerald-50 text-emerald-700",
-        !active && !done && "bg-muted text-muted-foreground",
-      )}
-    >
-      {done && !active && <CheckCircle2 className="size-3" />}
-      {label}
-    </span>
   );
 }
 
@@ -1060,7 +1016,7 @@ function CategoryStep({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-5 py-6">
+    <div className="flex w-full flex-col gap-4 px-5 py-6">
       <div>
         <h2 className="text-lg font-semibold text-foreground">Select category</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -1153,7 +1109,7 @@ function GoalStep({
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-5 py-6">
+    <div className="flex w-full flex-col gap-4 px-5 py-6">
       <div>
         <h2 className="text-lg font-semibold text-foreground">Choose job</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -1254,7 +1210,7 @@ function BatchStep({
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-5 py-6">
+    <div className="flex w-full flex-col gap-4 px-5 py-6">
       <div>
         <h2 className="text-lg font-semibold text-foreground">How many at a time?</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -1560,39 +1516,41 @@ function PhotosStep({
   }
 
   return (
-    <div className="grid min-h-full gap-0 lg:grid-cols-[330px_minmax(0,1fr)]">
-      <aside className="border-b border-border bg-muted/25 p-5 lg:border-b-0 lg:border-r">
-        <div className="mb-4">
-          <StatusBadge
-            label={`Photo ${index + 1} of ${total}`}
-            tone="neutral"
-            className="whitespace-nowrap"
-          />
-        </div>
+    <div className="flex min-h-full flex-col">
+      <div className="border-b border-border px-5 py-5">
+        <h2 className="text-lg font-semibold text-foreground">Review & approve photos</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Photo {index + 1} of {total}. Pick a primary image, remove any you don&apos;t want, then
+          approve.
+        </p>
+      </div>
 
-        <ProductSummary product={product} onLightbox={onLightbox} />
+      <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <aside className="border-b border-border bg-muted/25 p-5 lg:border-b-0 lg:border-r">
+          <ProductSummary product={product} onLightbox={onLightbox} />
 
-        {preloadingImages && preloadProgress.total > 0 && (
-          <div className="mt-4 rounded-md border border-border bg-white px-3 py-2 text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Loader2 className="size-3.5 animate-spin" />
-              Preloading photos {preloadProgress.done}/{preloadProgress.total}
+          {preloadingImages && preloadProgress.total > 0 && (
+            <div className="mt-4 rounded-md border border-border bg-white px-3 py-2 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <Loader2 className="size-3.5 animate-spin" />
+                Preloading photos {preloadProgress.done}/{preloadProgress.total}
+              </div>
             </div>
-          </div>
-        )}
-      </aside>
+          )}
+        </aside>
 
-      <main className="min-w-0 p-5">
-        <PhotoPanel
-          product={product}
-          imageRun={imageRun}
-          running={imageRunning}
-          onRunImages={onRunImages}
-          onImageUpdate={onImageUpdate}
-          onApproveImages={onApproveImages}
-          onLightbox={onLightbox}
-        />
-      </main>
+        <main className="min-w-0 p-5">
+          <PhotoPanel
+            product={product}
+            imageRun={imageRun}
+            running={imageRunning}
+            onRunImages={onRunImages}
+            onImageUpdate={onImageUpdate}
+            onApproveImages={onApproveImages}
+            onLightbox={onLightbox}
+          />
+        </main>
+      </div>
     </div>
   );
 }
@@ -1728,14 +1686,8 @@ function PhotoPanel({
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">Add photos</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Approve one primary image and any supporting images.
-          </p>
-        </div>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-end gap-3">
         {!canShowReview && (
           <Button type="button" size="sm" disabled={running} onClick={onRunImages}>
             <ImageIcon className="size-4" />
@@ -1751,7 +1703,8 @@ function PhotoPanel({
           img={imageRun}
           hasCanonical={!!product.canonical_product_id}
           saving={imageRun.phase === "saving"}
-          hideApproveAction
+          hideApproveAction={false}
+          size="large"
           onSetPrimary={(url) => onImageUpdate((prev) => ({ ...prev, primaryUrl: url }))}
           onRemove={(url) =>
             onImageUpdate((prev) => {
@@ -1787,13 +1740,6 @@ function PhotoPanel({
           onLightbox={onLightbox}
         />
       )}
-
-      {IMG_BUSY.includes(imageRun.phase) && imageRun.selectedUrls.length === 0 && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          Finding images
-        </div>
-      )}
     </div>
   );
 }
@@ -1824,7 +1770,7 @@ function ExistingPhotos({
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
       {images.map((image) => (
         <button
           key={image.id}
@@ -1863,20 +1809,20 @@ function DoneStep({
   onChooseAnother: () => void;
 }) {
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-xl flex-col items-center justify-center px-5 py-16 text-center">
+    <div className="flex w-full flex-col px-5 py-6">
       <span className="flex size-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
         <CheckCircle2 className="size-6" />
       </span>
-      <h2 className="mt-4 text-xl font-semibold text-foreground">Finished</h2>
-      <p className="mt-2 text-sm text-muted-foreground">
-        {category?.name ?? "Catalogue"} - {goalLabel(goal)}
+      <h2 className="mt-4 text-lg font-semibold text-foreground">Finished</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {category?.name ?? "Catalogue"} · {goalLabel(goal)}
       </p>
-      <div className="mt-6 grid w-full grid-cols-3 gap-2">
+      <div className="mt-6 grid w-full max-w-md grid-cols-3 gap-2">
         <SummaryStat label="Optimised" value={completed} />
         <SummaryStat label="Skipped" value={skipped} />
         <SummaryStat label="Failed" value={failed} />
       </div>
-      <Button type="button" variant="outline" size="sm" className="mt-6" onClick={onChooseAnother}>
+      <Button type="button" variant="outline" size="sm" className="mt-6 w-fit" onClick={onChooseAnother}>
         Choose another category
       </Button>
     </div>

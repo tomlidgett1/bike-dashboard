@@ -37,6 +37,12 @@ export type {
   LightspeedItemPrice,
   LightspeedItemImage,
   LightspeedItemsResponse,
+
+  // Manufacturer / vendor types
+  LightspeedManufacturer,
+  LightspeedManufacturersResponse,
+  LightspeedVendor,
+  LightspeedVendorsResponse,
   
   // Category types
   LightspeedCategory,
@@ -103,7 +109,6 @@ export {
   LightspeedClient,
   createLightspeedClient,
 } from './lightspeed-client'
-
 
 
 

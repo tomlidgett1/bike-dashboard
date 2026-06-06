@@ -20,6 +20,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { LightspeedCategoryCreateCard } from "@/components/genie/lightspeed-category-create-card";
+import { LightspeedProductEditCard } from "@/components/genie/lightspeed-product-edit-card";
 import type {
   ApplyResult,
   CarouselCreateProposal,
@@ -99,7 +101,7 @@ function CarouselDiff({ proposal }: { proposal: CarouselLayoutProposal }) {
       )}
 
       {proposal.order_preview.length > 0 && (
-        <div className="rounded-md bg-muted/50 p-2.5">
+        <div className="rounded-xl bg-muted/50 p-2.5">
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Your page will show</p>
           <ol className="space-y-0.5">
             {proposal.order_preview.map((row, i) => (
@@ -131,7 +133,7 @@ function CarouselCreateDiff({ proposal }: { proposal: CarouselCreateProposal }) 
       </div>
 
       {preview.length > 0 && (
-        <div className="space-y-1 rounded-md bg-muted/50 p-2.5">
+        <div className="space-y-1 rounded-xl bg-muted/50 p-2.5">
           {preview.map((p) => (
             <div key={p.id} className="truncate text-xs font-medium text-foreground">{p.name}</div>
           ))}
@@ -140,7 +142,7 @@ function CarouselCreateDiff({ proposal }: { proposal: CarouselCreateProposal }) 
       )}
 
       {proposal.order_preview.length > 0 && (
-        <div className="rounded-md bg-muted/50 p-2.5">
+        <div className="rounded-xl bg-muted/50 p-2.5">
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Your page will show</p>
           <ol className="space-y-0.5">
             {proposal.order_preview.map((row, i) => (
@@ -188,7 +190,7 @@ function DiscountApplyDiff({ proposal }: { proposal: DiscountApplyProposal }) {
         )}
       </div>
       {preview.length > 0 && (
-        <div className="space-y-1 rounded-md bg-muted/50 p-2.5">
+        <div className="space-y-1 rounded-xl bg-muted/50 p-2.5">
           {preview.map((p) => (
             <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
               <span className="truncate font-medium text-foreground">{p.name}</span>
@@ -212,7 +214,7 @@ function DiscountRemoveDiff({ proposal }: { proposal: DiscountRemoveProposal }) 
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">{proposal.match_label}</p>
       {preview.length > 0 && (
-        <div className="space-y-1 rounded-md bg-muted/50 p-2.5">
+        <div className="space-y-1 rounded-xl bg-muted/50 p-2.5">
           {preview.map((p) => (
             <div key={p.id} className="truncate text-xs font-medium text-foreground">{p.name}</div>
           ))}
@@ -231,7 +233,7 @@ function PriceUpdateDiff({ proposal }: { proposal: PriceUpdateProposal }) {
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">{proposal.match_label}</p>
       {preview.length > 0 && (
-        <div className="space-y-1.5 rounded-md bg-muted/50 p-2.5">
+        <div className="space-y-1.5 rounded-xl bg-muted/50 p-2.5">
           {preview.map((p) => (
             <div key={p.id} className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-xs text-foreground">{p.name}</span>
@@ -252,7 +254,11 @@ function PriceUpdateDiff({ proposal }: { proposal: PriceUpdateProposal }) {
   );
 }
 
-export function GenieProposalCard({ proposal }: { proposal: GenieProposal }) {
+function DefaultGenieProposalCard({
+  proposal,
+}: {
+  proposal: Exclude<GenieProposal, { kind: "product_brand_category_update" } | { kind: "lightspeed_category_create" }>;
+}) {
   const [status, setStatus] = React.useState<"idle" | "applying" | "applied" | "error">("idle");
   const [resultMsg, setResultMsg] = React.useState("");
 
@@ -295,9 +301,9 @@ export function GenieProposalCard({ proposal }: { proposal: GenieProposal }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      <Card size="sm" className="max-w-3xl gap-0 bg-white py-0 ring-1 ring-gray-200">
+      <Card size="sm" className="max-w-3xl gap-0 overflow-hidden rounded-3xl bg-white py-0 ring-1 ring-gray-200">
         <CardHeader className="grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-gray-200 px-4 py-3">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-foreground">
+          <div className="flex h-7 w-7 items-center justify-center rounded-xl border border-gray-200 bg-white text-foreground">
             <Icon className="h-3.5 w-3.5" />
           </div>
           <CardTitle className="text-xs">{meta.title}</CardTitle>
@@ -315,13 +321,13 @@ export function GenieProposalCard({ proposal }: { proposal: GenieProposal }) {
           {proposal.kind === "price_update" && <PriceUpdateDiff proposal={proposal} />}
 
           {status === "applied" ? (
-            <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-medium text-emerald-700">
+            <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-medium text-emerald-700">
               <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
               {resultMsg || "Done."}
             </div>
           ) : (
             <div className="space-y-1.5">
-              <Button onClick={apply} disabled={status === "applying"} className="w-full">
+              <Button onClick={apply} disabled={status === "applying"} className="w-full rounded-xl">
                 {status === "applying" ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -346,4 +352,14 @@ export function GenieProposalCard({ proposal }: { proposal: GenieProposal }) {
       </Card>
     </motion.div>
   );
+}
+
+export function GenieProposalCard({ proposal }: { proposal: GenieProposal }) {
+  if (proposal.kind === "product_brand_category_update") {
+    return <LightspeedProductEditCard proposal={proposal} />;
+  }
+  if (proposal.kind === "lightspeed_category_create") {
+    return <LightspeedCategoryCreateCard proposal={proposal} />;
+  }
+  return <DefaultGenieProposalCard proposal={proposal} />;
 }

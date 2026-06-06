@@ -140,6 +140,8 @@ interface MarketplaceHeaderProps {
   showMobileBrowseFiltersFab?: boolean;
   mobileBrowseFiltersBadge?: number;
   onOpenMobileBrowseFilters?: () => void;
+  /** Sort control shown beside the mobile search icon on browse pages. */
+  mobileBrowseSort?: React.ReactNode;
 }
 
 export function MarketplaceHeader({ 
@@ -153,6 +155,7 @@ export function MarketplaceHeader({
   showMobileBrowseFiltersFab = false,
   mobileBrowseFiltersBadge = 0,
   onOpenMobileBrowseFilters,
+  mobileBrowseSort,
 }: MarketplaceHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
@@ -423,6 +426,7 @@ export function MarketplaceHeader({
               >
                 <Search className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
               </button>
+              {mobileBrowseSort}
               {mounted && user && (
                 <>
                   <NotificationsDropdown />

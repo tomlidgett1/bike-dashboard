@@ -24,8 +24,23 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
-import type { GenieProposal } from '@/lib/types/genie-agent';
+import type {
+  GenieAnalysisPlanPayload,
+  GenieAnalysisQueryPayload,
+  GenieProposal,
+  GenieRawDebugLogEntry,
+  GenieWorkorderCardsPayload,
+} from '@/lib/types/genie-agent';
 import { GenieProposalCard } from '@/components/genie/genie-proposal-card';
+import { LightspeedWorkorderCards } from '@/components/genie/lightspeed-workorder-cards';
+import {
+  GenieRawLogsSection,
+  GenieThinkingDetailSections,
+  appendRawDebugLog,
+  mergeAnalysisPlan,
+  upsertAnalysisQuery,
+} from '@/components/genie/genie-thinking-detail-sections';
+import { compactGenieProgressText, liveGenieProgressPreview } from '@/lib/genie/progress-text';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +53,8 @@ type StatusPhase =
   | 'lightspeed_sales'
   | 'lightspeed_inventory'
   | 'lightspeed_customers'
+  | 'lightspeed_workorders'
+  | 'rechecking'
   | 'tool'
   | 'responding';
 
@@ -117,6 +134,10 @@ interface ChatMessage {
   charts?: GenieChartPayload[];
   tables?: GenieTablePayload[];
   products?: GenieProduct[];
+  workorders?: GenieWorkorderCardsPayload;
+  analysisPlan?: GenieAnalysisPlanPayload;
+  analysisQueries?: GenieAnalysisQueryPayload[];
+  rawDebugLogs?: GenieRawDebugLogEntry[];
   sources?: Citation[];
   proposals?: GenieProposal[];
   isStreaming?: boolean;
@@ -136,6 +157,9 @@ interface SavedMessage {
   charts?: GenieChartPayload[];
   tables?: GenieTablePayload[];
   products?: GenieProduct[];
+  workorders?: GenieWorkorderCardsPayload;
+  analysisPlan?: GenieAnalysisPlanPayload;
+  analysisQueries?: GenieAnalysisQueryPayload[];
   sources?: Citation[];
 }
 
@@ -378,16 +402,21 @@ function GenieLogo({ className }: { className?: string }) {
 // ─── Shimmer Status ───────────────────────────────────────────────────────────
 
 const PHASE_LABELS: Partial<Record<StatusPhase, string>> = {
-  planning: 'Planning...',
-  thinking: 'Thinking...',
-  web_search: 'Searching the web...',
-  web_search_done: 'Web research done',
-  product_search: 'Searching the marketplace...',
-  lightspeed_sales: 'Looking at Lightspeed sales...',
-  lightspeed_inventory: 'Searching Lightspeed inventory...',
-  lightspeed_customers: 'Searching Lightspeed customers...',
-  responding: 'Answering...',
+  planning: 'Planning',
+  thinking: 'Thinking',
+  web_search: 'Searching web',
+  web_search_done: 'Web search done',
+  product_search: 'Marketplace',
+  lightspeed_sales: 'Sales',
+  lightspeed_inventory: 'Stock',
+  lightspeed_customers: 'Customers',
+  rechecking: 'Retrying',
+  responding: 'Answering',
 };
+
+function normalizeStartupStatusText(text: string, phase?: string): string {
+  return compactGenieProgressText(text, phase);
+}
 
 function processTimestamp(): string {
   return new Intl.DateTimeFormat('en-AU', {
@@ -412,7 +441,7 @@ function createProcessStep(
   return {
     id: processStepId(),
     phase,
-    text: text.trim(),
+    text: kind === 'status' ? normalizeStartupStatusText(text.trim(), phase) : text.trim(),
     kind,
     at: processTimestamp(),
   };
@@ -437,8 +466,11 @@ function upsertLiveReasoningStep(steps: ProcessStep[] | undefined, step: Process
 }
 
 function ShimmerStatus({ step }: { step: StatusStep }) {
-  const label = step.text || PHASE_LABELS[step.phase] || 'Working...';
-  const isLightspeed = step.phase === 'lightspeed_sales' || step.phase === 'lightspeed_inventory' || step.phase === 'lightspeed_customers';
+  const label = liveGenieProgressPreview(
+    step.text || PHASE_LABELS[step.phase] || 'Working',
+    step.phase,
+  );
+  const isLightspeed = step.phase === 'lightspeed_sales' || step.phase === 'lightspeed_inventory' || step.phase === 'lightspeed_customers' || step.phase === 'rechecking';
   return (
     <motion.div key={`${step.phase}:${label}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.25 }} className="flex items-center gap-2 py-1">
@@ -460,15 +492,33 @@ function ShimmerStatus({ step }: { step: StatusStep }) {
   );
 }
 
-function ProcessTimelineBox({ steps, live }: { steps: ProcessStep[]; live?: boolean }) {
+function ProcessTimelineBox({
+  steps,
+  live,
+  analysisPlan,
+  analysisQueries,
+  rawDebugLogs,
+}: {
+  steps: ProcessStep[];
+  live?: boolean;
+  analysisPlan?: GenieAnalysisPlanPayload;
+  analysisQueries?: GenieAnalysisQueryPayload[];
+  rawDebugLogs?: GenieRawDebugLogEntry[];
+}) {
   const [manualExpanded, setManualExpanded] = useState(false);
   const [collapsedDuringLive, setCollapsedDuringLive] = useState(false);
   const visibleSteps = steps
     .filter(step => step.phase !== 'responding' && !/composing.*answer/i.test(step.text))
+    .map(step => ({
+      ...step,
+      text: step.kind === 'status' ? normalizeStartupStatusText(step.text, step.phase) : step.text,
+    }))
     .slice(-16);
+  const hasAnalysis = Boolean(analysisPlan?.execution_steps.length || analysisQueries?.length);
+  const hasRawLogs = Boolean(rawDebugLogs?.length);
   const expanded = live ? !collapsedDuringLive : manualExpanded;
 
-  if (visibleSteps.length === 0) return null;
+  if (visibleSteps.length === 0 && !hasAnalysis && !hasRawLogs) return null;
 
   return (
     <motion.div
@@ -499,7 +549,12 @@ function ProcessTimelineBox({ steps, live }: { steps: ProcessStep[]; live?: bool
             Thinking process
           </span>
         </span>
-        <ChevronDown className={cn('mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded ? 'rotate-180' : '')} />
+        <ChevronDown
+          className={cn(
+            'mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
+            expanded && 'rotate-180',
+          )}
+        />
       </button>
       <AnimatePresence initial={false}>
         {expanded ? (
@@ -508,13 +563,24 @@ function ProcessTimelineBox({ steps, live }: { steps: ProcessStep[]; live?: bool
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
             className="overflow-hidden"
           >
+            <GenieThinkingDetailSections
+              plan={analysisPlan}
+              queries={analysisQueries}
+              live={live}
+            />
+            <GenieRawLogsSection logs={rawDebugLogs} />
+            {visibleSteps.length > 0 ? (
+              <p className="mb-2 mt-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Progress
+              </p>
+            ) : null}
             <div className="max-h-60 overflow-y-auto pr-1">
         {visibleSteps.map((step, index) => {
           const isLast = index === visibleSteps.length - 1;
-          const isLightspeed = step.phase === 'lightspeed_sales' || step.phase === 'lightspeed_inventory' || step.phase === 'lightspeed_customers';
+          const isLightspeed = step.phase === 'lightspeed_sales' || step.phase === 'lightspeed_inventory' || step.phase === 'lightspeed_customers' || step.phase === 'rechecking';
           return (
             <div key={step.id} className="grid grid-cols-[18px_1fr] gap-2">
               <div className="relative flex justify-center">
@@ -842,7 +908,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   if (isUser) {
     return (
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
-        <div className="max-w-[82%] rounded-md rounded-br-sm bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-xs">
+        <div className="max-w-[82%] rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-xs">
           {message.content}
         </div>
       </motion.div>
@@ -851,11 +917,17 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
   const noProposals = !message.proposals || message.proposals.length === 0;
   const noProducts = !message.products || message.products.length === 0;
+  const noWorkorders = !message.workorders || message.workorders.workorders.length === 0;
   const noCharts = !message.charts || message.charts.length === 0;
   const noTables = !message.tables || message.tables.length === 0;
-  const showProcessTimeline = Boolean(message.processSteps?.length);
+  const showProcessTimeline = Boolean(
+    message.processSteps?.length
+    || message.analysisPlan?.execution_steps.length
+    || message.analysisQueries?.length
+    || message.rawDebugLogs?.length,
+  );
   const showShimmer = message.isStreaming && message.currentStatus && !showProcessTimeline;
-  const showSpinner = message.isStreaming && !message.content && !message.currentStatus && noProducts && noCharts && noTables && noProposals;
+  const showSpinner = message.isStreaming && !message.content && !message.currentStatus && noProducts && noWorkorders && noCharts && noTables && noProposals;
   const showReasoning = message.isStreaming && !!message.reasoningSummary?.trim() && !showProcessTimeline;
 
   return (
@@ -878,12 +950,34 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       </AnimatePresence>
 
       <AnimatePresence>
-        {message.processSteps?.length ? (
-          <ProcessTimelineBox steps={message.processSteps} live={message.isStreaming} />
+        {message.processSteps?.length
+          || message.analysisPlan?.execution_steps.length
+          || message.analysisQueries?.length
+          || message.rawDebugLogs?.length ? (
+          <ProcessTimelineBox
+            steps={message.processSteps ?? []}
+            live={message.isStreaming}
+            analysisPlan={message.analysisPlan}
+            analysisQueries={message.analysisQueries}
+            rawDebugLogs={message.rawDebugLogs}
+          />
         ) : null}
       </AnimatePresence>
 
-      {/* 2. Products — rendered first so text reveals below without pushing them */}
+      {/* 2. Lightspeed work orders */}
+      <AnimatePresence>
+        {message.workorders && message.workorders.workorders.length > 0 && (
+          <motion.div
+            key="workorders"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <LightspeedWorkorderCards payload={message.workorders} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 3. Products — rendered first so text reveals below without pushing them */}
       <AnimatePresence>
         {message.products && message.products.length > 0 && (
           <motion.div
@@ -900,7 +994,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       </AnimatePresence>
 
-      {/* 3. Lightspeed visuals */}
+      {/* 4. Lightspeed visuals */}
       <AnimatePresence>
         {message.charts && message.charts.length > 0 && (
           <motion.div key="charts" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
@@ -917,7 +1011,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       </AnimatePresence>
 
-      {/* 4. Text content — word-by-word reveal, then switches to parsed markdown */}
+      {/* 5. Text content — word-by-word reveal, then switches to parsed markdown */}
       <AnimatePresence>
         {(message.content || (!showShimmer && !showSpinner && message.isStreaming)) && (
           <motion.div
@@ -944,7 +1038,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       </AnimatePresence>
 
-      {/* 4b. Proposals — Store Agent action cards (preview → confirm) */}
+      {/* 5b. Proposals — Store Agent action cards (preview → confirm) */}
       {message.proposals && message.proposals.length > 0 && (
         <div className="space-y-2">
           {message.proposals.map((p, i) => <GenieProposalCard key={i} proposal={p} />)}
@@ -1050,7 +1144,8 @@ export function GeniePanel() {
       const savedMessages = (data.messages ?? []) as SavedMessage[];
       const loaded: ChatMessage[] = savedMessages.map(m => ({
         id: crypto.randomUUID(), role: m.role, content: m.content ?? '',
-        charts: m.charts, tables: m.tables, products: m.products, sources: m.sources,
+        charts: m.charts, tables: m.tables, products: m.products, workorders: m.workorders,
+        analysisPlan: m.analysisPlan, analysisQueries: m.analysisQueries, sources: m.sources,
       }));
       setMessages(loaded);
       setConversationId(id);
@@ -1107,6 +1202,9 @@ export function GeniePanel() {
             charts: m.charts,
             tables: m.tables,
             products: m.products,
+            workorders: m.workorders,
+            analysisPlan: m.analysisPlan,
+            analysisQueries: m.analysisQueries,
             sources: m.sources,
           })),
         }),
@@ -1140,7 +1238,7 @@ export function GeniePanel() {
         role: 'assistant',
         content: '',
         isStreaming: true,
-        processSteps: [createProcessStep('thinking', 'Waiting for Genie to start...')],
+        processSteps: [createProcessStep('thinking', 'Thinking')],
       }]);
       setInput('');
     });
@@ -1171,6 +1269,14 @@ export function GeniePanel() {
       ss.rafId = null;
     };
 
+    const recordStreamEvent = (payload: Record<string, unknown>) => {
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId
+          ? { ...m, rawDebugLogs: appendRawDebugLog(m.rawDebugLogs, payload) }
+          : m
+      ));
+    };
+
     try {
       const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
       const res = await fetch(endpoint, {
@@ -1180,6 +1286,14 @@ export function GeniePanel() {
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      recordStreamEvent({
+        event: '_stream_start',
+        endpoint,
+        user_message: text.trim(),
+        request_messages_count: history.length,
+        http_status: res.status,
+      });
 
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
@@ -1198,14 +1312,28 @@ export function GeniePanel() {
           if (!raw) continue;
           try {
             const parsed = JSON.parse(raw);
+            recordStreamEvent(parsed as Record<string, unknown>);
             if (parsed.event === 'status') {
-              const step = createProcessStep(String(parsed.phase ?? 'tool'), String(parsed.text ?? 'Working...'));
+              const phase = String(parsed.phase ?? 'tool');
+              const text = normalizeStartupStatusText(String(parsed.text ?? 'Working'), phase);
+              const step = createProcessStep(phase, text);
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
                   ? {
                       ...m,
-                      currentStatus: { phase: parsed.phase, text: parsed.text },
+                      currentStatus: { phase: phase as StatusPhase, text },
                       processSteps: appendProcessStep(m.processSteps, step),
+                    }
+                  : m
+              ));
+            }
+            if (parsed.event === 'heartbeat') {
+              const text = normalizeStartupStatusText(String(parsed.text ?? 'Still working'), 'thinking');
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId && m.isStreaming
+                  ? {
+                      ...m,
+                      currentStatus: { phase: 'thinking' as StatusPhase, text },
                     }
                   : m
               ));
@@ -1252,6 +1380,39 @@ export function GeniePanel() {
             if (parsed.event === 'products') {
               setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, products: parsed.products } : m));
             }
+            if (parsed.event === 'workorders' && parsed.workorders) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, workorders: parsed.workorders as GenieWorkorderCardsPayload }
+                  : m
+              ));
+            }
+            if (parsed.event === 'analysis_plan' && parsed.plan) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      analysisPlan: mergeAnalysisPlan(
+                        m.analysisPlan,
+                        parsed.plan as GenieAnalysisPlanPayload,
+                      ),
+                    }
+                  : m
+              ));
+            }
+            if (parsed.event === 'analysis_query' && parsed.query) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      analysisQueries: upsertAnalysisQuery(
+                        m.analysisQueries,
+                        parsed.query as GenieAnalysisQueryPayload,
+                      ),
+                    }
+                  : m
+              ));
+            }
             if (parsed.event === 'chart' && parsed.chart) {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId ? { ...m, charts: [...(m.charts ?? []), parsed.chart as GenieChartPayload] } : m
@@ -1291,9 +1452,13 @@ export function GeniePanel() {
                   : m
               ));
             }
-          } catch { /* skip malformed */ }
+          } catch {
+            recordStreamEvent({ event: '_sse_parse_error', raw });
+          }
         }
       }
+
+      recordStreamEvent({ event: '_stream_end' });
 
       // Stream closed — ensure the message is finalised even if 'done' event was missing
       if (ss.rafId !== null) { cancelAnimationFrame(ss.rafId); flushText(); }
@@ -1304,7 +1469,13 @@ export function GeniePanel() {
       ));
     } catch (err) {
       if (ss.rafId !== null) { cancelAnimationFrame(ss.rafId); ss.rafId = null; }
-      if ((err as Error).name !== 'AbortError') {
+      if ((err as Error).name === 'AbortError') {
+        recordStreamEvent({ event: '_stream_aborted' });
+      } else {
+        recordStreamEvent({
+          event: '_stream_error',
+          message: err instanceof Error ? err.message : String(err),
+        });
         setMessages(prev => prev.map(m =>
           m.id === assistantId
             ? { ...m, isStreaming: false, currentStatus: undefined, reasoningSummary: undefined, error: 'Connection error. Please try again.' }

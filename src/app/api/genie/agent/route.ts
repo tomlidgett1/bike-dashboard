@@ -12,10 +12,35 @@
 import { NextRequest } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import { randomUUID } from 'crypto'
 import { Agent, Runner, assistant as assistantMessage, tool, user as userMessage, webSearchTool, type AgentInputItem } from '@openai/agents'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server'
+import { compactGenieProgressText } from '@/lib/genie/progress-text'
+import {
+  GenieOrchestrationDecisionSchema,
+  latestUserText,
+  type GenieOrchestrationDecision,
+} from '@/lib/genie/orchestration'
+import {
+  buildInventoryProductPreviews,
+  buildStorefrontProductPreviews,
+  inventoryMatchesForPreview,
+  resolveInventoryItemImageUrls,
+  shouldEmitStoreProductPreviews,
+} from '@/lib/genie/store-product-previews'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
+import { resolveCategoryCreationTarget } from '@/lib/services/lightspeed/category-helpers'
+import {
+  buildWorkorderCardsPayload,
+  getGenieWorkorder,
+  listGenieWorkorders,
+} from '@/lib/services/lightspeed/workorder-queries'
+import type {
+  GenieAnalysisPlanPayload,
+  GenieAnalysisQueryPayload,
+  GenieWorkorderCardsPayload,
+} from '@/lib/types/genie-agent'
 import type {
   LightspeedCategory,
   LightspeedCustomer,
@@ -33,20 +58,63 @@ import type {
   DiscountApplyProposal,
   DiscountRemoveProposal,
   PriceUpdateProposal,
+  ProductBrandCategoryUpdateProposal,
+  LightspeedCategoryCreateProposal,
 } from '@/lib/types/genie-agent'
 import { NEW_CAROUSEL_SLOT } from '@/lib/types/genie-agent'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 600
 
-const MODEL = 'gpt-5.4'
+const PLANNER_MODEL = 'gpt-5.5'
+const EXECUTOR_MODEL = 'gpt-5.4-mini'
+const ORCHESTRATOR_MODEL = 'gpt-5.4-nano'
+const SMART_AGENT_MAX_TURNS = 40
+const STRATEGIC_AGENT_MAX_TURNS = 60
+const STREAM_HEARTBEAT_MS = 15_000
 const STORE_TIME_ZONE = 'Australia/Brisbane'
 const STORE_UTC_OFFSET = '+10:00'
 const storeAgentRunner = new Runner({
   tracingDisabled: true,
   traceIncludeSensitiveData: false,
 })
+
+const GenieExecutionPlanSchema = z.object({
+  route: z.enum([
+    'lightspeed_sales',
+    'lightspeed_customers',
+    'lightspeed_inventory',
+    'storefront',
+    'web_research',
+    'business_strategy',
+    'mixed',
+    'unsupported',
+  ]),
+  user_intent: z.string().max(1200),
+  primary_tools: z.array(z.string()).max(20),
+  date_range: z.object({
+    start_date: z.string().nullable(),
+    end_date: z.string().nullable(),
+    timezone: z.string(),
+    basis: z.string().max(500),
+  }).nullable(),
+  sql_strategy: z.object({
+    source_tables: z.array(z.string()).max(12),
+    filters: z.array(z.string()).max(30),
+    joins_needed: z.array(z.string()).max(16),
+    grain: z.string().max(500),
+    aggregation: z.string().max(1200),
+    group_by: z.array(z.string()).max(20),
+    order_by: z.string().nullable(),
+    safeguards: z.array(z.string()).max(20),
+  }).nullable(),
+  execution_steps: z.array(z.string()).min(1).max(40),
+  recheck_strategy: z.string().max(1200),
+  final_answer_shape: z.enum(['summary', 'table', 'chart', 'proposal', 'strategic_analysis', 'clarifying_question']),
+})
+
+type GenieExecutionPlan = z.infer<typeof GenieExecutionPlanSchema>
 let cachedLightspeedInstructions: string | null = null
 
 function getLightspeedInstructions(): string {
@@ -68,7 +136,17 @@ function storeDateFromDate(date: Date): string {
   }).format(date)
 }
 
-function buildSystemPrompt(storeName: string): string {
+function formatExecutionPlanForPrompt(plan: GenieExecutionPlan | null): string {
+  if (!plan) return ''
+
+  return `
+
+HIDDEN CURRENT-TURN EXECUTION PLAN
+This plan was produced by the planning model. Use it to choose tools and arguments, but do not reveal it, quote it, or include a Plan section in the final answer.
+${JSON.stringify(plan, null, 2)}`
+}
+
+function buildSystemPrompt(storeName: string, executionPlan: GenieExecutionPlan | null = null): string {
   const today = getStoreToday()
   return `You are the Yellow Jersey Store Agent — a sharp, efficient assistant that helps "${storeName}" manage their storefront on Yellow Jersey. Today is ${today}.
 
@@ -78,36 +156,46 @@ WHAT YOU CAN DO
    • Rename an existing carousel.
    • Reorder them, show/hide them, and set a size (featured | normal | compact). The FIRST carousel is the featured collection.
 2. Discounts — apply a percentage discount to one or more products (e.g. "50% off all Clif bars"), optionally with an end date after which it lapses.
+   • Recommend which products are best discount candidates right now by analysing stock, stale inventory, margin room, sales velocity, and competitor pricing.
 3. Pricing — view cost prices and adjust retail prices. You can:
    • Answer questions about cost, margin, or markup for any products.
    • Set retail prices to achieve a target markup % on cost (e.g. "set all Clif bars to 40% markup").
    • Set specific retail prices for named products.
    • Identify products with low margins or where cost exceeds/equals retail.
-4. Lightspeed activity — answer live questions about sales, sold products, item cost, gross profit, margin, and inventory stock from the store's connected Lightspeed account.
-5. Lightspeed customers — answer live customer questions, including customer lookup, contact details, purchase history, top customers, customer sales value, and customer lists from the connected Lightspeed account.
-6. Web research — search the live web for current cycling, product, pricing, standards, compatibility, supplier, event, and market information when the answer depends on up-to-date external facts.
+4. Lightspeed activity — answer questions about synced Lightspeed sales, sold products, current inventory, stock on hand, item cost, gross profit, and margin from the SQL Lightspeed reporting views. For live repair/service work orders (open jobs, pickup-ready, in-progress, customer contact, line notes, parts on the order), use list_lightspeed_workorders and get_lightspeed_workorder — not SQL.
+5. Lightspeed customers — answer customer purchase-history, top-customer, and product-purchaser questions from the SQL sales report table. Full phone/email contact extraction requires a future customer/contact table.
+6. Business performance analysis — build detailed profitability and growth analysis using multiple focused Lightspeed SQL queries when the user asks how to make more money, improve margin, reduce cash tied up, grow revenue, or find opportunities.
+7. Lightspeed catalogue edits — you CAN stage product brand/category changes for Lightspeed write-back. Pass brand_name or category_name directly (preferred when the store names them); unknown brands/categories are created in Lightspeed on approval. For nested categories use category_path (e.g. "Accessories/Winter Clearance") or parent_category_name. Use list_lightspeed_categories to browse existing categories. Use search_lightspeed_products to find items, then propose_product_brand_category_update for product assignments, or propose_lightspeed_category_create to add a category without moving products. The store must review and approve before anything is written.
+8. Product images — when the user wants to SEE specific products ("show me", "what does it look like", "picture of", or they name 1–4 identifiable items), pass show_product_images:true on search_lightspeed_inventory or search_store_products. Do NOT use this for rankings, totals, trends, stale-stock analysis, or broad "top N" questions.
+9. Web research — search the live web for current cycling, product, pricing, standards, compatibility, supplier, event, and market information when the answer depends on up-to-date external facts.
 
 HOW TO WORK
 - Read first: call get_store_carousels / search_store_products / get_product_costs / list_active_discounts to ground yourself in the store's ACTUAL data before proposing anything.
 - Then propose: call exactly one propose_* tool to stage the change. You never apply changes yourself — the store reviews a preview and clicks Apply.
-- For Lightspeed sales/inventory/cost/profit/margin/customer questions: follow the Lightspeed instructions below, call record_lightspeed_plan first, then call the required live Lightspeed tools. These are answer-only tools; do not create proposals for Lightspeed reporting.
+- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, search_lightspeed_inventory is also available. For work orders / repairs / service jobs: use list_lightspeed_workorders (scope open for active jobs, finished for completed/pickup-ready, all if unclear) with include_details:true, or get_lightspeed_workorder for one ID. The UI renders detailed Lightspeed work order cards automatically — keep your text answer brief (counts, highlights, next steps) and do not repeat every line item in prose. Use record_lightspeed_plan only for broad, complex, multi-pass Lightspeed analysis. If a lookup returns no, weak, ambiguous, partial, or non-answering results, call record_lightspeed_recheck and try one materially different SQL strategy before asking the user to clarify. These are answer-only tools; do not create proposals for Lightspeed reporting.
+- For broad business questions such as "how can we make more money", do not give generic advice. Run a multi-pass analysis with several targeted SQL queries before answering. Cover revenue trend, gross profit/margin trend, category/product profit drivers, discount leakage, average sale/basket indicators, top/repeat customers, low-margin/high-volume products, and inventory cash tied up. State data limitations clearly when customer-contact tables are not available.
 - For current external questions, use web_search. Use it for public information only. Never use web search instead of Lightspeed tools for store sales, sale lines, inventory, stock-on-hand, or private store activity.
+- For "our pricing vs other stores/competitors/market" questions, do not refuse. First use store pricing/product tools such as get_product_costs, search_store_products, or search_lightspeed_products to identify the store's relevant products and prices; then use web_search for public comparable prices. Answer with matched examples, confidence/limitations, and where the store appears high, low, or in line.
 - Creating a carousel: choose a clear name (use the store's own words if they gave one), and pass "match" to fill it by description ("all Clif bars" → match:"Clif"); use product_ids only for specific picks. To place it, pass position (1 = top/featured slot); omit to add it at the end.
 - Renaming: use get_store_carousels to find the carousel id, then propose_rename_carousel with the new name.
 - For discounts by description ("all Clif bars"), pass the keyword as "match" and let the system find the products. Only pass product_ids if the store picked specific items.
+- For "which products should I discount", "if you had to discount N products", or discount-candidate analysis: first call find_discount_candidates with the requested count. For 10 requested products, use limit:10, not 20-30. The tool already returns price, cost, margin, stock, age, and recent sales signals, so do not run a second SQL detail query unless required fields are missing. If the user also asks what others sell them for, use web_search only after the final candidates are selected. Batch competitor-price searches where possible and avoid researching extra candidates the user did not ask for. Do not call propose_discount unless the user asks to apply a concrete discount percent or explicitly says to stage it.
 - Expiry: if the store gives a deadline ("until Sunday"), compute the ISO date from today (${today}) and pass it as ends_at. No deadline → omit it.
 - For pricing: call get_product_costs first to see cost data, then propose_price_update with either markup_percent (applied to cost) or explicit new_prices (id→price map). Prices are always rounded to 2 decimal places. Never propose a price below cost.
+- For Lightspeed brand/category changes: do not refuse by saying you cannot change Lightspeed directly. You can stage an approval proposal. Call search_lightspeed_products (or search_lightspeed_inventory) to find the item(s), then propose_product_brand_category_update with brand_name and/or category_name, category_path, or category_id. If the brand or category does not exist yet, pass the name or path anyway — it will be created in Lightspeed when the store approves. To create a category without assigning products, use propose_lightspeed_category_create. The Apply button performs the actual Lightspeed write-back.
+- For product images: only pass show_product_images:true when the user is asking to see specific products visually. Keep it to a handful of clear matches — never for aggregate analytics, rankings, or large result sets.
 
 STYLE
 - Concise and confident. No preamble, no "let me…".
 - Use clean Markdown in final answers: short headings, bullets, bold labels for important metrics, and compact tables only for rankings or comparisons.
 - After proposing, briefly say what's staged and that they can review & Apply. Don't restate every item — the preview card shows detail.
-- For Lightspeed answers, use the planning status/tool first, but do not include a Plan section in the final answer. Give the result directly in structured Markdown.
-- If a request is ambiguous or matches nothing, say so in one line and ask a single sharp question.
+- For Lightspeed answers, do not include a Plan section in the final answer. Give direct results for narrow questions; reserve planning status/tool output for broad or complex analysis only.
+- For strategic business analysis, produce an executive summary, key findings, ranked opportunities, recommended actions, and the exact data period used. Prefer tables for ranked opportunities and charts for trends when useful.
+- If a non-Lightspeed request is ambiguous or matches nothing, say so in one line and ask a single sharp question. For Lightspeed misses, recheck once with a different SQL strategy before asking.
 - Stay on storefront management and Lightspeed sales/inventory/cost/profit/margin/customer activity. Politely redirect anything else.
 
 LIGHTSPEED INSTRUCTIONS
-${getLightspeedInstructions()}`
+${getLightspeedInstructions()}${formatExecutionPlanForPrompt(executionPlan)}`
 }
 
 interface Message {
@@ -148,8 +236,163 @@ function toAgentInputMessages(messages: Message[]): AgentInputItem[] {
   )
 }
 
+function buildOrchestratorInstructions(storeName: string): string {
+  return `You are the hidden router for the Yellow Jersey Store Agent for "${storeName}".
+Return only the structured routing decision required by the schema. Do not answer the user.
+
+Routes:
+- casual_chat: greetings, thanks, short follow-ups, meta questions like "what can you do?", basic clarification, and normal chat that does not need store data, Lightspeed data, web search, or a storefront proposal.
+- lightspeed_sql: any request about Lightspeed sales, customers, sold products, sale transactions, revenue, profit, margin, cost, services sold, product purchasers, current inventory/stock availability, or live work orders / repairs / service jobs (open, in-progress, finished, pickup-ready, work order details).
+- storefront_action: requests to read/change Yellow Jersey storefront carousels, discounts, product prices, store product lists, or to stage Lightspeed product brand/category write-back proposals (including creating new Lightspeed categories).
+- web_research: requests requiring current public external information, market facts, product compatibility, standards, events, suppliers, or internet lookup.
+- business_analysis: broad strategy requests about making the business more profitable, making more money, improving revenue, improving margin, finding opportunities, reducing wasted cash, reducing stale stock, or understanding what actions would improve the business.
+- mixed: requests combining multiple non-casual routes.
+- unsupported: off-topic requests outside store management, Lightspeed reporting, and cycling/store research.
+
+Routing examples:
+- "How does our pricing compare to other stores/competitors/market?" = mixed, because it needs store pricing data plus live web research.
+- "Are we overpriced on these products?" = mixed when it references competitors, market, online, or other stores; storefront_action if it only asks about internal cost/margin.
+
+Planning rule:
+- route=casual_chat must have needs_plan=false.
+- route=business_analysis must have needs_plan=true.
+- route=lightspeed_sql should have needs_plan=false for narrow direct reporting, stock, customer, product, sales, cost, profit, margin, inventory, or SQL questions that can be answered with one focused tool call/query.
+- route=lightspeed_sql should have needs_plan=true only for complex multi-pass analysis, cross-metric diagnosis, trend/comparison work, or broad questions needing several SQL lenses.
+- route=storefront_action should have needs_plan=false for direct carousel, discount, price, product, or Lightspeed brand/category write-back proposals.
+- route=storefront_action should have needs_plan=true only for broad multi-step merchandising/homepage/campaign work.
+- route=web_research must have needs_plan=false. Execute web search directly.
+- route=mixed should have needs_plan=true only when the mixed request needs deliberate sequencing across private store data and web research, or is otherwise complex.
+
+Be conservative: if the request might require private store data, Lightspeed data, a proposal, or web search, do not classify it as casual_chat.`
+}
+
+async function createGenieOrchestrationDecision(args: {
+  storeName: string
+  inputMessages: AgentInputItem[]
+  signal: AbortSignal
+}): Promise<GenieOrchestrationDecision> {
+  const orchestratorAgent = new Agent({
+    name: 'Yellow Jersey Orchestrator',
+    model: ORCHESTRATOR_MODEL,
+    instructions: buildOrchestratorInstructions(args.storeName),
+    outputType: GenieOrchestrationDecisionSchema,
+    modelSettings: {
+      parallelToolCalls: false,
+      store: false,
+      reasoning: { effort: 'none', summary: 'auto' },
+      text: { verbosity: 'low' },
+    },
+  })
+
+  try {
+    const result = await storeAgentRunner.run(orchestratorAgent, args.inputMessages, {
+      maxTurns: 1,
+      signal: args.signal,
+    })
+
+    const parsed = GenieOrchestrationDecisionSchema.safeParse(result.finalOutput)
+    if (!parsed.success) {
+      console.error('[Genie Agent] LLM router returned invalid output', {
+        issues: parsed.error.issues,
+        output: result.finalOutput,
+      })
+      throw new Error('LLM router returned an invalid orchestration decision.')
+    }
+
+    return parsed.data
+  } catch (error) {
+    console.error('[Genie Agent] LLM orchestration failed:', error)
+    throw error instanceof Error
+      ? error
+      : new Error('LLM router failed to classify the request.')
+  }
+}
+
+function buildCasualPrompt(storeName: string): string {
+  return `You are the Yellow Jersey Store Agent for "${storeName}".
+This is the casual-chat path. Answer directly without tools, SQL, web search, hidden plans, or proposal staging.
+
+Use this path only for greetings, thanks, simple follow-ups, and general capability questions.
+If the user asks for store data, Lightspeed reporting, current web facts, or an action/proposal, say briefly that it needs a smart lookup/action instead of pretending you checked anything.
+If the user asks for unrelated non-cycling or non-store work, briefly redirect them back to storefront, Lightspeed, inventory, web research, or bike-store questions.
+
+Keep answers concise and use light Markdown only when useful.`
+}
+
+function buildPlannerInstructions(storeName: string): string {
+  const today = getStoreToday()
+  return `You are the hidden planning model for the Yellow Jersey Store Agent for "${storeName}".
+Today in the store timezone (${STORE_TIME_ZONE}) is ${today}.
+
+Return only the structured execution plan required by the schema. Do not call tools.
+
+Planning rules:
+- Decide the route, tool set, date range, SQL/data strategy, and final answer shape for the executor.
+- Prefer one direct SQL query for narrow analytical Lightspeed questions.
+- For broad profitability, growth, or business-performance questions, plan a multi-pass analysis. Do not compress the work into one query when multiple lenses are needed.
+- For Lightspeed sales/customer/product reporting, the executor should use run_lightspeed_sql_query.
+- SQL relations available to the executor:
+  - genie_lightspeed_sales_report_lines columns: ${GENIE_LIGHTSPEED_SQL_SCHEMA.join(', ')}.
+  - genie_lightspeed_inventory columns: ${GENIE_LIGHTSPEED_INVENTORY_SQL_SCHEMA.join(', ')}.
+- Do not plan live Lightspeed API calls for supported sales/customer/product reporting.
+- For current stock/inventory questions, use genie_lightspeed_inventory or search_lightspeed_inventory. Brand is brand_name; supplier is supplier_name. Do not call the live Lightspeed API for Genie inventory answers.
+- For customer contact details, note that phone/email/address need a future customer/contact table.
+- For strategic profitability analysis, include concrete phases for: revenue and gross profit trend, category/service contribution, product contribution, low-margin/high-volume lines, discount leakage, average sale value, customer concentration/repeat spend, and stale/cash-tied-up inventory from genie_lightspeed_inventory. It is acceptable to plan many focused SQL queries over multiple turns.
+- For discount-candidate analysis, plan find_discount_candidates first with the requested product count. Do not plan 20-30 candidates for a 10-product request. The discount candidate tool already returns SKU/name/brand/category, current price, unit cost, margin, QOH, stale movement, age, and recent sales. Plan a second SQL check only if the requested answer needs a field that tool does not return. For competitor pricing, plan batched web_search calls for only the final selected products and stop once each item has a good exact/comparable price or a clear "not found quickly" note. Do not plan propose_discount unless the user provided a discount percent and asked to stage/apply it.
+- For "best customers", "top customers", or "highest spenders", plan one SQL query ranked by gross_sales unless the user asks for frequency or average value.
+- For "last 3 years" or similar relative ranges, use ${STORE_TIME_ZONE} and set start_date to the same month/day three years before ${today}; set end_date to ${today}.
+- For customer rankings, the correct grain is: aggregate line rows into distinct sale transactions first, then aggregate those sale totals by customer_id/customer_full_name. Exclude walk-in/unassigned customers unless the user asks to include them.
+- In sql_strategy.joins_needed, use [] when the current SQL table is enough. Mention future customer/contact joins only if the requested answer needs phone/email/address or customer metadata not in the sales report table.
+- Include concrete tool argument guidance in execution_steps, but never write a user-visible plan.
+- For broad strategy, set final_answer_shape to strategic_analysis.`
+}
+
+async function createGenieExecutionPlan(args: {
+  storeName: string
+  inputMessages: AgentInputItem[]
+  route: GenieOrchestrationDecision['route']
+  signal: AbortSignal
+}): Promise<GenieExecutionPlan | null> {
+  const plannerAgent = new Agent({
+    name: 'Yellow Jersey Planning Agent',
+    model: PLANNER_MODEL,
+    instructions: buildPlannerInstructions(args.storeName),
+    outputType: GenieExecutionPlanSchema,
+    modelSettings: {
+      parallelToolCalls: false,
+      store: false,
+      reasoning: {
+        effort: args.route === 'business_analysis' ? 'medium' : 'low',
+        summary: 'concise',
+      },
+      text: { verbosity: 'low' },
+    },
+  })
+
+  try {
+    const result = await storeAgentRunner.run(plannerAgent, args.inputMessages, {
+      maxTurns: 1,
+      signal: args.signal,
+    })
+
+    return result.finalOutput ?? null
+  } catch (error) {
+    console.warn('[Genie Agent] Planning failed; falling back to executor-only run:', error)
+    return null
+  }
+}
+
 function send(controller: ReadableStreamDefaultController, encoder: TextEncoder, data: object) {
   controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+}
+
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(1, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes <= 0) return `${seconds}s`
+  if (seconds === 0) return `${minutes}m`
+  return `${minutes}m ${seconds}s`
 }
 
 /** Strip characters that would break a PostgREST .or() ilike filter. */
@@ -371,7 +614,7 @@ type SoldProductTimeseriesMetric =
 type LightspeedSaleLineRelation = 'none' | 'lines' | 'lines_with_items'
 
 function emitStatus(emit: Emit, phase: string, text: string) {
-  emit({ event: 'status', phase, text })
+  emit({ event: 'status', phase, text: compactGenieProgressText(text, phase) })
 }
 
 function emitProgress(emit: Emit | undefined, phase: string, text: string) {
@@ -380,6 +623,33 @@ function emitProgress(emit: Emit | undefined, phase: string, text: string) {
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : pluralForm}`
+}
+
+function productRecheckSuggestions(query: string): string[] {
+  const cleaned = query.trim()
+  return [
+    `Try search_lightspeed_inventory with "${cleaned}" to inspect live item, brand, category, SKU, and stock matches.`,
+    'Retry with a shorter brand, model, category, SKU, or singular/plural variant from the user phrase.',
+    'If item IDs are needed for sales or customer lookup, resolve products first and then filter sales by SaleLines.itemID.',
+  ]
+}
+
+function inventoryRecheckSuggestions(query: string): string[] {
+  const cleaned = query.trim()
+  return [
+    `Retry inventory lookup with fewer words or a core brand/model/category token from "${cleaned}".`,
+    'Try exact SKU, UPC, manufacturer, or category terms when the product name search is weak.',
+    'Increase or split the item search only if the first result reports a page cap.',
+  ]
+}
+
+function customerRecheckSuggestions(query?: string): string[] {
+  const cleaned = String(query ?? '').trim()
+  return [
+    cleaned ? `Retry customer lookup with name pieces, company, email, phone digits, or address tokens from "${cleaned}".` : 'Retry customer lookup with a name, company, email, phone number, or customer ID.',
+    'Use contact-detail scanning when name/company lookup returns no confident customer.',
+    'If multiple plausible customers remain, ask the user to choose before exposing contact details.',
+  ]
 }
 
 interface LightspeedPageProgress {
@@ -409,19 +679,12 @@ function roundPercent(value: number): number {
   return Math.round(value * 10) / 10
 }
 
-function latestUserText(messages: Message[]): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]?.role === 'user') return messages[i]?.content ?? ''
-  }
-  return ''
-}
-
 function visualPrefsForMessages(messages: Message[]): VisualPrefs {
   const text = latestUserText(messages).toLowerCase()
   return {
     chart: /\b(bar|line|trend)\s*(chart|graph)\b|\b(chart|graph)\b|\bplot\b|\bvisuali[sz]e\b|\bbar\s+chart\b|\bbar\s+graph\b|\bline\s+chart\b|\bline\s+graph\b/.test(text),
     line: /\bline\s*(chart|graph)\b|\btrend\s*(line|chart|graph)\b/.test(text),
-    table: /\btable\b|\btabular\b|\bspreadsheet\b|\bbreakdown\b|\bcomparison\b|\branking\b|\brankings\b|\btop\b|\blist(?:ed|ing)?\b|\btransactions?\b|\breceipts?\b|\borders?\b|\bevery\s+sale\b|\beach\s+sale\b/.test(text),
+    table: /\btable\b|\btabular\b|\bspreadsheet\b|\bbreakdown\b|\bcomparison\b|\branking\b|\brankings\b|\btop\b|\blist(?:ed|ing)?\b|\btransactions?\b|\breceipts?\b|\borders?\b|\bevery\s+sale\b|\beach\s+sale\b|\bwhich\s+products?\b|\bwhat\s+would\s+they\s+be\b|\bdiscount\s+\d+\s+products?\b|\bproducts?\s+.*\bdiscount\b/.test(text),
   }
 }
 
@@ -927,6 +1190,62 @@ function summarizeItemShops(itemShops: LightspeedItemShop[]) {
   }
 }
 
+function daysBetweenIsoDates(startDate: string, endDate: string): number {
+  return Math.max(0, Math.floor((isoDateToUtcDate(endDate).getTime() - isoDateToUtcDate(startDate).getTime()) / 86_400_000))
+}
+
+async function getLightspeedItemsForIds(
+  userId: string,
+  itemIds: string[],
+  options?: {
+    batchSize?: number
+    emit?: Emit
+    phase?: string
+    label?: string
+    maxPagesPerBatch?: number
+  },
+) {
+  const client = createLightspeedClient(userId)
+  const uniqueItemIds = Array.from(new Set(itemIds.map(id => String(id).trim()).filter(Boolean)))
+  const batchSize = Math.min(Math.max(options?.batchSize ?? 100, 1), 100)
+  const batchCount = Math.ceil(uniqueItemIds.length / batchSize)
+  const items: LightspeedItem[] = []
+  let pagesFetched = 0
+  let hitPageLimit = false
+
+  for (let index = 0; index < uniqueItemIds.length; index += batchSize) {
+    const batch = uniqueItemIds.slice(index, index + batchSize)
+    const batchIndex = Math.floor(index / batchSize) + 1
+    emitProgress(
+      options?.emit,
+      options?.phase ?? 'lightspeed_inventory',
+      `Fetching item cost details for ${options?.label ?? 'stocked items'} (${batchIndex}/${batchCount})...`,
+    )
+    const result = await client.getAllItemsCursor({
+      archived: 'false',
+      itemID: lightspeedSaleLineItemFilter(batch),
+    }, {
+      maxPages: options?.maxPagesPerBatch ?? 5,
+      limit: 100,
+      onPage: progress => emitProgress(
+        options?.emit,
+        options?.phase ?? 'lightspeed_inventory',
+        `Fetched ${plural(progress.totalCount, 'item detail')} (${plural(progress.pagesFetched, 'item page')}, batch ${batchIndex}/${batchCount})...`,
+      ),
+    })
+    items.push(...result.items)
+    pagesFetched += result.pagesFetched
+    hitPageLimit ||= result.hitPageLimit
+  }
+
+  return {
+    items,
+    pagesFetched,
+    hitPageLimit,
+    batchesFetched: batchCount,
+  }
+}
+
 function lightspeedContainsFilter(term: string): string {
   const normalized = normalizeText(term).replace(/%/g, '').trim()
   return `~,%${normalized}%`
@@ -958,57 +1277,127 @@ function itemDescriptionSearchTerms(query: string): string[] {
   )).slice(0, 8)
 }
 
-async function resolveLightspeedSaleLineItems(
+async function resolveLightspeedProductItems(
   userId: string,
   query: string,
-  options?: { maxItems?: number; emit?: Emit },
+  options?: { maxItems?: number; emit?: Emit; phase?: string },
 ) {
   const client = createLightspeedClient(userId)
   const searchTerms = itemDescriptionSearchTerms(query)
-  const maxItems = options?.maxItems ?? 20
-  emitProgress(options?.emit, 'lightspeed_sales', `Matching "${query}" to live Lightspeed item names...`)
+  const maxItems = Math.min(Math.max(options?.maxItems ?? 30, 1), 80)
+  const phase = options?.phase ?? 'lightspeed_sales'
+  const meaningfulTokens = meaningfulQueryTokens(query).slice(0, 5)
+  emitProgress(options?.emit, phase, `Resolving live Lightspeed products for "${query}"...`)
 
   type ItemSearchResult = {
-    term: string
+    label: string
     items: LightspeedItem[]
     pagesFetched: number
     hitPageLimit: boolean
     error?: string
   }
 
-  const searchResults: ItemSearchResult[] = await Promise.all(
-    searchTerms.map(async term => {
-      try {
-        const result = await client.getAllItemsCursor({
-          archived: 'false',
-          description: lightspeedContainsFilter(term),
-        }, {
-          maxPages: term.includes(' ') ? 2 : 1,
-          limit: 100,
-          onPage: progress => emitProgress(
-            options?.emit,
-            'lightspeed_sales',
-            `Searching item names for "${term}" — ${plural(progress.totalCount, 'candidate')} found...`,
-          ),
-        })
-
-        return {
-          term,
-          items: result.items,
-          pagesFetched: result.pagesFetched,
-          hitPageLimit: result.hitPageLimit,
-        }
-      } catch (error) {
-        return {
-          term,
-          items: [],
-          pagesFetched: 0,
-          hitPageLimit: false,
-          error: error instanceof Error ? error.message : 'Lightspeed item search failed',
-        }
+  const fetchItems = async (
+    label: string,
+    params: Record<string, string | number | undefined>,
+    maxPages: number,
+  ): Promise<ItemSearchResult> => {
+    try {
+      const result = await client.getAllItemsCursor({ archived: 'false', ...params }, {
+        maxPages: Math.min(Math.max(maxPages, 1), 80),
+        limit: 100,
+        onPage: progress => emitProgress(
+          options?.emit,
+          phase,
+          `Found ${plural(progress.totalCount, 'product candidate')} by ${label} (${plural(progress.pagesFetched, 'page')})...`,
+        ),
+      })
+      return {
+        label,
+        items: result.items,
+        pagesFetched: result.pagesFetched,
+        hitPageLimit: result.hitPageLimit,
       }
-    }),
+    } catch (error) {
+      return {
+        label,
+        items: [],
+        pagesFetched: 0,
+        hitPageLimit: false,
+        error: error instanceof Error ? error.message : 'Lightspeed product search failed',
+      }
+    }
+  }
+
+  const [categories, manufacturerResults] = await Promise.all([
+    client.getAllCategories({ archived: 'false' }).catch(() => [] as LightspeedCategory[]),
+    Promise.all(
+      meaningfulTokens.map(token =>
+        client.getAllManufacturers({ name: lightspeedContainsFilter(token) }).catch(() => []),
+      ),
+    ),
+  ])
+
+  const manufacturerById = new Map<string, { manufacturerID: string; name: string }>()
+  for (const manufacturer of manufacturerResults.flat()) {
+    manufacturerById.set(String(manufacturer.manufacturerID), manufacturer)
+  }
+  const manufacturers = Array.from(manufacturerById.values())
+  const categoryMap = new Map(categories.map(category => [String(category.categoryID), category]))
+  const manufacturerMap = new Map(manufacturers.map(manufacturer => [String(manufacturer.manufacturerID), manufacturer.name]))
+
+  const matchedManufacturers = manufacturers
+    .map(manufacturer => ({
+      ...manufacturer,
+      score: brandScore(query, manufacturer.name),
+    }))
+    .filter(manufacturer => manufacturer.score >= 60)
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+    .slice(0, 6)
+
+  const matchedCategories = categories
+    .map(category => ({
+      ...category,
+      score: categoryQueryScore(query, category),
+    }))
+    .filter(category => category.score >= 30)
+    .sort((a, b) => b.score - a.score || (a.fullPathName || a.name).localeCompare(b.fullPathName || b.name))
+    .slice(0, 6)
+
+  emitProgress(
+    options?.emit,
+    phase,
+    `Matched ${plural(matchedManufacturers.length, 'brand')} and ${plural(matchedCategories.length, 'category')} before sale lookup...`,
   )
+
+  const brandCategorySearches = matchedManufacturers.length > 0 && matchedCategories.length > 0
+    ? matchedManufacturers.slice(0, 4).flatMap(manufacturer =>
+        matchedCategories.slice(0, 4).map(category =>
+          fetchItems(
+            `brand:${manufacturer.name} + category:${category.fullPathName || category.name}`,
+            { manufacturerID: manufacturer.manufacturerID, categoryID: category.categoryID },
+            8,
+          ),
+        ),
+      )
+    : []
+
+  const brandSearches = matchedManufacturers.slice(0, 4).map(manufacturer =>
+    fetchItems(`brand:${manufacturer.name}`, { manufacturerID: manufacturer.manufacturerID }, 24),
+  )
+  const categorySearches = matchedCategories.slice(0, 4).map(category =>
+    fetchItems(`category:${category.fullPathName || category.name}`, { categoryID: category.categoryID }, 16),
+  )
+  const descriptionSearches = searchTerms.slice(0, 6).map(term =>
+    fetchItems(`description:${term}`, { description: lightspeedContainsFilter(term) }, term.includes(' ') ? 3 : 2),
+  )
+
+  const searchResults = await Promise.all([
+    ...brandCategorySearches,
+    ...brandSearches,
+    ...categorySearches,
+    ...descriptionSearches,
+  ])
 
   const itemById = new Map<string, LightspeedItem>()
   for (const result of searchResults) {
@@ -1017,60 +1406,124 @@ async function resolveLightspeedSaleLineItems(
     }
   }
 
+  const descriptorTokens = meaningfulTokens.filter(token => !matchedManufacturers.some(manufacturer => {
+    const brand = normalizeText(manufacturer.name)
+    return tokenVariants(token).includes(brand) || hasToken(brand, token)
+  }))
+  const hasBrandConstraint = matchedManufacturers.length > 0
+
   const scored = Array.from(itemById.values())
-    .map(item => ({
-      item,
-      score: fuzzyTextScore(query, item.description),
-    }))
-    .filter(row => row.score > 0)
+    .map(item => {
+      const category = categoryMap.get(String(item.categoryID ?? ''))
+      const productText = normalizeText([
+        item.description,
+        item.itemType,
+        category?.name,
+        category?.fullPathName,
+      ].filter(Boolean).join(' '))
+      const brandMatched = matchedManufacturers.some(manufacturer => (
+        String(item.manufacturerID) === String(manufacturer.manufacturerID) ||
+        hasToken(normalizeText(item.description), normalizeText(manufacturer.name))
+      ))
+      const descriptorHits = descriptorTokens.filter(token => hasToken(productText, token))
+      const match = inventoryScore(query, item, categoryMap, manufacturerMap)
+      if (descriptorHits.length > 0) {
+        match.score += descriptorHits.length * 12
+        match.reasons.push('matched specific product terms')
+      }
+
+      return {
+        item,
+        ...match,
+        has_required_brand: !hasBrandConstraint || brandMatched,
+        has_required_specificity: !hasBrandConstraint || descriptorTokens.length === 0 || !brandMatched || descriptorHits.length > 0,
+      }
+    })
+    .filter(row => row.score > 0 && row.has_required_brand && row.has_required_specificity)
     .sort((a, b) => b.score - a.score || String(a.item.description).localeCompare(String(b.item.description)))
 
   const topScore = scored[0]?.score ?? 0
-  const strongThreshold = topScore >= 60
-    ? Math.max(45, topScore - 15)
-    : topScore >= 35
-      ? topScore
-      : Math.max(25, topScore)
+  const strongThreshold = topScore >= 100
+    ? Math.max(65, topScore - 30)
+    : topScore >= 60
+      ? Math.max(45, topScore - 20)
+      : topScore >= 35
+        ? topScore
+        : Math.max(25, topScore)
 
   const matchedItems = topScore > 0
-    ? scored.filter(row => row.score >= strongThreshold).slice(0, Math.min(Math.max(maxItems, 1), 40))
+    ? scored.filter(row => row.score >= strongThreshold).slice(0, maxItems)
     : []
+  const pageCapReached = searchResults.some(result => result.hitPageLimit)
 
   if (matchedItems.length > 0) {
     const preview = matchedItems.slice(0, 3).map(row => row.item.description || `Item ${row.item.itemID}`).join(', ')
-    emitProgress(options?.emit, 'lightspeed_sales', `Matched ${plural(matchedItems.length, 'Lightspeed item')}: ${preview}`)
+    emitProgress(options?.emit, phase, `Matched ${plural(matchedItems.length, 'Lightspeed product')}: ${preview}`)
   } else {
-    emitProgress(options?.emit, 'lightspeed_sales', `No strong live Lightspeed item match found for "${query}".`)
+    emitProgress(options?.emit, phase, `No strong live Lightspeed product match found for "${query}".`)
   }
 
   return {
     query,
     search_terms: searchTerms,
     candidates_found: itemById.size,
+    matched_brands: matchedManufacturers.map(manufacturer => ({
+      manufacturer_id: manufacturer.manufacturerID,
+      name: manufacturer.name,
+      score: manufacturer.score,
+    })),
+    matched_categories: matchedCategories.map(category => ({
+      category_id: category.categoryID,
+      name: category.fullPathName || category.name,
+      score: category.score,
+    })),
     matched_items: matchedItems.map(row => ({
       item_id: String(row.item.itemID),
       name: row.item.description || `Item ${row.item.itemID}`,
       score: row.score,
+      match_reasons: row.reasons,
       item_type: row.item.itemType || null,
       default_cost: itemDefaultCost(row.item),
       average_cost: itemAverageCost(row.item),
       effective_cost: itemEffectiveCost(row.item),
       retail_price: itemPrice(row.item),
       manufacturer_id: row.item.manufacturerID || null,
+      manufacturer: row.item.manufacturerID ? (manufacturerMap.get(String(row.item.manufacturerID)) ?? null) : null,
       category_id: row.item.categoryID || null,
+      category: row.item.categoryID
+        ? categoryMap.get(String(row.item.categoryID))?.fullPathName ?? categoryMap.get(String(row.item.categoryID))?.name ?? null
+        : null,
     })),
     top_score: topScore,
     strong_threshold: strongThreshold,
     searches: searchResults.map(result => ({
-      term: result.term,
+      label: result.label,
       item_count: result.items.length,
       pages_fetched: result.pagesFetched,
       page_cap_reached: result.hitPageLimit,
       error: result.error ?? null,
     })),
     pages_fetched: searchResults.reduce((sum, result) => sum + result.pagesFetched, 0),
-    page_cap_reached: searchResults.some(result => result.hitPageLimit),
+    page_cap_reached: pageCapReached,
+    recheck_required: matchedItems.length === 0 || pageCapReached,
+    recheck_suggestions: matchedItems.length === 0
+      ? productRecheckSuggestions(query)
+      : pageCapReached
+        ? ['Narrow the product/category/date scope or split the lookup to recover complete live data.']
+        : [],
   }
+}
+
+async function resolveLightspeedSaleLineItems(
+  userId: string,
+  query: string,
+  options?: { maxItems?: number; emit?: Emit },
+) {
+  return resolveLightspeedProductItems(userId, query, {
+    maxItems: options?.maxItems ?? 30,
+    emit: options?.emit,
+    phase: 'lightspeed_sales',
+  })
 }
 
 async function getLightspeedSalesForRange(args: {
@@ -1391,20 +1844,74 @@ async function getLightspeedTopSoldProducts(
   const startDate = assertIsoDate(args.start_date, 'start_date')
   const endDate = assertIsoDate(args.end_date, 'end_date')
   const costMethod = args.cost_method ?? 'avg'
-  emitProgress(emit, 'lightspeed_sales', `Fetching sales with sale lines from ${startDate} to ${endDate}...`)
+  const query = String(args.query ?? '').trim()
+  const itemLookup = query
+    ? await resolveLightspeedProductItems(userId, query, {
+        maxItems: 80,
+        emit,
+        phase: 'lightspeed_sales',
+      })
+    : null
+  const matchedItemIds = itemLookup?.matched_items.map(item => item.item_id) ?? []
+  const matchedItemIdSet = new Set(matchedItemIds)
+  const itemCandidateById = new Map(itemLookup?.matched_items.map(item => [item.item_id, item]) ?? [])
+
+  if (query && itemLookup && matchedItemIds.length === 0) {
+    return {
+      source: 'live_lightspeed_api',
+      date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+      cost_method: costMethod,
+      rank_by: args.rank_by ?? 'quantity',
+      query,
+      api_strategy: 'product_first_item_lookup_then_sale_line_filter',
+      sales_scanned: 0,
+      matched_sale_lines: 0,
+      excluded_manual_lines: 0,
+      net_sales: 0,
+      total_cost: 0,
+      gross_profit: 0,
+      gross_margin_percent: null,
+      top_products: [],
+      item_lookup: itemLookup,
+      pages_fetched: 0,
+      complete: !itemLookup.page_cap_reached,
+      page_cap_reached: itemLookup.page_cap_reached,
+      recheck_required: true,
+      recheck_suggestions: productRecheckSuggestions(query),
+      message: `No strong live Lightspeed product match found for "${query}".`,
+    }
+  }
+
+  emitProgress(
+    emit,
+    'lightspeed_sales',
+    query
+      ? `Fetching sales containing ${plural(matchedItemIds.length, 'matched product')} from ${startDate} to ${endDate}...`
+      : `Fetching sales with sale lines from ${startDate} to ${endDate}...`,
+  )
   const { sales, pagesFetched, hitPageLimit } = await getLightspeedSalesForRange({
     userId,
     startDate,
     endDate,
     includeLines: true,
-    maxPages: args.max_pages,
+    lineRelation: query ? 'lines' : 'lines_with_items',
+    saleLineItemIds: query ? matchedItemIds : undefined,
+    maxPages: args.max_pages ?? (query ? 80 : undefined),
     onPage: progress => emitProgress(
       emit,
       'lightspeed_sales',
-      `Fetched ${plural(progress.totalCount, 'sale')} with sale lines (${plural(progress.pagesFetched, 'page')})...`,
+      query
+        ? `Fetched ${plural(progress.totalCount, 'matching sale')} (${plural(progress.pagesFetched, 'page')})...`
+        : `Fetched ${plural(progress.totalCount, 'sale')} with sale lines (${plural(progress.pagesFetched, 'page')})...`,
     ),
   })
-  emitProgress(emit, 'lightspeed_sales', `Aggregating sold items across ${plural(sales.length, 'sale')}...`)
+  emitProgress(
+    emit,
+    'lightspeed_sales',
+    query
+      ? `Aggregating matched sale lines across ${plural(sales.length, 'sale')}...`
+      : `Aggregating sold items across ${plural(sales.length, 'sale')}...`,
+  )
 
   const byItem = new Map<string, {
     item_id: string
@@ -1423,13 +1930,14 @@ async function getLightspeedTopSoldProducts(
   for (const sale of sales) {
     for (const line of saleLines(sale)) {
       const itemId = line.itemID || line.Item?.itemID || 'unknown'
+      if (query && !matchedItemIdSet.has(String(itemId))) continue
       if (!args.include_manual_lines && itemId === '0') {
         excludedManualLines++
         continue
       }
 
-      const name = lineName(line)
-      if (args.query && fuzzyTextScore(args.query, name) === 0) continue
+      const itemCandidate = itemCandidateById.get(String(itemId))
+      const name = itemCandidate?.name ?? lineName(line)
 
       const qty = toNum(line.unitQuantity)
       if (qty <= 0) continue
@@ -1444,16 +1952,16 @@ async function getLightspeedTopSoldProducts(
         total_cost: 0,
         gross_profit: 0,
         sale_line_count: 0,
-        current_default_cost: itemDefaultCost(line.Item),
-        current_average_cost: itemAverageCost(line.Item),
+        current_default_cost: itemCandidate?.default_cost ?? itemDefaultCost(line.Item),
+        current_average_cost: itemCandidate?.average_cost ?? itemAverageCost(line.Item),
       }
       prev.units_sold += qty
       prev.revenue += revenue
       prev.total_cost += totalCost
       prev.gross_profit += revenue - totalCost
       prev.sale_line_count += 1
-      prev.current_default_cost ??= itemDefaultCost(line.Item)
-      prev.current_average_cost ??= itemAverageCost(line.Item)
+      prev.current_default_cost ??= itemCandidate?.default_cost ?? itemDefaultCost(line.Item)
+      prev.current_average_cost ??= itemCandidate?.average_cost ?? itemAverageCost(line.Item)
       byItem.set(itemId, prev)
       matchedLineCount++
     }
@@ -1488,7 +1996,10 @@ async function getLightspeedTopSoldProducts(
     date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
     cost_method: costMethod,
     rank_by: rankBy,
-    query: args.query || null,
+    query: query || null,
+    api_strategy: query
+      ? 'product_first_item_lookup_then_sale_line_filter'
+      : 'range_sale_line_scan_for_overall_top_products',
     sales_scanned: sales.length,
     matched_sale_lines: matchedLineCount,
     excluded_manual_lines: excludedManualLines,
@@ -1497,9 +2008,19 @@ async function getLightspeedTopSoldProducts(
     gross_profit: roundMoney(netSales - totalCost),
     gross_margin_percent: netSales > 0 ? roundPercent(((netSales - totalCost) / netSales) * 100) : null,
     top_products: top,
+    item_lookup: itemLookup,
     pages_fetched: pagesFetched,
-    complete: !hitPageLimit,
-    page_cap_reached: hitPageLimit,
+    complete: !hitPageLimit && !itemLookup?.page_cap_reached,
+    page_cap_reached: hitPageLimit || Boolean(itemLookup?.page_cap_reached),
+    recheck_required: Boolean(query && top.length === 0) || hitPageLimit || Boolean(itemLookup?.page_cap_reached),
+    recheck_suggestions: query && top.length === 0
+      ? [
+          'Matched products were found, but no sale lines matched the date range. Recheck the date range before saying the product never sold.',
+          ...productRecheckSuggestions(query),
+        ]
+      : hitPageLimit || Boolean(itemLookup?.page_cap_reached)
+        ? ['Split the date range or narrow the product scope to recover a complete live result.']
+        : [],
   }
 }
 
@@ -1907,6 +2428,8 @@ async function searchLightspeedInventory(
       })),
       complete: !itemResult.hitPageLimit,
       page_cap_reached: itemResult.hitPageLimit,
+      recheck_required: true,
+      recheck_suggestions: inventoryRecheckSuggestions(query),
       message: `No live Lightspeed items matched "${query}".`,
     }
   }
@@ -2023,6 +2546,307 @@ async function searchLightspeedInventory(
     used_full_inventory_fallback: Boolean(fallbackItemResult),
     complete: !itemResult.hitPageLimit,
     page_cap_reached: itemResult.hitPageLimit,
+    recheck_required: strongMatches.length === 0 || itemResult.hitPageLimit,
+    recheck_suggestions: strongMatches.length === 0
+      ? inventoryRecheckSuggestions(query)
+      : itemResult.hitPageLimit
+        ? ['Narrow the item/category scope or split the lookup because the live item page cap was reached.']
+        : [],
+  }
+}
+
+async function getLightspeedStaleInventoryCash(
+  userId: string,
+  args: {
+    query?: string
+    no_sale_days?: number
+    old_stock_days?: number
+    min_stock_value?: number
+    limit?: number
+    history_start_date?: string
+    max_stock_pages?: number
+    max_recent_sale_pages?: number
+    max_history_sale_pages?: number
+  },
+  emit?: Emit,
+) {
+  const query = String(args.query ?? '').trim()
+  const today = getStoreToday()
+  const noSaleDays = Math.min(Math.max(Math.round(args.no_sale_days ?? 180), 1), 3650)
+  const oldStockDays = Math.min(Math.max(Math.round(args.old_stock_days ?? 180), 1), 3650)
+  const minStockValue = Math.max(0, Number(args.min_stock_value ?? 0))
+  const limit = Math.min(Math.max(args.limit ?? 25, 1), 100)
+  const recentStartDate = isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(today), -noSaleDays))
+  const oldStockCutoffDate = isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(today), -oldStockDays))
+  const historyStartDate = assertIsoDate(args.history_start_date ?? '2010-01-01', 'history_start_date')
+  const historyEndDate = isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(recentStartDate), -1))
+  const client = createLightspeedClient(userId)
+  const recentSalesPromise = getLightspeedSalesForRange({
+    userId,
+    startDate: recentStartDate,
+    endDate: today,
+    includeLines: true,
+    lineRelation: 'lines',
+    maxPages: Math.min(Math.max(args.max_recent_sale_pages ?? 140, 1), 240),
+    onPage: progress => emitProgress(
+      emit,
+      'lightspeed_sales',
+      `Checked ${plural(progress.totalCount, 'recent sale')} for product movement (${plural(progress.pagesFetched, 'sale page')})...`,
+    ),
+  })
+  const categoriesPromise = client.getAllCategories({ archived: 'false' }).catch(() => [] as LightspeedCategory[])
+  const manufacturersPromise = client.getAllManufacturers().catch(() => [])
+
+  emitProgress(
+    emit,
+    'lightspeed_inventory',
+    `Fetching current positive stock from Lightspeed before checking stale cash...`,
+  )
+  const stockResult = await client.getAllItemShopsCursor({
+    shopID: 0,
+    qoh: '>,0',
+  }, {
+    maxPages: Math.min(Math.max(args.max_stock_pages ?? 260, 1), 400),
+    limit: 100,
+    onPage: progress => emitProgress(
+      emit,
+      'lightspeed_inventory',
+      `Fetched ${plural(progress.totalCount, 'positive-stock row')} (${plural(progress.pagesFetched, 'stock page')})...`,
+    ),
+  })
+
+  const stockByItemId = new Map<string, { qoh: number; sellable: number }>()
+  for (const row of stockResult.itemShops) {
+    const itemId = String(row.itemID)
+    const prev = stockByItemId.get(itemId)
+    const qoh = toNum(row.qoh)
+    const sellable = toNum(row.sellable)
+    if (!prev || String(row.shopID) === '0') {
+      stockByItemId.set(itemId, { qoh, sellable })
+    }
+  }
+  const stockedItemIds = Array.from(stockByItemId.entries())
+    .filter(([, stock]) => stock.qoh > 0)
+    .map(([itemId]) => itemId)
+
+  emitProgress(
+    emit,
+    'lightspeed_inventory',
+    `Found ${plural(stockedItemIds.length, 'stocked item')} with positive QOH; fetching costs and recent sales...`,
+  )
+  const [itemsResult, recentSalesResult, categories, manufacturers] = await Promise.all([
+    getLightspeedItemsForIds(userId, stockedItemIds, {
+      emit,
+      phase: 'lightspeed_inventory',
+      label: 'stocked items',
+      maxPagesPerBatch: 5,
+    }),
+    recentSalesPromise,
+    categoriesPromise,
+    manufacturersPromise,
+  ])
+
+  const categoryMap = new Map(categories.map(category => [String(category.categoryID), category]))
+  const manufacturerMap = new Map(manufacturers.map(manufacturer => [String(manufacturer.manufacturerID), manufacturer.name]))
+  const recentMovementByItem = new Map<string, { last_sold_at: string; units_sold: number; revenue: number }>()
+
+  for (const sale of recentSalesResult.sales) {
+    const completedAt = saleCompletedAt(sale)
+    for (const line of saleLines(sale)) {
+      const itemId = String(line.itemID || line.Item?.itemID || '')
+      if (!itemId || !stockByItemId.has(itemId)) continue
+      const qty = positiveQuantity(line)
+      if (qty <= 0) continue
+      const prev = recentMovementByItem.get(itemId) ?? {
+        last_sold_at: completedAt ?? '',
+        units_sold: 0,
+        revenue: 0,
+      }
+      if (completedAt && completedAt > prev.last_sold_at) prev.last_sold_at = completedAt
+      prev.units_sold += qty
+      prev.revenue += lineRevenue(line)
+      recentMovementByItem.set(itemId, prev)
+    }
+  }
+
+  emitProgress(
+    emit,
+    'lightspeed_inventory',
+    `Scoring stocked items by cost value, age, and no recent sales...`,
+  )
+  const itemsById = new Map(itemsResult.items.map(item => [String(item.itemID), item]))
+  const costMissingItemCount = stockedItemIds.filter(itemId => itemEffectiveCost(itemsById.get(itemId)) == null).length
+  const candidates = stockedItemIds
+    .map(itemId => {
+      const item = itemsById.get(itemId)
+      const stock = stockByItemId.get(itemId)
+      if (!item || !stock) return null
+      const createdDate = item.createTime ? storeDateFromDate(new Date(item.createTime)) : null
+      const itemAgeDays = createdDate ? daysBetweenIsoDates(createdDate, today) : null
+      const unitCost = itemEffectiveCost(item)
+      const price = itemPrice(item)
+      const stockValue = unitCost != null ? stock.qoh * unitCost : 0
+      const category = categoryMap.get(String(item.categoryID ?? ''))
+      const manufacturer = item.manufacturerID ? (manufacturerMap.get(String(item.manufacturerID)) ?? null) : null
+      const queryScore = query ? inventoryScore(query, item, categoryMap, manufacturerMap).score : 1
+
+      return {
+        item,
+        item_id: itemId,
+        name: item.description || `Item ${itemId}`,
+        system_sku: item.systemSku || null,
+        custom_sku: item.customSku || null,
+        manufacturer,
+        category: category?.fullPathName || category?.name || null,
+        qoh: stock.qoh,
+        sellable: stock.sellable,
+        unit_cost: unitCost,
+        stock_value: stockValue,
+        retail_price: price,
+        retail_value: price * stock.qoh,
+        created_date: createdDate,
+        item_age_days: itemAgeDays,
+        query_score: queryScore,
+      }
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .filter(row => !query || row.query_score > 0)
+    .filter(row => row.stock_value >= minStockValue)
+    .filter(row => row.item_age_days == null || row.item_age_days >= oldStockDays)
+    .filter(row => !recentMovementByItem.has(row.item_id))
+    .sort((a, b) => b.stock_value - a.stock_value || b.qoh - a.qoh || a.name.localeCompare(b.name))
+
+  const selected = candidates.slice(0, limit)
+  const selectedIds = selected.map(row => row.item_id)
+  const historyByItem = new Map<string, { last_sold_at: string; units_sold: number; revenue: number }>()
+  let historyPagesFetched = 0
+  let historyHitPageLimit = false
+  let historySalesScanned = 0
+
+  if (
+    selectedIds.length > 0 &&
+    isoDateToUtcDate(historyStartDate).getTime() <= isoDateToUtcDate(historyEndDate).getTime()
+  ) {
+    emitProgress(
+      emit,
+      'lightspeed_sales',
+      `Looking up older sale history for the top ${plural(selectedIds.length, 'stale-stock item')}...`,
+    )
+    const historyResult = await getLightspeedSalesForRange({
+      userId,
+      startDate: historyStartDate,
+      endDate: historyEndDate,
+      includeLines: true,
+      lineRelation: 'lines',
+      saleLineItemIds: selectedIds,
+      maxPages: Math.min(Math.max(args.max_history_sale_pages ?? 120, 1), 240),
+      onPage: progress => emitProgress(
+        emit,
+        'lightspeed_sales',
+        `Fetched ${plural(progress.totalCount, 'older matching sale')} (${plural(progress.pagesFetched, 'history page')})...`,
+      ),
+    })
+    historyPagesFetched = historyResult.pagesFetched
+    historyHitPageLimit = historyResult.hitPageLimit
+    historySalesScanned = historyResult.sales.length
+    const selectedIdSet = new Set(selectedIds)
+
+    for (const sale of historyResult.sales) {
+      const completedAt = saleCompletedAt(sale)
+      for (const line of saleLines(sale)) {
+        const itemId = String(line.itemID || line.Item?.itemID || '')
+        if (!selectedIdSet.has(itemId)) continue
+        const qty = positiveQuantity(line)
+        if (qty <= 0) continue
+        const prev = historyByItem.get(itemId) ?? {
+          last_sold_at: completedAt ?? '',
+          units_sold: 0,
+          revenue: 0,
+        }
+        if (completedAt && completedAt > prev.last_sold_at) prev.last_sold_at = completedAt
+        prev.units_sold += qty
+        prev.revenue += lineRevenue(line)
+        historyByItem.set(itemId, prev)
+      }
+    }
+  }
+
+  const rows = selected.map((row, index) => {
+    const history = historyByItem.get(row.item_id)
+    const lastSoldDate = history?.last_sold_at ? storeDateFromDate(new Date(history.last_sold_at)) : null
+    return {
+      rank: index + 1,
+      item_id: row.item_id,
+      product: row.name,
+      system_sku: row.system_sku,
+      custom_sku: row.custom_sku,
+      brand: row.manufacturer,
+      category: row.category,
+      qoh: roundMoney(row.qoh),
+      sellable: roundMoney(row.sellable),
+      unit_cost: row.unit_cost != null ? roundMoney(row.unit_cost) : null,
+      stock_value: roundMoney(row.stock_value),
+      retail_price: roundMoney(row.retail_price),
+      retail_value: roundMoney(row.retail_value),
+      created_date: row.created_date,
+      item_age_days: row.item_age_days,
+      last_sold_at: history?.last_sold_at ? formatStoreDateTime(history.last_sold_at) : null,
+      days_since_last_sale: lastSoldDate ? daysBetweenIsoDates(lastSoldDate, today) : null,
+      historical_units_sold: history ? roundMoney(history.units_sold) : 0,
+      historical_revenue: history ? roundMoney(history.revenue) : 0,
+      stale_reason: history?.last_sold_at
+        ? `No sales in last ${noSaleDays} days`
+        : `No sales found since ${historyStartDate}`,
+    }
+  })
+
+  const totalStaleStockValue = candidates.reduce((sum, row) => sum + row.stock_value, 0)
+  const totalStaleQoh = candidates.reduce((sum, row) => sum + row.qoh, 0)
+  const totalAnalysedStockValue = stockedItemIds.reduce((sum, itemId) => {
+    const item = itemsById.get(itemId)
+    const stock = stockByItemId.get(itemId)
+    const cost = itemEffectiveCost(item)
+    return sum + (stock && cost != null ? stock.qoh * cost : 0)
+  }, 0)
+
+  return {
+    source: 'live_lightspeed_api',
+    query: query || null,
+    date_context: {
+      today,
+      no_sale_since: recentStartDate,
+      old_stock_created_before: oldStockCutoffDate,
+      history_start_date: historyStartDate,
+      timezone: STORE_TIME_ZONE,
+    },
+    thresholds: {
+      no_sale_days: noSaleDays,
+      old_stock_days: oldStockDays,
+      min_stock_value: minStockValue,
+    },
+    stocked_item_count: stockedItemIds.length,
+    items_with_missing_cost: costMissingItemCount,
+    stale_item_count: candidates.length,
+    returned_count: rows.length,
+    row_limit: limit,
+    limited: candidates.length > rows.length,
+    total_stale_stock_value: roundMoney(totalStaleStockValue),
+    total_stale_qoh: roundMoney(totalStaleQoh),
+    total_analysed_stock_value: roundMoney(totalAnalysedStockValue),
+    stale_stock_value_percent_of_analysed: totalAnalysedStockValue > 0
+      ? roundPercent((totalStaleStockValue / totalAnalysedStockValue) * 100)
+      : null,
+    rows,
+    api_strategy: 'positive_qoh_stock_then_recent_sale_line_exclusion_then_top_candidate_history_lookup',
+    stock_pages_fetched: stockResult.pagesFetched,
+    item_pages_fetched: itemsResult.pagesFetched,
+    item_batches_fetched: itemsResult.batchesFetched,
+    recent_sale_pages_fetched: recentSalesResult.pagesFetched,
+    recent_sales_scanned: recentSalesResult.sales.length,
+    history_sale_pages_fetched: historyPagesFetched,
+    history_sales_scanned: historySalesScanned,
+    complete: !stockResult.hitPageLimit && !itemsResult.hitPageLimit && !recentSalesResult.hitPageLimit && !historyHitPageLimit,
+    page_cap_reached: stockResult.hitPageLimit || itemsResult.hitPageLimit || recentSalesResult.hitPageLimit || historyHitPageLimit,
   }
 }
 
@@ -2403,6 +3227,12 @@ async function searchLightspeedCustomers(
     pages_fetched: fetches.reduce((sum, fetchResult) => sum + fetchResult.pagesFetched, 0),
     complete: !fetches.some(fetchResult => fetchResult.hitPageLimit),
     page_cap_reached: fetches.some(fetchResult => fetchResult.hitPageLimit),
+    recheck_required: matches.length === 0 || fetches.some(fetchResult => fetchResult.hitPageLimit),
+    recheck_suggestions: matches.length === 0
+      ? customerRecheckSuggestions(query)
+      : fetches.some(fetchResult => fetchResult.hitPageLimit)
+        ? ['Narrow the customer query or split created-date filters because the live customer page cap was reached.']
+        : [],
   }
 }
 
@@ -2475,6 +3305,10 @@ async function getLightspeedCustomerSales(
       status: resolved.status,
       date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
       candidates: resolved.candidates,
+      recheck_required: resolved.status === 'not_found',
+      recheck_suggestions: resolved.status === 'ambiguous'
+        ? ['Ask the user to choose from the candidate customers before fetching sales or exposing contact details.']
+        : customerRecheckSuggestions(args.query),
       message: resolved.status === 'ambiguous'
         ? 'Multiple Lightspeed customers matched. Ask the user to choose a customer.'
         : 'No matching Lightspeed customer was found.',
@@ -2683,14 +3517,2347 @@ async function getLightspeedTopCustomers(
   }
 }
 
-type LightspeedSalesListResult = Awaited<ReturnType<typeof getLightspeedSalesList>>
-type LightspeedSalesTimeseriesResult = Awaited<ReturnType<typeof getLightspeedSalesTimeseries>>
-type LightspeedTopSoldProductsResult = Awaited<ReturnType<typeof getLightspeedTopSoldProducts>>
-type LightspeedSoldProductTimeseriesResult = Awaited<ReturnType<typeof getLightspeedSoldProductTimeseries>>
-type LightspeedInventorySearchResult = Awaited<ReturnType<typeof searchLightspeedInventory>>
-type LightspeedCustomerSearchResult = Awaited<ReturnType<typeof searchLightspeedCustomers>>
-type LightspeedCustomerSalesResult = Awaited<ReturnType<typeof getLightspeedCustomerSales>>
-type LightspeedTopCustomersResult = Awaited<ReturnType<typeof getLightspeedTopCustomers>>
+async function getLightspeedProductPurchasers(
+  userId: string,
+  args: {
+    query: string
+    start_date?: string
+    end_date?: string
+    limit?: number
+    include_contact_details?: boolean
+    include_walk_in?: boolean
+    rank_by?: 'matching_revenue' | 'sale_count' | 'units_sold' | 'last_purchase'
+    max_item_matches?: number
+    max_pages?: number
+  },
+  emit?: Emit,
+) {
+  const query = String(args.query || '').trim()
+  if (!query) return { error: 'query is required.' }
+
+  const startDate = assertIsoDate(args.start_date ?? '2010-01-01', 'start_date')
+  const endDate = assertIsoDate(args.end_date ?? getStoreToday(), 'end_date')
+  const limit = Math.min(Math.max(args.limit ?? 50, 1), 100)
+  const rankBy = args.rank_by ?? 'last_purchase'
+  const includeContactDetails = Boolean(args.include_contact_details)
+
+  const itemLookup = await resolveLightspeedProductItems(userId, query, {
+    maxItems: args.max_item_matches ?? 50,
+    emit,
+    phase: 'lightspeed_customers',
+  })
+  const matchedItemIds = itemLookup.matched_items.map(item => item.item_id)
+  const matchedItemIdSet = new Set(matchedItemIds)
+  const itemNameById = new Map(itemLookup.matched_items.map(item => [item.item_id, item.name]))
+
+  if (matchedItemIds.length === 0) {
+    return {
+      source: 'live_lightspeed_api',
+      query,
+      status: 'no_product_match',
+      date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+      matched_products: [],
+      customers: [],
+      customer_count: 0,
+      sales_scanned: 0,
+      matched_sale_lines: 0,
+      item_lookup: itemLookup,
+      complete: !itemLookup.page_cap_reached,
+      page_cap_reached: itemLookup.page_cap_reached,
+      recheck_required: true,
+      recheck_suggestions: productRecheckSuggestions(query),
+      message: `No strong live Lightspeed product match found for "${query}".`,
+    }
+  }
+
+  emitProgress(
+    emit,
+    'lightspeed_customers',
+    `Fetching sales that contain ${plural(matchedItemIds.length, 'matched product')} from ${startDate} to ${endDate}...`,
+  )
+  const { sales, pagesFetched, hitPageLimit } = await getLightspeedSalesForRange({
+    userId,
+    startDate,
+    endDate,
+    includeLines: true,
+    lineRelation: 'lines',
+    extraLoadRelations: ['Customer'],
+    saleLineItemIds: matchedItemIds,
+    maxPages: args.max_pages ?? 120,
+    onPage: progress => emitProgress(
+      emit,
+      'lightspeed_customers',
+      `Fetched ${plural(progress.totalCount, 'matching sale')} (${plural(progress.pagesFetched, 'sale page')})...`,
+    ),
+  })
+
+  emitProgress(emit, 'lightspeed_customers', `Aggregating ${plural(sales.length, 'matching sale')} by customer...`)
+
+  const byCustomer = new Map<string, {
+    customer_id: string
+    customer?: LightspeedCustomer
+    name: string
+    company: string | null
+    matching_revenue: number
+    units_sold: number
+    sale_ids: Set<string>
+    matched_sale_line_count: number
+    first_purchase_at: string | null
+    last_purchase_at: string | null
+    products: Map<string, { item_id: string; name: string; units_sold: number; revenue: number }>
+  }>()
+  let walkInSales = 0
+  let matchedSaleLines = 0
+
+  for (const sale of sales) {
+    const matchingLines = saleLines(sale).filter(line => {
+      const itemId = String(line.itemID || line.Item?.itemID || '')
+      return matchedItemIdSet.has(itemId) && positiveQuantity(line) > 0
+    })
+    if (matchingLines.length === 0) continue
+
+    const customerId = String(sale.customerID || sale.Customer?.customerID || '').trim()
+    if (!customerId || customerId === '0') {
+      walkInSales++
+      if (!args.include_walk_in) continue
+    }
+
+    const id = customerId || '0'
+    const completedAt = saleCompletedAt(sale)
+    const prev = byCustomer.get(id) ?? {
+      customer_id: id,
+      customer: sale.Customer,
+      name: sale.Customer ? customerName(sale.Customer) : id === '0' ? 'Walk-in / no customer' : `Customer ${id}`,
+      company: sale.Customer?.company || null,
+      matching_revenue: 0,
+      units_sold: 0,
+      sale_ids: new Set<string>(),
+      matched_sale_line_count: 0,
+      first_purchase_at: null,
+      last_purchase_at: null,
+      products: new Map<string, { item_id: string; name: string; units_sold: number; revenue: number }>(),
+    }
+    prev.customer = prev.customer ?? sale.Customer
+    prev.company = prev.company ?? sale.Customer?.company ?? null
+    prev.sale_ids.add(String(sale.saleID))
+    if (completedAt) {
+      if (!prev.first_purchase_at || completedAt < prev.first_purchase_at) prev.first_purchase_at = completedAt
+      if (!prev.last_purchase_at || completedAt > prev.last_purchase_at) prev.last_purchase_at = completedAt
+    }
+
+    for (const line of matchingLines) {
+      const itemId = String(line.itemID || line.Item?.itemID || '')
+      const qty = positiveQuantity(line)
+      const revenue = lineRevenue(line)
+      const product = prev.products.get(itemId) ?? {
+        item_id: itemId,
+        name: itemNameById.get(itemId) ?? lineName(line),
+        units_sold: 0,
+        revenue: 0,
+      }
+      product.units_sold += qty
+      product.revenue += revenue
+      prev.products.set(itemId, product)
+
+      prev.units_sold += qty
+      prev.matching_revenue += revenue
+      prev.matched_sale_line_count += 1
+      matchedSaleLines++
+    }
+
+    byCustomer.set(id, prev)
+  }
+
+  const ranked = Array.from(byCustomer.values())
+    .map(row => ({
+      customer_id: row.customer_id,
+      name: row.name,
+      company: row.company,
+      matching_revenue: roundMoney(row.matching_revenue),
+      units_sold: roundMoney(row.units_sold),
+      sale_count: row.sale_ids.size,
+      matched_sale_line_count: row.matched_sale_line_count,
+      first_purchase_at: row.first_purchase_at,
+      last_purchase_at: row.last_purchase_at,
+      matched_products: Array.from(row.products.values())
+        .map(product => ({
+          ...product,
+          units_sold: roundMoney(product.units_sold),
+          revenue: roundMoney(product.revenue),
+        }))
+        .sort((a, b) => b.units_sold - a.units_sold || b.revenue - a.revenue),
+    }))
+    .sort((a, b) => {
+      if (rankBy === 'matching_revenue') return b.matching_revenue - a.matching_revenue || b.units_sold - a.units_sold
+      if (rankBy === 'sale_count') return b.sale_count - a.sale_count || b.matching_revenue - a.matching_revenue
+      if (rankBy === 'units_sold') return b.units_sold - a.units_sold || b.matching_revenue - a.matching_revenue
+      return (b.last_purchase_at ?? '').localeCompare(a.last_purchase_at ?? '') || b.matching_revenue - a.matching_revenue
+    })
+
+  const returned = ranked.slice(0, limit)
+  const client = createLightspeedClient(userId)
+  const detailById = new Map<string, ReturnType<typeof customerRow>>()
+  const detailIds = returned
+    .filter(row => row.customer_id && row.customer_id !== '0')
+    .filter(row => includeContactDetails || row.name.startsWith('Customer '))
+    .map(row => row.customer_id)
+
+  if (detailIds.length > 0) {
+    emitProgress(emit, 'lightspeed_customers', `Fetching details for ${plural(detailIds.length, 'matched customer')}...`)
+  }
+  await Promise.all(detailIds.map(async customerId => {
+    try {
+      const customer = await client.getCustomer(
+        customerId,
+        includeContactDetails ? { load_relations: '["Contact"]' } : undefined,
+      )
+      detailById.set(customerId, customerRow(customer))
+    } catch {
+      // Keep purchaser rows even if a customer profile lookup fails.
+    }
+  }))
+
+  const customers = returned.map((row, index) => {
+    const details = detailById.get(row.customer_id)
+    return {
+      rank: index + 1,
+      customer_id: row.customer_id,
+      name: details?.name ?? row.name,
+      company: details?.company ?? row.company,
+      phones: includeContactDetails ? details?.phones ?? [] : [],
+      emails: includeContactDetails ? details?.emails ?? [] : [],
+      matching_revenue: row.matching_revenue,
+      units_sold: row.units_sold,
+      sale_count: row.sale_count,
+      matched_sale_line_count: row.matched_sale_line_count,
+      first_purchase_at: row.first_purchase_at ? formatStoreDateTime(row.first_purchase_at) : null,
+      last_purchase_at: row.last_purchase_at ? formatStoreDateTime(row.last_purchase_at) : null,
+      matched_products: row.matched_products,
+      matched_products_summary: row.matched_products
+        .slice(0, 4)
+        .map(product => `${compactQuantity(product.units_sold)} x ${product.name}`)
+        .join(', '),
+    }
+  })
+
+  const matchingRevenue = ranked.reduce((sum, row) => sum + row.matching_revenue, 0)
+  const unitsSold = ranked.reduce((sum, row) => sum + row.units_sold, 0)
+
+  return {
+    source: 'live_lightspeed_api',
+    query,
+    status: 'resolved',
+    date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+    rank_by: rankBy,
+    include_contact_details: includeContactDetails,
+    include_walk_in: Boolean(args.include_walk_in),
+    matched_products: itemLookup.matched_items,
+    matched_product_count: itemLookup.matched_items.length,
+    customer_count: ranked.length,
+    returned_count: customers.length,
+    row_limit: limit,
+    limited: ranked.length > customers.length,
+    customers,
+    matching_revenue: roundMoney(matchingRevenue),
+    units_sold: roundMoney(unitsSold),
+    matching_sales: sales.length,
+    matched_sale_lines: matchedSaleLines,
+    walk_in_or_unassigned_matching_sales: walkInSales,
+    item_lookup: itemLookup,
+    pages_fetched: pagesFetched,
+    sale_pages_fetched: pagesFetched,
+    complete: !hitPageLimit && !itemLookup.page_cap_reached,
+    page_cap_reached: hitPageLimit || itemLookup.page_cap_reached,
+    recheck_required: ranked.length === 0 || hitPageLimit || itemLookup.page_cap_reached,
+    recheck_suggestions: ranked.length === 0
+      ? [
+          'Matched products were found, but no customer-linked sales matched the date range. Recheck the date range or ask whether walk-in sales should be included.',
+          ...productRecheckSuggestions(query),
+        ]
+      : hitPageLimit || itemLookup.page_cap_reached
+        ? ['Split the date range or narrow the product scope to recover a complete customer-purchaser result.']
+        : [],
+	  }
+	}
+
+// ── Lightspeed SQL sales report helpers ───────────────────────────────────────
+
+type SalesReportCostSource = 'stored_sale_line_cost'
+
+interface SalesReportLineRow {
+  sale_id: string
+  sale_line_id: string
+  ticket_number: string | null
+  complete_time: string | null
+  line_time: string | null
+  employee_id: string | null
+  employee_name: string | null
+  category_id: string | null
+  category: string | null
+  item_id: string | null
+  sku: string | null
+  description: string | null
+  quantity: string | number | null
+  retail: string | number | null
+  subtotal: string | number | null
+  discount: string | number | null
+  total: string | number | null
+  customer_id: string | null
+  customer_full_name: string | null
+  cost: string | number | null
+  profit: string | number | null
+  margin_pct: string | number | null
+}
+
+interface SalesReportCoverage {
+  state_status: string | null
+  row_count: number
+  oldest_complete_time: string | null
+  latest_complete_time: string | null
+  oldest_sale_at: string | null
+  last_synced_at: string | null
+  complete: boolean
+}
+
+interface SalesReportFetchResult {
+  rows: SalesReportLineRow[]
+  rows_fetched: number
+  sql_pages_fetched: number
+  row_limit_reached: boolean
+  coverage: SalesReportCoverage
+  complete: boolean
+}
+
+interface GroupedSqlSale {
+  sale_id: string
+  completed_at: string | null
+  completed_at_utc: string | null
+  ticket_number: string | null
+  reference_number: string | null
+  customer_id: string | null
+  customer_name: string | null
+  employee_id: string | null
+  employee_name: string | null
+  lines: SalesReportLineRow[]
+  subtotal: number
+  tax: number
+  discounts: number
+  total: number
+  total_cost: number
+  gross_profit: number
+  units: number
+  line_count: number
+}
+
+const SALES_REPORT_SQL_SOURCE = 'sales_report_sql'
+const SALES_REPORT_COST_SOURCE: SalesReportCostSource = 'stored_sale_line_cost'
+const SALES_REPORT_SQL_PAGE_SIZE = 1000
+const SALES_REPORT_SQL_DEFAULT_MAX_ROWS = 100_000
+const SALES_REPORT_SQL_HARD_MAX_ROWS = 250_000
+const SALES_REPORT_SQL_COLUMNS = [
+  'sale_id',
+  'sale_line_id',
+  'ticket_number',
+  'complete_time',
+  'line_time',
+  'employee_id',
+  'employee_name',
+  'category_id',
+  'category',
+  'item_id',
+  'sku',
+  'description',
+  'quantity',
+  'retail',
+  'subtotal',
+  'discount',
+  'total',
+  'customer_id',
+  'customer_full_name',
+  'cost',
+  'profit',
+  'margin_pct',
+].join(',')
+
+function sqlDateBounds(startDate: string, endDate: string) {
+  return {
+    startUtc: storeLocalTimeToUtcTimestamp(startDate, '00:00:00'),
+    endUtc: storeLocalTimeToUtcTimestamp(endDate, '23:59:59'),
+  }
+}
+
+function sqlLikeTerm(value: string): string {
+  return sanitizeMatch(value).replace(/%/g, ' ').trim()
+}
+
+function sqlTextOrFilter(
+  terms: string[],
+  columns: Array<'description' | 'sku' | 'category' | 'customer_full_name' | 'customer_id' | 'item_id'>,
+): string | null {
+  const clauses: string[] = []
+  for (const rawTerm of terms) {
+    const term = sqlLikeTerm(rawTerm)
+    if (!term) continue
+    for (const column of columns) {
+      if ((column === 'customer_id' || column === 'item_id') && /^\d+$/.test(term)) {
+        clauses.push(`${column}.eq.${term}`)
+      } else if (column !== 'customer_id' && column !== 'item_id') {
+        clauses.push(`${column}.ilike.%${term}%`)
+      }
+    }
+  }
+  return clauses.length > 0 ? clauses.join(',') : null
+}
+
+function salesReportSearchTerms(query: string): string[] {
+  const terms = [
+    normalizeText(query),
+    queryTokens(query).map(singularToken).join(' '),
+    ...meaningfulQueryTokens(query),
+    ...itemDescriptionSearchTerms(query),
+  ]
+
+  return Array.from(new Set(
+    terms
+      .map(term => normalizeText(term))
+      .filter(term => term.length >= 2),
+  )).slice(0, 10)
+}
+
+async function getSalesReportCoverage(userId: string): Promise<SalesReportCoverage> {
+  const admin = createServiceRoleClient()
+  const [stateResult, countResult, newestResult, oldestResult] = await Promise.all([
+    admin
+      .from('lightspeed_sales_report_backfill_state')
+      .select('status, oldest_sale_at, last_synced_at')
+      .eq('user_id', userId)
+      .maybeSingle(),
+    admin
+      .from('lightspeed_sales_report_lines')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId),
+    admin
+      .from('lightspeed_sales_report_lines')
+      .select('complete_time')
+      .eq('user_id', userId)
+      .not('complete_time', 'is', null)
+      .order('complete_time', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    admin
+      .from('lightspeed_sales_report_lines')
+      .select('complete_time')
+      .eq('user_id', userId)
+      .not('complete_time', 'is', null)
+      .order('complete_time', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ])
+
+  if (stateResult.error) throw new Error(`Failed to read Lightspeed sales report state: ${stateResult.error.message}`)
+  if (countResult.error) throw new Error(`Failed to count Lightspeed sales report rows: ${countResult.error.message}`)
+  if (newestResult.error) throw new Error(`Failed to read latest Lightspeed sales report row: ${newestResult.error.message}`)
+  if (oldestResult.error) throw new Error(`Failed to read oldest Lightspeed sales report row: ${oldestResult.error.message}`)
+
+  const state = stateResult.data as {
+    status?: string | null
+    oldest_sale_at?: string | null
+    last_synced_at?: string | null
+  } | null
+
+  return {
+    state_status: state?.status ?? null,
+    row_count: countResult.count ?? 0,
+    oldest_complete_time: oldestResult.data?.complete_time ?? null,
+    latest_complete_time: newestResult.data?.complete_time ?? null,
+    oldest_sale_at: state?.oldest_sale_at ?? null,
+    last_synced_at: state?.last_synced_at ?? null,
+    complete: state?.status === 'complete',
+  }
+}
+
+async function fetchSalesReportRows(args: {
+  userId: string
+  startDate: string
+  endDate: string
+  order?: 'asc' | 'desc'
+  orFilter?: string | null
+  customerId?: string
+  maxRows?: number
+  emit?: Emit
+  phase?: string
+  progressLabel?: string
+}): Promise<SalesReportFetchResult> {
+  const admin = createServiceRoleClient()
+  const { startUtc, endUtc } = sqlDateBounds(args.startDate, args.endDate)
+  const maxRows = Math.min(Math.max(args.maxRows ?? SALES_REPORT_SQL_DEFAULT_MAX_ROWS, 1), SALES_REPORT_SQL_HARD_MAX_ROWS)
+  const rows: SalesReportLineRow[] = []
+  let sqlPagesFetched = 0
+  let rowLimitReached = false
+
+  for (let from = 0; from < maxRows; from += SALES_REPORT_SQL_PAGE_SIZE) {
+    const to = Math.min(from + SALES_REPORT_SQL_PAGE_SIZE - 1, maxRows - 1)
+    let query = admin
+      .from('lightspeed_sales_report_lines')
+      .select(SALES_REPORT_SQL_COLUMNS)
+      .eq('user_id', args.userId)
+      .not('complete_time', 'is', null)
+      .gte('complete_time', startUtc)
+      .lte('complete_time', endUtc)
+      .order('complete_time', { ascending: args.order === 'asc' })
+      .range(from, to)
+
+    if (args.customerId) query = query.eq('customer_id', args.customerId)
+    if (args.orFilter) query = query.or(args.orFilter)
+
+    const { data, error } = await query
+    if (error) throw new Error(`Failed to query Lightspeed sales report table: ${error.message}`)
+
+    const pageRows = (data ?? []) as unknown as SalesReportLineRow[]
+    rows.push(...pageRows)
+    sqlPagesFetched++
+    emitProgress(
+      args.emit,
+      args.phase ?? 'lightspeed_sales',
+      `${args.progressLabel ?? 'Reading sales report rows'}: ${plural(rows.length, 'row')} from SQL...`,
+    )
+
+    if (pageRows.length < SALES_REPORT_SQL_PAGE_SIZE) break
+    if (rows.length >= maxRows) rowLimitReached = true
+  }
+
+  const coverage = await getSalesReportCoverage(args.userId)
+  return {
+    rows,
+    rows_fetched: rows.length,
+    sql_pages_fetched: sqlPagesFetched,
+    row_limit_reached: rowLimitReached,
+    coverage,
+    complete: coverage.complete && !rowLimitReached,
+  }
+}
+
+function sqlLineQuantity(row: SalesReportLineRow): number {
+  return toNum(row.quantity)
+}
+
+function sqlPositiveQuantity(row: SalesReportLineRow): number {
+  return Math.max(0, sqlLineQuantity(row))
+}
+
+function sqlLineRevenue(row: SalesReportLineRow): number {
+  return toNum(row.subtotal)
+}
+
+function sqlLineTotal(row: SalesReportLineRow): number {
+  return toNum(row.total)
+}
+
+function sqlLineCost(row: SalesReportLineRow): number {
+  return toNum(row.cost)
+}
+
+function sqlLineProfit(row: SalesReportLineRow): number {
+  const storedProfit = toOptionalNum(row.profit)
+  if (storedProfit != null) return storedProfit
+  return sqlLineRevenue(row) - sqlLineCost(row)
+}
+
+function salesReportLineLabel(row: SalesReportLineRow): string {
+  return String(row.description || row.sku || row.item_id || 'Unknown item')
+}
+
+function salesReportItemsSummary(lines: SalesReportLineRow[], maxItems = 4): string {
+  const positiveLines = lines.filter(line => sqlPositiveQuantity(line) > 0)
+  if (positiveLines.length === 0) return 'No item detail'
+
+  const labels = positiveLines.slice(0, maxItems).map(line => {
+    const quantity = sqlPositiveQuantity(line)
+    const prefix = quantity === 1 ? '' : `${compactQuantity(quantity)} x `
+    return `${prefix}${salesReportLineLabel(line)}`
+  })
+  const extra = positiveLines.length - labels.length
+  return extra > 0 ? `${labels.join(', ')} +${extra} more` : labels.join(', ')
+}
+
+function groupSalesReportRows(rows: SalesReportLineRow[]): GroupedSqlSale[] {
+  const bySale = new Map<string, GroupedSqlSale>()
+
+  for (const row of rows) {
+    const saleId = String(row.sale_id || '').trim()
+    if (!saleId) continue
+
+    const prev = bySale.get(saleId) ?? {
+      sale_id: saleId,
+      completed_at: formatStoreDateTime(row.complete_time),
+      completed_at_utc: row.complete_time,
+      ticket_number: row.ticket_number ?? null,
+      reference_number: null,
+      customer_id: row.customer_id ?? null,
+      customer_name: row.customer_full_name ?? null,
+      employee_id: row.employee_id ?? null,
+      employee_name: row.employee_name ?? null,
+      lines: [],
+      subtotal: 0,
+      tax: 0,
+      discounts: 0,
+      total: 0,
+      total_cost: 0,
+      gross_profit: 0,
+      units: 0,
+      line_count: 0,
+    }
+
+    prev.lines.push(row)
+    prev.subtotal += sqlLineRevenue(row)
+    prev.total += sqlLineTotal(row)
+    prev.discounts += toNum(row.discount)
+    prev.total_cost += sqlLineCost(row)
+    prev.gross_profit += sqlLineProfit(row)
+    prev.units += sqlPositiveQuantity(row)
+    prev.line_count += 1
+    prev.tax = prev.total - prev.subtotal
+    prev.completed_at_utc = prev.completed_at_utc ?? row.complete_time
+    prev.completed_at = prev.completed_at ?? formatStoreDateTime(row.complete_time)
+    prev.ticket_number = prev.ticket_number ?? row.ticket_number ?? null
+    prev.customer_id = prev.customer_id ?? row.customer_id ?? null
+    prev.customer_name = prev.customer_name ?? row.customer_full_name ?? null
+    prev.employee_id = prev.employee_id ?? row.employee_id ?? null
+    prev.employee_name = prev.employee_name ?? row.employee_name ?? null
+    bySale.set(saleId, prev)
+  }
+
+  return Array.from(bySale.values()).sort((a, b) => (b.completed_at_utc ?? '').localeCompare(a.completed_at_utc ?? ''))
+}
+
+function sqlCompletionFields(fetchResult: SalesReportFetchResult) {
+  return {
+    rows_fetched: fetchResult.rows_fetched,
+    sql_pages_fetched: fetchResult.sql_pages_fetched,
+    complete: fetchResult.complete,
+    page_cap_reached: fetchResult.row_limit_reached,
+    row_limit_reached: fetchResult.row_limit_reached,
+    sales_report_coverage: fetchResult.coverage,
+  }
+}
+
+function sqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
+function inventorySqlSearchTerms(query: string): string[] {
+  const terms = [
+    normalizeText(query),
+    queryTokens(query).map(singularToken).join(' '),
+    ...meaningfulQueryTokens(query),
+    ...itemDescriptionSearchTerms(query),
+  ]
+
+  return Array.from(new Set(
+    terms
+      .map(term => normalizeText(term))
+      .filter(term => term.length >= 2),
+  )).slice(0, 10)
+}
+
+function numericSqlCell(row: SqlResultRow, key: string): number | null {
+  return toOptionalNum(row[key])
+}
+
+async function executeGeneratedLightspeedSql(userId: string, sql: string, limit: number) {
+  const admin = createServiceRoleClient()
+  const { data, error } = await admin.rpc(GENIE_LIGHTSPEED_SQL_RPC, {
+    p_sql: sql,
+    p_user_id: userId,
+    p_limit: limit,
+  })
+
+  if (error) throw new Error(error.message)
+
+  const result = isRecord(data) ? data : {}
+  return {
+    rows: coerceSqlRows(result.rows),
+    row_count: typeof result.row_count === 'number' ? result.row_count : coerceSqlRows(result.rows).length,
+    limit_applied: Boolean(result.limit_applied),
+  }
+}
+
+async function searchLightspeedInventorySql(
+  userId: string,
+  args: {
+    query: string
+    limit?: number
+    in_stock_only?: boolean
+    include_archived?: boolean
+  },
+  emit?: Emit,
+) {
+  const query = String(args.query ?? '').trim()
+  const limit = Math.min(Math.max(args.limit ?? 20, 1), 50)
+  const terms = inventorySqlSearchTerms(query)
+  const inStockOnly = args.in_stock_only ?? false
+  const includeArchived = args.include_archived ?? false
+
+  emitProgress(emit, 'lightspeed_inventory', `Searching the Lightspeed inventory mirror for "${query}"...`)
+
+  if (!query || terms.length === 0) {
+    return {
+      source: 'lightspeed_inventory_sql',
+      query,
+      matches: [],
+      returned_count: 0,
+      complete: true,
+      page_cap_reached: false,
+      recheck_required: true,
+      recheck_suggestions: ['Retry with a product name, SKU, barcode, brand, supplier, or category.'],
+      message: 'Inventory search needs a product, SKU, barcode, brand, supplier, or category term.',
+    }
+  }
+
+  const termPredicates = terms.map(term => {
+    const literal = sqlLiteral(`%${term}%`)
+    return [
+      `search_text LIKE ${literal}`,
+      `system_sku_l = ${sqlLiteral(term)}`,
+      `custom_sku_l = ${sqlLiteral(term)}`,
+      `manufacturer_sku_l = ${sqlLiteral(term)}`,
+      `upc_l = ${sqlLiteral(term)}`,
+      `ean_l = ${sqlLiteral(term)}`,
+      /^\d+$/.test(term) ? `item_id = ${sqlLiteral(term)}` : null,
+    ].filter(Boolean).join(' OR ')
+  })
+
+  const scoreParts = terms.flatMap(term => {
+    const like = sqlLiteral(`%${term}%`)
+    const literal = sqlLiteral(term)
+    return [
+      `CASE WHEN item_id = ${literal} THEN 180 ELSE 0 END`,
+      `CASE WHEN system_sku_l = ${literal} OR custom_sku_l = ${literal} OR manufacturer_sku_l = ${literal} OR upc_l = ${literal} OR ean_l = ${literal} THEN 160 ELSE 0 END`,
+      `CASE WHEN brand_l = ${literal} THEN 120 WHEN brand_l LIKE ${like} THEN 70 ELSE 0 END`,
+      `CASE WHEN supplier_l = ${literal} THEN 90 WHEN supplier_l LIKE ${like} THEN 45 ELSE 0 END`,
+      `CASE WHEN description_l LIKE ${like} THEN 50 ELSE 0 END`,
+      `CASE WHEN category_l LIKE ${like} THEN 35 ELSE 0 END`,
+      `CASE WHEN search_text LIKE ${like} THEN 10 ELSE 0 END`,
+    ]
+  })
+
+  const sql = `
+WITH base AS (
+  SELECT
+    *,
+    lower(coalesce(item_id, '')) AS item_id_l,
+    lower(coalesce(system_sku, '')) AS system_sku_l,
+    lower(coalesce(custom_sku, '')) AS custom_sku_l,
+    lower(coalesce(manufacturer_sku, '')) AS manufacturer_sku_l,
+    lower(coalesce(upc, '')) AS upc_l,
+    lower(coalesce(ean, '')) AS ean_l,
+    lower(coalesce(description, name, '')) AS description_l,
+    lower(coalesce(brand_name, '')) AS brand_l,
+    lower(coalesce(supplier_name, '')) AS supplier_l,
+    lower(coalesce(category_path, category_name, '')) AS category_l,
+    lower(concat_ws(' ', item_id, system_sku, custom_sku, manufacturer_sku, upc, ean, description, brand_name, supplier_name, category_path, category_name)) AS search_text
+  FROM ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}
+  WHERE ${includeArchived ? 'true' : 'archived = false'}
+    AND ${inStockOnly ? '(is_in_stock = true AND total_qoh > 0)' : 'true'}
+),
+scored AS (
+  SELECT
+    *,
+    (${scoreParts.join(' + ')}) AS score
+  FROM base
+  WHERE ${termPredicates.map(predicate => `(${predicate})`).join(' OR ')}
+)
+SELECT
+  item_id,
+  description AS name,
+  system_sku,
+  custom_sku,
+  manufacturer_sku,
+  upc,
+  ean,
+  brand_id,
+  brand_name,
+  supplier_id,
+  supplier_name,
+  category_id,
+  category_path AS category,
+  default_price AS price,
+  default_cost,
+  avg_cost AS average_cost,
+  COALESCE(NULLIF(avg_cost, 0), NULLIF(default_cost, 0)) AS effective_cost,
+  total_qoh,
+  total_sellable,
+  backorder,
+  reorder_point,
+  reorder_level,
+  is_in_stock,
+  archived,
+  publish_to_ecom,
+  primary_image_url,
+  lightspeed_created_at,
+  lightspeed_updated_at,
+  inventory_updated_at,
+  last_synced_at,
+  score
+FROM scored
+WHERE score > 0
+ORDER BY score DESC, is_in_stock DESC, total_qoh DESC, description ASC
+LIMIT ${limit}`
+
+  const result = await executeGeneratedLightspeedSql(userId, sql, limit)
+  const topScore = Math.max(0, ...result.rows.map(row => toNum(row.score)))
+  const strongThreshold = Math.max(45, topScore >= 120 ? topScore - 30 : topScore - 15)
+
+  const matches = result.rows.map(row => {
+    const price = numericSqlCell(row, 'price') ?? 0
+    const effectiveCost = numericSqlCell(row, 'effective_cost')
+    const retailProfit = effectiveCost != null ? price - effectiveCost : null
+    const score = toNum(row.score)
+
+    return {
+      item_id: String(row.item_id ?? ''),
+      name: String(row.name ?? row.item_id ?? ''),
+      system_sku: row.system_sku,
+      custom_sku: row.custom_sku,
+      manufacturer_sku: row.manufacturer_sku,
+      upc: row.upc,
+      ean: row.ean,
+      brand_id: row.brand_id,
+      brand: row.brand_name,
+      manufacturer: row.brand_name,
+      supplier_id: row.supplier_id,
+      supplier: row.supplier_name,
+      category_id: row.category_id,
+      category: row.category,
+      price,
+      default_cost: numericSqlCell(row, 'default_cost'),
+      average_cost: numericSqlCell(row, 'average_cost'),
+      effective_cost: effectiveCost,
+      retail_gross_profit: retailProfit != null ? roundMoney(retailProfit) : null,
+      retail_margin_percent: effectiveCost != null && price > 0 ? roundPercent((retailProfit ?? 0) / price * 100) : null,
+      total_qoh: numericSqlCell(row, 'total_qoh') ?? 0,
+      total_sellable: numericSqlCell(row, 'total_sellable') ?? 0,
+      backorder: numericSqlCell(row, 'backorder') ?? 0,
+      reorder_point: numericSqlCell(row, 'reorder_point') ?? 0,
+      reorder_level: numericSqlCell(row, 'reorder_level') ?? 0,
+      is_in_stock: row.is_in_stock,
+      archived: row.archived,
+      publish_to_ecom: row.publish_to_ecom,
+      primary_image_url: row.primary_image_url,
+      lightspeed_created_at: row.lightspeed_created_at,
+      lightspeed_updated_at: row.lightspeed_updated_at,
+      inventory_updated_at: row.inventory_updated_at,
+      last_synced_at: row.last_synced_at,
+      score,
+      confidence: score >= strongThreshold ? 'strong' : 'possible',
+      match_reasons: ['matched inventory mirror'],
+      shops: [],
+    }
+  })
+
+  const strongMatches = matches.filter(match => match.confidence === 'strong')
+
+  return {
+    source: 'lightspeed_inventory_sql',
+    query,
+    in_stock_only: inStockOnly,
+    include_archived: includeArchived,
+    matches,
+    returned_count: matches.length,
+    strong_match_count: strongMatches.length,
+    strong_matches_total_qoh: roundMoney(strongMatches.reduce((sum, match) => sum + match.total_qoh, 0)),
+    strong_matches_total_sellable: roundMoney(strongMatches.reduce((sum, match) => sum + match.total_sellable, 0)),
+    complete: !result.limit_applied,
+    page_cap_reached: result.limit_applied,
+    recheck_required: matches.length === 0 || result.limit_applied,
+    recheck_suggestions: matches.length === 0
+      ? inventoryRecheckSuggestions(query)
+      : result.limit_applied
+        ? ['Narrow the inventory query by product, brand, supplier, category, SKU, barcode, or in_stock_only.']
+        : [],
+    available_columns: GENIE_LIGHTSPEED_INVENTORY_SQL_SCHEMA,
+  }
+}
+
+async function getLightspeedStaleInventoryCashSql(
+  userId: string,
+  args: {
+    query?: string
+    no_sale_days?: number
+    old_stock_days?: number
+    min_stock_value?: number
+    limit?: number
+    history_start_date?: string
+  },
+  emit?: Emit,
+) {
+  const query = String(args.query ?? '').trim()
+  const today = getStoreToday()
+  const noSaleDays = Math.min(Math.max(Math.round(args.no_sale_days ?? 180), 1), 3650)
+  const oldStockDays = Math.min(Math.max(Math.round(args.old_stock_days ?? 180), 1), 3650)
+  const minStockValue = Math.max(0, Number(args.min_stock_value ?? 0))
+  const limit = Math.min(Math.max(args.limit ?? 25, 1), 100)
+  const recentStartDate = isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(today), -noSaleDays))
+  const oldStockCutoffDate = isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(today), -oldStockDays))
+  const historyStartDate = assertIsoDate(args.history_start_date ?? '2010-01-01', 'history_start_date')
+  const queryTerms = query ? inventorySqlSearchTerms(query) : []
+  const queryPredicate = queryTerms.length > 0
+    ? `AND (${queryTerms.map(term => {
+        const like = sqlLiteral(`%${term}%`)
+        return `lower(concat_ws(' ', i.item_id, i.system_sku, i.custom_sku, i.manufacturer_sku, i.upc, i.ean, i.description, i.brand_name, i.supplier_name, i.category_path, i.category_name)) LIKE ${like}`
+      }).join(' OR ')})`
+    : ''
+
+  emitProgress(emit, 'lightspeed_inventory', `Querying stale inventory cash from the SQL mirror...`)
+
+  const sql = `
+WITH recent_movement AS (
+  SELECT
+    item_id,
+    MAX(complete_time) AS last_recent_sale_at,
+    SUM(quantity) AS recent_units_sold
+  FROM ${GENIE_LIGHTSPEED_SQL_VIEW}
+  WHERE item_id IS NOT NULL
+    AND item_id <> ''
+    AND quantity > 0
+    AND complete_time >= ${sqlLiteral(recentStartDate)}::date
+    AND complete_time < (${sqlLiteral(today)}::date + interval '1 day')
+  GROUP BY item_id
+),
+lifetime_movement AS (
+  SELECT
+    item_id,
+    MAX(complete_time) AS last_sold_at,
+    SUM(quantity) AS lifetime_units_sold,
+    SUM(total) AS lifetime_revenue
+  FROM ${GENIE_LIGHTSPEED_SQL_VIEW}
+  WHERE item_id IS NOT NULL
+    AND item_id <> ''
+    AND quantity > 0
+    AND complete_time >= ${sqlLiteral(historyStartDate)}::date
+    AND complete_time < (${sqlLiteral(today)}::date + interval '1 day')
+  GROUP BY item_id
+),
+inventory AS (
+  SELECT
+    i.*,
+    COALESCE(NULLIF(i.avg_cost, 0), NULLIF(i.default_cost, 0), 0) AS unit_cost,
+    COALESCE(NULLIF(i.avg_cost, 0), NULLIF(i.default_cost, 0), 0) * i.total_qoh AS stock_value,
+    i.default_price * i.total_qoh AS retail_value
+  FROM ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW} i
+  WHERE i.archived = false
+    AND i.is_in_stock = true
+    AND i.total_qoh > 0
+    AND (i.lightspeed_created_at IS NULL OR i.lightspeed_created_at < ${sqlLiteral(oldStockCutoffDate)}::date)
+    ${queryPredicate}
+)
+SELECT
+  i.item_id,
+  i.description AS product,
+  i.system_sku,
+  i.custom_sku,
+  i.manufacturer_sku,
+  i.upc,
+  i.brand_name AS brand,
+  i.supplier_name AS supplier,
+  i.category_path AS category,
+  i.total_qoh AS qoh,
+  i.total_sellable AS sellable,
+  i.default_price AS retail_price,
+  i.unit_cost,
+  i.stock_value,
+  i.retail_value,
+  i.lightspeed_created_at,
+  CASE
+    WHEN i.lightspeed_created_at IS NULL THEN NULL
+    ELSE (${sqlLiteral(today)}::date - i.lightspeed_created_at::date)
+  END AS item_age_days,
+  lm.last_sold_at,
+  CASE
+    WHEN lm.last_sold_at IS NULL THEN NULL
+    ELSE (${sqlLiteral(today)}::date - lm.last_sold_at::date)
+  END AS days_since_last_sale,
+  COALESCE(lm.lifetime_units_sold, 0) AS lifetime_units_sold,
+  COALESCE(lm.lifetime_revenue, 0) AS lifetime_revenue
+FROM inventory i
+LEFT JOIN recent_movement rm ON rm.item_id = i.item_id
+LEFT JOIN lifetime_movement lm ON lm.item_id = i.item_id
+WHERE rm.item_id IS NULL
+  AND i.stock_value >= ${minStockValue}
+ORDER BY i.stock_value DESC, i.total_qoh DESC, i.description ASC
+LIMIT ${limit}`
+
+  const result = await executeGeneratedLightspeedSql(userId, sql, limit)
+  const rows = result.rows.map((row, index) => ({
+    rank: index + 1,
+    item_id: row.item_id,
+    product: row.product,
+    system_sku: row.system_sku,
+    custom_sku: row.custom_sku,
+    manufacturer_sku: row.manufacturer_sku,
+    upc: row.upc,
+    brand: row.brand,
+    supplier: row.supplier,
+    category: row.category,
+    qoh: numericSqlCell(row, 'qoh') ?? 0,
+    sellable: numericSqlCell(row, 'sellable') ?? 0,
+    retail_price: numericSqlCell(row, 'retail_price') ?? 0,
+    unit_cost: numericSqlCell(row, 'unit_cost') ?? 0,
+    stock_value: roundMoney(numericSqlCell(row, 'stock_value') ?? 0),
+    retail_value: roundMoney(numericSqlCell(row, 'retail_value') ?? 0),
+    lightspeed_created_at: row.lightspeed_created_at,
+    item_age_days: numericSqlCell(row, 'item_age_days'),
+    last_sold_at: row.last_sold_at,
+    days_since_last_sale: numericSqlCell(row, 'days_since_last_sale'),
+    lifetime_units_sold: numericSqlCell(row, 'lifetime_units_sold') ?? 0,
+    lifetime_revenue: roundMoney(numericSqlCell(row, 'lifetime_revenue') ?? 0),
+  }))
+
+  const totalStaleStockValue = rows.reduce((sum, row) => sum + row.stock_value, 0)
+  const totalStaleQoh = rows.reduce((sum, row) => sum + row.qoh, 0)
+
+  return {
+    source: 'lightspeed_inventory_sql',
+    query: query || null,
+    date_context: {
+      timezone: STORE_TIME_ZONE,
+      today,
+      no_sale_days: noSaleDays,
+      no_sale_since: recentStartDate,
+      old_stock_days: oldStockDays,
+      old_stock_created_before: oldStockCutoffDate,
+      history_start_date: historyStartDate,
+      min_stock_value: minStockValue,
+    },
+    rows,
+    returned_count: rows.length,
+    row_limit: limit,
+    limited: result.limit_applied,
+    stale_item_count: rows.length,
+    total_stale_stock_value: roundMoney(totalStaleStockValue),
+    total_stale_qoh: roundMoney(totalStaleQoh),
+    complete: !result.limit_applied,
+    page_cap_reached: result.limit_applied,
+    recheck_required: rows.length === 0 || result.limit_applied,
+    recheck_suggestions: rows.length === 0
+      ? ['Lower min_stock_value, reduce old_stock_days, reduce no_sale_days, or broaden the brand/category/product query.']
+      : result.limit_applied
+        ? ['Increase specificity by brand, supplier, category, or a higher min_stock_value.']
+        : [],
+  }
+}
+
+function salesReportProductScore(query: string, row: SalesReportLineRow): { score: number; reasons: string[] } {
+  const reasons: string[] = []
+  let score = 0
+  const normalizedQuery = normalizeText(query)
+  const sku = normalizeText(row.sku)
+  const itemId = normalizeText(row.item_id)
+
+  if (normalizedQuery && sku && normalizedQuery === sku) {
+    score += 140
+    reasons.push('matched SKU')
+  }
+  if (normalizedQuery && itemId && normalizedQuery === itemId) {
+    score += 130
+    reasons.push('matched item ID')
+  }
+
+  const descriptionScore = fuzzyTextScore(query, row.description)
+  if (descriptionScore > 0) {
+    score += descriptionScore
+    reasons.push('matched item description')
+  }
+
+  const categoryScore = fuzzyTextScore(query, row.category)
+  if (categoryScore > 0) {
+    score += Math.round(categoryScore * 0.8)
+    reasons.push('matched category')
+  }
+
+  const skuScore = fuzzyTextScore(query, row.sku)
+  if (skuScore > 0) {
+    score += skuScore
+    reasons.push('matched SKU')
+  }
+
+  const searchText = normalizeText([row.description, row.sku, row.category, row.item_id].filter(Boolean).join(' '))
+  const meaningfulTokens = meaningfulQueryTokens(query)
+  const matchedTokens = meaningfulTokens.filter(token => hasToken(searchText, token))
+  if (meaningfulTokens.length > 0 && matchedTokens.length === meaningfulTokens.length) {
+    score += 35
+    reasons.push('matched all product terms')
+  } else if (matchedTokens.length > 0) {
+    score += matchedTokens.length * 8
+    reasons.push('matched product terms')
+  }
+
+  if (queryHasBikeIntent(query) && searchText && !textHasBikeIntent(searchText)) {
+    score -= 25
+  }
+
+  return { score: Math.max(0, score), reasons: Array.from(new Set(reasons)) }
+}
+
+function filterSalesReportProductRows(query: string, rows: SalesReportLineRow[]) {
+  const scored = rows
+    .map(row => ({ row, ...salesReportProductScore(query, row) }))
+    .filter(result => result.score > 0 && sqlPositiveQuantity(result.row) > 0)
+    .sort((a, b) => b.score - a.score || salesReportLineLabel(a.row).localeCompare(salesReportLineLabel(b.row)))
+  const topScore = scored[0]?.score ?? 0
+  const threshold = topScore >= 100
+    ? Math.max(65, topScore - 30)
+    : topScore >= 60
+      ? Math.max(40, topScore - 20)
+      : topScore >= 25
+        ? topScore
+        : 0
+  const matched = threshold > 0 ? scored.filter(result => result.score >= threshold).map(result => result.row) : []
+
+  return {
+    matchedRows: matched,
+    scored,
+    topScore,
+    threshold,
+  }
+}
+
+function salesReportProductLookupPayload(query: string, candidateRows: SalesReportLineRow[], matchedRows: SalesReportLineRow[]) {
+  const byItem = new Map<string, {
+    item_id: string
+    name: string
+    sku: string | null
+    category: string | null
+    score: number
+    match_reasons: string[]
+  }>()
+
+  for (const row of matchedRows) {
+    const key = String(row.item_id || row.sku || row.description || 'unknown')
+    const match = salesReportProductScore(query, row)
+    const prev = byItem.get(key)
+    if (!prev || match.score > prev.score) {
+      byItem.set(key, {
+        item_id: String(row.item_id || key),
+        name: salesReportLineLabel(row),
+        sku: row.sku ?? null,
+        category: row.category ?? null,
+        score: match.score,
+        match_reasons: match.reasons,
+      })
+    }
+  }
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    search_terms: salesReportSearchTerms(query),
+    candidates_found: candidateRows.length,
+    matched_items: Array.from(byItem.values()).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)),
+    top_score: Math.max(0, ...Array.from(byItem.values()).map(row => row.score)),
+    note: 'Matched against stored sale-line description, SKU, item ID, and category fields in lightspeed_sales_report_lines.',
+  }
+}
+
+function salesReportProductOrFilter(query: string): string | null {
+  return sqlTextOrFilter(salesReportSearchTerms(query), ['description', 'sku', 'category', 'item_id'])
+}
+
+async function getLightspeedSalesSummarySql(
+  userId: string,
+  args: { start_date: string; end_date: string; cost_method?: CostMethod; max_pages?: number },
+  emit?: Emit,
+) {
+  const startDate = assertIsoDate(args.start_date, 'start_date')
+  const endDate = assertIsoDate(args.end_date, 'end_date')
+  emitProgress(emit, 'lightspeed_sales', `Querying sales report SQL from ${startDate} to ${endDate}...`)
+  const result = await fetchSalesReportRows({
+    userId,
+    startDate,
+    endDate,
+    emit,
+    progressLabel: 'Reading completed sale lines',
+  })
+  const sales = groupSalesReportRows(result.rows)
+  emitProgress(emit, 'lightspeed_sales', `Aggregating ${plural(sales.length, 'sale')} from SQL rows...`)
+
+  const grossSales = sales.reduce((sum, sale) => sum + sale.total, 0)
+  const subtotal = sales.reduce((sum, sale) => sum + sale.subtotal, 0)
+  const tax = sales.reduce((sum, sale) => sum + sale.tax, 0)
+  const discounts = sales.reduce((sum, sale) => sum + sale.discounts, 0)
+  const totalCost = sales.reduce((sum, sale) => sum + sale.total_cost, 0)
+  const profit = profitMetrics(subtotal, totalCost)
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+    cost_method: args.cost_method ?? 'avg',
+    cost_source: SALES_REPORT_COST_SOURCE,
+    sale_count: sales.length,
+    gross_sales: roundMoney(grossSales),
+    net_sales: roundMoney(subtotal),
+    subtotal: roundMoney(subtotal),
+    tax: roundMoney(tax),
+    discounts: roundMoney(discounts),
+    total_cost: profit.total_cost,
+    gross_profit: profit.gross_profit,
+    gross_margin_percent: profit.margin_percent,
+    average_sale_value: sales.length > 0 ? roundMoney(grossSales / sales.length) : 0,
+    ...sqlCompletionFields(result),
+  }
+}
+
+async function getLightspeedSalesListSql(
+  userId: string,
+  args: {
+    start_date: string
+    end_date: string
+    limit?: number
+    include_line_items?: boolean
+    include_profit?: boolean
+    cost_method?: CostMethod
+    max_pages?: number
+  },
+  emit?: Emit,
+) {
+  const startDate = assertIsoDate(args.start_date, 'start_date')
+  const endDate = assertIsoDate(args.end_date, 'end_date')
+  const includeLines = args.include_line_items ?? true
+  const includeProfit = args.include_profit ?? false
+  const limit = Math.min(Math.max(args.limit ?? 300, 1), 500)
+  emitProgress(emit, 'lightspeed_sales', `Querying sale transactions from the sales report table for ${startDate} to ${endDate}...`)
+  const result = await fetchSalesReportRows({
+    userId,
+    startDate,
+    endDate,
+    order: 'desc',
+    emit,
+    progressLabel: 'Reading transaction rows',
+  })
+  const sales = groupSalesReportRows(result.rows)
+  const rows = sales.slice(0, limit).map(sale => ({
+    sale_id: sale.sale_id,
+    completed_at: sale.completed_at,
+    completed_at_utc: sale.completed_at_utc,
+    ticket_number: sale.ticket_number,
+    reference_number: sale.reference_number,
+    customer_id: sale.customer_id,
+    customer_name: sale.customer_name,
+    items: includeLines ? salesReportItemsSummary(sale.lines) : null,
+    units: includeLines ? roundMoney(sale.units) : null,
+    line_count: includeLines ? sale.line_count : null,
+    subtotal: roundMoney(sale.subtotal),
+    tax: roundMoney(sale.tax),
+    discounts: roundMoney(sale.discounts),
+    total: roundMoney(sale.total),
+    total_cost: includeProfit ? roundMoney(sale.total_cost) : null,
+    gross_profit: includeProfit ? roundMoney(sale.gross_profit) : null,
+    gross_margin_percent: includeProfit && sale.subtotal > 0 ? roundPercent((sale.gross_profit / sale.subtotal) * 100) : null,
+    shop_id: null,
+    register_id: null,
+    employee_id: sale.employee_id,
+  }))
+  const netSales = sales.reduce((sum, sale) => sum + sale.subtotal, 0)
+  const totalCost = sales.reduce((sum, sale) => sum + sale.total_cost, 0)
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+    total_sales: sales.length,
+    returned_count: rows.length,
+    row_limit: limit,
+    limited: sales.length > rows.length,
+    include_line_items: includeLines,
+    include_profit: includeProfit,
+    cost_method: args.cost_method ?? 'avg',
+    cost_source: SALES_REPORT_COST_SOURCE,
+    sales: rows,
+    gross_sales: roundMoney(sales.reduce((sum, sale) => sum + sale.total, 0)),
+    net_sales: roundMoney(netSales),
+    total_cost: roundMoney(totalCost),
+    gross_profit: roundMoney(netSales - totalCost),
+    gross_margin_percent: netSales > 0 ? roundPercent(((netSales - totalCost) / netSales) * 100) : null,
+    ...sqlCompletionFields(result),
+  }
+}
+
+async function getLightspeedSalesTimeseriesSql(
+  userId: string,
+  args: {
+    start_date: string
+    end_date: string
+    bucket?: SalesBucket
+    metric?: SalesTimeseriesMetric
+    cost_method?: CostMethod
+    max_pages?: number
+  },
+  emit?: Emit,
+) {
+  const startDate = assertIsoDate(args.start_date, 'start_date')
+  const endDate = assertIsoDate(args.end_date, 'end_date')
+  const bucket = args.bucket ?? defaultSalesBucket(startDate, endDate)
+  const metric = args.metric ?? 'gross_sales'
+  const rangeStart = isoDateToUtcDate(startDate)
+  const rangeEnd = isoDateToUtcDate(endDate)
+  emitProgress(emit, 'lightspeed_sales', `Querying SQL sales rows for ${salesMetricLabel(metric).toLowerCase()} by ${bucket}...`)
+  const result = await fetchSalesReportRows({
+    userId,
+    startDate,
+    endDate,
+    order: 'asc',
+    emit,
+    progressLabel: 'Reading sales chart rows',
+  })
+  const sales = groupSalesReportRows(result.rows)
+
+  const bucketRows = new Map<string, {
+    label: string
+    bucket_start: string
+    bucket_end: string
+    sale_count: number
+    gross_sales: number
+    net_sales: number
+    total_cost: number
+  }>()
+
+  for (
+    let cursor = startOfSalesBucket(rangeStart, bucket);
+    cursor.getTime() <= rangeEnd.getTime();
+    cursor = nextSalesBucketStart(cursor, bucket)
+  ) {
+    const bucketStart = clampUtcDate(cursor, rangeStart, rangeEnd)
+    const bucketEnd = clampUtcDate(endOfSalesBucket(cursor, bucket), rangeStart, rangeEnd)
+    bucketRows.set(isoDateFromUtcDate(cursor), {
+      label: salesBucketLabel(cursor, bucket),
+      bucket_start: isoDateFromUtcDate(bucketStart),
+      bucket_end: isoDateFromUtcDate(bucketEnd),
+      sale_count: 0,
+      gross_sales: 0,
+      net_sales: 0,
+      total_cost: 0,
+    })
+  }
+
+  for (const sale of sales) {
+    if (!sale.completed_at_utc) continue
+    const saleDateText = storeDateFromDate(new Date(sale.completed_at_utc))
+    const saleDate = isoDateToUtcDate(saleDateText)
+    const key = isoDateFromUtcDate(startOfSalesBucket(saleDate, bucket))
+    const row = bucketRows.get(key)
+    if (!row) continue
+
+    row.sale_count += 1
+    row.gross_sales += sale.total
+    row.net_sales += sale.subtotal
+    row.total_cost += sale.total_cost
+  }
+
+  const buckets = Array.from(bucketRows.values()).map(row => ({
+    ...row,
+    gross_sales: roundMoney(row.gross_sales),
+    net_sales: roundMoney(row.net_sales),
+    total_cost: roundMoney(row.total_cost),
+    gross_profit: roundMoney(row.net_sales - row.total_cost),
+    gross_margin_percent: row.net_sales > 0 ? roundPercent(((row.net_sales - row.total_cost) / row.net_sales) * 100) : null,
+    average_sale_value: row.sale_count > 0 ? roundMoney(row.gross_sales / row.sale_count) : 0,
+  }))
+  const netSales = sales.reduce((sum, sale) => sum + sale.subtotal, 0)
+  const totalCost = sales.reduce((sum, sale) => sum + sale.total_cost, 0)
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+    cost_method: args.cost_method ?? 'avg',
+    cost_source: SALES_REPORT_COST_SOURCE,
+    bucket,
+    metric,
+    metric_label: salesMetricLabel(metric),
+    bucket_label: salesBucketLabelTitle(bucket),
+    buckets,
+    sale_count: sales.length,
+    gross_sales: roundMoney(sales.reduce((sum, sale) => sum + sale.total, 0)),
+    net_sales: roundMoney(netSales),
+    total_cost: roundMoney(totalCost),
+    gross_profit: roundMoney(netSales - totalCost),
+    gross_margin_percent: netSales > 0 ? roundPercent(((netSales - totalCost) / netSales) * 100) : null,
+    ...sqlCompletionFields(result),
+  }
+}
+
+async function getLightspeedTopSoldProductsSql(
+  userId: string,
+  args: {
+    start_date: string
+    end_date: string
+    limit?: number
+    query?: string
+    rank_by?: 'quantity' | 'revenue' | 'gross_profit' | 'margin_percent'
+    include_manual_lines?: boolean
+    cost_method?: CostMethod
+    max_pages?: number
+  },
+  emit?: Emit,
+) {
+  const startDate = assertIsoDate(args.start_date, 'start_date')
+  const endDate = assertIsoDate(args.end_date, 'end_date')
+  const query = String(args.query ?? '').trim()
+  const rankBy = args.rank_by ?? 'quantity'
+  const limit = Math.min(Math.max(args.limit ?? 5, 1), 20)
+  emitProgress(
+    emit,
+    'lightspeed_sales',
+    query
+      ? `Querying matching sale lines for "${query}" from SQL...`
+      : `Querying sold product lines from SQL for ${startDate} to ${endDate}...`,
+  )
+  const result = await fetchSalesReportRows({
+    userId,
+    startDate,
+    endDate,
+    orFilter: query ? salesReportProductOrFilter(query) : null,
+    emit,
+    progressLabel: query ? 'Reading candidate product lines' : 'Reading product sale lines',
+  })
+  const filtered = query ? filterSalesReportProductRows(query, result.rows) : null
+  const rowsToAggregate = (query ? filtered?.matchedRows ?? [] : result.rows)
+    .filter(row => sqlPositiveQuantity(row) > 0)
+  const itemLookup = query ? salesReportProductLookupPayload(query, result.rows, rowsToAggregate) : null
+
+  const byItem = new Map<string, {
+    item_id: string
+    name: string
+    sku: string | null
+    category: string | null
+    units_sold: number
+    revenue: number
+    total_cost: number
+    gross_profit: number
+    sale_line_count: number
+    current_default_cost: number | null
+    current_average_cost: number | null
+  }>()
+  let excludedManualLines = 0
+
+  for (const row of rowsToAggregate) {
+    const itemId = String(row.item_id || row.sku || row.description || 'unknown')
+    if (!args.include_manual_lines && (!row.item_id || row.item_id === '0')) {
+      excludedManualLines++
+      continue
+    }
+
+    const quantity = sqlPositiveQuantity(row)
+    const revenue = sqlLineRevenue(row)
+    const totalCost = sqlLineCost(row)
+    const prev = byItem.get(itemId) ?? {
+      item_id: itemId,
+      name: salesReportLineLabel(row),
+      sku: row.sku ?? null,
+      category: row.category ?? null,
+      units_sold: 0,
+      revenue: 0,
+      total_cost: 0,
+      gross_profit: 0,
+      sale_line_count: 0,
+      current_default_cost: null,
+      current_average_cost: null,
+    }
+
+    prev.units_sold += quantity
+    prev.revenue += revenue
+    prev.total_cost += totalCost
+    prev.gross_profit += revenue - totalCost
+    prev.sale_line_count += 1
+    byItem.set(itemId, prev)
+  }
+
+  const top = Array.from(byItem.values())
+    .map(row => ({
+      ...row,
+      units_sold: roundMoney(row.units_sold),
+      revenue: roundMoney(row.revenue),
+      average_unit_cost: row.units_sold > 0 ? roundMoney(row.total_cost / row.units_sold) : null,
+      total_cost: roundMoney(row.total_cost),
+      gross_profit: roundMoney(row.gross_profit),
+      margin_percent: row.revenue > 0 ? roundPercent((row.gross_profit / row.revenue) * 100) : null,
+    }))
+    .sort((a, b) => (
+      rankBy === 'revenue'
+        ? b.revenue - a.revenue || b.units_sold - a.units_sold
+        : rankBy === 'gross_profit'
+          ? b.gross_profit - a.gross_profit || b.revenue - a.revenue
+          : rankBy === 'margin_percent'
+            ? (b.margin_percent ?? -Infinity) - (a.margin_percent ?? -Infinity) || b.gross_profit - a.gross_profit
+            : b.units_sold - a.units_sold || b.revenue - a.revenue
+    ))
+    .slice(0, limit)
+  const netSales = Array.from(byItem.values()).reduce((sum, row) => sum + row.revenue, 0)
+  const totalCost = Array.from(byItem.values()).reduce((sum, row) => sum + row.total_cost, 0)
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+    cost_method: args.cost_method ?? 'avg',
+    cost_source: SALES_REPORT_COST_SOURCE,
+    rank_by: rankBy,
+    query: query || null,
+    sql_strategy: query ? 'date_range_plus_sale_line_text_filter' : 'date_range_sale_line_aggregate',
+    sales_scanned: new Set(rowsToAggregate.map(row => row.sale_id)).size,
+    matched_sale_lines: rowsToAggregate.length - excludedManualLines,
+    excluded_manual_lines: excludedManualLines,
+    net_sales: roundMoney(netSales),
+    total_cost: roundMoney(totalCost),
+    gross_profit: roundMoney(netSales - totalCost),
+    gross_margin_percent: netSales > 0 ? roundPercent(((netSales - totalCost) / netSales) * 100) : null,
+    top_products: top,
+    item_lookup: itemLookup,
+    recheck_required: Boolean(query && top.length === 0) || result.row_limit_reached || !result.coverage.complete,
+    recheck_suggestions: query && top.length === 0
+      ? [
+          'Retry with a shorter product, category, SKU, model, brand, or service term found in sale-line descriptions.',
+          'If the brand is not stored in sale-line descriptions, wait for the inventory table to add manufacturer/brand fields.',
+        ]
+      : result.row_limit_reached || !result.coverage.complete
+        ? ['The SQL sales report is still backfilling or reached the row limit; wait for backfill completion or narrow the date range.']
+        : [],
+    ...sqlCompletionFields(result),
+  }
+}
+
+async function getLightspeedSoldProductTimeseriesSql(
+  userId: string,
+  args: {
+    start_date: string
+    end_date: string
+    query: string
+    bucket?: SalesBucket
+    metric?: SoldProductTimeseriesMetric
+    include_manual_lines?: boolean
+    cost_method?: CostMethod
+    max_pages?: number
+  },
+  emit?: Emit,
+) {
+  const startDate = assertIsoDate(args.start_date, 'start_date')
+  const endDate = assertIsoDate(args.end_date, 'end_date')
+  const query = args.query.trim()
+  if (!query) throw new Error('query is required.')
+
+  const bucket = args.bucket ?? defaultSalesBucket(startDate, endDate)
+  const metric = args.metric ?? 'units_sold'
+  const rangeStart = isoDateToUtcDate(startDate)
+  const rangeEnd = isoDateToUtcDate(endDate)
+  emitProgress(emit, 'lightspeed_sales', `Querying SQL sale lines for "${query}" by ${bucket}...`)
+  const result = await fetchSalesReportRows({
+    userId,
+    startDate,
+    endDate,
+    order: 'asc',
+    orFilter: salesReportProductOrFilter(query),
+    emit,
+    progressLabel: 'Reading matching trend lines',
+  })
+  const filtered = filterSalesReportProductRows(query, result.rows)
+  const rowsToAggregate = filtered.matchedRows.filter(row => sqlPositiveQuantity(row) > 0)
+
+  const bucketRows = new Map<string, {
+    label: string
+    bucket_start: string
+    bucket_end: string
+    units_sold: number
+    revenue: number
+    total_cost: number
+    gross_profit: number
+    sale_line_count: number
+  }>()
+
+  for (
+    let cursor = startOfSalesBucket(rangeStart, bucket);
+    cursor.getTime() <= rangeEnd.getTime();
+    cursor = nextSalesBucketStart(cursor, bucket)
+  ) {
+    const bucketStart = clampUtcDate(cursor, rangeStart, rangeEnd)
+    const bucketEnd = clampUtcDate(endOfSalesBucket(cursor, bucket), rangeStart, rangeEnd)
+    bucketRows.set(isoDateFromUtcDate(cursor), {
+      label: salesBucketLabel(cursor, bucket),
+      bucket_start: isoDateFromUtcDate(bucketStart),
+      bucket_end: isoDateFromUtcDate(bucketEnd),
+      units_sold: 0,
+      revenue: 0,
+      total_cost: 0,
+      gross_profit: 0,
+      sale_line_count: 0,
+    })
+  }
+
+  const matchedProducts = new Map<string, {
+    item_id: string
+    name: string
+    units_sold: number
+    revenue: number
+    total_cost: number
+    gross_profit: number
+    sale_line_count: number
+    current_default_cost: number | null
+    current_average_cost: number | null
+  }>()
+  let excludedManualLines = 0
+
+  for (const row of rowsToAggregate) {
+    if (!row.complete_time) continue
+    const itemId = String(row.item_id || row.sku || row.description || 'unknown')
+    if (!args.include_manual_lines && (!row.item_id || row.item_id === '0')) {
+      excludedManualLines++
+      continue
+    }
+
+    const saleDate = isoDateToUtcDate(storeDateFromDate(new Date(row.complete_time)))
+    const bucketRow = bucketRows.get(isoDateFromUtcDate(startOfSalesBucket(saleDate, bucket)))
+    if (!bucketRow) continue
+
+    const quantity = sqlPositiveQuantity(row)
+    const revenue = sqlLineRevenue(row)
+    const totalCost = sqlLineCost(row)
+    bucketRow.units_sold += quantity
+    bucketRow.revenue += revenue
+    bucketRow.total_cost += totalCost
+    bucketRow.gross_profit += revenue - totalCost
+    bucketRow.sale_line_count += 1
+
+    const product = matchedProducts.get(itemId) ?? {
+      item_id: itemId,
+      name: salesReportLineLabel(row),
+      units_sold: 0,
+      revenue: 0,
+      total_cost: 0,
+      gross_profit: 0,
+      sale_line_count: 0,
+      current_default_cost: null,
+      current_average_cost: null,
+    }
+    product.units_sold += quantity
+    product.revenue += revenue
+    product.total_cost += totalCost
+    product.gross_profit += revenue - totalCost
+    product.sale_line_count += 1
+    matchedProducts.set(itemId, product)
+  }
+
+  const buckets = Array.from(bucketRows.values()).map(row => ({
+    ...row,
+    units_sold: roundMoney(row.units_sold),
+    revenue: roundMoney(row.revenue),
+    total_cost: roundMoney(row.total_cost),
+    gross_profit: roundMoney(row.gross_profit),
+    margin_percent: row.revenue > 0 ? roundPercent((row.gross_profit / row.revenue) * 100) : null,
+    average_unit_cost: row.units_sold > 0 ? roundMoney(row.total_cost / row.units_sold) : null,
+  }))
+  const totals = buckets.reduce((sum, row) => ({
+    units_sold: sum.units_sold + row.units_sold,
+    revenue: sum.revenue + row.revenue,
+    total_cost: sum.total_cost + row.total_cost,
+    gross_profit: sum.gross_profit + row.gross_profit,
+    sale_line_count: sum.sale_line_count + row.sale_line_count,
+  }), { units_sold: 0, revenue: 0, total_cost: 0, gross_profit: 0, sale_line_count: 0 })
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+    cost_method: args.cost_method ?? 'avg',
+    cost_source: SALES_REPORT_COST_SOURCE,
+    query,
+    bucket,
+    bucket_label: salesBucketLabelTitle(bucket),
+    metric,
+    metric_label: soldProductMetricLabel(metric),
+    buckets,
+    totals: {
+      units_sold: roundMoney(totals.units_sold),
+      revenue: roundMoney(totals.revenue),
+      total_cost: roundMoney(totals.total_cost),
+      gross_profit: roundMoney(totals.gross_profit),
+      margin_percent: totals.revenue > 0 ? roundPercent((totals.gross_profit / totals.revenue) * 100) : null,
+      average_unit_cost: totals.units_sold > 0 ? roundMoney(totals.total_cost / totals.units_sold) : null,
+      sale_line_count: totals.sale_line_count,
+    },
+    matched_products: Array.from(matchedProducts.values())
+      .map(row => ({
+        ...row,
+        units_sold: roundMoney(row.units_sold),
+        revenue: roundMoney(row.revenue),
+        total_cost: roundMoney(row.total_cost),
+        gross_profit: roundMoney(row.gross_profit),
+        margin_percent: row.revenue > 0 ? roundPercent((row.gross_profit / row.revenue) * 100) : null,
+        average_unit_cost: row.units_sold > 0 ? roundMoney(row.total_cost / row.units_sold) : null,
+      }))
+      .sort((a, b) => b.units_sold - a.units_sold || b.revenue - a.revenue)
+      .slice(0, 12),
+    matched_item_candidates: salesReportProductLookupPayload(query, result.rows, rowsToAggregate).matched_items,
+    item_lookup: salesReportProductLookupPayload(query, result.rows, rowsToAggregate),
+    sales_scanned: new Set(rowsToAggregate.map(row => row.sale_id)).size,
+    matched_sale_lines: rowsToAggregate.length - excludedManualLines,
+    excluded_manual_lines: excludedManualLines,
+    recheck_required: rowsToAggregate.length === 0 || result.row_limit_reached || !result.coverage.complete,
+    recheck_suggestions: rowsToAggregate.length === 0
+      ? [
+          'Retry with a shorter product, category, SKU, model, brand, or service term stored in sale-line descriptions.',
+          'If this is a current inventory/brand field not present in sale lines, wait for the inventory table.',
+        ]
+      : result.row_limit_reached || !result.coverage.complete
+        ? ['The SQL sales report is still backfilling or reached the row limit; wait for backfill completion or narrow the date range.']
+        : [],
+    ...sqlCompletionFields(result),
+  }
+}
+
+function salesReportCustomerBase(customerId: string | null, name: string | null, extra?: Record<string, string | number | boolean | null>) {
+  return {
+    customer_id: customerId || '0',
+    name: name || (customerId && customerId !== '0' ? `Customer ${customerId}` : 'Walk-in / no customer'),
+    company: null,
+    phones: [] as Array<{ number: string; use_type: string | null }>,
+    emails: [] as Array<{ address: string; use_type: string | null }>,
+    addresses: [] as Array<{
+      address1: string
+      address2: string | null
+      city: string | null
+      state: string | null
+      zip: string | null
+      country: string | null
+    }>,
+    no_email: false,
+    no_phone: false,
+    no_mail: false,
+    created_at: null,
+    updated_at: null,
+    archived: false,
+    ...extra,
+  }
+}
+
+async function fetchSalesReportCustomerRows(args: {
+  userId: string
+  query?: string
+  customerId?: string
+  maxRows?: number
+  emit?: Emit
+}): Promise<{ rows: SalesReportLineRow[]; coverage: SalesReportCoverage; row_limit_reached: boolean; sql_pages_fetched: number }> {
+  const admin = createServiceRoleClient()
+  const maxRows = Math.min(Math.max(args.maxRows ?? 20_000, 1), SALES_REPORT_SQL_HARD_MAX_ROWS)
+  const terms = args.query ? Array.from(new Set([normalizeText(args.query), ...queryTokens(args.query)].filter(term => term.length >= 2))) : []
+  const orFilter = args.query ? sqlTextOrFilter(terms, ['customer_full_name', 'customer_id']) : null
+  const rows: SalesReportLineRow[] = []
+  let sqlPagesFetched = 0
+  let rowLimitReached = false
+
+  for (let from = 0; from < maxRows; from += SALES_REPORT_SQL_PAGE_SIZE) {
+    const to = Math.min(from + SALES_REPORT_SQL_PAGE_SIZE - 1, maxRows - 1)
+    let query = admin
+      .from('lightspeed_sales_report_lines')
+      .select(SALES_REPORT_SQL_COLUMNS)
+      .eq('user_id', args.userId)
+      .not('customer_id', 'is', null)
+      .order('complete_time', { ascending: false })
+      .range(from, to)
+
+    if (args.customerId) query = query.eq('customer_id', args.customerId)
+    if (orFilter) query = query.or(orFilter)
+
+    const { data, error } = await query
+    if (error) throw new Error(`Failed to query Lightspeed customer rows from sales report table: ${error.message}`)
+    const pageRows = (data ?? []) as unknown as SalesReportLineRow[]
+    rows.push(...pageRows)
+    sqlPagesFetched++
+    emitProgress(args.emit, 'lightspeed_customers', `Reading customer rows from SQL: ${plural(rows.length, 'row')}...`)
+    if (pageRows.length < SALES_REPORT_SQL_PAGE_SIZE) break
+    if (rows.length >= maxRows) rowLimitReached = true
+  }
+
+  return {
+    rows,
+    coverage: await getSalesReportCoverage(args.userId),
+    row_limit_reached: rowLimitReached,
+    sql_pages_fetched: sqlPagesFetched,
+  }
+}
+
+function customerScoreFromSalesReport(query: string, row: { customer_id: string | null; customer_full_name: string | null }) {
+  if (!query.trim()) return { score: 1, reasons: ['listed from sales report'] }
+  let score = 0
+  const reasons: string[] = []
+  if (row.customer_id && normalizeText(query) === normalizeText(row.customer_id)) {
+    score += 120
+    reasons.push('matched customer ID')
+  }
+  const nameScore = fuzzyTextScore(query, row.customer_full_name)
+  if (nameScore > 0) {
+    score += nameScore
+    reasons.push('matched customer name')
+  }
+  return { score, reasons }
+}
+
+async function searchLightspeedCustomersSql(
+  userId: string,
+  args: {
+    query?: string
+    limit?: number
+    include_archived?: boolean
+    created_start_date?: string
+    created_end_date?: string
+    max_pages?: number
+  },
+  emit?: Emit,
+) {
+  const query = String(args.query ?? '').trim()
+  const limit = Math.min(Math.max(args.limit ?? 10, 1), 50)
+  emitProgress(emit, 'lightspeed_customers', query ? `Searching SQL sales customers for "${query}"...` : 'Listing customers from SQL sales report...')
+  const result = await fetchSalesReportCustomerRows({ userId, query, emit })
+  const byCustomer = new Map<string, {
+    customer_id: string
+    customer_full_name: string | null
+    sale_ids: Set<string>
+    gross_sales: number
+    first_purchase_at: string | null
+    last_purchase_at: string | null
+  }>()
+
+  for (const row of result.rows) {
+    const customerId = String(row.customer_id || '').trim()
+    if (!customerId || customerId === '0') continue
+    const prev = byCustomer.get(customerId) ?? {
+      customer_id: customerId,
+      customer_full_name: row.customer_full_name ?? null,
+      sale_ids: new Set<string>(),
+      gross_sales: 0,
+      first_purchase_at: null,
+      last_purchase_at: null,
+    }
+    prev.customer_full_name = prev.customer_full_name ?? row.customer_full_name ?? null
+    prev.sale_ids.add(String(row.sale_id))
+    prev.gross_sales += sqlLineTotal(row)
+    if (!prev.first_purchase_at || (row.complete_time && row.complete_time < prev.first_purchase_at)) prev.first_purchase_at = row.complete_time
+    if (!prev.last_purchase_at || (row.complete_time && row.complete_time > prev.last_purchase_at)) prev.last_purchase_at = row.complete_time
+    byCustomer.set(customerId, prev)
+  }
+
+  const scored = Array.from(byCustomer.values())
+    .map(customer => {
+      const match = customerScoreFromSalesReport(query, {
+        customer_id: customer.customer_id,
+        customer_full_name: customer.customer_full_name,
+      })
+      return { customer, ...match }
+    })
+    .filter(row => !query || row.score > 0)
+    .sort((a, b) => b.score - a.score || (a.customer.customer_full_name ?? '').localeCompare(b.customer.customer_full_name ?? ''))
+
+  const matches = scored.slice(0, limit).map(row => ({
+    ...salesReportCustomerBase(row.customer.customer_id, row.customer.customer_full_name, {
+      score: row.score,
+      confidence: row.score >= Math.max(40, (scored[0]?.score ?? 0) - 20) ? 'strong' : 'possible',
+      gross_sales: roundMoney(row.customer.gross_sales),
+      sale_count: row.customer.sale_ids.size,
+    }),
+    match_reasons: row.reasons,
+    first_purchase_at: row.customer.first_purchase_at ? formatStoreDateTime(row.customer.first_purchase_at) : null,
+    last_purchase_at: row.customer.last_purchase_at ? formatStoreDateTime(row.customer.last_purchase_at) : null,
+  }))
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    query: query || null,
+    include_archived: false,
+    created_range: args.created_start_date || args.created_end_date
+      ? {
+          start_date: args.created_start_date ?? null,
+          end_date: args.created_end_date ?? null,
+          timezone: STORE_TIME_ZONE,
+          supported: false,
+          note: 'Customer create dates are not stored in lightspeed_sales_report_lines.',
+        }
+      : null,
+    returned_count: matches.length,
+    candidate_count: scored.length,
+    matches,
+    sql_pages_fetched: result.sql_pages_fetched,
+    complete: result.coverage.complete && !result.row_limit_reached,
+    page_cap_reached: result.row_limit_reached,
+    row_limit_reached: result.row_limit_reached,
+    sales_report_coverage: result.coverage,
+    contact_details_available: false,
+    message: 'Customer phone/email/address fields are not available until a customer/contact table is added.',
+    recheck_required: matches.length === 0 || result.row_limit_reached || !result.coverage.complete,
+    recheck_suggestions: matches.length === 0
+      ? customerRecheckSuggestions(query)
+      : result.row_limit_reached || !result.coverage.complete
+        ? ['The SQL sales report is still backfilling or reached the row limit; wait for backfill completion or narrow the request.']
+        : [],
+  }
+}
+
+async function getLightspeedCustomerProfileSql(
+  userId: string,
+  args: { customer_id: string },
+  emit?: Emit,
+) {
+  const customerId = String(args.customer_id || '').trim()
+  if (!customerId) return { error: 'customer_id is required.' }
+  emitProgress(emit, 'lightspeed_customers', `Looking up customer ${customerId} in the SQL sales report...`)
+  const result = await fetchSalesReportCustomerRows({ userId, customerId, maxRows: 5000, emit })
+  const first = result.rows.find(row => String(row.customer_id) === customerId)
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    customer: salesReportCustomerBase(customerId, first?.customer_full_name ?? null),
+    contact_details_available: false,
+    message: first
+      ? 'This profile is derived from sales report rows. Phone/email/address fields are not available until a customer/contact table is added.'
+      : 'No customer sales rows were found for this customer ID in the SQL sales report table.',
+    complete: result.coverage.complete && !result.row_limit_reached,
+    page_cap_reached: result.row_limit_reached,
+    sales_report_coverage: result.coverage,
+  }
+}
+
+async function resolveSalesReportCustomer(
+  userId: string,
+  args: { customer_id?: string; query?: string },
+  emit?: Emit,
+) {
+  if (args.customer_id) {
+    const profile = await getLightspeedCustomerProfileSql(userId, { customer_id: args.customer_id }, emit)
+    if ('customer' in profile && profile.customer) {
+      return {
+        status: 'resolved' as const,
+        customer_id: profile.customer.customer_id,
+        customer: profile.customer,
+        candidates: [profile.customer],
+      }
+    }
+  }
+
+  if (!String(args.query ?? '').trim()) {
+    return { status: 'not_found' as const, candidates: [] }
+  }
+
+  const search = await searchLightspeedCustomersSql(userId, { query: args.query, limit: 5 }, emit)
+  const candidates = (Array.isArray(search.matches) ? search.matches : []) as Array<ReturnType<typeof salesReportCustomerBase> & { score?: number }>
+  const first = candidates[0]
+  const second = candidates[1]
+  if (!first) {
+    return { status: 'not_found' as const, candidates: [], search }
+  }
+  if (
+    !args.customer_id &&
+    second &&
+    Number(first.score ?? 0) < 90 &&
+    Number(second.score ?? 0) >= Number(first.score ?? 0) - 10
+  ) {
+    return { status: 'ambiguous' as const, candidates, search }
+  }
+  return {
+    status: 'resolved' as const,
+    customer_id: String(first.customer_id),
+    customer: first,
+    candidates,
+    search,
+  }
+}
+
+async function getLightspeedCustomerSalesSql(
+  userId: string,
+  args: {
+    start_date: string
+    end_date: string
+    customer_id?: string
+    query?: string
+    include_line_items?: boolean
+    limit?: number
+    max_pages?: number
+  },
+  emit?: Emit,
+) {
+  const startDate = assertIsoDate(args.start_date, 'start_date')
+  const endDate = assertIsoDate(args.end_date, 'end_date')
+  const resolved = await resolveSalesReportCustomer(userId, { customer_id: args.customer_id, query: args.query }, emit)
+  if (resolved.status !== 'resolved') {
+    return {
+      source: SALES_REPORT_SQL_SOURCE,
+      status: resolved.status,
+      date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+      candidates: resolved.candidates,
+      recheck_required: resolved.status === 'not_found',
+      recheck_suggestions: resolved.status === 'ambiguous'
+        ? ['Ask the user to choose from the candidate customers before fetching sales.']
+        : customerRecheckSuggestions(args.query),
+      message: resolved.status === 'ambiguous'
+        ? 'Multiple sales-report customers matched. Ask the user to choose a customer.'
+        : 'No matching customer was found in the SQL sales report table.',
+    }
+  }
+
+  const includeLines = args.include_line_items ?? true
+  const limit = Math.min(Math.max(args.limit ?? 100, 1), 500)
+  emitProgress(emit, 'lightspeed_customers', `Querying SQL sales for ${resolved.customer.name} from ${startDate} to ${endDate}...`)
+  const result = await fetchSalesReportRows({
+    userId,
+    startDate,
+    endDate,
+    customerId: resolved.customer_id,
+    order: 'desc',
+    emit,
+    phase: 'lightspeed_customers',
+    progressLabel: 'Reading customer sale rows',
+  })
+  const sales = groupSalesReportRows(result.rows)
+  const rows = sales.slice(0, limit).map(sale => ({
+    sale_id: sale.sale_id,
+    completed_at: sale.completed_at,
+    ticket_number: sale.ticket_number,
+    reference_number: sale.reference_number,
+    items: includeLines ? salesReportItemsSummary(sale.lines) : null,
+    units: includeLines ? roundMoney(sale.units) : null,
+    line_count: includeLines ? sale.line_count : null,
+    subtotal: roundMoney(sale.subtotal),
+    tax: roundMoney(sale.tax),
+    discounts: roundMoney(sale.discounts),
+    total: roundMoney(sale.total),
+  }))
+  const grossSales = sales.reduce((sum, sale) => sum + sale.total, 0)
+  const firstPurchase = sales[sales.length - 1]
+  const lastPurchase = sales[0]
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    status: 'resolved',
+    date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+    customer: resolved.customer,
+    total_sales: sales.length,
+    returned_count: rows.length,
+    row_limit: limit,
+    limited: sales.length > rows.length,
+    include_line_items: includeLines,
+    gross_sales: roundMoney(grossSales),
+    average_sale_value: sales.length > 0 ? roundMoney(grossSales / sales.length) : 0,
+    first_purchase_at: firstPurchase?.completed_at ?? null,
+    last_purchase_at: lastPurchase?.completed_at ?? null,
+    sales: rows,
+    ...sqlCompletionFields(result),
+  }
+}
+
+async function getLightspeedTopCustomersSql(
+  userId: string,
+  args: {
+    start_date: string
+    end_date: string
+    limit?: number
+    rank_by?: 'gross_sales' | 'sale_count' | 'average_sale_value'
+    include_contact_details?: boolean
+    include_walk_in?: boolean
+    max_pages?: number
+  },
+  emit?: Emit,
+) {
+  const startDate = assertIsoDate(args.start_date, 'start_date')
+  const endDate = assertIsoDate(args.end_date, 'end_date')
+  const limit = Math.min(Math.max(args.limit ?? 10, 1), 50)
+  const rankBy = args.rank_by ?? 'gross_sales'
+  emitProgress(emit, 'lightspeed_customers', `Aggregating top customers from SQL sales report for ${startDate} to ${endDate}...`)
+  const result = await fetchSalesReportRows({
+    userId,
+    startDate,
+    endDate,
+    emit,
+    phase: 'lightspeed_customers',
+    progressLabel: 'Reading customer aggregate rows',
+  })
+  const sales = groupSalesReportRows(result.rows)
+  const byCustomer = new Map<string, {
+    customer_id: string
+    name: string
+    gross_sales: number
+    sale_ids: Set<string>
+    first_purchase_at: string | null
+    last_purchase_at: string | null
+  }>()
+  let walkInSales = 0
+
+  for (const sale of sales) {
+    const customerId = String(sale.customer_id || '').trim()
+    if (!customerId || customerId === '0') {
+      walkInSales++
+      if (!args.include_walk_in) continue
+    }
+    const id = customerId || '0'
+    const prev = byCustomer.get(id) ?? {
+      customer_id: id,
+      name: sale.customer_name || (id === '0' ? 'Walk-in / no customer' : `Customer ${id}`),
+      gross_sales: 0,
+      sale_ids: new Set<string>(),
+      first_purchase_at: null,
+      last_purchase_at: null,
+    }
+    prev.gross_sales += sale.total
+    prev.sale_ids.add(sale.sale_id)
+    if (sale.completed_at_utc) {
+      if (!prev.first_purchase_at || sale.completed_at_utc < prev.first_purchase_at) prev.first_purchase_at = sale.completed_at_utc
+      if (!prev.last_purchase_at || sale.completed_at_utc > prev.last_purchase_at) prev.last_purchase_at = sale.completed_at_utc
+    }
+    byCustomer.set(id, prev)
+  }
+
+  const ranked = Array.from(byCustomer.values())
+    .map(row => ({
+      ...row,
+      sale_count: row.sale_ids.size,
+      gross_sales: roundMoney(row.gross_sales),
+      average_sale_value: row.sale_ids.size > 0 ? roundMoney(row.gross_sales / row.sale_ids.size) : 0,
+    }))
+    .sort((a, b) => (
+      rankBy === 'sale_count'
+        ? b.sale_count - a.sale_count || b.gross_sales - a.gross_sales
+        : rankBy === 'average_sale_value'
+          ? b.average_sale_value - a.average_sale_value || b.gross_sales - a.gross_sales
+          : b.gross_sales - a.gross_sales || b.sale_count - a.sale_count
+    ))
+    .slice(0, limit)
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+    rank_by: rankBy,
+    total_sales_scanned: sales.length,
+    customer_count: byCustomer.size,
+    walk_in_or_unassigned_sales: walkInSales,
+    include_walk_in: Boolean(args.include_walk_in),
+    include_contact_details: Boolean(args.include_contact_details),
+    contact_details_available: false,
+    top_customers: ranked.map((row, index) => ({
+      rank: index + 1,
+      customer_id: row.customer_id,
+      name: row.name,
+      company: null,
+      phones: [] as Array<{ number: string; use_type: string | null }>,
+      emails: [] as Array<{ address: string; use_type: string | null }>,
+      gross_sales: row.gross_sales,
+      sale_count: row.sale_count,
+      average_sale_value: row.average_sale_value,
+      first_purchase_at: row.first_purchase_at ? formatStoreDateTime(row.first_purchase_at) : null,
+      last_purchase_at: row.last_purchase_at ? formatStoreDateTime(row.last_purchase_at) : null,
+    })),
+    gross_sales: roundMoney(sales.reduce((sum, sale) => sum + sale.total, 0)),
+    ...sqlCompletionFields(result),
+  }
+}
+
+async function getLightspeedProductPurchasersSql(
+  userId: string,
+  args: {
+    query: string
+    start_date?: string
+    end_date?: string
+    limit?: number
+    include_contact_details?: boolean
+    include_walk_in?: boolean
+    rank_by?: 'matching_revenue' | 'sale_count' | 'units_sold' | 'last_purchase'
+    max_item_matches?: number
+    max_pages?: number
+  },
+  emit?: Emit,
+) {
+  const query = String(args.query || '').trim()
+  if (!query) return { error: 'query is required.' }
+  const startDate = assertIsoDate(args.start_date ?? '2010-01-01', 'start_date')
+  const endDate = assertIsoDate(args.end_date ?? getStoreToday(), 'end_date')
+  const limit = Math.min(Math.max(args.limit ?? 50, 1), 100)
+  const rankBy = args.rank_by ?? 'last_purchase'
+  emitProgress(emit, 'lightspeed_customers', `Finding purchasers of "${query}" from SQL sale lines...`)
+  const result = await fetchSalesReportRows({
+    userId,
+    startDate,
+    endDate,
+    orFilter: salesReportProductOrFilter(query),
+    emit,
+    phase: 'lightspeed_customers',
+    progressLabel: 'Reading purchaser candidate rows',
+  })
+  const filtered = filterSalesReportProductRows(query, result.rows)
+  const matchingRows = filtered.matchedRows.filter(row => sqlPositiveQuantity(row) > 0)
+  const itemLookup = salesReportProductLookupPayload(query, result.rows, matchingRows)
+
+  if (matchingRows.length === 0) {
+    return {
+      source: SALES_REPORT_SQL_SOURCE,
+      query,
+      status: 'no_product_match',
+      date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+      matched_products: [],
+      customers: [],
+      customer_count: 0,
+      sales_scanned: 0,
+      matched_sale_lines: 0,
+      item_lookup: itemLookup,
+      recheck_required: true,
+      recheck_suggestions: [
+        'Retry with a shorter product, category, SKU, model, brand, or service term stored in sale-line descriptions.',
+        'If the request relies on manufacturer/brand fields not stored in sale lines, wait for the inventory table.',
+      ],
+      message: `No matching sales report sale lines found for "${query}".`,
+      ...sqlCompletionFields(result),
+    }
+  }
+
+  const byCustomer = new Map<string, {
+    customer_id: string
+    name: string
+    company: string | null
+    matching_revenue: number
+    units_sold: number
+    sale_ids: Set<string>
+    matched_sale_line_count: number
+    first_purchase_at: string | null
+    last_purchase_at: string | null
+    products: Map<string, { item_id: string; name: string; units_sold: number; revenue: number }>
+  }>()
+  let walkInSales = 0
+
+  for (const row of matchingRows) {
+    const customerId = String(row.customer_id || '').trim()
+    if (!customerId || customerId === '0') {
+      walkInSales++
+      if (!args.include_walk_in) continue
+    }
+    const id = customerId || '0'
+    const itemId = String(row.item_id || row.sku || row.description || 'unknown')
+    const prev = byCustomer.get(id) ?? {
+      customer_id: id,
+      name: row.customer_full_name || (id === '0' ? 'Walk-in / no customer' : `Customer ${id}`),
+      company: null,
+      matching_revenue: 0,
+      units_sold: 0,
+      sale_ids: new Set<string>(),
+      matched_sale_line_count: 0,
+      first_purchase_at: null,
+      last_purchase_at: null,
+      products: new Map<string, { item_id: string; name: string; units_sold: number; revenue: number }>(),
+    }
+    prev.sale_ids.add(String(row.sale_id))
+    if (row.complete_time) {
+      if (!prev.first_purchase_at || row.complete_time < prev.first_purchase_at) prev.first_purchase_at = row.complete_time
+      if (!prev.last_purchase_at || row.complete_time > prev.last_purchase_at) prev.last_purchase_at = row.complete_time
+    }
+
+    const quantity = sqlPositiveQuantity(row)
+    const revenue = sqlLineRevenue(row)
+    const product = prev.products.get(itemId) ?? {
+      item_id: itemId,
+      name: salesReportLineLabel(row),
+      units_sold: 0,
+      revenue: 0,
+    }
+    product.units_sold += quantity
+    product.revenue += revenue
+    prev.products.set(itemId, product)
+    prev.units_sold += quantity
+    prev.matching_revenue += revenue
+    prev.matched_sale_line_count += 1
+    byCustomer.set(id, prev)
+  }
+
+  const ranked = Array.from(byCustomer.values())
+    .map(row => ({
+      customer_id: row.customer_id,
+      name: row.name,
+      company: row.company,
+      matching_revenue: roundMoney(row.matching_revenue),
+      units_sold: roundMoney(row.units_sold),
+      sale_count: row.sale_ids.size,
+      matched_sale_line_count: row.matched_sale_line_count,
+      first_purchase_at: row.first_purchase_at,
+      last_purchase_at: row.last_purchase_at,
+      matched_products: Array.from(row.products.values())
+        .map(product => ({
+          ...product,
+          units_sold: roundMoney(product.units_sold),
+          revenue: roundMoney(product.revenue),
+        }))
+        .sort((a, b) => b.units_sold - a.units_sold || b.revenue - a.revenue),
+    }))
+    .sort((a, b) => {
+      if (rankBy === 'matching_revenue') return b.matching_revenue - a.matching_revenue || b.units_sold - a.units_sold
+      if (rankBy === 'sale_count') return b.sale_count - a.sale_count || b.matching_revenue - a.matching_revenue
+      if (rankBy === 'units_sold') return b.units_sold - a.units_sold || b.matching_revenue - a.matching_revenue
+      return (b.last_purchase_at ?? '').localeCompare(a.last_purchase_at ?? '') || b.matching_revenue - a.matching_revenue
+    })
+
+  const returned = ranked.slice(0, limit)
+  const customers = returned.map((row, index) => ({
+    rank: index + 1,
+    customer_id: row.customer_id,
+    name: row.name,
+    company: row.company,
+    phones: [] as Array<{ number: string; use_type: string | null }>,
+    emails: [] as Array<{ address: string; use_type: string | null }>,
+    matching_revenue: row.matching_revenue,
+    units_sold: row.units_sold,
+    sale_count: row.sale_count,
+    matched_sale_line_count: row.matched_sale_line_count,
+    first_purchase_at: row.first_purchase_at ? formatStoreDateTime(row.first_purchase_at) : null,
+    last_purchase_at: row.last_purchase_at ? formatStoreDateTime(row.last_purchase_at) : null,
+    matched_products: row.matched_products,
+    matched_products_summary: row.matched_products
+      .slice(0, 4)
+      .map(product => `${compactQuantity(product.units_sold)} x ${product.name}`)
+      .join(', '),
+  }))
+  const matchingRevenue = ranked.reduce((sum, row) => sum + row.matching_revenue, 0)
+  const unitsSold = ranked.reduce((sum, row) => sum + row.units_sold, 0)
+
+  return {
+    source: SALES_REPORT_SQL_SOURCE,
+    query,
+    status: 'resolved',
+    date_range: { start_date: startDate, end_date: endDate, timezone: STORE_TIME_ZONE },
+    rank_by: rankBy,
+    include_contact_details: Boolean(args.include_contact_details),
+    include_walk_in: Boolean(args.include_walk_in),
+    contact_details_available: false,
+    matched_products: itemLookup.matched_items,
+    matched_product_count: itemLookup.matched_items.length,
+    customer_count: ranked.length,
+    returned_count: customers.length,
+    row_limit: limit,
+    limited: ranked.length > customers.length,
+    customers,
+    matching_revenue: roundMoney(matchingRevenue),
+    units_sold: roundMoney(unitsSold),
+    matching_sales: new Set(matchingRows.map(row => row.sale_id)).size,
+    matched_sale_lines: matchingRows.length,
+    walk_in_or_unassigned_matching_sales: walkInSales,
+    item_lookup: itemLookup,
+    recheck_required: ranked.length === 0 || result.row_limit_reached || !result.coverage.complete,
+    recheck_suggestions: ranked.length === 0
+      ? [
+          'Matched sale lines were found, but no customer-linked rows matched. Ask whether walk-in sales should be included.',
+          'Retry with a broader product/category term if needed.',
+        ]
+      : result.row_limit_reached || !result.coverage.complete
+        ? ['The SQL sales report is still backfilling or reached the row limit; wait for backfill completion or narrow the date range.']
+        : [],
+    ...sqlCompletionFields(result),
+  }
+}
+
+type LightspeedSalesListResult = Awaited<ReturnType<typeof getLightspeedSalesListSql>>
+type LightspeedSalesTimeseriesResult = Awaited<ReturnType<typeof getLightspeedSalesTimeseriesSql>>
+type LightspeedTopSoldProductsResult = Awaited<ReturnType<typeof getLightspeedTopSoldProductsSql>>
+type LightspeedSoldProductTimeseriesResult = Awaited<ReturnType<typeof getLightspeedSoldProductTimeseriesSql>>
+type LightspeedInventorySearchResult = Awaited<ReturnType<typeof searchLightspeedInventorySql>>
+type LightspeedStaleInventoryCashResult = Awaited<ReturnType<typeof getLightspeedStaleInventoryCashSql>>
+type LightspeedCustomerSearchResult = Awaited<ReturnType<typeof searchLightspeedCustomersSql>>
+type LightspeedCustomerSalesResult = Awaited<ReturnType<typeof getLightspeedCustomerSalesSql>>
+type LightspeedTopCustomersResult = Awaited<ReturnType<typeof getLightspeedTopCustomersSql>>
+type LightspeedProductPurchasersResult = Awaited<ReturnType<typeof getLightspeedProductPurchasersSql>>
 
 function emitVisuals(emit: Emit, prefs: VisualPrefs, visuals: { chart?: GenieChartPayload; table?: GenieTablePayload }) {
   if (prefs.chart && visuals.chart) emit({ event: 'chart', chart: visuals.chart })
@@ -2971,7 +6138,7 @@ function buildInventoryVisuals(result: LightspeedInventorySearchResult): {
 
   const strongMatches = result.matches.filter(match => match.confidence === 'strong')
   const rows = (strongMatches.length > 0 ? strongMatches : result.matches).slice(0, 12)
-  const subtitle = `Live Lightspeed matches for "${result.query}"`
+  const subtitle = `Lightspeed inventory mirror matches for "${result.query}"`
 
   return {
     chart: {
@@ -2996,6 +6163,7 @@ function buildInventoryVisuals(result: LightspeedInventorySearchResult): {
       columns: [
         { key: 'product', label: 'Product' },
         { key: 'brand', label: 'Brand' },
+        { key: 'supplier', label: 'Supplier' },
         { key: 'category', label: 'Category' },
         { key: 'price', label: 'Price', align: 'right', format: 'currency' },
         { key: 'cost', label: 'Cost', align: 'right', format: 'currency' },
@@ -3006,9 +6174,10 @@ function buildInventoryVisuals(result: LightspeedInventorySearchResult): {
         { key: 'confidence', label: 'Match' },
       ],
       rows: rows.map(row => ({
-        product: row.name || `Item ${row.item_id}`,
-        brand: row.manufacturer ?? '—',
-        category: row.category ?? '—',
+        product: safeDisplayText(row.name, `Item ${row.item_id}`),
+        brand: safeDisplayText(row.brand ?? row.manufacturer),
+        supplier: safeDisplayText(row.supplier),
+        category: safeDisplayText(row.category),
         price: row.price,
         cost: row.effective_cost,
         retail_profit: row.retail_gross_profit,
@@ -3016,6 +6185,66 @@ function buildInventoryVisuals(result: LightspeedInventorySearchResult): {
         qoh: row.total_qoh,
         sellable: row.total_sellable,
         confidence: row.confidence,
+      })),
+    },
+  }
+}
+
+function buildStaleInventoryCashVisuals(result: LightspeedStaleInventoryCashResult): {
+  chart?: GenieChartPayload
+  table?: GenieTablePayload
+} {
+  if ('error' in result || !('rows' in result) || !Array.isArray(result.rows) || result.rows.length === 0) return {}
+
+  const rows = result.rows.slice(0, 25)
+  const subtitleParts = [
+    `No sales since ${result.date_context.no_sale_since}`,
+    `created before ${result.date_context.old_stock_created_before}`,
+    `${result.returned_count} of ${result.stale_item_count} products`,
+  ]
+  if (result.limited) subtitleParts.push(`limited to ${result.row_limit} rows`)
+  if (result.page_cap_reached) subtitleParts.push('page cap reached')
+  const subtitle = subtitleParts.join(' · ')
+
+  return {
+    chart: {
+      kind: 'bar',
+      title: 'Cash Tied Up In Stale Stock',
+      subtitle,
+      xKey: 'label',
+      valueFormatter: 'currency',
+      series: [{ key: 'stock_value', label: 'Stock Value' }],
+      data: rows.slice(0, 12).map(row => ({
+        label: safeDisplayText(row.product),
+        stock_value: row.stock_value,
+      })),
+    },
+    table: {
+      title: 'Stale Inventory Cash',
+      subtitle,
+      columns: [
+        { key: 'rank', label: 'Rank', align: 'right', format: 'number' },
+        { key: 'product', label: 'Product' },
+        { key: 'brand', label: 'Brand' },
+        { key: 'category', label: 'Category' },
+        { key: 'qoh', label: 'QOH', align: 'right', format: 'number' },
+        { key: 'unit_cost', label: 'Unit Cost', align: 'right', format: 'currency' },
+        { key: 'stock_value', label: 'Stock Value', align: 'right', format: 'currency' },
+        { key: 'item_age_days', label: 'Age Days', align: 'right', format: 'number' },
+        { key: 'last_sold_at', label: 'Last Sold' },
+        { key: 'days_since_last_sale', label: 'Days Since Sale', align: 'right', format: 'number' },
+      ],
+      rows: rows.map(row => ({
+        rank: row.rank,
+        product: safeDisplayText(row.product, ''),
+        brand: safeDisplayText(row.brand, ''),
+        category: safeDisplayText(row.category, ''),
+        qoh: row.qoh,
+        unit_cost: row.unit_cost,
+        stock_value: row.stock_value,
+        item_age_days: row.item_age_days,
+        last_sold_at: safeDisplayText(row.last_sold_at, 'No sale found'),
+        days_since_last_sale: row.days_since_last_sale,
       })),
     },
   }
@@ -3044,7 +6273,7 @@ function buildCustomerSearchVisuals(result: LightspeedCustomerSearchResult): {
         { key: 'match', label: 'Match' },
       ],
       rows: result.matches.map(customer => {
-        const match = customer as LightspeedCustomerMatch
+        const match = customer as unknown as LightspeedCustomerMatch
         return {
           name: match.name,
           company: match.company ?? '',
@@ -3148,6 +6377,63 @@ function buildTopCustomersVisuals(result: LightspeedTopCustomersResult): {
         gross_sales: row.gross_sales,
         sale_count: row.sale_count,
         average_sale_value: row.average_sale_value,
+      })),
+    },
+  }
+}
+
+function buildProductPurchasersVisuals(result: LightspeedProductPurchasersResult): {
+  table?: GenieTablePayload
+} {
+  if (
+    'error' in result ||
+    !('customers' in result) ||
+    !('returned_count' in result) ||
+    !Array.isArray(result.customers) ||
+    result.customers.length === 0
+  ) {
+    return {}
+  }
+
+  const subtitleParts = [
+    `"${result.query}"`,
+    `${result.date_range.start_date} to ${result.date_range.end_date}`,
+    `${result.returned_count} of ${result.customer_count} customers`,
+  ]
+  if (result.limited) subtitleParts.push(`limited to ${result.row_limit} rows`)
+  if (result.page_cap_reached) subtitleParts.push('page cap reached')
+
+  return {
+    table: {
+      title: 'Customers Who Purchased Matching Products',
+      subtitle: subtitleParts.join(' · '),
+      columns: [
+        { key: 'rank', label: 'Rank', align: 'right', format: 'number' },
+        { key: 'name', label: 'Customer' },
+        { key: 'company', label: 'Company' },
+        ...(result.include_contact_details
+          ? [
+              { key: 'phone', label: 'Phone' },
+              { key: 'email', label: 'Email' },
+            ]
+          : []),
+        { key: 'products', label: 'Matched Products' },
+        { key: 'units_sold', label: 'Units', align: 'right', format: 'number' },
+        { key: 'matching_revenue', label: 'Matched Revenue', align: 'right', format: 'currency' },
+        { key: 'sale_count', label: 'Sales', align: 'right', format: 'number' },
+        { key: 'last_purchase_at', label: 'Last Purchase' },
+      ],
+      rows: result.customers.map(customer => ({
+        rank: customer.rank,
+        name: customer.name,
+        company: customer.company ?? '',
+        phone: contactList(customer.phones, 'number'),
+        email: contactList(customer.emails, 'address'),
+        products: customer.matched_products_summary,
+        units_sold: customer.units_sold,
+        matching_revenue: customer.matching_revenue,
+        sale_count: customer.sale_count,
+        last_purchase_at: customer.last_purchase_at,
       })),
     },
   }
@@ -3575,7 +6861,1090 @@ async function buildRemoveDiscountProposal(
   }
 }
 
+interface InventoryTargetRow {
+  lightspeed_item_id: string
+  description: string | null
+  system_sku: string | null
+  custom_sku: string | null
+  brand_id: string | null
+  brand_name: string | null
+  category_id: string | null
+  category_name: string | null
+  category_path: string | null
+  primary_image_url: string | null
+}
+
+async function resolveInventoryTargets(
+  supabase: Supa,
+  userId: string,
+  match: string | undefined,
+  lightspeedItemIds: string[] | undefined,
+): Promise<InventoryTargetRow[]> {
+  let q = supabase
+    .from('lightspeed_inventory')
+    .select('lightspeed_item_id, description, system_sku, custom_sku, brand_id, brand_name, category_id, category_name, category_path, primary_image_url')
+    .eq('user_id', userId)
+
+  if (lightspeedItemIds && lightspeedItemIds.length > 0) {
+    q = q.in('lightspeed_item_id', lightspeedItemIds)
+  } else if (match && sanitizeMatch(match)) {
+    const like = `%${sanitizeMatch(match)}%`
+    q = q.or(
+      [
+        `description.ilike.${like}`,
+        `system_sku.ilike.${like}`,
+        `custom_sku.ilike.${like}`,
+        `manufacturer_sku.ilike.${like}`,
+        `lightspeed_item_id.ilike.${like}`,
+        `brand_name.ilike.${like}`,
+        `category_name.ilike.${like}`,
+        `category_path.ilike.${like}`,
+      ].join(','),
+    )
+  } else {
+    return []
+  }
+
+  const { data } = await q.limit(100)
+  return (data ?? []) as InventoryTargetRow[]
+}
+
+type ResolvedBrandTarget = {
+  id: string | null
+  name: string
+  create: boolean
+}
+
+function normaliseLookupName(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+async function resolveBrandTarget(
+  client: ReturnType<typeof createLightspeedClient>,
+  brandIdInput: string,
+  brandNameInput: string,
+): Promise<{ target?: ResolvedBrandTarget; error?: string }> {
+  let brandId = brandIdInput
+  let brandName = brandNameInput
+
+  if (brandId && !/^\d+$/.test(brandId)) {
+    if (!brandName) brandName = brandId
+    brandId = ''
+  }
+
+  if (!brandId && !brandName) {
+    return { error: 'Provide brand_id or brand_name.' }
+  }
+
+  const manufacturers = await client.getAllManufacturers().catch(() => [])
+
+  if (brandId) {
+    const manufacturer = manufacturers.find(m => String(m.manufacturerID) === brandId)
+    if (manufacturer) {
+      return { target: { id: brandId, name: manufacturer.name, create: false } }
+    }
+    if (brandName) {
+      brandId = ''
+    } else {
+      return { error: `Brand id ${brandId} was not found.` }
+    }
+  }
+
+  const lookup = normaliseLookupName(brandName)
+  const existing = manufacturers.find(m => normaliseLookupName(m.name) === lookup)
+  if (existing) {
+    return { target: { id: String(existing.manufacturerID), name: existing.name, create: false } }
+  }
+
+  return { target: { id: null, name: brandName.trim(), create: true } }
+}
+
+async function buildProductBrandCategoryProposal(
+  supabase: Supa,
+  userId: string,
+  args: {
+    summary?: string
+    match?: string
+    lightspeed_item_ids?: string[]
+    brand_id?: string | null
+    brand_name?: string | null
+    category_id?: string | null
+    category_name?: string | null
+    category_path?: string | null
+    parent_category_id?: string | null
+    parent_category_name?: string | null
+    clear_category?: boolean
+  },
+): Promise<{ proposal?: ProductBrandCategoryUpdateProposal; output: object }> {
+  const brandIdInput = args.brand_id != null ? String(args.brand_id).trim() : ''
+  const brandNameInput = args.brand_name != null ? String(args.brand_name).trim() : ''
+  const categoryIdInput = args.category_id != null ? String(args.category_id).trim() : ''
+  const categoryNameInput = args.category_name != null ? String(args.category_name).trim() : ''
+  const categoryPathInput = args.category_path != null ? String(args.category_path).trim() : ''
+  const clearCategory = args.clear_category === true
+
+  if (
+    !brandIdInput &&
+    !brandNameInput &&
+    !categoryIdInput &&
+    !categoryNameInput &&
+    !categoryPathInput &&
+    !clearCategory
+  ) {
+    return {
+      output: {
+        error: 'Provide at least one of brand_id, brand_name, category_id, category_name, category_path, or clear_category.',
+      },
+    }
+  }
+
+  const targets = await resolveInventoryTargets(
+    supabase,
+    userId,
+    args.match,
+    args.lightspeed_item_ids,
+  )
+  if (targets.length === 0) {
+    return {
+      output: {
+        error: args.match || args.lightspeed_item_ids?.length
+          ? `No Lightspeed inventory items found${args.match ? ` matching "${args.match}"` : ''}.`
+          : 'Tell me which product to update (a keyword like "Shimano", or specific Lightspeed item IDs).',
+      },
+    }
+  }
+
+  const client = createLightspeedClient(userId)
+  let brandTarget: ResolvedBrandTarget | null = null
+  let categoryTarget: Awaited<ReturnType<typeof resolveCategoryCreationTarget>>['target'] | null = null
+
+  if (brandIdInput || brandNameInput) {
+    const resolved = await resolveBrandTarget(client, brandIdInput, brandNameInput)
+    if (resolved.error) {
+      return { output: { error: resolved.error } }
+    }
+    brandTarget = resolved.target ?? null
+  }
+
+  if (clearCategory) {
+    categoryTarget = {
+      id: null,
+      name: '',
+      path: '',
+      parentId: '0',
+      create: false,
+    }
+  } else if (categoryIdInput || categoryNameInput || categoryPathInput) {
+    const categories = await client.getAllCategories({ archived: 'false' }).catch(() => [])
+    const resolved = resolveCategoryCreationTarget({
+      categories,
+      categoryId: categoryIdInput || null,
+      categoryName: categoryNameInput || null,
+      categoryPath: categoryPathInput || null,
+      parentCategoryId: args.parent_category_id ?? null,
+      parentCategoryName: args.parent_category_name ?? null,
+    })
+    if (resolved.error) {
+      return { output: { error: resolved.error } }
+    }
+    categoryTarget = resolved.target ?? null
+  }
+
+  const imageByItem = await resolveInventoryItemImageUrls(
+    createServiceRoleClient(),
+    userId,
+    targets.map(row => String(row.lightspeed_item_id)),
+  )
+
+  const changes: ProductBrandCategoryUpdateProposal['changes'] = []
+
+  for (const row of targets) {
+    const brandChanging = brandTarget != null && (
+      brandTarget.create
+        ? normaliseLookupName(row.brand_name || '') !== normaliseLookupName(brandTarget.name)
+        : String(row.brand_id ?? '') !== brandTarget.id
+    )
+    const categoryChanging = clearCategory
+      ? Boolean(row.category_id || row.category_name || row.category_path)
+      : categoryTarget != null && (
+        categoryTarget.create
+          ? normaliseLookupName(row.category_path || row.category_name || '') !== normaliseLookupName(categoryTarget.path)
+          : String(row.category_id ?? '') !== categoryTarget.id
+      )
+    if (!brandChanging && !categoryChanging) continue
+
+    changes.push({
+      lightspeed_item_id: row.lightspeed_item_id,
+      product_name: row.description || 'Unnamed product',
+      sku: row.custom_sku || row.system_sku || null,
+      image_url: imageByItem.get(String(row.lightspeed_item_id)) ?? null,
+      prev_brand_id: row.brand_id,
+      prev_brand_name: row.brand_name,
+      next_brand_id: brandChanging ? brandTarget!.id : null,
+      next_brand_name: brandChanging ? brandTarget!.name : null,
+      create_brand: brandChanging && brandTarget!.create ? true : undefined,
+      prev_category_id: row.category_id,
+      prev_category_name: row.category_name,
+      prev_category_path: row.category_path,
+      next_category_id: categoryChanging && !clearCategory ? categoryTarget!.id : null,
+      next_category_name: categoryChanging && !clearCategory ? categoryTarget!.name : null,
+      next_category_path: categoryChanging && !clearCategory ? categoryTarget!.path : null,
+      next_category_parent_id: categoryChanging && !clearCategory ? categoryTarget!.parentId : null,
+      create_category: categoryChanging && !clearCategory && categoryTarget!.create ? true : undefined,
+      clear_category: clearCategory ? true : undefined,
+    })
+  }
+
+  if (changes.length === 0) {
+    return { output: { status: 'no_change', message: 'The matched products already have the requested brand and category.' } }
+  }
+
+  const match_label = args.lightspeed_item_ids?.length
+    ? `${changes.length} selected item${changes.length === 1 ? '' : 's'}`
+    : `${changes.length} item${changes.length === 1 ? '' : 's'}${args.match ? ` matching "${args.match}"` : ''}`
+
+  const parts: string[] = []
+  if (brandTarget) {
+    parts.push(`brand → ${brandTarget.name}${brandTarget.create ? ' (new)' : ''}`)
+  }
+  if (clearCategory) {
+    parts.push('category → cleared')
+  } else if (categoryTarget) {
+    parts.push(`category → ${categoryTarget.path}${categoryTarget.create ? ' (new)' : ''}`)
+  }
+
+  const proposal: ProductBrandCategoryUpdateProposal = {
+    kind: 'product_brand_category_update',
+    summary: args.summary?.trim() || `Update ${parts.join(', ')}`,
+    match_label,
+    changes,
+  }
+
+  return {
+    proposal,
+    output: {
+      status: 'proposed',
+      kind: 'product_brand_category_update',
+      item_count: changes.length,
+      brand_id: brandTarget?.id ?? null,
+      brand_name: brandTarget?.name ?? null,
+      create_brand: brandTarget?.create ?? false,
+      category_id: categoryTarget?.id ?? null,
+      category_name: categoryTarget?.name ?? null,
+      create_category: categoryTarget?.create ?? false,
+      category_path: categoryTarget?.path ?? null,
+      clear_category: clearCategory,
+    },
+  }
+}
+
+async function buildLightspeedCategoryCreateProposal(
+  userId: string,
+  args: {
+    summary?: string
+    category_name?: string | null
+    category_path?: string | null
+    parent_category_id?: string | null
+    parent_category_name?: string | null
+  },
+): Promise<{ proposal?: LightspeedCategoryCreateProposal; output: object }> {
+  const client = createLightspeedClient(userId)
+  const categories = await client.getAllCategories({ archived: 'false' }).catch(() => [])
+  const resolved = resolveCategoryCreationTarget({
+    categories,
+    categoryName: args.category_name ?? null,
+    categoryPath: args.category_path ?? null,
+    parentCategoryId: args.parent_category_id ?? null,
+    parentCategoryName: args.parent_category_name ?? null,
+  })
+
+  if (resolved.error) {
+    return { output: { error: resolved.error } }
+  }
+
+  const target = resolved.target
+  if (!target) {
+    return { output: { error: 'Could not resolve the category to create.' } }
+  }
+
+  if (!target.create) {
+    return {
+      output: {
+        status: 'no_change',
+        message: `Category "${target.path}" already exists in Lightspeed.`,
+        category_id: target.id,
+      },
+    }
+  }
+
+  const parent = target.parentId !== '0'
+    ? categories.find((row) => String(row.categoryID) === target.parentId)
+    : null
+
+  const proposal: LightspeedCategoryCreateProposal = {
+    kind: 'lightspeed_category_create',
+    summary: args.summary?.trim() || `Create Lightspeed category "${target.path}"`,
+    name: target.name,
+    path: target.path,
+    parent_category_id: target.parentId !== '0' ? target.parentId : null,
+    parent_category_name: parent?.name ?? (args.parent_category_name?.trim() || null),
+  }
+
+  return {
+    proposal,
+    output: {
+      status: 'proposed',
+      kind: 'lightspeed_category_create',
+      name: target.name,
+      path: target.path,
+      parent_category_id: proposal.parent_category_id,
+    },
+  }
+}
+
+// ── Lightspeed SQL executor ──────────────────────────────────────────────────
+
+const GENIE_LIGHTSPEED_SQL_VIEW = 'genie_lightspeed_sales_report_lines'
+const GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW = 'genie_lightspeed_inventory'
+const GENIE_LIGHTSPEED_SQL_RPC = 'execute_lightspeed_genie_sql'
+const GENIE_LIGHTSPEED_SQL_DEFAULT_LIMIT = 500
+const GENIE_LIGHTSPEED_SQL_MAX_LIMIT = 1000
+const GENIE_LIGHTSPEED_SQL_FALLBACK_MAX_LINES = 10_000
+const DEPRECATED_LIGHTSPEED_ANALYTICAL_TOOL_NAMES = new Set([
+  'get_lightspeed_sales_summary',
+  'get_lightspeed_sales_list',
+  'get_lightspeed_sales_timeseries',
+  'get_lightspeed_top_sold_products',
+  'get_lightspeed_sold_product_timeseries',
+  'search_lightspeed_customers',
+  'get_lightspeed_product_purchasers',
+  'get_lightspeed_customer_profile',
+  'get_lightspeed_customer_sales',
+  'get_lightspeed_top_customers',
+])
+
+const GENIE_LIGHTSPEED_SQL_SCHEMA = [
+  'sale_id text',
+  'sale_line_id text',
+  'ticket_number text',
+  'complete_time timestamptz',
+  'line_time timestamptz',
+  'employee_id text',
+  'employee_name text',
+  'category_id text',
+  'category text',
+  'item_id text',
+  'sku text',
+  'description text',
+  'quantity numeric',
+  'retail numeric',
+  'subtotal numeric',
+  'discount numeric',
+  'total numeric',
+  'customer_id text',
+  'customer_full_name text',
+  'cost numeric',
+  'profit numeric',
+  'margin_pct numeric',
+  'synced_at timestamptz',
+  'created_at timestamptz',
+  'updated_at timestamptz',
+]
+
+const GENIE_LIGHTSPEED_INVENTORY_SQL_SCHEMA = [
+  'item_id text',
+  'account_id text',
+  'product_uuid text',
+  'system_sku text',
+  'custom_sku text',
+  'manufacturer_sku text',
+  'upc text',
+  'ean text',
+  'name text',
+  'description text',
+  'model_year text',
+  'item_type text',
+  'labor_duration_minutes numeric',
+  'brand_id text',
+  'brand_name text',
+  'category_id text',
+  'category_name text',
+  'category_path text',
+  'supplier_id text',
+  'supplier_name text',
+  'supplier_archived boolean',
+  'supplier_currency_code text',
+  'default_price numeric',
+  'online_price numeric',
+  'msrp numeric',
+  'default_cost numeric',
+  'avg_cost numeric',
+  'total_qoh numeric',
+  'total_sellable numeric',
+  'backorder numeric',
+  'component_qoh numeric',
+  'component_backorder numeric',
+  'reorder_point numeric',
+  'reorder_level numeric',
+  'on_layaway numeric',
+  'on_special_order numeric',
+  'on_workorder numeric',
+  'on_transfer_in numeric',
+  'on_transfer_out numeric',
+  'is_in_stock boolean',
+  'archived boolean',
+  'publish_to_ecom boolean',
+  'serialized boolean',
+  'discountable boolean',
+  'taxable boolean',
+  'tax_class_id text',
+  'tax_class_name text',
+  'department_id text',
+  'season_id text',
+  'default_vendor_id text',
+  'item_matrix_id text',
+  'primary_image_url text',
+  'images jsonb',
+  'prices jsonb',
+  'stock_data jsonb',
+  'lightspeed_created_at timestamptz',
+  'lightspeed_updated_at timestamptz',
+  'inventory_updated_at timestamptz',
+  'first_seen_at timestamptz',
+  'last_seen_at timestamptz',
+  'last_synced_at timestamptz',
+  'created_at timestamptz',
+  'updated_at timestamptz',
+]
+
+const GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS = {
+  [GENIE_LIGHTSPEED_SQL_VIEW]: GENIE_LIGHTSPEED_SQL_SCHEMA,
+  [GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW]: GENIE_LIGHTSPEED_INVENTORY_SQL_SCHEMA,
+}
+
+type SqlResultRow = Record<string, string | number | boolean | null>
+
+interface LightspeedSqlVisualArgs {
+  table_title?: string
+  table_subtitle?: string
+  chart_kind?: 'bar' | 'line'
+  chart_title?: string
+  chart_subtitle?: string
+  chart_x_key?: string
+  chart_y_keys?: string[]
+  value_format?: VisualValueFormat
+}
+
+function clampSqlLimit(value: number | undefined): number {
+  if (!Number.isFinite(value)) return GENIE_LIGHTSPEED_SQL_DEFAULT_LIMIT
+  return Math.min(Math.max(Math.trunc(value ?? GENIE_LIGHTSPEED_SQL_DEFAULT_LIMIT), 1), GENIE_LIGHTSPEED_SQL_MAX_LIMIT)
+}
+
+function normalizeLightspeedReportSql(sql: string): string {
+  return sql
+    .trim()
+    .replace(/;\s*$/, '')
+    .replace(/\bpublic\.lightspeed_sales_report_lines\b/gi, `public.${GENIE_LIGHTSPEED_SQL_VIEW}`)
+    .replace(/(^|[^.\w])lightspeed_sales_report_lines\b/gi, `$1${GENIE_LIGHTSPEED_SQL_VIEW}`)
+    .replace(/\bpublic\.lightspeed_inventory\b/gi, `public.${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}`)
+    .replace(/(^|[^.\w])lightspeed_inventory\b/gi, `$1${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}`)
+}
+
+function scrubSqlStringLiterals(sql: string): string {
+  return sql.replace(/'([^']|'')*'/g, "''")
+}
+
+function validateLightspeedReportSql(sql: string): string | null {
+  const scrubbed = scrubSqlStringLiterals(sql)
+
+  if (!sql.trim()) return 'SQL query is required.'
+  if (/;/.test(sql)) return 'Only one SQL statement is allowed.'
+  if (/(\/\*|--)/.test(sql)) return 'SQL comments are not allowed.'
+  if (!/^\s*(select|with)\s/i.test(sql)) return 'Only SELECT/WITH read queries are allowed.'
+  if (/\b(insert|update|delete|drop|alter|truncate|create|replace|grant|revoke|copy|call|do|execute|merge|vacuum|analyze|refresh|listen|notify|set|reset|show|lock|begin|commit|rollback)\b/i.test(scrubbed)) {
+    return 'Mutating or administrative SQL is not allowed.'
+  }
+  if (/\b(public\.)?lightspeed_sales_report_lines\b/i.test(scrubbed)) {
+    return `Use ${GENIE_LIGHTSPEED_SQL_VIEW}, not the raw Lightspeed sales table.`
+  }
+  if (/\b(public\.)?lightspeed_inventory\b/i.test(scrubbed)) {
+    return `Use ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}, not the raw Lightspeed inventory table.`
+  }
+  if (!new RegExp(`\\b(public\\.)?(${GENIE_LIGHTSPEED_SQL_VIEW}|${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW})\\b`, 'i').test(scrubbed)) {
+    return `Query must read from ${GENIE_LIGHTSPEED_SQL_VIEW} or ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}.`
+  }
+  if (/\b(raw_sale|raw_line|raw_item|raw_item_shops|raw_vendor|source_hash|user_id|access_token|refresh_token|encrypted|password|secret)\b/i.test(scrubbed)) {
+    return 'Query references restricted columns or secrets.'
+  }
+
+  return null
+}
+
+function safeSqlCellValue(value: unknown): string | number | boolean | null {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
+  return JSON.stringify(value)
+}
+
+function safeSqlTableCellValue(value: unknown): string | number | null {
+  const safeValue = safeSqlCellValue(value)
+  if (typeof safeValue === 'boolean') return safeValue ? 'Yes' : 'No'
+  return safeValue
+}
+
+function safeDisplayText(value: unknown, fallback = '—'): string {
+  const text = String(value ?? '').trim()
+  return text || fallback
+}
+
+function coerceSqlRows(value: unknown): SqlResultRow[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((row): row is Record<string, unknown> => isRecord(row))
+    .map(row => Object.fromEntries(
+      Object.entries(row).map(([key, cell]) => [key, safeSqlCellValue(cell)]),
+    ))
+}
+
+function sqlColumnLabel(key: string): string {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function inferSqlValueFormat(key: string): VisualValueFormat | undefined {
+  if (/(margin|percent|pct|rate)/i.test(key)) return 'percent'
+  if (/(sales|sale|revenue|subtotal|total|cost|profit|discount|retail|value|amount|price|avg|average)/i.test(key)) return 'currency'
+  if (/(count|qty|quantity|units|rank|number)/i.test(key)) return 'number'
+  return undefined
+}
+
+function buildGenericSqlTable(
+  rows: SqlResultRow[],
+  visual: LightspeedSqlVisualArgs | undefined,
+  limitApplied: boolean,
+): GenieTablePayload | undefined {
+  if (rows.length === 0) return undefined
+  const keys = Object.keys(rows[0] ?? {}).slice(0, 24)
+  if (keys.length === 0) return undefined
+
+  const subtitleParts = [visual?.table_subtitle]
+  if (limitApplied) subtitleParts.push('row limit reached')
+
+  return {
+    title: visual?.table_title?.trim() || 'Lightspeed SQL Results',
+    subtitle: subtitleParts.filter(Boolean).join(' · ') || undefined,
+    columns: keys.map(key => ({
+      key,
+      label: sqlColumnLabel(key),
+      align: typeof rows[0]?.[key] === 'number' ? 'right' : 'left',
+      format: inferSqlValueFormat(key),
+    })),
+    rows: rows.slice(0, 250).map(row => Object.fromEntries(keys.map(key => [key, safeSqlTableCellValue(row[key])]))),
+  }
+}
+
+function buildGenericSqlChart(rows: SqlResultRow[], visual: LightspeedSqlVisualArgs | undefined): GenieChartPayload | undefined {
+  if (!visual?.chart_kind || !visual.chart_x_key || !visual.chart_y_keys?.length || rows.length === 0) return undefined
+  const xKey = visual.chart_x_key
+  const yKeys = visual.chart_y_keys.filter(key => rows.some(row => typeof row[key] === 'number')).slice(0, 5)
+  if (yKeys.length === 0) return undefined
+
+  return {
+    kind: visual.chart_kind,
+    title: visual.chart_title?.trim() || 'Lightspeed Chart',
+    subtitle: visual.chart_subtitle?.trim() || undefined,
+    xKey: 'label',
+    series: yKeys.map(key => ({ key, label: sqlColumnLabel(key) })),
+    data: rows.slice(0, 120).map(row => ({
+      label: String(row[xKey] ?? ''),
+      ...Object.fromEntries(yKeys.map(key => [key, typeof row[key] === 'number' ? row[key] : Number(row[key]) || 0])),
+    })),
+    valueFormatter: visual.value_format ?? inferSqlValueFormat(yKeys[0]),
+  }
+}
+
+function isMissingSqlRpcError(message: string): boolean {
+  return /could not find the function|schema cache|function .* does not exist/i.test(message)
+}
+
+function extractSqlDateLiteral(value: string | undefined): string | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  return value
+}
+
+function extractSalesDateRangeFromSql(sql: string): { startDate: string; endExclusiveDate: string } | null {
+  const betweenMatch = sql.match(/\bcomplete_time\s+between\s+'(\d{4}-\d{2}-\d{2})'(?:\s*::\w+)?\s+and\s+'(\d{4}-\d{2}-\d{2})'(?:\s*::\w+)?/i)
+  if (betweenMatch) {
+    const startDate = extractSqlDateLiteral(betweenMatch[1])
+    const endDate = extractSqlDateLiteral(betweenMatch[2])
+    if (startDate && endDate) {
+      return { startDate, endExclusiveDate: isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(endDate), 1)) }
+    }
+  }
+
+  const startMatch = sql.match(/\bcomplete_time\s*>=\s*\(?\s*'(\d{4}-\d{2}-\d{2})'(?:\s*::\w+)?\s*\)?/i)
+  const endPlusOneMatch = sql.match(/\bcomplete_time\s*<\s*\(?\s*'(\d{4}-\d{2}-\d{2})'(?:\s*::\w+)?\s*\+\s*interval\s+'1 day'\s*\)?/i)
+  const endExclusiveMatch = sql.match(/\bcomplete_time\s*<\s*\(?\s*'(\d{4}-\d{2}-\d{2})'(?:\s*::\w+)?\s*\)?/i)
+
+  const startDate = extractSqlDateLiteral(startMatch?.[1])
+  const endExclusiveDate = endPlusOneMatch?.[1]
+    ? isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(endPlusOneMatch[1]), 1))
+    : extractSqlDateLiteral(endExclusiveMatch?.[1])
+
+  if (!startDate || !endExclusiveDate) return null
+  return { startDate, endExclusiveDate }
+}
+
+async function runLightspeedSqlMissingRpcFallback(
+  admin: ReturnType<typeof createServiceRoleClient>,
+  userId: string,
+  args: {
+    purpose: string
+    sql: string
+    visual?: LightspeedSqlVisualArgs
+  },
+  emit: Emit,
+  visualPrefs: VisualPrefs,
+) {
+  const scrubbed = scrubSqlStringLiterals(args.sql)
+  if (!new RegExp(`\\b(public\\.)?${GENIE_LIGHTSPEED_SQL_VIEW}\\b`, 'i').test(scrubbed)) {
+    return null
+  }
+  if (new RegExp(`\\b(public\\.)?${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}\\b`, 'i').test(scrubbed)) {
+    return null
+  }
+
+  const dateRange = extractSalesDateRangeFromSql(args.sql)
+  if (!dateRange) {
+    return {
+      source: 'lightspeed_sql_executor_fallback',
+      status: 'error',
+      purpose: args.purpose,
+      error: 'The SQL executor RPC is missing, and the API fallback only supports date-bounded sales summary queries.',
+      allowed_views: [GENIE_LIGHTSPEED_SQL_VIEW, GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW],
+      available_columns: GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS,
+      recheck_required: true,
+    }
+  }
+
+  const { data, error, count } = await admin
+    .from('lightspeed_sales_report_lines')
+    .select('sale_id,total,subtotal,cost,profit,discount,quantity', { count: 'exact' })
+    .eq('user_id', userId)
+    .gte('complete_time', dateRange.startDate)
+    .lt('complete_time', dateRange.endExclusiveDate)
+    .range(0, GENIE_LIGHTSPEED_SQL_FALLBACK_MAX_LINES - 1)
+
+  if (error) {
+    return {
+      source: 'lightspeed_sql_executor_fallback',
+      status: 'error',
+      purpose: args.purpose,
+      error: error.message,
+      allowed_views: [GENIE_LIGHTSPEED_SQL_VIEW, GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW],
+      available_columns: GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS,
+      recheck_required: true,
+    }
+  }
+
+  const lines = Array.isArray(data) ? data : []
+  const saleIds = new Set(lines.map(line => String(line.sale_id ?? '')).filter(Boolean))
+  const grossSales = lines.reduce((sum, line) => sum + toNum(line.total), 0)
+  const netSales = lines.reduce((sum, line) => sum + toNum(line.subtotal), 0)
+  const totalCost = lines.reduce((sum, line) => sum + toNum(line.cost), 0)
+  const grossProfit = lines.reduce((sum, line) => sum + toNum(line.profit), 0)
+  const discounts = lines.reduce((sum, line) => sum + toNum(line.discount), 0)
+  const units = lines.reduce((sum, line) => sum + toNum(line.quantity), 0)
+  const lineCount = count ?? lines.length
+  const limitApplied = lineCount > lines.length
+  const rows: SqlResultRow[] = [{
+    period_start: dateRange.startDate,
+    period_end: isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(dateRange.endExclusiveDate), -1)),
+    sale_count: saleIds.size,
+    line_count: lineCount,
+    gross_sales: roundMoney(grossSales),
+    net_sales: roundMoney(netSales),
+    discounts: roundMoney(discounts),
+    units: roundMoney(units),
+    total_cost: roundMoney(totalCost),
+    gross_profit: roundMoney(grossProfit),
+    gross_margin_pct: netSales > 0 ? roundPercent((grossProfit / netSales) * 100) : null,
+  }]
+
+  const table = buildGenericSqlTable(rows, args.visual, limitApplied)
+  const chart = buildGenericSqlChart(rows, args.visual)
+  emitVisuals(emit, visualPrefs, { table, chart })
+
+  return {
+    source: 'lightspeed_sql_executor_fallback',
+    status: 'ok',
+    purpose: args.purpose,
+    warning: `Database RPC ${GENIE_LIGHTSPEED_SQL_RPC} is missing; used API sales-summary fallback.`,
+    row_count: rows.length,
+    returned_count: rows.length,
+    row_limit: GENIE_LIGHTSPEED_SQL_FALLBACK_MAX_LINES,
+    limit_applied: limitApplied,
+    rows,
+    available_columns: GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS,
+    table_emitted: Boolean(table),
+    chart_emitted: Boolean(chart),
+    recheck_required: limitApplied,
+  }
+}
+
+function toAnalysisPlanPayload(plan: GenieExecutionPlan): GenieAnalysisPlanPayload {
+  const strategy = plan.sql_strategy
+  const strategyParts = strategy
+    ? [
+        strategy.grain ? `Grain: ${strategy.grain}` : null,
+        strategy.aggregation ? `Aggregation: ${strategy.aggregation}` : null,
+        strategy.filters.length ? `Filters: ${strategy.filters.join('; ')}` : null,
+        strategy.group_by.length ? `Group by: ${strategy.group_by.join(', ')}` : null,
+        strategy.order_by ? `Order by: ${strategy.order_by}` : null,
+      ].filter(Boolean)
+    : []
+
+  const dateRange = plan.date_range
+  const dateRangeLabel = dateRange?.start_date && dateRange?.end_date
+    ? `${dateRange.start_date} → ${dateRange.end_date}`
+    : dateRange?.basis ?? null
+
+  return {
+    source: 'planner',
+    user_intent: plan.user_intent,
+    execution_steps: plan.execution_steps,
+    primary_tools: plan.primary_tools,
+    sql_strategy_summary: strategyParts.length ? strategyParts.join(' · ') : null,
+    date_range_label: dateRangeLabel,
+    recheck_strategy: plan.recheck_strategy || null,
+  }
+}
+
+function emitAnalysisPlan(emit: Emit, plan: GenieAnalysisPlanPayload) {
+  if (!plan.execution_steps.length) return
+  emit({ event: 'analysis_plan', plan })
+}
+
+function emitAnalysisQuery(
+  emit: Emit,
+  query: Omit<GenieAnalysisQueryPayload, 'id' | 'at'> & Partial<Pick<GenieAnalysisQueryPayload, 'id' | 'at'>>,
+) {
+  emit({
+    event: 'analysis_query',
+    query: {
+      id: query.id ?? randomUUID(),
+      at: query.at ?? new Date().toISOString(),
+      tool_name: query.tool_name,
+      purpose: query.purpose,
+      sql: query.sql ?? null,
+      status: query.status,
+      row_count: query.row_count ?? null,
+      error: query.error ?? null,
+    },
+  })
+}
+
+async function runLightspeedSqlQuery(
+  userId: string,
+  args: {
+    purpose: string
+    sql: string
+    limit?: number
+    visual?: LightspeedSqlVisualArgs
+  },
+  emit: Emit,
+  visualPrefs: VisualPrefs,
+) {
+  const sql = normalizeLightspeedReportSql(args.sql)
+  const queryId = randomUUID()
+  emitAnalysisQuery(emit, {
+    id: queryId,
+    tool_name: 'run_lightspeed_sql_query',
+    purpose: args.purpose,
+    sql,
+    status: 'running',
+  })
+
+  const validationError = validateLightspeedReportSql(sql)
+  if (validationError) {
+    emitAnalysisQuery(emit, {
+      id: queryId,
+      tool_name: 'run_lightspeed_sql_query',
+      purpose: args.purpose,
+      sql,
+      status: 'rejected',
+      error: validationError,
+    })
+    return {
+      source: 'lightspeed_sql_executor',
+      status: 'rejected',
+      purpose: args.purpose,
+      error: validationError,
+      allowed_views: [GENIE_LIGHTSPEED_SQL_VIEW, GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW],
+      available_columns: GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS,
+      recheck_required: true,
+    }
+  }
+
+  const limit = clampSqlLimit(args.limit)
+  const admin = createServiceRoleClient()
+  const { data, error } = await admin.rpc(GENIE_LIGHTSPEED_SQL_RPC, {
+    p_sql: sql,
+    p_user_id: userId,
+    p_limit: limit,
+  })
+
+  if (error) {
+    if (isMissingSqlRpcError(error.message)) {
+      const fallbackResult = await runLightspeedSqlMissingRpcFallback(
+        admin,
+        userId,
+        { purpose: args.purpose, sql, visual: args.visual },
+        emit,
+        visualPrefs,
+      )
+      if (fallbackResult) {
+        emitAnalysisQuery(emit, {
+          id: queryId,
+          tool_name: 'run_lightspeed_sql_query',
+          purpose: args.purpose,
+          sql,
+          status: fallbackResult.status === 'ok' ? 'ok' : 'error',
+          row_count: typeof fallbackResult.row_count === 'number' ? fallbackResult.row_count : null,
+          error: typeof fallbackResult.error === 'string' ? fallbackResult.error : null,
+        })
+        return fallbackResult
+      }
+    }
+
+    emitAnalysisQuery(emit, {
+      id: queryId,
+      tool_name: 'run_lightspeed_sql_query',
+      purpose: args.purpose,
+      sql,
+      status: 'error',
+      error: error.message,
+    })
+    return {
+      source: 'lightspeed_sql_executor',
+      status: 'error',
+      purpose: args.purpose,
+      error: error.message,
+      allowed_views: [GENIE_LIGHTSPEED_SQL_VIEW, GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW],
+      available_columns: GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS,
+      recheck_required: true,
+    }
+  }
+
+  const result = isRecord(data) ? data : {}
+  const rows = coerceSqlRows(result.rows)
+  const rowCount = typeof result.row_count === 'number' ? result.row_count : rows.length
+  const limitApplied = Boolean(result.limit_applied)
+
+  const table = buildGenericSqlTable(rows, args.visual, limitApplied)
+  const chart = buildGenericSqlChart(rows, args.visual)
+  emitVisuals(emit, visualPrefs, { table, chart })
+
+  emitAnalysisQuery(emit, {
+    id: queryId,
+    tool_name: 'run_lightspeed_sql_query',
+    purpose: args.purpose,
+    sql,
+    status: 'ok',
+    row_count: rowCount,
+  })
+
+  return {
+    source: 'lightspeed_sql_executor',
+    status: 'ok',
+    purpose: args.purpose,
+    row_count: rowCount,
+    returned_count: rows.length,
+    row_limit: limit,
+    limit_applied: limitApplied,
+    rows,
+    available_columns: GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS,
+    table_emitted: Boolean(table),
+    chart_emitted: Boolean(chart),
+    recheck_required: rows.length === 0 || limitApplied,
+  }
+}
+
+async function findDiscountCandidatesSql(
+  userId: string,
+  args: {
+    limit?: number
+    no_sale_days?: number
+    min_stock_value?: number
+  },
+  emit: Emit,
+  visualPrefs: VisualPrefs,
+) {
+  const today = getStoreToday()
+  const limit = Math.max(1, Math.min(Number(args.limit) || 10, 30))
+  const noSaleDays = Math.max(30, Math.min(Number(args.no_sale_days) || 120, 3650))
+  const minStockValue = Math.max(0, Number(args.min_stock_value) || 0)
+  const salesStartDate = storeDateFromDate(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000))
+  const recentStartDate = storeDateFromDate(new Date(Date.now() - noSaleDays * 24 * 60 * 60 * 1000))
+
+  const sql = `
+WITH inventory AS (
+  SELECT
+    item_id,
+    COALESCE(NULLIF(description, ''), NULLIF(name, ''), item_id) AS product_name,
+    COALESCE(NULLIF(custom_sku, ''), NULLIF(system_sku, ''), NULLIF(manufacturer_sku, ''), NULLIF(upc, '')) AS sku,
+    brand_name,
+    COALESCE(NULLIF(category_path, ''), NULLIF(category_name, '')) AS category,
+    supplier_name,
+    COALESCE(NULLIF(online_price, 0), NULLIF(default_price, 0), NULLIF(msrp, 0), 0) AS current_price,
+    COALESCE(NULLIF(avg_cost, 0), NULLIF(default_cost, 0), 0) AS unit_cost,
+    total_qoh,
+    total_sellable,
+    COALESCE(NULLIF(avg_cost, 0), NULLIF(default_cost, 0), 0) * total_qoh AS stock_value_at_cost,
+    COALESCE(NULLIF(online_price, 0), NULLIF(default_price, 0), NULLIF(msrp, 0), 0) * total_qoh AS retail_stock_value,
+    CASE
+      WHEN COALESCE(NULLIF(online_price, 0), NULLIF(default_price, 0), NULLIF(msrp, 0), 0) > 0
+      THEN ROUND(((COALESCE(NULLIF(online_price, 0), NULLIF(default_price, 0), NULLIF(msrp, 0), 0) - COALESCE(NULLIF(avg_cost, 0), NULLIF(default_cost, 0), 0)) / COALESCE(NULLIF(online_price, 0), NULLIF(default_price, 0), NULLIF(msrp, 0), 0) * 100)::numeric, 1)
+      ELSE NULL
+    END AS margin_percent,
+    lightspeed_created_at,
+    primary_image_url
+  FROM ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}
+  WHERE is_in_stock = true
+    AND total_qoh > 0
+    AND archived = false
+    AND COALESCE(discountable, true) = true
+    AND COALESCE(NULLIF(online_price, 0), NULLIF(default_price, 0), NULLIF(msrp, 0), 0) > 0
+    AND COALESCE(NULLIF(avg_cost, 0), NULLIF(default_cost, 0), 0) >= 0
+    AND lower(COALESCE(item_type, '')) NOT IN ('labor', 'labour', 'service', 'gift_card', 'gift card')
+),
+sales AS (
+  SELECT
+    item_id,
+    SUM(CASE WHEN complete_time >= ${sqlLiteral(salesStartDate)}::date THEN quantity ELSE 0 END) AS units_sold_365,
+    SUM(CASE WHEN complete_time >= ${sqlLiteral(recentStartDate)}::date THEN quantity ELSE 0 END) AS units_sold_recent,
+    SUM(CASE WHEN complete_time >= ${sqlLiteral(salesStartDate)}::date THEN total ELSE 0 END) AS revenue_365,
+    MAX(complete_time) AS last_sold_at
+  FROM ${GENIE_LIGHTSPEED_SQL_VIEW}
+  WHERE item_id IS NOT NULL
+    AND complete_time >= ${sqlLiteral(salesStartDate)}::date
+    AND complete_time < (${sqlLiteral(today)}::date + interval '1 day')
+  GROUP BY item_id
+),
+scored AS (
+  SELECT
+    i.*,
+    COALESCE(s.units_sold_365, 0) AS units_sold_365,
+    COALESCE(s.units_sold_recent, 0) AS units_sold_recent,
+    COALESCE(s.revenue_365, 0) AS revenue_365,
+    s.last_sold_at,
+    CASE
+      WHEN s.last_sold_at IS NULL THEN 9999
+      ELSE (${sqlLiteral(today)}::date - s.last_sold_at::date)
+    END AS days_since_last_sale,
+    CASE
+      WHEN i.lightspeed_created_at IS NULL THEN NULL
+      ELSE (${sqlLiteral(today)}::date - i.lightspeed_created_at::date)
+    END AS item_age_days,
+    (
+      CASE WHEN COALESCE(s.units_sold_recent, 0) = 0 THEN 35 ELSE 0 END +
+      LEAST(CASE WHEN s.last_sold_at IS NULL THEN 60 ELSE GREATEST(0, (${sqlLiteral(today)}::date - s.last_sold_at::date) / 4.0) END, 60) +
+      LEAST(i.stock_value_at_cost / 25.0, 45) +
+      LEAST(i.total_qoh * 2.0, 30) +
+      CASE WHEN i.margin_percent >= 45 THEN 20 WHEN i.margin_percent >= 35 THEN 12 WHEN i.margin_percent >= 25 THEN 6 ELSE -12 END +
+      CASE WHEN i.lightspeed_created_at IS NOT NULL AND (${sqlLiteral(today)}::date - i.lightspeed_created_at::date) >= ${noSaleDays} THEN 10 ELSE 0 END
+    ) AS discount_priority_score
+  FROM inventory i
+  LEFT JOIN sales s ON s.item_id = i.item_id
+  WHERE i.stock_value_at_cost >= ${minStockValue}
+)
+SELECT
+  item_id,
+  product_name,
+  sku,
+  brand_name,
+  category,
+  supplier_name,
+  ROUND(current_price::numeric, 2) AS current_price,
+  ROUND(unit_cost::numeric, 2) AS unit_cost,
+  margin_percent,
+  ROUND(total_qoh::numeric, 2) AS total_qoh,
+  ROUND(total_sellable::numeric, 2) AS total_sellable,
+  ROUND(stock_value_at_cost::numeric, 2) AS stock_value_at_cost,
+  ROUND(retail_stock_value::numeric, 2) AS retail_stock_value,
+  ROUND(units_sold_365::numeric, 2) AS units_sold_365,
+  ROUND(units_sold_recent::numeric, 2) AS units_sold_recent,
+  ROUND(revenue_365::numeric, 2) AS revenue_365,
+  last_sold_at,
+  days_since_last_sale,
+  item_age_days,
+  ROUND(discount_priority_score::numeric, 1) AS discount_priority_score,
+  CASE
+    WHEN margin_percent >= 50 AND (units_sold_recent = 0 OR days_since_last_sale >= ${noSaleDays}) THEN 25
+    WHEN margin_percent >= 40 THEN 20
+    WHEN margin_percent >= 30 THEN 15
+    ELSE 10
+  END AS suggested_discount_percent,
+  CONCAT_WS(', ',
+    CASE WHEN units_sold_recent = 0 THEN 'no recent sales' ELSE NULL END,
+    CASE WHEN days_since_last_sale >= ${noSaleDays} THEN 'stale movement' ELSE NULL END,
+    CASE WHEN stock_value_at_cost >= 500 THEN 'meaningful cash tied up' ELSE NULL END,
+    CASE WHEN total_qoh >= 3 THEN 'multiple units on hand' ELSE NULL END,
+    CASE WHEN margin_percent >= 35 THEN 'margin room for markdown' ELSE NULL END
+  ) AS candidate_reason
+FROM scored
+ORDER BY discount_priority_score DESC, stock_value_at_cost DESC, total_qoh DESC, product_name ASC
+LIMIT ${limit}
+`
+
+  const result = await runLightspeedSqlQuery(
+    userId,
+    {
+      purpose: `Find ${limit} current products that are strongest discount candidates`,
+      sql,
+      limit,
+      visual: {
+        table_title: `Top ${limit} Discount Candidates`,
+        table_subtitle: `Ranked by stock value, slow movement, quantity on hand, and margin room`,
+        chart_kind: 'bar',
+        chart_title: 'Discount Candidate Priority',
+        chart_x_key: 'product_name',
+        chart_y_keys: ['discount_priority_score'],
+        value_format: 'number',
+      },
+    },
+    emit,
+    visualPrefs,
+  )
+
+  if (result.status !== 'ok') return result
+
+  return {
+    ...result,
+    analysis_basis: {
+      sales_start_date: salesStartDate,
+      sales_end_date: today,
+      no_sale_days: noSaleDays,
+      min_stock_value: minStockValue,
+      ranking_factors: [
+        'no/recent sales weakness',
+        'days since last sale',
+        'stock value at cost',
+        'quantity on hand',
+        'margin room',
+        'item age',
+      ],
+    },
+  }
+}
+
 // ── Agent SDK tools ──────────────────────────────────────────────────────────
+
+function emitWorkorderCards(emit: Emit, payload: GenieWorkorderCardsPayload | null) {
+  if (!payload?.workorders.length) return
+  emit({ event: 'workorders', workorders: payload })
+}
 
 function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs: VisualPrefs) {
   const proposalToolOutput = (result: { proposal?: GenieProposal; output: object }) => {
@@ -3583,28 +7952,92 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
     return result.output
   }
 
-  return [
+  const tools = [
     webSearchTool({
-      searchContextSize: 'medium',
+      searchContextSize: 'low',
       externalWebAccess: true,
     }),
     tool({
       name: 'record_lightspeed_plan',
-      description: 'Record the short plan before answering any Lightspeed sales or inventory question. Call this before other Lightspeed tools.',
+      description: 'Record a detailed analysis plan only before broad, complex, multi-pass Lightspeed sales, inventory, product, customer, or business-performance analysis. Do not call this for narrow direct lookups or one-query reports.',
       parameters: z.object({
-        steps: z.array(z.string()).min(1).max(8),
+        steps: z.array(z.string()).min(1).max(40),
       }),
       async execute({ steps }) {
         const cleanSteps = steps.map(step => step.trim()).filter(Boolean)
-        const summary = cleanSteps.slice(0, 3).join(' → ')
+        const summary =
+          cleanSteps.length <= 6
+            ? cleanSteps.join(' → ')
+            : `${cleanSteps.slice(0, 6).join(' → ')} → ${cleanSteps.length - 6} more`
         emitStatus(emit, 'planning', summary ? `Planning ${plural(cleanSteps.length, 'step')}: ${summary}` : 'Planning Lightspeed lookup...')
+        emitAnalysisPlan(emit, {
+          source: 'agent',
+          user_intent: summary || null,
+          execution_steps: cleanSteps,
+        })
         emit({ event: 'reasoning_done', text: cleanSteps.map(step => `- ${step}`).join('\n') })
         return { status: 'planned', steps: cleanSteps }
       },
     }),
     tool({
+      name: 'record_lightspeed_recheck',
+      description: 'Record the required second Lightspeed lookup strategy after a first tool result is empty, weak, ambiguous, partial, row-limited, still backfilling, or does not answer the user request. Call this before the recheck tool call.',
+      parameters: z.object({
+        reason: z.string().min(3).describe('Why the first Lightspeed result was not enough.'),
+        next_strategy: z.string().min(3).describe('The materially different SQL Lightspeed strategy to try next.'),
+        previous_tool: z.string().optional().describe('The previous Lightspeed tool that returned weak, empty, ambiguous, partial, or non-answering results.'),
+        changed_inputs: z.array(z.string()).max(8).optional().describe('Specific changed query terms, date ranges, thresholds, page strategy, or tool inputs for the recheck.'),
+      }),
+      async execute(args) {
+        const reason = args.reason.trim()
+        const nextStrategy = args.next_strategy.trim()
+        const changedInputs = (args.changed_inputs ?? []).map(input => input.trim()).filter(Boolean)
+        emitStatus(emit, 'rechecking', `Rechecking: ${nextStrategy}`)
+        emit({
+          event: 'reasoning_done',
+          text: [
+            'Recheck:',
+            `- Reason: ${reason}`,
+            `- Next: ${nextStrategy}`,
+            args.previous_tool ? `- Previous tool: ${args.previous_tool}` : null,
+            changedInputs.length ? `- Changed inputs: ${changedInputs.join('; ')}` : null,
+          ].filter(Boolean).join('\n'),
+        })
+        return {
+          status: 'recheck_recorded',
+          reason,
+          next_strategy: nextStrategy,
+          previous_tool: args.previous_tool ?? null,
+          changed_inputs: changedInputs,
+        }
+      },
+    }),
+    tool({
+      name: 'run_lightspeed_sql_query',
+      description: `Run one validated read-only SQL query for Lightspeed reporting. Use this for Lightspeed sales analytics, customer rankings, customer purchase history, sold-product analysis, current inventory, stock-on-hand, brand/supplier/category inventory, inventory value, cost/profit/margin reporting, transaction lists, and chart/table requests. Available tenant-scoped relations: ${GENIE_LIGHTSPEED_SQL_VIEW} (${GENIE_LIGHTSPEED_SQL_SCHEMA.join(', ')}), and ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW} (${GENIE_LIGHTSPEED_INVENTORY_SQL_SCHEMA.join(', ')}). Write a single SELECT/WITH query whenever possible. For customer rankings, aggregate sale lines to sale_id first, then aggregate by customer. For current inventory, use brand_name and supplier_name as first-class columns. Do not query raw tables, raw JSON, secrets, or user_id.`,
+      parameters: z.object({
+        purpose: z.string().min(3).describe('Brief business purpose for the query, e.g. "Top customers by gross sales over the last 3 years".'),
+        sql: z.string().min(10).describe(`A single SELECT/WITH query against ${GENIE_LIGHTSPEED_SQL_VIEW} and/or ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}. Do not include semicolons or comments.`),
+        limit: z.number().int().min(1).max(GENIE_LIGHTSPEED_SQL_MAX_LIMIT).optional().describe('Maximum rows to return. Defaults to 500, hard max 1000.'),
+        visual: z.object({
+          table_title: z.string().optional(),
+          table_subtitle: z.string().optional(),
+          chart_kind: z.enum(['bar', 'line']).optional(),
+          chart_title: z.string().optional(),
+          chart_subtitle: z.string().optional(),
+          chart_x_key: z.string().optional().describe('Column name to use for chart labels.'),
+          chart_y_keys: z.array(z.string()).max(5).optional().describe('Numeric column names to chart.'),
+          value_format: z.enum(['currency', 'number', 'percent']).optional(),
+        }).optional(),
+      }),
+      async execute(args) {
+        emitStatus(emit, 'lightspeed_sales', `Running SQL report: ${args.purpose}`)
+        return runLightspeedSqlQuery(userId, args, emit, visualPrefs)
+      },
+    }),
+    tool({
       name: 'get_lightspeed_sales_summary',
-      description: 'Fetch completed, non-voided Lightspeed sales totals, net sales, total cost, gross profit, and gross margin for an ISO date range using the live Lightspeed API.',
+      description: 'Aggregate completed Lightspeed sales totals, net sales, total cost, gross profit, and gross margin for an ISO date range from the lightspeed_sales_report_lines SQL table.',
       parameters: z.object({
         start_date: z.string().describe('YYYY-MM-DD'),
         end_date: z.string().describe('YYYY-MM-DD'),
@@ -3612,13 +8045,13 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         max_pages: z.number().int().min(1).max(220).optional(),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_sales', `Preparing sales total lookup for ${args.start_date} to ${args.end_date}...`)
-        return getLightspeedSalesSummary(userId, args, emit)
+        emitStatus(emit, 'lightspeed_sales', `Querying SQL sales totals for ${args.start_date} to ${args.end_date}...`)
+        return getLightspeedSalesSummarySql(userId, args, emit)
       },
     }),
     tool({
       name: 'get_lightspeed_sales_list',
-      description: 'Fetch individual completed, non-voided Lightspeed sale transactions for an ISO date range using the live Lightspeed API. Use for every-sale, transaction, receipt, order, detailed sale-list, and sale-level profit/margin requests.',
+      description: 'Fetch individual completed Lightspeed sale transactions for an ISO date range from the lightspeed_sales_report_lines SQL table. Use for every-sale, transaction, receipt, order, detailed sale-list, and sale-level profit/margin requests.',
       parameters: z.object({
         start_date: z.string().describe('YYYY-MM-DD'),
         end_date: z.string().describe('YYYY-MM-DD'),
@@ -3629,8 +8062,8 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         max_pages: z.number().int().min(1).max(220).optional(),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_sales', `Preparing sale transaction list for ${args.start_date} to ${args.end_date}...`)
-        const result = await getLightspeedSalesList(userId, args, emit)
+        emitStatus(emit, 'lightspeed_sales', `Querying SQL sale transaction list for ${args.start_date} to ${args.end_date}...`)
+        const result = await getLightspeedSalesListSql(userId, args, emit)
         const table = buildSalesListTable(result)
         if (table) emit({ event: 'table', table })
         return result
@@ -3638,7 +8071,7 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
     }),
     tool({
       name: 'get_lightspeed_sales_timeseries',
-      description: 'Fetch completed Lightspeed sales and bucket them by day, week, month, or year for live sales, cost, gross profit, gross margin, graphs, bar charts, line charts, breakdowns, and tables.',
+      description: 'Query completed Lightspeed sales from the SQL sales report table and bucket them by day, week, month, or year for sales, cost, gross profit, gross margin, graphs, bar charts, line charts, breakdowns, and tables.',
       parameters: z.object({
         start_date: z.string().describe('YYYY-MM-DD'),
         end_date: z.string().describe('YYYY-MM-DD'),
@@ -3648,15 +8081,15 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         max_pages: z.number().int().min(1).max(220).optional(),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_sales', `Preparing ${args.bucket ?? 'auto-bucketed'} sales chart for ${args.start_date} to ${args.end_date}...`)
-        const result = await getLightspeedSalesTimeseries(userId, args, emit)
+        emitStatus(emit, 'lightspeed_sales', `Querying SQL ${args.bucket ?? 'auto-bucketed'} sales chart for ${args.start_date} to ${args.end_date}...`)
+        const result = await getLightspeedSalesTimeseriesSql(userId, args, emit)
         emitVisuals(emit, visualPrefs, buildSalesTimeseriesVisuals(result, visualPrefs))
         return result
       },
     }),
     tool({
       name: 'get_lightspeed_top_sold_products',
-      description: 'Fetch completed Lightspeed sales with sale lines and aggregate top sold products by quantity, revenue, gross profit, or margin over an ISO date range. Returns item cost, total cost, gross profit, and margin from live Lightspeed sale-line costs.',
+      description: 'Aggregate top sold products by quantity, revenue, gross profit, or margin over an ISO date range from the lightspeed_sales_report_lines SQL table. When query is provided, filter and fuzzy-rank stored sale-line description, SKU, item ID, and category fields.',
       parameters: z.object({
         start_date: z.string().describe('YYYY-MM-DD'),
         end_date: z.string().describe('YYYY-MM-DD'),
@@ -3668,15 +8101,15 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         max_pages: z.number().int().min(1).max(120).optional(),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_sales', `Preparing top-sold product lookup for ${args.start_date} to ${args.end_date}...`)
-        const result = await getLightspeedTopSoldProducts(userId, args, emit)
+        emitStatus(emit, 'lightspeed_sales', `Querying SQL top-sold product lookup for ${args.start_date} to ${args.end_date}...`)
+        const result = await getLightspeedTopSoldProductsSql(userId, args, emit)
         emitVisuals(emit, visualPrefs, buildTopSoldVisuals(result))
         return result
       },
     }),
     tool({
       name: 'get_lightspeed_sold_product_timeseries',
-      description: 'Fetch completed Lightspeed sales with sale lines, fuzzy-match a product/service/category query, and bucket matched sold lines by day, week, month, or year. Use for monthly charts/tables of units, revenue, item cost, gross profit, margin, or average unit cost for a specific product/service over time.',
+      description: 'Query SQL sale lines, fuzzy-match a product/service/category/SKU query, and bucket matched sold lines by day, week, month, or year. Use for monthly charts/tables of units, revenue, item cost, gross profit, margin, or average unit cost for a specific product/service over time.',
       parameters: z.object({
         start_date: z.string().describe('YYYY-MM-DD'),
         end_date: z.string().describe('YYYY-MM-DD'),
@@ -3688,8 +8121,8 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         max_pages: z.number().int().min(1).max(180).optional(),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_sales', `Preparing ${args.bucket ?? 'auto-bucketed'} trend for "${args.query}"...`)
-        const result = await getLightspeedSoldProductTimeseries(userId, args, emit)
+        emitStatus(emit, 'lightspeed_sales', `Querying SQL ${args.bucket ?? 'auto-bucketed'} trend for "${args.query}"...`)
+        const result = await getLightspeedSoldProductTimeseriesSql(userId, args, emit)
         emitStatus(emit, 'lightspeed_sales', `Rendering ${result.metric_label.toLowerCase()} visuals for "${result.query}"...`)
         emitVisuals(emit, visualPrefs, buildSoldProductTimeseriesVisuals(result, visualPrefs))
         return result
@@ -3697,22 +8130,70 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
     }),
     tool({
       name: 'search_lightspeed_inventory',
-      description: 'Search live Lightspeed inventory across item names, brands/manufacturers, categories, SKUs, UPCs, costs, prices, margins, and ItemShop stock. Use for stock questions, item cost lookup, retail margin lookup, and brand/category inventory counts.',
+      description: 'Search the SQL Lightspeed inventory mirror by product, SKU, barcode, brand, supplier, or category. Use for current stock, availability, item detail, brand inventory, supplier inventory, price/cost, QOH, sellable quantity, and reorder questions. The mirror syncs every 10 minutes; do not call the live Lightspeed API from Genie. Pass show_product_images:true only when the user wants to see what specific products look like.',
       parameters: z.object({
         query: z.string(),
         limit: z.number().int().min(1).max(20).optional(),
+        in_stock_only: z.boolean().optional().describe('Restrict to items currently in stock with total_qoh > 0. Defaults to false.'),
+        include_archived: z.boolean().optional().describe('Include archived Lightspeed items. Defaults to false.'),
+        show_product_images: z.boolean().optional().describe('Set true when the user asks to see/show/look at specific products. Never use for rankings, totals, or analytics.'),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_inventory', `Preparing inventory search for "${args.query}"...`)
-        const result = await searchLightspeedInventory(userId, args, emit)
-        emitStatus(emit, 'lightspeed_inventory', `Rendering inventory results for "${args.query}"...`)
+        emitStatus(emit, 'lightspeed_inventory', `Searching inventory mirror for "${args.query}"...`)
+        const result = await searchLightspeedInventorySql(userId, args, emit)
         emitVisuals(emit, visualPrefs, buildInventoryVisuals(result))
+
+        if (!('error' in result) && Array.isArray(result.matches)) {
+          const previewMatches = inventoryMatchesForPreview(result.matches.map(match => ({
+            item_id: String(match.item_id ?? ''),
+            name: String(match.name ?? match.item_id ?? ''),
+            price: Number(match.price) || undefined,
+            category: match.category != null ? String(match.category) : null,
+            brand: match.brand != null ? String(match.brand) : null,
+            primary_image_url: match.primary_image_url != null ? String(match.primary_image_url) : null,
+            total_qoh: Number(match.total_qoh) || undefined,
+            is_in_stock: typeof match.is_in_stock === 'boolean' ? match.is_in_stock : null,
+            confidence: match.confidence,
+            system_sku: match.system_sku != null ? String(match.system_sku) : null,
+            custom_sku: match.custom_sku != null ? String(match.custom_sku) : null,
+          })))
+          if (
+            shouldEmitStoreProductPreviews(
+              args.query,
+              previewMatches.length,
+              previewMatches.filter(match => Boolean(match.primary_image_url)).length,
+              args.show_product_images,
+            )
+          ) {
+            const previews = await buildInventoryProductPreviews(supabase, userId, previewMatches)
+            if (previews.length > 0) emit({ event: 'products', products: previews })
+          }
+        }
+
+        return result
+      },
+    }),
+    tool({
+      name: 'get_lightspeed_stale_inventory_cash',
+      description: 'Analyze stale/dead/slow-moving inventory cash using the SQL inventory mirror joined to SQL sales-report movement. Use for cash tied up, old stock, no recent sales, slow movers, dead stock, and stale stock by brand/supplier/category.',
+      parameters: z.object({
+        query: z.string().optional().describe('Optional brand, category, product, SKU, or inventory segment to restrict the stale-stock analysis.'),
+        no_sale_days: z.number().int().min(1).max(3650).optional().describe('Treat products with no sales in this many days as stale. Defaults to 180.'),
+        old_stock_days: z.number().int().min(1).max(3650).optional().describe('Treat items created before this age in days as old stock. Defaults to 180.'),
+        min_stock_value: z.number().min(0).optional().describe('Minimum stock value at cost to include. Defaults to 0.'),
+        limit: z.number().int().min(1).max(100).optional(),
+        history_start_date: z.string().optional().describe('YYYY-MM-DD lower bound for older last-sale lookup. Defaults to 2010-01-01.'),
+      }),
+      async execute(args) {
+        emitStatus(emit, 'lightspeed_inventory', 'Querying stale inventory cash from SQL...')
+        const result = await getLightspeedStaleInventoryCashSql(userId, args, emit)
+        emitVisuals(emit, visualPrefs, buildStaleInventoryCashVisuals(result))
         return result
       },
     }),
     tool({
       name: 'search_lightspeed_customers',
-      description: 'Search live Lightspeed customers by name, company, customer ID, phone, email, or address and return contact details. Use for customer lookup, phone/email extraction, customer lists, and customer profile questions.',
+      description: 'Search customers that appear in the SQL sales report table by customer name or customer ID. Phone, email, address, archived status, and customer-created date are not available until a customer/contact table exists.',
       parameters: z.object({
         query: z.string().optional().describe('Customer name, company, customer ID, phone, email, or address. Omit only for broad customer lists/counts.'),
         limit: z.number().int().min(1).max(50).optional(),
@@ -3722,26 +8203,47 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         max_pages: z.number().int().min(1).max(120).optional(),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_customers', args.query ? `Preparing customer search for "${args.query}"...` : 'Preparing customer list lookup...')
-        const result = await searchLightspeedCustomers(userId, args, emit)
+        emitStatus(emit, 'lightspeed_customers', args.query ? `Querying SQL customer search for "${args.query}"...` : 'Querying SQL customer list lookup...')
+        const result = await searchLightspeedCustomersSql(userId, args, emit)
         emitVisuals(emit, visualPrefs, buildCustomerSearchVisuals(result))
         return result
       },
     }),
     tool({
+      name: 'get_lightspeed_product_purchasers',
+      description: 'Find customers who purchased a matching product, brand, model, category, SKU, or service by querying and fuzzy-ranking SQL sale-line rows. Use for "which customers bought/purchased X", product-specific customer lists, and customer purchase targeting.',
+      parameters: z.object({
+        query: z.string().describe('Product, brand, model, category, SKU, or service phrase, e.g. "Orbea time trial bikes".'),
+        start_date: z.string().optional().describe('YYYY-MM-DD. Defaults to broad all-time practical range when omitted.'),
+        end_date: z.string().optional().describe('YYYY-MM-DD. Defaults to today when omitted.'),
+        limit: z.number().int().min(1).max(100).optional(),
+        include_contact_details: z.boolean().optional().describe('Set true only when the user asks for phone numbers, emails, or contact details.'),
+        include_walk_in: z.boolean().optional().describe('Include unassigned/walk-in matching sales as a pseudo customer. Defaults false.'),
+        rank_by: z.enum(['matching_revenue', 'sale_count', 'units_sold', 'last_purchase']).optional(),
+        max_item_matches: z.number().int().min(1).max(80).optional(),
+        max_pages: z.number().int().min(1).max(180).optional(),
+      }),
+      async execute(args) {
+        emitStatus(emit, 'lightspeed_customers', `Querying SQL customer purchaser lookup for "${args.query}"...`)
+        const result = await getLightspeedProductPurchasersSql(userId, args, emit)
+        emitVisuals(emit, visualPrefs, buildProductPurchasersVisuals(result))
+        return result
+      },
+    }),
+    tool({
       name: 'get_lightspeed_customer_profile',
-      description: 'Fetch one Lightspeed customer by customer ID with Contact relation details such as phone numbers, email addresses, opt-out flags, and address fields.',
+      description: 'Look up a customer by customer ID from the SQL sales report table. Contact fields such as phone, email, opt-out flags, and address are not available until a customer/contact table exists.',
       parameters: z.object({
         customer_id: z.string(),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_customers', `Preparing customer profile lookup for ${args.customer_id}...`)
-        return getLightspeedCustomerProfile(userId, args, emit)
+        emitStatus(emit, 'lightspeed_customers', `Querying SQL customer profile lookup for ${args.customer_id}...`)
+        return getLightspeedCustomerProfileSql(userId, args, emit)
       },
     }),
     tool({
       name: 'get_lightspeed_customer_sales',
-      description: 'Fetch completed, non-voided Lightspeed sales for one customer over a date range. Use for customer purchase history, what a customer bought, customer lifetime/recent spend, last purchase, and customer sales detail questions.',
+      description: 'Fetch completed Lightspeed sales for one customer over a date range from the SQL sales report table. Use for customer purchase history, what a customer bought, customer lifetime/recent spend, last purchase, and customer sales detail questions.',
       parameters: z.object({
         start_date: z.string().describe('YYYY-MM-DD'),
         end_date: z.string().describe('YYYY-MM-DD'),
@@ -3752,8 +8254,8 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         max_pages: z.number().int().min(1).max(220).optional(),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_customers', `Preparing customer sales lookup for ${args.customer_id ?? args.query ?? 'selected customer'}...`)
-        const result = await getLightspeedCustomerSales(userId, args, emit)
+        emitStatus(emit, 'lightspeed_customers', `Querying SQL customer sales lookup for ${args.customer_id ?? args.query ?? 'selected customer'}...`)
+        const result = await getLightspeedCustomerSalesSql(userId, args, emit)
         const table = buildCustomerSalesTable(result)
         if (table) emit({ event: 'table', table })
         return result
@@ -3761,7 +8263,7 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
     }),
     tool({
       name: 'get_lightspeed_top_customers',
-      description: 'Aggregate completed, non-voided Lightspeed sales by customer over a date range. Use for top customers, best customers, highest spenders, most frequent customers, average-sale customer rankings, and customer leaderboard questions.',
+      description: 'Aggregate completed Lightspeed sales by customer over a date range from the SQL sales report table. Use for top customers, best customers, highest spenders, most frequent customers, average-sale customer rankings, and customer leaderboard questions.',
       parameters: z.object({
         start_date: z.string().describe('YYYY-MM-DD'),
         end_date: z.string().describe('YYYY-MM-DD'),
@@ -3772,8 +8274,8 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         max_pages: z.number().int().min(1).max(220).optional(),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_customers', `Preparing top customer analysis for ${args.start_date} to ${args.end_date}...`)
-        const result = await getLightspeedTopCustomers(userId, args, emit)
+        emitStatus(emit, 'lightspeed_customers', `Querying SQL top customer analysis for ${args.start_date} to ${args.end_date}...`)
+        const result = await getLightspeedTopCustomersSql(userId, args, emit)
         emitVisuals(emit, visualPrefs, buildTopCustomersVisuals(result))
         return result
       },
@@ -3789,13 +8291,31 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
     }),
     tool({
       name: 'search_store_products',
-      description: 'Search this store own Yellow Jersey products by keyword. Use for storefront discounts/carousels only, not Lightspeed stock or sales reporting.',
+      description: 'Search this store own Yellow Jersey products by keyword. Use for storefront discounts/carousels only, not Lightspeed stock or sales reporting. Pass show_product_images:true only when the user wants to see what specific products look like.',
       parameters: z.object({
         query: z.string(),
+        show_product_images: z.boolean().optional().describe('Set true when the user asks to see/show/look at specific products. Never use for rankings or analytics.'),
       }),
-      async execute({ query }) {
+      async execute({ query, show_product_images }) {
         emitStatus(emit, 'tool', 'Finding products...')
-        return { products: await searchStoreProducts(supabase, userId, query) }
+        const products = await searchStoreProducts(supabase, userId, query)
+        const previewCandidates = products.slice(0, 6)
+        if (
+          shouldEmitStoreProductPreviews(
+            query,
+            previewCandidates.length,
+            previewCandidates.length,
+            show_product_images,
+          )
+        ) {
+          const previews = await buildStorefrontProductPreviews(
+            supabase,
+            userId,
+            previewCandidates.map(product => product.id),
+          )
+          if (previews.length > 0) emit({ event: 'products', products: previews })
+        }
+        return { products }
       },
     }),
     tool({
@@ -3805,6 +8325,19 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
       async execute() {
         emitStatus(emit, 'tool', 'Checking active discounts...')
         return { discounts: await listActiveDiscounts(supabase, userId) }
+      },
+    }),
+    tool({
+      name: 'find_discount_candidates',
+      description: 'Rank current in-stock Lightspeed inventory products that are good discount candidates right now. Uses stock on hand, stock value, stale/slow movement, recent sales, and margin room. Use before answering "which products should we discount" or "if you had to discount N products". This is analysis only and does not stage a discount.',
+      parameters: z.object({
+        limit: z.number().int().min(1).max(30).optional().describe('Number of candidates to return. Defaults to 10.'),
+        no_sale_days: z.number().int().min(30).max(3650).optional().describe('Treat no sales in this many days as stale. Defaults to 120.'),
+        min_stock_value: z.number().min(0).optional().describe('Minimum stock value at cost to include. Defaults to 0.'),
+      }),
+      async execute(args) {
+        emitStatus(emit, 'lightspeed_inventory', 'Finding discount candidates...')
+        return findDiscountCandidatesSql(userId, args, emit, visualPrefs)
       },
     }),
     tool({
@@ -3906,28 +8439,263 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         return proposalToolOutput(await buildPriceUpdateProposal(supabase, userId, args))
       },
     }),
+    tool({
+      name: 'list_lightspeed_brands',
+      description: 'List Lightspeed manufacturer brands for this store. Optional query narrows by name. Use before proposing brand changes.',
+      parameters: z.object({
+        query: z.string().optional(),
+      }),
+      async execute({ query }) {
+        emitStatus(emit, 'lightspeed_inventory', 'Loading Lightspeed brands...')
+        const client = createLightspeedClient(userId)
+        const manufacturers = await client.getAllManufacturers().catch(() => [])
+        const needle = query ? normalizeText(query) : ''
+        const brands = manufacturers
+          .filter(m => !needle || normalizeText(m.name).includes(needle))
+          .slice(0, 80)
+          .map(m => ({ brand_id: String(m.manufacturerID), name: m.name }))
+        return { brands, total: brands.length }
+      },
+    }),
+    tool({
+      name: 'list_lightspeed_categories',
+      description: 'List Lightspeed categories for this store. Optional query narrows by name or path. Use before proposing category changes.',
+      parameters: z.object({
+        query: z.string().optional(),
+      }),
+      async execute({ query }) {
+        emitStatus(emit, 'lightspeed_inventory', 'Loading Lightspeed categories...')
+        const client = createLightspeedClient(userId)
+        const categories = await client.getAllCategories({ archived: 'false' }).catch(() => [])
+        const needle = query ? normalizeText(query) : ''
+        const rows = categories
+          .filter(c => {
+            if (!needle) return true
+            const text = normalizeText([c.name, c.fullPathName].filter(Boolean).join(' '))
+            return text.includes(needle)
+          })
+          .slice(0, 80)
+          .map(c => ({
+            category_id: String(c.categoryID),
+            name: c.name,
+            path: c.fullPathName || c.name,
+          }))
+        return { categories: rows, total: rows.length }
+      },
+    }),
+    tool({
+      name: 'search_lightspeed_products',
+      description: 'Search synced Lightspeed inventory items by product name, SKU, brand, or category. Use before proposing brand/category write-back. Pass show_product_images:true only when the user wants to see what specific products look like.',
+      parameters: z.object({
+        query: z.string(),
+        show_product_images: z.boolean().optional().describe('Set true when the user asks to see/show/look at specific products.'),
+      }),
+      async execute({ query, show_product_images }) {
+        emitStatus(emit, 'lightspeed_inventory', `Searching inventory for "${query}"...`)
+        const rows = await resolveInventoryTargets(supabase, userId, query, undefined)
+        const previewRows = rows
+          .filter(row => Boolean(row.description))
+          .slice(0, 6)
+          .map(row => ({
+            item_id: row.lightspeed_item_id,
+            name: row.description || 'Unnamed product',
+            category: row.category_path || row.category_name,
+            brand: row.brand_name,
+            custom_sku: row.custom_sku,
+            system_sku: row.system_sku,
+            primary_image_url: null as string | null,
+          }))
+
+        if (previewRows.length > 0) {
+          const imageByItem = await resolveInventoryItemImageUrls(
+            createServiceRoleClient(),
+            userId,
+            previewRows.map(row => String(row.item_id)),
+          )
+          for (const row of previewRows) {
+            row.primary_image_url = imageByItem.get(String(row.item_id)) ?? null
+          }
+        }
+
+        const withImages = previewRows.filter(row => Boolean(row.primary_image_url))
+        if (
+          shouldEmitStoreProductPreviews(query, withImages.length, withImages.length, show_product_images)
+        ) {
+          const previews = await buildInventoryProductPreviews(supabase, userId, withImages)
+          if (previews.length > 0) emit({ event: 'products', products: previews })
+        }
+
+        return {
+          products: rows.slice(0, 25).map(row => ({
+            lightspeed_item_id: row.lightspeed_item_id,
+            name: row.description,
+            sku: row.custom_sku || row.system_sku,
+            brand_id: row.brand_id,
+            brand: row.brand_name,
+            category_id: row.category_id,
+            category: row.category_path || row.category_name,
+          })),
+          total: rows.length,
+        }
+      },
+    }),
+    tool({
+      name: 'list_lightspeed_workorders',
+      description: 'List live Lightspeed repair/service work orders with full details. Use scope "open" for active/in-progress jobs, "finished" for completed or pickup-ready, or "all". Returns customer contact, status, dates, notes, labour lines, and parts. Answer-only — never create proposals.',
+      parameters: z.object({
+        scope: z.enum(['open', 'finished', 'all']).optional().describe('Defaults to open for active work orders.'),
+        query: z.string().optional().describe('Optional filter on customer name, phone, work order ID, notes, or part descriptions.'),
+        limit: z.number().int().min(1).max(100).optional(),
+        include_details: z.boolean().optional().describe('Include lines, parts, and customer contact. Defaults to true.'),
+      }),
+      async execute(args) {
+        const scope = args.scope ?? 'open'
+        emitStatus(emit, 'lightspeed_workorders', scope === 'open' ? 'Loading open work orders' : 'Loading work orders')
+        const result = await listGenieWorkorders(userId, {
+          scope,
+          query: args.query,
+          limit: args.limit,
+          include_details: args.include_details,
+        })
+        emitWorkorderCards(
+          emit,
+          buildWorkorderCardsPayload({
+            scope,
+            workorders: result.workorders,
+            truncated: result.truncated,
+          }),
+        )
+        return {
+          scope: result.scope,
+          total: result.total,
+          truncated: result.truncated,
+          workorders: result.workorders.map(row => ({
+            workorder_id: row.workorder_id,
+            customer_name: row.customer_name,
+            status_name: row.status_name,
+            is_finished: row.is_finished,
+            time_in: row.time_in,
+            eta_out: row.eta_out,
+            note: row.note,
+            line_count: row.lines.length,
+            item_count: row.items.length,
+          })),
+        }
+      },
+    }),
+    tool({
+      name: 'get_lightspeed_workorder',
+      description: 'Fetch one Lightspeed work order by ID with full details: customer, status, dates, notes, labour lines, and parts/items.',
+      parameters: z.object({
+        workorder_id: z.string().min(1),
+      }),
+      async execute({ workorder_id }) {
+        emitStatus(emit, 'lightspeed_workorders', `Loading work order ${workorder_id}`)
+        const workorder = await getGenieWorkorder(userId, workorder_id)
+        if (!workorder) {
+          return { found: false, workorder_id, message: 'No work order found with that ID.' }
+        }
+        emitWorkorderCards(
+          emit,
+          buildWorkorderCardsPayload({
+            scope: 'single',
+            workorders: [workorder],
+            title: `Work order #${workorder.workorder_id}`,
+          }),
+        )
+        return {
+          found: true,
+          workorder_id: workorder.workorder_id,
+          customer_name: workorder.customer_name,
+          status_name: workorder.status_name,
+          is_finished: workorder.is_finished,
+        }
+      },
+    }),
+    tool({
+      name: 'propose_product_brand_category_update',
+      description: 'Stage Lightspeed brand and/or category changes on products for human approval. Writes to Lightspeed only after Approve. Pass brand_name and/or category_name, category_path (e.g. "Bikes/Road"), or ids. New brands/categories are created on approval. Use clear_category:true to remove a product category.',
+      parameters: z.object({
+        summary: z.string(),
+        match: z.string().optional(),
+        lightspeed_item_ids: z.array(z.string()).optional(),
+        brand_id: z.string().nullable().optional(),
+        brand_name: z.string().nullable().optional(),
+        category_id: z.string().nullable().optional(),
+        category_name: z.string().nullable().optional(),
+        category_path: z.string().nullable().optional(),
+        parent_category_id: z.string().nullable().optional(),
+        parent_category_name: z.string().nullable().optional(),
+        clear_category: z.boolean().optional(),
+      }),
+      async execute(args) {
+        emitStatus(emit, 'tool', 'Preparing Lightspeed edits...')
+        return proposalToolOutput(await buildProductBrandCategoryProposal(supabase, userId, args))
+      },
+    }),
+    tool({
+      name: 'propose_lightspeed_category_create',
+      description: 'Stage creation of a new Lightspeed category (no product assignment). Use category_path for nested paths like "Accessories/Winter Clearance", or category_name with parent_category_name. Writes to Lightspeed only after Approve.',
+      parameters: z.object({
+        summary: z.string(),
+        category_name: z.string().nullable().optional(),
+        category_path: z.string().nullable().optional(),
+        parent_category_id: z.string().nullable().optional(),
+        parent_category_name: z.string().nullable().optional(),
+      }),
+      async execute(args) {
+        emitStatus(emit, 'tool', 'Preparing Lightspeed category...')
+        return proposalToolOutput(await buildLightspeedCategoryCreateProposal(userId, args))
+      },
+    }),
   ]
+
+  return tools.filter(candidate => {
+    const name = 'name' in candidate ? String(candidate.name) : ''
+    return !DEPRECATED_LIGHTSPEED_ANALYTICAL_TOOL_NAMES.has(name)
+  })
 }
 
 function statusForTool(toolName: string): { phase: string; text: string } {
-  if (toolName === 'web_search' || toolName === 'web_search_preview') return { phase: 'web_search', text: 'Searching the web...' }
-  if (toolName === 'record_lightspeed_plan') return { phase: 'planning', text: 'Writing the Lightspeed lookup plan...' }
-  if (toolName === 'get_lightspeed_sales_summary') return { phase: 'lightspeed_sales', text: 'Opening the Lightspeed sales total tool...' }
-  if (toolName === 'get_lightspeed_sales_list') return { phase: 'lightspeed_sales', text: 'Opening the Lightspeed transaction list tool...' }
-  if (toolName === 'get_lightspeed_sales_timeseries') return { phase: 'lightspeed_sales', text: 'Opening the Lightspeed sales chart tool...' }
-  if (toolName === 'get_lightspeed_top_sold_products') return { phase: 'lightspeed_sales', text: 'Opening the Lightspeed sale-line aggregation tool...' }
-  if (toolName === 'get_lightspeed_sold_product_timeseries') return { phase: 'lightspeed_sales', text: 'Opening the Lightspeed product trend tool...' }
-  if (toolName === 'search_lightspeed_inventory') return { phase: 'lightspeed_inventory', text: 'Opening the Lightspeed inventory search tool...' }
-  if (toolName === 'search_lightspeed_customers') return { phase: 'lightspeed_customers', text: 'Opening the Lightspeed customer search tool...' }
-  if (toolName === 'get_lightspeed_customer_profile') return { phase: 'lightspeed_customers', text: 'Opening the Lightspeed customer profile tool...' }
-  if (toolName === 'get_lightspeed_customer_sales') return { phase: 'lightspeed_customers', text: 'Opening the Lightspeed customer sales tool...' }
-  if (toolName === 'get_lightspeed_top_customers') return { phase: 'lightspeed_customers', text: 'Opening the Lightspeed top customers tool...' }
-  if (toolName === 'get_store_carousels') return { phase: 'tool', text: 'Reading your carousels...' }
-  if (toolName === 'search_store_products') return { phase: 'tool', text: 'Finding products...' }
-  if (toolName === 'list_active_discounts') return { phase: 'tool', text: 'Checking active discounts...' }
-  if (toolName === 'get_product_costs') return { phase: 'tool', text: 'Looking up cost prices...' }
-  if (toolName.startsWith('propose_')) return { phase: 'tool', text: 'Preparing changes...' }
-  return { phase: 'tool', text: `Running ${toolName}...` }
+  if (toolName === 'web_search' || toolName === 'web_search_preview' || toolName === 'web_search_call') return { phase: 'web_search', text: 'Searching web' }
+  if (toolName === 'record_lightspeed_plan') return { phase: 'planning', text: 'Planning lookup' }
+  if (toolName === 'record_lightspeed_recheck') return { phase: 'rechecking', text: 'Alternate query' }
+  if (toolName === 'run_lightspeed_sql_query') return { phase: 'lightspeed_sales', text: 'Running SQL' }
+  if (toolName === 'get_lightspeed_sales_summary') return { phase: 'lightspeed_sales', text: 'Sales totals' }
+  if (toolName === 'get_lightspeed_sales_list') return { phase: 'lightspeed_sales', text: 'Sale list' }
+  if (toolName === 'get_lightspeed_sales_timeseries') return { phase: 'lightspeed_sales', text: 'Sales chart' }
+  if (toolName === 'get_lightspeed_top_sold_products') return { phase: 'lightspeed_sales', text: 'Top products' }
+  if (toolName === 'get_lightspeed_sold_product_timeseries') return { phase: 'lightspeed_sales', text: 'Product trend' }
+  if (toolName === 'search_lightspeed_inventory') return { phase: 'lightspeed_inventory', text: 'Searching stock' }
+  if (toolName === 'get_lightspeed_stale_inventory_cash') return { phase: 'lightspeed_inventory', text: 'Stale stock value' }
+  if (toolName === 'search_lightspeed_customers') return { phase: 'lightspeed_customers', text: 'Finding customers' }
+  if (toolName === 'get_lightspeed_product_purchasers') return { phase: 'lightspeed_customers', text: 'Finding buyers' }
+  if (toolName === 'get_lightspeed_customer_profile') return { phase: 'lightspeed_customers', text: 'Customer profile' }
+  if (toolName === 'get_lightspeed_customer_sales') return { phase: 'lightspeed_customers', text: 'Customer sales' }
+  if (toolName === 'get_lightspeed_top_customers') return { phase: 'lightspeed_customers', text: 'Top customers' }
+  if (toolName === 'get_store_carousels') return { phase: 'tool', text: 'Carousels' }
+  if (toolName === 'search_store_products') return { phase: 'tool', text: 'Products' }
+  if (toolName === 'list_active_discounts') return { phase: 'tool', text: 'Discounts' }
+  if (toolName === 'find_discount_candidates') return { phase: 'lightspeed_inventory', text: 'Discount candidates' }
+  if (toolName === 'get_product_costs') return { phase: 'tool', text: 'Costs' }
+  if (toolName === 'list_lightspeed_brands') return { phase: 'lightspeed_inventory', text: 'Brands' }
+  if (toolName === 'list_lightspeed_categories') return { phase: 'lightspeed_inventory', text: 'Categories' }
+  if (toolName === 'search_lightspeed_products') return { phase: 'lightspeed_inventory', text: 'Products' }
+  if (toolName === 'list_lightspeed_workorders') return { phase: 'lightspeed_workorders', text: 'Work orders' }
+  if (toolName === 'get_lightspeed_workorder') return { phase: 'lightspeed_workorders', text: 'Work order' }
+  if (toolName === 'propose_product_brand_category_update') return { phase: 'tool', text: 'Preparing Lightspeed edits' }
+  if (toolName === 'propose_lightspeed_category_create') return { phase: 'tool', text: 'Preparing Lightspeed category' }
+  if (toolName.startsWith('propose_')) return { phase: 'tool', text: 'Preparing changes' }
+  return { phase: 'tool', text: `Running ${toolName.replaceAll('_', ' ')}` }
+}
+
+function maxTurnsForRoute(route: GenieOrchestrationDecision['route'], planned: boolean): number {
+  if (route === 'business_analysis') return STRATEGIC_AGENT_MAX_TURNS
+  if (planned) return SMART_AGENT_MAX_TURNS
+  if (route === 'web_research') return 8
+  if (route === 'lightspeed_sql' || route === 'storefront_action') return 16
+  if (route === 'mixed') return 24
+  return 8
 }
 
 export async function POST(request: NextRequest) {
@@ -3957,65 +8725,102 @@ export async function POST(request: NextRequest) {
     const storeName = profile.business_name || 'your store'
     const visualPrefs = visualPrefsForMessages(messages)
     const encoder = new TextEncoder()
+    const requestId = randomUUID()
+    const requestStartedAt = Date.now()
 
     const stream = new ReadableStream({
       async start(controller) {
         let lastStatusKey = ''
+        let lastStatusPhase = 'thinking'
+        let lastStatusText = 'Working'
+        let finalRoute: GenieOrchestrationDecision['route'] | null = null
+        let plannerUsed = false
+        let streamClosed = false
+        const write = (data: object) => {
+          if (streamClosed) return
+          send(controller, encoder, data)
+        }
         const emit = (data: object) => {
           if ('event' in data && data.event === 'status') {
             const status = data as { phase?: unknown; text?: unknown }
-            const key = `${String(status.phase ?? '')}:${String(status.text ?? '')}`
+            const phase = String(status.phase ?? '')
+            const text = compactGenieProgressText(String(status.text ?? ''), phase)
+            const key = `${phase}:${text}`
             if (key === lastStatusKey) return
             lastStatusKey = key
+            lastStatusPhase = phase
+            lastStatusText = text
+            write({ event: 'status', phase, text })
+            return
           }
-          send(controller, encoder, data)
+          write(data)
         }
+        const heartbeatTimer = setInterval(() => {
+          const elapsedMs = Date.now() - requestStartedAt
+          try {
+            write({
+              event: 'heartbeat',
+              elapsed_ms: elapsedMs,
+              route: finalRoute,
+              planner_used: plannerUsed,
+              phase: lastStatusPhase,
+              text: `Still ${lastStatusText.toLowerCase()} (${formatElapsed(elapsedMs)})`,
+            })
+          } catch (error) {
+            streamClosed = true
+            clearInterval(heartbeatTimer)
+            console.warn('[Genie Agent] heartbeat stream closed', {
+              requestId,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }, STREAM_HEARTBEAT_MS)
         try {
-          emit({ event: 'status', phase: 'thinking', text: 'Reading your request and choosing the next tool...' })
+          emit({ event: 'status', phase: 'thinking', text: 'Thinking' })
 
           const inputMessages = toAgentInputMessages(messages)
-
-          const agent = new Agent({
-            name: 'Yellow Jersey Store Agent',
-            model: MODEL,
-            instructions: buildSystemPrompt(storeName),
-            tools: buildAgentTools(supabase, user.id, emit, visualPrefs),
-            modelSettings: {
-              parallelToolCalls: false,
-              store: false,
-              reasoning: { effort: 'medium', summary: 'concise' },
-              text: { verbosity: 'low' },
-            },
-          })
-
-          const agentStream = await storeAgentRunner.run(agent, inputMessages, {
-            stream: true,
-            maxTurns: 10,
+          const orchestrationStartedAt = Date.now()
+          const orchestration = await createGenieOrchestrationDecision({
+            storeName,
+            inputMessages,
             signal: request.signal,
-            toolExecution: { maxFunctionToolConcurrency: 1 },
-            toolNotFoundBehavior: 'return_error_to_model',
-            reasoningItemIdPolicy: 'omit',
-            errorHandlers: {
-              maxTurns: () => ({
-                finalOutput: 'I hit the tool-use limit before I could finish. Please narrow the request and try again.',
-                includeInHistory: true,
-              }),
-            },
+          })
+          finalRoute = orchestration.route
+          console.info('[Genie Agent] orchestration', {
+            requestId,
+            router_model: ORCHESTRATOR_MODEL,
+            router_invoked: true,
+            route: orchestration.route,
+            needs_plan: orchestration.needs_plan,
+            reason: orchestration.reason,
+            message_count: messages.length,
+            latest_user_chars: messages.at(-1)?.content?.length ?? 0,
+            ms: Date.now() - orchestrationStartedAt,
           })
 
-          for await (const event of agentStream) {
-            if (event.type === 'run_item_stream_event') {
-              const item = event.item as StreamToolItem
-              const toolName = item.rawItem?.name || item.rawItem?.toolName || item.name
-              if (event.name === 'reasoning_item_created' && lastStatusKey === '') {
-                emit({ event: 'status', phase: 'thinking', text: 'Reasoning about the requested workflow...' })
-              }
-              if (event.name === 'tool_called' && toolName) {
-                emit({ event: 'status', ...statusForTool(toolName) })
-              }
-            }
+          if (orchestration.route === 'casual_chat' || orchestration.route === 'unsupported') {
+            const casualAgent = new Agent({
+              name: 'Yellow Jersey Casual Agent',
+              model: EXECUTOR_MODEL,
+              instructions: buildCasualPrompt(storeName),
+              tools: [],
+              modelSettings: {
+                parallelToolCalls: false,
+                store: false,
+                reasoning: { effort: 'low', summary: 'auto' },
+                text: { verbosity: 'low' },
+              },
+            })
 
-            if (event.type === 'raw_model_stream_event') {
+            const casualStream = await storeAgentRunner.run(casualAgent, inputMessages, {
+              stream: true,
+              maxTurns: 1,
+              signal: request.signal,
+              reasoningItemIdPolicy: 'omit',
+            })
+
+            for await (const event of casualStream) {
+              if (event.type !== 'raw_model_stream_event') continue
               const raw = event.data as RawModelDeltaEvent
               const rawType = raw.type ?? raw.event?.type
               const delta =
@@ -4039,16 +8844,143 @@ export async function POST(request: NextRequest) {
                 emit({ event: 'reasoning_delta', text: delta })
               }
 
-              if (rawType === 'response.web_search_call.in_progress') {
-                emit({ event: 'status', phase: 'web_search', text: 'Opening web search...' })
+              if (
+                (rawType === 'response.reasoning_summary_text.done' ||
+                  rawType === 'response.reasoning_summary_part.done') &&
+                reasoningText
+              ) {
+                emit({ event: 'reasoning_done', text: reasoningText })
+              }
+
+              if (rawType === 'output_text_delta' || rawType === 'response.output_text.delta') {
+                emit({ event: 'text_delta', text: delta })
+              }
+            }
+
+            await casualStream.completed
+            emit({ event: 'done' })
+            return
+          }
+
+          let executionPlan: GenieExecutionPlan | null = null
+
+          if (orchestration.needs_plan) {
+            plannerUsed = true
+            emit({ event: 'status', phase: 'planning', text: compactGenieProgressText('Planning', 'planning') })
+            const planningStartedAt = Date.now()
+            executionPlan = await createGenieExecutionPlan({
+              storeName,
+              inputMessages,
+              route: orchestration.route,
+              signal: request.signal,
+            })
+            if (executionPlan) {
+              emitAnalysisPlan(emit, toAnalysisPlanPayload(executionPlan))
+            }
+            console.info('[Genie Agent] planning', {
+              requestId,
+              route: orchestration.route,
+              planned: Boolean(executionPlan),
+              ms: Date.now() - planningStartedAt,
+            })
+            emit({
+              event: 'status',
+              phase: 'planning_done',
+              text: compactGenieProgressText('Running analysis', 'planning_done'),
+            })
+          } else {
+            emit({ event: 'status', phase: 'thinking', text: 'Thinking' })
+          }
+
+          const agent = new Agent({
+            name: 'Yellow Jersey Store Agent',
+            model: EXECUTOR_MODEL,
+            instructions: buildSystemPrompt(storeName, executionPlan),
+            tools: buildAgentTools(supabase, user.id, emit, visualPrefs),
+            modelSettings: {
+              parallelToolCalls: false,
+              store: false,
+              reasoning: orchestration.needs_plan || orchestration.route === 'business_analysis'
+                ? { effort: 'medium', summary: 'concise' }
+                : { effort: 'low', summary: 'auto' },
+              text: { verbosity: 'low' },
+            },
+          })
+
+          const agentStream = await storeAgentRunner.run(agent, inputMessages, {
+            stream: true,
+            maxTurns: maxTurnsForRoute(orchestration.route, orchestration.needs_plan),
+            signal: request.signal,
+            toolExecution: { maxFunctionToolConcurrency: 1 },
+            toolNotFoundBehavior: 'return_error_to_model',
+            reasoningItemIdPolicy: 'omit',
+            errorHandlers: {
+              maxTurns: () => ({
+                finalOutput: 'I hit the analysis turn limit before I could finish. I can continue with a narrower follow-up, or this should be moved to a background analysis job for a full long-running report.',
+                includeInHistory: true,
+              }),
+            },
+          })
+
+          for await (const event of agentStream) {
+            if (event.type === 'run_item_stream_event') {
+              const item = event.item as StreamToolItem
+              const toolName = item.rawItem?.name || item.rawItem?.toolName || item.name
+              if (event.name === 'reasoning_item_created' && lastStatusKey === '') {
+                emit({ event: 'status', phase: 'thinking', text: compactGenieProgressText('Thinking', 'thinking') })
+              }
+              if (event.name === 'tool_called' && toolName) {
+                emit({ event: 'status', ...statusForTool(toolName) })
+              }
+              if (event.name === 'tool_output') {
+                emit({ event: 'status', phase: 'thinking', text: 'Preparing answer' })
+              }
+            }
+
+            if (event.type === 'raw_model_stream_event') {
+              const raw = event.data as RawModelDeltaEvent
+              const rawType = raw.type ?? raw.event?.type
+              const rawRecord = raw as unknown as Record<string, unknown>
+              const rawItem = isRecord(rawRecord.item) ? rawRecord.item : null
+              const rawEvent = isRecord(rawRecord.event) ? rawRecord.event : null
+              const rawEventItem = rawEvent && isRecord(rawEvent.item) ? rawEvent.item : null
+              const rawItemType =
+                typeof rawItem?.type === 'string'
+                  ? rawItem.type
+                  : typeof rawEventItem?.type === 'string'
+                    ? rawEventItem.type
+                    : ''
+              const delta =
+                typeof raw.delta === 'string'
+                  ? raw.delta
+                  : typeof raw.event?.delta === 'string'
+                    ? raw.event.delta
+                    : ''
+              const reasoningText =
+                typeof raw.text === 'string'
+                  ? raw.text
+                  : typeof raw.event?.text === 'string'
+                    ? raw.event.text
+                    : typeof raw.part?.text === 'string'
+                      ? raw.part.text
+                      : typeof raw.event?.part?.text === 'string'
+                        ? raw.event.part.text
+                        : ''
+
+              if (rawType === 'response.reasoning_summary_text.delta' && delta) {
+                emit({ event: 'reasoning_delta', text: delta })
+              }
+
+              if (rawType === 'response.web_search_call.in_progress' || rawItemType === 'web_search_call') {
+                emit({ event: 'status', phase: 'web_search', text: compactGenieProgressText('Searching web', 'web_search') })
               }
 
               if (rawType === 'response.web_search_call.searching') {
-                emit({ event: 'status', phase: 'web_search', text: 'Searching the web...' })
+                emit({ event: 'status', phase: 'web_search', text: compactGenieProgressText('Searching web', 'web_search') })
               }
 
               if (rawType === 'response.web_search_call.completed') {
-                emit({ event: 'status', phase: 'web_search_done', text: 'Web research done' })
+                emit({ event: 'status', phase: 'web_search_done', text: compactGenieProgressText('Web search done', 'web_search_done') })
               }
 
               if (
@@ -4069,9 +9001,27 @@ export async function POST(request: NextRequest) {
 
           emit({ event: 'done' })
         } catch (err) {
-          emit({ event: 'error', message: err instanceof Error ? err.message : 'Unknown error' })
+          try {
+            emit({ event: 'error', message: err instanceof Error ? err.message : 'Unknown error' })
+          } catch {
+            streamClosed = true
+          }
         } finally {
-          controller.close()
+          clearInterval(heartbeatTimer)
+          console.info('[Genie Agent] completed', {
+            requestId,
+            route: finalRoute,
+            planner_used: plannerUsed,
+            ms: Date.now() - requestStartedAt,
+          })
+          if (!streamClosed) {
+            streamClosed = true
+            try {
+              controller.close()
+            } catch {
+              // Client already disconnected.
+            }
+          }
         }
       },
     })

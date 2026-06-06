@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { createPortal, flushSync } from "react-dom";
-import { ArrowDown, ArrowUp, ArrowUpDown, AudioLines, BarChart3, History, LineChart as LineChartIcon, Pencil, Plus, Square, Table2, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, AudioLines, BarChart3, Download, History, LineChart as LineChartIcon, Pencil, Plus, Square, Table2, Trash2, X } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,24 @@ import {
 } from "@/components/ui/chart";
 import { cn } from "@/lib/utils";
 import { GenieProposalCard } from "@/components/genie/genie-proposal-card";
-import type { GenieProposal } from "@/lib/types/genie-agent";
+import { GenieStoreProductCards } from "@/components/genie/genie-store-product-cards";
+import {
+  GenieRawLogsViewer,
+  GenieThinkingDetailSections,
+  appendRawDebugLog,
+  mergeAnalysisPlan,
+  upsertAnalysisQuery,
+} from "@/components/genie/genie-thinking-detail-sections";
+import type { GenieStoreProductPreview } from "@/lib/genie/store-product-previews";
+import { HomeV2SmartSuggestions } from "@/components/settings/homev2-smart-suggestions";
+import type {
+  GenieAnalysisPlanPayload,
+  GenieAnalysisQueryPayload,
+  GenieProposal,
+  GenieRawDebugLogEntry,
+} from "@/lib/types/genie-agent";
+import { downloadChartCardAsPng, downloadTableCsv } from "@/lib/utils/genie-visual-export";
+import { compactGenieProgressText, liveGenieProgressPreview } from "@/lib/genie/progress-text";
 
 type ChatRole = "user" | "assistant";
 type VisualValueFormat = "currency" | "number" | "percent";
@@ -76,10 +93,14 @@ interface ChatMessage {
   charts?: GenieChartPayload[];
   tables?: GenieTablePayload[];
   proposals?: GenieProposal[];
+  products?: GenieStoreProductPreview[];
   status?: string;
   statusPhase?: string;
   reasoningSummary?: string;
   processSteps?: ProcessStep[];
+  analysisPlan?: GenieAnalysisPlanPayload;
+  analysisQueries?: GenieAnalysisQueryPayload[];
+  rawDebugLogs?: GenieRawDebugLogEntry[];
   isStreaming?: boolean;
   error?: string;
 }
@@ -108,14 +129,19 @@ const THINKING_SHIMMER_STYLE: React.CSSProperties = {
 const PHASE_LABELS: Record<string, string> = {
   planning: "Planning",
   thinking: "Thinking",
-  web_search: "Searching the web",
-  web_search_done: "Web research done",
-  lightspeed_sales: "Lightspeed Sales",
-  lightspeed_inventory: "Lightspeed Inventory",
-  lightspeed_customers: "Lightspeed Customers",
-  responding: "Responding",
-  tool: "Tool",
+  web_search: "Searching web",
+  web_search_done: "Web search done",
+  lightspeed_sales: "Sales",
+  lightspeed_inventory: "Stock",
+  lightspeed_customers: "Customers",
+  rechecking: "Retrying",
+  responding: "Answering",
+  tool: "Working",
 };
+
+function normalizeStartupStatusText(text: string, phase?: string): string {
+  return compactGenieProgressText(text, phase);
+}
 
 function processTimestamp(): string {
   return new Intl.DateTimeFormat("en-AU", {
@@ -140,7 +166,7 @@ function createProcessStep(
   return {
     id: processStepId(),
     phase,
-    text: text.trim(),
+    text: kind === "status" ? normalizeStartupStatusText(text.trim(), phase) : text.trim(),
     kind,
     at: processTimestamp(),
   };
@@ -214,7 +240,7 @@ function renderMarkdown(text: string) {
         index++;
       }
       index--;
-      html.push('<div class="my-3 overflow-x-auto rounded-lg border border-border/70 bg-background/70">');
+      html.push('<div class="my-3 overflow-x-auto rounded-2xl border border-border/70 bg-background/70">');
       html.push('<table class="w-full min-w-[420px] border-collapse text-sm">');
       html.push("<thead><tr>");
       for (const head of header) html.push(`<th class="border-b border-border/70 px-3 py-2 text-left font-semibold text-foreground">${inline(head)}</th>`);
@@ -255,6 +281,19 @@ function renderMarkdown(text: string) {
 
   closeList();
   return html.join("");
+}
+
+function AssistantMessageContent({ content }: { content: string }) {
+  if (!content) return null;
+
+  return (
+    <div className="max-w-3xl text-[15px] leading-relaxed">
+      <div
+        className="[&>p+p]:mt-2 [&_strong]:font-semibold"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+      />
+    </div>
+  );
 }
 
 function formatVisualValue(value: string | number | null | undefined, format?: VisualValueFormat) {
@@ -332,6 +371,8 @@ function sortedTableRows(table: GenieTablePayload, sort: TableSortState | null) 
 }
 
 function GenieChart({ chart }: { chart: GenieChartPayload }) {
+  const cardRef = React.useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = React.useState(false);
   const isLineChart = chart.kind === "line";
   const ChartIcon = isLineChart ? LineChartIcon : BarChart3;
   const config = chart.series.reduce<ChartConfig>((acc, series, index) => {
@@ -342,16 +383,44 @@ function GenieChart({ chart }: { chart: GenieChartPayload }) {
     return acc;
   }, {});
 
+  const handleDownloadPng = async () => {
+    if (!cardRef.current || isExporting) return;
+    setIsExporting(true);
+    try {
+      await downloadChartCardAsPng({
+        cardEl: cardRef.current,
+        title: chart.title,
+        subtitle: chart.subtitle,
+      });
+    } catch {
+      // Ignore export failures silently — chart may still be rendering.
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
-    <div className="w-full rounded-2xl border border-border/70 bg-background p-4 shadow-sm">
+    <div ref={cardRef} className="w-full rounded-3xl border border-border/70 bg-background p-4 shadow-sm">
       <div className="mb-3 flex items-start gap-2">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary">
           <ChartIcon className="h-4 w-4" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="font-semibold leading-tight text-foreground">{chart.title}</p>
           {chart.subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{chart.subtitle}</p>}
         </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleDownloadPng}
+          disabled={isExporting}
+          className="h-8 shrink-0 gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground hover:text-foreground"
+          aria-label={`Download ${chart.title} as PNG`}
+        >
+          <Download className="h-3.5 w-3.5" />
+          PNG
+        </Button>
       </div>
 
       <ChartContainer config={config} className="aspect-auto h-[260px] w-full">
@@ -437,7 +506,7 @@ function GenieChart({ chart }: { chart: GenieChartPayload }) {
               }
             />
             {chart.series.map((series) => (
-              <Bar key={series.key} dataKey={series.key} fill={`var(--color-${series.key})`} radius={[6, 6, 0, 0]} />
+              <Bar key={series.key} dataKey={series.key} fill={`var(--color-${series.key})`} radius={[10, 10, 0, 0]} />
             ))}
           </BarChart>
         )}
@@ -458,16 +527,35 @@ function GenieTable({ table }: { table: GenieTablePayload }) {
     );
   };
 
+  const handleDownloadCsv = () => {
+    downloadTableCsv({
+      title: table.title,
+      columns: table.columns,
+      rows,
+    });
+  };
+
   return (
-    <div className="w-full overflow-hidden rounded-2xl border border-border/70 bg-background shadow-sm">
+    <div className="w-full overflow-hidden rounded-3xl border border-border/70 bg-background shadow-sm">
       <div className="flex items-start gap-2 px-4 py-4">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary">
           <Table2 className="h-4 w-4" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="font-semibold leading-tight text-foreground">{table.title}</p>
           {table.subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{table.subtitle}</p>}
         </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleDownloadCsv}
+          className="h-8 shrink-0 gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground hover:text-foreground"
+          aria-label={`Download ${table.title} as CSV`}
+        >
+          <Download className="h-3.5 w-3.5" />
+          CSV
+        </Button>
       </div>
       <div className="overflow-x-auto border-t border-border/70">
         <table className="w-full min-w-[560px] border-collapse text-sm">
@@ -548,17 +636,6 @@ function processStepLabel(step: ProcessStep) {
   return PHASE_LABELS[step.phase] ?? step.phase;
 }
 
-function processStepPreview(text: string) {
-  return text
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/^[-*]\s+/gm, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function ProcessStepDetail({
   step,
   isLast,
@@ -572,6 +649,7 @@ function ProcessStepDetail({
     step.phase === "lightspeed_sales"
     || step.phase === "lightspeed_inventory"
     || step.phase === "lightspeed_customers"
+    || step.phase === "rechecking"
     || isLightspeedStatus(step.text);
 
   return (
@@ -614,15 +692,23 @@ function ThinkingProgressPanel({
   steps,
   live,
   phaseLabel,
+  analysisPlan,
+  analysisQueries,
+  rawDebugLogs,
 }: {
   open: boolean;
   onClose: () => void;
   steps: ProcessStep[];
   live?: boolean;
   phaseLabel: string;
+  analysisPlan?: GenieAnalysisPlanPayload;
+  analysisQueries?: GenieAnalysisQueryPayload[];
+  rawDebugLogs?: GenieRawDebugLogEntry[];
 }) {
+  const [rawLogsOpen, setRawLogsOpen] = React.useState(false);
   const panelScrollRef = React.useRef<HTMLDivElement>(null);
   const latestStepText = steps[steps.length - 1]?.text;
+  const logCount = rawDebugLogs?.length ?? 0;
 
   React.useEffect(() => {
     if (!open || !panelScrollRef.current) return;
@@ -632,11 +718,18 @@ function ThinkingProgressPanel({
   React.useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        if (rawLogsOpen) setRawLogsOpen(false);
+        else onClose();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, rawLogsOpen]);
+
+  React.useEffect(() => {
+    if (!open) setRawLogsOpen(false);
+  }, [open]);
 
   if (!open || typeof document === "undefined") return null;
 
@@ -659,32 +752,79 @@ function ThinkingProgressPanel({
       >
         <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-4">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900">Thinking & progress</p>
+            <p className="text-sm font-semibold text-gray-900">
+              {rawLogsOpen ? "Raw logs" : "Thinking & progress"}
+            </p>
             <p className="mt-0.5 text-xs text-gray-500">
-              {live
-                ? `${phaseLabel} · ${steps.length} step${steps.length === 1 ? "" : "s"} so far`
-                : `${steps.length} step${steps.length === 1 ? "" : "s"} recorded`}
+              {rawLogsOpen
+                ? `${logCount} captured event${logCount === 1 ? "" : "s"}`
+                : live
+                  ? `${phaseLabel} · ${steps.length} step${steps.length === 1 ? "" : "s"} so far`
+                  : `${steps.length} step${steps.length === 1 ? "" : "s"} recorded`}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            {rawLogsOpen ? (
+              <button
+                type="button"
+                onClick={() => setRawLogsOpen(false)}
+                className="rounded-md px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
+              >
+                Back
+              </button>
+            ) : logCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => setRawLogsOpen(true)}
+                className="rounded-md px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
+              >
+                Raw logs
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        <div ref={panelScrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          {steps.map((step, index) => (
-            <ProcessStepDetail
-              key={step.id}
-              step={step}
-              isLast={index === steps.length - 1}
-              live={live && index === steps.length - 1}
-            />
-          ))}
+        <div
+          ref={panelScrollRef}
+          className={cn(
+            "min-h-0 flex-1 px-4 py-4",
+            rawLogsOpen ? "flex flex-col overflow-hidden" : "overflow-y-auto",
+          )}
+        >
+          {rawLogsOpen ? (
+            <GenieRawLogsViewer logs={rawDebugLogs ?? []} />
+          ) : (
+            <div className="space-y-4">
+              <GenieThinkingDetailSections
+                plan={analysisPlan}
+                queries={analysisQueries}
+                live={live}
+              />
+              {steps.length > 0 ? (
+                <div>
+                  <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                    Progress
+                  </p>
+                  {steps.map((step, index) => (
+                    <ProcessStepDetail
+                      key={step.id}
+                      step={step}
+                      isLast={index === steps.length - 1}
+                      live={live && index === steps.length - 1}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
       </aside>
     </>,
@@ -692,19 +832,36 @@ function ThinkingProgressPanel({
   );
 }
 
-function ProcessTimelineBox({ steps, live }: { steps: ProcessStep[]; live?: boolean }) {
+function ProcessTimelineBox({
+  steps,
+  live,
+  analysisPlan,
+  analysisQueries,
+  rawDebugLogs,
+}: {
+  steps: ProcessStep[];
+  live?: boolean;
+  analysisPlan?: GenieAnalysisPlanPayload;
+  analysisQueries?: GenieAnalysisQueryPayload[];
+  rawDebugLogs?: GenieRawDebugLogEntry[];
+}) {
   const [panelOpen, setPanelOpen] = React.useState(false);
   const visibleSteps = steps
     .filter((step) => step.phase !== "responding" && !/composing.*answer/i.test(step.text))
+    .map((step) => ({
+      ...step,
+      text: step.kind === "status" ? normalizeStartupStatusText(step.text, step.phase) : step.text,
+    }))
     .slice(-40);
   const latestStep = visibleSteps[visibleSteps.length - 1];
+  const hasAnalysis = Boolean(analysisPlan?.execution_steps.length || analysisQueries?.length);
 
-  if (visibleSteps.length === 0) return null;
+  if (visibleSteps.length === 0 && !hasAnalysis) return null;
 
-  const phaseLabel = latestStep ? processStepLabel(latestStep) : "Working";
+  const phaseLabel = latestStep ? processStepLabel(latestStep) : analysisPlan ? "Planning" : "Working";
   const progressText = latestStep
-    ? processStepPreview(latestStep.text) || phaseLabel
-    : "Analysing your request…";
+    ? liveGenieProgressPreview(latestStep.text, latestStep.phase) || phaseLabel
+    : "Thinking…";
 
   return (
     <>
@@ -712,7 +869,7 @@ function ProcessTimelineBox({ steps, live }: { steps: ProcessStep[]; live?: bool
         type="button"
         onClick={() => setPanelOpen(true)}
         className={cn(
-          "w-fit max-w-3xl border-0 bg-transparent p-0 text-left text-[15px] leading-relaxed text-gray-500",
+          "w-fit max-w-3xl whitespace-normal border-0 bg-transparent p-0 text-left text-[15px] leading-relaxed text-gray-500",
           live && "text-transparent bg-clip-text animate-[agent-text-shimmer_5.5s_linear_infinite]",
           !live && "text-gray-400 hover:text-gray-600",
         )}
@@ -728,17 +885,12 @@ function ProcessTimelineBox({ steps, live }: { steps: ProcessStep[]; live?: bool
         steps={visibleSteps}
         live={live}
         phaseLabel={phaseLabel}
+        analysisPlan={analysisPlan}
+        analysisQueries={analysisQueries}
+        rawDebugLogs={rawDebugLogs}
       />
     </>
   );
-}
-
-function suggestedPrompts() {
-  return [
-    "What were my sales last month?",
-    "Show a bar chart of top sold products over the last 30 days.",
-    "How many Focus bikes are in stock?",
-  ];
 }
 
 function readConversationHistory(): SavedHomeV2Conversation[] {
@@ -810,7 +962,7 @@ function PromptQueueList({
       {items.map((item) => (
         <div
           key={item.id}
-          className="flex h-8 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2"
+          className="flex h-8 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2"
         >
           {editingId === item.id ? (
             <>
@@ -1091,9 +1243,9 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       role: "assistant",
       content: "",
       isStreaming: true,
-      status: "Thinking...",
+      status: "Thinking",
       statusPhase: "thinking",
-      processSteps: [createProcessStep("thinking", "Waiting for Genie to start...")],
+      processSteps: [createProcessStep("thinking", "Thinking")],
     };
 
     const nextMessages = [...messagesRef.current, userMessage];
@@ -1157,6 +1309,14 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       }
     };
 
+    const recordStreamEvent = (payload: Record<string, unknown>) => {
+      setMessages((current) => current.map((message) =>
+        message.id === assistantId
+          ? { ...message, rawDebugLogs: appendRawDebugLog(message.rawDebugLogs, payload) }
+          : message
+      ));
+    };
+
     try {
       const response = await fetch("/api/genie/agent", {
         method: "POST",
@@ -1171,6 +1331,14 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       });
 
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+
+      recordStreamEvent({
+        event: "_stream_start",
+        endpoint: "/api/genie/agent",
+        user_message: trimmed,
+        request_messages_count: nextMessages.length,
+        http_status: response.status,
+      });
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1192,12 +1360,15 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
           try {
             event = JSON.parse(raw);
           } catch {
+            recordStreamEvent({ event: "_sse_parse_error", raw });
             continue;
           }
 
+          recordStreamEvent(event);
+
           if (event.event === "status") {
             const phase = String(event.phase ?? "tool");
-            const text = String(event.text ?? "Working...");
+            const text = normalizeStartupStatusText(String(event.text ?? "Working"), phase);
             const step = createProcessStep(phase, text);
             setMessages((current) => current.map((message) =>
               message.id === assistantId
@@ -1206,6 +1377,19 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                     status: text,
                     statusPhase: phase,
                     processSteps: appendProcessStep(message.processSteps, step),
+                  }
+                : message
+            ));
+          }
+
+          if (event.event === "heartbeat") {
+            const text = normalizeStartupStatusText(String(event.text ?? "Still working"), "thinking");
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId && message.isStreaming
+                ? {
+                    ...message,
+                    status: text,
+                    statusPhase: "thinking",
                   }
                 : message
             ));
@@ -1248,6 +1432,34 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             ));
           }
 
+          if (event.event === "analysis_plan" && event.plan) {
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    analysisPlan: mergeAnalysisPlan(
+                      message.analysisPlan,
+                      event.plan as GenieAnalysisPlanPayload,
+                    ),
+                  }
+                : message
+            ));
+          }
+
+          if (event.event === "analysis_query" && event.query) {
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    analysisQueries: upsertAnalysisQuery(
+                      message.analysisQueries,
+                      event.query as GenieAnalysisQueryPayload,
+                    ),
+                  }
+                : message
+            ));
+          }
+
           if (event.event === "text_delta") {
             queueTextDelta(String(event.text ?? ""));
           }
@@ -1280,6 +1492,18 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             ));
           }
 
+          if (event.event === "products" && Array.isArray(event.products) && event.products.length > 0) {
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    products: event.products as GenieStoreProductPreview[],
+                    status: undefined,
+                  }
+                : message
+            ));
+          }
+
           if (event.event === "done") {
             flushPendingText();
             setMessages((current) => current.map((message) =>
@@ -1294,6 +1518,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       }
 
       flushPendingText();
+      recordStreamEvent({ event: "_stream_end" });
       setMessages((current) => current.map((message) =>
         message.id === assistantId ? { ...message, isStreaming: false, status: undefined } : message
       ));
@@ -1303,11 +1528,16 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
         streamState.rafId = null;
       }
       if ((error as Error).name === "AbortError") {
+        recordStreamEvent({ event: "_stream_aborted" });
         flushPendingText();
         setMessages((current) => current.map((message) =>
           message.isStreaming ? { ...message, isStreaming: false, status: undefined } : message
         ));
       } else {
+        recordStreamEvent({
+          event: "_stream_error",
+          message: error instanceof Error ? error.message : String(error),
+        });
         flushPendingText();
         setMessages((current) => current.map((message) =>
           message.id === assistantId
@@ -1376,18 +1606,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             />
           </div>
 
-          <div className="mt-5 flex max-w-3xl flex-wrap justify-center gap-2">
-            {suggestedPrompts().map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                onClick={() => submitPrompt(prompt)}
-                className="rounded-full border border-border/70 bg-background/80 px-3.5 py-2 text-sm text-muted-foreground shadow-sm transition hover:border-primary/40 hover:text-foreground disabled:opacity-50"
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
+          <HomeV2SmartSuggestions />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1409,34 +1628,36 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 	                    {message.role === "assistant" ? (
 	                      <div className="w-full max-w-none text-sm text-foreground">
 	                        <div className="space-y-4">
-		                          {message.processSteps?.length ? (
-		                            <ProcessTimelineBox steps={message.processSteps} live={message.isStreaming} />
+		                          {message.processSteps?.length
+                            || message.analysisPlan?.execution_steps.length
+                            || message.analysisQueries?.length
+                            || message.rawDebugLogs?.length ? (
+		                            <ProcessTimelineBox
+                                steps={message.processSteps ?? []}
+                                live={message.isStreaming}
+                                analysisPlan={message.analysisPlan}
+                                analysisQueries={message.analysisQueries}
+                                rawDebugLogs={message.rawDebugLogs}
+                              />
 		                          ) : null}
+	                          {message.products?.length ? (
+	                            <GenieStoreProductCards products={message.products} />
+	                          ) : null}
 	                          {message.charts?.map((chart, index) => <GenieChart key={`${chart.title}-${index}`} chart={chart} />)}
 	                          {message.tables?.map((table, index) => <GenieTable key={`${table.title}-${index}`} table={table} />)}
-	                          {message.content ? (
-	                            message.isStreaming ? (
-	                              <div className="max-w-3xl whitespace-pre-wrap text-[15px] leading-relaxed">
-	                                {message.content}
-	                                <span className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-primary align-text-bottom" />
-	                              </div>
-	                            ) : (
-	                              <div
-	                                className="max-w-3xl text-[15px] leading-relaxed [&>p+p]:mt-2 [&_strong]:font-semibold"
-	                                dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-	                              />
-	                            )
-	                          ) : null}
-	                          {message.proposals?.map((proposal, proposalIndex) => (
-	                            <GenieProposalCard key={`${proposal.kind}-${proposalIndex}`} proposal={proposal} />
-	                          ))}
+	                          <AssistantMessageContent content={message.content} />
+	                          {!message.isStreaming
+	                            ? message.proposals?.map((proposal, proposalIndex) => (
+	                                <GenieProposalCard key={`${proposal.kind}-${proposalIndex}`} proposal={proposal} />
+	                              ))
+	                            : null}
 	                        </div>
                         {message.error && (
                           <p className="mt-2 text-sm font-medium text-destructive">{message.error}</p>
                         )}
                       </div>
                     ) : (
-                      <div className="max-w-[86%] rounded-[24px] rounded-br-md bg-primary px-4 py-2 text-sm leading-snug text-primary-foreground shadow-sm sm:max-w-[78%]">
+                      <div className="max-w-[86%] rounded-[24px] bg-primary px-4 py-2 text-sm leading-snug text-primary-foreground shadow-sm sm:max-w-[78%]">
                         <span className="whitespace-pre-wrap">{message.content}</span>
                       </div>
                     )}
@@ -1449,7 +1670,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
           <div className="sticky bottom-0 z-10 shrink-0 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc] to-transparent px-5 pb-4 pt-6">
             <div className="mx-auto w-full max-w-3xl">
               {historyOpen ? (
-                <div className="mb-3 max-h-52 overflow-y-auto rounded-md border border-gray-200 bg-white p-3 shadow-sm">
+                <div className="mb-3 max-h-52 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
                   {conversations.length === 0 ? (
                     <p className="px-1 py-2 text-sm text-muted-foreground">No conversation history yet.</p>
                   ) : (
@@ -1460,7 +1681,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                           type="button"
                           onClick={() => loadConversation(conversation)}
                           className={cn(
-                            "rounded-md border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-gray-300 hover:bg-gray-50",
+                            "rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-gray-300 hover:bg-gray-50",
                             activeConversationId === conversation.id && "border-gray-400 bg-gray-50",
                           )}
                         >

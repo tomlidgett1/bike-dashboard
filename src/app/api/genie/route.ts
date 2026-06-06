@@ -1,14 +1,23 @@
 import { NextRequest } from 'next/server'
 import OpenAI from 'openai'
+import type { Stream } from 'openai/core/streaming'
+import type {
+  Response as OpenAIResponse,
+  ResponseInput,
+  ResponseStreamEvent,
+  Tool,
+} from 'openai/resources/responses/responses'
 import { createClient } from '@/lib/supabase/server'
 import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms'
+import { compactGenieProgressText } from '@/lib/genie/progress-text'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 const MODEL = 'gpt-5.4'
+const STREAM_HEARTBEAT_MS = 15_000
 
 const SYSTEM_PROMPT = `You are the Yellow Jersey Genius — a warm, sharp cycling expert on Yellow Jersey, Australia's bike & gear marketplace. Talk like a knowledgeable mate working the floor of a great bike shop: friendly, genuine, direct. Never robotic. Never a pushy salesperson.
 
@@ -48,11 +57,32 @@ interface Citation {
   title: string
 }
 
+interface MarketplaceProductPreview {
+  id: string
+  name: string | null
+  category: string | null
+  price: number | string | null
+  qoh: number | null
+  listing_type: string | null
+  condition: string | null
+  image: string | null
+  store_name: string | null
+}
+
 function send(controller: ReadableStreamDefaultController, encoder: TextEncoder, data: object) {
   controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
 }
 
-function extractCitations(response: any): Citation[] {
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(1, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes <= 0) return `${seconds}s`
+  if (seconds === 0) return `${minutes}m`
+  return `${minutes}m ${seconds}s`
+}
+
+function extractCitations(response: OpenAIResponse | null | undefined): Citation[] {
   const citations: Citation[] = []
   for (const item of response?.output ?? []) {
     if (item.type !== 'message') continue
@@ -93,7 +123,7 @@ async function runMarketplaceSearch(
 ) {
   if (!rawQuery.trim()) {
     return {
-      products: [] as any[],
+      products: [] as MarketplaceProductPreview[],
       output: { found: 0, products: [], message: 'No matching in-stock listings right now.' },
     }
   }
@@ -139,7 +169,7 @@ async function runMarketplaceSearch(
 
   if (rankedIds.length === 0) {
     return {
-      products: [] as any[],
+      products: [] as MarketplaceProductPreview[],
       output: { found: 0, products: [], message: 'No matching in-stock listings right now.' },
     }
   }
@@ -164,7 +194,7 @@ async function runMarketplaceSearch(
 
   if (ranked.length === 0) {
     return {
-      products: [] as any[],
+      products: [] as MarketplaceProductPreview[],
       output: { found: 0, products: [], message: 'No matching in-stock listings right now.' },
     }
   }
@@ -221,20 +251,55 @@ export async function POST(request: NextRequest) {
     // Public client — customer-facing, no auth required
     const supabase = await createClient()
     const encoder = new TextEncoder()
+    const requestStartedAt = Date.now()
 
     const stream = new ReadableStream({
       async start(controller) {
-        const emit = (data: object) => send(controller, encoder, data)
+        let lastStatusKey = ''
+        let streamClosed = false
+        const write = (data: object) => {
+          if (streamClosed) return
+          send(controller, encoder, data)
+        }
+        const emit = (data: object) => {
+          if ('event' in data && data.event === 'status') {
+            const status = data as { phase?: unknown; text?: unknown }
+            const phase = String(status.phase ?? '')
+            const text = compactGenieProgressText(String(status.text ?? ''), phase)
+            const key = `${phase}:${text}`
+            if (key === lastStatusKey) return
+            lastStatusKey = key
+            write({ event: 'status', phase, text })
+            return
+          }
+          write(data)
+        }
+        const heartbeatTimer = setInterval(() => {
+          const elapsedMs = Date.now() - requestStartedAt
+          try {
+            write({
+              event: 'heartbeat',
+              elapsed_ms: elapsedMs,
+              text: `Still working (${formatElapsed(elapsedMs)})`,
+            })
+          } catch (error) {
+            streamClosed = true
+            clearInterval(heartbeatTimer)
+            console.warn('[Genie] heartbeat stream closed', {
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }, STREAM_HEARTBEAT_MS)
 
         try {
-          emit({ event: 'status', phase: 'planning', text: 'Thinking...' })
+          emit({ event: 'status', phase: 'planning', text: 'Thinking' })
 
           const inputMessages = messages.map(m => ({
             role: m.role as 'user' | 'assistant',
             content: m.content,
           }))
 
-          const tools: any[] = [
+          const tools: Tool[] = [
             { type: 'web_search_preview' as const },
             {
               type: 'function' as const,
@@ -261,14 +326,13 @@ export async function POST(request: NextRequest) {
           // guarantee a written answer.
           const MAX_ITERATIONS = 4
           let previousResponseId: string | null = null
-          let nextInput: any = inputMessages
+          let nextInput: ResponseInput = inputMessages
           const citations: Citation[] = []
 
           for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
             const isLastIteration = iteration === MAX_ITERATIONS - 1
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const response: any = await openai.responses.create({
+            const response: Stream<ResponseStreamEvent> = await openai.responses.create({
               model: MODEL,
               instructions: SYSTEM_PROMPT,
               ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
@@ -284,41 +348,40 @@ export async function POST(request: NextRequest) {
               const type = event.type
 
               if (type === 'response.created') {
-                responseId = (event as any).response?.id ?? null
+                responseId = event.response?.id ?? null
               }
 
               if (type === 'response.web_search_call.in_progress') {
-                emit({ event: 'status', phase: 'web_search', text: 'Searching the web...' })
+                emit({ event: 'status', phase: 'web_search', text: 'Searching web' })
               }
               if (type === 'response.web_search_call.searching') {
-                emit({ event: 'status', phase: 'web_search', text: 'Browsing cycling resources...' })
+                emit({ event: 'status', phase: 'web_search', text: 'Searching web' })
               }
               if (type === 'response.web_search_call.completed') {
-                emit({ event: 'status', phase: 'web_search_done', text: 'Web research done' })
+                emit({ event: 'status', phase: 'web_search_done', text: 'Web search done' })
               }
 
               if (type === 'response.output_item.added') {
-                const item = (event as any).item
-                if (item?.type === 'function_call') {
+                const item = event.item
+                if (item?.type === 'function_call' && item.id && item.call_id) {
                   pendingFunctionCalls.set(item.id, { name: item.name, arguments: '', callId: item.call_id })
                   if (item.name === 'search_marketplace_products') {
-                    emit({ event: 'status', phase: 'product_search', text: 'Checking the marketplace...' })
+                    emit({ event: 'status', phase: 'product_search', text: 'Marketplace' })
                   }
                 }
               }
 
               if (type === 'response.function_call_arguments.delta') {
-                const ev = event as any
-                const fc = pendingFunctionCalls.get(ev.item_id)
-                if (fc) fc.arguments += ev.delta ?? ''
+                const fc = pendingFunctionCalls.get(event.item_id)
+                if (fc) fc.arguments += event.delta ?? ''
               }
 
               if (type === 'response.output_text.delta') {
-                emit({ event: 'text_delta', text: (event as any).delta ?? '' })
+                emit({ event: 'text_delta', text: event.delta ?? '' })
               }
 
               if (type === 'response.completed') {
-                citations.push(...extractCitations((event as any).response))
+                citations.push(...extractCitations(event.response))
               }
             }
 
@@ -328,12 +391,13 @@ export async function POST(request: NextRequest) {
             if (pendingFunctionCalls.size === 0) break
 
             // Run marketplace searches and feed the results back for the next turn
-            const toolOutputs: any[] = []
+            const toolOutputs: ResponseInput = []
             for (const fc of pendingFunctionCalls.values()) {
               if (fc.name === 'search_marketplace_products') {
                 try {
-                  const args = JSON.parse(fc.arguments || '{}')
-                  const { products, output } = await runMarketplaceSearch(supabase, (args.query ?? '').trim())
+                  const args = JSON.parse(fc.arguments || '{}') as { query?: unknown }
+                  const query = typeof args.query === 'string' ? args.query.trim() : ''
+                  const { products, output } = await runMarketplaceSearch(supabase, query)
                   if (products.length > 0) emit({ event: 'products', products })
                   toolOutputs.push({ type: 'function_call_output', call_id: fc.callId, output: JSON.stringify(output) })
                 } catch {
@@ -363,9 +427,21 @@ export async function POST(request: NextRequest) {
 
           emit({ event: 'done' })
         } catch (err) {
-          emit({ event: 'error', message: err instanceof Error ? err.message : 'Unknown error' })
+          try {
+            emit({ event: 'error', message: err instanceof Error ? err.message : 'Unknown error' })
+          } catch {
+            streamClosed = true
+          }
         } finally {
-          controller.close()
+          clearInterval(heartbeatTimer)
+          if (!streamClosed) {
+            streamClosed = true
+            try {
+              controller.close()
+            } catch {
+              // Client already disconnected.
+            }
+          }
         }
       },
     })

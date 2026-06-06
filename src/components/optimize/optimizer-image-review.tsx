@@ -23,16 +23,6 @@ import {
   MAX_SELECTED_IMAGES,
 } from "@/components/optimize/optimizer-shared";
 
-const IMG_PHASE_LABEL: Partial<Record<ImageRun["phase"], string>> = {
-  queued: "Queued",
-  searching: "Searching images…",
-  selecting: "AI selecting…",
-  ready: "Review picks",
-  saving: "Saving…",
-  no_results: "No images found",
-  error: "Failed",
-};
-
 export function OptimizerImageReview({
   img,
   hasCanonical,
@@ -45,6 +35,7 @@ export function OptimizerImageReview({
   onLightbox,
   saving,
   hideApproveAction = false,
+  size = "default",
 }: {
   img: ImageRun;
   hasCanonical: boolean;
@@ -57,6 +48,7 @@ export function OptimizerImageReview({
   onLightbox: (url: string) => void;
   saving: boolean;
   hideApproveAction?: boolean;
+  size?: "default" | "large";
 }) {
   const editable = img.phase === "ready";
   const done = img.phase === "done";
@@ -72,9 +64,9 @@ export function OptimizerImageReview({
 
   if (IMG_BUSY.includes(img.phase) && img.selectedUrls.length === 0) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-        {IMG_PHASE_LABEL[img.phase]}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-4 shrink-0 animate-spin" />
+        Finding images
       </div>
     );
   }
@@ -82,6 +74,14 @@ export function OptimizerImageReview({
   if (img.selectedUrls.length === 0) return null;
 
   const extra = img.candidates.filter((c) => !img.selectedUrls.includes(c.url));
+  const selectedGridClass =
+    size === "large"
+      ? "grid grid-cols-2 gap-4 sm:grid-cols-3"
+      : "grid grid-cols-4 gap-2 sm:grid-cols-6";
+  const extraGridClass =
+    size === "large"
+      ? "grid max-h-96 grid-cols-3 gap-3 overflow-y-auto sm:grid-cols-4"
+      : "grid max-h-72 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6";
 
   return (
     <div className="space-y-3">
@@ -136,7 +136,7 @@ export function OptimizerImageReview({
         </p>
       )}
 
-      <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+      <div className={selectedGridClass}>
         {img.selectedUrls.map((url) => {
           const candidate = img.candidates.find((c) => c.url === url);
           const isEnhanced = !!img.enhancedUrls?.[url];
@@ -237,7 +237,7 @@ export function OptimizerImageReview({
                 </span>
                 <div className="h-px flex-1 bg-border" />
               </div>
-              <div className="grid max-h-72 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
+              <div className={extraGridClass}>
                 {extra.map((c) => {
                   const atMax = img.selectedUrls.length >= MAX_SELECTED_IMAGES;
                   return (

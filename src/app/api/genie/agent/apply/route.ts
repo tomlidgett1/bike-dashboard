@@ -9,7 +9,14 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import type { GenieProposal, ApplyResult, CarouselSizeOption } from '@/lib/types/genie-agent'
+import { createLightspeedClient } from '@/lib/services/lightspeed'
+import { buildFullPathName } from '@/lib/services/lightspeed/category-helpers'
+import type {
+  GenieProposal,
+  ApplyResult,
+  CarouselSizeOption,
+  ProductBrandCategoryChange,
+} from '@/lib/types/genie-agent'
 import { NEW_CAROUSEL_SLOT } from '@/lib/types/genie-agent'
 
 export const dynamic = 'force-dynamic'
@@ -272,6 +279,188 @@ export async function POST(request: NextRequest) {
         kind: 'discount_remove',
         affected,
         message: `Discount removed from ${affected} product${affected === 1 ? '' : 's'}.`,
+      }
+      return NextResponse.json(result)
+    }
+
+    // ── Lightspeed brand/category write-back ─────────────────────────────
+    if (proposal.kind === 'product_brand_category_update') {
+      const changes = Array.isArray(proposal.changes) ? proposal.changes : []
+      if (changes.length === 0) {
+        return NextResponse.json({ error: 'No changes to apply.' }, { status: 400 })
+      }
+
+      const client = createLightspeedClient(user.id)
+      let affected = 0
+      const createdBrandIds = new Map<string, string>()
+      const createdCategoryIds = new Map<string, string>()
+      const appliedChanges: ProductBrandCategoryChange[] = []
+
+      for (const change of changes) {
+        const itemId = change?.lightspeed_item_id
+        if (!itemId) continue
+
+        const { data: existing } = await supabase
+          .from('lightspeed_inventory')
+          .select('lightspeed_item_id')
+          .eq('user_id', user.id)
+          .eq('lightspeed_item_id', itemId)
+          .maybeSingle()
+
+        if (!existing) {
+          return NextResponse.json({ error: `Inventory item ${itemId} was not found for this store.` }, { status: 404 })
+        }
+
+        let nextBrandId = change.next_brand_id
+        if (change.create_brand && change.next_brand_name && !nextBrandId) {
+          const brandKey = change.next_brand_name.trim().toLowerCase()
+          const cachedBrandId = createdBrandIds.get(brandKey)
+          if (cachedBrandId) {
+            nextBrandId = cachedBrandId
+          } else {
+            const manufacturer = await client.createManufacturer(change.next_brand_name.trim())
+            nextBrandId = String(manufacturer.manufacturerID)
+            createdBrandIds.set(brandKey, nextBrandId)
+          }
+        }
+
+        let nextCategoryId = change.next_category_id
+        let nextCategoryName = change.next_category_name
+        let nextCategoryPath = change.next_category_path
+        if (change.create_category && change.next_category_name && !nextCategoryId) {
+          const categoryKey = (change.next_category_path || change.next_category_name).trim().toLowerCase()
+          const cachedCategoryId = createdCategoryIds.get(categoryKey)
+          if (cachedCategoryId) {
+            nextCategoryId = cachedCategoryId
+          } else {
+            const existingCategories = await client.getAllCategories({ archived: 'false' }).catch(() => [])
+            const categoriesById = new Map(
+              existingCategories.map((row) => [String(row.categoryID), row]),
+            )
+            const parentID = change.next_category_parent_id && change.next_category_parent_id !== '0'
+              ? String(change.next_category_parent_id)
+              : '0'
+            const name = change.next_category_name.trim()
+            const fullPathName = (change.next_category_path || '').trim()
+              || buildFullPathName(name, parentID, categoriesById)
+            const category = await client.createCategory({
+              name,
+              fullPathName,
+              parentID: parentID !== '0' ? parentID : undefined,
+            })
+            nextCategoryId = String(category.categoryID)
+            nextCategoryName = category.name
+            nextCategoryPath = category.fullPathName || category.name
+            createdCategoryIds.set(categoryKey, nextCategoryId)
+          }
+        }
+
+        const brandChanging = Boolean(nextBrandId) || change.create_brand || change.clear_brand
+        const categoryChanging = Boolean(nextCategoryId) || change.create_category || change.clear_category
+
+        const payload: Record<string, string> = {}
+        if (brandChanging) payload.manufacturerID = nextBrandId || '0'
+        if (categoryChanging) payload.categoryID = nextCategoryId || '0'
+
+        if (Object.keys(payload).length === 0) continue
+
+        await client.updateItem(itemId, payload)
+
+        const cachePatch: Record<string, unknown> = {
+          last_synced_at: new Date().toISOString(),
+        }
+        if (brandChanging) {
+          cachePatch.brand_id = nextBrandId || null
+          cachePatch.brand_name = change.clear_brand ? null : change.next_brand_name
+        }
+        if (categoryChanging) {
+          cachePatch.category_id = nextCategoryId || null
+          cachePatch.category_name = change.clear_category ? null : nextCategoryName
+          cachePatch.category_path = change.clear_category ? null : nextCategoryPath
+        }
+
+        await supabase
+          .from('lightspeed_inventory')
+          .update(cachePatch)
+          .eq('user_id', user.id)
+          .eq('lightspeed_item_id', itemId)
+
+        const productPatch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        if (brandChanging) {
+          productPatch.manufacturer_id = nextBrandId || null
+          productPatch.manufacturer_name = change.clear_brand ? null : change.next_brand_name
+        }
+        if (categoryChanging) {
+          productPatch.lightspeed_category_id = nextCategoryId || null
+          productPatch.category_name = change.clear_category ? null : nextCategoryName
+          productPatch.full_category_path = change.clear_category ? null : nextCategoryPath
+        }
+
+        await supabase
+          .from('products')
+          .update(productPatch)
+          .eq('user_id', user.id)
+          .eq('lightspeed_item_id', itemId)
+
+        appliedChanges.push({
+          lightspeed_item_id: itemId,
+          product_name: change.product_name,
+          sku: change.sku,
+          image_url: change.image_url ?? null,
+          prev_brand_id: change.prev_brand_id,
+          prev_brand_name: change.prev_brand_name,
+          next_brand_id: nextBrandId || null,
+          next_brand_name: change.clear_brand ? null : change.next_brand_name,
+          prev_category_id: change.prev_category_id,
+          prev_category_name: change.prev_category_name,
+          prev_category_path: change.prev_category_path,
+          next_category_id: nextCategoryId || null,
+          next_category_name: change.clear_category ? null : nextCategoryName,
+          next_category_path: change.clear_category ? null : nextCategoryPath,
+        })
+
+        affected++
+      }
+
+      const result: ApplyResult = {
+        ok: true,
+        kind: 'product_brand_category_update',
+        affected,
+        message: `Updated brand/category for ${affected} product${affected === 1 ? '' : 's'} in Lightspeed.`,
+        applied_changes: appliedChanges,
+      }
+      return NextResponse.json(result)
+    }
+
+    // ── Lightspeed category create ───────────────────────────────────────
+    if (proposal.kind === 'lightspeed_category_create') {
+      const name = (proposal.name ?? '').trim()
+      if (!name) {
+        return NextResponse.json({ error: 'Category name is required.' }, { status: 400 })
+      }
+
+      const client = createLightspeedClient(user.id)
+      const existingCategories = await client.getAllCategories({ archived: 'false' }).catch(() => [])
+      const categoriesById = new Map(
+        existingCategories.map((row) => [String(row.categoryID), row]),
+      )
+      const parentID = proposal.parent_category_id && proposal.parent_category_id !== '0'
+        ? String(proposal.parent_category_id)
+        : '0'
+      const fullPathName = (proposal.path ?? '').trim()
+        || buildFullPathName(name, parentID, categoriesById)
+
+      const category = await client.createCategory({
+        name,
+        fullPathName,
+        parentID: parentID !== '0' ? parentID : undefined,
+      })
+
+      const result: ApplyResult = {
+        ok: true,
+        kind: 'lightspeed_category_create',
+        affected: 1,
+        message: `Created Lightspeed category "${category.fullPathName || category.name}".`,
       }
       return NextResponse.json(result)
     }

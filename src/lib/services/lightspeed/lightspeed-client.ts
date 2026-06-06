@@ -34,6 +34,14 @@ import type {
   LightspeedWorkorder,
   LightspeedWorkorderStatus,
   LightspeedWorkorderStatusesResponse,
+  LightspeedWorkorderItem,
+  LightspeedWorkorderItemsResponse,
+  LightspeedWorkorderWithRelations,
+  LightspeedWorkordersResponse,
+  LightspeedManufacturer,
+  LightspeedManufacturersResponse,
+  LightspeedVendor,
+  LightspeedVendorsResponse,
 } from './types'
 
 interface CursorPageProgress {
@@ -547,8 +555,8 @@ export class LightspeedClient {
   /**
    * Get all manufacturers (brands) with pagination
    */
-  async getAllManufacturers(additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>): Promise<Array<{ manufacturerID: string; name: string }>> {
-    const allManufacturers: Array<{ manufacturerID: string; name: string }> = []
+  async getAllManufacturers(additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>): Promise<LightspeedManufacturer[]> {
+    const allManufacturers: LightspeedManufacturer[] = []
     const accountId = await this.getAccountId()
     const limit = 100
     let nextUrl: string = `/Account/${accountId}/Manufacturer.json${this.buildQueryString({
@@ -557,10 +565,7 @@ export class LightspeedClient {
     })}`
 
     for (let page = 0; page < 50; page++) {
-      const response = await this.request<{
-        Manufacturer?: { manufacturerID: string; name: string } | Array<{ manufacturerID: string; name: string }>
-        '@attributes'?: { next?: string }
-      }>(nextUrl)
+      const response = await this.request<LightspeedManufacturersResponse>(nextUrl)
       const page_data = this.ensureArray(response.Manufacturer)
       allManufacturers.push(...page_data)
       const next = response['@attributes']?.next
@@ -569,6 +574,49 @@ export class LightspeedClient {
     }
 
     return allManufacturers
+  }
+
+  /**
+   * Create a new manufacturer (brand) in Lightspeed.
+   */
+  async createManufacturer(name: string): Promise<LightspeedManufacturer> {
+    const accountId = await this.getAccountId()
+    const response = await this.request<{ Manufacturer: LightspeedManufacturer }>(
+      `/Account/${accountId}/Manufacturer.json`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ name: name.trim() }),
+      },
+    )
+    return response.Manufacturer
+  }
+
+  // ============================================================
+  // Vendor / Supplier Methods
+  // ============================================================
+
+  /**
+   * Get all vendors (suppliers) with cursor pagination.
+   */
+  async getAllVendors(additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>): Promise<LightspeedVendor[]> {
+    const allVendors: LightspeedVendor[] = []
+    const accountId = await this.getAccountId()
+    const limit = 100
+    let nextUrl: string = `/Account/${accountId}/Vendor.json${this.buildQueryString({
+      ...additionalParams,
+      limit,
+    })}`
+
+    for (let page = 0; page < 50; page++) {
+      const response = await this.request<LightspeedVendorsResponse>(nextUrl)
+      const pageData = this.ensureArray(response.Vendor)
+      allVendors.push(...pageData)
+      const next = response['@attributes']?.next
+      if (!next || pageData.length < limit) break
+      nextUrl = next
+    }
+
+    return allVendors
   }
 
   // ============================================================
@@ -660,6 +708,85 @@ export class LightspeedClient {
       `/Account/${accountId}/WorkorderStatus.json${queryString}`
     )
     return this.ensureArray(response.WorkorderStatus)
+  }
+
+  /**
+   * List workorders for the account (cursor-paginated).
+   */
+  async getWorkorders(params?: LightspeedQueryParams): Promise<LightspeedWorkorderWithRelations[]> {
+    const accountId = await this.getAccountId()
+    const queryString = this.buildQueryString(params)
+    const response = await this.request<LightspeedWorkordersResponse>(
+      `/Account/${accountId}/Workorder.json${queryString}`
+    )
+    return this.ensureArray(response.Workorder)
+  }
+
+  /**
+   * Fetch a single workorder by ID (with optional relations).
+   */
+  async getWorkorder(
+    workorderId: string,
+    params?: LightspeedQueryParams,
+  ): Promise<LightspeedWorkorderWithRelations | null> {
+    const accountId = await this.getAccountId()
+    const queryString = this.buildQueryString(params)
+    try {
+      const response = await this.request<{ Workorder: LightspeedWorkorderWithRelations }>(
+        `/Account/${accountId}/Workorder/${workorderId}.json${queryString}`,
+      )
+      return response.Workorder ?? null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * List parts/items attached to a workorder (with Item description when available).
+   */
+  async getWorkorderItems(workorderId: string): Promise<LightspeedWorkorderItem[]> {
+    const accountId = await this.getAccountId()
+    const queryString = this.buildQueryString({ load_relations: '["Item"]' })
+    const response = await this.request<LightspeedWorkorderItemsResponse>(
+      `/Account/${accountId}/Workorder/${workorderId}/WorkorderItem.json${queryString}`,
+    )
+    return this.ensureArray(response.WorkorderItem)
+  }
+
+  /**
+   * Fetch recent workorders across cursor pages (stops early once enough rows are collected).
+   */
+  async getRecentWorkorders(
+    additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>,
+    options?: CursorOptions & { targetCount?: number }
+  ): Promise<LightspeedWorkorderWithRelations[]> {
+    const targetCount = Math.max(options?.targetCount ?? 80, 1)
+    const limit = Math.min(Math.max(options?.limit ?? 100, 1), 100)
+    const maxPages = Math.max(options?.maxPages ?? 5, 1)
+    const accountId = await this.getAccountId()
+    const collected: LightspeedWorkorderWithRelations[] = []
+
+    let endpoint: string | null = `/Account/${accountId}/Workorder.json${this.buildQueryString({
+      ...additionalParams,
+      limit,
+    })}`
+    let pagesFetched = 0
+
+    while (endpoint && pagesFetched < maxPages && collected.length < targetCount) {
+      const response: LightspeedWorkordersResponse = await this.request<LightspeedWorkordersResponse>(endpoint)
+      const page = this.ensureArray(response.Workorder)
+      collected.push(...page)
+      pagesFetched++
+
+      const next: string | undefined = response['@attributes']?.next
+      if (!next || page.length < limit) {
+        endpoint = null
+      } else {
+        endpoint = next
+      }
+    }
+
+    return collected.slice(0, targetCount)
   }
 
   /**
@@ -1159,4 +1286,3 @@ export class LightspeedClient {
 export function createLightspeedClient(userId: string): LightspeedClient {
   return new LightspeedClient(userId)
 }
-

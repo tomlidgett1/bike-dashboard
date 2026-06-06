@@ -1,0 +1,392 @@
+import type { GenieWorkorderCard, GenieWorkorderCardsPayload } from '@/lib/types/genie-agent'
+import { createLightspeedClient } from './lightspeed-client'
+import type {
+  LightspeedCustomer,
+  LightspeedWorkorderItem,
+  LightspeedWorkorderLine,
+  LightspeedWorkorderStatus,
+  LightspeedWorkorderWithRelations,
+} from './types'
+
+const FINISHED_SYSTEM_VALUES = new Set(['finished', 'paid', 'complete', 'done'])
+
+export type GenieWorkorderScope = 'open' | 'finished' | 'all'
+
+export type GenieWorkorderLine = {
+  line_id: string
+  note: string
+  done: boolean
+}
+
+export type GenieWorkorderItem = {
+  item_id: string
+  description: string | null
+  sku: string | null
+  note: string
+  quantity: number | null
+  unit_price: number | null
+  line_total: number | null
+}
+
+export type GenieWorkorderDetail = {
+  workorder_id: string
+  status_id: string
+  status_name: string
+  status_system_value: string | null
+  is_finished: boolean
+  archived: boolean
+  time_in: string
+  eta_out: string
+  updated_at: string
+  note: string
+  internal_note: string
+  warranty: string
+  customer_id: string
+  customer_name: string
+  customer_phone: string | null
+  customer_email: string | null
+  employee_id: string
+  shop_id: string
+  sale_id: string | null
+  lines: GenieWorkorderLine[]
+  items: GenieWorkorderItem[]
+  items_subtotal: number | null
+}
+
+export type ListGenieWorkordersOptions = {
+  scope?: GenieWorkorderScope
+  query?: string
+  limit?: number
+  include_details?: boolean
+  max_pages_per_status?: number
+}
+
+function ensureArray<T>(data: T | T[] | undefined): T[] {
+  if (!data) return []
+  return Array.isArray(data) ? data : [data]
+}
+
+function parseTimestamp(value: string | undefined): number {
+  if (!value) return 0
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+function parseNumber(value: string | undefined): number | null {
+  if (value == null || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizeText(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+export function isFinishedWorkorderStatus(status: LightspeedWorkorderStatus | undefined): boolean {
+  if (!status) return false
+  const systemValue = String(status.systemValue ?? '').trim().toLowerCase()
+  if (systemValue && FINISHED_SYSTEM_VALUES.has(systemValue)) return true
+  const name = String(status.name ?? '').trim().toLowerCase()
+  return /(finish|finished|done|complete|ready|pickup|paid)/.test(name)
+}
+
+function customerDisplayName(customer: LightspeedCustomer | undefined, customerId: string): string {
+  if (!customer) return `Customer ${customerId}`
+  const name = [customer.firstName, customer.lastName]
+    .map(part => String(part ?? '').trim())
+    .filter(Boolean)
+    .join(' ')
+  return name || String(customer.company ?? '').trim() || `Customer ${customerId}`
+}
+
+function pickCustomerPhone(customer: LightspeedCustomer): string | null {
+  const phones = ensureArray(customer.Contact?.Phones?.ContactPhone)
+  const mobile = phones.find(phone => String(phone.useType ?? '').toLowerCase().includes('mobile'))
+  if (mobile?.number?.trim()) return mobile.number.trim()
+  const first = phones.find(phone => phone.number?.trim())
+  return first?.number?.trim() ?? null
+}
+
+function pickCustomerEmail(customer: LightspeedCustomer): string | null {
+  const emails = ensureArray(customer.Contact?.Emails?.ContactEmail)
+  const primary = emails.find(email => String(email.useType ?? '').toLowerCase().includes('primary'))
+  if (primary?.address?.trim()) return primary.address.trim()
+  const first = emails.find(email => email.address?.trim())
+  return first?.address?.trim() ?? null
+}
+
+function workorderLines(workorder: LightspeedWorkorderWithRelations): LightspeedWorkorderLine[] {
+  return ensureArray(workorder.WorkorderLines?.WorkorderLine)
+}
+
+function workorderItemsFromRelation(workorder: LightspeedWorkorderWithRelations): LightspeedWorkorderItem[] {
+  return ensureArray(workorder.WorkorderItems?.WorkorderItem)
+}
+
+function mapWorkorderLines(workorder: LightspeedWorkorderWithRelations): GenieWorkorderLine[] {
+  return workorderLines(workorder).map(line => ({
+    line_id: String(line.workorderLineID),
+    note: String(line.note ?? '').trim(),
+    done: String(line.done ?? '') === 'true',
+  }))
+}
+
+function mapWorkorderItems(items: LightspeedWorkorderItem[]): GenieWorkorderItem[] {
+  return items.map(item => {
+    const quantity = parseNumber(item.unitQuantity)
+    const unitPrice = parseNumber(item.unitPrice)
+    const lineTotal = quantity != null && unitPrice != null ? quantity * unitPrice : null
+    return {
+      item_id: String(item.itemID ?? ''),
+      description: String(item.Item?.description ?? '').trim() || null,
+      sku: String(item.Item?.customSku ?? item.Item?.systemSku ?? '').trim() || null,
+      note: String(item.note ?? '').trim(),
+      quantity,
+      unit_price: unitPrice,
+      line_total: lineTotal,
+    }
+  })
+}
+
+function itemsSubtotal(items: GenieWorkorderItem[]): number | null {
+  const totals = items.map(item => item.line_total).filter((value): value is number => value != null)
+  if (totals.length === 0) return null
+  return totals.reduce((sum, value) => sum + value, 0)
+}
+
+function statusForWorkorder(
+  workorder: LightspeedWorkorderWithRelations,
+  statusById: Map<string, LightspeedWorkorderStatus>,
+): LightspeedWorkorderStatus | undefined {
+  return (
+    workorder.WorkorderStatus
+    ?? statusById.get(String(workorder.workorderStatusID ?? ''))
+  )
+}
+
+function matchesQuery(detail: GenieWorkorderDetail, needle: string): boolean {
+  const haystack = [
+    detail.workorder_id,
+    detail.customer_name,
+    detail.customer_phone ?? '',
+    detail.customer_email ?? '',
+    detail.note,
+    detail.internal_note,
+    detail.status_name,
+    ...detail.lines.map(line => line.note),
+    ...detail.items.map(item => [item.description, item.sku, item.note].filter(Boolean).join(' ')),
+  ]
+    .map(part => normalizeText(String(part)))
+    .join(' ')
+  return haystack.includes(needle)
+}
+
+async function enrichWorkorder(
+  userId: string,
+  workorder: LightspeedWorkorderWithRelations,
+  statusById: Map<string, LightspeedWorkorderStatus>,
+  includeDetails: boolean,
+): Promise<GenieWorkorderDetail> {
+  const client = createLightspeedClient(userId)
+  const workorderId = String(workorder.workorderID)
+  const customerId = String(workorder.customerID ?? '')
+  const status = statusForWorkorder(workorder, statusById)
+  const statusName = String(status?.name ?? 'Unknown').trim()
+  const isFinished = isFinishedWorkorderStatus(status)
+
+  let customer = workorder.Customer
+  let items = workorderItemsFromRelation(workorder)
+
+  if (includeDetails) {
+    const [profileResult, itemsResult] = await Promise.allSettled([
+      customerId && customerId !== '0'
+        ? client.getCustomer(customerId, { load_relations: '["Contact"]' })
+        : Promise.resolve(customer),
+      items.length === 0 ? client.getWorkorderItems(workorderId) : Promise.resolve(items),
+    ])
+
+    if (profileResult.status === 'fulfilled' && profileResult.value) {
+      customer = profileResult.value
+    }
+    if (itemsResult.status === 'fulfilled') {
+      items = itemsResult.value
+    }
+  }
+
+  const mappedItems = includeDetails ? mapWorkorderItems(items) : []
+  const customerName = customerDisplayName(customer, customerId)
+  const customerPhone = customer ? pickCustomerPhone(customer) : null
+  const customerEmail = customer ? pickCustomerEmail(customer) : null
+
+  return {
+    workorder_id: workorderId,
+    status_id: String(workorder.workorderStatusID ?? ''),
+    status_name: statusName,
+    status_system_value: String(status?.systemValue ?? '').trim() || null,
+    is_finished: isFinished,
+    archived: String(workorder.archived ?? '') === 'true',
+    time_in: String(workorder.timeIn ?? ''),
+    eta_out: String(workorder.etaOut ?? ''),
+    updated_at: String(workorder.timeStamp ?? workorder.etaOut ?? workorder.timeIn ?? ''),
+    note: String(workorder.note ?? '').trim(),
+    internal_note: String(workorder.internalNote ?? '').trim(),
+    warranty: String(workorder.warranty ?? '').trim(),
+    customer_id: customerId,
+    customer_name: customerName,
+    customer_phone: customerPhone,
+    customer_email: customerEmail,
+    employee_id: String(workorder.employeeID ?? ''),
+    shop_id: String(workorder.shopID ?? ''),
+    sale_id: workorder.saleID ? String(workorder.saleID) : null,
+    lines: includeDetails ? mapWorkorderLines(workorder) : [],
+    items: mappedItems,
+    items_subtotal: includeDetails ? itemsSubtotal(mappedItems) : null,
+  }
+}
+
+async function fetchWorkordersByStatusIds(
+  userId: string,
+  statusIds: string[],
+  options?: { limitPerStatus?: number; maxPagesPerStatus?: number },
+): Promise<LightspeedWorkorderWithRelations[]> {
+  if (statusIds.length === 0) return []
+
+  const client = createLightspeedClient(userId)
+  const loadRelations = '["Customer","WorkorderLines","WorkorderStatus"]'
+  const limitPerStatus = Math.max(options?.limitPerStatus ?? 24, 1)
+  const maxPagesPerStatus = Math.max(options?.maxPagesPerStatus ?? 2, 1)
+
+  const batches = await Promise.all(
+    statusIds.map(statusId =>
+      client.getRecentWorkorders(
+        {
+          archived: 'false',
+          workorderStatusID: statusId,
+          sort: '-timeStamp',
+          load_relations: loadRelations,
+        },
+        {
+          targetCount: limitPerStatus,
+          limit: Math.min(limitPerStatus, 100),
+          maxPages: maxPagesPerStatus,
+        },
+      ),
+    ),
+  )
+
+  const byId = new Map<string, LightspeedWorkorderWithRelations>()
+  for (const workorder of batches.flat()) {
+    byId.set(String(workorder.workorderID), workorder)
+  }
+
+  return [...byId.values()].sort((a, b) => parseTimestamp(b.timeStamp) - parseTimestamp(a.timeStamp))
+}
+
+export async function listGenieWorkorders(
+  userId: string,
+  options: ListGenieWorkordersOptions = {},
+): Promise<{
+  scope: GenieWorkorderScope
+  statuses: Array<{ status_id: string; name: string; system_value: string | null; is_finished: boolean }>
+  workorders: GenieWorkorderDetail[]
+  total: number
+  truncated: boolean
+}> {
+  const scope = options.scope ?? 'open'
+  const limit = Math.min(Math.max(options.limit ?? 40, 1), 100)
+  const includeDetails = options.include_details !== false
+  const query = options.query ? normalizeText(options.query) : ''
+
+  const client = createLightspeedClient(userId)
+  const statuses = await client.getWorkorderStatuses()
+  const statusById = new Map(statuses.map(status => [String(status.workorderStatusID), status]))
+
+  const statusRows = statuses.map(status => ({
+    status_id: String(status.workorderStatusID),
+    name: String(status.name ?? '').trim(),
+    system_value: String(status.systemValue ?? '').trim() || null,
+    is_finished: isFinishedWorkorderStatus(status),
+  }))
+
+  const targetStatusIds = statuses
+    .filter(status => {
+      const finished = isFinishedWorkorderStatus(status)
+      if (scope === 'open') return !finished
+      if (scope === 'finished') return finished
+      return true
+    })
+    .map(status => String(status.workorderStatusID))
+
+  const perStatusLimit = Math.max(Math.ceil(limit / Math.max(targetStatusIds.length, 1)) + 4, 8)
+  const rawWorkorders = await fetchWorkordersByStatusIds(userId, targetStatusIds, {
+    limitPerStatus: perStatusLimit,
+    maxPagesPerStatus: options.max_pages_per_status ?? 2,
+  })
+
+  const scoped = rawWorkorders.filter(workorder => {
+    const status = statusForWorkorder(workorder, statusById)
+    const finished = isFinishedWorkorderStatus(status)
+    if (scope === 'open') return !finished
+    if (scope === 'finished') return finished
+    return true
+  })
+
+  const enriched = await Promise.all(
+    scoped.slice(0, limit + (query ? perStatusLimit : 0)).map(workorder =>
+      enrichWorkorder(userId, workorder, statusById, includeDetails),
+    ),
+  )
+
+  const filtered = query
+    ? enriched.filter(detail => matchesQuery(detail, query)).slice(0, limit)
+    : enriched.slice(0, limit)
+
+  return {
+    scope,
+    statuses: statusRows,
+    workorders: filtered,
+    total: filtered.length,
+    truncated: scoped.length > filtered.length || rawWorkorders.length > scoped.length,
+  }
+}
+
+export async function getGenieWorkorder(
+  userId: string,
+  workorderId: string,
+): Promise<GenieWorkorderDetail | null> {
+  const cleanId = String(workorderId).trim()
+  if (!cleanId) return null
+
+  const client = createLightspeedClient(userId)
+  const statuses = await client.getWorkorderStatuses()
+  const statusById = new Map(statuses.map(status => [String(status.workorderStatusID), status]))
+
+  const workorder = await client.getWorkorder(cleanId, {
+    load_relations: '["Customer","WorkorderLines","WorkorderStatus","WorkorderItems"]',
+  })
+
+  if (!workorder) return null
+  return enrichWorkorder(userId, workorder, statusById, true)
+}
+
+const SCOPE_TITLES: Record<GenieWorkorderScope | 'single', string> = {
+  open: 'Open work orders',
+  finished: 'Finished work orders',
+  all: 'Work orders',
+  single: 'Work order',
+}
+
+export function buildWorkorderCardsPayload(args: {
+  scope: GenieWorkorderScope | 'single'
+  workorders: GenieWorkorderDetail[]
+  truncated?: boolean
+  title?: string
+}): GenieWorkorderCardsPayload | null {
+  if (args.workorders.length === 0) return null
+  return {
+    title: args.title ?? SCOPE_TITLES[args.scope],
+    scope: args.scope,
+    truncated: args.truncated,
+    workorders: args.workorders as GenieWorkorderCard[],
+  }
+}

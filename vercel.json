@@ -13,6 +13,18 @@
       "schedule": "*/20 * * * *"
     },
     {
+      "path": "/api/cron/lightspeed-sales-report-sync",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/lightspeed-inventory-sync",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/lightspeed-sales-report-backfill",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/lightspeed-title-cleaning",
       "schedule": "* * * * *"
     }

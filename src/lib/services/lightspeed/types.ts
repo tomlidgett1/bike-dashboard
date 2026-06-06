@@ -185,6 +185,57 @@ export interface LightspeedItemsResponse {
 }
 
 // ============================================================
+// Manufacturer / Vendor Types
+// ============================================================
+
+export interface LightspeedManufacturer {
+  manufacturerID: string
+  name: string
+  createTime?: string
+  timeStamp?: string
+}
+
+export interface LightspeedManufacturersResponse {
+  Manufacturer: LightspeedManufacturer | LightspeedManufacturer[]
+  '@attributes'?: {
+    count?: string
+    offset?: string
+    limit?: string
+    next?: string
+    previous?: string
+  }
+}
+
+export interface LightspeedVendor {
+  vendorID: string
+  name: string
+  archived: string
+  accountNumber?: string
+  priceLevel?: string
+  updatePrice?: string
+  updateCost?: string
+  updateDescription?: string
+  shareSellThrough?: string
+  timeStamp?: string
+  purchasingCurrency?: {
+    code?: string
+    symbol?: string
+    rate?: string
+  }
+}
+
+export interface LightspeedVendorsResponse {
+  Vendor: LightspeedVendor | LightspeedVendor[]
+  '@attributes'?: {
+    count?: string
+    offset?: string
+    limit?: string
+    next?: string
+    previous?: string
+  }
+}
+
+// ============================================================
 // Category Types
 // ============================================================
 
@@ -369,6 +420,58 @@ export interface LightspeedWorkorderStatusesResponse {
   WorkorderStatus: LightspeedWorkorderStatus | LightspeedWorkorderStatus[]
   '@attributes'?: {
     count: string
+    offset?: string
+    limit?: string
+    next?: string
+    previous?: string
+  }
+}
+
+export interface LightspeedWorkorderLine {
+  workorderLineID: string
+  note: string
+  done: string
+  workorderID: string
+  timeStamp?: string
+}
+
+export interface LightspeedWorkorderItem {
+  workorderItemID: string
+  note: string
+  itemID: string
+  workorderID: string
+  unitQuantity?: string
+  unitPrice?: string
+  timeStamp?: string
+  Item?: Pick<LightspeedItem, 'itemID' | 'description' | 'customSku' | 'systemSku'>
+}
+
+export interface LightspeedWorkorderItemsResponse {
+  WorkorderItem: LightspeedWorkorderItem | LightspeedWorkorderItem[]
+  '@attributes'?: {
+    count?: string
+    offset?: string
+    limit?: string
+    next?: string
+    previous?: string
+  }
+}
+
+export interface LightspeedWorkorderWithRelations extends LightspeedWorkorder {
+  Customer?: LightspeedCustomer
+  WorkorderStatus?: LightspeedWorkorderStatus
+  WorkorderLines?: {
+    WorkorderLine: LightspeedWorkorderLine | LightspeedWorkorderLine[]
+  }
+  WorkorderItems?: {
+    WorkorderItem: LightspeedWorkorderItem | LightspeedWorkorderItem[]
+  }
+}
+
+export interface LightspeedWorkordersResponse {
+  Workorder: LightspeedWorkorderWithRelations | LightspeedWorkorderWithRelations[]
+  '@attributes'?: {
+    count?: string
     offset?: string
     limit?: string
     next?: string
@@ -619,7 +722,6 @@ export interface SyncOption {
   description: string
   enabled: boolean
 }
-
 
 
 

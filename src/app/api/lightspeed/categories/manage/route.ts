@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createLightspeedClient } from '@/lib/services/lightspeed';
 import type { LightspeedCategory } from '@/lib/services/lightspeed';
+import { buildFullPathName } from '@/lib/services/lightspeed/category-helpers';
 
 async function requireLightspeedStore(): Promise<
   | { error: NextResponse }
@@ -94,24 +95,6 @@ async function getProductCountsByCategory(userId: string, supabase: Awaited<Retu
   }
 
   return counts;
-}
-
-function buildFullPathName(
-  name: string,
-  parentId: string | undefined,
-  categoriesById: Map<string, LightspeedCategory>
-): string {
-  const trimmedName = name.trim();
-  if (!parentId || parentId === '0') {
-    return trimmedName;
-  }
-
-  const parent = categoriesById.get(parentId);
-  if (!parent?.fullPathName) {
-    return trimmedName;
-  }
-
-  return `${parent.fullPathName}/${trimmedName}`;
 }
 
 export async function GET() {

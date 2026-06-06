@@ -9,7 +9,6 @@ import {
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
-  BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "./theme-toggle";
@@ -24,11 +23,6 @@ const LazyNotificationsDropdown = dynamic(
 
 const LazyMessagesDropdown = dynamic(
   () => import("./messages-dropdown").then((mod) => mod.MessagesDropdown),
-  { ssr: false }
-);
-
-const LazyTopbarLightspeedStatus = dynamic(
-  () => import("./topbar-lightspeed-status").then((mod) => mod.TopbarLightspeedStatus),
   { ssr: false }
 );
 
@@ -102,26 +96,23 @@ export function Topbar() {
   const showDeferredActions = useDeferredTopbarActions();
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border/60 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border/50 bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <SidebarTrigger className="-ml-1" />
       <Breadcrumb>
         <BreadcrumbList>
-          <BreadcrumbItem className="hidden text-muted-foreground md:block">
-            {crumb.section}
-          </BreadcrumbItem>
-          <BreadcrumbSeparator className="hidden md:block" />
           <BreadcrumbItem>
-            <BreadcrumbPage>{crumb.page}</BreadcrumbPage>
+            <BreadcrumbPage className="text-sm font-medium text-foreground">
+              {crumb.page}
+            </BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-0.5">
         <TopbarNavPills />
         {showAgentInHeader ? <AgentHeaderButton /> : null}
         {showDeferredActions ? (
           <>
-            <LazyTopbarLightspeedStatus />
             {user ? <LazyNotificationsDropdown /> : null}
             {user ? <LazyMessagesDropdown /> : null}
           </>

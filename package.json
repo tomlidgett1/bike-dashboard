@@ -10,6 +10,7 @@
     "profile:marketplace": "npm run build:profile && node scripts/report-marketplace-bundle.mjs",
     "start": "node ./node_modules/next/dist/bin/next start",
     "lint": "eslint",
+    "test:genie-orchestration": "tsx scripts/test-genie-orchestration.ts",
     "check:google-oauth": "node --env-file=.env.local scripts/check-google-oauth.mjs",
     "check:apple-oauth": "node --env-file=.env.local scripts/check-apple-oauth.mjs",
     "migrate:canonical": "ts-node scripts/migrate-to-canonical.ts"

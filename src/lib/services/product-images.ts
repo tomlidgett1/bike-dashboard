@@ -8,10 +8,12 @@
  */
 
 import { SupabaseClient } from "@supabase/supabase-js";
+import { getProductImageSlotUrl, resolveProductImage } from "@/lib/services/image-resolver";
 import {
   buildCloudinaryVariantUrls,
   buildCloudinaryImageUrl,
   extractCloudinaryPublicId,
+  toCurrentHeroPublicId,
 } from "@/lib/utils/cloudinary-transforms";
 
 // ============================================================
@@ -159,6 +161,252 @@ export async function getProductCardUrl(
   }
 
   return null;
+}
+
+function isDisplayableImage(image: ProductImage): boolean {
+  return image.approval_status === "approved" || image.approval_status == null;
+}
+
+function pickPrimaryProductImage(
+  images: ProductImage[],
+  selectedProductImageId?: string | null,
+): ProductImage | null {
+  const approved = images.filter(isDisplayableImage);
+  if (approved.length === 0) return null;
+  const sorted = [...approved].sort((a, b) => a.sort_order - b.sort_order);
+  return (
+    sorted.find((img) => img.id === selectedProductImageId) ||
+    sorted.find((img) => img.is_primary) ||
+    sorted[0] ||
+    null
+  );
+}
+
+type MarketplaceReadyImageRow = {
+  id: string;
+  resolved_image_id: string | null;
+  resolved_image_source: string | null;
+  resolved_external_url: string | null;
+  resolved_cloudinary_url: string | null;
+  resolved_cloudinary_public_id: string | null;
+};
+
+type ProductRowForImage = {
+  id: string;
+  lightspeed_item_id: string;
+  canonical_product_id: string | null;
+  selected_product_image_id: string | null;
+  cached_image_url: string | null;
+  cached_thumbnail_url: string | null;
+  product_images?: ProductImage[] | null;
+  canonical_products?: {
+    product_images?: ProductImage[] | null;
+  } | null;
+};
+
+function marketplaceCardImageUrl(row: MarketplaceReadyImageRow | undefined): string | null {
+  if (!row) return null;
+  const effectivePublicId = toCurrentHeroPublicId(
+    row.resolved_cloudinary_public_id,
+    row.resolved_image_source,
+  );
+  const resolved = resolveProductImage({
+    id: row.resolved_image_id,
+    cloudinary_public_id: effectivePublicId,
+    cloudinary_url: row.resolved_cloudinary_url,
+    external_url: row.resolved_external_url,
+    approval_status: "approved",
+  });
+  return resolved?.card_url ?? resolved?.thumbnail_url ?? resolved?.original_url ?? null;
+}
+
+function resolveImageForProductRow(
+  product: ProductRowForImage,
+  marketplaceRow?: MarketplaceReadyImageRow,
+): string | null {
+  const marketplaceUrl = marketplaceCardImageUrl(marketplaceRow);
+  if (marketplaceUrl) return marketplaceUrl;
+
+  const canonicalImages = product.canonical_products?.product_images ?? [];
+  const canonicalPrimary = pickPrimaryProductImage(
+    canonicalImages,
+    product.selected_product_image_id,
+  );
+  if (canonicalPrimary) {
+    const url = productImageDisplayUrl(canonicalPrimary, "thumbnail");
+    if (url) return url;
+  }
+
+  const productImages = product.product_images ?? [];
+  const productPrimary = pickPrimaryProductImage(
+    productImages,
+    product.selected_product_image_id,
+  );
+  if (productPrimary) {
+    const url = productImageDisplayUrl(productPrimary, "thumbnail");
+    if (url) return url;
+  }
+
+  return product.cached_thumbnail_url || product.cached_image_url || null;
+}
+
+function productImageDisplayUrl(image: ProductImage, slot: "thumbnail" | "grid_card" = "thumbnail"): string | null {
+  const effectivePublicId = toCurrentHeroPublicId(
+    image.cloudinary_public_id || extractCloudinaryPublicId(image.cloudinary_url),
+    image.source,
+  );
+  const resolvable: ProductImage = {
+    ...image,
+    cloudinary_public_id: effectivePublicId,
+  };
+
+  return (
+    getProductImageSlotUrl(resolvable, slot) ||
+    image.thumbnail_url ||
+    image.card_url ||
+    image.gallery_url ||
+    image.external_url ||
+    image.cloudinary_url
+  );
+}
+
+/**
+ * Batch-resolve Cloudinary thumbnail URLs for Lightspeed items.
+ * Source of truth: cloudinary_public_id on product_images (or resolved_* on
+ * marketplace_ready_products). URLs are built on the fly via getProductImageSlotUrl
+ * — same pipeline as the homepage and product pages. Internal Lightspeed admin
+ * surfaces fall back to the inventory mirror's primary_image_url when no
+ * product_images/marketplace image exists yet.
+ */
+export async function resolveThumbnailUrlsByLightspeedItemIds(
+  supabase: SupabaseClient,
+  userId: string,
+  lightspeedItemIds: string[],
+): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  const uniqueItemIds = [...new Set(lightspeedItemIds.map(String).filter(Boolean))];
+  if (uniqueItemIds.length === 0) return result;
+
+  const { data: inventoryRows } = await supabase
+    .from("lightspeed_inventory")
+    .select("lightspeed_item_id, product_uuid, primary_image_url")
+    .eq("user_id", userId)
+    .in("lightspeed_item_id", uniqueItemIds);
+
+  const productUuidByItem = new Map<string, string | null>();
+  const inventoryImageByItem = new Map<string, string | null>();
+  for (const row of inventoryRows ?? []) {
+    const itemId = String(row.lightspeed_item_id);
+    productUuidByItem.set(itemId, row.product_uuid ? String(row.product_uuid) : null);
+    inventoryImageByItem.set(
+      itemId,
+      typeof row.primary_image_url === "string" && row.primary_image_url.trim()
+        ? row.primary_image_url.trim()
+        : null,
+    );
+  }
+
+  const linkedProductIds = [
+    ...new Set(
+      [...productUuidByItem.values()].filter((id): id is string => Boolean(id)),
+    ),
+  ];
+
+  let productsQuery = supabase
+    .from("products")
+    .select(`
+      id,
+      lightspeed_item_id,
+      canonical_product_id,
+      selected_product_image_id,
+      cached_image_url,
+      cached_thumbnail_url,
+      product_images!product_id (
+        id,
+        product_id,
+        canonical_product_id,
+        cloudinary_public_id,
+        cloudinary_url,
+        external_url,
+        is_primary,
+        approval_status,
+        sort_order,
+        source
+      ),
+      canonical_products!canonical_product_id (
+        product_images!canonical_product_id (
+          id,
+          product_id,
+          canonical_product_id,
+          cloudinary_public_id,
+          cloudinary_url,
+          external_url,
+          is_primary,
+          approval_status,
+          sort_order,
+          source
+        )
+      )
+    `)
+    .eq("user_id", userId);
+
+  if (linkedProductIds.length > 0) {
+    productsQuery = productsQuery.or(
+      `lightspeed_item_id.in.(${uniqueItemIds.join(",")}),id.in.(${linkedProductIds.join(",")})`,
+    );
+  } else {
+    productsQuery = productsQuery.in("lightspeed_item_id", uniqueItemIds);
+  }
+
+  const { data: products } = await productsQuery;
+  const productRows = (products ?? []) as unknown as ProductRowForImage[];
+
+  const productIds = productRows.map((product) => String(product.id));
+  const mrpByProductId = new Map<string, MarketplaceReadyImageRow>();
+  if (productIds.length > 0) {
+    const { data: marketplaceRows } = await supabase
+      .from("marketplace_ready_products")
+      .select(`
+        id,
+        resolved_image_id,
+        resolved_image_source,
+        resolved_external_url,
+        resolved_cloudinary_url,
+        resolved_cloudinary_public_id
+      `)
+      .eq("user_id", userId)
+      .in("id", productIds);
+
+    for (const row of (marketplaceRows ?? []) as MarketplaceReadyImageRow[]) {
+      mrpByProductId.set(String(row.id), row);
+    }
+  }
+
+  const urlByProductId = new Map<string, string | null>();
+  const urlByLightspeedItemId = new Map<string, string | null>();
+  for (const product of productRows) {
+    const url = resolveImageForProductRow(
+      product,
+      mrpByProductId.get(String(product.id)),
+    );
+    urlByProductId.set(String(product.id), url);
+    urlByLightspeedItemId.set(String(product.lightspeed_item_id), url);
+  }
+
+  for (const itemId of uniqueItemIds) {
+    const url =
+      urlByLightspeedItemId.get(itemId) ??
+      (() => {
+        const productId = productUuidByItem.get(itemId);
+        return productId ? urlByProductId.get(productId) ?? null : null;
+      })() ??
+      inventoryImageByItem.get(itemId) ??
+      null;
+
+    result.set(itemId, url ?? null);
+  }
+
+  return result;
 }
 
 /**

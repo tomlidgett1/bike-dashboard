@@ -3,7 +3,7 @@
 import { Bot } from "lucide-react";
 import { useGenie } from "@/components/providers/genie-provider";
 import { cn } from "@/lib/utils";
-import { topbarPillClass } from "@/components/layout/topbar-nav-pills";
+import { topbarActionClass } from "@/components/layout/topbar-nav-pills";
 
 export function AgentHeaderButton() {
   const { isOpen, openAgent, close } = useGenie();
@@ -23,19 +23,15 @@ export function AgentHeaderButton() {
       aria-label={isOpen ? "Close Agent" : "Open Agent"}
       aria-pressed={isOpen}
       className={cn(
-        topbarPillClass,
+        topbarActionClass,
         "cursor-pointer",
-        isOpen && "border-[#ffde59] bg-[#ffde59]/15 shadow-sm"
+        isOpen && "bg-muted text-foreground"
       )}
     >
-      <Bot
-        className={cn(
-          "h-4 w-4 shrink-0",
-          isOpen ? "text-gray-900" : "text-gray-500"
-        )}
-        aria-hidden
-      />
-      <span className="text-yj-agent-shimmer font-semibold">Agent</span>
+      <Bot className="size-3.5 shrink-0" aria-hidden />
+      <span className={cn("hidden md:inline", isOpen && "text-foreground")}>
+        Agent
+      </span>
     </button>
   );
 }
