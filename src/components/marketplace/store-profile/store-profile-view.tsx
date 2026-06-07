@@ -46,12 +46,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ProductCard } from "@/components/marketplace/product-card";
 import { StoreCarouselRowControls } from "@/components/marketplace/store-profile/store-carousel-row-controls";
 import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-tab";
@@ -60,7 +60,7 @@ import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-ca
 import type { StoreCategoryWithProducts, StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
-import { useProductImpressions, useStorePageView } from "@/lib/tracking/store-analytics";
+import { useProductImpressions, useStorePageView, useStoreSearchTracking } from "@/lib/tracking/store-analytics";
 
 // ============================================================
 // Store Profile View
@@ -79,6 +79,54 @@ const RentalsSection = dynamic(() =>
 
 type StoreTab = "home" | "products" | "rentals" | "service" | "about" | "reviews";
 type SortKey = "featured" | "price-asc" | "price-desc" | "newest";
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "featured", label: "Featured" },
+  { value: "price-asc", label: "Price: Low to High" },
+  { value: "price-desc", label: "Price: High to Low" },
+  { value: "newest", label: "Newest" },
+];
+
+function sortLabel(key: SortKey): string {
+  return SORT_OPTIONS.find((option) => option.value === key)?.label ?? "Featured";
+}
+
+function StoreSortButton({
+  sort,
+  onSortChange,
+  size = "md",
+}: {
+  sort: SortKey;
+  onSortChange: (sort: SortKey) => void;
+  size?: "md" | "sm";
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Sort: ${sortLabel(sort)}`}
+          className={cn(
+            "flex shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white shadow-none transition-colors cursor-pointer",
+            size === "md" ? "h-9 w-9 min-w-9" : "h-8 w-8 min-w-8",
+            sort !== "featured" ? "text-gray-900" : "text-gray-500 hover:text-gray-700",
+          )}
+        >
+          <ArrowUpDown className={size === "md" ? "h-4 w-4" : "h-3.5 w-3.5"} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44 bg-white">
+        <DropdownMenuRadioGroup value={sort} onValueChange={(v) => onSortChange(v as SortKey)}>
+          {SORT_OPTIONS.map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={option.value}>
+              {option.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 type StoreProductCategory = StoreCategoryWithProducts & {
   products: MarketplaceProduct[];
   carousel_size?: string;
@@ -195,44 +243,28 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
     impressionContext,
   );
 
-  // Responsive column widths keep store rows aligned with the marketplace
-  // homepage grids while preserving a single-row horizontal carousel.
-  const colWidth =
-    catSize === 'featured' ? "clamp(170px, 18vw, 260px)" :
-    catSize === 'compact'  ? "clamp(118px, 12vw, 155px)" :
-    "clamp(145px, 15vw, 205px)";
-
-  // Fixed slot height = square image (colWidth) + info row (~40px).
-  // Prevents off-screen lazy-loading skeletons from inflating the row
-  // and leaving dead space below the visible loaded cards.
-  const colHeight =
-    catSize === 'featured' ? "calc(clamp(170px, 18vw, 260px) + 40px)" :
-    catSize === 'compact'  ? "calc(clamp(118px, 12vw, 155px) + 40px)" :
-    "calc(clamp(145px, 15vw, 205px) + 40px)";
-
-  const gap = catSize === 'compact' ? 8 : 10;
+  // Mobile: uniform card slots. sm+: widths follow carousel_size from settings.
+  const cardCompact = catSize === 'compact';
+  const cardFeatured = catSize === 'featured';
 
   // ── Grid (expanded) ───────────────────────────────────────────────────────
   if (isExpanded) {
     const gridCls = cn(
-      "grid",
-      catSize === 'compact' && "gap-2",
-      catSize === 'featured' && "grid-cols-2 sm:grid-cols-4 gap-4",
-      catSize === 'normal' && "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3",
+      "grid grid-cols-2 gap-1.5",
+      catSize === 'compact' && "sm:gap-2 sm:[grid-template-columns:repeat(auto-fill,minmax(130px,1fr))]",
+      catSize === 'featured' && "sm:grid-cols-4 sm:gap-3",
+      catSize === 'normal' && "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 sm:gap-2.5",
     );
-    const gridStyle = catSize === 'compact'
-      ? { gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))" }
-      : undefined;
     return (
-      <div ref={impressionRef} className={gridCls} style={gridStyle}>
+      <div ref={impressionRef} className={gridCls}>
         {products.map((product, j) => (
           <div key={product.id} data-analytics-product-id={product.id}>
             <ProductCard
               product={product}
               priority={rowIndex === 0 && j < 6}
               hideStoreMeta
-              compact={catSize === 'compact'}
-              featuredMobile={catSize === 'featured'}
+              compact={cardCompact}
+              featuredMobile={cardFeatured}
               storeId={storeId}
             />
           </div>
@@ -252,25 +284,32 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
         {/* Single-row scroll track. The cards are top-aligned so a taller
             off-screen card cannot reserve vertical space under shorter cards. */}
         <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: `${gap}px`,
-          }}
+          className={cn(
+            "flex items-start gap-1.5",
+            catSize === 'compact' ? "sm:gap-1.5" : "sm:gap-2",
+          )}
         >
           {products.map((product, j) => (
             <div
               key={product.id}
               data-analytics-product-id={product.id}
-              className="snap-start flex-none overflow-hidden"
-              style={{ width: colWidth, height: colHeight }}
+              className={cn(
+                "snap-start flex-none overflow-hidden",
+                "w-[42vw] h-[calc(42vw+40px)]",
+                catSize === 'featured' &&
+                  "sm:w-[clamp(170px,18vw,260px)] sm:h-[calc(clamp(170px,18vw,260px)+40px)]",
+                catSize === 'compact' &&
+                  "sm:w-[clamp(118px,12vw,155px)] sm:h-[calc(clamp(118px,12vw,155px)+40px)]",
+                catSize === 'normal' &&
+                  "sm:w-[clamp(145px,15vw,205px)] sm:h-[calc(clamp(145px,15vw,205px)+40px)]",
+              )}
             >
               <ProductCard
                 product={product}
                 priority={rowIndex === 0 && j < 6}
                 hideStoreMeta
-                compact={catSize === 'compact'}
-                featuredMobile={catSize === 'featured'}
+                compact={cardCompact}
+                featuredMobile={cardFeatured}
                 storeId={storeId}
               />
             </div>
@@ -419,7 +458,7 @@ function CarouselRow({
 
   return (
     <section key={cat.id}>
-      <div className="flex items-center justify-between gap-2 mb-2">
+      <div className="flex items-center justify-between gap-2 mb-1.5">
         <div className="flex items-center gap-3">
           {logoUrl ? (
             <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
@@ -550,16 +589,14 @@ function ProductSearchResultsGrid({
   );
 
   const gridCls = cn(
-    "grid",
-    compact && "gap-2",
-    !compact && "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3 sm:gap-4",
+    "grid grid-cols-2 gap-1.5",
+    compact && "sm:gap-2 sm:[grid-template-columns:repeat(auto-fill,minmax(130px,1fr))]",
+    !compact &&
+      "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 sm:gap-2.5 md:gap-3",
   );
-  const gridStyle = compact
-    ? { gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))" }
-    : undefined;
 
   return (
-    <div ref={impressionRef} className={gridCls} style={gridStyle}>
+    <div ref={impressionRef} className={gridCls}>
       {products.map((product, index) => (
         <div key={product.id} data-analytics-product-id={product.id}>
           <ProductCard
@@ -629,7 +666,7 @@ function ProductsTab({
     const hasUberCarousel = section.categories.some((cat) => cat.source === "uber");
 
     return (
-      <div key={section.id} className="bg-gray-200/60 border-y border-gray-300 -mx-5 sm:-mx-8 lg:-mx-10 px-5 sm:px-8 lg:px-10 pt-4 pb-5 space-y-5">
+      <div key={section.id} className="bg-gray-200/60 border-y border-gray-300 -mx-5 sm:-mx-8 lg:-mx-10 px-5 sm:px-8 lg:px-10 pt-3 pb-3.5 space-y-3">
         <div>
           <div className="flex items-center gap-3">
             {hasUberCarousel && <UberCarouselLogo className="h-7 px-2.5" />}
@@ -701,9 +738,9 @@ function ProductsTab({
     }
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-3">
         {ordered}
-        {extras.length > 0 && <div className="space-y-5">{extras}</div>}
+        {extras.length > 0 && <div className="space-y-3">{extras}</div>}
       </div>
     );
   }
@@ -716,18 +753,13 @@ function ProductsTab({
     <div className="space-y-0">
       {visibleSections.map((section, secIdx) => (
         <div key={section.id}>
-          {secIdx > 0 && <div className="my-6" />}
+          {secIdx > 0 && <div className="my-3" />}
           {renderSection(section)}
         </div>
       ))}
 
       {standalonePlusSectionless.length > 0 && (
-        <div className={cn("space-y-5", visibleSections.length > 0 && "mt-8")}>
-          {visibleSections.length > 0 && (
-            <span className="text-[11px] font-medium text-gray-400 uppercase tracking-widest">
-              More Products
-            </span>
-          )}
+        <div className={cn("space-y-3", visibleSections.length > 0 && "mt-5")}>
           {standalonePlusSectionless.map((cat) => renderCarousel(cat))}
         </div>
       )}
@@ -867,6 +899,13 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const visibleProductCount = isProductSearchActive
     ? searchedProducts.length
     : sortedCategories.reduce((n, c) => n + c.products.length, 0);
+
+  useStoreSearchTracking(
+    isOwnProfile ? null : store.id,
+    storeSearch,
+    visibleProductCount,
+    activeTab === "products" && isProductSearchActive,
+  );
 
   const directionsUrl = store.address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`
@@ -1209,32 +1248,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 </button>
               )}
             </div>
-            <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-              <SelectTrigger
-                aria-label={`Sort: ${
-                  sort === "featured"
-                    ? "Featured"
-                    : sort === "price-asc"
-                      ? "Price: Low to High"
-                      : sort === "price-desc"
-                        ? "Price: High to Low"
-                        : "Newest"
-                }`}
-                className={cn(
-                  "flex h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white p-0 shadow-none ring-0 transition-colors cursor-pointer [&>svg:last-child]:hidden",
-                  sort !== "featured" ? "text-gray-900" : "text-gray-500 hover:text-gray-700"
-                )}
-              >
-                <ArrowUpDown className="h-4 w-4" />
-                <SelectValue className="sr-only" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="featured">Featured</SelectItem>
-                <SelectItem value="price-asc">Price: Low to High</SelectItem>
-                <SelectItem value="price-desc">Price: High to Low</SelectItem>
-                <SelectItem value="newest">Newest</SelectItem>
-              </SelectContent>
-            </Select>
+            <StoreSortButton sort={sort} onSortChange={setSort} />
           </div>
         </div>
       )}
@@ -1349,32 +1363,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                     <Grip className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-                  <SelectTrigger
-                    aria-label={`Sort: ${
-                      sort === "featured"
-                        ? "Featured"
-                        : sort === "price-asc"
-                          ? "Price: Low to High"
-                          : sort === "price-desc"
-                            ? "Price: High to Low"
-                            : "Newest"
-                    }`}
-                    className={cn(
-                      "flex h-8 w-8 min-w-8 items-center justify-center rounded-md border border-gray-200 bg-white p-0 shadow-none ring-0 transition-colors cursor-pointer [&>svg:last-child]:hidden",
-                      sort !== "featured" ? "text-gray-900" : "text-gray-500 hover:text-gray-700"
-                    )}
-                  >
-                    <ArrowUpDown className="h-3.5 w-3.5" />
-                    <SelectValue className="sr-only" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="featured">Featured</SelectItem>
-                    <SelectItem value="price-asc">Price: Low to High</SelectItem>
-                    <SelectItem value="price-desc">Price: High to Low</SelectItem>
-                    <SelectItem value="newest">Newest</SelectItem>
-                  </SelectContent>
-                </Select>
+                <StoreSortButton sort={sort} onSortChange={setSort} size="sm" />
               </div>
             </div>
           </div>
@@ -1452,7 +1441,35 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
               ))}
 
             {/* RENTALS */}
-            {activeTab === "rentals" && <RentalsSection storeName={store.store_name} />}
+            {activeTab === "rentals" &&
+              (store.rentals.length > 0 ? (
+                <div className="space-y-6">
+                  <RentalsSection
+                    rentals={store.rentals}
+                    storeName={store.store_name}
+                    storeId={store.id}
+                    storePhone={store.phone}
+                  />
+                  {!viewAsOwner && store.phone && (
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-md bg-gray-900 text-white px-6 py-5">
+                      <div>
+                        <h3 className="text-base font-semibold">Interested in hiring?</h3>
+                        <p className="text-sm text-gray-300 mt-0.5">
+                          Call {store.store_name} to check availability and book a rental.
+                        </p>
+                      </div>
+                      <a
+                        href={`tel:${store.phone.replace(/\s/g, "")}`}
+                        className="inline-flex items-center justify-center rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100 transition-colors"
+                      >
+                        Call {store.phone}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <RentalsSection rentals={[]} storeName={store.store_name} storeId={store.id} />
+              ))}
 
             {/* SERVICE */}
             {activeTab === "service" &&

@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import {
   ChevronLeft,
   Inbox,
@@ -26,7 +28,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PageBody, PageHeader } from "@/components/dashboard";
 import { SettingsSection } from "@/components/dashboard/settings-primitives";
 import {
   formatNestOutboundMessage,
@@ -43,17 +44,99 @@ import {
 } from "@/lib/nest/types";
 import { NestAutoServicePanel } from "@/components/settings/nest-auto-service-panel";
 import { NestHiddenPickupSuggestionsPanel } from "@/components/settings/nest-hidden-pickup-suggestions";
+import { NestPickupSuggestionsDropdown } from "@/components/settings/nest-pickup-suggestions-dropdown";
+import {
+  NEST_OVERLAY_INNER_RADIUS_CLASS,
+  NEST_OVERLAY_RADIUS_CLASS,
+} from "@/components/settings/nest-pickup-suggestion-ui";
+import {
+  isNestConversationUnread,
+  markNestConversationRead,
+} from "@/lib/nest/conversation-read-state";
 
-const QUICK_REPLIES = [
-  "Thanks, we'll get back to you shortly.",
-  "We're looking into this now.",
-  "Could you share a bit more detail?",
-] as const;
+const NEST_TAB_BUTTON_CLASS =
+  "flex shrink-0 items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors";
 
-const INBOX_CARD =
-  "overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm";
+function nestTabClass(isActive: boolean) {
+  return cn(
+    NEST_TAB_BUTTON_CLASS,
+    isActive
+      ? "border-gray-900 text-gray-900"
+      : "border-transparent text-gray-500 hover:border-gray-200 hover:text-gray-900",
+  );
+}
 
-const LAST_READ_KEY = "yj_nest_last_read";
+const IMESSAGE_OUTGOING = "#007AFF";
+const IMESSAGE_INCOMING = "#E9E9EB";
+const IMESSAGE_AI = "#F2F2F7";
+
+const IMAGE_URL_PATTERN =
+  /^https?:\/\/[^\s]+\.(?:png|jpe?g|gif|webp|avif)(?:\?[^\s]*)?$/i;
+
+function isImageUrl(text: string): boolean {
+  return IMAGE_URL_PATTERN.test(text.trim());
+}
+
+function NestChatBubble({
+  children,
+  variant,
+  showTail = true,
+  dense = false,
+}: {
+  children: React.ReactNode;
+  variant: "incoming" | "outgoing" | "ai" | "system";
+  showTail?: boolean;
+  dense?: boolean;
+}) {
+  if (variant === "system") {
+    return (
+      <div className="rounded-full bg-muted px-4 py-1.5 text-center text-xs text-muted-foreground">
+        {children}
+      </div>
+    );
+  }
+
+  const isOutgoing = variant === "outgoing";
+  const color = isOutgoing ? IMESSAGE_OUTGOING : variant === "ai" ? IMESSAGE_AI : IMESSAGE_INCOMING;
+
+  return (
+    <div className="relative max-w-full">
+      <div
+        className={cn(
+          "relative overflow-visible text-[15px] leading-snug",
+          dense ? "p-0.5" : "px-3 py-2",
+          isOutgoing
+            ? cn("rounded-[18px] text-white", showTail ? "rounded-br-[4px]" : "rounded-br-[18px]")
+            : cn("rounded-[18px] text-foreground", showTail ? "rounded-bl-[4px]" : "rounded-bl-[18px]"),
+        )}
+        style={{ backgroundColor: color }}
+      >
+        {children}
+        {showTail ? (
+          <>
+            <span
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute bottom-0 h-5 w-5",
+                isOutgoing
+                  ? "right-[-7px] rounded-bl-[16px_14px]"
+                  : "left-[-7px] rounded-br-[16px_14px]",
+              )}
+              style={{ backgroundColor: color }}
+            />
+            <span
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute bottom-0 h-5 w-[26px] bg-white",
+                isOutgoing ? "right-[-26px] rounded-bl-[10px]" : "left-[-26px] rounded-br-[10px]",
+              )}
+            />
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function formatListTime(iso: string): string {
   const when = new Date(iso);
@@ -70,16 +153,6 @@ function formatListTime(iso: string): string {
 
 function formatMessageTime(iso: string): string {
   return new Date(iso).toLocaleString("en-AU", {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatLastSeen(value: number | null): string | null {
-  if (!value) return null;
-  return new Date(value).toLocaleString("en-AU", {
     day: "numeric",
     month: "short",
     hour: "numeric",
@@ -108,42 +181,23 @@ function splitAssistantBubbles(text: string): string[] {
   return parts.length > 0 ? parts : [text.trim()];
 }
 
+function messageSide(message: NestConversationMessage): "outgoing" | "incoming" | "system" {
+  const isStaff =
+    (typeof message.handle === "string" && message.handle.startsWith("staff@")) ||
+    isManualMessage(message);
+  if (message.role === "system") return "system";
+  if (isStaff) return "outgoing";
+  return "incoming";
+}
+
+function sameMessageGroup(a: NestConversationMessage, b: NestConversationMessage): boolean {
+  return messageSide(a) === messageSide(b) && messageSide(a) !== "system";
+}
+
 function sortChats(chats: NestConversationListItem[]): NestConversationListItem[] {
   return [...chats].sort(
     (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
   );
-}
-
-function readLastReadMap(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(LAST_READ_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, string>;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeLastRead(chatId: string, iso: string) {
-  if (typeof window === "undefined") return;
-  const map = readLastReadMap();
-  map[chatId] = iso;
-  localStorage.setItem(LAST_READ_KEY, JSON.stringify(map));
-}
-
-function isConversationUnread(chat: NestConversationListItem): boolean {
-  const anchor = chat.lastCustomerMessageAt || chat.lastMessageAt;
-  if (!anchor) return false;
-  const lastRead = readLastReadMap()[chat.chatId];
-  if (!lastRead) return true;
-  return new Date(anchor).getTime() > new Date(lastRead).getTime();
-}
-
-function markConversationRead(chat: NestConversationListItem) {
-  const anchor = chat.lastCustomerMessageAt || chat.lastMessageAt;
-  if (anchor) writeLastRead(chat.chatId, anchor);
 }
 
 async function fetchNestConversations(params: {
@@ -176,8 +230,16 @@ async function fetchNestConversations(params: {
 async function searchNestCustomers(query: string): Promise<NestLightspeedCustomer[]> {
   const search = new URLSearchParams({ customerSearch: "1", q: query });
   const res = await fetch(`/api/store/nest-messages?${search.toString()}`, { cache: "no-store" });
-  const data = (await res.json()) as { customers?: NestLightspeedCustomer[]; error?: string };
-  if (!res.ok) throw new Error(data.error || "Could not search customers.");
+  const data = (await res.json()) as {
+    customers?: NestLightspeedCustomer[];
+    error?: string;
+    lightspeedConnected?: boolean;
+  };
+
+  if (!res.ok || data.error) {
+    throw new Error(data.error || "Could not search Lightspeed customers.");
+  }
+
   return Array.isArray(data.customers) ? data.customers.slice(0, 8) : [];
 }
 
@@ -247,7 +309,7 @@ function ConversationRow({
   active: boolean;
   onClick: () => void;
 }) {
-  const unread = isConversationUnread(chat);
+  const unread = isNestConversationUnread(chat);
   const displayTitle = chat.displayName || chat.title || chat.participantHandle || chat.chatId;
 
   return (
@@ -301,7 +363,13 @@ function ConversationRow({
   );
 }
 
-function ThreadMessage({ message }: { message: NestConversationMessage }) {
+function ThreadMessage({
+  message,
+  showTail = true,
+}: {
+  message: NestConversationMessage;
+  showTail?: boolean;
+}) {
   const isStaff =
     (typeof message.handle === "string" && message.handle.startsWith("staff@")) ||
     isManualMessage(message);
@@ -311,6 +379,8 @@ function ThreadMessage({ message }: { message: NestConversationMessage }) {
   const isOutgoing = isStaff;
   const bubbles =
     message.role === "assistant" ? splitAssistantBubbles(message.content) : [message.content];
+
+  const bubbleVariant = isOutgoing ? "outgoing" : isAi ? "ai" : isCustomer ? "incoming" : "system";
 
   return (
     <div
@@ -325,24 +395,32 @@ function ThreadMessage({ message }: { message: NestConversationMessage }) {
             Nest
           </p>
         ) : null}
-        {bubbles.map((bubble, index) => (
-          <div
-            key={`${message.id}-${index}`}
-            className={cn(
-              "text-sm leading-snug",
-              isOutgoing &&
-                "rounded-[24px] bg-primary px-4 py-2 text-primary-foreground shadow-sm",
-              isCustomer &&
-                "rounded-[24px] border border-gray-200 bg-white px-4 py-2 text-foreground shadow-sm",
-              isAi &&
-                "rounded-[24px] border border-gray-200 bg-muted/50 px-4 py-2 text-foreground",
-              isSystem &&
-                "rounded-full bg-muted px-4 py-1.5 text-center text-xs text-muted-foreground",
-            )}
-          >
-            <RichText text={bubble} />
-          </div>
-        ))}
+        {bubbles.map((bubble, index) => {
+          const trimmed = bubble.trim();
+          const imageOnly = isImageUrl(trimmed);
+
+          return (
+            <NestChatBubble
+              key={`${message.id}-${index}`}
+              variant={bubbleVariant}
+              showTail={showTail && index === bubbles.length - 1}
+              dense={imageOnly}
+            >
+              {imageOnly ? (
+                <div className="overflow-hidden rounded-[14px]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={trimmed}
+                    alt="Shared image"
+                    className="block max-h-72 max-w-full object-cover"
+                  />
+                </div>
+              ) : (
+                <RichText text={bubble} />
+              )}
+            </NestChatBubble>
+          );
+        })}
         {!isSystem ? (
           <p
             className={cn(
@@ -396,30 +474,12 @@ function ComposeBox({
   }
 
   return (
-    <div className="shrink-0 border-t border-border/60 bg-background/80 px-4 py-4 backdrop-blur-sm">
+    <div className="shrink-0 border-t border-gray-200/80 bg-white/90 px-4 py-3 backdrop-blur-sm md:px-5">
       {sendErr ? (
         <div className="mb-3 rounded-md border border-destructive/20 bg-white px-3 py-2 text-sm text-destructive">
           {sendErr}
         </div>
       ) : null}
-      <div className="mb-3 flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]">
-        {QUICK_REPLIES.map((snippet) => (
-          <Button
-            key={snippet}
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setText((prev) => (prev.trim() ? `${prev.trim()}\n\n${snippet}` : snippet));
-              requestAnimationFrame(() => textareaRef.current?.focus());
-            }}
-            disabled={sending}
-            className="h-7 shrink-0 rounded-full px-3 text-xs font-normal"
-          >
-            {snippet}
-          </Button>
-        ))}
-      </div>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -427,7 +487,17 @@ function ComposeBox({
         }}
         className="w-full"
       >
-        <div className="flex w-full items-end gap-1 rounded-full border border-gray-200 bg-white px-2 py-2 shadow-sm">
+        <div className="flex w-full items-end gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 shadow-sm">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="mb-0.5 h-8 w-8 shrink-0 rounded-full text-gray-500 hover:text-gray-700"
+            disabled={sending}
+            aria-label="Add attachment"
+          >
+            <Plus className="h-5 w-5" />
+          </Button>
           <Textarea
             ref={textareaRef}
             rows={1}
@@ -439,8 +509,8 @@ function ComposeBox({
                 void send();
               }
             }}
-            placeholder="Message"
-            className="max-h-[132px] min-h-[36px] flex-1 resize-none border-0 bg-transparent px-2 py-2 text-[15px] leading-snug shadow-none focus-visible:ring-0"
+            placeholder="iMessage"
+            className="max-h-[132px] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-[15px] leading-snug shadow-none focus-visible:ring-0"
             style={{ height: "auto" }}
             disabled={sending}
           />
@@ -448,7 +518,10 @@ function ComposeBox({
             type="submit"
             size="icon"
             disabled={!text.trim() || sending}
-            className="mb-0.5 h-9 w-9 shrink-0 rounded-full"
+            className={cn(
+              "mb-0.5 h-8 w-8 shrink-0 rounded-full",
+              text.trim() ? "bg-[#007AFF] text-white hover:bg-[#007AFF]/90" : "bg-transparent text-gray-400",
+            )}
             aria-label="Send message"
           >
             {sending ? (
@@ -458,7 +531,6 @@ function ComposeBox({
             )}
           </Button>
         </div>
-        <p className="mt-2 text-center text-[11px] text-muted-foreground">⌘↵ to send</p>
       </form>
     </div>
   );
@@ -629,8 +701,10 @@ function StartMessageDialog({
   const [text, setText] = React.useState("");
   const [customerQuery, setCustomerQuery] = React.useState("");
   const [selectedCustomerName, setSelectedCustomerName] = React.useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = React.useState<string | null>(null);
   const [customers, setCustomers] = React.useState<NestLightspeedCustomer[]>([]);
   const [customerLoading, setCustomerLoading] = React.useState(false);
+  const [customerSearchError, setCustomerSearchError] = React.useState<string | null>(null);
   const [sending, setSending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -640,7 +714,9 @@ function StartMessageDialog({
     setText("");
     setCustomerQuery("");
     setSelectedCustomerName("");
+    setSelectedCustomerId(null);
     setCustomers([]);
+    setCustomerSearchError(null);
     setError(null);
   }, [open]);
 
@@ -649,17 +725,24 @@ function StartMessageDialog({
     if (q.length < 2) {
       setCustomers([]);
       setCustomerLoading(false);
+      setCustomerSearchError(null);
       return;
     }
     let cancelled = false;
     setCustomerLoading(true);
+    setCustomerSearchError(null);
     const id = window.setTimeout(() => {
       searchNestCustomers(q)
         .then((next) => {
           if (!cancelled) setCustomers(next);
         })
-        .catch(() => {
-          if (!cancelled) setCustomers([]);
+        .catch((err) => {
+          if (!cancelled) {
+            setCustomers([]);
+            setCustomerSearchError(
+              err instanceof Error ? err.message : "Could not search Lightspeed customers.",
+            );
+          }
         })
         .finally(() => {
           if (!cancelled) setCustomerLoading(false);
@@ -695,18 +778,38 @@ function StartMessageDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-lg rounded-md bg-white p-0 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:rounded-md"
+        className={cn(
+          "flex max-h-[min(40rem,90vh)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out",
+          NEST_OVERLAY_RADIUS_CLASS,
+        )}
         overlayClassName="animate-in fade-in duration-200"
-        showCloseButton={false}
       >
-        <DialogHeader className="border-b border-border/60 px-5 py-5 text-left">
-          <DialogTitle>New message</DialogTitle>
-          <DialogDescription>Send a manual iMessage from your store.</DialogDescription>
+        <DialogHeader className="shrink-0 border-b border-border px-6 pb-4 pt-6">
+          <div className="flex items-start gap-3 pr-8">
+            <Image
+              src="/nest-logo.png"
+              alt="Nest"
+              width={28}
+              height={28}
+              className="shrink-0 rounded-full"
+            />
+            <div className="space-y-1.5">
+              <DialogTitle>New message</DialogTitle>
+              <DialogDescription>
+                Search Lightspeed, choose a customer, and send a manual iMessage from your store.
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-4 px-5 py-5">
+        <div className="space-y-4 overflow-y-auto px-6 py-4">
           {error ? (
-            <div className="rounded-md border border-destructive/20 bg-white px-3 py-2 text-xs text-destructive">
+            <div
+              className={cn(
+                "border border-destructive/20 bg-white px-3 py-2.5 text-sm text-destructive",
+                NEST_OVERLAY_INNER_RADIUS_CLASS,
+              )}
+            >
               {error}
             </div>
           ) : null}
@@ -714,38 +817,58 @@ function StartMessageDialog({
           <div className="space-y-2">
             <Label htmlFor="nest-customer-search">Search Lightspeed customers</Label>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 id="nest-customer-search"
                 type="search"
                 value={customerQuery}
-                onChange={(event) => setCustomerQuery(event.target.value)}
-                placeholder="Search name or mobile"
-                className="pl-9"
+                onChange={(event) => {
+                  setCustomerQuery(event.target.value);
+                  setSelectedCustomerName("");
+                  setSelectedCustomerId(null);
+                }}
+                placeholder="Search name, mobile, or customer ID"
+                className="pl-8"
                 disabled={sending}
               />
             </div>
           </div>
 
-          {customerLoading || customers.length > 0 ? (
-            <div className="rounded-md border border-gray-200 bg-white p-2">
-              {customerLoading ? (
-                <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Searching Lightspeed…
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {customers.map((customer) => (
+          <div className="space-y-2">
+            <Label>Customer matches</Label>
+            <div
+              className={cn(
+                "max-h-52 overflow-y-auto border border-border",
+                NEST_OVERLAY_INNER_RADIUS_CLASS,
+              )}
+            >
+              <div className="space-y-0.5 p-2">
+                {customerQuery.trim().length < 2 ? (
+                  <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+                    Type at least 2 characters to search Lightspeed customers.
+                  </p>
+                ) : customerLoading ? (
+                  <div className="flex items-center justify-center gap-2 px-2 py-8 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Searching Lightspeed…
+                  </div>
+                ) : customerSearchError ? (
+                  <p className="px-2 py-8 text-center text-sm text-destructive">{customerSearchError}</p>
+                ) : customers.length > 0 ? (
+                  customers.map((customer) => (
                     <button
-                      key={customer.phone}
+                      key={customer.customerId}
                       type="button"
                       onClick={() => {
                         setMobile(customer.phone);
                         setSelectedCustomerName(customer.name);
-                        setCustomerQuery(customer.name);
+                        setSelectedCustomerId(customer.customerId);
                       }}
-                      className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/50"
+                      className={cn(
+                        "flex w-full items-center justify-between gap-3 p-2.5 text-left transition-colors hover:bg-accent/60",
+                        NEST_OVERLAY_INNER_RADIUS_CLASS,
+                        selectedCustomerId === customer.customerId && "bg-accent/60",
+                      )}
                     >
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-medium text-foreground">
@@ -755,13 +878,17 @@ function StartMessageDialog({
                           {customer.phone}
                         </span>
                       </span>
-                      <span className="text-xs font-medium text-muted-foreground">Use</span>
+                      <span className="shrink-0 text-xs font-medium text-muted-foreground">Use</span>
                     </button>
-                  ))}
-                </div>
-              )}
+                  ))
+                ) : (
+                  <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+                    No Lightspeed customers matched that search.
+                  </p>
+                )}
+              </div>
             </div>
-          ) : null}
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="nest-mobile">Mobile number</Label>
@@ -772,10 +899,14 @@ function StartMessageDialog({
               onChange={(event) => {
                 setMobile(event.target.value);
                 setSelectedCustomerName("");
+                setSelectedCustomerId(null);
               }}
               placeholder="0412 345 678"
               disabled={sending}
             />
+            {selectedCustomerName ? (
+              <p className="text-xs text-muted-foreground">Sending to {selectedCustomerName}</p>
+            ) : null}
           </div>
 
           <div className="space-y-2">
@@ -785,14 +916,14 @@ function StartMessageDialog({
               value={text}
               onChange={(event) => setText(event.target.value)}
               placeholder="Write your opening message"
-              rows={4}
-              className="min-h-[120px] resize-none"
+              rows={5}
+              className="min-h-[140px] resize-none"
               disabled={sending}
             />
           </div>
         </div>
 
-        <DialogFooter className="border-t border-border/60 px-5 py-4">
+        <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
             Cancel
           </Button>
@@ -813,6 +944,8 @@ function StartMessageDialog({
 type NestPanelTab = "inbox" | "auto" | "settings";
 
 export function StoreNestMessagesPanel() {
+  const searchParams = useSearchParams();
+  const chatIdFromUrl = searchParams.get("chatId");
   const [activeTab, setActiveTab] = React.useState<NestPanelTab>("inbox");
   const [configured, setConfigured] = React.useState<boolean | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -884,6 +1017,16 @@ export function StoreNestMessagesPanel() {
   }, [loadList]);
 
   React.useEffect(() => {
+    if (!chatIdFromUrl || loading) return;
+    const chat = chats.find((item) => item.chatId === chatIdFromUrl);
+    if (!chat) return;
+    setActiveTab("inbox");
+    setSelectedChatId(chat.chatId);
+    setShowMobileThread(true);
+    markNestConversationRead(chat);
+  }, [chatIdFromUrl, chats, loading]);
+
+  React.useEffect(() => {
     if (!selectedChatId) {
       setConversation(null);
       return;
@@ -913,7 +1056,7 @@ export function StoreNestMessagesPanel() {
   }, [conversation?.messages.length, selectedChatId]);
 
   function openConversation(chat: NestConversationListItem) {
-    markConversationRead(chat);
+    markNestConversationRead(chat);
     setSelectedChatId(chat.chatId);
     setShowMobileThread(true);
   }
@@ -994,11 +1137,11 @@ export function StoreNestMessagesPanel() {
     setRefreshing(false);
   }
 
-  const unreadCount = chats.filter(isConversationUnread).length;
+  const unreadCount = chats.filter(isNestConversationUnread).length;
 
-  const inboxActions =
+  const inboxToolbar =
     activeTab === "inbox" ? (
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <Button
           type="button"
           variant="outline"
@@ -1014,6 +1157,10 @@ export function StoreNestMessagesPanel() {
           )}
           Refresh
         </Button>
+        <NestPickupSuggestionsDropdown
+          disabled={configured === false}
+          onMessageSent={() => void refreshAll()}
+        />
         <Button
           type="button"
           size="sm"
@@ -1025,30 +1172,21 @@ export function StoreNestMessagesPanel() {
           New message
         </Button>
       </div>
-    ) : undefined;
+    ) : null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <PageHeader
-        className="shrink-0"
-        title="Nest"
-        description="Manage customer iMessage conversations, automated service reminders, and message templates."
-        actions={inboxActions}
-      />
-      <PageBody className="mt-4 flex min-h-0 flex-1 flex-col space-y-0 overflow-hidden">
-        <nav className="shrink-0 border-b border-border/60" aria-label="Nest sections">
-        <div className="-mb-px flex gap-6 overflow-x-auto pb-0">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+      <div className="flex shrink-0 items-end justify-between gap-3 border-b border-gray-200 px-4 pt-3 md:px-5">
+        <nav
+          className="-mb-px flex min-w-0 gap-5 overflow-x-auto"
+          aria-label="Nest sections"
+        >
           <button
             type="button"
             onClick={() => setActiveTab("inbox")}
-            className={cn(
-              "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
-              activeTab === "inbox"
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-            )}
+            className={nestTabClass(activeTab === "inbox")}
           >
-            <Inbox className="size-4 shrink-0" />
+            <Inbox size={15} />
             Inbox
             {unreadCount > 0 ? (
               <Badge variant="outline" className="rounded-md px-1.5 py-0 text-[10px] font-medium">
@@ -1059,69 +1197,57 @@ export function StoreNestMessagesPanel() {
           <button
             type="button"
             onClick={() => setActiveTab("auto")}
-            className={cn(
-              "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
-              activeTab === "auto"
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-            )}
+            className={nestTabClass(activeTab === "auto")}
           >
-            <Sparkles className="size-4 shrink-0" />
+            <Sparkles size={15} />
             Auto
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("settings")}
-            className={cn(
-              "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
-              activeTab === "settings"
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-            )}
+            className={nestTabClass(activeTab === "settings")}
           >
-            <Settings className="size-4 shrink-0" />
+            <Settings size={15} />
             Settings
           </button>
-        </div>
-      </nav>
+        </nav>
+        {inboxToolbar ? (
+          <div className="flex shrink-0 items-center gap-2 pb-3">{inboxToolbar}</div>
+        ) : null}
+      </div>
 
-      <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {activeTab === "inbox" ? (
         <>
           {configured === false ? (
-            <div className={cn(INBOX_CARD, "px-6 py-10 text-center text-sm text-muted-foreground")}>
+            <div className="flex flex-1 items-center justify-center px-6 py-10 text-center text-sm text-muted-foreground">
               Nest messaging is not configured for this environment yet.
             </div>
           ) : loading && chats.length === 0 ? (
-            <div className={cn(INBOX_CARD, "flex items-center justify-center py-24")}>
+            <div className="flex flex-1 items-center justify-center py-24">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : error ? (
-            <div className={cn(INBOX_CARD, "px-6 py-10 text-center text-sm text-destructive")}>
+            <div className="flex flex-1 items-center justify-center px-6 py-10 text-center text-sm text-destructive">
               {error}
             </div>
           ) : (
-            <div
-              className={cn(
-                INBOX_CARD,
-                "flex h-full min-h-0 flex-1 flex-col overflow-hidden md:flex-row",
-              )}
-            >
+            <div className="flex h-full min-h-0 flex-1 overflow-hidden md:flex-row">
               <aside
                 className={cn(
-                  "flex min-h-0 w-full shrink-0 flex-col overflow-hidden border-border/60 md:h-full md:w-[min(320px,32%)] md:max-w-[360px] md:flex-none md:border-r",
+                  "flex min-h-0 w-full shrink-0 flex-col overflow-hidden border-gray-200 bg-[#f6f6f6] md:h-full md:w-[min(340px,34%)] md:max-w-[380px] md:flex-none md:border-r",
                   showMobileThread ? "hidden md:flex" : "flex flex-1",
                 )}
               >
-                <div className="shrink-0 border-b border-border/60 px-4 py-4">
+                <div className="shrink-0 border-b border-gray-200/80 bg-[#f6f6f6] px-4 py-3">
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       type="search"
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
-                      placeholder="Search conversations"
-                      className="pl-9"
+                      placeholder="Search"
+                      className="rounded-md border-gray-300 bg-white pl-9"
                     />
                   </div>
                   {unreadCount > 0 ? (
@@ -1134,7 +1260,7 @@ export function StoreNestMessagesPanel() {
                   className="h-0 min-h-0 flex-1 overflow-y-auto overscroll-contain"
                   style={{ WebkitOverflowScrolling: "touch" }}
                 >
-                  <div className="space-y-1 p-2">
+                  <div className="space-y-0.5 p-2">
                     {filteredChats.length === 0 ? (
                       <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
                         <Inbox className="mb-3 h-8 w-8 text-muted-foreground/40" strokeWidth={1.5} />
@@ -1163,7 +1289,7 @@ export function StoreNestMessagesPanel() {
 
               <section
                 className={cn(
-                  "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background md:h-full",
+                  "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white md:h-full",
                   showMobileThread ? "flex" : "hidden md:flex",
                 )}
               >
@@ -1179,7 +1305,7 @@ export function StoreNestMessagesPanel() {
                   </div>
                 ) : (
                   <>
-                    <div className="shrink-0 border-b border-border/60 px-4 py-4 md:px-5">
+                    <div className="shrink-0 border-b border-gray-200/80 bg-white/95 px-4 py-3 backdrop-blur-sm md:px-5">
                       <div className="flex items-center gap-2">
                         <Button
                           type="button"
@@ -1191,16 +1317,16 @@ export function StoreNestMessagesPanel() {
                         >
                           <ChevronLeft className="h-5 w-5" />
                         </Button>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-base font-semibold tracking-tight text-foreground">
-                            {conversation.displayName || conversation.title}
+                        <div className="min-w-0 flex-1 text-center md:text-left">
+                          <p className="truncate text-sm text-muted-foreground">
+                            To:{" "}
+                            <span className="font-medium text-foreground">
+                              {conversation.displayName || conversation.title}
+                            </span>
                           </p>
-                          <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                            {conversation.participantHandle ?? conversation.chatId}
-                          </p>
-                          {formatLastSeen(conversation.lastSeen) ? (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Active {formatLastSeen(conversation.lastSeen)}
+                          {conversation.participantHandle ? (
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {conversation.participantHandle}
                             </p>
                           ) : null}
                         </div>
@@ -1209,7 +1335,7 @@ export function StoreNestMessagesPanel() {
 
                     <div
                       ref={threadRef}
-                      className="h-0 min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-muted/20 px-4 py-5 md:px-6"
+                      className="h-0 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-5 py-5 md:px-10"
                       style={{ WebkitOverflowScrolling: "touch" }}
                     >
                       {threadLoading && conversation.messages.length === 0 ? (
@@ -1217,9 +1343,17 @@ export function StoreNestMessagesPanel() {
                           <Loader2 className="h-5 w-5 animate-spin text-gray-300" />
                         </div>
                       ) : (
-                        conversation.messages.map((message) => (
-                          <ThreadMessage key={message.id} message={message} />
-                        ))
+                        conversation.messages.map((message, index) => {
+                          const nextMessage = conversation.messages[index + 1];
+                          const showTail = !nextMessage || !sameMessageGroup(message, nextMessage);
+                          return (
+                            <ThreadMessage
+                              key={message.id}
+                              message={message}
+                              showTail={showTail}
+                            />
+                          );
+                        })
                       )}
                     </div>
 
@@ -1233,19 +1367,18 @@ export function StoreNestMessagesPanel() {
       ) : null}
 
       {activeTab === "auto" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 md:px-6">
           <NestAutoServicePanel />
         </div>
       ) : null}
 
       {activeTab === "settings" ? (
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 py-4 md:px-6">
           <NestMessageTemplatesSettings />
           <NestHiddenPickupSuggestionsPanel />
         </div>
       ) : null}
       </div>
-      </PageBody>
 
       <StartMessageDialog
         open={newMessageOpen}

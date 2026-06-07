@@ -8,10 +8,11 @@ import { AuthModalProvider } from "@/components/providers/auth-modal-provider";
 import { SellModalProvider } from "@/components/providers/sell-modal-provider";
 import { UploadProvider } from "@/components/providers/upload-provider";
 import { OrderNotificationsProvider } from "@/components/providers/order-notifications-provider";
+import { MessagesProvider } from "@/components/providers/messages-provider";
+import { NestNotificationsProvider } from "@/components/providers/nest-notifications-provider";
+import { CartProvider } from "@/components/providers/cart-provider";
 import { ConditionalLayout } from "@/components/layout";
 import { GenieProvider } from "@/components/providers/genie-provider";
-import { MessagesProvider } from "@/components/providers/messages-provider";
-import { CartProvider } from "@/components/providers/cart-provider";
 import { DeferredGlobalPanels } from "@/components/layout/deferred-global-panels";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
@@ -86,6 +87,7 @@ export default async function RootLayout({
                     <UploadProvider>
                       <MobileNavProvider>
                         <MessagesProvider>
+                          <NestNotificationsProvider>
                           <GenieProvider>
                               <CartProvider>
                                 <ConditionalLayout>{children}</ConditionalLayout>
@@ -93,6 +95,7 @@ export default async function RootLayout({
                               <DeferredGlobalPanels />
                             </CartProvider>
                           </GenieProvider>
+                          </NestNotificationsProvider>
                         </MessagesProvider>
                       </MobileNavProvider>
                     </UploadProvider>

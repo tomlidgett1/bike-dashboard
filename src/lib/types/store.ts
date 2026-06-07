@@ -59,6 +59,23 @@ export interface StoreService {
   updated_at?: string;
 }
 
+export interface StoreRental {
+  id: string;
+  user_id?: string;
+  product_id: string;
+  name: string;
+  description?: string | null;
+  price_per_hour?: number | null;
+  price_per_day?: number | null;
+  image_url?: string | null;
+  is_available: boolean;
+  category?: string | null;
+  display_order?: number;
+  is_active?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface StoreBrand {
   id: string;
   user_id: string;
@@ -81,6 +98,7 @@ export interface StoreProfile {
   categories: StoreCategoryWithProducts[];
   sections: StoreSectionWithCategories[];
   services: StoreService[];
+  rentals: StoreRental[];
   brands: StoreBrand[];
   /** Optional storefront enrichments — rendered only when present */
   cover_image_url?: string | null;
@@ -333,6 +351,74 @@ export interface UpdateServiceRequest {
   includes?: string[];
   display_order?: number;
   is_active?: boolean;
+}
+
+export interface CreateRentalRequest {
+  product_id: string;
+  description?: string | null;
+  price_per_hour?: number | null;
+  price_per_day?: number | null;
+  is_available?: boolean;
+  display_order?: number;
+}
+
+export interface UpdateRentalRequest {
+  id: string;
+  description?: string | null;
+  price_per_hour?: number | null;
+  price_per_day?: number | null;
+  is_available?: boolean;
+  display_order?: number;
+  is_active?: boolean;
+}
+
+export type RentalBookingStatus = 'pending' | 'confirmed' | 'cancelled';
+
+export interface StoreRentalBooking {
+  id: string;
+  user_id: string;
+  rental_id: string;
+  start_date: string;
+  end_date: string;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_email?: string | null;
+  status: RentalBookingStatus;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface RentalAvailabilityResponse {
+  booked_dates: string[];
+  bookings: Array<{
+    id: string;
+    start_date: string;
+    end_date: string;
+    status: RentalBookingStatus;
+  }>;
+}
+
+export interface CreateRentalBookingRequest {
+  rental_id: string;
+  start_date: string;
+  end_date: string;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_email?: string | null;
+  status?: RentalBookingStatus;
+  notes?: string | null;
+}
+
+export interface UpdateRentalBookingRequest {
+  id: string;
+  start_date?: string;
+  end_date?: string;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_email?: string | null;
+  status?: RentalBookingStatus;
+  notes?: string | null;
 }
 
 export interface CreateBrandRequest {

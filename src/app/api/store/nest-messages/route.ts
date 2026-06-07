@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { proxyNestBrandPortalRequest } from "@/lib/nest/brand-portal-client";
 import { isNestMessagingConfigured } from "@/lib/nest/config";
 import { resolveStoreNestBrandKey } from "@/lib/nest/resolve-store-brand-key";
+import { searchLightspeedCustomersForNest } from "@/lib/services/lightspeed/customer-search";
+import { getConnection } from "@/lib/services/lightspeed/token-manager";
 import { createClient } from "@/lib/supabase/server";
 
 function json(body: Record<string, unknown>, status = 200) {
@@ -49,6 +51,7 @@ async function requireStoreUser() {
   }
 
   return {
+    userId: user.id,
     brandKey: resolveStoreNestBrandKey(profile),
   } as const;
 }
@@ -58,6 +61,44 @@ export async function GET(request: NextRequest) {
   if ("error" in auth) return auth.error;
 
   const { searchParams } = new URL(request.url);
+
+  if (searchParams.get("customerSearch") === "1") {
+    const q = searchParams.get("q")?.trim() ?? "";
+    if (q.length < 2) {
+      return json({ customers: [], configured: true, lightspeedConnected: true });
+    }
+
+    const connection = await getConnection(auth.userId);
+    if (!connection || connection.status !== "connected") {
+      return json({
+        customers: [],
+        configured: true,
+        lightspeedConnected: false,
+        error: "Connect Lightspeed to search customers.",
+      });
+    }
+
+    try {
+      const customers = await searchLightspeedCustomersForNest(auth.userId, q);
+      return json({
+        customers,
+        configured: true,
+        lightspeedConnected: true,
+      });
+    } catch (error) {
+      console.error("[store-nest-messages] customer search failed:", error);
+      return json(
+        {
+          customers: [],
+          configured: true,
+          lightspeedConnected: true,
+          error: error instanceof Error ? error.message : "Could not search Lightspeed customers.",
+        },
+        502,
+      );
+    }
+  }
+
   const query = new URLSearchParams();
   query.set("conversations", "1");
 
@@ -65,12 +106,6 @@ export async function GET(request: NextRequest) {
   if (chatId) query.set("chatId", chatId);
   if (searchParams.get("listOnly") === "1") query.set("listOnly", "1");
   if (searchParams.get("threadOnly") === "1") query.set("threadOnly", "1");
-
-  if (searchParams.get("customerSearch") === "1") {
-    query.set("customerSearch", "1");
-    const q = searchParams.get("q")?.trim();
-    if (q) query.set("q", q);
-  }
 
   try {
     const data = await proxyNestBrandPortalRequest(auth.brandKey, {

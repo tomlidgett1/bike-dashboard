@@ -16,7 +16,7 @@ export default function StoreAnalyticsPage() {
     <PageContainer size="wide">
       <PageHeader
         title="Analytics"
-        description="Website traffic, product engagement, distinct viewers, and device split."
+        description="Website traffic, product engagement, customer search terms, distinct viewers, and device split."
       />
       <PageBody>
         <StoreAnalyticsManager />

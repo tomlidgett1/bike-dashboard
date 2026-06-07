@@ -38,6 +38,7 @@ export type NestConversationsResponse = {
 };
 
 export type NestLightspeedCustomer = {
+  customerId: string;
   name: string;
   phone: string;
 };

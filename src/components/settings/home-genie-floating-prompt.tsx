@@ -14,7 +14,7 @@ export function HomeGenieFloatingPrompt() {
     if (!trimmed) return;
     if (!queueHomeV2Prompt(trimmed)) return;
     setInput("");
-    router.push("/settings/store/homev2");
+    router.push("/settings/store/home");
   }, [input, router]);
 
   return (

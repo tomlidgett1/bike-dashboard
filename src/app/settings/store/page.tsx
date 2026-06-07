@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 
 const VALID = [
   "home",
-  "homev2",
   "nest",
   "landing",
   "carousels",
@@ -10,6 +9,7 @@ const VALID = [
   "sections",
   "brands",
   "services",
+  "rentals",
   "analytics",
   "products",
   "titles",
@@ -27,6 +27,12 @@ export default async function StoreSettingsIndex({
     redirect("/optimize?workflow=online");
   }
   const dest =
-    tab === "categories" ? "carousels" : tab && VALID.includes(tab) ? tab : "homev2";
+    tab === "categories"
+      ? "carousels"
+      : tab === "homev2"
+        ? "home"
+        : tab && VALID.includes(tab)
+          ? tab
+          : "home";
   redirect(`/settings/store/${dest}`);
 }

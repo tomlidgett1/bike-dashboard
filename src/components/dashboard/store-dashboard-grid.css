@@ -1,0 +1,43 @@
+.store-dashboard-grid .react-grid-item.react-grid-placeholder {
+  background:
+    linear-gradient(135deg, rgba(255, 222, 89, 0.26), rgba(11, 110, 153, 0.08));
+  border: 1px dashed rgba(120, 119, 116, 0.38);
+  border-radius: 0.375rem;
+  opacity: 1;
+}
+
+.store-dashboard-grid .react-grid-item.react-draggable-dragging {
+  z-index: 20;
+}
+
+.store-dashboard-grid .react-grid-item.react-draggable-dragging > div {
+  box-shadow: 0 18px 40px -22px rgba(15, 23, 42, 0.55);
+}
+
+.store-dashboard-grid .react-grid-item.react-resizable-resizing > div {
+  box-shadow: 0 18px 40px -24px rgba(15, 23, 42, 0.5);
+}
+
+.store-dashboard-grid .react-resizable-handle-se {
+  right: 6px;
+  bottom: 6px;
+  width: 18px;
+  height: 18px;
+  background-image: none;
+}
+
+.store-dashboard-grid .react-resizable-handle-se::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid #a3a3a3;
+  border-bottom: 2px solid #a3a3a3;
+  border-radius: 0 0 2px 0;
+}
+
+.store-dashboard-grid .react-resizable-handle-se:hover::after {
+  border-color: #525252;
+}

@@ -18,6 +18,11 @@ import { z } from 'zod'
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server'
 import { compactGenieProgressText } from '@/lib/genie/progress-text'
 import {
+  buildPivotTableFromRows,
+  type GeniePivotTableConfig,
+  type GeniePivotTablePayload,
+} from '@/lib/genie/pivot-table'
+import {
   GenieOrchestrationDecisionSchema,
   latestUserText,
   type GenieOrchestrationDecision,
@@ -170,12 +175,15 @@ WHAT YOU CAN DO
 9. Web research — search the live web for current cycling, product, pricing, standards, compatibility, supplier, event, and market information when the answer depends on up-to-date external facts.
 
 HOW TO WORK
+- Context first: every request may be a continuation. Read the recent conversation and any private structured context from previous Genie tool results before calling tools. If the current question can be answered from that context, answer directly and do not re-run slow Lightspeed or web tools just to rediscover the same records. Resolve pronouns like "she", "he", "that bike", "those items", and "these products" against the most recent relevant structured context. Use tools only when the context is missing, stale by explicit user request, ambiguous, or insufficient for the answer.
 - Read first: call get_store_carousels / search_store_products / get_product_costs / list_active_discounts to ground yourself in the store's ACTUAL data before proposing anything.
 - Then propose: call exactly one propose_* tool to stage the change. You never apply changes yourself — the store reviews a preview and clicks Apply.
-- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, search_lightspeed_inventory is also available. For work orders / repairs / service jobs: use list_lightspeed_workorders (scope open for active jobs, finished for completed/pickup-ready, all if unclear) with include_details:true, or get_lightspeed_workorder for one ID. For "due today", "due tomorrow", or any ETA date question, pass due_on as YYYY-MM-DD in ${STORE_TIME_ZONE} (today is ${today}) — do not load every open work order without a date filter. Always include a brief text summary even when work order cards render. The UI renders detailed Lightspeed work order cards automatically — keep your text answer brief (counts, highlights, next steps) and do not repeat every line item in prose. Use record_lightspeed_plan only for broad, complex, multi-pass Lightspeed analysis. If a lookup returns no, weak, ambiguous, partial, or non-answering results, call record_lightspeed_recheck and try one materially different SQL strategy before asking the user to clarify. These are answer-only tools; do not create proposals for Lightspeed reporting.
+- For pivot table or crosstab requests where the user specifies row fields, column fields, and values: use run_lightspeed_sql_query with visual.pivot_table. Return detail rows in SQL (do not pre-aggregate away the row/column dimensions), then set row_fields, column_fields, value_field, and aggregation (sum, count, avg, min, max, count_distinct). Example: row_fields ["category_name"], column_fields ["sale_month"], value_field "gross_sales", aggregation "sum".
+- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, search_lightspeed_inventory is also available. For work orders / repairs / service jobs: first reuse recent private structured workorder context when it answers the follow-up. Otherwise use list_lightspeed_workorders (scope open for active jobs, finished for completed/pickup-ready, all if unclear) with include_details:true, or get_lightspeed_workorder for one ID. For "what did X get done", "completed", "paid", or similar completed-work questions, use scope:"finished", query the customer name, include_details:true, and a small limit. For "due today", "due tomorrow", or any ETA date question, pass due_on as YYYY-MM-DD in ${STORE_TIME_ZONE} (today is ${today}) — do not load every open work order without a date filter. Always include a brief text summary even when work order cards render. The UI renders detailed Lightspeed work order cards automatically — keep your text answer brief (counts, highlights, next steps) and do not repeat every line item in prose. Use record_lightspeed_plan only for broad, complex, multi-pass Lightspeed analysis. If a lookup returns no, weak, ambiguous, partial, or non-answering results, call record_lightspeed_recheck and try one materially different SQL strategy before asking the user to clarify. These are answer-only tools; do not create proposals for Lightspeed reporting.
 - For broad business questions such as "how can we make more money", do not give generic advice. Run a multi-pass analysis with several targeted SQL queries before answering. Cover revenue trend, gross profit/margin trend, category/product profit drivers, discount leakage, average sale/basket indicators, top/repeat customers, low-margin/high-volume products, and inventory cash tied up. State data limitations clearly when customer-contact tables are not available.
 - For current external questions, use web_search. Use it for public information only. Never use web search instead of Lightspeed tools for store sales, sale lines, inventory, stock-on-hand, or private store activity.
 - For "our pricing vs other stores/competitors/market" questions, do not refuse. First use store pricing/product tools such as get_product_costs, search_store_products, or search_lightspeed_products to identify the store's relevant products and prices; then use web_search for public comparable prices. Answer with matched examples, confidence/limitations, and where the store appears high, low, or in line.
+- For customer-specific bike fitment or compatibility questions like "what bottom bracket does Jackson Trotman need on this bike", "what pads does Sarah need for her bike", or "what tyre size does this customer's Trek take": do not answer from web search alone. First resolve the customer, then inspect their sales history and work orders to identify the exact bike/model/year/build from sold bikes, service notes, work-order descriptions, and parts already used. Use web_search only after the bike context is grounded. If the bike cannot be confidently identified, ask one concise clarification and state what you checked.
 - Creating a carousel: choose a clear name (use the store's own words if they gave one), and pass "match" to fill it by description ("all Clif bars" → match:"Clif"); use product_ids only for specific picks. To place it, pass position (1 = top/featured slot); omit to add it at the end.
 - Renaming: use get_store_carousels to find the carousel id, then propose_rename_carousel with the new name.
 - For discounts by description ("all Clif bars"), pass the keyword as "match" and let the system find the products. Only pass product_ids if the store picked specific items.
@@ -201,6 +209,15 @@ ${getLightspeedInstructions()}${formatExecutionPlanForPrompt(executionPlan)}`
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  charts?: unknown[]
+  tables?: unknown[]
+  pivotTables?: unknown[]
+  proposals?: GenieProposal[]
+  products?: unknown[]
+  workorders?: GenieWorkorderCardsPayload
+  analysisPlan?: GenieAnalysisPlanPayload
+  analysisQueries?: GenieAnalysisQueryPayload[]
+  sources?: unknown[]
 }
 
 interface StreamToolItem {
@@ -228,11 +245,155 @@ interface RawModelDeltaEvent {
   }
 }
 
+const MAX_PRIVATE_CONTEXT_CHARS = 12_000
+
+function compactContextText(value: unknown, maxLength = 260): string {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim()
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`
+}
+
+function compactJsonForContext(value: unknown, maxLength = 1_400): string {
+  try {
+    const json = JSON.stringify(value, (_key, nestedValue) => {
+      if (Array.isArray(nestedValue)) return nestedValue.slice(0, 5)
+      if (typeof nestedValue === 'string') return compactContextText(nestedValue, 260)
+      return nestedValue
+    })
+    return compactContextText(json, maxLength)
+  } catch {
+    return ''
+  }
+}
+
+function compactProductForContext(product: unknown): string {
+  if (!product || typeof product !== 'object') return compactContextText(product)
+  const row = product as Record<string, unknown>
+  const fields = [
+    ['id', row.id ?? row.product_id ?? row.lightspeed_item_id],
+    ['name', row.name ?? row.title ?? row.description],
+    ['sku', row.sku ?? row.custom_sku ?? row.system_sku],
+    ['brand', row.brand ?? row.brand_name],
+    ['category', row.category ?? row.category_name ?? row.category_path],
+    ['price', row.price ?? row.current_price ?? row.retail_price],
+    ['sale_price', row.sale_price],
+    ['stock', row.stock ?? row.qoh ?? row.quantity_on_hand],
+  ]
+    .filter(([, value]) => value != null && value !== '')
+    .map(([key, value]) => `${key}=${compactContextText(value, 120)}`)
+  return fields.length > 0 ? fields.join(', ') : compactJsonForContext(product, 500)
+}
+
+function compactWorkordersForContext(payload: GenieWorkorderCardsPayload): string {
+  if (!payload?.workorders?.length) return ''
+  const rows = payload.workorders.slice(0, 6).map(workorder => {
+    const header = [
+      `#${workorder.workorder_id}`,
+      `status=${compactContextText(workorder.status_name, 80)}`,
+      workorder.is_finished ? 'finished=true' : 'finished=false',
+      `customer=${compactContextText(workorder.customer_name, 120)}`,
+      workorder.customer_id ? `customer_id=${workorder.customer_id}` : '',
+      workorder.sale_id ? `sale_id=${workorder.sale_id}` : '',
+      workorder.time_in ? `time_in=${workorder.time_in}` : '',
+      workorder.eta_out ? `eta_out=${workorder.eta_out}` : '',
+      workorder.updated_at ? `updated_at=${workorder.updated_at}` : '',
+      workorder.items_subtotal != null ? `items_subtotal=${workorder.items_subtotal}` : '',
+    ].filter(Boolean).join(', ')
+
+    const details = [
+      workorder.note ? `note=${compactContextText(workorder.note, 500)}` : '',
+      workorder.internal_note ? `internal_note=${compactContextText(workorder.internal_note, 360)}` : '',
+      workorder.lines.length
+        ? `lines=${workorder.lines.slice(0, 5).map(line =>
+          `${line.done ? 'done' : 'open'}:${compactContextText(line.note, 160)}`,
+        ).join(' | ')}`
+        : '',
+      workorder.items.length
+        ? `items=${workorder.items.slice(0, 6).map(item => [
+          compactContextText(item.description || 'item', 120),
+          item.sku ? `sku ${compactContextText(item.sku, 80)}` : '',
+          item.quantity != null ? `qty ${item.quantity}` : '',
+          item.unit_price != null ? `$${item.unit_price}` : '',
+          item.note ? compactContextText(item.note, 120) : '',
+        ].filter(Boolean).join(' ')).join(' | ')}`
+        : '',
+    ].filter(Boolean)
+
+    return [`- ${header}`, ...details.map(detail => `  ${detail}`)].join('\n')
+  })
+
+  return [
+    `workorders title=${compactContextText(payload.title, 160)} scope=${payload.scope}${payload.truncated ? ' truncated=true' : ''}`,
+    ...rows,
+  ].join('\n')
+}
+
+function privateContextForMessage(message: Message): string {
+  const sections: string[] = []
+
+  if (message.workorders?.workorders?.length) {
+    sections.push(compactWorkordersForContext(message.workorders))
+  }
+
+  if (message.products?.length) {
+    sections.push([
+      `products count=${message.products.length}`,
+      ...message.products.slice(0, 8).map(product => `- ${compactProductForContext(product)}`),
+    ].join('\n'))
+  }
+
+  if (message.proposals?.length) {
+    sections.push(`proposals count=${message.proposals.length} latest=${compactJsonForContext(message.proposals.at(-1), 1_200)}`)
+  }
+
+  if (message.analysisPlan) {
+    sections.push(`analysis_plan=${compactJsonForContext(message.analysisPlan, 1_200)}`)
+  }
+
+  if (message.analysisQueries?.length) {
+    sections.push([
+      `analysis_queries count=${message.analysisQueries.length}`,
+      ...message.analysisQueries.slice(-6).map(query => [
+        `- ${query.tool_name}`,
+        `status=${query.status}`,
+        query.purpose ? `purpose=${compactContextText(query.purpose, 160)}` : '',
+        query.row_count != null ? `rows=${query.row_count}` : '',
+        query.error ? `error=${compactContextText(query.error, 180)}` : '',
+      ].filter(Boolean).join(', ')),
+    ].join('\n'))
+  }
+
+  if (message.tables?.length) {
+    sections.push(`tables count=${message.tables.length} latest=${compactJsonForContext(message.tables.at(-1), 1_400)}`)
+  }
+
+  if (message.charts?.length) {
+    sections.push(`charts count=${message.charts.length} latest=${compactJsonForContext(message.charts.at(-1), 1_200)}`)
+  }
+
+  if (message.pivotTables?.length) {
+    sections.push(`pivot_tables count=${message.pivotTables.length} latest=${compactJsonForContext(message.pivotTables.at(-1), 1_200)}`)
+  }
+
+  if (message.sources?.length) {
+    sections.push(`sources count=${message.sources.length} latest=${compactJsonForContext(message.sources.slice(-5), 1_000)}`)
+  }
+
+  return compactContextText(sections.filter(Boolean).join('\n\n'), MAX_PRIVATE_CONTEXT_CHARS)
+}
+
+function contentForAgent(message: Message): string {
+  if (message.role !== 'assistant') return message.content
+  const privateContext = privateContextForMessage(message)
+  if (!privateContext) return message.content
+  return `${message.content}\n\n[Private structured context from previous Genie tool results. Use it to resolve follow-ups, but do not quote this marker to the user.]\n${privateContext}`
+}
+
 function toAgentInputMessages(messages: Message[]): AgentInputItem[] {
   return messages.map(message =>
     message.role === 'user'
-      ? userMessage(message.content)
-      : assistantMessage(message.content),
+      ? userMessage(contentForAgent(message))
+      : assistantMessage(contentForAgent(message)),
   )
 }
 
@@ -249,9 +410,14 @@ Routes:
 - mixed: requests combining multiple non-casual routes.
 - unsupported: off-topic requests outside store management, Lightspeed reporting, and cycling/store research.
 
+Continuation rule:
+- Route the latest user message in the context of the full conversation, including private structured context appended to prior assistant messages. Short follow-ups, pronouns, "this/that/these", or "she/he/they" inherit the route implied by the referenced prior store data, work order, product set, customer, or web result. Do not classify a follow-up as casual_chat just because it is short.
+
 Routing examples:
 - "How does our pricing compare to other stores/competitors/market?" = mixed, because it needs store pricing data plus live web research.
 - "Are we overpriced on these products?" = mixed when it references competitors, market, online, or other stores; storefront_action if it only asks about internal cost/margin.
+- "What bottom bracket does Jackson Trotman need on this bike?" = mixed, because it needs private customer sales/work-order history to identify the bike, then public compatibility research.
+- "What brake pads does this customer's Trek need?" = mixed when customer context/history is needed; web_research only if the exact bike/model is already explicitly provided in the conversation.
 
 Planning rule:
 - route=casual_chat must have needs_plan=false.
@@ -328,6 +494,7 @@ Return only the structured execution plan required by the schema. Do not call to
 
 Planning rules:
 - Decide the route, tool set, date range, SQL/data strategy, and final answer shape for the executor.
+- Treat recent private structured context as already-grounded evidence. For continuation questions, plan fresh tool calls only for missing, ambiguous, stale, or explicitly refreshed information.
 - Prefer one direct SQL query for narrow analytical Lightspeed questions.
 - For broad profitability, growth, or business-performance questions, plan a multi-pass analysis. Do not compress the work into one query when multiple lenses are needed.
 - For Lightspeed sales/customer/product reporting, the executor should use run_lightspeed_sql_query.
@@ -339,6 +506,7 @@ Planning rules:
 - For customer contact details, note that phone/email/address need a future customer/contact table.
 - For strategic profitability analysis, include concrete phases for: revenue and gross profit trend, category/service contribution, product contribution, low-margin/high-volume lines, discount leakage, average sale value, customer concentration/repeat spend, and stale/cash-tied-up inventory from genie_lightspeed_inventory. It is acceptable to plan many focused SQL queries over multiple turns.
 - For discount-candidate analysis, plan find_discount_candidates first with the requested product count. Do not plan 20-30 candidates for a 10-product request. The discount candidate tool already returns SKU/name/brand/category, current price, unit cost, margin, QOH, stale movement, age, and recent sales. Plan a second SQL check only if the requested answer needs a field that tool does not return. For competitor pricing, plan batched web_search calls for only the final selected products and stop once each item has a good exact/comparable price or a clear "not found quickly" note. Do not plan propose_discount unless the user provided a discount percent and asked to stage/apply it.
+- For customer-specific bike fitment or compatibility questions, plan a grounded diagnostic workflow: resolve the customer by name with search_lightspeed_customers; inspect broad customer sales history with get_lightspeed_customer_sales for bike purchases and prior parts; inspect work orders with list_lightspeed_workorders using the customer name and include_details:true, scope all if needed; infer the most likely bike/model/year and confidence; then use web_search for the exact compatibility standard/part. If multiple plausible bikes remain, final_answer_shape must be clarifying_question.
 - For "best customers", "top customers", or "highest spenders", plan one SQL query ranked by gross_sales unless the user asks for frequency or average value.
 - For "last 3 years" or similar relative ranges, use ${STORE_TIME_ZONE} and set start_date to the same month/day three years before ${today}; set end_date to ${today}.
 - For customer rankings, the correct grain is: aggregate line rows into distinct sale transactions first, then aggregate those sale totals by customer_id/customer_full_name. Exclude walk-in/unassigned customers unless the user asks to include them.
@@ -684,7 +852,7 @@ function visualPrefsForMessages(messages: Message[]): VisualPrefs {
   return {
     chart: /\b(bar|line|trend)\s*(chart|graph)\b|\b(chart|graph)\b|\bplot\b|\bvisuali[sz]e\b|\bbar\s+chart\b|\bbar\s+graph\b|\bline\s+chart\b|\bline\s+graph\b/.test(text),
     line: /\bline\s*(chart|graph)\b|\btrend\s*(line|chart|graph)\b/.test(text),
-    table: /\btable\b|\btabular\b|\bspreadsheet\b|\bbreakdown\b|\bcomparison\b|\branking\b|\brankings\b|\btop\b|\blist(?:ed|ing)?\b|\btransactions?\b|\breceipts?\b|\borders?\b|\bevery\s+sale\b|\beach\s+sale\b|\bwhich\s+products?\b|\bwhat\s+would\s+they\s+be\b|\bdiscount\s+\d+\s+products?\b|\bproducts?\s+.*\bdiscount\b/.test(text),
+    table: /\btable\b|\btabular\b|\bspreadsheet\b|\bbreakdown\b|\bcomparison\b|\branking\b|\brankings\b|\btop\b|\blist(?:ed|ing)?\b|\btransactions?\b|\breceipts?\b|\borders?\b|\bevery\s+sale\b|\beach\s+sale\b|\bwhich\s+products?\b|\bwhat\s+would\s+they\s+be\b|\bdiscount\s+\d+\s+products?\b|\bproducts?\s+.*\bdiscount\b|\bpivot(?:\s+table)?\b|\bcrosstab\b|\bcross[\s-]?tab\b/.test(text),
   }
 }
 
@@ -5859,9 +6027,14 @@ type LightspeedCustomerSalesResult = Awaited<ReturnType<typeof getLightspeedCust
 type LightspeedTopCustomersResult = Awaited<ReturnType<typeof getLightspeedTopCustomersSql>>
 type LightspeedProductPurchasersResult = Awaited<ReturnType<typeof getLightspeedProductPurchasersSql>>
 
-function emitVisuals(emit: Emit, prefs: VisualPrefs, visuals: { chart?: GenieChartPayload; table?: GenieTablePayload }) {
+function emitVisuals(
+  emit: Emit,
+  prefs: VisualPrefs,
+  visuals: { chart?: GenieChartPayload; table?: GenieTablePayload; pivot_table?: GeniePivotTablePayload },
+) {
   if (prefs.chart && visuals.chart) emit({ event: 'chart', chart: visuals.chart })
-  if (prefs.table && visuals.table) emit({ event: 'table', table: visuals.table })
+  if (visuals.pivot_table) emit({ event: 'pivot_table', pivot_table: visuals.pivot_table })
+  else if (prefs.table && visuals.table) emit({ event: 'table', table: visuals.table })
 }
 
 function buildSalesListTable(result: LightspeedSalesListResult): GenieTablePayload | undefined {
@@ -7327,12 +7500,22 @@ type SqlResultRow = Record<string, string | number | boolean | null>
 interface LightspeedSqlVisualArgs {
   table_title?: string
   table_subtitle?: string
+  pivot_table?: GeniePivotTableConfig
   chart_kind?: 'bar' | 'line'
   chart_title?: string
   chart_subtitle?: string
   chart_x_key?: string
   chart_y_keys?: string[]
   value_format?: VisualValueFormat
+}
+
+function buildPivotSqlTable(
+  rows: SqlResultRow[],
+  visual: LightspeedSqlVisualArgs | undefined,
+  limitApplied: boolean,
+): GeniePivotTablePayload | undefined {
+  if (!visual?.pivot_table) return undefined
+  return buildPivotTableFromRows(rows, visual.pivot_table, { limitApplied })
 }
 
 function clampSqlLimit(value: number | undefined): number {
@@ -7572,9 +7755,10 @@ async function runLightspeedSqlMissingRpcFallback(
     gross_margin_pct: netSales > 0 ? roundPercent((grossProfit / netSales) * 100) : null,
   }]
 
-  const table = buildGenericSqlTable(rows, args.visual, limitApplied)
+  const pivotTable = buildPivotSqlTable(rows, args.visual, limitApplied)
+  const table = pivotTable ? undefined : buildGenericSqlTable(rows, args.visual, limitApplied)
   const chart = buildGenericSqlChart(rows, args.visual)
-  emitVisuals(emit, visualPrefs, { table, chart })
+  emitVisuals(emit, visualPrefs, { table, chart, pivot_table: pivotTable })
 
   return {
     source: 'lightspeed_sql_executor_fallback',
@@ -7588,6 +7772,7 @@ async function runLightspeedSqlMissingRpcFallback(
     rows,
     available_columns: GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS,
     table_emitted: Boolean(table),
+    pivot_table_emitted: Boolean(pivotTable),
     chart_emitted: Boolean(chart),
     recheck_required: limitApplied,
   }
@@ -7742,9 +7927,10 @@ async function runLightspeedSqlQuery(
   const rowCount = typeof result.row_count === 'number' ? result.row_count : rows.length
   const limitApplied = Boolean(result.limit_applied)
 
-  const table = buildGenericSqlTable(rows, args.visual, limitApplied)
+  const pivotTable = buildPivotSqlTable(rows, args.visual, limitApplied)
+  const table = pivotTable ? undefined : buildGenericSqlTable(rows, args.visual, limitApplied)
   const chart = buildGenericSqlChart(rows, args.visual)
-  emitVisuals(emit, visualPrefs, { table, chart })
+  emitVisuals(emit, visualPrefs, { table, chart, pivot_table: pivotTable })
 
   emitAnalysisQuery(emit, {
     id: queryId,
@@ -7753,6 +7939,8 @@ async function runLightspeedSqlQuery(
     sql,
     status: 'ok',
     row_count: rowCount,
+    visual: args.visual ?? null,
+    limit,
   })
 
   return {
@@ -7766,6 +7954,7 @@ async function runLightspeedSqlQuery(
     rows,
     available_columns: GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS,
     table_emitted: Boolean(table),
+    pivot_table_emitted: Boolean(pivotTable),
     chart_emitted: Boolean(chart),
     recheck_required: rows.length === 0 || limitApplied,
   }
@@ -8022,6 +8211,16 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         visual: z.object({
           table_title: z.string().optional(),
           table_subtitle: z.string().optional(),
+          pivot_table: z.object({
+            title: z.string().optional(),
+            subtitle: z.string().optional(),
+            row_fields: z.array(z.string()).min(1).max(3).describe('Dimension columns for pivot rows, e.g. ["category_name"].'),
+            column_fields: z.array(z.string()).max(2).optional().describe('Dimension columns for pivot columns, e.g. ["sale_month"].'),
+            value_field: z.string().optional().describe('Numeric field to aggregate, e.g. "gross_sales". Optional when aggregation is count.'),
+            aggregation: z.enum(['sum', 'count', 'avg', 'min', 'max', 'count_distinct']).optional().describe('How to aggregate value_field within each row/column cell. Defaults to sum.'),
+            value_format: z.enum(['currency', 'number', 'percent']).optional(),
+            show_totals: z.boolean().optional().describe('Show row/column totals. Defaults to true.'),
+          }).optional().describe('Build a pivot/crosstab from the SQL rows instead of a flat table.'),
           chart_kind: z.enum(['bar', 'line']).optional(),
           chart_title: z.string().optional(),
           chart_subtitle: z.string().optional(),
@@ -8193,7 +8392,7 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
     }),
     tool({
       name: 'search_lightspeed_customers',
-      description: 'Search customers that appear in the SQL sales report table by customer name or customer ID. Phone, email, address, archived status, and customer-created date are not available until a customer/contact table exists.',
+      description: 'Search customers that appear in the SQL sales report table by customer name or customer ID. Use first for named-customer fitment/compatibility questions before checking sales/work orders. Phone, email, address, archived status, and customer-created date are not available until a customer/contact table exists.',
       parameters: z.object({
         query: z.string().optional().describe('Customer name, company, customer ID, phone, email, or address. Omit only for broad customer lists/counts.'),
         limit: z.number().int().min(1).max(50).optional(),
@@ -8243,7 +8442,7 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
     }),
     tool({
       name: 'get_lightspeed_customer_sales',
-      description: 'Fetch completed Lightspeed sales for one customer over a date range from the SQL sales report table. Use for customer purchase history, what a customer bought, customer lifetime/recent spend, last purchase, and customer sales detail questions.',
+      description: 'Fetch completed Lightspeed sales for one customer over a date range from the SQL sales report table. Use for customer purchase history, what a customer bought, customer lifetime/recent spend, last purchase, and customer sales detail questions. For customer-specific bike fitment questions, use this to infer owned bikes, prior components, and relevant model identifiers before web compatibility research.',
       parameters: z.object({
         start_date: z.string().describe('YYYY-MM-DD'),
         end_date: z.string().describe('YYYY-MM-DD'),
@@ -8541,7 +8740,7 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
     }),
     tool({
       name: 'list_lightspeed_workorders',
-      description: 'List live Lightspeed repair/service work orders with full details. Use scope "open" for active/in-progress jobs, "finished" for completed or pickup-ready, or "all". For due-date questions ("due today", ETA on a date), pass due_on as YYYY-MM-DD in the store timezone. Returns customer contact, status, dates, notes, labour lines, and parts. Answer-only — never create proposals.',
+      description: 'List live Lightspeed repair/service work orders with full details. Reuse recent private structured workorder context for follow-ups when it already answers the question. Use scope "open" for active/in-progress jobs, "finished" for completed, done, paid, or pickup-ready questions such as "what did X get done", or "all" only when the user truly needs active plus completed history. For named-customer bike fitment questions, query the customer name with include_details:true and use work-order notes/parts to identify the bike before web compatibility research. For due-date questions ("due today", ETA on a date), pass due_on as YYYY-MM-DD in the store timezone. Use small limits for named-customer lookups. Returns customer contact, status, dates, notes, labour lines, and parts. Answer-only — never create proposals.',
       parameters: z.object({
         scope: z.enum(['open', 'finished', 'all']).optional().describe('Defaults to open for active work orders.'),
         due_on: z.string().optional().describe('Filter by ETA out date (YYYY-MM-DD, store timezone). Use for "due today" and similar questions.'),

@@ -9,6 +9,19 @@ interface GenieTableExportPayload {
   rows: Array<Record<string, string | number | null>>;
 }
 
+interface GeniePivotExportPayload {
+  title: string;
+  rowLabel: string;
+  columns: Array<{ key: string; label: string }>;
+  rows: Array<{
+    row_label: string;
+    cells: Record<string, number | null>;
+    total?: number | null;
+  }>;
+  column_totals?: Record<string, number | null>;
+  grand_total?: number | null;
+}
+
 function slugifyFilename(title: string) {
   const slug = title
     .toLowerCase()
@@ -52,6 +65,51 @@ export function tableToCsv(table: GenieTableExportPayload) {
 
 export function downloadTableCsv(table: GenieTableExportPayload) {
   const csv = tableToCsv(table);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  triggerDownload(URL.createObjectURL(blob), `${slugifyFilename(table.title)}.csv`);
+}
+
+export function pivotTableToCsv(table: GeniePivotExportPayload) {
+  const headers = [table.rowLabel, ...table.columns.map((column) => column.label)];
+  if (table.column_totals) headers.push("Total");
+
+  const body = table.rows.map((row) => {
+    const cells = [
+      escapeCsvCell(row.row_label),
+      ...table.columns.map((column) => escapeCsvCell(row.cells[column.key])),
+    ];
+    if (table.column_totals) cells.push(escapeCsvCell(row.total));
+    return cells.join(",");
+  });
+
+  if (table.column_totals) {
+    const totalRow = [
+      escapeCsvCell("Total"),
+      ...table.columns.map((column) => escapeCsvCell(table.column_totals?.[column.key])),
+    ];
+    if (table.column_totals) totalRow.push(escapeCsvCell(table.grand_total));
+    body.push(totalRow.join(","));
+  }
+
+  return `${headers.map((header) => escapeCsvCell(header)).join(",")}\n${body.join("\n")}`;
+}
+
+export function downloadPivotTableCsv(table: {
+  title: string;
+  row_fields: Array<{ label: string }>;
+  columns: GeniePivotExportPayload["columns"];
+  rows: GeniePivotExportPayload["rows"];
+  column_totals?: GeniePivotExportPayload["column_totals"];
+  grand_total?: number | null;
+}) {
+  const csv = pivotTableToCsv({
+    title: table.title,
+    rowLabel: table.row_fields.map((field) => field.label).join(" / "),
+    columns: table.columns,
+    rows: table.rows,
+    column_totals: table.column_totals,
+    grand_total: table.grand_total,
+  });
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   triggerDownload(URL.createObjectURL(blob), `${slugifyFilename(table.title)}.csv`);
 }

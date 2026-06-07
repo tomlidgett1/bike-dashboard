@@ -9,6 +9,9 @@ import {
 const root = process.cwd()
 const agentRouteSource = readFileSync(join(root, 'src/app/api/genie/agent/route.ts'), 'utf8')
 const orchestrationSource = readFileSync(join(root, 'src/lib/genie/orchestration.ts'), 'utf8')
+const workorderQuerySource = readFileSync(join(root, 'src/lib/services/lightspeed/workorder-queries.ts'), 'utf8')
+const homeV2ChatSource = readFileSync(join(root, 'src/app/settings/store/homev2/homev2-chat.tsx'), 'utf8')
+const geniePanelSource = readFileSync(join(root, 'src/components/genie/genie-panel.tsx'), 'utf8')
 
 const forbiddenDeterministicRoutingTokens = [
   'fallbackOrchestrationDecision',
@@ -79,6 +82,51 @@ assert.match(
   /searchContextSize: 'low'/,
   'web search should use low context by default for latency-sensitive Genie execution',
 )
+assert.match(
+  agentRouteSource,
+  /customer-specific bike fitment or compatibility questions/,
+  'agent instructions must explicitly ground named-customer bike fitment questions in sales/work-order history before web research',
+)
+assert.match(
+  agentRouteSource,
+  /What bottom bracket does Jackson Trotman need on this bike\?/,
+  'router examples must cover named-customer fitment plus internet compatibility routing',
+)
+assert.match(
+  agentRouteSource,
+  /Context first: every request may be a continuation/,
+  'executor must inspect recent conversation context before re-running tools',
+)
+assert.match(
+  agentRouteSource,
+  /Continuation rule:/,
+  'router instructions must explicitly route short follow-ups with conversation context',
+)
+assert.match(
+  agentRouteSource,
+  /Private structured context from previous Genie tool results/,
+  'agent input must include private structured tool context for follow-up reasoning',
+)
+assert.match(
+  homeV2ChatSource,
+  /workorders: message\.workorders/,
+  'Home v2 Genie requests must preserve workorder card payloads in conversation history',
+)
+assert.match(
+  geniePanelSource,
+  /workorders: m\.workorders/,
+  'Floating Genie requests must preserve workorder card payloads in conversation history',
+)
+assert.match(
+  workorderQuerySource,
+  /tokens\.every\(token => haystack\.includes\(token\)\)/,
+  'workorder query matching must support tokenized customer plus topic queries',
+)
+assert.match(
+  workorderQuerySource,
+  /options\.limit \?\? \(options\.query \? 8 : dueOn \? 30 : 40\)/,
+  'named workorder searches should default to a small enrichment limit for latency',
+)
 assert.equal(
   /CONCAT_WS\('; /.test(agentRouteSource),
   false,
@@ -109,6 +157,14 @@ const decisionFixtures: Array<{ name: string; decision: GenieOrchestrationDecisi
   {
     name: 'SQL plus internet',
     decision: { route: 'mixed', needs_plan: true, reason: 'Needs private store data plus public market research.' },
+  },
+  {
+    name: 'customer bike fitment plus internet compatibility',
+    decision: {
+      route: 'mixed',
+      needs_plan: true,
+      reason: 'Needs private customer sales/work-order history to identify the bike plus public compatibility research.',
+    },
   },
   {
     name: 'discount candidates plus internet competitor pricing',
@@ -146,4 +202,5 @@ console.log(JSON.stringify({
   schema_fixtures: decisionFixtures.length,
   planner_cases: decisionFixtures.filter(fixture => fixture.decision.needs_plan).length,
   no_planner_cases: decisionFixtures.filter(fixture => !fixture.decision.needs_plan).length,
+  structured_context_checks: 8,
 }, null, 2))

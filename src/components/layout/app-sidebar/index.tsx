@@ -6,12 +6,10 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ChevronRight,
   Database,
-  LayoutDashboard,
   LifeBuoy,
   MessageSquare,
   Package,
   Settings,
-  ShieldCheck,
   ShoppingBag,
   Sparkles,
   Store,
@@ -44,6 +42,7 @@ import {
 import { cn } from "@/lib/utils";
 import { NavUser } from "./nav-user";
 import { SidebarLightspeedStatus } from "./sidebar-lightspeed-status";
+import { SidebarViewStoreLink } from "./sidebar-view-store-link";
 import { SidebarYjLogo } from "./sidebar-yj-logo";
 
 type SubItem = { title: string; href: string; exact?: boolean };
@@ -62,8 +61,7 @@ const NAV: NavGroup[] = [
   {
     label: "Store",
     items: [
-      { title: "Home", href: "/settings/store/home", icon: LayoutDashboard, exact: true },
-      { title: "Homev2", href: "/settings/store/homev2", icon: Sparkles, exact: true },
+      { title: "Home", href: "/settings/store/home", icon: Sparkles, exact: true },
       { title: "Nest", href: "/settings/store/nest", icon: MessageSquare, exact: true },
       { title: "Products", href: "/products", icon: Package },
       {
@@ -75,6 +73,7 @@ const NAV: NavGroup[] = [
           { title: "Sections", href: "/settings/store/sections" },
           { title: "Brands", href: "/settings/store/brands" },
           { title: "Services", href: "/settings/store/services" },
+          { title: "Rentals", href: "/settings/store/rentals" },
           { title: "Analytics", href: "/settings/store/analytics" },
           { title: "Product content", href: "/settings/store/products" },
           { title: "Titles", href: "/settings/store/titles" },
@@ -102,12 +101,6 @@ const NAV: NavGroup[] = [
       { title: "Uber Direct", href: "/settings/uber", icon: Truck },
       { title: "Data", href: "/settings/data", icon: Database },
       { title: "Lightspeed", href: "/connect-lightspeed", icon: Zap },
-    ],
-  },
-  {
-    label: "Admin",
-    items: [
-      { title: "Image QA", href: "/admin/image-qa", icon: ShieldCheck },
     ],
   },
 ];
@@ -234,6 +227,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <div className="flex h-14 shrink-0 items-center">
           <SidebarYjLogo />
         </div>
+        <SidebarViewStoreLink />
       </SidebarHeader>
 
       <SidebarContent className="gap-1">

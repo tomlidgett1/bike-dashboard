@@ -11,6 +11,46 @@ import type {
 const FINISHED_SYSTEM_VALUES = new Set(['finished', 'paid', 'complete', 'done'])
 const STORE_TIME_ZONE = 'Australia/Brisbane'
 const ENRICH_CONCURRENCY = 6
+const WORKORDER_QUERY_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'did',
+  'do',
+  'does',
+  'done',
+  'for',
+  'get',
+  'got',
+  'he',
+  'her',
+  'hers',
+  'him',
+  'his',
+  'in',
+  'is',
+  'it',
+  'need',
+  'needs',
+  'of',
+  'on',
+  'order',
+  'repair',
+  'service',
+  'she',
+  'that',
+  'the',
+  'their',
+  'them',
+  'they',
+  'this',
+  'to',
+  'was',
+  'what',
+  'work',
+  'workorder',
+])
 
 function storeDateFromIso(value: string): string | null {
   const parsed = Date.parse(value)
@@ -124,7 +164,14 @@ function parseNumber(value: string | undefined): number | null {
 }
 
 function normalizeText(value: string): string {
-  return value.trim().toLowerCase()
+  return value.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function queryTokens(value: string): string[] {
+  return normalizeText(value)
+    .split(/[^a-z0-9]+/)
+    .map(token => token.trim())
+    .filter(token => token.length > 1 && !WORKORDER_QUERY_STOP_WORDS.has(token))
 }
 
 export function isFinishedWorkorderStatus(status: LightspeedWorkorderStatus | undefined): boolean {
@@ -223,7 +270,9 @@ function matchesQuery(detail: GenieWorkorderDetail, needle: string): boolean {
   ]
     .map(part => normalizeText(String(part)))
     .join(' ')
-  return haystack.includes(needle)
+  if (haystack.includes(needle)) return true
+  const tokens = queryTokens(needle)
+  return tokens.length > 0 && tokens.every(token => haystack.includes(token))
 }
 
 async function enrichWorkorder(
@@ -375,7 +424,7 @@ export async function listGenieWorkorders(
 }> {
   const scope = options.scope ?? 'open'
   const dueOn = options.due_on?.trim() || ''
-  const limit = Math.min(Math.max(options.limit ?? (dueOn ? 30 : 40), 1), 100)
+  const limit = Math.min(Math.max(options.limit ?? (options.query ? 8 : dueOn ? 30 : 40), 1), 100)
   const includeDetails = options.include_details !== false
   const query = options.query ? normalizeText(options.query) : ''
 

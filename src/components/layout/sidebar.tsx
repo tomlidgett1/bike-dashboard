@@ -11,7 +11,6 @@ import {
   Package,
   Store,
   Edit,
-  ShieldCheck,
   Tag,
   HelpCircle,
   ExternalLink,
@@ -82,15 +81,6 @@ const mainNavItems: NavItem[] = [
     title: "Connect Lightspeed",
     href: "/connect-lightspeed",
     icon: Zap,
-  },
-];
-
-const adminItems: NavItem[] = [
-  {
-    title: "Image QA",
-    href: "/admin/image-qa",
-    icon: ShieldCheck,
-    isAdmin: true,
   },
 ];
 
@@ -282,11 +272,6 @@ export function Sidebar() {
             ))}
           </NavSection>
 
-          <NavSection label="Admin">
-            {adminItems.map((item) => (
-              <NavLink key={item.href} item={item} pathname={pathname} />
-            ))}
-          </NavSection>
         </div>
       </ScrollArea>
 
@@ -378,16 +363,6 @@ export function MobileSidebar() {
               ))}
             </NavSection>
 
-            <NavSection label="Admin">
-              {adminItems.map((item) => (
-                <NavLink
-                  key={item.href}
-                  item={item}
-                  pathname={pathname}
-                  onNavigate={close}
-                />
-              ))}
-            </NavSection>
           </div>
         </ScrollArea>
 

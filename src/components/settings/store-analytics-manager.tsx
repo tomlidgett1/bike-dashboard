@@ -12,6 +12,7 @@ import {
   MousePointerClick,
   Package,
   RefreshCw,
+  Search,
   Smartphone,
   Users,
 } from "lucide-react";
@@ -37,7 +38,7 @@ import {
   getStoreAnalyticsTimezoneShortLabel,
 } from "@/lib/utils/format-store-analytics-date";
 
-type AnalyticsTab = "overview" | "traffic" | "products" | "devices";
+type AnalyticsTab = "overview" | "traffic" | "products" | "devices" | "search";
 type ChartGrouping = "daily" | "weekly";
 
 interface AnalyticsSummary {
@@ -84,6 +85,27 @@ interface TopProduct {
   lastViewedAt: string | null;
 }
 
+interface SearchTermRow {
+  term: string;
+  searchCount: number;
+  distinctSearchers: number;
+  avgResultCount: number;
+  zeroResultCount: number;
+  lastSearchedAt: string | null;
+}
+
+interface SearchAnalyticsSummary {
+  totalSearches: number;
+  distinctSearchers: number;
+  zeroResultSearches: number;
+}
+
+interface SearchAnalytics {
+  days: number;
+  summary: SearchAnalyticsSummary;
+  searchTerms: SearchTermRow[];
+}
+
 interface AnalyticsResponse {
   days: number;
   timezone?: string;
@@ -96,6 +118,7 @@ interface AnalyticsResponse {
     distinctUsers: number;
   }>;
   topProducts: TopProduct[];
+  searchAnalytics?: SearchAnalytics;
   webAnalytics: WebTrackingAnalytics;
 }
 
@@ -124,6 +147,7 @@ const tabs: Array<{ value: AnalyticsTab; label: string; icon: React.ComponentTyp
   { value: "overview", label: "Overview", icon: BarChart3 },
   { value: "traffic", label: "Traffic", icon: Eye },
   { value: "products", label: "Products", icon: Package },
+  { value: "search", label: "Search", icon: Search },
   { value: "devices", label: "Devices", icon: Monitor },
 ];
 
@@ -142,6 +166,15 @@ function formatCurrency(value: number | null | undefined) {
     currency: "AUD",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("en-AU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Australia/Melbourne",
+  }).format(new Date(value));
 }
 
 function formatPercent(value: number) {
@@ -345,11 +378,16 @@ export function StoreAnalyticsManager() {
   const summary = data?.summary;
   const webAnalytics = data?.webAnalytics;
   const selectedPeriod = webAnalytics?.selectedPeriod;
-  const hasData = Boolean(
-    selectedPeriod && (selectedPeriod.totalViews > 0 || selectedPeriod.productImpressions > 0)
-  );
   const analyticsTimezoneLabel = getStoreAnalyticsTimezoneShortLabel();
   const topProducts = data?.topProducts ?? [];
+  const searchAnalytics = data?.searchAnalytics;
+  const searchTerms = searchAnalytics?.searchTerms ?? [];
+  const searchSummary = searchAnalytics?.summary;
+  const hasTrafficData = Boolean(
+    selectedPeriod && (selectedPeriod.totalViews > 0 || selectedPeriod.productImpressions > 0),
+  );
+  const hasSearchData = (searchSummary?.totalSearches ?? 0) > 0;
+  const hasData = hasTrafficData || hasSearchData;
 
   const chartPoints = React.useMemo(() => {
     const points = chartGrouping === "daily" ? webAnalytics?.daily ?? [] : webAnalytics?.weekly ?? [];
@@ -382,9 +420,9 @@ export function StoreAnalyticsManager() {
         <div>
           <h2 className="text-base font-semibold text-foreground">Storefront analytics</h2>
           <p className="max-w-3xl text-sm text-muted-foreground">
-            Page views, distinct viewers, product engagement, and device split. Daily and weekly
-            buckets use Melbourne calendar time ({analyticsTimezoneLabel}); owner visits are
-            excluded.
+            Page views, distinct viewers, product engagement, customer search terms, and device
+            split. Daily and weekly buckets use Melbourne calendar time ({analyticsTimezoneLabel});
+            owner visits are excluded.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -412,7 +450,13 @@ export function StoreAnalyticsManager() {
             <AnalyticsTabButton
               key={tab.value}
               active={activeTab === tab.value}
-              count={tab.value === "products" ? topProducts.length : undefined}
+              count={
+                tab.value === "products"
+                  ? topProducts.length
+                  : tab.value === "search"
+                    ? searchTerms.length
+                    : undefined
+              }
               icon={tab.icon}
               label={tab.label}
               onClick={() => setActiveTab(tab.value)}
@@ -428,7 +472,23 @@ export function StoreAnalyticsManager() {
       ) : null}
 
       {!data || !summary || !webAnalytics || !selectedPeriod ? null : !hasData ? (
-        <EmptyAnalytics />
+        activeTab === "search" ? (
+          <div className="space-y-4">
+            <Card className="rounded-md border-border">
+              <CardHeader className="border-b border-border/60 pb-3">
+                <CardTitle className="text-sm font-semibold">Customer search terms</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Search queries customers enter on your public store profile.
+                </p>
+              </CardHeader>
+              <CardContent className="px-4 py-10 text-center text-sm text-muted-foreground">
+                No search activity in this period yet.
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <EmptyAnalytics />
+        )
       ) : (
         <div className="space-y-4">
           {activeTab === "overview" ? (
@@ -762,6 +822,97 @@ export function StoreAnalyticsManager() {
                 </CardContent>
               </Card>
             </div>
+          ) : null}
+
+          {activeTab === "search" ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <MetricCard
+                  icon={Search}
+                  label="Total searches"
+                  value={searchSummary?.totalSearches ?? 0}
+                  detail={`${formatNumber(searchSummary?.distinctSearchers ?? 0)} distinct searchers`}
+                />
+                <MetricCard
+                  icon={Users}
+                  label="Distinct searchers"
+                  value={searchSummary?.distinctSearchers ?? 0}
+                  detail={formatRange(selectedPeriod.startDate, selectedPeriod.endDate)}
+                />
+                <MetricCard
+                  icon={MousePointerClick}
+                  label="Zero-result searches"
+                  value={searchSummary?.zeroResultSearches ?? 0}
+                  detail={
+                    (searchSummary?.totalSearches ?? 0) > 0
+                      ? `${formatPercent(((searchSummary?.zeroResultSearches ?? 0) / (searchSummary?.totalSearches ?? 1)) * 100)} of searches`
+                      : "No searches yet"
+                  }
+                />
+              </div>
+
+              <Card className="rounded-md border-border">
+                <CardHeader className="border-b border-border/60 pb-3">
+                  <CardTitle className="text-sm font-semibold">Search terms</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Ranked by search volume. Terms are grouped case-insensitively; the most recent
+                    spelling is shown.
+                  </p>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {searchTerms.length === 0 ? (
+                    <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      No search activity in this period.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border/60">
+                      {searchTerms.map((row, index) => (
+                        <div
+                          key={`${row.term}-${index}`}
+                          className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-[auto_minmax(0,1fr)_repeat(4,minmax(78px,auto))]"
+                        >
+                          <span className="w-6 text-sm font-semibold tabular-nums text-muted-foreground">
+                            {index + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-foreground">{row.term}</p>
+                            {row.zeroResultCount > 0 ? (
+                              <p className="text-xs text-muted-foreground">
+                                {formatNumber(row.zeroResultCount)} with no results
+                              </p>
+                            ) : null}
+                          </div>
+                          <div>
+                            <p className="font-semibold tabular-nums text-foreground">
+                              {formatNumber(row.searchCount)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">searches</p>
+                          </div>
+                          <div>
+                            <p className="font-semibold tabular-nums text-foreground">
+                              {formatNumber(row.distinctSearchers)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">searchers</p>
+                          </div>
+                          <div>
+                            <p className="font-semibold tabular-nums text-foreground">
+                              {formatNumber(row.avgResultCount)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">avg results</p>
+                          </div>
+                          <div>
+                            <p className="font-semibold tabular-nums text-foreground">
+                              {formatDateTime(row.lastSearchedAt)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">last seen</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
           ) : null}
         </div>
       )}

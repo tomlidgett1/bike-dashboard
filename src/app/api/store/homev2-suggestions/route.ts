@@ -17,19 +17,25 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
     }
 
-    const { data: profile } = await supabase
-      .from('users')
-      .select(
-        'account_type, bicycle_store, business_name, nest_message_intro, nest_message_signoff',
-      )
-      .eq('user_id', user.id)
-      .maybeSingle()
+    const [{ data: profile }, connection, hiddenResult] = await Promise.all([
+      supabase
+        .from('users')
+        .select(
+          'account_type, bicycle_store, business_name, nest_message_intro, nest_message_signoff',
+        )
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      getConnection(user.id),
+      supabase
+        .from('store_nest_hidden_pickup_suggestions')
+        .select('workorder_id')
+        .eq('user_id', user.id),
+    ])
 
     if (profile?.account_type !== 'bicycle_store' || profile?.bicycle_store !== true) {
       return NextResponse.json({ error: 'Store access required.' }, { status: 403 })
     }
 
-    const connection = await getConnection(user.id)
     if (!connection || connection.status !== 'connected') {
       return NextResponse.json({
         suggestions: [],
@@ -39,10 +45,7 @@ export async function GET() {
     }
 
     const hiddenIds = new Set<string>()
-    const { data: hiddenRows, error: hiddenError } = await supabase
-      .from('store_nest_hidden_pickup_suggestions')
-      .select('workorder_id')
-      .eq('user_id', user.id)
+    const { data: hiddenRows, error: hiddenError } = hiddenResult
 
     if (hiddenError) {
       console.warn('[homev2-suggestions] hidden filter unavailable:', hiddenError.message)
@@ -71,6 +74,7 @@ export async function GET() {
     })
 
     return NextResponse.json({
+      storeOwnerId: user.id,
       suggestions,
       lightspeedConnected: true,
       nestConfigured: isNestMessagingConfigured(),

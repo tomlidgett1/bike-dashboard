@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Send, Bike, Loader2, AlertCircle, Globe, Maximize2, Minimize2,
   Clock, Trash2, ArrowLeft, MessageSquarePlus,
-  Store, Sparkles, CheckCircle2, BarChart3, LineChart as LineChartIcon, Table2, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown,
+  Store, Sparkles, CheckCircle2, BarChart3, LineChart as LineChartIcon, ChevronDown,
 } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { useGenie } from '@/components/providers/genie-provider';
@@ -31,7 +31,10 @@ import type {
   GenieRawDebugLogEntry,
   GenieWorkorderCardsPayload,
 } from '@/lib/types/genie-agent';
+import { GenieDataTable, type GenieTablePayload } from '@/components/genie/genie-data-table';
+import { GeniePivotTable } from '@/components/genie/genie-pivot-table';
 import { GenieProposalCard } from '@/components/genie/genie-proposal-card';
+import type { GeniePivotTablePayload } from '@/lib/genie/pivot-table';
 import { LightspeedWorkorderCards } from '@/components/genie/lightspeed-workorder-cards';
 import {
   GenieRawLogsSection,
@@ -103,27 +106,6 @@ interface GenieChartPayload {
   valueFormatter?: VisualValueFormat;
 }
 
-interface GenieTableColumn {
-  key: string;
-  label: string;
-  align?: 'left' | 'right';
-  format?: VisualValueFormat;
-}
-
-interface GenieTablePayload {
-  title: string;
-  subtitle?: string;
-  columns: GenieTableColumn[];
-  rows: Array<Record<string, string | number | null>>;
-}
-
-type SortDirection = 'asc' | 'desc';
-
-interface TableSortState {
-  key: string;
-  direction: SortDirection;
-}
-
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -133,6 +115,7 @@ interface ChatMessage {
   processSteps?: ProcessStep[];
   charts?: GenieChartPayload[];
   tables?: GenieTablePayload[];
+  pivotTables?: GeniePivotTablePayload[];
   products?: GenieProduct[];
   workorders?: GenieWorkorderCardsPayload;
   analysisPlan?: GenieAnalysisPlanPayload;
@@ -156,6 +139,7 @@ interface SavedMessage {
   content?: string;
   charts?: GenieChartPayload[];
   tables?: GenieTablePayload[];
+  pivotTables?: GeniePivotTablePayload[];
   products?: GenieProduct[];
   workorders?: GenieWorkorderCardsPayload;
   analysisPlan?: GenieAnalysisPlanPayload;
@@ -225,37 +209,6 @@ function truncateChartLabel(value: string, max = 18): string {
   return `${value.slice(0, Math.max(0, max - 1))}…`;
 }
 
-function compareTableValues(
-  a: string | number | null | undefined,
-  b: string | number | null | undefined,
-  format?: VisualValueFormat,
-): number {
-  const aEmpty = a == null || a === '';
-  const bEmpty = b == null || b === '';
-  if (aEmpty && bEmpty) return 0;
-  if (aEmpty) return 1;
-  if (bEmpty) return -1;
-
-  const aNumber = typeof a === 'number' ? a : Number(String(a).replace(/[$,%]/g, ''));
-  const bNumber = typeof b === 'number' ? b : Number(String(b).replace(/[$,%]/g, ''));
-  if ((format === 'currency' || format === 'number' || format === 'percent' || (Number.isFinite(aNumber) && Number.isFinite(bNumber))) && Number.isFinite(aNumber) && Number.isFinite(bNumber)) {
-    return aNumber - bNumber;
-  }
-
-  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-}
-
-function sortedTableRows(table: GenieTablePayload, sort: TableSortState | null) {
-  if (!sort) return table.rows;
-  const column = table.columns.find(col => col.key === sort.key);
-  if (!column) return table.rows;
-
-  return [...table.rows].sort((a, b) => {
-    const result = compareTableValues(a[column.key], b[column.key], column.format);
-    return sort.direction === 'asc' ? result : -result;
-  });
-}
-
 function stripUrlsAndLinks(s: string): string {
   // Markdown links [text](url) → just text
   return s
@@ -314,14 +267,14 @@ function parseMarkdown(text: string): string {
 
     return [
       '<div class="my-2 overflow-x-auto rounded-md border border-border/70 bg-background/60">',
-      '<table class="w-full border-collapse text-xs">',
+      '<table class="w-max min-w-full border-collapse text-xs">',
       '<thead><tr>',
-      ...head.map(cell => `<th class="border-b border-border/70 px-2 py-1.5 text-left font-semibold text-foreground">${inline(cell)}</th>`),
+      ...head.map(cell => `<th class="border-b border-border/70 px-2 py-1.5 text-left font-semibold text-foreground whitespace-nowrap">${inline(cell)}</th>`),
       '</tr></thead>',
       '<tbody>',
       ...body.map(row => [
         '<tr class="border-t border-border/50">',
-        ...row.map(cell => `<td class="px-2 py-1.5 align-top text-muted-foreground">${inline(cell)}</td>`),
+        ...row.map(cell => `<td class="px-2 py-1.5 align-top text-muted-foreground whitespace-nowrap">${inline(cell)}</td>`),
         '</tr>',
       ].join('')),
       '</tbody></table></div>',
@@ -812,94 +765,6 @@ function GenieBarChartCard({ chart }: { chart: GenieChartPayload }) {
   );
 }
 
-function GenieDataTable({ table }: { table: GenieTablePayload }) {
-  const [sort, setSort] = useState<TableSortState | null>(null);
-  const rows = sortedTableRows(table, sort);
-
-  const toggleSort = (key: string) => {
-    setSort(prev =>
-      prev?.key === key
-        ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: 'asc' },
-    );
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="max-w-full rounded-md border border-border/70 bg-background shadow-xs"
-    >
-      <div className="flex items-start gap-2 px-3 py-3">
-        <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
-          <Table2 className="h-3.5 w-3.5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold leading-tight text-foreground">{table.title}</p>
-          {table.subtitle && <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{table.subtitle}</p>}
-        </div>
-      </div>
-      <div className="overflow-x-auto border-t border-border/70">
-        <table className="w-full min-w-[420px] border-collapse text-xs">
-          <thead>
-            <tr className="bg-muted/45">
-              {table.columns.map(column => (
-                <th
-                  key={column.key}
-                  aria-sort={
-                    sort?.key === column.key
-                      ? sort.direction === 'asc' ? 'ascending' : 'descending'
-                      : 'none'
-                  }
-                  className={cn(
-                    'border-b border-border/70 px-3 py-2 font-semibold text-foreground',
-                    column.align === 'right' ? 'text-right' : 'text-left',
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleSort(column.key)}
-                    className={cn(
-                      'inline-flex w-full items-center gap-1.5 rounded-sm text-left outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/30',
-                      column.align === 'right' ? 'justify-end' : 'justify-start',
-                    )}
-                  >
-                    <span className="truncate">{column.label}</span>
-                    {sort?.key === column.key ? (
-                      sort.direction === 'asc'
-                        ? <ArrowUp className="h-3 w-3 shrink-0" />
-                        : <ArrowDown className="h-3 w-3 shrink-0" />
-                    ) : (
-                      <ArrowUpDown className="h-3 w-3 shrink-0 opacity-45" />
-                    )}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, rowIndex) => (
-              <tr key={rowIndex} className="border-t border-border/50">
-                {table.columns.map(column => (
-                  <td
-                    key={column.key}
-                    className={cn(
-                      'px-3 py-2 align-top text-muted-foreground',
-                      column.align === 'right' && 'text-right font-mono tabular-nums',
-                    )}
-                  >
-                    {formatVisualValue(row[column.key], column.format)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </motion.div>
-  );
-}
-
 // ─── Message Bubble ────────────────────────────────────────────────────────────
 
 function MessageBubble({ message }: { message: ChatMessage }) {
@@ -1004,9 +869,17 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       </AnimatePresence>
 
       <AnimatePresence>
+        {message.pivotTables && message.pivotTables.length > 0 && (
+          <motion.div key="pivot-tables" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
+            {message.pivotTables.map((table, index) => <GeniePivotTable key={`${table.title}-pivot-${index}`} table={table} />)}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {message.tables && message.tables.length > 0 && (
           <motion.div key="tables" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
-            {message.tables.map((table, index) => <GenieDataTable key={`${table.title}-${index}`} table={table} />)}
+            {message.tables.map((table, index) => <GenieDataTable key={`${table.title}-${index}`} table={table} variant="panel" />)}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1278,7 +1151,19 @@ export function GeniePanel() {
     };
 
     try {
-      const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
+      const history = [...messages, userMsg].map(m => ({
+        role: m.role,
+        content: m.content,
+        charts: m.charts,
+        tables: m.tables,
+        pivotTables: m.pivotTables,
+        products: m.products,
+        workorders: m.workorders,
+        proposals: m.proposals,
+        analysisPlan: m.analysisPlan,
+        analysisQueries: m.analysisQueries,
+        sources: m.sources,
+      }));
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1421,6 +1306,13 @@ export function GeniePanel() {
             if (parsed.event === 'table' && parsed.table) {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId ? { ...m, tables: [...(m.tables ?? []), parsed.table as GenieTablePayload] } : m
+              ));
+            }
+            if (parsed.event === 'pivot_table' && parsed.pivot_table) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, pivotTables: [...(m.pivotTables ?? []), parsed.pivot_table as GeniePivotTablePayload] }
+                  : m
               ));
             }
             if (parsed.event === 'proposal' && parsed.proposal) {

@@ -7,6 +7,7 @@ import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms'
 import type {
   StoreCategoryWithProducts,
   StoreProfile,
+  StoreRental,
   StoreSectionWithCategories,
 } from '@/lib/types/store'
 import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed'
@@ -90,6 +91,7 @@ export async function fetchPublicStoreProfile(
 
   const [
     servicesResult,
+    rentalsResult,
     brandsResult,
     displayOverridesResult,
     searchProductIds,
@@ -97,6 +99,12 @@ export async function fetchPublicStoreProfile(
     supabase
       .from('store_services')
       .select('*')
+      .eq('user_id', storeId)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true }),
+    supabase
+      .from('store_rentals')
+      .select('id, product_id, description, price_per_hour, price_per_day, is_available, display_order')
       .eq('user_id', storeId)
       .eq('is_active', true)
       .order('display_order', { ascending: true }),
@@ -116,6 +124,9 @@ export async function fetchPublicStoreProfile(
 
   if (servicesResult.error) {
     console.error('[Store profile] Services query failed:', servicesResult.error)
+  }
+  if (rentalsResult.error) {
+    console.error('[Store profile] Rentals query failed:', rentalsResult.error)
   }
   if (brandsResult.error) {
     console.error('[Store profile] Brands query failed:', brandsResult.error)
@@ -381,6 +392,40 @@ export async function fetchPublicStoreProfile(
     }))
     .filter((section) => section.categories.length > 0)
 
+  const productLookup = new Map(sortedProducts.map((product) => [product.id, product]))
+  const rentals: StoreRental[] = (rentalsResult.data ?? []).flatMap((rental: any) => {
+    const product = productLookup.get(rental.product_id)
+    if (!product) return []
+
+    const effectivePublicId = toCurrentHeroPublicId(
+      product.resolved_cloudinary_public_id,
+      product.resolved_image_source,
+    )
+    const resolved = resolveProductImage({
+      id: product.resolved_image_id,
+      cloudinary_public_id: effectivePublicId,
+      cloudinary_url: product.resolved_cloudinary_url,
+      external_url: product.resolved_external_url,
+      approval_status: 'approved',
+    })
+    const imageUrl = resolved?.card_url || resolved?.original_url || null
+
+    return [{
+      id: rental.id,
+      product_id: rental.product_id,
+      name: product.display_name || product.description,
+      description: rental.description || null,
+      price_per_hour:
+        rental.price_per_hour != null ? parseFloat(rental.price_per_hour) : null,
+      price_per_day:
+        rental.price_per_day != null ? parseFloat(rental.price_per_day) : null,
+      image_url: imageUrl,
+      is_available: rental.is_available ?? true,
+      category: product.category_name || null,
+      display_order: rental.display_order,
+    } satisfies StoreRental]
+  })
+
   return {
     id: storeId,
     store_name: storeUser.business_name,
@@ -392,6 +437,7 @@ export async function fetchPublicStoreProfile(
     categories: categoriesForResponse,
     sections: sectionsWithCategories,
     services: servicesResult.data || [],
+    rentals,
     brands: brandsResult.data || [],
     cover_image_url: storeUser.cover_image_url || null,
     description: storeUser.bio || null,

@@ -17,8 +17,49 @@ function useStoreSetup() {
   return { profile, refreshProfile, open, setOpen, complete, progress };
 }
 
-export function StoreSetupButton({ className }: { className?: string }) {
+export function StoreSetupButton({
+  className,
+  iconOnly = false,
+}: {
+  className?: string;
+  iconOnly?: boolean;
+}) {
   const { open, setOpen, complete, progress, refreshProfile } = useStoreSetup();
+
+  if (iconOnly) {
+    return (
+      <>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => setOpen(true)}
+          aria-label={
+            complete
+              ? "Onboarding or setup"
+              : progress > 0
+                ? `Onboarding or setup, ${progress}% complete`
+                : "Onboarding or setup"
+          }
+          className={cn(
+            "relative size-8 text-muted-foreground hover:text-foreground",
+            className,
+          )}
+        >
+          <Sparkles className="size-4" />
+          {!complete ? (
+            <span className="absolute right-1 top-1 size-1.5 rounded-full bg-[#FFC72C]" />
+          ) : null}
+        </Button>
+
+        <StoreSetupModal
+          open={open}
+          onOpenChange={setOpen}
+          onComplete={() => refreshProfile()}
+        />
+      </>
+    );
+  }
 
   return (
     <>

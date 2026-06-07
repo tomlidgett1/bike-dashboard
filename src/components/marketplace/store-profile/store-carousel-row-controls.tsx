@@ -26,7 +26,7 @@ export function StoreCarouselRowControls({
   onScrollRight,
 }: StoreCarouselRowControlsProps) {
   return (
-    <div className="flex items-center gap-2 flex-shrink-0">
+    <div className="flex items-center gap-1.5 flex-shrink-0">
       {showSeeAll && onSeeAll && (
         <button
           type="button"
@@ -43,18 +43,13 @@ export function StoreCarouselRowControls({
         disabled={!canScrollLeft}
         aria-label="Scroll carousel left"
         className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm transition-colors",
+          "flex h-7 w-7 items-center justify-center rounded-full border border-gray-100 bg-white/70 transition-colors",
           canScrollLeft
-            ? "hover:bg-gray-50 cursor-pointer"
-            : "cursor-default opacity-60"
+            ? "text-gray-400 hover:bg-gray-50 hover:text-gray-600 cursor-pointer"
+            : "cursor-default opacity-40"
         )}
       >
-        <ChevronLeft
-          className={cn(
-            "h-4 w-4",
-            canScrollLeft ? "text-gray-900" : "text-gray-300"
-          )}
-        />
+        <ChevronLeft className="h-3.5 w-3.5" />
       </button>
 
       <button
@@ -63,18 +58,13 @@ export function StoreCarouselRowControls({
         disabled={!canScrollRight}
         aria-label="Scroll carousel right"
         className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm transition-colors",
+          "flex h-7 w-7 items-center justify-center rounded-full border border-gray-100 bg-white/70 transition-colors",
           canScrollRight
-            ? "hover:bg-gray-50 cursor-pointer"
-            : "cursor-default opacity-60"
+            ? "text-gray-400 hover:bg-gray-50 hover:text-gray-600 cursor-pointer"
+            : "cursor-default opacity-40"
         )}
       >
-        <ChevronRight
-          className={cn(
-            "h-4 w-4",
-            canScrollRight ? "text-gray-900" : "text-gray-300"
-          )}
-        />
+        <ChevronRight className="h-3.5 w-3.5" />
       </button>
     </div>
   );

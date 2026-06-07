@@ -107,6 +107,65 @@ export function useStoreProductView(
   }, [storeOwnerId, productId]);
 }
 
+export function trackStoreSearchEvent(
+  storeOwnerId: string,
+  searchTerm: string,
+  resultCount: number,
+) {
+  if (typeof window === "undefined") return;
+  if (!validUuid(storeOwnerId)) return;
+
+  const trimmed = searchTerm.trim();
+  if (trimmed.length < 2 || trimmed.length > 120) return;
+
+  const body = JSON.stringify({
+    storeOwnerId,
+    searchTerm: trimmed,
+    resultCount: Math.max(0, Math.floor(resultCount)),
+    visitorId: getStoredUuid(VISITOR_KEY),
+    sessionId: getSessionId(),
+    deviceType: getStoreAnalyticsDeviceType(),
+    occurredAt: new Date().toISOString(),
+  });
+
+  fetch("/api/store/analytics/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: true,
+  }).catch(() => {
+    // Analytics must never interrupt storefront browsing.
+  });
+}
+
+export function useStoreSearchTracking(
+  storeOwnerId: string | null | undefined,
+  searchTerm: string,
+  resultCount: number,
+  enabled = true,
+) {
+  const lastTrackedRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!enabled || !validUuid(storeOwnerId)) return;
+
+    const trimmed = searchTerm.trim();
+    if (trimmed.length < 2) {
+      lastTrackedRef.current = null;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const key = `${storeOwnerId}:${trimmed.toLowerCase()}:${resultCount}`;
+      if (lastTrackedRef.current === key) return;
+      lastTrackedRef.current = key;
+      trackStoreSearchEvent(storeOwnerId, trimmed, resultCount);
+    }, 800);
+
+    return () => window.clearTimeout(timer);
+  }, [enabled, resultCount, searchTerm, storeOwnerId]);
+}
+
 export function useProductImpressions(
   storeOwnerId: string | null | undefined,
   products: Array<{ id: string }> | null | undefined,

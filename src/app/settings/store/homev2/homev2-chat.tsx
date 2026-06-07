@@ -3,17 +3,15 @@
 import * as React from "react";
 import Image from "next/image";
 import { createPortal, flushSync } from "react-dom";
-import { ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Download, History, LineChart as LineChartIcon, Pencil, Plus, Table2, Trash2, X } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronDown, History, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
 import { cn } from "@/lib/utils";
+import { GenieChart, type GenieChartPayload } from "@/components/genie/genie-chart";
+import { GenieDataTable, type GenieTablePayload } from "@/components/genie/genie-data-table";
+import { GeniePivotTable } from "@/components/genie/genie-pivot-table";
 import { HomeV2ChatInput } from "@/components/genie/homev2-chat-input";
+import type { GeniePivotTablePayload } from "@/lib/genie/pivot-table";
 import { GenieProposalCard } from "@/components/genie/genie-proposal-card";
 import { LightspeedWorkorderCards } from "@/components/genie/lightspeed-workorder-cards";
 import { GenieStoreProductCards } from "@/components/genie/genie-store-product-cards";
@@ -34,54 +32,10 @@ import type {
   GenieRawDebugLogEntry,
   GenieWorkorderCardsPayload,
 } from "@/lib/types/genie-agent";
-import { downloadChartCardAsPng, downloadTableCsv } from "@/lib/utils/genie-visual-export";
 import { consumeHomeV2PendingPrompt } from "@/lib/genie/homev2-navigation";
 import { compactGenieProgressText, liveGenieProgressPreview } from "@/lib/genie/progress-text";
 
 type ChatRole = "user" | "assistant";
-type VisualValueFormat = "currency" | "number" | "percent";
-
-interface GenieChartSeries {
-  key: string;
-  label: string;
-  color?: string;
-}
-
-interface GenieChartPoint {
-  label: string;
-  [key: string]: string | number | null;
-}
-
-interface GenieChartPayload {
-  kind: "bar" | "line";
-  title: string;
-  subtitle?: string;
-  xKey: "label";
-  series: GenieChartSeries[];
-  data: GenieChartPoint[];
-  valueFormatter?: VisualValueFormat;
-}
-
-interface GenieTableColumn {
-  key: string;
-  label: string;
-  align?: "left" | "right";
-  format?: VisualValueFormat;
-}
-
-interface GenieTablePayload {
-  title: string;
-  subtitle?: string;
-  columns: GenieTableColumn[];
-  rows: Array<Record<string, string | number | null>>;
-}
-
-type SortDirection = "asc" | "desc";
-
-interface TableSortState {
-  key: string;
-  direction: SortDirection;
-}
 
 interface ProcessStep {
   id: string;
@@ -97,6 +51,7 @@ interface ChatMessage {
   content: string;
   charts?: GenieChartPayload[];
   tables?: GenieTablePayload[];
+  pivotTables?: GeniePivotTablePayload[];
   proposals?: GenieProposal[];
   products?: GenieStoreProductPreview[];
   workorders?: GenieWorkorderCardsPayload;
@@ -247,13 +202,13 @@ function renderMarkdown(text: string) {
       }
       index--;
       html.push('<div class="my-3 overflow-x-auto rounded-2xl border border-border/70 bg-background/70">');
-      html.push('<table class="w-full min-w-[420px] border-collapse text-sm">');
+      html.push('<table class="w-max min-w-full border-collapse text-sm">');
       html.push("<thead><tr>");
-      for (const head of header) html.push(`<th class="border-b border-border/70 px-3 py-2 text-left font-semibold text-foreground">${inline(head)}</th>`);
+      for (const head of header) html.push(`<th class="border-b border-border/70 px-3 py-2 text-left font-semibold text-foreground whitespace-nowrap">${inline(head)}</th>`);
       html.push("</tr></thead><tbody>");
       for (const row of rows) {
         html.push('<tr class="border-t border-border/50">');
-        for (const cell of row) html.push(`<td class="px-3 py-2 align-top text-muted-foreground">${inline(cell)}</td>`);
+        for (const cell of row) html.push(`<td class="px-3 py-2 align-top text-muted-foreground whitespace-nowrap">${inline(cell)}</td>`);
         html.push("</tr>");
       }
       html.push("</tbody></table></div>");
@@ -298,322 +253,6 @@ function AssistantMessageContent({ content }: { content: string }) {
         className="[&>p+p]:mt-2 [&_strong]:font-semibold"
         dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
       />
-    </div>
-  );
-}
-
-function formatVisualValue(value: string | number | null | undefined, format?: VisualValueFormat) {
-  if (value == null || value === "") return "—";
-  const numeric = typeof value === "number" ? value : Number(value);
-
-  if (format === "currency" && Number.isFinite(numeric)) {
-    return new Intl.NumberFormat("en-AU", {
-      style: "currency",
-      currency: "AUD",
-      maximumFractionDigits: 2,
-    }).format(numeric);
-  }
-
-  if (format === "percent" && Number.isFinite(numeric)) {
-    return `${new Intl.NumberFormat("en-AU", { maximumFractionDigits: 1 }).format(numeric)}%`;
-  }
-
-  if (Number.isFinite(numeric)) {
-    return new Intl.NumberFormat("en-AU", { maximumFractionDigits: 2 }).format(numeric);
-  }
-
-  return String(value);
-}
-
-function formatAxisValue(value: number, format?: VisualValueFormat) {
-  if (format === "percent") {
-    return `${new Intl.NumberFormat("en-AU", {
-      notation: "compact",
-      maximumFractionDigits: 1,
-    }).format(value)}%`;
-  }
-
-  return new Intl.NumberFormat("en-AU", {
-    style: format === "currency" ? "currency" : undefined,
-    currency: format === "currency" ? "AUD" : undefined,
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function chartLabel(value: string) {
-  return value.length > 20 ? `${value.slice(0, 19)}…` : value;
-}
-
-function compareTableValues(
-  a: string | number | null | undefined,
-  b: string | number | null | undefined,
-  format?: VisualValueFormat,
-) {
-  const aEmpty = a == null || a === "";
-  const bEmpty = b == null || b === "";
-  if (aEmpty && bEmpty) return 0;
-  if (aEmpty) return 1;
-  if (bEmpty) return -1;
-
-  const aNumber = typeof a === "number" ? a : Number(String(a).replace(/[$,%]/g, ""));
-  const bNumber = typeof b === "number" ? b : Number(String(b).replace(/[$,%]/g, ""));
-  if ((format === "currency" || format === "number" || format === "percent" || (Number.isFinite(aNumber) && Number.isFinite(bNumber))) && Number.isFinite(aNumber) && Number.isFinite(bNumber)) {
-    return aNumber - bNumber;
-  }
-
-  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
-}
-
-function sortedTableRows(table: GenieTablePayload, sort: TableSortState | null) {
-  if (!sort) return table.rows;
-  const column = table.columns.find((col) => col.key === sort.key);
-  if (!column) return table.rows;
-
-  return [...table.rows].sort((a, b) => {
-    const result = compareTableValues(a[column.key], b[column.key], column.format);
-    return sort.direction === "asc" ? result : -result;
-  });
-}
-
-function GenieChart({ chart }: { chart: GenieChartPayload }) {
-  const cardRef = React.useRef<HTMLDivElement>(null);
-  const [isExporting, setIsExporting] = React.useState(false);
-  const isLineChart = chart.kind === "line";
-  const ChartIcon = isLineChart ? LineChartIcon : BarChart3;
-  const config = chart.series.reduce<ChartConfig>((acc, series, index) => {
-    acc[series.key] = {
-      label: series.label,
-      color: series.color ?? `var(--chart-${(index % 5) + 1})`,
-    };
-    return acc;
-  }, {});
-
-  const handleDownloadPng = async () => {
-    if (!cardRef.current || isExporting) return;
-    setIsExporting(true);
-    try {
-      await downloadChartCardAsPng({
-        cardEl: cardRef.current,
-        title: chart.title,
-        subtitle: chart.subtitle,
-      });
-    } catch {
-      // Ignore export failures silently — chart may still be rendering.
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  return (
-    <div ref={cardRef} className="w-full rounded-3xl border border-border/70 bg-background p-4 shadow-sm">
-      <div className="mb-3 flex items-start gap-2">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary">
-          <ChartIcon className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold leading-tight text-foreground">{chart.title}</p>
-          {chart.subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{chart.subtitle}</p>}
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleDownloadPng}
-          disabled={isExporting}
-          className="h-8 shrink-0 gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground hover:text-foreground"
-          aria-label={`Download ${chart.title} as PNG`}
-        >
-          <Download className="h-3.5 w-3.5" />
-          PNG
-        </Button>
-      </div>
-
-      <ChartContainer config={config} className="aspect-auto h-[260px] w-full">
-        {isLineChart ? (
-          <LineChart accessibilityLayer data={chart.data} margin={{ top: 8, right: 10, bottom: 4, left: 0 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey={chart.xKey}
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              interval={chart.data.length > 7 ? "preserveStartEnd" : 0}
-              tickFormatter={(value) => chartLabel(String(value))}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              width={58}
-              tickFormatter={(value) => formatAxisValue(Number(value), chart.valueFormatter)}
-            />
-            <ChartTooltip
-              cursor={false}
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(value) => String(value)}
-                  formatter={(value, name) => (
-                    <>
-                      <span className="text-muted-foreground">{config[String(name)]?.label ?? String(name)}</span>
-                      <span className="ml-auto font-mono font-medium text-foreground tabular-nums">
-                        {formatVisualValue(Number(value), chart.valueFormatter)}
-                      </span>
-                    </>
-                  )}
-                />
-              }
-            />
-            {chart.series.map((series) => (
-              <Line
-                key={series.key}
-                type="monotone"
-                dataKey={series.key}
-                stroke={`var(--color-${series.key})`}
-                strokeWidth={2.5}
-                dot={chart.data.length <= 18 ? { r: 3 } : false}
-                activeDot={{ r: 4 }}
-                connectNulls
-              />
-            ))}
-          </LineChart>
-        ) : (
-          <BarChart accessibilityLayer data={chart.data} margin={{ top: 8, right: 10, bottom: 4, left: 0 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey={chart.xKey}
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              interval={chart.data.length > 7 ? "preserveStartEnd" : 0}
-              tickFormatter={(value) => chartLabel(String(value))}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              width={58}
-              tickFormatter={(value) => formatAxisValue(Number(value), chart.valueFormatter)}
-            />
-            <ChartTooltip
-              cursor={false}
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(value) => String(value)}
-                  formatter={(value, name) => (
-                    <>
-                      <span className="text-muted-foreground">{config[String(name)]?.label ?? String(name)}</span>
-                      <span className="ml-auto font-mono font-medium text-foreground tabular-nums">
-                        {formatVisualValue(Number(value), chart.valueFormatter)}
-                      </span>
-                    </>
-                  )}
-                />
-              }
-            />
-            {chart.series.map((series) => (
-              <Bar key={series.key} dataKey={series.key} fill={`var(--color-${series.key})`} radius={[10, 10, 0, 0]} />
-            ))}
-          </BarChart>
-        )}
-      </ChartContainer>
-    </div>
-  );
-}
-
-function GenieTable({ table }: { table: GenieTablePayload }) {
-  const [sort, setSort] = React.useState<TableSortState | null>(null);
-  const rows = sortedTableRows(table, sort);
-
-  const toggleSort = (key: string) => {
-    setSort((prev) =>
-      prev?.key === key
-        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
-        : { key, direction: "asc" },
-    );
-  };
-
-  const handleDownloadCsv = () => {
-    downloadTableCsv({
-      title: table.title,
-      columns: table.columns,
-      rows,
-    });
-  };
-
-  return (
-    <div className="w-full overflow-hidden rounded-3xl border border-border/70 bg-background shadow-sm">
-      <div className="flex items-start gap-2 px-4 py-4">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary">
-          <Table2 className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold leading-tight text-foreground">{table.title}</p>
-          {table.subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{table.subtitle}</p>}
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleDownloadCsv}
-          className="h-8 shrink-0 gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground hover:text-foreground"
-          aria-label={`Download ${table.title} as CSV`}
-        >
-          <Download className="h-3.5 w-3.5" />
-          CSV
-        </Button>
-      </div>
-      <div className="overflow-x-auto border-t border-border/70">
-        <table className="w-full min-w-[560px] border-collapse text-sm">
-          <thead>
-            <tr className="bg-muted/50">
-              {table.columns.map((column) => (
-                <th
-                  key={column.key}
-                  aria-sort={
-                    sort?.key === column.key
-                      ? sort.direction === "asc" ? "ascending" : "descending"
-                      : "none"
-                  }
-                  className={cn("border-b border-border/70 px-4 py-2 text-left font-semibold text-foreground", column.align === "right" && "text-right")}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleSort(column.key)}
-                    className={cn(
-                      "inline-flex w-full items-center gap-1.5 rounded-sm text-left outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/30",
-                      column.align === "right" ? "justify-end" : "justify-start",
-                    )}
-                  >
-                    <span className="truncate">{column.label}</span>
-                    {sort?.key === column.key ? (
-                      sort.direction === "asc"
-                        ? <ArrowUp className="h-3.5 w-3.5 shrink-0" />
-                        : <ArrowDown className="h-3.5 w-3.5 shrink-0" />
-                    ) : (
-                      <ArrowUpDown className="h-3.5 w-3.5 shrink-0 opacity-45" />
-                    )}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={index} className="border-t border-border/50">
-                {table.columns.map((column) => (
-                  <td
-                    key={column.key}
-                    className={cn("px-4 py-2 align-top text-muted-foreground", column.align === "right" && "text-right font-mono tabular-nums")}
-                  >
-                    {formatVisualValue(row[column.key], column.format)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
@@ -931,6 +570,119 @@ function conversationTime(value: string) {
   }).format(date);
 }
 
+function ConversationHistoryDropdown({
+  conversations,
+  activeConversationId,
+  onSelect,
+  showNewChat = false,
+  onNewChat,
+}: {
+  conversations: SavedHomeV2Conversation[];
+  activeConversationId: string | null;
+  onSelect: (conversation: SavedHomeV2Conversation) => void;
+  showNewChat?: boolean;
+  onNewChat?: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (rootRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [open]);
+
+  if (conversations.length === 0 && !showNewChat) return null;
+
+  return (
+    <div ref={rootRef} className="relative inline-flex items-center gap-1.5">
+      {showNewChat && onNewChat ? (
+        <button
+          type="button"
+          onClick={onNewChat}
+          className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-gray-100/80 hover:text-foreground"
+        >
+          <Plus className="h-3 w-3" />
+          New chat
+        </button>
+      ) : null}
+
+      {conversations.length > 0 ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setOpen((current) => !current)}
+            className={cn(
+              "inline-flex h-7 items-center gap-1 rounded-xl px-2.5 text-xs text-muted-foreground transition-colors hover:bg-gray-100/80 hover:text-foreground",
+              open && "bg-gray-100/80 text-foreground",
+            )}
+            aria-expanded={open}
+            aria-haspopup="listbox"
+            aria-label="Recent conversations"
+          >
+            <History className="h-3 w-3 opacity-70" />
+            <span>Recent</span>
+            <ChevronDown
+              className={cn(
+                "h-3 w-3 opacity-60 transition-transform duration-200",
+                open && "rotate-180",
+              )}
+            />
+          </button>
+
+          <AnimatePresence>
+            {open ? (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{
+                  duration: 0.4,
+                  ease: [0.04, 0.62, 0.23, 0.98],
+                }}
+                className="absolute left-0 top-full z-30 mt-1.5 w-60 overflow-hidden rounded-xl border border-gray-200/90 bg-white shadow-[0_10px_30px_-12px_rgba(15,23,42,0.18)]"
+              >
+                <ul className="max-h-48 overflow-y-auto p-1" role="listbox">
+                  {conversations.map((conversation) => (
+                    <li key={conversation.id}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={activeConversationId === conversation.id}
+                        onClick={() => {
+                          onSelect(conversation);
+                          setOpen(false);
+                        }}
+                        className={cn(
+                          "w-full rounded-md px-2.5 py-2 text-left transition-colors hover:bg-gray-50",
+                          activeConversationId === conversation.id && "bg-gray-50",
+                        )}
+                      >
+                        <p className="line-clamp-1 text-xs font-medium text-foreground/90">
+                          {conversation.title}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground">
+                          {conversationTime(conversation.updatedAt)}
+                        </p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function PromptQueueList({
   items,
   onUpdate,
@@ -1034,7 +786,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [conversations, setConversations] = React.useState<SavedHomeV2Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = React.useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [queuedPrompts, setQueuedPrompts] = React.useState<QueuedPrompt[]>([]);
   const [lastMsgMinHeight, setLastMsgMinHeight] = React.useState<number | undefined>(undefined);
@@ -1115,7 +866,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     setMessages([]);
     setLastMsgMinHeight(undefined);
     setActiveConversationId(null);
-    setHistoryOpen(false);
     isLoadingRef.current = false;
     setIsLoading(false);
   }, [clearPromptQueue]);
@@ -1127,7 +877,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     setMessages(conversation.messages.map((message) => ({ ...message, isStreaming: false, status: undefined })));
     setLastMsgMinHeight(undefined);
     setActiveConversationId(conversation.id);
-    setHistoryOpen(false);
     isLoadingRef.current = false;
     setIsLoading(false);
   }, [clearPromptQueue]);
@@ -1189,7 +938,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 
     const controller = new AbortController();
     abortRef.current = controller;
-
     const streamState = { pending: "", rafId: null as number | null };
     const flushText = () => {
       if (streamState.pending) {
@@ -1233,6 +981,14 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
           messages: nextMessages.map((message) => ({
             role: message.role,
             content: message.content,
+            charts: message.charts,
+            tables: message.tables,
+            pivotTables: message.pivotTables,
+            products: message.products,
+            workorders: message.workorders,
+            proposals: message.proposals,
+            analysisPlan: message.analysisPlan,
+            analysisQueries: message.analysisQueries,
           })),
         }),
         signal: controller.signal,
@@ -1355,13 +1111,14 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
           }
 
           if (event.event === "analysis_query" && event.query) {
+            const query = event.query as GenieAnalysisQueryPayload;
             setMessages((current) => current.map((message) =>
               message.id === assistantId
                 ? {
                     ...message,
                     analysisQueries: upsertAnalysisQuery(
                       message.analysisQueries,
-                      event.query as GenieAnalysisQueryPayload,
+                      query,
                     ),
                   }
                 : message
@@ -1373,17 +1130,31 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
           }
 
           if (event.event === "chart" && event.chart) {
+            const chart = event.chart as GenieChartPayload;
             setMessages((current) => current.map((message) =>
               message.id === assistantId
-                ? { ...message, charts: [...(message.charts ?? []), event.chart as GenieChartPayload] }
+                ? { ...message, charts: [...(message.charts ?? []), chart] }
                 : message
             ));
           }
 
           if (event.event === "table" && event.table) {
+            const table = event.table as GenieTablePayload;
             setMessages((current) => current.map((message) =>
               message.id === assistantId
-                ? { ...message, tables: [...(message.tables ?? []), event.table as GenieTablePayload] }
+                ? { ...message, tables: [...(message.tables ?? []), table] }
+                : message
+            ));
+          }
+
+          if (event.event === "pivot_table" && event.pivot_table) {
+            const pivotTable = event.pivot_table as GeniePivotTablePayload;
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    pivotTables: [...(message.pivotTables ?? []), pivotTable],
+                  }
                 : message
             ));
           }
@@ -1521,7 +1292,14 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 
           <HomeV2MetricsCards />
 
-          <div className="w-full">
+          <div className="w-full max-w-3xl">
+            <div className="mb-2 flex justify-start">
+              <ConversationHistoryDropdown
+                conversations={conversations}
+                activeConversationId={activeConversationId}
+                onSelect={loadConversation}
+              />
+            </div>
             <PromptQueueList
               items={queuedPrompts}
               onUpdate={updateQueuedPrompt}
@@ -1578,8 +1356,24 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 	                          {message.workorders?.workorders.length ? (
 	                            <LightspeedWorkorderCards payload={message.workorders} fullWidth />
 	                          ) : null}
-	                          {message.charts?.map((chart, index) => <GenieChart key={`${chart.title}-${index}`} chart={chart} />)}
-	                          {message.tables?.map((table, index) => <GenieTable key={`${table.title}-${index}`} table={table} />)}
+	                          {message.charts?.map((chart, index) => (
+	                            <GenieChart
+	                              key={`${chart.title}-${index}`}
+	                              chart={chart}
+	                            />
+	                          ))}
+	                          {message.pivotTables?.map((table, index) => (
+	                            <GeniePivotTable
+	                              key={`${table.title}-pivot-${index}`}
+	                              table={table}
+	                            />
+	                          ))}
+	                          {message.tables?.map((table, index) => (
+	                            <GenieDataTable
+	                              key={`${table.title}-${index}`}
+	                              table={table}
+	                            />
+	                          ))}
 	                          <AssistantMessageContent content={message.content} />
 	                          {!message.isStreaming
 	                            ? message.proposals?.map((proposal, proposalIndex) => (
@@ -1604,55 +1398,14 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 
           <div className="sticky bottom-0 z-10 shrink-0 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc] to-transparent px-5 pb-4 pt-6">
             <div className="mx-auto w-full max-w-3xl">
-              {historyOpen ? (
-                <div className="mb-3 max-h-52 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
-                  {conversations.length === 0 ? (
-                    <p className="px-1 py-2 text-sm text-muted-foreground">No conversation history yet.</p>
-                  ) : (
-                    <div className="grid gap-2">
-                      {conversations.map((conversation) => (
-                        <button
-                          key={conversation.id}
-                          type="button"
-                          onClick={() => loadConversation(conversation)}
-                          className={cn(
-                            "rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-gray-300 hover:bg-gray-50",
-                            activeConversationId === conversation.id && "border-gray-400 bg-gray-50",
-                          )}
-                        >
-                          <p className="line-clamp-1 text-sm font-medium text-foreground">{conversation.title}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">{conversationTime(conversation.updatedAt)}</p>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
-              <div className="mb-2 flex items-center justify-start gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={startNewChat}
-                  className="h-8 rounded-full px-3 text-xs font-medium"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  New chat
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setHistoryOpen((open) => !open)}
-                  className={cn(
-                    "h-8 w-8 rounded-full text-muted-foreground hover:text-foreground",
-                    historyOpen && "bg-gray-100 text-foreground",
-                  )}
-                  aria-label="Conversation history"
-                >
-                  <History className="h-4 w-4" />
-                </Button>
+              <div className="mb-2 flex justify-start">
+                <ConversationHistoryDropdown
+                  conversations={conversations}
+                  activeConversationId={activeConversationId}
+                  onSelect={loadConversation}
+                  showNewChat
+                  onNewChat={startNewChat}
+                />
               </div>
 
               <PromptQueueList

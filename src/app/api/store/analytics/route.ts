@@ -146,8 +146,12 @@ export async function GET(request: NextRequest) {
   const daysParam = request.nextUrl.searchParams.get("days");
   const days = Math.max(1, Math.min(Number(daysParam || 30) || 30, 365));
 
-  const [summaryResult, webAnalytics] = await Promise.all([
+  const [summaryResult, searchTermsResult, webAnalytics] = await Promise.all([
     service.rpc("get_store_analytics_summary", {
+      p_store_owner_id: user.id,
+      p_days: days,
+    }),
+    service.rpc("get_store_search_terms_summary", {
       p_store_owner_id: user.id,
       p_days: days,
     }),
@@ -162,8 +166,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Failed to load analytics" }, { status: 500 });
   }
 
+  if (searchTermsResult.error) {
+    console.error("[store analytics] search terms failed", searchTermsResult.error);
+    return NextResponse.json({ error: "Failed to load analytics" }, { status: 500 });
+  }
+
   return NextResponse.json({
     ...((summaryResult.data ?? {}) as Record<string, unknown>),
+    searchAnalytics: searchTermsResult.data ?? {
+      days,
+      summary: { totalSearches: 0, distinctSearchers: 0, zeroResultSearches: 0 },
+      searchTerms: [],
+    },
     webAnalytics,
   });
 }

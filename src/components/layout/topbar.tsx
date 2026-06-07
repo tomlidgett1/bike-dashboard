@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import dynamic from "next/dynamic";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { AgentHeaderButton } from "@/components/genie/agent-header-button";
 import {
@@ -12,25 +12,19 @@ import {
 } from "@/components/ui/breadcrumb";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "./theme-toggle";
-import { TopbarNavPills } from "./topbar-nav-pills";
+import { NotificationsDropdown } from "./notifications-dropdown";
+import { MessagesDropdown } from "./messages-dropdown";
+import { NestMessagesDropdown } from "./nest-messages-dropdown";
+import { StoreSetupButton } from "@/components/settings/store-setup-button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { isStoreDashboardPath } from "@/lib/routes/store-dashboard";
-
-const LazyNotificationsDropdown = dynamic(
-  () => import("./notifications-dropdown").then((mod) => mod.NotificationsDropdown),
-  { ssr: false }
-);
-
-const LazyMessagesDropdown = dynamic(
-  () => import("./messages-dropdown").then((mod) => mod.MessagesDropdown),
-  { ssr: false }
-);
 
 // Route → breadcrumb labels. Falls back to a title-cased last segment.
 const CRUMBS: Record<string, { section: string; page: string }> = {
   "/products": { section: "Store", page: "Products" },
   "/optimize": { section: "Store", page: "Product Optimise" },
   "/settings/store": { section: "Store", page: "Storefront" },
+  "/settings/store/home": { section: "Store", page: "Home" },
   "/settings/store/nest": { section: "Store", page: "Nest" },
   "/settings/my-listings": { section: "Marketplace", page: "My listings" },
   "/settings/drafts": { section: "Marketplace", page: "Drafts" },
@@ -56,9 +50,11 @@ function useCrumb(pathname: string) {
     const seg = pathname.split("/")[3];
     const page = !seg
       ? "Storefront"
-      : seg === "products"
-        ? "Product content"
-        : titleCase(seg);
+      : seg === "home"
+        ? "Home"
+        : seg === "products"
+          ? "Product content"
+          : titleCase(seg);
     return { section: "Storefront", page };
   }
   const segments = pathname.split("/").filter(Boolean);
@@ -91,6 +87,7 @@ function useDeferredTopbarActions() {
 export function Topbar() {
   const pathname = usePathname() ?? "/products";
   const showAgentInHeader = isStoreDashboardPath(pathname);
+  const isNestPage = pathname === "/settings/store/nest";
   const crumb = useCrumb(pathname);
   const { user } = useAuth();
   const showDeferredActions = useDeferredTopbarActions();
@@ -101,20 +98,31 @@ export function Topbar() {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbPage className="text-sm font-medium text-foreground">
+            <BreadcrumbPage className="flex items-center gap-2 text-sm font-medium text-foreground">
+              {isNestPage ? (
+                <Image
+                  src="/nest-logo.png"
+                  alt=""
+                  width={20}
+                  height={20}
+                  className="rounded-full"
+                  aria-hidden
+                />
+              ) : null}
               {crumb.page}
             </BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="ml-auto flex items-center gap-0.5">
-        <TopbarNavPills />
+      <div className="ml-auto flex items-center gap-1">
         {showAgentInHeader ? <AgentHeaderButton /> : null}
         {showDeferredActions ? (
           <>
-            {user ? <LazyNotificationsDropdown /> : null}
-            {user ? <LazyMessagesDropdown /> : null}
+            {showAgentInHeader ? <StoreSetupButton iconOnly /> : null}
+            {showAgentInHeader && user ? <NestMessagesDropdown /> : null}
+            {user ? <NotificationsDropdown /> : null}
+            {user ? <MessagesDropdown /> : null}
           </>
         ) : null}
         <ThemeToggle />

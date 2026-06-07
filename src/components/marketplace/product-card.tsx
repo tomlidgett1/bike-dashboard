@@ -308,7 +308,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
       className={cn(
         "product-card-root block",
         isList && "w-full",
-        !isList && featuredMobile && "col-span-2 sm:col-span-1"
+        !isList && featuredMobile && "sm:col-span-1"
       )}
     >
       <div
@@ -326,7 +326,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             isList
               ? "w-28 sm:w-32 flex-shrink-0 aspect-square mb-0"
               : "w-full mb-0.5",
-            !isList && (featuredMobile ? "aspect-[4/3]" : "aspect-square")
+            !isList && (featuredMobile ? "aspect-square sm:aspect-[4/3]" : "aspect-square")
           )}
         >
           {isVisible && (cardPublicId || imageUrl) && !imageError ? (
@@ -429,8 +429,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 	        <div
 	          className={cn(
 	            isList && "flex flex-1 flex-col justify-center min-w-0 py-0",
-	            !isList && (featuredMobile ? "px-0.5 pt-1 mb-2 sm:mb-3" : "px-0.5 mb-1 sm:mb-2"),
-	            !isList && hideStoreMeta && (featuredMobile ? "h-11 overflow-hidden" : "h-9 overflow-hidden mb-0.5")
+	            !isList && (featuredMobile ? "px-0.5 mb-1 sm:pt-1 sm:mb-2 md:mb-3" : "px-0.5 mb-1 sm:mb-2"),
+	            !isList && hideStoreMeta && (featuredMobile ? "h-9 sm:h-11 overflow-hidden mb-0.5" : "h-9 overflow-hidden mb-0.5")
 	          )}
 	        >
           {/* Product Title - Enhanced typography */}
@@ -440,10 +440,12 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
               isList && "text-sm font-semibold mb-1",
               !isList &&
                 (featuredMobile
-                  ? "text-base font-semibold line-clamp-1 mb-0.5"
+                  ? "text-xs sm:text-base font-medium sm:font-semibold line-clamp-1 mb-0 sm:mb-0.5"
                   : compact
-                    ? "text-[11px] font-medium line-clamp-1 mb-0"
-                    : "text-sm font-medium line-clamp-1 mb-0")
+                    ? "text-xs sm:text-[11px] font-medium line-clamp-1 mb-0"
+                    : hideStoreMeta
+                      ? "text-xs font-medium line-clamp-1 mb-0"
+                      : "text-sm font-medium line-clamp-1 mb-0")
             )}
           >
             {productData.display_name || product.description}
@@ -456,7 +458,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             const priceSizeClass = cn(
               "font-semibold leading-tight",
               isList && "text-sm",
-              !isList && (featuredMobile ? "text-sm" : "text-xs")
+              !isList && (featuredMobile ? "text-xs sm:text-sm" : "text-xs")
             );
             const priceConditionBadge = conditionBadge ? (
               <span className="inline-flex items-center rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-gray-700">

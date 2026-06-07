@@ -4,6 +4,7 @@ import * as React from "react";
 import { Search, X, Loader2, Package } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { trackStoreSearchEvent } from "@/lib/tracking/store-analytics";
 import Image from "next/image";
 
 // ============================================================
@@ -67,12 +68,14 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
   const [selectedIndex, setSelectedIndex] = React.useState(-1);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const lastTrackedQueryRef = React.useRef<string | null>(null);
 
   // Debounced search
   React.useEffect(() => {
     if (query.length < 2) {
       setResults([]);
       setShowDropdown(false);
+      lastTrackedQueryRef.current = null;
       return;
     }
 
@@ -82,9 +85,17 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
         const response = await fetch(`/api/marketplace/store/${storeId}/search?q=${encodeURIComponent(query)}`);
         if (response.ok) {
           const data = await response.json();
-          setResults(data.products || []);
+          const products = data.products || [];
+          setResults(products);
           setShowDropdown(true);
           setSelectedIndex(-1);
+
+          const trimmed = query.trim();
+          const trackKey = `${trimmed.toLowerCase()}:${products.length}`;
+          if (lastTrackedQueryRef.current !== trackKey) {
+            lastTrackedQueryRef.current = trackKey;
+            trackStoreSearchEvent(storeId, trimmed, products.length);
+          }
         }
       } catch (error) {
         console.error('Store search error:', error);

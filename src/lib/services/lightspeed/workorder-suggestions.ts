@@ -4,7 +4,7 @@ import {
 } from '@/lib/nest/message-format'
 import {
   buildWorkorderPickupSmsContext,
-  generateWorkorderPickupSmsDraft,
+  generateWorkorderPickupSmsDraftsBatch,
 } from '@/lib/nest/workorder-pickup-sms'
 import { createLightspeedClient } from './lightspeed-client'
 import { isFinishedWorkorderStatus } from './workorder-queries'
@@ -157,31 +157,32 @@ export async function fetchHomeV2WorkorderNestSuggestions(
   const client = createLightspeedClient(userId)
   const statuses = await client.getWorkorderStatuses()
   const finishedStatusIds = new Set(
-    statuses.filter(isFinishedWorkorderStatus).map((status) => status.workorderStatusID),
+    statuses.filter(isFinishedWorkorderStatus).map((status) => String(status.workorderStatusID)),
   )
 
   if (finishedStatusIds.size === 0) return []
 
-  const loadRelations = '["Customer","WorkorderLines","WorkorderStatus"]'
-  const batches = await Promise.all(
-    [...finishedStatusIds].map((statusId) =>
-      client.getWorkorders({
-        archived: 'false',
-        workorderStatusID: statusId,
-        sort: '-timeStamp',
-        limit: 12,
-        load_relations: loadRelations,
-      }),
-    ),
+  const loadRelations = '["Customer","WorkorderLines","WorkorderStatus","WorkorderItems"]'
+  const recent = await client.getRecentWorkorders(
+    {
+      archived: 'false',
+      sort: '-timeStamp',
+      load_relations: loadRelations,
+    },
+    {
+      targetCount: Math.max(limit * 8, 24),
+      maxPages: 2,
+      limit: 100,
+    },
   )
 
-  const byId = new Map<string, LightspeedWorkorderWithRelations>()
-  for (const workorder of batches.flat()) {
-    byId.set(String(workorder.workorderID), workorder)
-  }
-
-  const finished = [...byId.values()]
-    .filter((workorder) => String(workorder.customerID ?? '') && workorder.customerID !== '0')
+  const finished = recent
+    .filter(
+      (workorder) =>
+        finishedStatusIds.has(String(workorder.workorderStatusID)) &&
+        String(workorder.customerID ?? '') &&
+        workorder.customerID !== '0',
+    )
     .sort((a, b) => parseTimestamp(b.timeStamp) - parseTimestamp(a.timeStamp))
     .slice(0, limit)
 
@@ -192,9 +193,12 @@ export async function fetchHomeV2WorkorderNestSuggestions(
       let mobile: string | null = null
       let items = workorderItemsFromRelation(workorder)
 
+      const needsItemFetch =
+        items.length === 0 || itemDescriptions(items).length === 0
+
       const [profileResult, itemsResult] = await Promise.allSettled([
         client.getCustomer(customerId, { load_relations: '["Contact"]' }),
-        items.length === 0
+        needsItemFetch
           ? client.getWorkorderItems(String(workorder.workorderID))
           : Promise.resolve(items),
       ])
@@ -214,18 +218,16 @@ export async function fetchHomeV2WorkorderNestSuggestions(
     }),
   )
 
-  const smsDrafts = await Promise.all(
-    enriched.map(async ({ workorder, items }) => {
-      const statusName = String(workorder.WorkorderStatus?.name ?? 'Finished').trim()
-      const context = buildWorkorderPickupSmsContext({
-        lineNotes: lineNotes(workorder),
-        workorderNote: workorder.note,
-        itemDescriptions: itemDescriptions(items),
-        statusName,
-      })
-      return generateWorkorderPickupSmsDraft(context)
-    }),
-  )
+  const smsContexts = enriched.map(({ workorder, items }) => {
+    const statusName = String(workorder.WorkorderStatus?.name ?? 'Finished').trim()
+    return buildWorkorderPickupSmsContext({
+      lineNotes: lineNotes(workorder),
+      workorderNote: workorder.note,
+      itemDescriptions: itemDescriptions(items),
+      statusName,
+    })
+  })
+  const smsDrafts = await generateWorkorderPickupSmsDraftsBatch(smsContexts)
 
   const suggestions: HomeV2WorkorderNestSuggestion[] = []
 

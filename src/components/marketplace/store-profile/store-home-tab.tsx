@@ -1203,10 +1203,9 @@ function FeaturedCarouselBlock({
           <button
             type="button"
             onClick={() => onOpenCollection(category.name)}
-            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
+            className="text-sm text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
           >
             View all {category.products.length}
-            <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
 
@@ -1233,7 +1232,7 @@ function FeaturedCarouselBlock({
               key={ri}
               className="-mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-pl-5"
             >
-              <div className="flex items-start gap-3" style={{ minWidth: "min-content" }}>
+              <div className="flex items-start gap-2" style={{ minWidth: "min-content" }}>
                 <div className="w-5 flex-shrink-0" aria-hidden />
                 {row.map((product, i) => (
                   // Fixed slot height (square image + info row) so off-screen cards

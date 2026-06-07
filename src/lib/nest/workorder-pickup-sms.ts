@@ -82,6 +82,14 @@ function sanitiseWorkPhrase(workPhrase: string): string {
   return trimmed || 'bike service'
 }
 
+function hasPickupSmsSignal(context: WorkorderPickupSmsContext): boolean {
+  return (
+    context.lineNotes.length > 0 ||
+    context.workorderNote.length > 0 ||
+    context.itemDescriptions.length > 0
+  )
+}
+
 function parseDraft(content: string): WorkorderPickupSmsDraft | null {
   try {
     const parsed = JSON.parse(content) as { body?: unknown; workPhrase?: unknown }
@@ -98,17 +106,92 @@ function parseDraft(content: string): WorkorderPickupSmsDraft | null {
   }
 }
 
+const BATCH_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
+
+When given multiple work orders, return JSON only:
+{"drafts":[{"body":"...","workPhrase":"..."}, ...]}
+Include one draft object per work order, in the same order as the input.`
+
+function parseBatchDrafts(content: string, expectedCount: number): (WorkorderPickupSmsDraft | null)[] {
+  const fallback = Array.from({ length: expectedCount }, () => null as WorkorderPickupSmsDraft | null)
+
+  try {
+    const parsed = JSON.parse(content) as { drafts?: unknown }
+    const drafts = parsed.drafts
+    if (!Array.isArray(drafts)) return fallback
+
+    return fallback.map((_, index) => {
+      const entry = drafts[index]
+      if (!entry || typeof entry !== 'object') return null
+      const body = typeof (entry as { body?: unknown }).body === 'string'
+        ? sanitiseBody((entry as { body: string }).body)
+        : ''
+      const workPhrase = typeof (entry as { workPhrase?: unknown }).workPhrase === 'string'
+        ? sanitiseWorkPhrase((entry as { workPhrase: string }).workPhrase)
+        : ''
+      if (!body) return null
+      return {
+        body: body.length > 120 ? `${body.slice(0, 117)}…` : body,
+        workPhrase: workPhrase || 'bike service',
+      }
+    })
+  } catch {
+    return fallback
+  }
+}
+
+export async function generateWorkorderPickupSmsDraftsBatch(
+  contexts: WorkorderPickupSmsContext[],
+): Promise<(WorkorderPickupSmsDraft | null)[]> {
+  const results: (WorkorderPickupSmsDraft | null)[] = contexts.map(() => null)
+  if (!openai || contexts.length === 0) return results
+
+  const activeIndices = contexts
+    .map((context, index) => (hasPickupSmsSignal(context) ? index : -1))
+    .filter((index) => index >= 0)
+
+  if (activeIndices.length === 0) return results
+
+  if (activeIndices.length === 1) {
+    const draft = await generateWorkorderPickupSmsDraft(contexts[activeIndices[0]])
+    if (draft) results[activeIndices[0]] = draft
+    return results
+  }
+
+  try {
+    const userContent = activeIndices
+      .map((index, order) => `Work order ${order + 1}:\n${formatContextForPrompt(contexts[index])}`)
+      .join('\n\n---\n\n')
+
+    const response = await openai.chat.completions.create({
+      model: MODEL,
+      max_tokens: Math.min(180 * activeIndices.length, 900),
+      temperature: 0.3,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: BATCH_SYSTEM_PROMPT },
+        { role: 'user', content: userContent },
+      ],
+    })
+
+    const content = response.choices[0]?.message?.content
+    if (!content) return results
+
+    const batchDrafts = parseBatchDrafts(content, activeIndices.length)
+    activeIndices.forEach((contextIndex, order) => {
+      results[contextIndex] = batchDrafts[order] ?? null
+    })
+    return results
+  } catch (error) {
+    console.error('[workorder-pickup-sms] batch LLM failed:', error)
+    return results
+  }
+}
+
 export async function generateWorkorderPickupSmsDraft(
   context: WorkorderPickupSmsContext,
 ): Promise<WorkorderPickupSmsDraft | null> {
-  if (!openai) return null
-
-  const hasSignal =
-    context.lineNotes.length > 0 ||
-    context.workorderNote.length > 0 ||
-    context.itemDescriptions.length > 0
-
-  if (!hasSignal) return null
+  if (!openai || !hasPickupSmsSignal(context)) return null
 
   try {
     const response = await openai.chat.completions.create({

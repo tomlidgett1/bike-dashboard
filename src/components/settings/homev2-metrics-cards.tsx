@@ -6,27 +6,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { HomeV2RollingMetricValue } from "@/components/settings/homev2-rolling-metric-value";
+import {
+  homeV2MetricsChanged,
+  parseHomeV2OverviewMetrics,
+  readCachedHomeV2MetricsEntry,
+  writeCachedHomeV2Metrics,
+  type HomeV2OverviewMetrics,
+} from "@/lib/store/homev2-metrics-cache";
 import { cn } from "@/lib/utils";
 import {
   formatStoreAnalyticsDate,
   getStoreAnalyticsTimezoneShortLabel,
 } from "@/lib/utils/format-store-analytics-date";
-
-interface OverviewMetrics {
-  rolling7Days: {
-    startDate: string;
-    endDate: string;
-    totalDistinctViewers: number;
-  };
-  inventory: {
-    marketplaceLive: number;
-    withoutApprovedPhotos: number;
-  };
-}
-
-function formatNumber(value: number | null | undefined) {
-  return new Intl.NumberFormat("en-AU").format(value || 0);
-}
 
 function formatTrackingRange(startDate: string, endDate: string) {
   if (startDate === endDate) return formatStoreAnalyticsDate(startDate);
@@ -35,24 +27,59 @@ function formatTrackingRange(startDate: string, endDate: string) {
 
 function MetricCell({
   value,
+  previousValue,
+  animate,
   label,
+  periodLabel,
   tooltip,
+  onClick,
 }: {
-  value: string;
+  value: number;
+  previousValue: number | null;
+  animate: boolean;
   label: string;
+  periodLabel?: string;
   tooltip: string;
+  onClick?: () => void;
 }) {
+  const Wrapper = onClick ? "button" : "div";
+  const wrapperProps = onClick
+    ? {
+        type: "button" as const,
+        onClick,
+        "aria-label": `${label}. ${periodLabel ?? ""}. Tap to switch period.`,
+      }
+    : {};
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex min-w-0 cursor-default flex-col items-center justify-center px-3 py-3.5 text-center sm:px-4 sm:py-4">
+        <Wrapper
+          {...wrapperProps}
+          className={cn(
+            "flex min-w-0 w-full flex-col items-center justify-center px-3 py-3.5 text-center sm:px-4 sm:py-4",
+            onClick
+              ? "cursor-pointer transition-colors hover:bg-gray-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-200"
+              : "cursor-default",
+          )}
+        >
           <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground sm:text-2xl">
-            {value}
+            <HomeV2RollingMetricValue
+              value={value}
+              previousValue={previousValue}
+              animate={animate}
+            />
           </p>
-          <p className="mt-1 text-[11px] font-medium leading-tight text-muted-foreground sm:text-xs">
+          <p className="mt-1 max-w-full text-[11px] font-medium leading-snug text-muted-foreground sm:text-xs">
             {label}
+            {periodLabel ? (
+              <>
+                <span className="text-gray-300"> · </span>
+                <span className="text-gray-500">{periodLabel}</span>
+              </>
+            ) : null}
           </p>
-        </div>
+        </Wrapper>
       </TooltipTrigger>
       <TooltipContent side="bottom" sideOffset={8} className="max-w-[220px] text-center">
         {tooltip}
@@ -77,9 +104,29 @@ function MetricsSkeleton() {
 }
 
 export function HomeV2MetricsCards({ className }: { className?: string }) {
-  const [metrics, setMetrics] = React.useState<OverviewMetrics | null>(null);
+  const [metrics, setMetrics] = React.useState<HomeV2OverviewMetrics | null>(null);
+  const [previousMetrics, setPreviousMetrics] = React.useState<HomeV2OverviewMetrics | null>(null);
+  const [animateValues, setAnimateValues] = React.useState(false);
+  const [viewsPeriod, setViewsPeriod] = React.useState<"rolling7" | "today">("rolling7");
   const [loading, setLoading] = React.useState(true);
+  const metricsRef = React.useRef<HomeV2OverviewMetrics | null>(null);
+  const cachedEntryRef = React.useRef<ReturnType<typeof readCachedHomeV2MetricsEntry>>(null);
   const analyticsTimezoneLabel = getStoreAnalyticsTimezoneShortLabel();
+
+  React.useEffect(() => {
+    metricsRef.current = metrics;
+  }, [metrics]);
+
+  React.useLayoutEffect(() => {
+    const entry = readCachedHomeV2MetricsEntry();
+    cachedEntryRef.current = entry;
+
+    if (entry?.metrics) {
+      setMetrics(entry.metrics);
+      metricsRef.current = entry.metrics;
+      setLoading(false);
+    }
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -92,25 +139,33 @@ export function HomeV2MetricsCards({ className }: { className?: string }) {
         const json = await response.json();
         if (!response.ok || cancelled) return;
 
-        const rolling7Days = json.webAnalytics?.rolling7Days;
-        const inventory = json.inventory;
-        if (!rolling7Days || !inventory) return;
+        const nextMetrics = parseHomeV2OverviewMetrics(json);
+        const storeOwnerId = typeof json.storeOwnerId === "string" ? json.storeOwnerId : null;
+        if (!nextMetrics || !storeOwnerId) return;
 
-        setMetrics({
-          rolling7Days: {
-            startDate: rolling7Days.startDate,
-            endDate: rolling7Days.endDate,
-            totalDistinctViewers: rolling7Days.totalDistinctViewers,
-          },
-          inventory: {
-            marketplaceLive: inventory.marketplaceLive,
-            withoutApprovedPhotos: inventory.withoutApprovedPhotos,
-          },
-        });
+        const cachedEntry = cachedEntryRef.current;
+        const cacheMatchesStore = cachedEntry?.storeOwnerId === storeOwnerId;
+        const baseline = cacheMatchesStore ? metricsRef.current ?? cachedEntry?.metrics ?? null : null;
+
+        if (baseline && homeV2MetricsChanged(baseline, nextMetrics)) {
+          setPreviousMetrics(baseline);
+          setAnimateValues(true);
+        } else {
+          setPreviousMetrics(null);
+          setAnimateValues(false);
+        }
+
+        setMetrics(nextMetrics);
+        metricsRef.current = nextMetrics;
+        writeCachedHomeV2Metrics(storeOwnerId, nextMetrics);
       } catch {
-        if (!cancelled) setMetrics(null);
+        if (!cancelled && !metricsRef.current) {
+          setMetrics(null);
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
@@ -122,35 +177,54 @@ export function HomeV2MetricsCards({ className }: { className?: string }) {
 
   if (!loading && !metrics) return null;
 
+  const showingToday = viewsPeriod === "today";
+  const viewsValue = showingToday
+    ? metrics?.today.totalDistinctViewers ?? 0
+    : metrics?.rolling7Days.totalDistinctViewers ?? 0;
+  const viewsPreviousValue = showingToday
+    ? previousMetrics?.today.totalDistinctViewers ?? null
+    : previousMetrics?.rolling7Days.totalDistinctViewers ?? null;
   const viewsTooltip = metrics
-    ? `Rolling 7 days · ${formatTrackingRange(metrics.rolling7Days.startDate, metrics.rolling7Days.endDate)} · ${analyticsTimezoneLabel}`
+    ? showingToday
+      ? `Distinct viewers today · ${formatStoreAnalyticsDate(metrics.today.startDate)} · ${analyticsTimezoneLabel}. Tap to show last 7 days.`
+      : `Distinct viewers in the last 7 days · ${formatTrackingRange(metrics.rolling7Days.startDate, metrics.rolling7Days.endDate)} · ${analyticsTimezoneLabel}. Tap to show today.`
     : "";
 
   return (
     <div className={cn("mx-auto w-full max-w-xl", className)}>
-      {loading || !metrics ? (
+      {loading && !metrics ? (
         <MetricsSkeleton />
-      ) : (
+      ) : metrics ? (
         <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_10px_28px_rgba(15,23,42,0.06)] backdrop-blur-sm">
           <div className="grid grid-cols-3 divide-x divide-gray-200/70">
             <MetricCell
-              value={formatNumber(metrics.rolling7Days.totalDistinctViewers)}
+              value={viewsValue}
+              previousValue={viewsPreviousValue}
+              animate={animateValues}
               label="Distinct views"
+              periodLabel={showingToday ? "Today" : "Last 7 days"}
               tooltip={viewsTooltip}
+              onClick={() => {
+                setViewsPeriod((current) => (current === "rolling7" ? "today" : "rolling7"));
+              }}
             />
             <MetricCell
-              value={formatNumber(metrics.inventory.marketplaceLive)}
+              value={metrics.inventory.marketplaceLive}
+              previousValue={previousMetrics?.inventory.marketplaceLive ?? null}
+              animate={animateValues}
               label="Live products"
               tooltip="Approved and listed on the marketplace"
             />
             <MetricCell
-              value={formatNumber(metrics.inventory.withoutApprovedPhotos)}
+              value={metrics.inventory.withoutApprovedPhotos}
+              previousValue={previousMetrics?.inventory.withoutApprovedPhotos ?? null}
+              animate={animateValues}
               label="Missing photos"
               tooltip="Active products without an approved image"
             />
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

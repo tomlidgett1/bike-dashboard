@@ -2,8 +2,8 @@
 
 import { Bot } from "lucide-react";
 import { useGenie } from "@/components/providers/genie-provider";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { topbarActionClass } from "@/components/layout/topbar-nav-pills";
 
 export function AgentHeaderButton() {
   const { isOpen, openAgent, close } = useGenie();
@@ -17,21 +17,19 @@ export function AgentHeaderButton() {
   };
 
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="icon"
       onClick={handleClick}
       aria-label={isOpen ? "Close Agent" : "Open Agent"}
       aria-pressed={isOpen}
       className={cn(
-        topbarActionClass,
-        "cursor-pointer",
-        isOpen && "bg-muted text-foreground"
+        "size-8 text-muted-foreground hover:text-foreground",
+        isOpen && "bg-muted text-foreground",
       )}
     >
-      <Bot className="size-3.5 shrink-0" aria-hidden />
-      <span className={cn("hidden md:inline", isOpen && "text-foreground")}>
-        Agent
-      </span>
-    </button>
+      <Bot className="size-4" />
+    </Button>
   );
 }

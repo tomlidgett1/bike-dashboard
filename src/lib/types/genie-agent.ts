@@ -240,6 +240,27 @@ export interface GenieAnalysisPlanPayload {
   recheck_strategy?: string | null;
 }
 
+/** Visual args used when a SQL query produced a chart, table, or pivot. */
+export interface GenieAnalysisQueryVisualArgs {
+  table_title?: string;
+  table_subtitle?: string;
+  pivot_table?: {
+    title?: string;
+    row_fields: string[];
+    column_fields?: string[];
+    value_field?: string;
+    aggregation?: 'sum' | 'count' | 'avg' | 'min' | 'max' | 'count_distinct';
+    value_format?: 'currency' | 'number' | 'percent';
+    show_totals?: boolean;
+  };
+  chart_kind?: 'bar' | 'line';
+  chart_title?: string;
+  chart_subtitle?: string;
+  chart_x_key?: string;
+  chart_y_keys?: string[];
+  value_format?: 'currency' | 'number' | 'percent';
+}
+
 /** SQL or lookup executed during analysis, shown in the queries dropdown. */
 export interface GenieAnalysisQueryPayload {
   id: string;
@@ -250,6 +271,8 @@ export interface GenieAnalysisQueryPayload {
   at: string;
   row_count?: number | null;
   error?: string | null;
+  visual?: GenieAnalysisQueryVisualArgs | null;
+  limit?: number | null;
 }
 
 /** One captured SSE / client debug event for the raw logs panel. */
