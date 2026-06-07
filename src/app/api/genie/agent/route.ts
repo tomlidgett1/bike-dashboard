@@ -7893,7 +7893,7 @@ function toAnalysisPlanPayload(plan: GenieExecutionPlan): GenieAnalysisPlanPaylo
     sql_strategy_summary: strategyParts.length ? strategyParts.join(' · ') : null,
     date_range_label: dateRangeLabel,
     recheck_strategy: plan.recheck_strategy || null,
-    answer_success_criteria: plan.answer_success_criteria ?? null,
+    answer_success_criteria: plan.answer_success_criteria,
   }
 }
 
