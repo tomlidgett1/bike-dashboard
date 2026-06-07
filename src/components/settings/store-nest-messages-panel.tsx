@@ -12,7 +12,6 @@ import {
   Settings,
   Sparkles,
 } from "lucide-react";
-import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { PageBody, PageHeader } from "@/components/dashboard";
 import { SettingsSection } from "@/components/dashboard/settings-primitives";
 import {
   formatNestOutboundMessage,
@@ -997,73 +996,59 @@ export function StoreNestMessagesPanel() {
 
   const unreadCount = chats.filter(isConversationUnread).length;
 
-  return (
-    <div className="mx-auto flex h-[calc(100svh-57px)] w-full max-w-6xl flex-col px-5 py-6">
-      <div className="mb-5 flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Image
-            src="/nest-logo.png"
-            alt="Nest"
-            width={32}
-            height={32}
-            className="h-8 w-8 rounded-md object-contain"
-          />
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">Nest</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {activeTab === "inbox"
-                ? "Customer messages"
-                : activeTab === "auto"
-                  ? "Service reminders"
-                  : "Templates and preferences"}
-            </p>
-          </div>
-        </div>
-
-        {activeTab === "inbox" ? (
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void refreshAll()}
-              disabled={refreshing}
-              className="h-8 rounded-full px-3 text-xs font-medium"
-            >
-              {refreshing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
-              )}
-              Refresh
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setNewMessageOpen(true)}
-              disabled={configured === false}
-              className="h-8 rounded-full px-3 text-xs font-medium"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New message
-            </Button>
-          </div>
-        ) : null}
+  const inboxActions =
+    activeTab === "inbox" ? (
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void refreshAll()}
+          disabled={refreshing}
+          className="gap-1.5"
+        >
+          {refreshing ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          Refresh
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => setNewMessageOpen(true)}
+          disabled={configured === false}
+          className="gap-1.5"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          New message
+        </Button>
       </div>
+    ) : undefined;
 
-      <div className="mb-5 shrink-0">
-        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <PageHeader
+        className="shrink-0"
+        title="Nest"
+        description="Manage customer iMessage conversations, automated service reminders, and message templates."
+        actions={inboxActions}
+      />
+      <PageBody className="mt-4 flex min-h-0 flex-1 flex-col space-y-0 overflow-hidden">
+        <nav className="shrink-0 border-b border-border/60" aria-label="Nest sections">
+        <div className="-mb-px flex gap-6 overflow-x-auto pb-0">
           <button
             type="button"
             onClick={() => setActiveTab("inbox")}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
               activeTab === "inbox"
-                ? "text-gray-800 bg-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-200/70",
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
             )}
           >
-            <Inbox size={15} />
+            <Inbox className="size-4 shrink-0" />
             Inbox
             {unreadCount > 0 ? (
               <Badge variant="outline" className="rounded-md px-1.5 py-0 text-[10px] font-medium">
@@ -1075,32 +1060,32 @@ export function StoreNestMessagesPanel() {
             type="button"
             onClick={() => setActiveTab("auto")}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
               activeTab === "auto"
-                ? "text-gray-800 bg-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-200/70",
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
             )}
           >
-            <Sparkles size={15} />
+            <Sparkles className="size-4 shrink-0" />
             Auto
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("settings")}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
               activeTab === "settings"
-                ? "text-gray-800 bg-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-200/70",
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
             )}
           >
-            <Settings size={15} />
+            <Settings className="size-4 shrink-0" />
             Settings
           </button>
         </div>
-      </div>
+      </nav>
 
-      <div className="min-h-0 flex-1">
+      <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
       {activeTab === "inbox" ? (
         <>
           {configured === false ? (
@@ -1119,13 +1104,13 @@ export function StoreNestMessagesPanel() {
             <div
               className={cn(
                 INBOX_CARD,
-                "flex h-full min-h-[520px] flex-col md:flex-row",
+                "flex h-full min-h-0 flex-1 flex-col overflow-hidden md:flex-row",
               )}
             >
               <aside
                 className={cn(
-                  "flex h-full min-h-0 w-full shrink-0 flex-col border-border/60 md:w-[300px] md:border-r",
-                  showMobileThread ? "hidden md:flex" : "flex",
+                  "flex min-h-0 w-full shrink-0 flex-col overflow-hidden border-border/60 md:h-full md:w-[min(320px,32%)] md:max-w-[360px] md:flex-none md:border-r",
+                  showMobileThread ? "hidden md:flex" : "flex flex-1",
                 )}
               >
                 <div className="shrink-0 border-b border-border/60 px-4 py-4">
@@ -1145,7 +1130,10 @@ export function StoreNestMessagesPanel() {
                     </p>
                   ) : null}
                 </div>
-                <ScrollArea className="min-h-0 flex-1">
+                <div
+                  className="h-0 min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                  style={{ WebkitOverflowScrolling: "touch" }}
+                >
                   <div className="space-y-1 p-2">
                     {filteredChats.length === 0 ? (
                       <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
@@ -1170,12 +1158,12 @@ export function StoreNestMessagesPanel() {
                       ))
                     )}
                   </div>
-                </ScrollArea>
+                </div>
               </aside>
 
               <section
                 className={cn(
-                  "flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background",
+                  "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background md:h-full",
                   showMobileThread ? "flex" : "hidden md:flex",
                 )}
               >
@@ -1221,7 +1209,7 @@ export function StoreNestMessagesPanel() {
 
                     <div
                       ref={threadRef}
-                      className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-muted/20 px-4 py-5 md:px-6"
+                      className="h-0 min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-muted/20 px-4 py-5 md:px-6"
                       style={{ WebkitOverflowScrolling: "touch" }}
                     >
                       {threadLoading && conversation.messages.length === 0 ? (
@@ -1244,15 +1232,20 @@ export function StoreNestMessagesPanel() {
         </>
       ) : null}
 
-      {activeTab === "auto" ? <NestAutoServicePanel /> : null}
+      {activeTab === "auto" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <NestAutoServicePanel />
+        </div>
+      ) : null}
 
       {activeTab === "settings" ? (
-        <div className="space-y-6">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain">
           <NestMessageTemplatesSettings />
           <NestHiddenPickupSuggestionsPanel />
         </div>
       ) : null}
       </div>
+      </PageBody>
 
       <StartMessageDialog
         open={newMessageOpen}

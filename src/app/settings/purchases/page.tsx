@@ -585,9 +585,91 @@ function StatusBadge({
 const ORDERS_SEARCH_INPUT_CLASS =
   "h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30";
 
-const TAB_ACTIVE_CLASS = "text-gray-800 bg-white shadow-sm";
-const TAB_INACTIVE_CLASS = "text-gray-600 hover:bg-gray-200/70";
-const SUB_TAB_CONTAINER_CLASS = "flex items-center bg-gray-100 p-0.5 rounded-md w-fit";
+const UNDERLINE_TAB_BUTTON_CLASS =
+  "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors";
+
+function underlineTabClass(isActive: boolean) {
+  return cn(
+    UNDERLINE_TAB_BUTTON_CLASS,
+    isActive
+      ? "border-foreground text-foreground"
+      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+  );
+}
+
+const MAIN_TAB_ICONS: Record<
+  MainTab,
+  React.ComponentType<{ className?: string }>
+> = {
+  orders: Package,
+  listings: Tag,
+  offers: DollarSign,
+  claims: LifeBuoy,
+  drafts: FileText,
+};
+
+type FilterTab<T extends string> = {
+  id: T;
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+};
+
+function OrderFilterTabs<T extends string>({
+  activeTab,
+  onTabChange,
+  tabs,
+  className,
+  fullWidth,
+}: {
+  activeTab: T;
+  onTabChange: (tab: T) => void;
+  tabs: FilterTab<T>[];
+  className?: string;
+  fullWidth?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "-mb-px flex gap-4 overflow-x-auto",
+        fullWidth && "w-full",
+        className,
+      )}
+    >
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        const isActive = activeTab === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onTabChange(tab.id)}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 border-b-2 pb-2.5 pt-1 text-sm font-medium transition-colors",
+              fullWidth && "flex-1 justify-center",
+              isActive
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+            )}
+          >
+            {Icon ? <Icon className="size-4 shrink-0" /> : null}
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const ORDER_MODE_TABS: FilterTab<"all" | "buying" | "selling">[] = [
+  { id: "all", label: "All", icon: Package },
+  { id: "buying", label: "Buying", icon: ShoppingBag },
+  { id: "selling", label: "Selling", icon: Store },
+];
+
+const OFFERS_MODE_TABS: FilterTab<"buying" | "selling">[] = [
+  { id: "buying", label: "Sent", icon: ShoppingBag },
+  { id: "selling", label: "Received", icon: Store },
+];
 
 function OrdersSearchField({
   value,
@@ -625,32 +707,36 @@ function OrderManagementMainTabs({
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        SUB_TAB_CONTAINER_CLASS,
-        "max-w-full overflow-x-auto",
-        className
-      )}
+    <nav
+      className={cn("shrink-0 border-b border-border/60", className)}
+      aria-label="Order management sections"
     >
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => onTabChange(tab.id)}
-          className={cn(
-            "flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-            activeTab === tab.id ? TAB_ACTIVE_CLASS : TAB_INACTIVE_CLASS
-          )}
-        >
-          {tab.label}
-          {tab.badge > 0 ? (
-            <span className="text-xs text-gray-500">
-              ({tab.badge > 99 ? "99+" : tab.badge})
-            </span>
-          ) : null}
-        </button>
-      ))}
-    </div>
+      <div className="-mb-px flex gap-6 overflow-x-auto pb-0">
+        {tabs.map((tab) => {
+          const Icon = MAIN_TAB_ICONS[tab.id];
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onTabChange(tab.id)}
+              className={underlineTabClass(isActive)}
+            >
+              <Icon className="size-4 shrink-0" />
+              {tab.label}
+              {tab.badge > 0 ? (
+                <Badge
+                  variant="outline"
+                  className="rounded-md px-1.5 py-0 text-[10px] font-medium"
+                >
+                  {tab.badge > 99 ? "99+" : tab.badge}
+                </Badge>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 
@@ -3369,44 +3455,11 @@ function OrderManagementPageContent() {
                   <Card className="gap-0 py-0">
                     {/* Toolbar */}
                     <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
-                      <div className={SUB_TAB_CONTAINER_CLASS}>
-                        <button
-                          onClick={() => setOrderMode('all')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
-                            orderMode === 'all'
-                              ? TAB_ACTIVE_CLASS
-                              : TAB_INACTIVE_CLASS
-                          )}
-                        >
-                          <Package size={15} />
-                          All
-                        </button>
-                        <button
-                          onClick={() => setOrderMode('buying')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
-                            orderMode === 'buying'
-                              ? TAB_ACTIVE_CLASS
-                              : TAB_INACTIVE_CLASS
-                          )}
-                        >
-                          <ShoppingBag size={15} />
-                          Buying
-                        </button>
-                        <button
-                          onClick={() => setOrderMode('selling')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
-                            orderMode === 'selling'
-                              ? TAB_ACTIVE_CLASS
-                              : TAB_INACTIVE_CLASS
-                          )}
-                        >
-                          <Store size={15} />
-                          Selling
-                        </button>
-                      </div>
+                      <OrderFilterTabs
+                        activeTab={orderMode}
+                        onTabChange={setOrderMode}
+                        tabs={ORDER_MODE_TABS}
+                      />
 
                       <OrdersSearchField
                         value={search}
@@ -3692,32 +3745,11 @@ function OrderManagementPageContent() {
                 {activeTab === 'offers' && (
                   <Card className="gap-0 py-0">
                     <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
-                      <div className={SUB_TAB_CONTAINER_CLASS}>
-                        <button
-                          onClick={() => setOffersMode('buying')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
-                            offersMode === 'buying'
-                              ? TAB_ACTIVE_CLASS
-                              : TAB_INACTIVE_CLASS
-                          )}
-                        >
-                          <ShoppingBag size={15} />
-                          Sent
-                        </button>
-                        <button
-                          onClick={() => setOffersMode('selling')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer",
-                            offersMode === 'selling'
-                              ? TAB_ACTIVE_CLASS
-                              : TAB_INACTIVE_CLASS
-                          )}
-                        >
-                          <Store size={15} />
-                          Received
-                        </button>
-                      </div>
+                      <OrderFilterTabs
+                        activeTab={offersMode}
+                        onTabChange={setOffersMode}
+                        tabs={OFFERS_MODE_TABS}
+                      />
 
                       <Select value={offersFilter} onValueChange={(v) => setOffersFilter(v as any)}>
                         <SelectTrigger className="w-[140px]">
@@ -3750,56 +3782,15 @@ function OrderManagementPageContent() {
 
             {/* Mobile Content */}
             <div className="sm:hidden space-y-4">
-              {isVerifiedStore ? (
-                <OrderManagementMainTabs
-                  activeTab={activeTab}
-                  onTabChange={setActiveTab}
-                  tabs={mainTabs}
-                  className="w-full"
-                />
-              ) : null}
-
               {/* Mobile Header for Orders */}
               {activeTab === 'orders' && (
                 <div className="space-y-3">
-                  <div className={cn(SUB_TAB_CONTAINER_CLASS, "w-full")}>
-                    <button
-                      onClick={() => setOrderMode('all')}
-                      className={cn(
-                        "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
-                        orderMode === 'all'
-                          ? TAB_ACTIVE_CLASS
-                          : TAB_INACTIVE_CLASS
-                      )}
-                    >
-                      <Package size={14} />
-                      All
-                    </button>
-                    <button
-                      onClick={() => setOrderMode('buying')}
-                      className={cn(
-                        "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
-                        orderMode === 'buying'
-                          ? TAB_ACTIVE_CLASS
-                          : TAB_INACTIVE_CLASS
-                      )}
-                    >
-                      <ShoppingBag size={14} />
-                      Buying
-                    </button>
-                    <button
-                      onClick={() => setOrderMode('selling')}
-                      className={cn(
-                        "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
-                        orderMode === 'selling'
-                          ? TAB_ACTIVE_CLASS
-                          : TAB_INACTIVE_CLASS
-                      )}
-                    >
-                      <Store size={14} />
-                      Selling
-                    </button>
-                  </div>
+                  <OrderFilterTabs
+                    activeTab={orderMode}
+                    onTabChange={setOrderMode}
+                    tabs={ORDER_MODE_TABS}
+                    fullWidth
+                  />
 
                   <div className="flex gap-2">
                     <OrdersSearchField
@@ -4043,33 +4034,12 @@ function OrderManagementPageContent() {
               {/* Mobile Offers */}
               {activeTab === 'offers' && (
                 <div className="space-y-3">
-                  {/* Mode toggle */}
-                  <div className={cn(SUB_TAB_CONTAINER_CLASS, "w-full")}>
-                    <button
-                      onClick={() => setOffersMode('buying')}
-                      className={cn(
-                        "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
-                        offersMode === 'buying'
-                          ? TAB_ACTIVE_CLASS
-                          : TAB_INACTIVE_CLASS
-                      )}
-                    >
-                      <ShoppingBag size={14} />
-                      Sent
-                    </button>
-                    <button
-                      onClick={() => setOffersMode('selling')}
-                      className={cn(
-                        "flex items-center gap-1 px-2 py-2 text-sm font-medium rounded-md transition-colors flex-1 justify-center cursor-pointer",
-                        offersMode === 'selling'
-                          ? TAB_ACTIVE_CLASS
-                          : TAB_INACTIVE_CLASS
-                      )}
-                    >
-                      <Store size={14} />
-                      Received
-                    </button>
-                  </div>
+                  <OrderFilterTabs
+                    activeTab={offersMode}
+                    onTabChange={setOffersMode}
+                    tabs={OFFERS_MODE_TABS}
+                    fullWidth
+                  />
 
                   {/* Filter chips */}
                   <div className="flex gap-2 overflow-x-auto pb-1">

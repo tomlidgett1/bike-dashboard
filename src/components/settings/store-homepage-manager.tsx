@@ -55,6 +55,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PageHeader, PageBody } from "@/components/dashboard";
 import { useAuth } from "@/components/providers/auth-provider";
 import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-tab";
 import {
@@ -86,6 +87,37 @@ const SECTION_LABELS: Record<HomeSectionKey, string> = {
   gallery: "Gallery",
   visit: "Visit us",
 };
+
+type EditorTabId =
+  | "theme"
+  | "hero"
+  | "announcement"
+  | "highlights"
+  | "collections"
+  | "story"
+  | "services"
+  | "gallery"
+  | "visit"
+  | "carousels"
+  | "layout";
+
+const EDITOR_TABS: {
+  id: EditorTabId;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { id: "theme", label: "Theme", icon: Palette },
+  { id: "hero", label: "Hero", icon: ImageIcon },
+  { id: "announcement", label: "Announcement", icon: Megaphone },
+  { id: "highlights", label: "Highlights", icon: Sparkles },
+  { id: "collections", label: "Collections", icon: LayoutGrid },
+  { id: "story", label: "Story", icon: BookOpen },
+  { id: "services", label: "Services", icon: Wrench },
+  { id: "gallery", label: "Gallery", icon: Images },
+  { id: "visit", label: "Visit", icon: MapPin },
+  { id: "carousels", label: "Carousels", icon: GalleryHorizontal },
+  { id: "layout", label: "Layout", icon: ListOrdered },
+];
 
 const CTA_KNOWN = ["products", "service", "rentals", "about", "call", "directions"];
 const CTA_OPTIONS: { value: string; label: string }[] = [
@@ -129,6 +161,7 @@ export function StoreHomepageManager() {
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [savedAt, setSavedAt] = React.useState<number | null>(null);
   const [showPreview, setShowPreview] = React.useState(true);
+  const [activeTab, setActiveTab] = React.useState<EditorTabId>("hero");
 
   const load = React.useCallback(async () => {
     if (!user?.id) return;
@@ -224,29 +257,77 @@ export function StoreHomepageManager() {
     [store, config],
   );
 
+  const landingPageTitle = (
+    <PageHeader
+      title="Landing page"
+      description="Design the landing page customers see first on your storefront."
+    />
+  );
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-7 w-7 text-muted-foreground animate-spin" />
-      </div>
+      <>
+        {landingPageTitle}
+        <PageBody>
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-7 w-7 text-muted-foreground animate-spin" />
+          </div>
+        </PageBody>
+      </>
     );
   }
 
   if (loadError || !config || !store) {
     return (
-      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
-        <AlertTriangle className="h-6 w-6 text-destructive mx-auto mb-2" />
-        <p className="text-sm text-foreground font-medium">{loadError || "Couldn't load your home page settings"}</p>
-        <Button variant="outline" size="sm" onClick={load} className="mt-4">
-          <RotateCcw className="h-3.5 w-3.5 mr-2" /> Try again
-        </Button>
-      </div>
+      <>
+        {landingPageTitle}
+        <PageBody>
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+            <AlertTriangle className="h-6 w-6 text-destructive mx-auto mb-2" />
+            <p className="text-sm text-foreground font-medium">{loadError || "Couldn't load your home page settings"}</p>
+            <Button variant="outline" size="sm" onClick={load} className="mt-4">
+              <RotateCcw className="h-3.5 w-3.5 mr-2" /> Try again
+            </Button>
+          </div>
+        </PageBody>
+      </>
     );
   }
 
   const liveUrl = `/marketplace/store/${user?.id}`;
 
   return (
+    <>
+      <PageHeader
+        title="Landing page"
+        description="Design the landing page customers see first on your storefront."
+        actions={
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <label className="flex cursor-pointer items-center gap-2.5">
+              <Switch checked={config.enabled} onCheckedChange={setEnabled} />
+              <span className="text-sm font-medium text-foreground">
+                {config.enabled ? "Home tab is on" : "Home tab is off"}
+              </span>
+            </label>
+            <Button asChild variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
+              <a href={liveUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-3.5 w-3.5" /> View live
+              </a>
+            </Button>
+            <Button onClick={handleSave} disabled={saving} size="sm" className="gap-1.5 min-w-[92px]">
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : savedAt ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              {saving ? "Saving" : savedAt ? "Saved" : "Save"}
+            </Button>
+          </div>
+        }
+      />
+      <PageBody>
     <div className="space-y-5">
       {/* Migration warning */}
       {!migrated && (
@@ -263,39 +344,37 @@ export function StoreHomepageManager() {
         </div>
       )}
 
-      {/* ── Sticky action bar ── */}
-      <div className="sticky top-0 z-20 -mx-1 flex items-center justify-between gap-3 rounded-lg border border-border bg-card/95 backdrop-blur px-3 py-2.5 shadow-sm">
-        <label className="flex items-center gap-2.5 cursor-pointer">
-          <Switch checked={config.enabled} onCheckedChange={setEnabled} />
-          <span className="text-sm font-medium text-foreground">
-            {config.enabled ? "Home tab is on" : "Home tab is off"}
-          </span>
-        </label>
-        <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
-            <a href={liveUrl} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="h-3.5 w-3.5" /> View live
-            </a>
-          </Button>
-          <Button onClick={handleSave} disabled={saving} size="sm" className="gap-1.5 min-w-[92px]">
-            {saving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : savedAt ? (
-              <Check className="h-3.5 w-3.5" />
-            ) : (
-              <Save className="h-3.5 w-3.5" />
-            )}
-            {saving ? "Saving" : savedAt ? "Saved" : "Save"}
-          </Button>
-        </div>
-      </div>
       {saveError && (
         <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
           {saveError}
         </p>
       )}
 
-      {/* ── Theme ── */}
+      <nav className="border-b border-border/60" aria-label="Landing page sections">
+        <div className="-mb-px flex gap-6 overflow-x-auto pb-0">
+          {EDITOR_TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
+                  isActive
+                    ? "border-foreground text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+                )}
+              >
+                <tab.icon className="size-4 shrink-0" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {activeTab === "theme" && (
       <SectionCard icon={Palette} title="Theme" description="Accent colour used across buttons and highlights.">
         <div className="flex items-center gap-3">
           <input
@@ -320,8 +399,9 @@ export function StoreHomepageManager() {
           </button>
         </div>
       </SectionCard>
+      )}
 
-      {/* ── Hero ── */}
+      {activeTab === "hero" && (
       <SectionCard icon={ImageIcon} title="Hero" description="The first thing visitors see.">
         <Field label="Layout">
           <Segmented
@@ -382,8 +462,9 @@ export function StoreHomepageManager() {
           </div>
         </Field>
       </SectionCard>
+      )}
 
-      {/* ── Announcement ── */}
+      {activeTab === "announcement" && (
       <SectionCard
         icon={Megaphone}
         title="Announcement bar"
@@ -398,8 +479,9 @@ export function StoreHomepageManager() {
           placeholder="Free local delivery on orders over $100"
         />
       </SectionCard>
+      )}
 
-      {/* ── Highlights ── */}
+      {activeTab === "highlights" && (
       <SectionCard
         icon={Sparkles}
         title="Highlights"
@@ -451,8 +533,9 @@ export function StoreHomepageManager() {
           />
         )}
       </SectionCard>
+      )}
 
-      {/* ── Collections ── */}
+      {activeTab === "collections" && (
       <SectionCard
         icon={LayoutGrid}
         title="Collections"
@@ -544,8 +627,9 @@ export function StoreHomepageManager() {
           </div>
         )}
       </SectionCard>
+      )}
 
-      {/* ── Story ── */}
+      {activeTab === "story" && (
       <SectionCard
         icon={BookOpen}
         title="Our story"
@@ -567,8 +651,9 @@ export function StoreHomepageManager() {
           />
         </Field>
       </SectionCard>
+      )}
 
-      {/* ── Services ── */}
+      {activeTab === "services" && (
       <SectionCard
         icon={Wrench}
         title="Services teaser"
@@ -586,8 +671,9 @@ export function StoreHomepageManager() {
           </p>
         )}
       </SectionCard>
+      )}
 
-      {/* ── Gallery ── */}
+      {activeTab === "gallery" && (
       <SectionCard
         icon={Images}
         title="Gallery"
@@ -625,8 +711,9 @@ export function StoreHomepageManager() {
           onAdd={(url) => patchGal({ images: [...config.gallery.images, { id: uid(), url } as HomeGalleryImage] })}
         />
       </SectionCard>
+      )}
 
-      {/* ── Visit ── */}
+      {activeTab === "visit" && (
       <SectionCard
         icon={MapPin}
         title="Visit us"
@@ -636,8 +723,9 @@ export function StoreHomepageManager() {
       >
         <TextField label="Title" value={config.visit.title} onChange={(v) => patchVisit({ title: v })} />
       </SectionCard>
+      )}
 
-      {/* ── Featured carousels ── */}
+      {activeTab === "carousels" && (
       <SectionCard
         icon={GalleryHorizontal}
         title="Featured carousels"
@@ -698,8 +786,10 @@ export function StoreHomepageManager() {
           );
         })()}
       </SectionCard>
+      )}
 
-      {/* ── Badges ── */}
+      {activeTab === "layout" && (
+      <>
       <SectionCard icon={Eye} title="Badges & indicators" description="Choose which status indicators appear on your public profile.">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -735,7 +825,6 @@ export function StoreHomepageManager() {
         </Reorder.Group>
       </SectionCard>
 
-      {/* ── Reset ── */}
       <div className="flex justify-end">
         <button
           type="button"
@@ -745,6 +834,8 @@ export function StoreHomepageManager() {
           <RotateCcw className="h-3.5 w-3.5" /> Reset everything to defaults
         </button>
       </div>
+      </>
+      )}
 
       {/* ── Live preview ── */}
       <div className="rounded-xl border border-border overflow-hidden">
@@ -768,6 +859,8 @@ export function StoreHomepageManager() {
         )}
       </div>
     </div>
+      </PageBody>
+    </>
   );
 }
 

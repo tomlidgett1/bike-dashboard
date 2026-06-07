@@ -3,17 +3,21 @@
 export const dynamic = "force-dynamic";
 
 import nextDynamic from "next/dynamic";
+import { PageContainer } from "@/components/dashboard";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
 
 const StoreNestMessagesPanel = nextDynamic(
   () => import("@/components/settings/store-nest-messages-panel").then((mod) => mod.StoreNestMessagesPanel),
-  { ssr: false, loading: () => <SettingsManagerLoading className="min-h-[60vh]" /> }
+  { ssr: false, loading: () => <SettingsManagerLoading className="min-h-80" /> }
 );
 
 export default function StoreNestPage() {
   return (
-    <div className="min-h-[calc(100svh-57px)] overflow-hidden bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]">
+    <PageContainer
+      size="wide"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden !py-4 lg:!py-5"
+    >
       <StoreNestMessagesPanel />
-    </div>
+    </PageContainer>
   );
 }

@@ -42,7 +42,6 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import { StoreSwitcher } from "./store-switcher";
 import { NavUser } from "./nav-user";
 import { SidebarLightspeedStatus } from "./sidebar-lightspeed-status";
 import { SidebarYjLogo } from "./sidebar-yj-logo";
@@ -230,13 +229,11 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         className={cn(
           "flex flex-col gap-0.5 px-3 pb-2 pt-0",
           "group-data-[collapsible=icon]:gap-0.5 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:pb-2 group-data-[collapsible=icon]:pt-0",
-          pathname.startsWith("/settings/store") && "bg-gray-100/80"
         )}
       >
         <div className="flex h-14 shrink-0 items-center">
           <SidebarYjLogo />
         </div>
-        <StoreSwitcher />
       </SidebarHeader>
 
       <SidebarContent className="gap-1">
@@ -281,8 +278,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarSeparator />
       <SidebarFooter className="gap-1">
+        <SidebarSeparator className="mx-0 w-full" />
         <SidebarLightspeedStatus />
         <NavUser />
       </SidebarFooter>

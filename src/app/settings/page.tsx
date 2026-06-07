@@ -433,29 +433,27 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8">
-        {/* Secondary nav */}
-        <nav className="lg:sticky lg:top-20 lg:self-start">
-          <div className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+      <div className="mt-6 space-y-6">
+        <nav
+          className="border-b border-border/60"
+          aria-label="Settings sections"
+        >
+          <div className="-mb-px flex gap-6 overflow-x-auto pb-0">
             {NAV.map((item) => {
               const isActive = section === item.id;
               return (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => setSection(item.id)}
                   className={cn(
-                    "flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors lg:w-full",
+                    "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      ? "border-foreground text-foreground"
+                      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
                   )}
                 >
-                  <item.icon
-                    className={cn(
-                      "size-4 shrink-0",
-                      isActive ? "text-foreground" : "text-muted-foreground"
-                    )}
-                  />
+                  <item.icon className="size-4 shrink-0" />
                   {item.label}
                 </button>
               );
@@ -463,7 +461,6 @@ export default function SettingsPage() {
           </div>
         </nav>
 
-        {/* Active panel */}
         <div className="min-w-0 space-y-6">
           {section === "account" && (
             <>

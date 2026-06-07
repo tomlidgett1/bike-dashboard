@@ -19,7 +19,15 @@ export function SidebarYjLogo() {
         alt="Yellow Jersey"
         width={500}
         height={60}
-        className="h-5 w-auto"
+        className="h-5 w-auto group-data-[collapsible=icon]:hidden"
+        priority
+      />
+      <Image
+        src="/yjsmall.png"
+        alt="Yellow Jersey"
+        width={32}
+        height={32}
+        className="hidden size-8 rounded-md object-contain group-data-[collapsible=icon]:block"
         priority
       />
     </Link>

@@ -30,7 +30,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         <AppSidebar />
         <SidebarInset className="h-svh min-w-0 overflow-hidden bg-background">
           <Topbar />
-          <div className="min-h-0 flex-1 overflow-y-auto bg-background">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
             {children}
           </div>
         </SidebarInset>

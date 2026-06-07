@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import {
   BadgeCheck,
   ChevronsUpDown,
+  ExternalLink,
   LifeBuoy,
   LogOut,
   Settings,
+  Store,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -24,19 +26,17 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
 import { createClient } from "@/lib/supabase/client";
+import { StoreSidebarLogo } from "./store-sidebar-logo";
 
 export function NavUser() {
   const { isMobile } = useSidebar();
   const { profile } = useUserProfile();
   const router = useRouter();
 
-  const displayName =
-    [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ||
-    profile?.name ||
-    "Account";
-  const email = profile?.email ?? "";
+  const name = profile?.business_name || profile?.name || "Your store";
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -52,15 +52,22 @@ export function NavUser() {
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              tooltip={name}
+              className={cn(
+                "data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground",
+                "group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0!",
+              )}
             >
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">{displayName}</span>
+              <div className="flex aspect-square size-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary text-primary-foreground">
+                <StoreSidebarLogo logoUrl={profile?.logo_url} alt={name} />
+              </div>
+              <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
+                <span className="truncate font-semibold">{name}</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {email}
+                  Bike store
                 </span>
               </div>
-              <ChevronsUpDown className="ml-auto size-4 text-muted-foreground" />
+              <ChevronsUpDown className="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -69,28 +76,33 @@ export function NavUser() {
             align="end"
             sideOffset={4}
           >
-            <DropdownMenuLabel className="p-0 font-normal">
-              <div className="px-1 py-1.5 text-left text-sm">
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold">{displayName}</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {email}
-                  </span>
-                </div>
-              </div>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              {name}
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem asChild className="gap-2">
-                <Link href="/settings">
-                  <BadgeCheck className="size-4" />
-                  Account
-                </Link>
-              </DropdownMenuItem>
+              {profile?.user_id ? (
+                <DropdownMenuItem asChild className="gap-2">
+                  <Link
+                    href={`/marketplace/store/${profile.user_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Store className="size-4" />
+                    View my store
+                    <ExternalLink className="ml-auto size-3.5 text-muted-foreground" />
+                  </Link>
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem asChild className="gap-2">
                 <Link href="/settings/store">
                   <Settings className="size-4" />
-                  Store settings
+                  Storefront settings
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild className="gap-2">
+                <Link href="/settings">
+                  <BadgeCheck className="size-4" />
+                  Account settings
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild className="gap-2">
