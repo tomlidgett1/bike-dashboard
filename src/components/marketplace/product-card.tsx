@@ -47,6 +47,8 @@ interface ProductCardProps {
 type ListingImage = {
   url: string;
   cardUrl?: string;
+  publicId?: string;
+  cloudinaryPublicId?: string;
   isPrimary?: boolean;
 };
 
@@ -59,6 +61,20 @@ type ProductCardData = MarketplaceProduct & {
 
 function getCardActionImage(product: ProductCardData): string | null {
   return product.card_url || product.primary_image_url || null;
+}
+
+function getPrimaryListingImageSignature(images: ListingImage[] | null | undefined): string {
+  if (!Array.isArray(images) || images.length === 0) return "";
+  const image = images.find((img) => img.isPrimary) || images[0];
+  if (!image) return "";
+
+  return [
+    image.cloudinaryPublicId || "",
+    image.publicId || "",
+    image.cardUrl || "",
+    image.url || "",
+    image.isPrimary ? "primary" : "",
+  ].join("|");
 }
 
 function getCardActionMaxQuantity(product: ProductCardData): number {
@@ -119,6 +135,22 @@ function CartOverlayButton({ product }: { product: ProductCardData }) {
   );
 }
 
+function UberDeliveryBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-gray-900 px-1.5 py-0.5">
+      <Image
+        src="/uberwhite.png"
+        alt="Uber"
+        width={22}
+        height={8}
+        quality={100}
+        className="object-contain"
+      />
+      <span className="text-[9px] font-semibold leading-none text-green-500">1hr</span>
+    </span>
+  );
+}
+
 function BuyNowOverlayButton({ product }: { product: ProductCardData }) {
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
@@ -175,10 +207,17 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   inCarousel = false,
 }) {
   const router = useRouter();
-  const [imageError, setImageError] = React.useState(false);
+  const [cardPublicIdError, setCardPublicIdError] = React.useState(false);
+  const [directImageError, setDirectImageError] = React.useState(false);
   const [isVisible, setIsVisible] = React.useState(priority);
   const imageRef = React.useRef<HTMLDivElement>(null);
   const productData = product as ProductCardData;
+
+  React.useEffect(() => {
+    if (priority) {
+      setIsVisible(true);
+    }
+  }, [priority]);
 
   // Get relative time for new listings (show for products < 24 hours old)
   const relativeTime = React.useMemo(() => {
@@ -200,7 +239,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 
   // Intersection Observer for lazy loading
   React.useEffect(() => {
-    if (priority || isVisible) return;
+    if (priority || inCarousel || isVisible) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -224,7 +263,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         observer.unobserve(target);
       }
     };
-  }, [priority, isVisible]);
+  }, [priority, inCarousel, isVisible]);
 
   // Image URL - uses card_url from product_images table (source of truth)
   // The API fetches the primary image and passes it as card_url
@@ -258,6 +297,15 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     () => productData.cloudinary_public_id || extractCloudinaryPublicId(imageUrl),
     [productData.cloudinary_public_id, imageUrl]
   );
+
+  React.useEffect(() => {
+    setCardPublicIdError(false);
+    setDirectImageError(false);
+  }, [cardPublicId, imageUrl]);
+
+  const useCloudinaryLoader = !!cardPublicId && !cardPublicIdError;
+  const useDirectImage = !!imageUrl && (!cardPublicId || cardPublicIdError) && !directImageError;
+  const shouldMountImage = isVisible || inCarousel;
 
   // Width the card occupies at each breakpoint, so the browser fetches the
   // smallest sufficient variant. Grid: 2-col mobile, 3 md, 4 lg, 6 xl.
@@ -333,11 +381,11 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             !isList && (featuredMobile ? "aspect-square sm:aspect-[4/3]" : "aspect-square")
           )}
         >
-          {isVisible && (cardPublicId || imageUrl) && !imageError ? (
-            cardPublicId ? (
+          {shouldMountImage && (useCloudinaryLoader || useDirectImage) ? (
+            useCloudinaryLoader ? (
               <Image
                 loader={cloudinaryCardLoader}
-                src={cardPublicId}
+                src={cardPublicId!}
                 alt={product.description}
                 fill
                 sizes={cardSizes}
@@ -346,7 +394,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
                 priority={priority}
                 placeholder="blur"
                 blurDataURL={CARD_BLUR_DATA_URL}
-                onError={() => setImageError(true)}
+                onError={() => setCardPublicIdError(true)}
               />
             ) : (
               <Image
@@ -359,33 +407,16 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
                 priority={priority}
                 placeholder="blur"
                 blurDataURL={CARD_BLUR_DATA_URL}
-                onError={() => setImageError(true)}
+                onError={() => setDirectImageError(true)}
               />
             )
-          ) : !isVisible ? (
+          ) : !shouldMountImage ? (
             <div className="flex h-full w-full items-center justify-center">
               <div className="animate-pulse h-full w-full bg-gray-200/50" />
             </div>
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <Package className="h-12 w-12 text-gray-300" />
-            </div>
-          )}
-
-          {/* Uber Express Badge */}
-          {isUberDeliveryEligible && (
-            <div className="absolute bottom-2.5 right-2.5">
-              <div className="bg-black/85 px-2 py-1 rounded-md shadow-sm flex items-center gap-1">
-                <Image
-                  src="/uberwhite.png"
-                  alt="Uber"
-                  width={26}
-                  height={10}
-                  quality={100}
-                  className="object-contain"
-                />
-                <span className="text-[10px] font-semibold text-green-500">1hr</span>
-              </div>
             </div>
           )}
 
@@ -473,9 +504,10 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             if (live.onSale) {
               return (
 	                <div className={cn("flex items-center gap-1.5 mb-0", hideStoreMeta ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
-	                  <p className={cn(priceSizeClass, "text-red-600 mb-0")}>
+	                  <p className={cn(priceSizeClass, "text-red-600 mb-0 shrink-0")}>
 	                    {formatPriceAUDFull(live.price)}
 	                  </p>
+	                  {isUberDeliveryEligible && <UberDeliveryBadge />}
 	                  {priceConditionBadge}
 	                  <p className={cn(priceSizeClass, "text-gray-400 font-normal line-through mb-0", hideStoreMeta && "truncate")}>
 	                    {formatPriceAUDFull(live.originalPrice as number)}
@@ -485,9 +517,10 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             }
             return (
 	              <div className={cn("flex items-center gap-1.5 mb-0", hideStoreMeta ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
-	                <p className={cn(priceSizeClass, "text-gray-900 mb-0")}>
+	                <p className={cn(priceSizeClass, "text-gray-900 mb-0 shrink-0")}>
 	                  {formatPriceAUD(live.price)}
 	                </p>
+                {isUberDeliveryEligible && <UberDeliveryBadge />}
                 {priceConditionBadge}
               </div>
             );
@@ -546,9 +579,15 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   );
 }, (prevProps, nextProps) => {
   // Custom comparison function for React.memo.
-  // Re-render on id/priority/layout change, AND on any discount-pricing change
-  // (otherwise a newly applied/removed discount would not repaint the card).
+  // Re-render on fields that affect the visible card. Image fields are included
+  // so a refreshed card URL/public id cannot stay stuck behind the memo boundary.
   return prevProps.product.id === nextProps.product.id &&
+         prevProps.product.description === nextProps.product.description &&
+         prevProps.product.primary_image_url === nextProps.product.primary_image_url &&
+         (prevProps.product as ProductCardData).card_url === (nextProps.product as ProductCardData).card_url &&
+         (prevProps.product as ProductCardData).cloudinary_public_id === (nextProps.product as ProductCardData).cloudinary_public_id &&
+         getPrimaryListingImageSignature((prevProps.product as ProductCardData).images) ===
+           getPrimaryListingImageSignature((nextProps.product as ProductCardData).images) &&
          prevProps.product.price === nextProps.product.price &&
          prevProps.product.sale_price === nextProps.product.sale_price &&
          prevProps.product.discount_active === nextProps.product.discount_active &&
@@ -556,12 +595,16 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
          prevProps.product.discount_ends_at === nextProps.product.discount_ends_at &&
          prevProps.product.qoh === nextProps.product.qoh &&
          prevProps.product.listing_type === nextProps.product.listing_type &&
+         prevProps.product.listing_source === nextProps.product.listing_source &&
          prevProps.product.condition_rating === nextProps.product.condition_rating &&
          prevProps.product.display_name === nextProps.product.display_name &&
          prevProps.product.store_name === nextProps.product.store_name &&
          prevProps.product.store_account_type === nextProps.product.store_account_type &&
          prevProps.product.uber_delivery_enabled === nextProps.product.uber_delivery_enabled &&
          prevProps.product.store_bicycle_store === nextProps.product.store_bicycle_store &&
+         prevProps.product.pickup_location === nextProps.product.pickup_location &&
+         prevProps.product.first_name === nextProps.product.first_name &&
+         prevProps.product.last_name === nextProps.product.last_name &&
          prevProps.hideStoreMeta === nextProps.hideStoreMeta &&
          prevProps.compact === nextProps.compact &&
          prevProps.isAdmin === nextProps.isAdmin &&

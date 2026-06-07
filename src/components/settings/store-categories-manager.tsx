@@ -45,7 +45,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { StoreCategory, LightspeedCategoryOption, CarouselSize } from "@/lib/types/store";
+import type {
+  StoreCategory,
+  LightspeedCategoryOption,
+  CarouselSize,
+  StoreCarouselPage,
+} from "@/lib/types/store";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 
 interface BrandOption {
@@ -69,7 +74,17 @@ const PRODUCT_PICKER_DIALOG_CLASS =
 const BRAND_CAROUSEL_DIALOG_CLASS =
   "flex h-[min(26rem,85vh)] max-h-[min(26rem,85vh)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg";
 
-export function StoreCategoriesManager({ refreshKey }: { refreshKey?: number } = {}) {
+function categoryPage(category: StoreCategory): StoreCarouselPage {
+  return category.store_page === "bikes" ? "bikes" : "products";
+}
+
+export function StoreCategoriesManager({
+  refreshKey,
+  activePage = "products",
+}: {
+  refreshKey?: number;
+  activePage?: StoreCarouselPage;
+} = {}) {
   const [categories, setCategories] = React.useState<StoreCategory[]>([]);
   const [products, setProducts] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -324,6 +339,7 @@ export function StoreCategoriesManager({ refreshKey }: { refreshKey?: number } =
             source: 'lightspeed',
             lightspeed_category_id: lsCategory.id,
             product_ids: categoryProducts.map((p: any) => p.id),
+            store_page: activePage,
           }),
         });
       });
@@ -405,6 +421,7 @@ export function StoreCategoriesManager({ refreshKey }: { refreshKey?: number } =
           name: formData.name,
           source: 'custom',
           product_ids: formData.productIds,
+          store_page: activePage,
         }),
       });
 
@@ -435,6 +452,7 @@ export function StoreCategoriesManager({ refreshKey }: { refreshKey?: number } =
           name: 'Uber Delivery',
           source: 'uber',
           product_ids: [],
+          store_page: activePage,
         }),
       });
 
@@ -528,9 +546,46 @@ export function StoreCategoriesManager({ refreshKey }: { refreshKey?: number } =
     });
   };
 
-  // Handle reorder
+  const pageCategories = React.useMemo(
+    () =>
+      categories
+        .filter((category) => categoryPage(category) === activePage)
+        .sort((a, b) => a.display_order - b.display_order),
+    [categories, activePage],
+  );
+
+  const handleStorePageChange = async (
+    category: StoreCategory,
+    nextPage: StoreCarouselPage,
+  ) => {
+    if (categoryPage(category) === nextPage) return;
+
+    setCategories((prev) =>
+      prev.map((item) =>
+        item.id === category.id
+          ? { ...item, store_page: nextPage, section_id: nextPage === "bikes" ? undefined : item.section_id }
+          : item,
+      ),
+    );
+
+    await fetch("/api/store/categories", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: category.id,
+        store_page: nextPage,
+        ...(nextPage === "bikes" ? { section_id: null } : {}),
+      }),
+    });
+  };
+
+  // Handle reorder within the active storefront page
   const handleReorder = async (newOrder: StoreCategory[]) => {
-    setCategories(newOrder);
+    const otherPageCategories = categories.filter(
+      (category) => categoryPage(category) !== activePage,
+    );
+    const merged = [...otherPageCategories, ...newOrder];
+    setCategories(merged);
 
     try {
       await Promise.all(
@@ -596,6 +651,7 @@ export function StoreCategoriesManager({ refreshKey }: { refreshKey?: number } =
           source: 'brand',
           brand_name: selectedBrand,
           product_ids: [],
+          store_page: activePage,
         }),
       });
 
@@ -694,20 +750,24 @@ export function StoreCategoriesManager({ refreshKey }: { refreshKey?: number } =
       </div>
 
       {/* Carousels list */}
-      {categories.length === 0 ? (
+      {pageCategories.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-sm text-muted-foreground">No carousels added yet</p>
+            <p className="text-sm text-muted-foreground">
+              {activePage === "bikes"
+                ? "No Bikes page carousels yet"
+                : "No Products page carousels yet"}
+            </p>
           </CardContent>
         </Card>
       ) : (
         <Reorder.Group
           axis="y"
-          values={categories}
+          values={pageCategories}
           onReorder={handleReorder}
           className="space-y-2"
         >
-          {categories.map((category) => (
+          {pageCategories.map((category) => (
             <Reorder.Item key={category.id} value={category}>
               <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-foreground/20 hover:bg-accent/40 cursor-move">
                 <div className="flex-shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing">
@@ -734,6 +794,25 @@ export function StoreCategoriesManager({ refreshKey }: { refreshKey?: number } =
                         ? 'Automatically shows every Uber-enabled product'
                       : `${category.product_ids.length} products assigned`}
                   </p>
+                  <div className="mt-2 flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                    {(["products", "bikes"] as StoreCarouselPage[]).map((page) => {
+                      const isActive = categoryPage(category) === page;
+                      return (
+                        <button
+                          key={page}
+                          type="button"
+                          onClick={() => void handleStorePageChange(category, page)}
+                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                            isActive
+                              ? "text-gray-800 bg-white shadow-sm"
+                              : "text-gray-600 hover:bg-gray-200/70"
+                          }`}
+                        >
+                          {page === "bikes" ? "Bikes page" : "Products page"}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Logo upload + title toggle */}

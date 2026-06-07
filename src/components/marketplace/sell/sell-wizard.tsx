@@ -31,6 +31,8 @@ import { Step2CApparelDetails } from "./step-2c-apparel-details";
 import { Step7Review } from "./step-7-review";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import {
   validateItemType,
   validateBikeDetails,
@@ -53,6 +55,9 @@ export function SellWizard() {
   const mode = searchParams?.get('mode'); // 'smart', 'facebook', or null (default manual)
   const hasAiData = searchParams?.get('ai') === 'true';
   const draftId = searchParams?.get('draftId') || undefined;
+  const textUploadToken = searchParams?.get('textUploadToken') || undefined;
+  const { user, loading: authLoading } = useAuth();
+  const { openAuthModal } = useAuthModal();
   
   const {
     formData,
@@ -69,6 +74,9 @@ export function SellWizard() {
 
   const [errors, setErrors] = React.useState<ValidationError[]>([]);
   const [isPublishing, setIsPublishing] = React.useState(false);
+  const [textUploadLoading, setTextUploadLoading] = React.useState(false);
+  const [textUploadError, setTextUploadError] = React.useState<string | null>(null);
+  const loadedTextUploadTokenRef = React.useRef<string | null>(null);
   // Don't show method choice if we have a draftId (loading existing draft)
   const [showMethodChoice, setShowMethodChoice] = React.useState(!mode && !hasAiData && !draftId);
 
@@ -244,10 +252,11 @@ export function SellWizard() {
     console.log('🎯 [WIZARD DEBUG] mode:', mode);
     console.log('🎯 [WIZARD DEBUG] hasAiData:', hasAiData);
     console.log('🎯 [WIZARD DEBUG] draftId:', draftId);
+    console.log('🎯 [WIZARD DEBUG] textUploadToken:', textUploadToken);
     console.log('🎯 [WIZARD DEBUG] currentStep:', currentStep);
     console.log('🎯 [WIZARD DEBUG] showMethodChoice:', showMethodChoice);
     console.log('🎯 [WIZARD DEBUG] formData:', formData);
-  }, [mode, hasAiData, draftId, currentStep, showMethodChoice, formData]);
+  }, [mode, hasAiData, draftId, textUploadToken, currentStep, showMethodChoice, formData]);
 
   // Check for Facebook import data from sessionStorage (from header modal)
   React.useEffect(() => {
@@ -333,6 +342,67 @@ export function SellWizard() {
       console.log('🔍 [WIZARD] No smartUploadData in sessionStorage');
     }
   }, []); // Only run once on mount
+
+  React.useEffect(() => {
+    if (!textUploadToken) return;
+    if (authLoading) return;
+
+    if (!user) {
+      openAuthModal({ mode: "signin" });
+      return;
+    }
+
+    if (loadedTextUploadTokenRef.current === textUploadToken) return;
+
+    let cancelled = false;
+
+    const loadTextUploadSession = async () => {
+      setTextUploadLoading(true);
+      setTextUploadError(null);
+
+      try {
+        const response = await fetch(
+          `/api/marketplace/text-upload/sessions/${encodeURIComponent(textUploadToken)}`,
+          { cache: "no-store" },
+        );
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || !data?.formData) {
+          throw new Error(
+            typeof data?.error === "string"
+              ? data.error
+              : "Could not load this text upload.",
+          );
+        }
+
+        if (cancelled) return;
+
+        loadedTextUploadTokenRef.current = textUploadToken;
+        sessionStorage.removeItem("smartUploadData");
+        updateFormData({ ...data.formData });
+        goToStep(1);
+        setShowMethodChoice(false);
+      } catch (error) {
+        if (!cancelled) {
+          setTextUploadError(
+            error instanceof Error
+              ? error.message
+              : "Could not load this text upload.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setTextUploadLoading(false);
+        }
+      }
+    };
+
+    void loadTextUploadSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, goToStep, openAuthModal, textUploadToken, updateFormData, user]);
 
   // Get total steps based on item type
   const getTotalSteps = () => {
@@ -1230,6 +1300,55 @@ export function SellWizard() {
     );
   };
 
+  if (textUploadToken && (authLoading || textUploadLoading)) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 text-center shadow-sm">
+          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900" />
+          <h1 className="text-lg font-semibold text-gray-900">Loading your listing</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Pulling in the photos and details from your text upload.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (textUploadToken && !user) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-gray-900">Log in to finish your listing</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Create an account or sign in so we can attach this upload to you.
+          </p>
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Button onClick={() => openAuthModal({ mode: "signin" })}>
+              Log in
+            </Button>
+            <Button variant="outline" onClick={() => openAuthModal({ mode: "signup" })}>
+              Create account
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (textUploadError) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-gray-900">Text upload unavailable</h1>
+          <p className="mt-2 text-sm text-gray-600">{textUploadError}</p>
+          <Button className="mt-5" onClick={() => router.push("/marketplace/sell")}>
+            Start a new listing
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // Handle Bulk Upload mode
   if (mode === 'bulk') {
     return (
@@ -1454,4 +1573,3 @@ export function SellWizard() {
     </div>
   );
 }
-

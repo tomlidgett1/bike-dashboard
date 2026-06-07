@@ -137,6 +137,8 @@ export async function POST(request: NextRequest) {
       body.source === 'uber' ? await fetchUberEnabledProductIds(supabase, user.id) : null;
 
     // Insert category
+    const storePage = body.store_page === 'bikes' ? 'bikes' : 'products';
+
     const { data: category, error } = await supabase
       .from('store_categories')
       .insert({
@@ -148,6 +150,7 @@ export async function POST(request: NextRequest) {
         product_ids: uberProductIds ?? body.product_ids ?? [],
         display_order: displayOrder,
         is_active: true,
+        store_page: storePage,
       })
       .select()
       .single();
@@ -220,6 +223,12 @@ export async function PUT(request: NextRequest) {
     if ('section_id' in body) updateData.section_id = body.section_id ?? null;
     if ('logo_url' in body) updateData.logo_url = body.logo_url ?? null;
     if ('hide_title' in body) updateData.hide_title = !!body.hide_title;
+    if (body.store_page !== undefined) {
+      updateData.store_page = body.store_page === 'bikes' ? 'bikes' : 'products';
+      if (updateData.store_page === 'bikes') {
+        updateData.section_id = null;
+      }
+    }
 
     // Assigning an Uber carousel to a section: sync all Uber-enabled products
     if ('section_id' in body && body.section_id != null) {

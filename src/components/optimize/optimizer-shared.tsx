@@ -237,6 +237,22 @@ function mapProductRows(rows: ProductApiRow[]): OptimizerProduct[] {
   }));
 }
 
+export async function fetchOptimizerProductsBySearch(
+  search: string,
+  options?: { signal?: AbortSignal; pageSize?: number },
+): Promise<OptimizerProduct[]> {
+  const params = new URLSearchParams({
+    page: "1",
+    pageSize: String(options?.pageSize ?? 15),
+    status: "active",
+    search,
+  });
+  const res = await fetch(`/api/products?${params}`, { signal: options?.signal });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return mapProductRows((data.products ?? []) as ProductApiRow[]);
+}
+
 // ── Hooks ───────────────────────────────────────────────────────────────────
 
 export function useOptimizerCategories() {

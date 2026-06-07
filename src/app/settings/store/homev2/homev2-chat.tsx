@@ -14,7 +14,11 @@ import { HomeV2ChatInput } from "@/components/genie/homev2-chat-input";
 import type { GeniePivotTablePayload } from "@/lib/genie/pivot-table";
 import { GenieProposalCard } from "@/components/genie/genie-proposal-card";
 import { LightspeedWorkorderCards } from "@/components/genie/lightspeed-workorder-cards";
+import { GmailEmailSearchCard } from "@/components/genie/gmail-email-search-card";
+import { GmailConnectCard } from "@/components/genie/gmail-connect-card";
 import { GenieStoreProductCards } from "@/components/genie/genie-store-product-cards";
+import { GenieWebImageCards } from "@/components/genie/genie-web-image-cards";
+import type { GenieWebImagePreview } from "@/lib/genie/web-image-search";
 import {
   GenieRawLogsViewer,
   GenieThinkingDetailSections,
@@ -31,9 +35,13 @@ import type {
   GenieProposal,
   GenieRawDebugLogEntry,
   GenieWorkorderCardsPayload,
+  GmailEmailsPayload,
+  GmailConnectPayload,
+  GmailAgentContext,
 } from "@/lib/types/genie-agent";
 import { consumeHomeV2PendingPrompt } from "@/lib/genie/homev2-navigation";
 import { compactGenieProgressText, liveGenieProgressPreview } from "@/lib/genie/progress-text";
+import { mergeGmailAgentContext } from "@/lib/genie/gmail-agent-context";
 
 type ChatRole = "user" | "assistant";
 
@@ -54,7 +62,10 @@ interface ChatMessage {
   pivotTables?: GeniePivotTablePayload[];
   proposals?: GenieProposal[];
   products?: GenieStoreProductPreview[];
+  webImages?: GenieWebImagePreview[];
   workorders?: GenieWorkorderCardsPayload;
+  gmailEmails?: GmailEmailsPayload;
+  gmailConnect?: GmailConnectPayload;
   status?: string;
   statusPhase?: string;
   reasoningSummary?: string;
@@ -98,6 +109,8 @@ const PHASE_LABELS: Record<string, string> = {
   rechecking: "Retrying",
   responding: "Answering",
   tool: "Working",
+  gmail: "Gmail",
+  gmail_done: "Gmail",
 };
 
 function normalizeStartupStatusText(text: string, phase?: string): string {
@@ -789,6 +802,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   const [isLoading, setIsLoading] = React.useState(false);
   const [queuedPrompts, setQueuedPrompts] = React.useState<QueuedPrompt[]>([]);
   const [lastMsgMinHeight, setLastMsgMinHeight] = React.useState<number | undefined>(undefined);
+  const [gmailConnectBanner, setGmailConnectBanner] = React.useState<GmailConnectPayload | null>(null);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const lastUserMessageRef = React.useRef<HTMLDivElement | null>(null);
   const abortRef = React.useRef<AbortController | null>(null);
@@ -835,6 +849,26 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 
   React.useEffect(() => {
     setConversations(readConversationHistory());
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const statusRes = await fetch("/api/composio/status");
+        const status = await statusRes.json().catch(() => null);
+        if (cancelled || !status?.configured || status?.connected) return;
+        const connectRes = await fetch("/api/composio/connect", { method: "POST" });
+        const connect = await connectRes.json().catch(() => null);
+        if (cancelled || !connect?.url) return;
+        setGmailConnectBanner({ url: connect.url, reason: "status" });
+      } catch {
+        // Gmail connect banner is optional — Genie can still prompt in chat.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   React.useEffect(() => () => abortRef.current?.abort(), []);
@@ -985,8 +1019,10 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             tables: message.tables,
             pivotTables: message.pivotTables,
             products: message.products,
+            webImages: message.webImages,
             workorders: message.workorders,
             proposals: message.proposals,
+            gmailEmails: message.gmailEmails,
             analysisPlan: message.analysisPlan,
             analysisQueries: message.analysisQueries,
           })),
@@ -1183,12 +1219,63 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             ));
           }
 
+          if (event.event === "web_images" && Array.isArray(event.images) && event.images.length > 0) {
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    webImages: event.images as GenieWebImagePreview[],
+                    status: undefined,
+                  }
+                : message
+            ));
+          }
+
           if (event.event === "workorders" && event.workorders) {
             setMessages((current) => current.map((message) =>
               message.id === assistantId
                 ? {
                     ...message,
                     workorders: event.workorders as GenieWorkorderCardsPayload,
+                    status: undefined,
+                  }
+                : message
+            ));
+          }
+
+          if (event.event === "gmail_emails" && event.gmail_emails) {
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    gmailEmails: event.gmail_emails as GmailEmailsPayload,
+                    status: undefined,
+                  }
+                : message
+            ));
+          }
+
+          if (event.event === "gmail_agent_context" && event.gmail_agent_context) {
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    gmailEmails: mergeGmailAgentContext(
+                      message.gmailEmails,
+                      event.gmail_agent_context as GmailAgentContext,
+                    ),
+                    status: undefined,
+                  }
+                : message
+            ));
+          }
+
+          if (event.event === "gmail_connect" && event.gmail_connect) {
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    gmailConnect: event.gmail_connect as GmailConnectPayload,
                     status: undefined,
                   }
                 : message
@@ -1353,8 +1440,20 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 	                          {message.products?.length ? (
 	                            <GenieStoreProductCards products={message.products} />
 	                          ) : null}
+	                          {message.webImages?.length ? (
+	                            <GenieWebImageCards images={message.webImages} />
+	                          ) : null}
 	                          {message.workorders?.workorders.length ? (
 	                            <LightspeedWorkorderCards payload={message.workorders} fullWidth />
+	                          ) : null}
+	                          {message.gmailEmails?.emails.length ? (
+	                            <GmailEmailSearchCard payload={message.gmailEmails} />
+	                          ) : null}
+	                          {message.gmailConnect ? (
+	                            <GmailConnectCard
+	                              payload={message.gmailConnect}
+	                              onConnected={() => setGmailConnectBanner(null)}
+	                            />
 	                          ) : null}
 	                          {message.charts?.map((chart, index) => (
 	                            <GenieChart
@@ -1413,6 +1512,15 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                 onUpdate={updateQueuedPrompt}
                 onDelete={deleteQueuedPrompt}
               />
+
+              {gmailConnectBanner ? (
+                <div className="mb-3">
+                  <GmailConnectCard
+                    payload={gmailConnectBanner}
+                    onConnected={() => setGmailConnectBanner(null)}
+                  />
+                </div>
+              ) : null}
 
               <HomeV2ChatInput
                 compact

@@ -35,12 +35,23 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const layout: Array<{ type: 'section' | 'carousel'; id: string }> = body.layout;
+    const page = body.page === 'bikes' ? 'bikes' : 'products';
 
     if (!Array.isArray(layout)) {
       return NextResponse.json({ error: 'layout must be an array' }, { status: 400 });
     }
 
-    // Read existing homepage_config so we only update products_page_layout
+    if (page === 'bikes') {
+      const invalid = layout.some((item) => item.type !== 'carousel');
+      if (invalid) {
+        return NextResponse.json(
+          { error: 'Bikes page layout only supports carousel items' },
+          { status: 400 },
+        );
+      }
+    }
+
+    // Read existing homepage_config so we only update the requested page layout
     const { data: profile } = await supabase
       .from('users')
       .select('homepage_config')
@@ -48,7 +59,8 @@ export async function PUT(request: NextRequest) {
       .single();
 
     const existing = (profile?.homepage_config as Record<string, unknown>) || {};
-    const updated = { ...existing, products_page_layout: layout };
+    const layoutKey = page === 'bikes' ? 'bikes_page_layout' : 'products_page_layout';
+    const updated = { ...existing, [layoutKey]: layout };
 
     const { error: dbError } = await supabase
       .from('users')

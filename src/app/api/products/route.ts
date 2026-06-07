@@ -89,7 +89,9 @@ export async function GET(request: NextRequest) {
 
     // Apply search filter
     if (search) {
-      query = query.or(`description.ilike.%${search}%,custom_sku.ilike.%${search}%,system_sku.ilike.%${search}%`)
+      query = query.or(
+        `description.ilike.%${search}%,display_name.ilike.%${search}%,custom_sku.ilike.%${search}%,system_sku.ilike.%${search}%`,
+      )
     }
 
     // Apply category filter

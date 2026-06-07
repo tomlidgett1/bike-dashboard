@@ -53,6 +53,7 @@ import {
   type ImageRun,
   type OptimizerProduct,
   type TextStatus,
+  fetchOptimizerProductsBySearch,
   useOptimizerCategories,
   useOptimizerProducts,
 } from "@/components/optimize/optimizer-shared";
@@ -149,6 +150,10 @@ export function CatalogueOptimiseModal({
   const [goal, setGoal] = React.useState<OptimiseGoal | null>(null);
   const [batchSize, setBatchSize] = React.useState<BatchSize | null>(null);
   const [categorySearch, setCategorySearch] = React.useState("");
+  const [productSearch, setProductSearch] = React.useState("");
+  const [productSearchResults, setProductSearchResults] = React.useState<OptimizerProduct[]>([]);
+  const [productSearchLoading, setProductSearchLoading] = React.useState(false);
+  const [pinnedProduct, setPinnedProduct] = React.useState<OptimizerProduct | null>(null);
   const [pendingQueueIds, setPendingQueueIds] = React.useState<string[]>([]);
   const [queueIds, setQueueIds] = React.useState<string[]>([]);
   const [photoQueueIds, setPhotoQueueIds] = React.useState<string[]>([]);
@@ -172,6 +177,49 @@ export function CatalogueOptimiseModal({
     "catalogue",
   );
 
+  const catalogueProducts = React.useMemo(() => {
+    if (!pinnedProduct) return products;
+    const match = products.find((item) => item.id === pinnedProduct.id);
+    return match ? [match] : [pinnedProduct];
+  }, [pinnedProduct, products]);
+
+  const productSearchAbortRef = React.useRef<AbortController | null>(null);
+
+  React.useEffect(() => {
+    const query = productSearch.trim();
+    if (!query) {
+      productSearchAbortRef.current?.abort();
+      setProductSearchResults([]);
+      setProductSearchLoading(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      productSearchAbortRef.current?.abort();
+      const controller = new AbortController();
+      productSearchAbortRef.current = controller;
+      setProductSearchLoading(true);
+
+      void fetchOptimizerProductsBySearch(query, {
+        signal: controller.signal,
+        pageSize: 15,
+      })
+        .then((rows) => {
+          if (!controller.signal.aborted) setProductSearchResults(rows);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setProductSearchResults([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setProductSearchLoading(false);
+        });
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [productSearch]);
+
   const copyAbortRef = React.useRef<AbortController | null>(null);
   const imageAbortRef = React.useRef<AbortController | null>(null);
   const imageCancelledRef = React.useRef(false);
@@ -185,6 +233,10 @@ export function CatalogueOptimiseModal({
     setGoal(null);
     setBatchSize(null);
     setCategorySearch("");
+    setProductSearch("");
+    setProductSearchResults([]);
+    setProductSearchLoading(false);
+    setPinnedProduct(null);
     setPendingQueueIds([]);
     setQueueIds([]);
     setPhotoQueueIds([]);
@@ -242,24 +294,29 @@ export function CatalogueOptimiseModal({
       : categories.find((item) => item.id === category) ?? null;
 
   const goalCounts = React.useMemo(() => {
+    if (pinnedProduct) {
+      return { copy: 1, photos: 1, both: 1 };
+    }
     return {
-      copy: products.filter(needsCopy).length,
-      photos: products.filter(needsPhotos).length,
-      both: products.filter((product) => needsCopy(product) || needsPhotos(product)).length,
+      copy: catalogueProducts.filter(needsCopy).length,
+      photos: catalogueProducts.filter(needsPhotos).length,
+      both: catalogueProducts.filter(
+        (product) => needsCopy(product) || needsPhotos(product),
+      ).length,
     };
-  }, [products]);
+  }, [catalogueProducts, pinnedProduct]);
 
   const batchProducts = React.useMemo(() => {
     return queueIds
-      .map((id) => products.find((product) => product.id === id))
+      .map((id) => catalogueProducts.find((product) => product.id === id))
       .filter((product): product is OptimizerProduct => !!product);
-  }, [products, queueIds]);
+  }, [catalogueProducts, queueIds]);
 
   const currentProduct = React.useMemo(() => {
     const id = photoQueueIds[currentIndex];
     if (!id) return null;
-    return products.find((product) => product.id === id) ?? null;
-  }, [currentIndex, photoQueueIds, products]);
+    return catalogueProducts.find((product) => product.id === id) ?? null;
+  }, [currentIndex, photoQueueIds, catalogueProducts]);
 
   const filteredCopyProducts = React.useMemo(() => {
     const q = copySearch.trim().toLowerCase();
@@ -309,6 +366,9 @@ export function CatalogueOptimiseModal({
   );
 
   const handleCategorySelect = (id: string) => {
+    setPinnedProduct(null);
+    setProductSearch("");
+    setProductSearchResults([]);
     setCategory(id);
     setGoal(null);
     setQueueIds([]);
@@ -319,10 +379,56 @@ export function CatalogueOptimiseModal({
     setStep("goal");
   };
 
+  const handleProductSelect = (product: OptimizerProduct) => {
+    setPinnedProduct(product);
+    setProductSearch("");
+    setProductSearchResults([]);
+    setCategory("");
+    setGoal(null);
+    setQueueIds([]);
+    setCurrentIndex(0);
+    setCompletedIds(new Set());
+    setSkippedIds(new Set());
+    setFailedIds(new Set());
+    setProducts((prev) => {
+      if (prev.some((item) => item.id === product.id)) {
+        return prev.map((item) => (item.id === product.id ? product : item));
+      }
+      return [product, ...prev];
+    });
+    setStep("goal");
+  };
+
+  const beginBatch = React.useCallback(
+    (nextGoal: OptimiseGoal, ids: string[], size: BatchSize) => {
+      setBatchSize(size);
+      setQueueIds(ids);
+      setSelectedCopyIds(new Set(ids));
+      setCurrentIndex(0);
+
+      if (nextGoal === "photos") {
+        const nextPhotoIds = pinnedProduct
+          ? ids
+          : photoIdsFromQueue(ids, catalogueProducts);
+        setPhotoQueueIds(nextPhotoIds);
+        setStep(nextPhotoIds.length > 0 ? "photos" : "done");
+        if (nextPhotoIds.length > 0) {
+          void preloadQueueImagesRef.current?.(nextPhotoIds, "photos");
+        }
+        return;
+      }
+
+      setStep(ids.length > 0 ? "copy_batch" : "done");
+    },
+    [catalogueProducts, pinnedProduct],
+  );
+
   const handleGoalSelect = (nextGoal: OptimiseGoal) => {
-    const ids = products
-      .filter((product) => productNeedsGoal(product, nextGoal))
-      .map((product) => product.id);
+    const ids = pinnedProduct
+      ? [pinnedProduct.id]
+      : catalogueProducts
+          .filter((product) => productNeedsGoal(product, nextGoal))
+          .map((product) => product.id);
     setGoal(nextGoal);
     setBatchSize(null);
     setPendingQueueIds(ids);
@@ -331,31 +437,30 @@ export function CatalogueOptimiseModal({
     setCompletedIds(new Set());
     setSkippedIds(new Set());
     setFailedIds(new Set());
-    setStep(ids.length > 0 ? "batch" : "done");
-  };
 
-  const handleBatchConfirm = (size: BatchSize) => {
-    const ids = sliceQueueIds(pendingQueueIds, size);
-    setBatchSize(size);
-    setQueueIds(ids);
-    setSelectedCopyIds(new Set(ids));
-    setCurrentIndex(0);
-
-    if (goal === "photos") {
-      const nextPhotoIds = photoIdsFromQueue(ids, products);
-      setPhotoQueueIds(nextPhotoIds);
-      setStep(nextPhotoIds.length > 0 ? "photos" : "done");
-      if (nextPhotoIds.length > 0) {
-        void preloadQueueImagesRef.current?.(nextPhotoIds, "photos");
-      }
+    if (ids.length === 0) {
+      setStep("done");
       return;
     }
 
-    setStep(ids.length > 0 ? "copy_batch" : "done");
+    if (pinnedProduct) {
+      beginBatch(nextGoal, ids, "individual");
+      return;
+    }
+
+    setStep("batch");
+  };
+
+  const handleBatchConfirm = (size: BatchSize) => {
+    if (!goal) return;
+    const ids = sliceQueueIds(pendingQueueIds, size);
+    beginBatch(goal, ids, size);
   };
 
   const startPhotosFlow = React.useCallback(() => {
-    const nextPhotoIds = photoIdsFromQueue(queueIds, products);
+    const nextPhotoIds = pinnedProduct
+      ? queueIds
+      : photoIdsFromQueue(queueIds, catalogueProducts);
     setPhotoQueueIds(nextPhotoIds);
     setCurrentIndex(0);
     if (nextPhotoIds.length === 0) {
@@ -364,7 +469,7 @@ export function CatalogueOptimiseModal({
     }
     setStep("photos");
     void preloadQueueImagesRef.current?.(nextPhotoIds, goal ?? "photos");
-  }, [goal, products, queueIds]);
+  }, [goal, catalogueProducts, pinnedProduct, queueIds]);
 
   const advance = React.useCallback(
     (id: string, kind: "completed" | "skipped" = "completed") => {
@@ -602,7 +707,7 @@ export function CatalogueOptimiseModal({
     if (!shouldPreloadImages(selectedGoal)) return;
 
     const targets = ids
-      .map((id) => products.find((product) => product.id === id))
+      .map((id) => catalogueProducts.find((product) => product.id === id))
       .filter((product): product is OptimizerProduct => !!product && needsPhotos(product));
 
     if (targets.length === 0) return;
@@ -808,13 +913,19 @@ export function CatalogueOptimiseModal({
               search={categorySearch}
               onSearchChange={setCategorySearch}
               onSelect={handleCategorySelect}
+              productSearch={productSearch}
+              onProductSearchChange={setProductSearch}
+              productSearchResults={productSearchResults}
+              productSearchLoading={productSearchLoading}
+              onProductSelect={handleProductSelect}
             />
           )}
 
           {step === "goal" && (
             <GoalStep
               category={categoryMeta}
-              loading={loading}
+              pinnedProduct={pinnedProduct}
+              loading={loading && !pinnedProduct}
               counts={goalCounts}
               onSelect={handleGoalSelect}
             />
@@ -876,6 +987,9 @@ export function CatalogueOptimiseModal({
               onChooseAnother={() => {
                 setStep("category");
                 setCategory("");
+                setPinnedProduct(null);
+                setProductSearch("");
+                setProductSearchResults([]);
                 setGoal(null);
                 setBatchSize(null);
                 setPendingQueueIds([]);
@@ -898,10 +1012,17 @@ export function CatalogueOptimiseModal({
                 disabled={copyRunning}
                 onClick={() => {
                   if (step === "photos") {
-                    setStep(needsCopyStep(goal) ? "copy_batch" : "batch");
-                  } else if (step === "copy_batch") setStep("batch");
-                  else if (step === "batch") setStep("goal");
-                  else setStep("category");
+                    setStep(
+                      needsCopyStep(goal) ? "copy_batch" : pinnedProduct ? "goal" : "batch",
+                    );
+                  } else if (step === "copy_batch") {
+                    setStep(pinnedProduct ? "goal" : "batch");
+                  } else if (step === "batch") {
+                    setStep("goal");
+                  } else {
+                    setPinnedProduct(null);
+                    setStep("category");
+                  }
                 }}
               >
                 <ArrowLeft className="size-4" />
@@ -1008,78 +1129,156 @@ function CategoryStep({
   search,
   onSearchChange,
   onSelect,
+  productSearch,
+  onProductSearchChange,
+  productSearchResults,
+  productSearchLoading,
+  onProductSelect,
 }: {
   categories: CategoryOption[];
   loading: boolean;
   search: string;
   onSearchChange: (value: string) => void;
   onSelect: (id: string) => void;
+  productSearch: string;
+  onProductSearchChange: (value: string) => void;
+  productSearchResults: OptimizerProduct[];
+  productSearchLoading: boolean;
+  onProductSelect: (product: OptimizerProduct) => void;
 }) {
+  const showProductResults = productSearch.trim().length > 0;
+
   return (
     <div className="flex w-full flex-col gap-4 px-5 py-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Select category</h2>
+        <h2 className="text-lg font-semibold text-foreground">What do you want to optimise?</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Choose the catalogue area to work through.
+          Search for a product, or choose a category to work through in batches.
         </p>
       </div>
 
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search categories"
-          className="pl-9"
-        />
+      <div className="rounded-md border border-border bg-white p-4">
+        <p className="text-sm font-medium text-foreground">Search for a product</p>
+        <div className="relative mt-2">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={productSearch}
+            onChange={(event) => onProductSearchChange(event.target.value)}
+            placeholder="Name, SKU, or description"
+            className="pl-9"
+          />
+        </div>
+
+        {showProductResults ? (
+          <div className="mt-3">
+            {productSearchLoading ? (
+              <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Searching products
+              </div>
+            ) : productSearchResults.length === 0 ? (
+              <p className="py-3 text-center text-sm text-muted-foreground">
+                No products found
+              </p>
+            ) : (
+              <div className="divide-y divide-border overflow-hidden rounded-md border border-border bg-background">
+                {productSearchResults.map((product) => {
+                  const needsWork = needsCopy(product) || needsPhotos(product);
+                  return (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => onProductSelect(product)}
+                      className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-muted/60"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {productLabel(product)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {product.brand || "No brand"}
+                          {product.upc ? ` · ${product.upc}` : ""}
+                          {needsWork ? "" : " · already complete"}
+                        </p>
+                      </div>
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
 
-      {loading ? (
-        <CenteredState label="Loading categories" />
-      ) : (
-        <div className="divide-y divide-border overflow-hidden rounded-md border border-border bg-background">
-          {categories.map((category) => {
-            const photoNeed = category.missingSerperImages || category.missingImages;
-            return (
-              <button
-                key={category.id}
-                type="button"
-                onClick={() => onSelect(category.id)}
-                className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-muted/60"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    {category.id === "all" ? (
-                      <Layers className="size-4 text-muted-foreground" />
-                    ) : (
-                      <Package className="size-4 text-muted-foreground" />
-                    )}
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {category.name}
-                    </p>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {category.count.toLocaleString()} products
-                    {photoNeed > 0 ? ` - ${photoNeed.toLocaleString()} need photos` : ""}
-                  </p>
-                </div>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {!showProductResults ? (
+        <>
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs font-medium text-muted-foreground">or browse by category</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search categories"
+              className="pl-9"
+            />
+          </div>
+
+          {loading ? (
+            <CenteredState label="Loading categories" />
+          ) : (
+            <div className="divide-y divide-border overflow-hidden rounded-md border border-border bg-background">
+              {categories.map((category) => {
+                const photoNeed = category.missingSerperImages || category.missingImages;
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => onSelect(category.id)}
+                    className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-muted/60"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        {category.id === "all" ? (
+                          <Layers className="size-4 text-muted-foreground" />
+                        ) : (
+                          <Package className="size-4 text-muted-foreground" />
+                        )}
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {category.name}
+                        </p>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {category.count.toLocaleString()} products
+                        {photoNeed > 0 ? ` - ${photoNeed.toLocaleString()} need photos` : ""}
+                      </p>
+                    </div>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </>
+      ) : null}
     </div>
   );
 }
 
 function GoalStep({
   category,
+  pinnedProduct,
   loading,
   counts,
   onSelect,
 }: {
   category: CategoryOption | null;
+  pinnedProduct: OptimizerProduct | null;
   loading: boolean;
   counts: Record<OptimiseGoal, number>;
   onSelect: (goal: OptimiseGoal) => void;
@@ -1113,8 +1312,14 @@ function GoalStep({
       <div>
         <h2 className="text-lg font-semibold text-foreground">Choose job</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {category?.name ?? "Catalogue"}
-          {category ? ` - ${category.count.toLocaleString()} products` : ""}
+          {pinnedProduct
+            ? productLabel(pinnedProduct)
+            : category?.name ?? "Catalogue"}
+          {pinnedProduct
+            ? ""
+            : category
+              ? ` - ${category.count.toLocaleString()} products`
+              : ""}
         </p>
       </div>
 

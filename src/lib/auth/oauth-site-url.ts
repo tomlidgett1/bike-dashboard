@@ -35,3 +35,17 @@ export function getBrowserOAuthBaseUrl(): string {
 
   return canonical;
 }
+
+export function getCurrentReturnPath(fallback = "/marketplace"): string {
+  if (typeof window === "undefined") return fallback;
+
+  const value = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (!value.startsWith("/") || value.startsWith("//")) return fallback;
+  return value;
+}
+
+export function buildBrowserOAuthRedirectTo(returnPath: string): string {
+  const url = new URL("/auth/callback", getBrowserOAuthBaseUrl());
+  url.searchParams.set("next", returnPath);
+  return url.toString();
+}

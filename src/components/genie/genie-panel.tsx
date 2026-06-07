@@ -6,9 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Send, Bike, Loader2, AlertCircle, Globe, Maximize2, Minimize2,
   Clock, Trash2, ArrowLeft, MessageSquarePlus,
-  Store, Sparkles, CheckCircle2, BarChart3, LineChart as LineChartIcon, ChevronDown,
+  Store, Sparkles, CheckCircle2, ChevronDown,
 } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { useGenie } from '@/components/providers/genie-provider';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useUserProfile } from '@/components/providers/profile-provider';
@@ -18,19 +17,20 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart';
 import type {
   GenieAnalysisPlanPayload,
   GenieAnalysisQueryPayload,
   GenieProposal,
   GenieRawDebugLogEntry,
   GenieWorkorderCardsPayload,
+  GmailEmailsPayload,
+  GmailConnectPayload,
+  GmailAgentContext,
 } from '@/lib/types/genie-agent';
+import { mergeGmailAgentContext } from '@/lib/genie/gmail-agent-context';
+import { GmailEmailSearchCard } from '@/components/genie/gmail-email-search-card';
+import { GmailConnectCard } from '@/components/genie/gmail-connect-card';
+import { GenieChart, type GenieChartPayload } from '@/components/genie/genie-chart';
 import { GenieDataTable, type GenieTablePayload } from '@/components/genie/genie-data-table';
 import { GeniePivotTable } from '@/components/genie/genie-pivot-table';
 import { GenieProposalCard } from '@/components/genie/genie-proposal-card';
@@ -44,6 +44,8 @@ import {
   upsertAnalysisQuery,
 } from '@/components/genie/genie-thinking-detail-sections';
 import { compactGenieProgressText, liveGenieProgressPreview } from '@/lib/genie/progress-text';
+import type { GenieWebImagePreview } from '@/lib/genie/web-image-search';
+import { GenieWebImageCards } from '@/components/genie/genie-web-image-cards';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +54,8 @@ type StatusPhase =
   | 'thinking'
   | 'web_search'
   | 'web_search_done'
+  | 'image_search'
+  | 'image_search_done'
   | 'product_search'
   | 'lightspeed_sales'
   | 'lightspeed_inventory'
@@ -83,29 +87,6 @@ interface GenieProduct {
   store_name?: string | null;
 }
 
-type VisualValueFormat = 'currency' | 'number' | 'percent';
-
-interface GenieChartSeries {
-  key: string;
-  label: string;
-  color?: string;
-}
-
-interface GenieChartPoint {
-  label: string;
-  [key: string]: string | number | null;
-}
-
-interface GenieChartPayload {
-  kind: 'bar' | 'line';
-  title: string;
-  subtitle?: string;
-  xKey: 'label';
-  series: GenieChartSeries[];
-  data: GenieChartPoint[];
-  valueFormatter?: VisualValueFormat;
-}
-
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -117,7 +98,10 @@ interface ChatMessage {
   tables?: GenieTablePayload[];
   pivotTables?: GeniePivotTablePayload[];
   products?: GenieProduct[];
+  webImages?: GenieWebImagePreview[];
   workorders?: GenieWorkorderCardsPayload;
+  gmailEmails?: GmailEmailsPayload;
+  gmailConnect?: GmailConnectPayload;
   analysisPlan?: GenieAnalysisPlanPayload;
   analysisQueries?: GenieAnalysisQueryPayload[];
   rawDebugLogs?: GenieRawDebugLogEntry[];
@@ -141,7 +125,10 @@ interface SavedMessage {
   tables?: GenieTablePayload[];
   pivotTables?: GeniePivotTablePayload[];
   products?: GenieProduct[];
+  webImages?: GenieWebImagePreview[];
   workorders?: GenieWorkorderCardsPayload;
+  gmailEmails?: GmailEmailsPayload;
+  gmailConnect?: GmailConnectPayload;
   analysisPlan?: GenieAnalysisPlanPayload;
   analysisQueries?: GenieAnalysisQueryPayload[];
   sources?: Citation[];
@@ -152,61 +139,6 @@ interface SavedMessage {
 function formatPrice(price: number | null | undefined): string {
   if (!price) return '';
   return `$${price.toFixed(2)}`;
-}
-
-function formatVisualValue(value: string | number | null | undefined, format?: VisualValueFormat): string {
-  if (value == null || value === '') return '—';
-  const numeric = typeof value === 'number' ? value : Number(value);
-
-  if (format === 'currency' && Number.isFinite(numeric)) {
-    return new Intl.NumberFormat('en-AU', {
-      style: 'currency',
-      currency: 'AUD',
-      maximumFractionDigits: 2,
-    }).format(numeric);
-  }
-
-  if (format === 'number' && Number.isFinite(numeric)) {
-    return new Intl.NumberFormat('en-AU', { maximumFractionDigits: 2 }).format(numeric);
-  }
-
-  if (format === 'percent' && Number.isFinite(numeric)) {
-    return `${new Intl.NumberFormat('en-AU', { maximumFractionDigits: 1 }).format(numeric)}%`;
-  }
-
-  return String(value);
-}
-
-function formatVisualAxisValue(value: string | number | null | undefined, format?: VisualValueFormat): string {
-  if (value == null || value === '') return '';
-  const numeric = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(numeric)) return String(value);
-
-  if (format === 'currency') {
-    return new Intl.NumberFormat('en-AU', {
-      style: 'currency',
-      currency: 'AUD',
-      notation: 'compact',
-      maximumFractionDigits: 1,
-    }).format(numeric);
-  }
-
-  if (format === 'percent') {
-    return `${new Intl.NumberFormat('en-AU', {
-      notation: 'compact',
-      maximumFractionDigits: 1,
-    }).format(numeric)}%`;
-  }
-
-  return new Intl.NumberFormat('en-AU', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(numeric);
-}
-
-function truncateChartLabel(value: string, max = 18): string {
-  if (value.length <= max) return value;
-  return `${value.slice(0, Math.max(0, max - 1))}…`;
 }
 
 function stripUrlsAndLinks(s: string): string {
@@ -359,6 +291,8 @@ const PHASE_LABELS: Partial<Record<StatusPhase, string>> = {
   thinking: 'Thinking',
   web_search: 'Searching web',
   web_search_done: 'Web search done',
+  image_search: 'Finding images',
+  image_search_done: 'Images ready',
   product_search: 'Marketplace',
   lightspeed_sales: 'Sales',
   lightspeed_inventory: 'Stock',
@@ -639,132 +573,6 @@ function ProductCard({ product }: { product: GenieProduct }) {
   );
 }
 
-// ─── Lightspeed Visuals ──────────────────────────────────────────────────────
-
-function GenieBarChartCard({ chart }: { chart: GenieChartPayload }) {
-  const isLineChart = chart.kind === 'line';
-  const ChartIcon = isLineChart ? LineChartIcon : BarChart3;
-  const config = chart.series.reduce<ChartConfig>((acc, series, index) => {
-    acc[series.key] = {
-      label: series.label,
-      color: series.color ?? `var(--chart-${(index % 5) + 1})`,
-    };
-    return acc;
-  }, {});
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="max-w-full rounded-md border border-border/70 bg-background px-3 py-3 shadow-xs"
-    >
-      <div className="mb-2 flex items-start gap-2">
-        <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
-          <ChartIcon className="h-3.5 w-3.5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold leading-tight text-foreground">{chart.title}</p>
-          {chart.subtitle && <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{chart.subtitle}</p>}
-        </div>
-      </div>
-
-      <ChartContainer config={config} className="aspect-auto h-[220px] w-full">
-        {isLineChart ? (
-          <LineChart accessibilityLayer data={chart.data} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey={chart.xKey}
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              interval={chart.data.length > 6 ? 'preserveStartEnd' : 0}
-              tickFormatter={(value) => truncateChartLabel(String(value))}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tickMargin={6}
-              width={56}
-              tickFormatter={(value) => formatVisualAxisValue(Number(value), chart.valueFormatter)}
-            />
-            <ChartTooltip
-              cursor={false}
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(value) => String(value)}
-                  formatter={(value, name) => (
-                    <>
-                      <span className="text-muted-foreground">{config[String(name)]?.label ?? String(name)}</span>
-                      <span className="ml-auto font-mono font-medium text-foreground tabular-nums">
-                        {formatVisualValue(Number(value), chart.valueFormatter)}
-                      </span>
-                    </>
-                  )}
-                />
-              }
-            />
-            {chart.series.map(series => (
-              <Line
-                key={series.key}
-                type="monotone"
-                dataKey={series.key}
-                stroke={`var(--color-${series.key})`}
-                strokeWidth={2.25}
-                dot={chart.data.length <= 18 ? { r: 3 } : false}
-                activeDot={{ r: 4 }}
-                connectNulls
-              />
-            ))}
-          </LineChart>
-        ) : (
-          <BarChart accessibilityLayer data={chart.data} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey={chart.xKey}
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              interval={chart.data.length > 6 ? 'preserveStartEnd' : 0}
-              tickFormatter={(value) => truncateChartLabel(String(value))}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tickMargin={6}
-              width={56}
-              tickFormatter={(value) => formatVisualAxisValue(Number(value), chart.valueFormatter)}
-            />
-            <ChartTooltip
-              cursor={false}
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(value) => String(value)}
-                  formatter={(value, name) => (
-                    <>
-                      <span className="text-muted-foreground">{config[String(name)]?.label ?? String(name)}</span>
-                      <span className="ml-auto font-mono font-medium text-foreground tabular-nums">
-                        {formatVisualValue(Number(value), chart.valueFormatter)}
-                      </span>
-                    </>
-                  )}
-                />
-              }
-            />
-            {chart.series.map(series => (
-              <Bar
-                key={series.key}
-                dataKey={series.key}
-                fill={`var(--color-${series.key})`}
-                radius={[4, 4, 0, 0]}
-              />
-            ))}
-          </BarChart>
-        )}
-      </ChartContainer>
-    </motion.div>
-  );
-}
-
 // ─── Message Bubble ────────────────────────────────────────────────────────────
 
 function MessageBubble({ message }: { message: ChatMessage }) {
@@ -782,6 +590,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
   const noProposals = !message.proposals || message.proposals.length === 0;
   const noProducts = !message.products || message.products.length === 0;
+  const noWebImages = !message.webImages || message.webImages.length === 0;
   const noWorkorders = !message.workorders || message.workorders.workorders.length === 0;
   const noCharts = !message.charts || message.charts.length === 0;
   const noTables = !message.tables || message.tables.length === 0;
@@ -792,7 +601,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     || message.rawDebugLogs?.length,
   );
   const showShimmer = message.isStreaming && message.currentStatus && !showProcessTimeline;
-  const showSpinner = message.isStreaming && !message.content && !message.currentStatus && noProducts && noWorkorders && noCharts && noTables && noProposals;
+  const showSpinner = message.isStreaming && !message.content && !message.currentStatus && noProducts && noWebImages && noWorkorders && noCharts && noTables && noProposals;
   const showReasoning = message.isStreaming && !!message.reasoningSummary?.trim() && !showProcessTimeline;
 
   return (
@@ -842,6 +651,45 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       </AnimatePresence>
 
+      {/* 2b. Gmail search results */}
+      <AnimatePresence>
+        {message.gmailEmails && message.gmailEmails.emails.length > 0 && (
+          <motion.div
+            key="gmail-emails"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <GmailEmailSearchCard payload={message.gmailEmails} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 2c. Gmail connect */}
+      <AnimatePresence>
+        {message.gmailConnect && (
+          <motion.div
+            key="gmail-connect"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <GmailConnectCard payload={message.gmailConnect} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 3b. Web reference images */}
+      <AnimatePresence>
+        {message.webImages && message.webImages.length > 0 && (
+          <motion.div
+            key="web-images"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <GenieWebImageCards images={message.webImages} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* 3. Products — rendered first so text reveals below without pushing them */}
       <AnimatePresence>
         {message.products && message.products.length > 0 && (
@@ -863,7 +711,14 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       <AnimatePresence>
         {message.charts && message.charts.length > 0 && (
           <motion.div key="charts" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
-            {message.charts.map((chart, index) => <GenieBarChartCard key={`${chart.title}-${index}`} chart={chart} />)}
+            {message.charts.map((chart, index) => (
+              <GenieChart
+                key={`${chart.title}-${index}`}
+                chart={chart}
+                variant="panel"
+                showExport={false}
+              />
+            ))}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1017,7 +872,7 @@ export function GeniePanel() {
       const savedMessages = (data.messages ?? []) as SavedMessage[];
       const loaded: ChatMessage[] = savedMessages.map(m => ({
         id: crypto.randomUUID(), role: m.role, content: m.content ?? '',
-        charts: m.charts, tables: m.tables, products: m.products, workorders: m.workorders,
+        charts: m.charts, tables: m.tables, products: m.products, webImages: m.webImages, workorders: m.workorders,
         analysisPlan: m.analysisPlan, analysisQueries: m.analysisQueries, sources: m.sources,
       }));
       setMessages(loaded);
@@ -1075,7 +930,10 @@ export function GeniePanel() {
             charts: m.charts,
             tables: m.tables,
             products: m.products,
+            webImages: m.webImages,
             workorders: m.workorders,
+            proposals: m.proposals,
+            gmailEmails: m.gmailEmails,
             analysisPlan: m.analysisPlan,
             analysisQueries: m.analysisQueries,
             sources: m.sources,
@@ -1158,8 +1016,10 @@ export function GeniePanel() {
         tables: m.tables,
         pivotTables: m.pivotTables,
         products: m.products,
+        webImages: m.webImages,
         workorders: m.workorders,
         proposals: m.proposals,
+        gmailEmails: m.gmailEmails,
         analysisPlan: m.analysisPlan,
         analysisQueries: m.analysisQueries,
         sources: m.sources,
@@ -1265,10 +1125,44 @@ export function GeniePanel() {
             if (parsed.event === 'products') {
               setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, products: parsed.products } : m));
             }
+            if (parsed.event === 'web_images' && Array.isArray(parsed.images) && parsed.images.length > 0) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, webImages: parsed.images as GenieWebImagePreview[] }
+                  : m
+              ));
+            }
             if (parsed.event === 'workorders' && parsed.workorders) {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
                   ? { ...m, workorders: parsed.workorders as GenieWorkorderCardsPayload }
+                  : m
+              ));
+            }
+            if (parsed.event === 'gmail_emails' && parsed.gmail_emails) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, gmailEmails: parsed.gmail_emails as GmailEmailsPayload }
+                  : m
+              ));
+            }
+            if (parsed.event === 'gmail_agent_context' && parsed.gmail_agent_context) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      gmailEmails: mergeGmailAgentContext(
+                        m.gmailEmails,
+                        parsed.gmail_agent_context as GmailAgentContext,
+                      ),
+                    }
+                  : m
+              ));
+            }
+            if (parsed.event === 'gmail_connect' && parsed.gmail_connect) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, gmailConnect: parsed.gmail_connect as GmailConnectPayload }
                   : m
               ));
             }

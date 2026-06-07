@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Sparkles } from "lucide-react";
+import { MessageCircle, Upload, Sparkles } from "lucide-react";
 import Image from "next/image";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -13,6 +13,7 @@ interface MobileUploadMethodDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectQuick: () => void;
+  onSelectText: () => void;
   onSelectFacebook: () => void;
   onSelectBulk: () => void;
 }
@@ -45,6 +46,7 @@ export function MobileUploadMethodDialog({
   isOpen,
   onClose,
   onSelectQuick,
+  onSelectText,
   onSelectFacebook,
   onSelectBulk,
 }: MobileUploadMethodDialogProps) {
@@ -71,6 +73,15 @@ export function MobileUploadMethodDialog({
           label="Quick upload"
           description="AI fills in details from your photos"
           onClick={() => { onClose(); onSelectQuick(); }}
+        />
+
+        <Separator />
+
+        <MethodRow
+          icon={<MessageCircle className="h-4 w-4 text-muted-foreground" />}
+          label="Text upload"
+          description="Send photos through Messages"
+          onClick={() => { onClose(); onSelectText(); }}
         />
 
         <Separator />

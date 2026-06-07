@@ -9,6 +9,14 @@ const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const OPENAI_LISTING_MODEL = 'gpt-5.4-mini';
+const INTERNAL_EDGE_SHARED_SECRET =
+  Deno.env.get('INTERNAL_EDGE_SHARED_SECRET') ||
+  Deno.env.get('NEST_INTERNAL_EDGE_SHARED_SECRET') ||
+  Deno.env.get('NEST_SUPABASE_SECRET_KEY') ||
+  Deno.env.get('SUPABASE_SECRET_KEY') ||
+  Deno.env.get('SUPABASE_SECRET_KEYS') ||
+  Deno.env.get('NEW_SUPABASE_SECRET_KEY') ||
+  '';
 
 // ============================================================
 // System Prompt - Human-like output style
@@ -129,8 +137,27 @@ const LISTING_SCHEMA = {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-internal-secret, x-client-info, apikey, content-type',
 };
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+function isInternalRequest(req: Request): boolean {
+  const received = req.headers.get('x-internal-secret')?.trim() ||
+    (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  return Boolean(
+    received &&
+    INTERNAL_EDGE_SHARED_SECRET &&
+    timingSafeEqual(received, INTERNAL_EDGE_SHARED_SECRET),
+  );
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -140,32 +167,42 @@ Deno.serve(async (req) => {
   try {
     console.log('🤖 [AI EDGE FUNCTION] === Request started ===');
 
+    const internalRequest = isInternalRequest(req);
+
     // Get auth header
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    if (!authHeader && !internalRequest) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Verify user with Supabase
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      global: {
-        headers: { Authorization: authHeader },
+    // Verify user with Supabase unless this is a trusted server-to-server call.
+    const supabase = createClient(
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY,
+      internalRequest ? {} : {
+        global: {
+          headers: { Authorization: authHeader! },
+        },
       },
-    });
+    );
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('❌ [AI EDGE FUNCTION] Auth error:', authError);
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (internalRequest) {
+      console.log('✓ [AI EDGE FUNCTION] Internal request authenticated');
+    } else {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        console.error('❌ [AI EDGE FUNCTION] Auth error:', authError);
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log('✓ [AI EDGE FUNCTION] User authenticated:', user.id);
     }
-
-    console.log('✓ [AI EDGE FUNCTION] User authenticated:', user.id);
 
     // Parse request body
     const { imageUrls, userHints } = await req.json();
@@ -360,7 +397,7 @@ ${JSON.stringify(LISTING_SCHEMA, null, 2)}`;
       console.log('Raw output:', outputText);
       
       // Try to extract JSON from markdown code blocks
-      let jsonMatch = outputText.match(/```json\n([\s\S]*?)\n```/) || outputText.match(/```\n([\s\S]*?)\n```/);
+      const jsonMatch = outputText.match(/```json\n([\s\S]*?)\n```/) || outputText.match(/```\n([\s\S]*?)\n```/);
       if (jsonMatch) {
         try {
           analysis = JSON.parse(jsonMatch[1]);
@@ -769,7 +806,7 @@ Return ONLY valid JSON (no markdown):
     return new Response(
       JSON.stringify({
         error: 'AI analysis failed',
-        details: error.message,
+        details: error instanceof Error ? error.message : 'Unknown error',
       }),
       {
         status: 500,

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Menu, X, Settings, LogOut, Sparkles, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Upload, Bell, SlidersHorizontal } from "lucide-react";
+import { Menu, X, Settings, LogOut, Sparkles, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Upload, Bell, SlidersHorizontal, MessageCircle } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
@@ -49,6 +49,10 @@ const SmartUploadModal = dynamic(
 );
 const MobileUploadMethodDialog = dynamic(
   () => import("./sell/mobile-upload-method-dialog").then((mod) => mod.MobileUploadMethodDialog),
+  { ssr: false }
+);
+const TextUploadDialog = dynamic(
+  () => import("./sell/text-upload-dialog").then((mod) => mod.TextUploadDialog),
   { ssr: false }
 );
 const BulkUploadSheet = dynamic(
@@ -163,6 +167,7 @@ export function MarketplaceHeader({
   const [sellRequirementModalOpen, setSellRequirementModalOpen] = React.useState(false);
   const [facebookModalOpen, setFacebookModalOpen] = React.useState(false);
   const [smartUploadModalOpen, setSmartUploadModalOpen] = React.useState(false);
+  const [textUploadDialogOpen, setTextUploadDialogOpen] = React.useState(false);
   const [mobileUploadMethodOpen, setMobileUploadMethodOpen] = React.useState(false);
   const [bulkUploadSheetOpen, setBulkUploadSheetOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
@@ -491,6 +496,16 @@ export function MarketplaceHeader({
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem
+                      onClick={() => setTextUploadDialogOpen(true)}
+                      className="cursor-pointer rounded-md"
+                    >
+                      <MessageCircle className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Text Upload</span>
+                        <span className="text-xs text-gray-500">Send photos in Messages</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
                       onClick={() =>
                         user ? setFacebookModalOpen(true) : setSellRequirementModalOpen(true)
                       }
@@ -528,18 +543,14 @@ export function MarketplaceHeader({
       {/* Mobile Space Navigator removed - now integrated into UnifiedFilterBar */}
 
       {/* Mobile Floating List Item Button - Only shown on homepage and product pages */}
-      {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && !isUploading && (
+      {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && !textUploadDialogOpen && !isUploading && (
         <div
           className="sm:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300"
         >
           <div className="flex items-center gap-3 justify-center">
             <button
               onClick={() => {
-                if (user) {
-                  setMobileUploadMethodOpen(true);
-                } else {
-                  setSellRequirementModalOpen(true);
-                }
+                setMobileUploadMethodOpen(true);
               }}
               className="relative transition-transform active:scale-95"
             >
@@ -875,14 +886,34 @@ export function MarketplaceHeader({
         isOpen={mobileUploadMethodOpen}
         onClose={() => setMobileUploadMethodOpen(false)}
         onSelectQuick={() => {
-          setSmartUploadModalOpen(true);
+          if (user) {
+            setSmartUploadModalOpen(true);
+          } else {
+            setSellRequirementModalOpen(true);
+          }
+        }}
+        onSelectText={() => {
+          setTextUploadDialogOpen(true);
         }}
         onSelectFacebook={() => {
-          setFacebookModalOpen(true);
+          if (user) {
+            setFacebookModalOpen(true);
+          } else {
+            setSellRequirementModalOpen(true);
+          }
         }}
         onSelectBulk={() => {
-          setBulkUploadSheetOpen(true);
+          if (user) {
+            setBulkUploadSheetOpen(true);
+          } else {
+            setSellRequirementModalOpen(true);
+          }
         }}
+      />
+
+      <TextUploadDialog
+        isOpen={textUploadDialogOpen}
+        onClose={() => setTextUploadDialogOpen(false)}
       />
 
       {/* Bulk Upload Sheet (Mobile) */}

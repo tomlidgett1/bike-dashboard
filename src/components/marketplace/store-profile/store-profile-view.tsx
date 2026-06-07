@@ -65,7 +65,7 @@ import { useProductImpressions, useStorePageView, useStoreSearchTracking } from 
 // ============================================================
 // Store Profile View
 // Hero-banner storefront for verified bicycle stores.
-// Tabs: Products · Rentals · Service · About · Reviews
+// Tabs: Products · Bikes · Rentals · Service · About · Reviews
 // ============================================================
 
 const BRAND_YELLOW = "#ffde59";
@@ -77,7 +77,11 @@ const RentalsSection = dynamic(() =>
   import("@/components/marketplace/store-profile/rentals-section").then((mod) => mod.RentalsSection),
 );
 
-type StoreTab = "home" | "products" | "rentals" | "service" | "about" | "reviews";
+type StoreTab = "home" | "products" | "bikes" | "rentals" | "service" | "about" | "reviews";
+
+function isBikesStorePage(category: { store_page?: string | null }) {
+  return category.store_page === "bikes";
+}
 type SortKey = "featured" | "price-asc" | "price-desc" | "newest";
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
@@ -544,13 +548,10 @@ function applyStoreProductFilters(
   if (options.showSaleOnly) {
     filtered = filtered.filter((p) => options.saleProductIds.has(p.id));
   }
-  const q = options.searchQuery.trim().toLowerCase();
-  if (q) {
-    filtered = filtered.filter(
-      (p) =>
-        (p.display_name ?? p.description ?? "").toLowerCase().includes(q) ||
-        (p.description ?? "").toLowerCase().includes(q),
-    );
+  const query = normaliseStoreSearchText(options.searchQuery);
+  if (query) {
+    const queryTokens = query.split(" ").filter(Boolean);
+    filtered = filtered.filter((p) => matchesStoreProductSearch(p, query, queryTokens));
   }
   switch (options.sort) {
     case "price-asc":
@@ -569,6 +570,37 @@ function applyStoreProductFilters(
       break;
   }
   return filtered;
+}
+
+function normaliseStoreSearchText(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function matchesStoreProductSearch(
+  product: MarketplaceProduct,
+  query: string,
+  queryTokens: string[],
+): boolean {
+  const haystack = normaliseStoreSearchText(
+    [
+      product.display_name,
+      product.description,
+      product.brand,
+      product.marketplace_category,
+      product.marketplace_subcategory,
+      product.marketplace_level_3_category,
+      product.category_name,
+      product.model_year,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  return haystack.includes(query) || queryTokens.every((token) => haystack.includes(token));
 }
 
 // ── Flat grid shown while the store product search box has a query ───────────
@@ -768,7 +800,10 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [sort, setSort] = React.useState<SortKey>("featured");
   const [storeSearch, setStoreSearch] = React.useState("");
+  const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
+  const mobileSearchInputRef = React.useRef<HTMLInputElement>(null);
   const [expandedCategories, setExpandedCategories] = React.useState<Set<string>>(new Set());
+  const [expandedBikesCategories, setExpandedBikesCategories] = React.useState<Set<string>>(new Set());
   const [compact, setCompact] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
   const [showSaleOnly, setShowSaleOnly] = React.useState(false);
@@ -793,7 +828,12 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   }, []);
 
   React.useEffect(() => {
-    if (activeTab !== "products" || store.product_feed_complete !== false) return;
+    if (
+      (activeTab !== "products" && activeTab !== "bikes") ||
+      store.product_feed_complete !== false
+    ) {
+      return;
+    }
 
     let cancelled = false;
     setLoadingFullProducts(true);
@@ -853,6 +893,20 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   );
 
   const isProductSearchActive = storeSearch.trim().length > 0;
+  const mobileSearchMode =
+    mobileSearchOpen && activeTab === "products" && allProducts.length > 0;
+
+  React.useEffect(() => {
+    if (activeTab !== "products") {
+      setMobileSearchOpen(false);
+    }
+  }, [activeTab]);
+
+  React.useEffect(() => {
+    if (mobileSearchMode) {
+      mobileSearchInputRef.current?.focus();
+    }
+  }, [mobileSearchMode]);
 
   const filterOptions = React.useMemo(
     () => ({ searchQuery: storeSearch, showSaleOnly, saleProductIds, sort }),
@@ -876,16 +930,52 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     return applyStoreProductFilters(unique, filterOptions);
   }, [allProducts, selectedCategory, store.categories, filterOptions]);
 
-  const sortedCategories = React.useMemo(() => {
-    const cats = selectedCategory
-      ? store.categories.filter((c) => c.name === selectedCategory)
-      : store.categories;
-    return cats.map((cat) => ({
-      ...cat,
-      products: applyStoreProductFilters(cat.products, filterOptions),
-      logo_url: cat.logo_url ?? null,
-    }));
-  }, [selectedCategory, store.categories, filterOptions]);
+  const buildSortedCategories = React.useCallback(
+    (page: "products" | "bikes") => {
+      const pageCategories = store.categories.filter((category) =>
+        page === "bikes"
+          ? isBikesStorePage(category)
+          : !isBikesStorePage(category),
+      );
+      const cats = selectedCategory
+        ? pageCategories.filter((c) => c.name === selectedCategory)
+        : pageCategories;
+      return cats.map((cat) => ({
+        ...cat,
+        products: applyStoreProductFilters(cat.products, filterOptions),
+        logo_url: cat.logo_url ?? null,
+      }));
+    },
+    [selectedCategory, store.categories, filterOptions],
+  );
+
+  const sortedCategories = React.useMemo(
+    () => buildSortedCategories("products"),
+    [buildSortedCategories],
+  );
+
+  const sortedBikesCategories = React.useMemo(
+    () => buildSortedCategories("bikes"),
+    [buildSortedCategories],
+  );
+
+  const productsSections = React.useMemo(
+    () =>
+      (store.sections ?? []).map((section) => ({
+        ...section,
+        categories: section.categories.filter((category) => !isBikesStorePage(category)),
+      })),
+    [store.sections],
+  );
+
+  const bikesCarouselCount = React.useMemo(
+    () =>
+      sortedBikesCategories.reduce(
+        (count, category) => count + (category.products.length > 0 ? 1 : 0),
+        0,
+      ),
+    [sortedBikesCategories],
+  );
 
   const visibleProductCount = isProductSearchActive
     ? searchedProducts.length
@@ -918,7 +1008,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
         window.open(href, "_blank", "noopener,noreferrer");
         return;
       }
-      const tabKeys: StoreTab[] = ["home", "products", "rentals", "service", "about", "reviews"];
+      const tabKeys: StoreTab[] = ["home", "products", "bikes", "rentals", "service", "about", "reviews"];
       if (tabKeys.includes(href as StoreTab)) {
         setActiveTab(href as StoreTab);
         setSelectedCategory(null);
@@ -938,7 +1028,8 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const tabs: { key: StoreTab; label: string; icon: typeof Package }[] = [
     ...(homeEnabled ? [{ key: "home" as StoreTab, label: "Home", icon: Home }] : []),
     { key: "products", label: "Products", icon: Package },
-    { key: "rentals", label: "Rentals", icon: Bike },
+    { key: "bikes", label: "Bikes", icon: Bike },
+    { key: "rentals", label: "Rentals", icon: CircleDot },
     { key: "service", label: "Service", icon: Wrench },
     { key: "about", label: "About", icon: Info },
     { key: "reviews", label: "Reviews", icon: Star },
@@ -981,8 +1072,42 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
           ? "border-b-2 border-[#ffde59]"
           : "border-b border-gray-200"
       )}>
-        <div className="px-5 sm:px-8 lg:px-10">
-          <div className="relative flex h-14 items-center justify-between gap-3 sm:h-16 sm:gap-4">
+        <div className={cn("px-5 sm:px-8 lg:px-10", mobileSearchMode && "max-md:px-3")}>
+          {mobileSearchMode ? (
+            <div className="relative flex h-14 w-full items-center md:hidden">
+              <Search className="absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                ref={mobileSearchInputRef}
+                type="text"
+                value={storeSearch}
+                onChange={(e) => setStoreSearch(e.target.value)}
+                placeholder={`Search ${store.store_name}…`}
+                className="h-11 w-full rounded-md border border-gray-200 bg-white pl-9 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (storeSearch) {
+                    setStoreSearch("");
+                    mobileSearchInputRef.current?.focus();
+                  } else {
+                    setMobileSearchOpen(false);
+                  }
+                }}
+                className="absolute right-2.5 top-1/2 z-10 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-700 cursor-pointer"
+                aria-label={storeSearch ? "Clear search" : "Close search"}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : null}
+
+          <div
+            className={cn(
+              "relative h-14 items-center justify-between gap-3 sm:h-16 sm:gap-4",
+              mobileSearchMode ? "hidden md:flex" : "flex",
+            )}
+          >
             {/* Store identity */}
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
 
@@ -1126,6 +1251,16 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                   )}
                 </div>
               )}
+              {activeTab === "products" && allProducts.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setMobileSearchOpen(true)}
+                  className="flex md:hidden h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors cursor-pointer"
+                  aria-label="Search products"
+                >
+                  <Search className="h-4 w-4" />
+                </button>
+              )}
               {actionButtons}
               <CartButton />
               {/* Back to Yellow Jersey — far-right pill */}
@@ -1153,7 +1288,8 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
       {/* ── Underline tab bar ────────────────────────────── */}
       <div className={cn(
         "bg-gray-50 border-b border-gray-200",
-        storeContentShell
+        storeContentShell,
+        mobileSearchMode && "hidden md:block",
       )}>
         <div className="flex items-center">
           {/* Tabs — scrollable */}
@@ -1210,37 +1346,12 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
       {/* Cover banner (optional) — scrolls beneath the sticky header.
           Hidden on Home, where the hero owns the cover imagery. */}
       {store.cover_image_url && activeTab !== "home" && (
-        <div className="relative h-32 sm:h-44 lg:h-52 w-full overflow-hidden bg-gray-100">
+        <div className={cn(
+          "relative h-32 sm:h-44 lg:h-52 w-full overflow-hidden bg-gray-100",
+          mobileSearchMode && "hidden md:block",
+        )}>
           <Image src={store.cover_image_url} alt="" fill sizes="100vw" className="object-cover" priority />
           <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
-        </div>
-      )}
-
-      {/* Mobile product search (the header hides it < md) */}
-      {activeTab === "products" && allProducts.length > 0 && (
-        <div className="md:hidden bg-gray-50 px-5 sm:px-8 pt-3">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1 min-w-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-              <input
-                type="text"
-                value={storeSearch}
-                onChange={(e) => setStoreSearch(e.target.value)}
-                placeholder="Search products…"
-                className="h-9 w-full rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
-              />
-              {storeSearch && (
-                <button
-                  type="button"
-                  onClick={() => setStoreSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-            <StoreSortButton sort={sort} onSortChange={setSort} />
-          </div>
         </div>
       )}
 
@@ -1253,7 +1364,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
 
       {/* ── Products filter bar ─────────────────────────── */}
       {activeTab === "products" && allProducts.length > 0 && (
-        <div className="bg-gray-50">
+        <div className={cn("bg-gray-50", mobileSearchMode && "hidden md:block")}>
           <div className={cn(
             "pt-3 pb-1",
             storeContentShell
@@ -1328,8 +1439,11 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 </div>
               )}
 
-              {/* Sort + density — desktop only (mobile sort sits beside search above) */}
-              <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="md:hidden">
+                  <StoreSortButton sort={sort} onSortChange={setSort} size="sm" />
+                </div>
+                <div className="hidden md:flex items-center gap-2">
                 <div className="flex items-center rounded-md border border-gray-200 overflow-hidden">
                   <button
                     type="button"
@@ -1355,6 +1469,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                   </button>
                 </div>
                 <StoreSortButton sort={sort} onSortChange={setSort} size="sm" />
+                </div>
               </div>
             </div>
           </div>
@@ -1409,7 +1524,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 ) : (
                   <ProductsTab
                     sortedCategories={sortedCategories}
-                    sections={store.sections ?? []}
+                    sections={productsSections}
                     pageLayout={store.homepage_config?.products_page_layout}
                     expandedCategories={expandedCategories}
                     setExpandedCategories={setExpandedCategories}
@@ -1427,6 +1542,37 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                     viewAsOwner
                       ? "Sync your inventory or add products to start showcasing your range here."
                       : "This store hasn't listed any products yet."
+                  }
+                />
+              ))}
+
+            {/* BIKES */}
+            {activeTab === "bikes" &&
+              (loadingFullProducts ? (
+                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-medium text-gray-500">
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
+                  Loading bikes...
+                </div>
+              ) : bikesCarouselCount > 0 ? (
+                <ProductsTab
+                  sortedCategories={sortedBikesCategories}
+                  sections={[]}
+                  pageLayout={store.homepage_config?.bikes_page_layout}
+                  expandedCategories={expandedBikesCategories}
+                  setExpandedCategories={setExpandedBikesCategories}
+                  compact={compact}
+                  isOwnProfile={viewAsOwner}
+                  storeId={store.id}
+                  trackAnalytics={!isOwnProfile}
+                />
+              ) : (
+                <EmptyState
+                  icon={Bike}
+                  title="No bikes yet"
+                  body={
+                    viewAsOwner
+                      ? "Add carousels to your Bikes page in Settings → Storefront → Carousels."
+                      : "This store hasn't listed any bikes yet."
                   }
                 />
               ))}

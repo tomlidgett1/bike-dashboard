@@ -16,8 +16,11 @@ import type {
   ApplyResult,
   CarouselSizeOption,
   ProductBrandCategoryChange,
+  GmailEmailActionProposal,
 } from '@/lib/types/genie-agent'
 import { NEW_CAROUSEL_SLOT } from '@/lib/types/genie-agent'
+import { executeGmailCreateDraft, executeGmailSendEmail } from '@/lib/composio/gmail'
+import { isComposioConfigured } from '@/lib/composio/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -463,6 +466,51 @@ export async function POST(request: NextRequest) {
         message: `Created Lightspeed category "${category.fullPathName || category.name}".`,
       }
       return NextResponse.json(result)
+    }
+
+    // ── Gmail send / draft via Composio ───────────────────────────────────
+    if (proposal.kind === 'gmail_email_action') {
+      if (!isComposioConfigured()) {
+        return NextResponse.json({ error: 'Gmail integration is not configured.' }, { status: 503 })
+      }
+
+      const gmailProposal = proposal as GmailEmailActionProposal
+      const recipient = (gmailProposal.recipient_email ?? '').trim()
+      if (!recipient) {
+        return NextResponse.json({ error: 'Recipient email is required.' }, { status: 400 })
+      }
+
+      const executeArgs = {
+        recipient_email: recipient,
+        subject: gmailProposal.subject ?? '',
+        body: gmailProposal.body ?? '',
+        cc: gmailProposal.cc,
+        bcc: gmailProposal.bcc,
+        is_html: gmailProposal.is_html,
+        connected_account_id: gmailProposal.connected_account_id ?? undefined,
+      }
+
+      try {
+        const result = gmailProposal.action === 'draft'
+          ? await executeGmailCreateDraft(user.id, executeArgs)
+          : await executeGmailSendEmail(user.id, executeArgs)
+
+        const resultMessage: ApplyResult = {
+          ok: true,
+          kind: 'gmail_email_action',
+          affected: 1,
+          message: gmailProposal.action === 'draft'
+            ? `Draft created for ${recipient}.`
+            : `Email sent to ${recipient}.`,
+        }
+        return NextResponse.json({ ...resultMessage, provider_result: result })
+      } catch (error) {
+        console.error('Apply gmail_email_action error:', error)
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : 'Gmail action failed.' },
+          { status: 502 },
+        )
+      }
     }
 
     // ── Price update ─────────────────────────────────────────────────────

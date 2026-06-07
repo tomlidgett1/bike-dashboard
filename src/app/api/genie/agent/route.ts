@@ -34,6 +34,7 @@ import {
   resolveInventoryItemImageUrls,
   shouldEmitStoreProductPreviews,
 } from '@/lib/genie/store-product-previews'
+import { searchWebImages, maybeSearchWebImagesForUserMessage } from '@/lib/genie/web-image-search'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
 import { resolveCategoryCreationTarget } from '@/lib/services/lightspeed/category-helpers'
 import {
@@ -65,8 +66,25 @@ import type {
   PriceUpdateProposal,
   ProductBrandCategoryUpdateProposal,
   LightspeedCategoryCreateProposal,
+  GmailEmailActionProposal,
+  GmailEmailsPayload,
+  GmailConnectPayload,
 } from '@/lib/types/genie-agent'
 import { NEW_CAROUSEL_SLOT } from '@/lib/types/genie-agent'
+import {
+  executeGmailCreateDraft,
+  executeGmailSendEmail,
+  getGmailConnection,
+  isComposioConfigured,
+  listGmailConnections,
+  mintGmailConnectLink,
+  readGmailMessages,
+  searchGmailEmails,
+} from '@/lib/composio/gmail'
+import { applyGmailPlanningPolicy, isGmailAddAccountIntent, isGmailConnectIntent } from '@/lib/composio/gmail-intent'
+import { GMAIL_SEARCH_PLAYBOOK } from '@/lib/composio/gmail-search-playbook'
+import { verifyQuestionAnswered } from '@/lib/genie/answer-verification'
+import { buildGmailAgentContextFromMessages, buildGmailAgentContextFromPayload } from '@/lib/genie/gmail-agent-context'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -116,6 +134,7 @@ const GenieExecutionPlanSchema = z.object({
   }).nullable(),
   execution_steps: z.array(z.string()).min(1).max(40),
   recheck_strategy: z.string().max(1200),
+  answer_success_criteria: z.array(z.string()).min(1).max(10).optional(),
   final_answer_shape: z.enum(['summary', 'table', 'chart', 'proposal', 'strategic_analysis', 'clarifying_question']),
 })
 
@@ -171,11 +190,12 @@ WHAT YOU CAN DO
 5. Lightspeed customers — answer customer purchase-history, top-customer, and product-purchaser questions from the SQL sales report table. Full phone/email contact extraction requires a future customer/contact table.
 6. Business performance analysis — build detailed profitability and growth analysis using multiple focused Lightspeed SQL queries when the user asks how to make more money, improve margin, reduce cash tied up, grow revenue, or find opportunities.
 7. Lightspeed catalogue edits — you CAN stage product brand/category changes for Lightspeed write-back. Pass brand_name or category_name directly (preferred when the store names them); unknown brands/categories are created in Lightspeed on approval. For nested categories use category_path (e.g. "Accessories/Winter Clearance") or parent_category_name. Use list_lightspeed_categories to browse existing categories. Use search_lightspeed_products to find items, then propose_product_brand_category_update for product assignments, or propose_lightspeed_category_create to add a category without moving products. The store must review and approve before anything is written.
-8. Product images — when the user wants to SEE specific products ("show me", "what does it look like", "picture of", or they name 1–4 identifiable items), pass show_product_images:true on search_lightspeed_inventory or search_store_products. Do NOT use this for rankings, totals, trends, stale-stock analysis, or broad "top N" questions.
+8. Product images — when the user wants to SEE specific products ("show me", "what does it look like", "picture of", or they name 1–4 identifiable items), pass show_product_images:true on search_lightspeed_inventory or search_store_products for YOUR store stock. For external bikes, parts, gear, colours, or reference photos not tied to your inventory, use search_web_images with a specific query. Do NOT use either for rankings, totals, trends, stale-stock analysis, or broad "top N" questions.
 9. Web research — search the live web for current cycling, product, pricing, standards, compatibility, supplier, event, and market information when the answer depends on up-to-date external facts.
+10. Gmail — connect via get_gmail_connection_status (Connect Gmail card in chat). When connected, add another mailbox the same way — the card lists connected accounts and an Add another Gmail button. When connected, answer email questions by searching the real inbox. Every Gmail task runs through a hidden execution plan first — follow execution_steps for tool order and search passes. Stage send/draft with propose_gmail_email for approval only. NEVER send the user to the Composio dashboard — use the in-chat Connect card.
 
 HOW TO WORK
-- Context first: every request may be a continuation. Read the recent conversation and any private structured context from previous Genie tool results before calling tools. If the current question can be answered from that context, answer directly and do not re-run slow Lightspeed or web tools just to rediscover the same records. Resolve pronouns like "she", "he", "that bike", "those items", and "these products" against the most recent relevant structured context. Use tools only when the context is missing, stale by explicit user request, ambiguous, or insufficient for the answer.
+- Context first: every request may be a continuation. Read the recent conversation and any private structured context from previous Genie tool results before calling tools. If the current question can be answered from that context, answer directly and do not re-run slow Lightspeed or web tools just to rediscover the same records. Resolve pronouns like "she", "he", "that bike", "those items", "these products", "that email", "this message", and "reply to them" against the most recent relevant structured context. Use tools only when the context is missing, stale by explicit user request, ambiguous, or insufficient for the answer.
 - Read first: call get_store_carousels / search_store_products / get_product_costs / list_active_discounts to ground yourself in the store's ACTUAL data before proposing anything.
 - Then propose: call exactly one propose_* tool to stage the change. You never apply changes yourself — the store reviews a preview and clicks Apply.
 - For pivot table or crosstab requests where the user specifies row fields, column fields, and values: use run_lightspeed_sql_query with visual.pivot_table. Return detail rows in SQL (do not pre-aggregate away the row/column dimensions), then set row_fields, column_fields, value_field, and aggregation (sum, count, avg, min, max, count_distinct). Example: row_fields ["category_name"], column_fields ["sale_month"], value_field "gross_sales", aggregation "sum".
@@ -191,7 +211,11 @@ HOW TO WORK
 - Expiry: if the store gives a deadline ("until Sunday"), compute the ISO date from today (${today}) and pass it as ends_at. No deadline → omit it.
 - For pricing: call get_product_costs first to see cost data, then propose_price_update with either markup_percent (applied to cost) or explicit new_prices (id→price map). Prices are always rounded to 2 decimal places. Never propose a price below cost.
 - For Lightspeed brand/category changes: do not refuse by saying you cannot change Lightspeed directly. You can stage an approval proposal. Call search_lightspeed_products (or search_lightspeed_inventory) to find the item(s), then propose_product_brand_category_update with brand_name and/or category_name, category_path, or category_id. If the brand or category does not exist yet, pass the name or path anyway — it will be created in Lightspeed when the store approves. To create a category without assigning products, use propose_lightspeed_category_create. The Apply button performs the actual Lightspeed write-back.
-- For product images: only pass show_product_images:true when the user is asking to see specific products visually. Keep it to a handful of clear matches — never for aggregate analytics, rankings, or large result sets.
+- For product images: pass show_product_images:true when the user wants to see specific store inventory visually. Use search_web_images for reference photos of bikes, parts, gear, colours, or setups that are not your in-stock items. Keep both to a handful of clear matches — never for aggregate analytics, rankings, or large result sets.
+- For Gmail: follow the hidden execution plan execution_steps in order. ANY inbox/mail question requires planned search_gmail passes before answering — never skip planning or guess from one scan. For issue/warranty/what-happened questions, read message bodies via search_gmail message_bodies or read_gmail_messages — never answer from subjects/snippets alone. For rep/contact questions use contact_analysis.earliest_likely_sales_contact. Connect/setup → get_gmail_connection_status. Send/draft → propose_gmail_email. Not connected → Connect Gmail card in chat.
+- Gmail follow-ups: when the user asks to reply, send, or draft a response to an email you already showed, reuse the prior turn's private gmail context (message_id, connected_account_id, from, subject, body). Call propose_gmail_email with recipient_email parsed from the sender's from field, Re: subject, and a draft body — do not re-search unless that context is missing or they name a different message.
+
+${GMAIL_SEARCH_PLAYBOOK}
 
 STYLE
 - Concise and confident. No preamble, no "let me…".
@@ -201,6 +225,13 @@ STYLE
 - For strategic business analysis, produce an executive summary, key findings, ranked opportunities, recommended actions, and the exact data period used. Prefer tables for ranked opportunities and charts for trends when useful.
 - If a non-Lightspeed request is ambiguous or matches nothing, say so in one line and ask a single sharp question. For Lightspeed misses, recheck once with a different SQL strategy before asking.
 - Stay on storefront management and Lightspeed sales/inventory/cost/profit/margin/customer activity. Politely redirect anything else.
+
+ANSWER VERIFICATION (mandatory before every final user-visible reply when using tools)
+- Ask yourself: "Have we actually answered the user's question?" If not, keep using tools — do not reply yet.
+- Before you send the final answer, call verify_question_answered with the user's question, your draft answer, remaining_gaps (empty only when truly ready), and success_criteria from the plan when available.
+- If verify_question_answered returns not_ready, do NOT reply to the user — run more tools / rechecks until gaps are closed, then verify again.
+- If a tool returns answer_readiness or recheck_required with gaps, treat those as remaining_gaps until resolved.
+- Never present partial tool output as a complete answer (e.g. warranty@ as "the rep" when the user asked for a sales rep).
 
 LIGHTSPEED INSTRUCTIONS
 ${getLightspeedInstructions()}${formatExecutionPlanForPrompt(executionPlan)}`
@@ -213,6 +244,7 @@ interface Message {
   tables?: unknown[]
   pivotTables?: unknown[]
   proposals?: GenieProposal[]
+  gmailEmails?: GmailEmailsPayload
   products?: unknown[]
   workorders?: GenieWorkorderCardsPayload
   analysisPlan?: GenieAnalysisPlanPayload
@@ -328,8 +360,56 @@ function compactWorkordersForContext(payload: GenieWorkorderCardsPayload): strin
   ].join('\n')
 }
 
+function compactGmailForContext(payload: GmailEmailsPayload): string {
+  if (!payload?.emails?.length && !payload.agent_context?.message_bodies?.length) return ''
+
+  const lines = [
+    `gmail title=${compactContextText(payload.title, 120)} query=${compactContextText(payload.query, 160)}`,
+    payload.connected_mailboxes?.length
+      ? `mailboxes=${payload.connected_mailboxes.map((mailbox) => mailbox.email_address ?? mailbox.label).join(', ')}`
+      : '',
+    `emails count=${payload.emails.length}`,
+    ...payload.emails.slice(0, 8).map((email) => {
+      const parts = [
+        `message_id=${email.message_id}`,
+        email.connected_account_id ? `connected_account_id=${email.connected_account_id}` : '',
+        email.thread_id ? `thread_id=${email.thread_id}` : '',
+        email.mailbox_label ? `mailbox=${compactContextText(email.mailbox_label, 80)}` : '',
+        `from=${compactContextText(email.from, 180)}`,
+        email.to ? `to=${compactContextText(email.to, 120)}` : '',
+        `subject=${compactContextText(email.subject, 160)}`,
+        email.date_label ? `date=${email.date_label}` : '',
+        `snippet=${compactContextText(email.snippet, 220)}`,
+      ].filter(Boolean)
+      return `- ${parts.join(', ')}`
+    }),
+  ]
+
+  const bodies = payload.agent_context?.message_bodies ?? []
+  if (bodies.length > 0) {
+    lines.push('message_bodies:')
+    for (const body of bodies.slice(0, 5)) {
+      lines.push([
+        `- message_id=${body.message_id}`,
+        body.connected_account_id ? `connected_account_id=${body.connected_account_id}` : '',
+        body.thread_id ? `thread_id=${body.thread_id}` : '',
+        `from=${compactContextText(body.from, 180)}`,
+        body.to ? `to=${compactContextText(body.to, 120)}` : '',
+        `subject=${compactContextText(body.subject, 160)}`,
+        `body=${compactContextText(body.body_text, 900)}`,
+      ].filter(Boolean).join(', '))
+    }
+  }
+
+  return lines.filter(Boolean).join('\n')
+}
+
 function privateContextForMessage(message: Message): string {
   const sections: string[] = []
+
+  if (message.gmailEmails?.emails?.length || message.gmailEmails?.agent_context?.message_bodies?.length) {
+    sections.push(compactGmailForContext(message.gmailEmails))
+  }
 
   if (message.workorders?.workorders?.length) {
     sections.push(compactWorkordersForContext(message.workorders))
@@ -402,30 +482,33 @@ function buildOrchestratorInstructions(storeName: string): string {
 Return only the structured routing decision required by the schema. Do not answer the user.
 
 Routes:
-- casual_chat: greetings, thanks, short follow-ups, meta questions like "what can you do?", basic clarification, and normal chat that does not need store data, Lightspeed data, web search, or a storefront proposal.
+- casual_chat: greetings, thanks, short follow-ups, meta questions like "what can you do?", basic clarification, and normal chat that does not need store data, Lightspeed data, web search, Gmail, or a storefront proposal.
 - lightspeed_sql: any request about Lightspeed sales, customers, sold products, sale transactions, revenue, profit, margin, cost, services sold, product purchasers, current inventory/stock availability, or live work orders / repairs / service jobs (open, in-progress, finished, pickup-ready, work order details).
-- storefront_action: requests to read/change Yellow Jersey storefront carousels, discounts, product prices, store product lists, or to stage Lightspeed product brand/category write-back proposals (including creating new Lightspeed categories).
+- storefront_action: requests to read/change Yellow Jersey storefront carousels, discounts, product prices, store product lists, staging Lightspeed product brand/category write-back proposals (including creating new Lightspeed categories), connecting or checking Gmail/Composio email, searching inbox, or sending email.
 - web_research: requests requiring current public external information, market facts, product compatibility, standards, events, suppliers, or internet lookup.
 - business_analysis: broad strategy requests about making the business more profitable, making more money, improving revenue, improving margin, finding opportunities, reducing wasted cash, reducing stale stock, or understanding what actions would improve the business.
 - mixed: requests combining multiple non-casual routes.
 - unsupported: off-topic requests outside store management, Lightspeed reporting, and cycling/store research.
 
 Continuation rule:
-- Route the latest user message in the context of the full conversation, including private structured context appended to prior assistant messages. Short follow-ups, pronouns, "this/that/these", or "she/he/they" inherit the route implied by the referenced prior store data, work order, product set, customer, or web result. Do not classify a follow-up as casual_chat just because it is short.
+- Route the latest user message in the context of the full conversation, including private structured context appended to prior assistant messages. Short follow-ups, pronouns, "this/that/these", "she/he/they", "that email", "reply to it", or "send that" inherit the route implied by the referenced prior store data, work order, product set, customer, gmail message, or web result. Do not classify a follow-up as casual_chat just because it is short.
 
 Routing examples:
 - "How does our pricing compare to other stores/competitors/market?" = mixed, because it needs store pricing data plus live web research.
 - "Are we overpriced on these products?" = mixed when it references competitors, market, online, or other stores; storefront_action if it only asks about internal cost/margin.
 - "What bottom bracket does Jackson Trotman need on this bike?" = mixed, because it needs private customer sales/work-order history to identify the bike, then public compatibility research.
 - "What brake pads does this customer's Trek need?" = mixed when customer context/history is needed; web_research only if the exact bike/model is already explicitly provided in the conversation.
+- "Connect my Gmail" or "connect composio gmail" = storefront_action with needs_plan=true (plan get_gmail_connection_status).
+- Any email/inbox/Gmail question (search, summarise, counts, earliest/latest contact, supplier correspondence, invoices, send, draft) = storefront_action with needs_plan=true — the planner must sequence Gmail tool calls before the executor runs.
 
 Planning rule:
 - route=casual_chat must have needs_plan=false.
 - route=business_analysis must have needs_plan=true.
 - route=lightspeed_sql should have needs_plan=false for narrow direct reporting, stock, customer, product, sales, cost, profit, margin, inventory, or SQL questions that can be answered with one focused tool call/query.
 - route=lightspeed_sql should have needs_plan=true only for complex multi-pass analysis, cross-metric diagnosis, trend/comparison work, or broad questions needing several SQL lenses.
-- route=storefront_action should have needs_plan=false for direct carousel, discount, price, product, or Lightspeed brand/category write-back proposals.
-- route=storefront_action should have needs_plan=true only for broad multi-step merchandising/homepage/campaign work.
+- route=storefront_action should have needs_plan=false for direct carousel, discount, price, product, or Lightspeed brand/category write-back proposals only.
+- ANY Gmail/email/inbox task (connect, search, summarise, send, draft, rep/contact research) under storefront_action MUST have needs_plan=true — never needs_plan=false for Gmail.
+- route=storefront_action should have needs_plan=true for broad multi-step merchandising/homepage/campaign work and for all Gmail tasks.
 - route=web_research must have needs_plan=false. Execute web search directly.
 - route=mixed should have needs_plan=true only when the mixed request needs deliberate sequencing across private store data and web research, or is otherwise complex.
 
@@ -512,7 +595,14 @@ Planning rules:
 - For customer rankings, the correct grain is: aggregate line rows into distinct sale transactions first, then aggregate those sale totals by customer_id/customer_full_name. Exclude walk-in/unassigned customers unless the user asks to include them.
 - In sql_strategy.joins_needed, use [] when the current SQL table is enough. Mention future customer/contact joins only if the requested answer needs phone/email/address or customer metadata not in the sales report table.
 - Include concrete tool argument guidance in execution_steps, but never write a user-visible plan.
-- For broad strategy, set final_answer_shape to strategic_analysis.`
+- Every plan MUST include answer_success_criteria: 1–5 concrete checks that prove the user's question was answered (e.g. "Name the earliest likely sales rep with date and email", "Total matched count from full scan").
+- The final execution_steps entry MUST be: "Call verify_question_answered; only respond if ready."
+- primary_tools MUST include verify_question_answered for any task that uses other tools.
+- For broad strategy, set final_answer_shape to strategic_analysis.
+- For ANY Gmail/email/inbox task, primary_tools must list the Gmail tools needed (get_gmail_connection_status, search_gmail, read_gmail_messages when body/content is needed, propose_gmail_email). execution_steps must list each search_gmail pass explicitly (query, scan_depth, sort_order) — never one vague "check email" step. For issue/warranty/summary/what-happened questions, plan search_gmail then read_gmail_messages on the top message_ids if bodies are needed. For rep/first-contact/supplier-history questions, plan 2–4 search passes: broad from:domain full scan; exclude warranty/support/noreply; sales-keyword pass; optional from:"Name" follow-up. Set sql_strategy to null and date_range null unless the question includes explicit calendar filters for the Gmail query. final_answer_shape is usually summary; use clarifying_question only if the plan cannot resolve ambiguity after planned searches.
+
+GMAIL PLANNING REFERENCE (embed in execution_steps, do not quote to user):
+${GMAIL_SEARCH_PLAYBOOK}`
 }
 
 async function createGenieExecutionPlan(args: {
@@ -7803,6 +7893,7 @@ function toAnalysisPlanPayload(plan: GenieExecutionPlan): GenieAnalysisPlanPaylo
     sql_strategy_summary: strategyParts.length ? strategyParts.join(' · ') : null,
     date_range_label: dateRangeLabel,
     recheck_strategy: plan.recheck_strategy || null,
+    answer_success_criteria: plan.answer_success_criteria ?? null,
   }
 }
 
@@ -8135,7 +8226,111 @@ function emitWorkorderCards(emit: Emit, payload: GenieWorkorderCardsPayload | nu
   emit({ event: 'workorders', workorders: payload })
 }
 
-function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs: VisualPrefs) {
+function emitGmailConnect(
+  emit: Emit,
+  connectUrl: string | null | undefined,
+  reason: GmailConnectPayload['reason'],
+  extras?: Pick<GmailConnectPayload, 'accounts' | 'can_add_more'>,
+) {
+  const url = connectUrl?.trim()
+  if (!url && !extras?.accounts?.length) return
+  emit({
+    event: 'gmail_connect',
+    gmail_connect: {
+      url: url ?? '',
+      reason,
+      ...extras,
+    } satisfies GmailConnectPayload,
+  })
+}
+
+async function buildGmailEmailActionProposal(
+  userId: string,
+  emit: Emit,
+  args: {
+    action: 'send' | 'draft'
+    summary: string
+    recipient_email: string
+    subject: string
+    body: string
+    cc?: string[]
+    bcc?: string[]
+    is_html?: boolean
+    connected_account_id?: string
+  },
+): Promise<{ proposal?: GmailEmailActionProposal; output: object }> {
+  const recipient = args.recipient_email.trim()
+  const subject = args.subject.trim()
+  const body = args.body.trim()
+
+  if (!recipient) {
+    return { output: { error: 'recipient_email is required.' } }
+  }
+  if (!subject && !body) {
+    return { output: { error: 'At least a subject or body is required.' } }
+  }
+
+  const connection = await getGmailConnection(userId, args.connected_account_id?.trim() || undefined).catch((error) => {
+    const message = error instanceof Error ? error.message : 'Gmail connection check failed.'
+    emitGmailConnect(emit, null, 'send')
+    return { error: message } as const
+  })
+  if (connection && 'error' in connection) {
+    return { output: { connected: false, error: connection.error } }
+  }
+  if (!connection || connection.status !== 'ACTIVE') {
+    let connectUrl: string | null = null
+    if (isComposioConfigured()) {
+      try {
+        const link = await mintGmailConnectLink(userId)
+        connectUrl = link.url
+      } catch {
+        connectUrl = null
+      }
+    }
+    emitGmailConnect(emit, connectUrl, 'send')
+    return {
+      output: {
+        connected: false,
+        connect_url: connectUrl,
+        message: 'Gmail is not connected yet. Ask the store to connect Gmail before sending or drafting.',
+      },
+    }
+  }
+
+  const bodyPreview = body.slice(0, 120) || '(Empty body)'
+  const description =
+    args.action === 'draft'
+      ? `This will create a Gmail draft addressed to ${recipient} with subject '${subject || '(No subject)'}' and body '${bodyPreview}'. No sensitive data is being shared yet.`
+      : `This will send a Gmail email addressed to ${recipient} with subject '${subject || '(No subject)'}' and body '${bodyPreview}'. No sensitive data is being shared yet.`
+
+  const proposal: GmailEmailActionProposal = {
+    kind: 'gmail_email_action',
+    action: args.action,
+    summary: args.summary,
+    recipient_email: recipient,
+    subject,
+    body,
+    cc: args.cc,
+    bcc: args.bcc,
+    is_html: args.is_html,
+    connected_account_id: connection.id,
+    description,
+    sharing_data: [{ label: 'Emails', value: recipient }],
+  }
+
+  return { proposal, output: { staged: true, action: args.action, recipient_email: recipient } }
+}
+
+function buildAgentTools(
+  supabase: Supa,
+  userId: string,
+  emit: Emit,
+  visualPrefs: VisualPrefs,
+  latestUserMessage: string,
+) {
+  const wantsGmailConnectCard =
+    isGmailConnectIntent(latestUserMessage) || isGmailAddAccountIntent(latestUserMessage)
   const proposalToolOutput = (result: { proposal?: GenieProposal; output: object }) => {
     if (result.proposal) emit({ event: 'proposal', proposal: result.proposal })
     return result.output
@@ -8145,6 +8340,31 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
     webSearchTool({
       searchContextSize: 'low',
       externalWebAccess: true,
+    }),
+    tool({
+      name: 'search_web_images',
+      description: 'Search the web for reference product or cycling photos when the user wants to see what something looks like. Use for specific bikes, parts, gear, colours, setup examples, or "what does X look like" — not for analytics, rankings, or abstract non-visual questions. Prefer show_product_images on store inventory tools when the user wants to see their own stock.',
+      parameters: z.object({
+        query: z.string().describe('Specific visual search, e.g. "2024 Trek Fuel EX 8", "Shimano XT rear derailleur", "gravel bike setup".'),
+        limit: z.number().int().min(1).max(6).optional().describe('Number of images to show. Defaults to 4.'),
+      }),
+      async execute({ query, limit }) {
+        emitStatus(emit, 'image_search', `Finding images for "${query.trim()}"...`)
+        const result = await searchWebImages(query, { limit })
+        if (result.images.length > 0) {
+          emit({ event: 'web_images', images: result.images, query: result.query })
+        }
+        emitStatus(emit, 'image_search_done', 'Images ready')
+        return {
+          query: result.query,
+          found: result.images.length,
+          images: result.images.map(image => ({
+            title: image.title,
+            domain: image.domain,
+          })),
+          message: result.message,
+        }
+      },
     }),
     tool({
       name: 'record_lightspeed_plan',
@@ -8166,6 +8386,61 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         })
         emit({ event: 'reasoning_done', text: cleanSteps.map(step => `- ${step}`).join('\n') })
         return { status: 'planned', steps: cleanSteps }
+      },
+    }),
+    tool({
+      name: 'record_answer_recheck',
+      description: 'Record the next lookup strategy when tool results, answer_readiness gaps, or recheck_required show the user question is not answered yet. Call before the follow-up tool (Gmail search, SQL, web, etc.).',
+      parameters: z.object({
+        reason: z.string().min(3).describe('Why the current evidence does not answer the user question.'),
+        next_strategy: z.string().min(3).describe('The materially different next tool/query strategy.'),
+        previous_tool: z.string().optional(),
+        changed_inputs: z.array(z.string()).max(8).optional(),
+      }),
+      async execute(args) {
+        const reason = args.reason.trim()
+        const nextStrategy = args.next_strategy.trim()
+        const changedInputs = (args.changed_inputs ?? []).map((input) => input.trim()).filter(Boolean)
+        emitStatus(emit, 'rechecking', `Rechecking: ${nextStrategy}`)
+        emit({
+          event: 'reasoning_done',
+          text: [
+            'Answer recheck:',
+            `- Reason: ${reason}`,
+            `- Next: ${nextStrategy}`,
+            args.previous_tool ? `- Previous tool: ${args.previous_tool}` : null,
+            changedInputs.length ? `- Changed inputs: ${changedInputs.join('; ')}` : null,
+          ].filter(Boolean).join('\n'),
+        })
+        return {
+          status: 'recheck_recorded',
+          reason,
+          next_strategy: nextStrategy,
+          previous_tool: args.previous_tool ?? null,
+          changed_inputs: changedInputs,
+        }
+      },
+    }),
+    tool({
+      name: 'verify_question_answered',
+      description: 'MANDATORY before the final user-visible answer whenever you used tools this turn. Pass remaining_gaps=[] only when the draft fully answers the user question with evidence. If not_ready, run more tools — do not reply yet.',
+      parameters: z.object({
+        user_question: z.string().min(3).describe('The user question you are answering, in their words.'),
+        draft_answer: z.string().min(3).describe('Your draft final answer — not yet shown to the user.'),
+        remaining_gaps: z.array(z.string()).max(10).describe('Empty only when every part of the question is answered with evidence.'),
+        success_criteria: z.array(z.string()).max(10).optional().describe('From the execution plan answer_success_criteria — pass through so each check is validated.'),
+      }),
+      async execute(args) {
+        const result = verifyQuestionAnswered({
+          user_question: args.user_question.trim(),
+          draft_answer: args.draft_answer.trim(),
+          remaining_gaps: args.remaining_gaps ?? [],
+          success_criteria: args.success_criteria,
+        })
+        if (!result.ready) {
+          emitStatus(emit, 'rechecking', 'Answer incomplete — continuing lookup')
+        }
+        return result
       },
     }),
     tool({
@@ -8859,6 +9134,184 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
         return proposalToolOutput(await buildLightspeedCategoryCreateProposal(userId, args))
       },
     }),
+    tool({
+      name: 'get_gmail_connection_status',
+      description: 'Check which Gmail accounts the store has connected via Composio. Always use when the user asks to connect, link, set up, or add another Gmail mailbox — never refuse. Emits the in-chat Gmail card for connect/add-another flows.',
+      parameters: z.object({
+        show_connect_card: z.boolean().optional().describe('When true, show the Gmail connect card in chat (connect or add another mailbox). Auto-set for connect/add intents.'),
+      }),
+      async execute(args) {
+        if (!isComposioConfigured()) {
+          return { configured: false, connected: false, message: 'Gmail integration is not configured on this environment.' }
+        }
+        const connections = await listGmailConnections(userId)
+        const link = await mintGmailConnectLink(userId).catch((error) => {
+          console.error('[gmail] mint connect link failed:', error)
+          return null
+        })
+        const accounts = connections.map((connection) => ({
+          id: connection.id,
+          label: connection.label,
+          email_address: connection.email_address ?? null,
+          status: connection.status,
+        }))
+        const showCard = args.show_connect_card ?? (wantsGmailConnectCard || connections.length === 0)
+        if (showCard) {
+          emitGmailConnect(emit, link?.url ?? null, connections.length > 0 ? 'add_account' : 'status', {
+            accounts,
+            can_add_more: true,
+          })
+        }
+        if (connections.length > 0) {
+          return {
+            configured: true,
+            connected: true,
+            accounts,
+            gmail: connections[0],
+            connect_url: link?.url ?? null,
+            can_add_more: true,
+            connect_card_shown: showCard,
+            message:
+              connections.length === 1
+                ? 'One Gmail account is connected. The Gmail card in chat can add another mailbox.'
+                : `${connections.length} Gmail accounts are connected. The Gmail card in chat can add another mailbox.`,
+          }
+        }
+        return {
+          configured: true,
+          connected: false,
+          accounts: [],
+          connect_url: link?.url ?? null,
+          can_add_more: true,
+          connect_card_shown: showCard,
+          message: 'Gmail is not connected. Use the Gmail card in chat to authorise Gmail.',
+        }
+      },
+    }),
+    tool({
+      name: 'search_gmail',
+      description: 'Search connected Gmail with Gmail query syntax. Searches all connected mailboxes by default. Use before ANY email answer. scan_depth "full" paginates entire matching history. Returns emails (with mailbox_label when multiple accounts), scan_stats, sender_summary, contact_analysis, and message_bodies.',
+      parameters: z.object({
+        query: z.string().optional().describe('Gmail search query (from:, subject:, after:, before:, has:attachment, etc.). Defaults to in:inbox.'),
+        scan_depth: z.enum(['quick', 'full']).optional().describe('full = paginate all matching mail for history/counts/earliest; quick = one page for recent previews.'),
+        max_results: z.number().int().min(1).max(50).optional().describe('Emails shown in the UI card only — does not limit full scans.'),
+        sort_order: z.enum(['newest', 'oldest']).optional().describe('Sort scanned results by date. Use oldest for earliest/first questions after scan_depth full.'),
+        connected_account_id: z.string().optional().describe('Optional Composio connected account id to search one mailbox only. Omit to search all connected Gmail accounts.'),
+        user_question: z.string().min(3).describe('The user question this search must help answer — required for answer_readiness gaps.'),
+      }),
+      async execute(args) {
+        if (!isComposioConfigured()) {
+          return { error: 'Gmail integration is not configured.' }
+        }
+        const connections = await listGmailConnections(userId)
+        if (connections.length === 0) {
+          const link = await mintGmailConnectLink(userId).catch((error) => {
+            console.error('[gmail] mint connect link failed:', error)
+            return null
+          })
+          emitGmailConnect(emit, link?.url ?? null, 'search')
+          return {
+            connected: false,
+            connect_url: link?.url ?? null,
+            message: 'Connect Gmail before searching emails.',
+          }
+        }
+        emitStatus(emit, 'gmail', `Searching Gmail${args.query ? ` for "${args.query.trim()}"` : ''}...`)
+        const payload = await searchGmailEmails(userId, {
+          query: args.query,
+          max_results: args.max_results,
+          sort_order: args.sort_order,
+          scan_depth: args.scan_depth,
+          user_question: args.user_question,
+          connected_account_id: args.connected_account_id,
+        })
+        if (payload.emails.length > 0 || payload.scan_stats?.scan_mode === 'full') {
+          const { message_bodies: _agentBodies, ...uiPayload } = payload
+          const agentContext = buildGmailAgentContextFromPayload(payload)
+          emit({
+            event: 'gmail_emails',
+            gmail_emails: {
+              ...uiPayload,
+              agent_context: agentContext.message_bodies?.length ? agentContext : undefined,
+            },
+          })
+        }
+        emitStatus(emit, 'gmail_done', 'Gmail search done')
+        return {
+          query: payload.query,
+          scan_depth: args.scan_depth ?? payload.scan_stats?.scan_mode ?? 'quick',
+          sort_order: args.sort_order ?? 'newest',
+          total: payload.emails.length,
+          truncated: payload.truncated ?? false,
+          scan_stats: payload.scan_stats ?? null,
+          connected_mailboxes: payload.connected_mailboxes ?? [],
+          sender_summary: payload.sender_summary ?? [],
+          contact_analysis: payload.contact_analysis ?? null,
+          answer_readiness: payload.answer_readiness ?? null,
+          message_bodies: payload.message_bodies ?? [],
+          emails: payload.emails,
+        }
+      },
+    }),
+    tool({
+      name: 'read_gmail_messages',
+      description: 'Fetch full email body text for specific message_ids from a prior search_gmail result. Pass connected_account_id from emails[].connected_account_id when multiple mailboxes are connected. REQUIRED before answering issue/warranty/what-happened/summary questions when message_bodies is empty.',
+      parameters: z.object({
+        message_ids: z.array(z.string()).min(1).max(5).describe('Gmail messageId values from search_gmail emails[].message_id'),
+        connected_account_id: z.string().optional().describe('Composio connected account id from search_gmail emails[].connected_account_id — required when the same message_id could exist across mailboxes.'),
+        user_question: z.string().min(3).describe('The user question these bodies must help answer.'),
+      }),
+      async execute(args) {
+        if (!isComposioConfigured()) {
+          return { error: 'Gmail integration is not configured.' }
+        }
+        const connections = await listGmailConnections(userId)
+        if (connections.length === 0) {
+          return { connected: false, message: 'Connect Gmail before reading messages.' }
+        }
+        emitStatus(emit, 'gmail', `Reading ${args.message_ids.length} email${args.message_ids.length === 1 ? '' : 's'}...`)
+        const messages = await readGmailMessages(userId, {
+          message_ids: args.message_ids,
+          connected_account_id: args.connected_account_id ?? (connections.length === 1 ? connections[0].id : undefined),
+        })
+        const agentContext = buildGmailAgentContextFromMessages(messages)
+        if (agentContext.message_bodies?.length) {
+          emit({ event: 'gmail_agent_context', gmail_agent_context: agentContext })
+        }
+        emitStatus(emit, 'gmail_done', 'Email content ready')
+        return {
+          user_question: args.user_question.trim(),
+          messages,
+          hydrated: messages.filter((message) => message.body_text.trim().length > 80).length,
+          instruction:
+            messages.length === 0
+              ? 'No bodies returned — check message_ids from search_gmail.'
+              : 'Use body_text to answer the user question with specific fault/details/quotes.',
+        }
+      },
+    }),
+    tool({
+      name: 'propose_gmail_email',
+      description: 'Stage a Gmail send or draft for human approval. Never sends immediately — the store must Allow on the Gmail card. Use action "send" or "draft". For replies, pass connected_account_id from prior gmail context when multiple mailboxes are connected.',
+      parameters: z.object({
+        action: z.enum(['send', 'draft']),
+        summary: z.string(),
+        recipient_email: z.string(),
+        subject: z.string(),
+        body: z.string(),
+        connected_account_id: z.string().optional().describe('Composio connected account id from prior gmail context (emails[].connected_account_id).'),
+        cc: z.array(z.string()).optional(),
+        bcc: z.array(z.string()).optional(),
+        is_html: z.boolean().optional(),
+      }),
+      async execute(args) {
+        if (!isComposioConfigured()) {
+          return { configured: false, connected: false, message: 'Gmail integration is not configured on this environment.' }
+        }
+        emitStatus(emit, 'gmail', args.action === 'draft' ? 'Preparing Gmail draft...' : 'Preparing Gmail send...')
+        return proposalToolOutput(await buildGmailEmailActionProposal(userId, emit, args))
+      },
+    }),
   ]
 
   return tools.filter(candidate => {
@@ -8869,6 +9322,7 @@ function buildAgentTools(supabase: Supa, userId: string, emit: Emit, visualPrefs
 
 function statusForTool(toolName: string): { phase: string; text: string } {
   if (toolName === 'web_search' || toolName === 'web_search_preview' || toolName === 'web_search_call') return { phase: 'web_search', text: 'Searching web' }
+  if (toolName === 'search_web_images') return { phase: 'image_search', text: 'Finding images' }
   if (toolName === 'record_lightspeed_plan') return { phase: 'planning', text: 'Planning lookup' }
   if (toolName === 'record_lightspeed_recheck') return { phase: 'rechecking', text: 'Alternate query' }
   if (toolName === 'run_lightspeed_sql_query') return { phase: 'lightspeed_sales', text: 'Running SQL' }
@@ -8896,6 +9350,12 @@ function statusForTool(toolName: string): { phase: string; text: string } {
   if (toolName === 'get_lightspeed_workorder') return { phase: 'lightspeed_workorders', text: 'Work order' }
   if (toolName === 'propose_product_brand_category_update') return { phase: 'tool', text: 'Preparing Lightspeed edits' }
   if (toolName === 'propose_lightspeed_category_create') return { phase: 'tool', text: 'Preparing Lightspeed category' }
+  if (toolName === 'verify_question_answered') return { phase: 'thinking', text: 'Checking answer' }
+  if (toolName === 'record_answer_recheck') return { phase: 'rechecking', text: 'Alternate query' }
+  if (toolName === 'search_gmail') return { phase: 'gmail', text: 'Searching Gmail' }
+  if (toolName === 'read_gmail_messages') return { phase: 'gmail', text: 'Reading email content' }
+  if (toolName === 'propose_gmail_email') return { phase: 'gmail', text: 'Preparing Gmail action' }
+  if (toolName === 'get_gmail_connection_status') return { phase: 'gmail', text: 'Checking Gmail' }
   if (toolName.startsWith('propose_')) return { phase: 'tool', text: 'Preparing changes' }
   return { phase: 'tool', text: `Running ${toolName.replaceAll('_', ' ')}` }
 }
@@ -8989,13 +9449,24 @@ export async function POST(request: NextRequest) {
         try {
           emit({ event: 'status', phase: 'thinking', text: 'Thinking' })
 
+          const latestUserMessage = latestUserText(messages)
+          const autoWebImages = await maybeSearchWebImagesForUserMessage(latestUserMessage)
+          if (autoWebImages) {
+            emit({ event: 'status', phase: 'image_search', text: 'Finding images' })
+            emit({ event: 'web_images', images: autoWebImages.images, query: autoWebImages.query })
+            emit({ event: 'status', phase: 'image_search_done', text: 'Images ready' })
+          }
+
           const inputMessages = toAgentInputMessages(messages)
           const orchestrationStartedAt = Date.now()
-          const orchestration = await createGenieOrchestrationDecision({
-            storeName,
-            inputMessages,
-            signal: request.signal,
-          })
+          let orchestration = applyGmailPlanningPolicy(
+            await createGenieOrchestrationDecision({
+              storeName,
+              inputMessages,
+              signal: request.signal,
+            }),
+            latestUserMessage,
+          )
           finalRoute = orchestration.route
           console.info('[Genie Agent] orchestration', {
             requestId,
@@ -9107,7 +9578,7 @@ export async function POST(request: NextRequest) {
             name: 'Yellow Jersey Store Agent',
             model: EXECUTOR_MODEL,
             instructions: buildSystemPrompt(storeName, executionPlan),
-            tools: buildAgentTools(supabase, user.id, emit, visualPrefs),
+            tools: buildAgentTools(supabase, user.id, emit, visualPrefs, latestUserMessage),
             modelSettings: {
               parallelToolCalls: false,
               store: false,

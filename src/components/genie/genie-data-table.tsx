@@ -3,12 +3,19 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import { ArrowDown, ArrowUp, ArrowUpDown, Download } from "lucide-react";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { downloadTableCsv } from "@/lib/utils/genie-visual-export";
 import {
   formatTableCellValue,
-  formatVisualValue,
   type VisualDateFormat,
   type VisualValueFormat,
 } from "@/lib/genie/visual-format";
@@ -29,12 +36,7 @@ export interface GenieTablePayload {
   rows: Array<Record<string, string | number | null>>;
 }
 
-type SortDirection = "asc" | "desc";
-
-interface TableSortState {
-  key: string;
-  direction: SortDirection;
-}
+type GenieTableRow = Record<string, string | number | null>;
 
 function compareTableValues(
   a: string | number | null | undefined,
@@ -59,17 +61,6 @@ function compareTableValues(
   }
 
   return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
-}
-
-function sortedTableRows(table: GenieTablePayload, sort: TableSortState | null) {
-  if (!sort) return table.rows;
-  const column = table.columns.find((col) => col.key === sort.key);
-  if (!column) return table.rows;
-
-  return [...table.rows].sort((a, b) => {
-    const result = compareTableValues(a[column.key], b[column.key], column.format);
-    return sort.direction === "asc" ? result : -result;
-  });
 }
 
 function columnMinWidth(format?: VisualValueFormat, align?: "left" | "right") {
@@ -105,27 +96,50 @@ export function GenieDataTable({
   dateFormat?: VisualDateFormat;
   columnFormats?: Record<string, { valueFormat?: VisualValueFormat | ""; dateFormat?: VisualDateFormat }>;
 }) {
-  const [sort, setSort] = React.useState<TableSortState | null>(null);
-  const rows = sortedTableRows(table, sort);
+  const [sorting, setSorting] = React.useState<SortingState>([]);
   const isPanel = variant === "panel";
   const isDashboard = variant === "dashboard";
   const cellTextClass = isPanel || isDashboard ? "text-xs" : "text-sm";
   const headerPad = isPanel || isDashboard ? "px-3 py-2" : "px-4 py-2";
   const cellPad = isPanel || isDashboard ? "px-3 py-2" : "px-4 py-2";
 
-  const toggleSort = (key: string) => {
-    setSort((prev) =>
-      prev?.key === key
-        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
-        : { key, direction: "asc" },
-    );
-  };
+  const columns = React.useMemo<ColumnDef<GenieTableRow>[]>(
+    () =>
+      table.columns.map((column) => ({
+        id: column.key,
+        accessorKey: column.key,
+        header: column.label,
+        meta: column,
+        sortingFn: (rowA, rowB, columnId) =>
+          compareTableValues(rowA.getValue(columnId), rowB.getValue(columnId), column.format),
+        cell: ({ getValue }) => {
+          const columnFormat = columnFormats?.[column.key];
+          return formatTableCellValue(getValue() as string | number | null | undefined, {
+            format: columnFormat?.valueFormat || column.format,
+            dateFormat: columnFormat?.dateFormat ?? dateFormat,
+          });
+        },
+      })),
+    [columnFormats, dateFormat, table.columns],
+  );
+
+  const tableModel = useReactTable({
+    data: table.rows,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getRowId: (_row, index) => String(index),
+  });
+
+  const rows = tableModel.getRowModel().rows;
 
   const handleDownloadCsv = () => {
     downloadTableCsv({
       title: table.title,
       columns: table.columns,
-      rows,
+      rows: rows.map((row) => row.original),
     });
   };
 
@@ -138,58 +152,64 @@ export function GenieDataTable({
       <div className={cn("overflow-x-auto", !embedded && "border-t border-border/70")}>
         <table className={cn("w-max min-w-full border-collapse", cellTextClass)}>
           <thead>
-            <tr className={isPanel ? "bg-muted/45" : "bg-muted/50"}>
-              {table.columns.map((column) => (
-                <th
-                  key={column.key}
-                  title={column.label}
-                  aria-sort={
-                    sort?.key === column.key
-                      ? sort.direction === "asc" ? "ascending" : "descending"
-                      : "none"
-                  }
-                  className={cn(
-                    columnMinWidth(column.format, column.align),
-                    headerPad,
-                    "border-b border-border/70 font-semibold leading-none text-foreground whitespace-nowrap",
-                    column.align === "right" ? "text-right" : "text-left",
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleSort(column.key)}
-                    className={cn(
-                      "inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-sm outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/30",
-                      column.align === "right" ? "justify-end" : "justify-start",
-                    )}
-                  >
-                    <span>{column.label}</span>
-                    {sort?.key === column.key ? (
-                      sort.direction === "asc"
-                        ? <ArrowUp className={cn("shrink-0", isPanel ? "h-3 w-3" : "h-3.5 w-3.5")} />
-                        : <ArrowDown className={cn("shrink-0", isPanel ? "h-3 w-3" : "h-3.5 w-3.5")} />
-                    ) : (
-                      <ArrowUpDown className={cn("shrink-0 opacity-45", isPanel ? "h-3 w-3" : "h-3.5 w-3.5")} />
-                    )}
-                  </button>
-                </th>
-              ))}
-            </tr>
+            {tableModel.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id} className={isPanel ? "bg-muted/45" : "bg-muted/50"}>
+                {headerGroup.headers.map((header) => {
+                  const column = header.column.columnDef.meta as GenieTableColumn;
+                  const sorted = header.column.getIsSorted();
+
+                  return (
+                    <th
+                      key={header.id}
+                      title={column.label}
+                      aria-sort={
+                        sorted === "asc"
+                          ? "ascending"
+                          : sorted === "desc"
+                            ? "descending"
+                            : "none"
+                      }
+                      className={cn(
+                        columnMinWidth(column.format, column.align),
+                        headerPad,
+                        "border-b border-border/70 font-semibold leading-none text-foreground whitespace-nowrap",
+                        column.align === "right" ? "text-right" : "text-left",
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={header.column.getToggleSortingHandler()}
+                        className={cn(
+                          "inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-sm outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/30",
+                          column.align === "right" ? "justify-end" : "justify-start",
+                        )}
+                      >
+                        <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                        {sorted === "asc" ? (
+                          <ArrowUp className={cn("shrink-0", isPanel ? "h-3 w-3" : "h-3.5 w-3.5")} />
+                        ) : sorted === "desc" ? (
+                          <ArrowDown className={cn("shrink-0", isPanel ? "h-3 w-3" : "h-3.5 w-3.5")} />
+                        ) : (
+                          <ArrowUpDown className={cn("shrink-0 opacity-45", isPanel ? "h-3 w-3" : "h-3.5 w-3.5")} />
+                        )}
+                      </button>
+                    </th>
+                  );
+                })}
+              </tr>
+            ))}
           </thead>
           <tbody>
-            {rows.map((row, rowIndex) => (
-              <tr key={rowIndex} className="border-t border-border/50">
-                {table.columns.map((column) => {
-                  const columnFormat = columnFormats?.[column.key];
-                  const display = formatTableCellValue(row[column.key], {
-                    format: columnFormat?.valueFormat || column.format,
-                    dateFormat: columnFormat?.dateFormat ?? dateFormat,
-                  });
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-border/50">
+                {row.getVisibleCells().map((cell) => {
+                  const column = cell.column.columnDef.meta as GenieTableColumn;
+                  const display = String(cell.getValue() ?? "—");
                   const numeric = isNumericColumn(column);
 
                   return (
                     <td
-                      key={column.key}
+                      key={cell.id}
                       title={!numeric && display !== "—" ? display : undefined}
                       className={cn(
                         columnMinWidth(column.format, column.align),
@@ -199,12 +219,25 @@ export function GenieDataTable({
                         !numeric && "max-w-[18rem] truncate",
                       )}
                     >
-                      {display}
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   );
                 })}
               </tr>
             ))}
+            {rows.length === 0 ? (
+              <tr className="border-t border-border/50">
+                <td
+                  colSpan={table.columns.length}
+                  className={cn(
+                    cellPad,
+                    "h-20 text-center text-xs font-medium text-muted-foreground",
+                  )}
+                >
+                  No table data
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

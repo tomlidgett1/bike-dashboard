@@ -22,6 +22,7 @@ export interface DayHours {
 }
 
 export type CarouselSize = 'featured' | 'normal' | 'compact';
+export type StoreCarouselPage = 'products' | 'bikes';
 export type StoreCategorySource = 'lightspeed' | 'custom' | 'brand' | 'uber' | 'display_override';
 export type EditableStoreCategorySource = Exclude<StoreCategorySource, 'display_override'>;
 
@@ -38,6 +39,8 @@ export interface StoreCategory {
   carousel_size?: CarouselSize;
   logo_url?: string | null;
   hide_title?: boolean;
+  section_id?: string | null;
+  store_page?: StoreCarouselPage;
   created_at?: string;
   updated_at?: string;
 }
@@ -245,6 +248,8 @@ export interface StoreHomepageConfig {
   section_order: HomeSectionKey[];
   /** Ordered page layout for the Products tab — interleaves sections and standalone carousels. */
   products_page_layout?: Array<{ type: 'section' | 'carousel'; id: string }>;
+  /** Ordered carousel layout for the Bikes tab. */
+  bikes_page_layout?: Array<{ type: 'carousel'; id: string }>;
   badges: {
     /** Show the live Open/Closed pill next to opening hours (Visit section + About tab). */
     show_open_status: boolean;
@@ -266,6 +271,7 @@ export interface StoreCategoryWithProducts {
   section_id?: string | null;
   logo_url?: string | null;
   hide_title?: boolean;
+  store_page?: StoreCarouselPage;
 }
 
 export interface StoreSection {
@@ -300,6 +306,7 @@ export interface CreateCategoryRequest {
   brand_name?: string;
   product_ids?: string[];
   display_order?: number;
+  store_page?: StoreCarouselPage;
 }
 
 export interface UpdateCategoryRequest {
@@ -313,6 +320,7 @@ export interface UpdateCategoryRequest {
   section_id?: string | null;
   logo_url?: string | null;
   hide_title?: boolean;
+  store_page?: StoreCarouselPage;
 }
 
 export interface CreateSectionRequest {

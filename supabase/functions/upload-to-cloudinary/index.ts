@@ -11,9 +11,38 @@ import { buildCloudinaryUrls, CLOUDINARY_EAGER_TRANSFORMS } from "../_shared/clo
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-internal-secret, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+const INTERNAL_EDGE_SHARED_SECRET =
+  Deno.env.get("INTERNAL_EDGE_SHARED_SECRET") ||
+  Deno.env.get("NEST_INTERNAL_EDGE_SHARED_SECRET") ||
+  Deno.env.get("NEST_SUPABASE_SECRET_KEY") ||
+  Deno.env.get("SUPABASE_SECRET_KEY") ||
+  Deno.env.get("SUPABASE_SECRET_KEYS") ||
+  Deno.env.get("NEW_SUPABASE_SECRET_KEY") ||
+  "";
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+function isInternalRequest(req: Request): boolean {
+  const received =
+    req.headers.get("x-internal-secret")?.trim() ||
+    (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  return Boolean(
+    received &&
+      INTERNAL_EDGE_SHARED_SECRET &&
+      timingSafeEqual(received, INTERNAL_EDGE_SHARED_SECRET),
+  );
+}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -33,27 +62,33 @@ serve(async (req) => {
       );
     }
 
+    const internalRequest = isInternalRequest(req);
+
     // Verify authentication
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    if (!authHeader && !internalRequest) {
       return new Response(
         JSON.stringify({ error: "No authorization header" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    let userId = "text-upload";
+    if (!internalRequest) {
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+        { global: { headers: { Authorization: authHeader! } } }
       );
+
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        return new Response(
+          JSON.stringify({ error: "Unauthorized" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      userId = user.id;
     }
 
     // Check content type to determine if it's a file upload or URL
@@ -76,7 +111,7 @@ serve(async (req) => {
         );
       }
 
-      console.log(`📸 [CLOUDINARY] Downloading from URL for user ${user.id}, listing ${listingId}`);
+      console.log(`📸 [CLOUDINARY] Downloading from URL for user ${userId}, listing ${listingId}`);
       console.log(`📸 [CLOUDINARY] URL: ${imageUrl.substring(0, 100)}...`);
 
       // Download the image with browser-like headers to avoid 403 Forbidden
@@ -134,7 +169,7 @@ serve(async (req) => {
       }
 
       console.log(`🔍 [CLOUDINARY] ====== UPLOAD REQUEST ======`);
-      console.log(`🔍 [CLOUDINARY] user: ${user.id}`);
+      console.log(`🔍 [CLOUDINARY] user: ${userId}`);
       console.log(`🔍 [CLOUDINARY] listingId: ${listingId}`);
       console.log(`🔍 [CLOUDINARY] index received: ${index}`);
       console.log(`🔍 [CLOUDINARY] file name: ${file.name}`);
@@ -155,7 +190,9 @@ serve(async (req) => {
     }
 
     const timestamp = Math.floor(Date.now() / 1000);
-    const publicId = `bike-marketplace/listings/${user.id}/${listingId}/${timestamp}-${index}`;
+    const publicId = internalRequest
+      ? `bike-marketplace/text-upload/${listingId}/${timestamp}-${index}`
+      : `bike-marketplace/listings/${userId}/${listingId}/${timestamp}-${index}`;
 
     // Upload to Cloudinary (Basic Auth — no manual signature; see Cloudinary upload API docs)
     const cloudinaryForm = new FormData();
@@ -241,4 +278,3 @@ serve(async (req) => {
     );
   }
 });
-

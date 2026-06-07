@@ -186,7 +186,7 @@ export async function fetchPublicStoreProfile(
     productsQuery.limit(10000),
     supabase
       .from('store_categories')
-      .select('id, name, source, lightspeed_category_id, brand_name, product_ids, display_order, carousel_size, section_id, logo_url, hide_title')
+      .select('id, name, source, lightspeed_category_id, brand_name, product_ids, display_order, carousel_size, section_id, logo_url, hide_title, store_page')
       .eq('user_id', storeId)
       .eq('is_active', true)
       .neq('source', 'display_override')
@@ -218,7 +218,11 @@ export async function fetchPublicStoreProfile(
       .order('display_order', { ascending: true })
 
     customCategories = fallback.data
-      ? fallback.data.map((category: any) => ({ ...category, section_id: null }))
+      ? fallback.data.map((category: any) => ({
+          ...category,
+          section_id: null,
+          store_page: 'products',
+        }))
       : null
   }
 
@@ -327,6 +331,7 @@ export async function fetchPublicStoreProfile(
           section_id: category.section_id ?? null,
           logo_url: category.logo_url ?? null,
           hide_title: category.hide_title ?? false,
+          store_page: category.store_page === 'bikes' ? 'bikes' : 'products',
           products: marketplaceProducts,
           product_count: marketplaceProducts.length,
         })

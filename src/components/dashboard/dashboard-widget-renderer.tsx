@@ -11,7 +11,7 @@ export function DashboardWidgetRenderer({ widget }: { widget: DashboardWidget })
 
   switch (widget.payload.type) {
     case "chart":
-      return <GenieChart chart={widget.payload.data} embedded />;
+      return <GenieChart chart={widget.payload.data} variant="dashboard" embedded />;
     case "table":
       return (
         <GenieDataTable

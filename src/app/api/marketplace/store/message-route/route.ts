@@ -23,6 +23,11 @@ function getInternalSecret(): string | null {
   return (
     process.env.INTERNAL_EDGE_SHARED_SECRET?.trim() ||
     process.env.NEST_INTERNAL_EDGE_SHARED_SECRET?.trim() ||
+    process.env.NEST_SUPABASE_SECRET_KEY?.trim() ||
+    process.env.NEST_NEW_SUPABASE_SECRET_KEY?.trim() ||
+    process.env.NEST_SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+    process.env.NEW_SUPABASE_SECRET_KEY?.trim() ||
+    process.env.SUPABASE_SECRET_KEY?.trim() ||
     null
   );
 }
@@ -87,7 +92,15 @@ export async function POST(request: Request) {
   const messageHref = messageNumber ? toSmsHref(messageNumber) : null;
 
   if (!nestRouteUrl || !internalSecret || !messageHref) {
-    return json({ error: "Store messaging is not configured yet." }, 500);
+    console.error("[store-message-route] missing configuration", {
+      nestRouteUrl: Boolean(nestRouteUrl),
+      internalSecret: Boolean(internalSecret),
+      messageHref: Boolean(messageHref),
+    });
+    const error = !messageHref
+      ? "Nest iMessage number is not configured yet."
+      : "Store messaging is not configured yet.";
+    return json({ error }, 500);
   }
 
   try {

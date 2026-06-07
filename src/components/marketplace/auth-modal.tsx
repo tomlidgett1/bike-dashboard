@@ -59,11 +59,19 @@ export function AuthModal({
     destination,
     mode: authMode,
   }: {
-    destination: "/marketplace" | "/settings";
+    destination: string;
     mode: "signin" | "signup";
   }) => {
     onOpenChange(false);
-    if (destination === "/settings" || authMode === "signup") {
+    const currentPath =
+      typeof window === "undefined"
+        ? ""
+        : `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (
+      destination === "/settings" ||
+      authMode === "signup" ||
+      (destination && destination !== currentPath)
+    ) {
       router.push(destination);
     }
     router.refresh();

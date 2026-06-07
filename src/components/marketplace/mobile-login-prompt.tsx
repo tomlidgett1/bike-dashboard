@@ -3,7 +3,10 @@
 import * as React from "react";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { getBrowserOAuthBaseUrl } from "@/lib/auth/oauth-site-url";
+import {
+  buildBrowserOAuthRedirectTo,
+  getCurrentReturnPath,
+} from "@/lib/auth/oauth-site-url";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -55,11 +58,12 @@ export function MobileLoginPrompt() {
   const handleGoogleSignIn = async () => {
     try {
       setGoogleLoading(true);
+      const returnPath = getCurrentReturnPath();
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
+          redirectTo: buildBrowserOAuthRedirectTo(returnPath),
           queryParams: {
             access_type: "offline",
             prompt: "consent",
@@ -78,11 +82,12 @@ export function MobileLoginPrompt() {
   const handleAppleSignIn = async () => {
     try {
       setAppleLoading(true);
+      const returnPath = getCurrentReturnPath();
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "apple",
         options: {
-          redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
+          redirectTo: buildBrowserOAuthRedirectTo(returnPath),
           scopes: "email name",
         },
       });

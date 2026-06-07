@@ -5,7 +5,10 @@ import { forwardRef, useImperativeHandle, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Lock, Mail, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { getBrowserOAuthBaseUrl } from "@/lib/auth/oauth-site-url";
+import {
+  buildBrowserOAuthRedirectTo,
+  getCurrentReturnPath,
+} from "@/lib/auth/oauth-site-url";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +17,7 @@ import { cn } from "@/lib/utils";
 type AuthMode = "signin" | "signup";
 
 type AuthSuccess = {
-  destination: "/marketplace" | "/settings";
+  destination: string;
   mode: AuthMode;
 };
 
@@ -105,10 +108,11 @@ export const AuthCard = forwardRef<AuthCardHandle, AuthCardProps>(
       try {
         setGoogleLoading(true);
         setError(null);
+        const returnPath = getCurrentReturnPath();
         const { error } = await supabase.auth.signInWithOAuth({
           provider: "google",
           options: {
-            redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
+            redirectTo: buildBrowserOAuthRedirectTo(returnPath),
             queryParams: { access_type: "offline", prompt: "consent" },
           },
         });
@@ -123,10 +127,11 @@ export const AuthCard = forwardRef<AuthCardHandle, AuthCardProps>(
       try {
         setAppleLoading(true);
         setError(null);
+        const returnPath = getCurrentReturnPath();
         const { error } = await supabase.auth.signInWithOAuth({
           provider: "apple",
           options: {
-            redirectTo: `${getBrowserOAuthBaseUrl()}/auth/callback?next=/marketplace`,
+            redirectTo: buildBrowserOAuthRedirectTo(returnPath),
             scopes: "email name",
           },
         });
@@ -143,6 +148,8 @@ export const AuthCard = forwardRef<AuthCardHandle, AuthCardProps>(
       setError(null);
 
       try {
+        const returnPath = getCurrentReturnPath();
+
         if (mode === "signin") {
           const { data, error } = await supabase.auth.signInWithPassword({ email, password });
           if (error) throw error;
@@ -158,7 +165,7 @@ export const AuthCard = forwardRef<AuthCardHandle, AuthCardProps>(
               destination:
                 profile?.account_type === "bicycle_store" && profile?.bicycle_store === true
                   ? "/settings"
-                  : "/marketplace",
+                  : returnPath,
               mode,
             });
           }
@@ -174,7 +181,7 @@ export const AuthCard = forwardRef<AuthCardHandle, AuthCardProps>(
           const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
           if (signInError) throw signInError;
 
-          completeAuth({ destination: "/marketplace", mode });
+          completeAuth({ destination: returnPath, mode });
         }
       } catch (err: unknown) {
         setError(getErrorMessage(err));

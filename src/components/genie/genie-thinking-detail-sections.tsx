@@ -176,6 +176,17 @@ export function GenieThinkingPlanSection({
           </div>
         ) : null}
 
+        {plan.answer_success_criteria && plan.answer_success_criteria.length > 0 ? (
+          <div className="rounded-md bg-gray-50 px-2.5 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Answer checks</p>
+            <ul className="mt-1 list-inside list-disc space-y-0.5 text-[11px] leading-relaxed text-gray-600">
+              {plan.answer_success_criteria.map((criterion) => (
+                <li key={criterion}>{criterion}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         {plan.recheck_strategy ? (
           <p className="text-[11px] text-gray-500">
             <span className="font-medium text-gray-600">Recheck:</span> {plan.recheck_strategy}

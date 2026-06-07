@@ -734,7 +734,9 @@ export function StoreHomepageManager() {
         onEnabledChange={(v) => patchFeaturedCarousels({ enabled: v })}
       >
         {(() => {
-          const cats = (store.categories ?? []).filter((c) => c.products.length > 0);
+          const cats = (store.categories ?? []).filter(
+            (c) => c.products.length > 0 && (c.store_page ?? "products") !== "bikes",
+          );
           return (
             <div className="space-y-4">
               {/* Products per row */}

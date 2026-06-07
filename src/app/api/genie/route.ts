@@ -10,6 +10,7 @@ import type {
 import { createClient } from '@/lib/supabase/server'
 import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms'
 import { compactGenieProgressText } from '@/lib/genie/progress-text'
+import { searchWebImages, maybeSearchWebImagesForUserMessage } from '@/lib/genie/web-image-search'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -26,6 +27,7 @@ Help people make great cycling decisions. Actually understand what they need fir
 
 TOOLS (use them silently — never say "let me search"):
 - search_marketplace_products → Yellow Jersey's live, in-stock inventory. This is your home turf.
+- search_web_images → find reference photos from the web when the user wants to SEE something: bike models, parts, gear, colours, setup examples, "what does X look like", "show me pictures of". Use 1–3 focused queries for identifiable items. Do NOT use for rankings, analytics, or abstract questions with no visual subject.
 - web search → live specs, reviews, comparisons, current pricing, model-year info, technique.
 
 HOW TO HELP
@@ -294,6 +296,14 @@ export async function POST(request: NextRequest) {
         try {
           emit({ event: 'status', phase: 'planning', text: 'Thinking' })
 
+          const latestUserMessage = [...messages].reverse().find(m => m.role === 'user')?.content ?? ''
+          const autoWebImages = await maybeSearchWebImagesForUserMessage(latestUserMessage)
+          if (autoWebImages) {
+            emit({ event: 'status', phase: 'image_search', text: 'Finding images' })
+            emit({ event: 'web_images', images: autoWebImages.images, query: autoWebImages.query })
+            emit({ event: 'status', phase: 'image_search_done', text: 'Images ready' })
+          }
+
           const inputMessages = messages.map(m => ({
             role: m.role as 'user' | 'assistant',
             content: m.content,
@@ -312,6 +322,26 @@ export async function POST(request: NextRequest) {
                   query: {
                     type: 'string',
                     description: 'Short keyword(s): simple nouns like "gravel bike", "helmet", "wheelset". Avoid adjectives and full sentences.',
+                  },
+                },
+                required: ['query'],
+              },
+            },
+            {
+              type: 'function' as const,
+              name: 'search_web_images',
+              description: 'Search the web for reference product or cycling photos when the user wants to see what something looks like. Use for specific bikes, parts, gear, colours, or setup examples — not for analytics or broad lists.',
+              strict: null,
+              parameters: {
+                type: 'object',
+                properties: {
+                  query: {
+                    type: 'string',
+                    description: 'Specific visual search, e.g. "2024 Trek Fuel EX 8", "Shimano XT rear derailleur", "gravel bike setup photos".',
+                  },
+                  limit: {
+                    type: 'integer',
+                    description: 'Number of images to return (1–6). Defaults to 4.',
                   },
                 },
                 required: ['query'],
@@ -368,6 +398,9 @@ export async function POST(request: NextRequest) {
                   if (item.name === 'search_marketplace_products') {
                     emit({ event: 'status', phase: 'product_search', text: 'Marketplace' })
                   }
+                  if (item.name === 'search_web_images') {
+                    emit({ event: 'status', phase: 'image_search', text: 'Finding images' })
+                  }
                 }
               }
 
@@ -405,6 +438,37 @@ export async function POST(request: NextRequest) {
                     type: 'function_call_output',
                     call_id: fc.callId,
                     output: JSON.stringify({ error: 'Search temporarily unavailable' }),
+                  })
+                }
+              }
+              if (fc.name === 'search_web_images') {
+                try {
+                  const args = JSON.parse(fc.arguments || '{}') as { query?: unknown; limit?: unknown }
+                  const query = typeof args.query === 'string' ? args.query.trim() : ''
+                  const limit = typeof args.limit === 'number' ? args.limit : undefined
+                  const result = await searchWebImages(query, { limit })
+                  if (result.images.length > 0) {
+                    emit({ event: 'web_images', images: result.images, query: result.query })
+                  }
+                  emit({ event: 'status', phase: 'image_search_done', text: 'Images ready' })
+                  toolOutputs.push({
+                    type: 'function_call_output',
+                    call_id: fc.callId,
+                    output: JSON.stringify({
+                      query: result.query,
+                      found: result.images.length,
+                      images: result.images.map(image => ({
+                        title: image.title,
+                        domain: image.domain,
+                      })),
+                      message: result.message,
+                    }),
+                  })
+                } catch {
+                  toolOutputs.push({
+                    type: 'function_call_output',
+                    call_id: fc.callId,
+                    output: JSON.stringify({ error: 'Image search temporarily unavailable' }),
                   })
                 }
               }

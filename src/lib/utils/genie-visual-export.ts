@@ -200,8 +200,10 @@ export async function downloadChartCardAsPng(options: {
   title: string;
   subtitle?: string;
 }) {
-  const svg = options.cardEl.querySelector("svg");
-  if (!svg) throw new Error("Chart not ready");
+  const chartCanvas = options.cardEl.querySelector("canvas");
+  const chartSvg = options.cardEl.querySelector("svg");
+  const chartEl = chartCanvas ?? chartSvg;
+  if (!chartEl) throw new Error("Chart not ready");
 
   const padding = 24;
   const titleLineHeight = 22;
@@ -210,9 +212,9 @@ export async function downloadChartCardAsPng(options: {
   const headerHeight =
     titleLineHeight + (options.subtitle ? subtitleLineHeight : 0) + headerGap;
 
-  const svgRect = svg.getBoundingClientRect();
-  const width = Math.ceil(svgRect.width + padding * 2);
-  const height = Math.ceil(headerHeight + svgRect.height + padding);
+  const chartRect = chartEl.getBoundingClientRect();
+  const width = Math.ceil(chartRect.width + padding * 2);
+  const height = Math.ceil(headerHeight + chartRect.height + padding);
 
   const canvas = document.createElement("canvas");
   const scale = 2;
@@ -235,20 +237,24 @@ export async function downloadChartCardAsPng(options: {
     context.fillText(options.subtitle, padding, padding + titleLineHeight + 4);
   }
 
-  const chartPng = await svgElementToPng(svg, svgRect.width, svgRect.height);
-  const chartUrl = URL.createObjectURL(chartPng);
+  if (chartCanvas instanceof HTMLCanvasElement) {
+    context.drawImage(chartCanvas, padding, headerHeight, chartRect.width, chartRect.height);
+  } else if (chartSvg instanceof SVGElement) {
+    const chartPng = await svgElementToPng(chartSvg, chartRect.width, chartRect.height);
+    const chartUrl = URL.createObjectURL(chartPng);
 
-  try {
-    const chartImage = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error("Failed to compose chart image"));
-      img.src = chartUrl;
-    });
+    try {
+      const chartImage = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Failed to compose chart image"));
+        img.src = chartUrl;
+      });
 
-    context.drawImage(chartImage, padding, headerHeight, svgRect.width, svgRect.height);
-  } finally {
-    URL.revokeObjectURL(chartUrl);
+      context.drawImage(chartImage, padding, headerHeight, chartRect.width, chartRect.height);
+    } finally {
+      URL.revokeObjectURL(chartUrl);
+    }
   }
 
   const pngBlob = await new Promise<Blob>((resolve, reject) => {

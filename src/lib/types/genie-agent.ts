@@ -170,6 +170,148 @@ export interface LightspeedCategoryCreateProposal {
   parent_category_name: string | null;
 }
 
+export type GmailEmailActionKind = 'send' | 'draft';
+
+/** Stage a Gmail send or draft for human approval before Composio executes. */
+export interface GmailEmailActionProposal {
+  kind: 'gmail_email_action';
+  action: GmailEmailActionKind;
+  summary: string;
+  recipient_email: string;
+  subject: string;
+  body: string;
+  cc?: string[];
+  bcc?: string[];
+  is_html?: boolean;
+  connected_account_id?: string | null;
+  /** Short human-readable description for the approval card. */
+  description: string;
+  /** Data categories shown in the approval card footer. */
+  sharing_data: Array<{ label: string; value: string }>;
+}
+
+export type GmailSortOrder = 'newest' | 'oldest';
+
+export type GmailScanDepth = 'quick' | 'full';
+
+export type GmailSenderRoleHint = 'sales' | 'support' | 'automated' | 'unknown';
+
+export interface GmailSenderSummary {
+  from: string;
+  email_count: number;
+  first_seen_ms: number | null;
+  first_seen_label: string | null;
+  last_seen_ms: number | null;
+  last_seen_label: string | null;
+  display_name?: string | null;
+  email_address?: string | null;
+  role_hint?: GmailSenderRoleHint;
+  sample_subjects?: string[];
+}
+
+export interface GmailContactCandidate {
+  from: string;
+  display_name: string | null;
+  email_address: string | null;
+  role_hint: GmailSenderRoleHint;
+  first_seen_ms: number | null;
+  first_seen_label: string | null;
+  email_count: number;
+  sample_subjects: string[];
+  sales_signal_score: number;
+}
+
+export interface GmailContactAnalysis {
+  earliest_likely_sales_contact: GmailContactCandidate | null;
+  earliest_any_contact: GmailContactCandidate | null;
+  likely_sales_contacts: GmailContactCandidate[];
+  support_or_automated_senders: GmailContactCandidate[];
+  analysis_notes: string[];
+}
+
+export interface GmailEmailPreview {
+  message_id: string;
+  thread_id: string | null;
+  subject: string;
+  from: string;
+  to: string | null;
+  snippet: string;
+  /** Unix ms for reliable sorting; null when Composio omits a timestamp. */
+  internal_date_ms: number | null;
+  date_label: string | null;
+  /** Composio connected account that owns this message (multi-mailbox search). */
+  connected_account_id?: string;
+  mailbox_label?: string | null;
+}
+
+/** Full message text for the agent — not shown in the Gmail UI card. */
+export interface GmailMessageContent extends GmailEmailPreview {
+  body_text: string;
+  body_truncated: boolean;
+}
+
+export interface GmailAgentContextBody {
+  message_id: string;
+  connected_account_id?: string;
+  thread_id?: string | null;
+  from: string;
+  to: string | null;
+  subject: string;
+  mailbox_label?: string | null;
+  body_text: string;
+}
+
+/** Compact Gmail state carried across chat turns for reply/draft follow-ups. */
+export interface GmailAgentContext {
+  message_bodies?: GmailAgentContextBody[];
+}
+
+export interface GmailEmailsPayload {
+  title: string;
+  query: string;
+  emails: GmailEmailPreview[];
+  truncated?: boolean;
+  connected_mailboxes?: Array<{
+    id: string;
+    label: string;
+    email_address: string | null;
+  }>;
+  /** Agent-only context for follow-up turns; not rendered in the UI card. */
+  agent_context?: GmailAgentContext;
+  scan_stats?: {
+    total_matched: number;
+    pages_scanned: number;
+    scan_mode: GmailScanDepth;
+    oldest_date_ms: number | null;
+    newest_date_ms: number | null;
+    oldest_date_label: string | null;
+    newest_date_label: string | null;
+    capped: boolean;
+    mailboxes_searched?: number;
+  };
+  sender_summary?: GmailSenderSummary[];
+  contact_analysis?: GmailContactAnalysis;
+  message_bodies?: GmailMessageContent[];
+  answer_readiness?: {
+    ready_to_answer: boolean;
+    gaps: string[];
+    criteria_checked: string[];
+  };
+}
+
+/** Gmail OAuth connect card streamed when the store needs to authorise Gmail. */
+export interface GmailConnectPayload {
+  url: string;
+  reason?: 'search' | 'send' | 'status' | 'add_account';
+  accounts?: Array<{
+    id: string;
+    label: string;
+    email_address: string | null;
+    status: string;
+  }>;
+  can_add_more?: boolean;
+}
+
 export type GenieProposal =
   | CarouselLayoutProposal
   | CarouselCreateProposal
@@ -178,7 +320,8 @@ export type GenieProposal =
   | DiscountRemoveProposal
   | PriceUpdateProposal
   | ProductBrandCategoryUpdateProposal
-  | LightspeedCategoryCreateProposal;
+  | LightspeedCategoryCreateProposal
+  | GmailEmailActionProposal;
 
 /** Read-only Lightspeed work order row streamed to the Genie UI. */
 export interface GenieWorkorderLineCard {
@@ -238,6 +381,7 @@ export interface GenieAnalysisPlanPayload {
   sql_strategy_summary?: string | null;
   date_range_label?: string | null;
   recheck_strategy?: string | null;
+  answer_success_criteria?: string[];
 }
 
 /** Visual args used when a SQL query produced a chart, table, or pivot. */

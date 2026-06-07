@@ -133,11 +133,20 @@ export function StoreSectionsManager() {
       const allCats: StoreCategory[] = categoriesData.categories || [];
       const rawSections: StoreSection[] = sectionsData.sections || [];
 
+      const isProductsPageCarousel = (category: StoreCategory) =>
+        (category.store_page ?? "products") !== "bikes";
+
       const builtSections = rawSections.map((s) => ({
         ...s,
-        categoryRows: allCats.filter((c) => (c as any).section_id === s.id),
+        categoryRows: allCats.filter(
+          (c) => (c as StoreCategory & { section_id?: string | null }).section_id === s.id
+            && isProductsPageCarousel(c),
+        ),
       }));
-      const standalone = allCats.filter((c) => !(c as any).section_id);
+      const standalone = allCats.filter(
+        (c) => !(c as StoreCategory & { section_id?: string | null }).section_id
+          && isProductsPageCarousel(c),
+      );
 
       const savedLayout: Array<{ type: string; id: string }> =
         configData?.config?.products_page_layout || [];
