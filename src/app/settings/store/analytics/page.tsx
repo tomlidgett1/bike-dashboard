@@ -3,8 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import nextDynamic from "next/dynamic";
-import { BarChart3 } from "lucide-react";
-import { PageContainer, PageHeader, PageBody, SettingsSection } from "@/components/dashboard";
+import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
 
 const StoreAnalyticsManager = nextDynamic(
@@ -17,16 +16,10 @@ export default function StoreAnalyticsPage() {
     <PageContainer size="wide">
       <PageHeader
         title="Analytics"
-        description="Store visits, product views, impressions and distinct users."
+        description="Website traffic, product engagement, distinct viewers, and device split."
       />
       <PageBody>
-        <SettingsSection
-          title="Storefront analytics"
-          description="Track engagement across your store page."
-          icon={BarChart3}
-        >
-          <StoreAnalyticsManager />
-        </SettingsSection>
+        <StoreAnalyticsManager />
       </PageBody>
     </PageContainer>
   );

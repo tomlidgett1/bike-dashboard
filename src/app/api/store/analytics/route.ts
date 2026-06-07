@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getWebTrackingAnalytics } from "@/lib/store/web-tracking-analytics";
 import { resolveAnalyticsDeviceType } from "@/lib/tracking/resolve-analytics-device-type";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 
@@ -145,15 +146,24 @@ export async function GET(request: NextRequest) {
   const daysParam = request.nextUrl.searchParams.get("days");
   const days = Math.max(1, Math.min(Number(daysParam || 30) || 30, 365));
 
-  const { data, error } = await service.rpc("get_store_analytics_summary", {
-    p_store_owner_id: user.id,
-    p_days: days,
-  });
+  const [summaryResult, webAnalytics] = await Promise.all([
+    service.rpc("get_store_analytics_summary", {
+      p_store_owner_id: user.id,
+      p_days: days,
+    }),
+    getWebTrackingAnalytics(service, user.id, {
+      dailyDays: days,
+      weekCount: Math.ceil(days / 7),
+    }),
+  ]);
 
-  if (error) {
-    console.error("[store analytics] summary failed", error);
+  if (summaryResult.error) {
+    console.error("[store analytics] summary failed", summaryResult.error);
     return NextResponse.json({ error: "Failed to load analytics" }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  return NextResponse.json({
+    ...((summaryResult.data ?? {}) as Record<string, unknown>),
+    webAnalytics,
+  });
 }

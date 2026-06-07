@@ -2,20 +2,43 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { BarChart3, Eye, Loader2, MousePointerClick, Package, Users } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
-import { StoreAnalyticsByDeviceBreakdown } from "@/components/settings/store-analytics-by-device";
+import Link from "next/link";
 import {
-  normaliseStoreAnalyticsByDevice,
-  type StoreAnalyticsByDevice,
-} from "@/lib/types/store-analytics";
+  BarChart3,
+  CalendarDays,
+  Eye,
+  Loader2,
+  Monitor,
+  MousePointerClick,
+  Package,
+  RefreshCw,
+  Smartphone,
+  Users,
+} from "lucide-react";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/lib/utils";
+import type { StoreAnalyticsByDevice } from "@/lib/types/store-analytics";
 import {
   formatStoreAnalyticsDate,
   getStoreAnalyticsTimezoneShortLabel,
 } from "@/lib/utils/format-store-analytics-date";
+
+type AnalyticsTab = "overview" | "traffic" | "products" | "devices";
+type ChartGrouping = "daily" | "weekly";
 
 interface AnalyticsSummary {
   storeViews: number;
@@ -29,16 +52,25 @@ interface AnalyticsSummary {
   byDevice?: StoreAnalyticsByDevice;
 }
 
-interface DailyPoint {
-  date: string;
+interface TrackingPeriodSummary {
+  startDate: string;
+  endDate: string;
   storeViews: number;
   productViews: number;
-  impressions: number;
-  distinctUsers: number;
+  productImpressions: number;
+  totalViews: number;
+  totalDistinctViewers: number;
+  byDevice: StoreAnalyticsByDevice;
 }
 
-function shouldUnoptimizeProductImage(url: string) {
-  return !url.includes("res.cloudinary.com") && !url.includes("supabase.co");
+interface WebTrackingAnalytics {
+  timezone?: string;
+  today: TrackingPeriodSummary;
+  currentWeek: TrackingPeriodSummary;
+  selectedPeriod: TrackingPeriodSummary;
+  last30Days: TrackingPeriodSummary;
+  daily: TrackingPeriodSummary[];
+  weekly: TrackingPeriodSummary[];
 }
 
 interface TopProduct {
@@ -56,111 +88,226 @@ interface AnalyticsResponse {
   days: number;
   timezone?: string;
   summary: AnalyticsSummary;
-  daily: DailyPoint[];
+  daily: Array<{
+    date: string;
+    storeViews: number;
+    productViews: number;
+    impressions: number;
+    distinctUsers: number;
+  }>;
   topProducts: TopProduct[];
+  webAnalytics: WebTrackingAnalytics;
 }
 
-const emptySummary: AnalyticsSummary = {
-  storeViews: 0,
-  storeDistinctUsers: 0,
-  productViews: 0,
-  productDistinctUsers: 0,
-  productImpressions: 0,
-  impressionDistinctUsers: 0,
-  totalViews: 0,
-  totalDistinctUsers: 0,
+const emptyDeviceBreakdown: StoreAnalyticsByDevice = {
+  mobile: { totalViews: 0, distinctUsers: 0 },
+  desktop: { totalViews: 0, distinctUsers: 0 },
+  unknown: { totalViews: 0, distinctUsers: 0 },
 };
+
+const trafficChartConfig = {
+  totalViews: {
+    label: "Page views",
+    color: "var(--chart-1)",
+  },
+  totalDistinctViewers: {
+    label: "Distinct viewers",
+    color: "var(--chart-2)",
+  },
+  productImpressions: {
+    label: "Product impressions",
+    color: "var(--chart-3)",
+  },
+} satisfies ChartConfig;
+
+const tabs: Array<{ value: AnalyticsTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { value: "overview", label: "Overview", icon: BarChart3 },
+  { value: "traffic", label: "Traffic", icon: Eye },
+  { value: "products", label: "Products", icon: Package },
+  { value: "devices", label: "Devices", icon: Monitor },
+];
+
+function shouldUnoptimizeProductImage(url: string) {
+  return !url.includes("res.cloudinary.com") && !url.includes("supabase.co");
+}
 
 function formatNumber(value: number | null | undefined) {
   return new Intl.NumberFormat("en-AU").format(value || 0);
 }
 
 function formatCurrency(value: number | null | undefined) {
-  if (value == null) return null;
-  return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 }).format(value);
+  if (value == null) return "No price";
+  return new Intl.NumberFormat("en-AU", {
+    style: "currency",
+    currency: "AUD",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
-function Metric({
+function formatPercent(value: number) {
+  if (!Number.isFinite(value)) return "0%";
+  return `${Math.round(value)}%`;
+}
+
+function formatRange(startDate: string, endDate: string) {
+  if (!startDate || !endDate) return "";
+  if (startDate === endDate) return formatStoreAnalyticsDate(startDate);
+  return `${formatStoreAnalyticsDate(startDate)} - ${formatStoreAnalyticsDate(endDate)}`;
+}
+
+function getDeviceTotal(byDevice: StoreAnalyticsByDevice | undefined) {
+  const device = byDevice ?? emptyDeviceBreakdown;
+  return device.mobile.totalViews + device.desktop.totalViews + device.unknown.totalViews;
+}
+
+function getEngagementRate(views: number, impressions: number) {
+  return impressions > 0 ? (views / impressions) * 100 : 0;
+}
+
+function AnalyticsTabButton({
+  active,
+  count,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  count?: number;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
+        active
+          ? "border-foreground text-foreground"
+          : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+      )}
+    >
+      <Icon className="size-4 shrink-0" />
+      {label}
+      {typeof count === "number" && count > 0 ? (
+        <Badge variant="outline" className="rounded-md px-1.5 py-0 text-[10px] font-medium">
+          {formatNumber(count)}
+        </Badge>
+      ) : null}
+    </button>
+  );
+}
+
+function MetricCard({
   icon: Icon,
   label,
   value,
-  sub,
+  detail,
 }: {
-  icon: typeof Eye;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number;
-  sub: string;
+  detail: string;
 }) {
   return (
     <div className="rounded-md border border-border bg-background p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{formatNumber(value)}</p>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-muted-foreground">{label}</p>
+          <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
+            {formatNumber(value)}
+          </p>
         </div>
-        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
           <Icon className="h-4 w-4 text-foreground" />
         </div>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">{sub}</p>
+      <p className="mt-2 text-xs text-muted-foreground">{detail}</p>
     </div>
   );
 }
 
-function TrendBars({ points }: { points: DailyPoint[] }) {
-  const max = Math.max(1, ...points.map((point) => point.storeViews + point.productViews));
-  const compactPoints = points.length > 45 ? points.filter((_, index) => index % 3 === 0) : points;
-  const analyticsTimezoneLabel = getStoreAnalyticsTimezoneShortLabel();
-
+function BreakdownRow({
+  label,
+  value,
+  total,
+  detail,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  detail: string;
+}) {
+  const percent = total > 0 ? (value / total) * 100 : 0;
   return (
-    <div className="rounded-md border border-border bg-background p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">Views Over Time</h3>
-          <p className="text-xs text-muted-foreground">
-            Store page views plus product page views ({analyticsTimezoneLabel}).
-          </p>
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          <p className="text-xs text-muted-foreground">{detail}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-semibold tabular-nums text-foreground">{formatNumber(value)}</p>
+          <p className="text-xs text-muted-foreground">{formatPercent(percent)}</p>
         </div>
       </div>
-      <div className="flex h-44 items-end gap-1">
-        {compactPoints.map((point) => {
-          const views = point.storeViews + point.productViews;
-          const height = Math.max(3, Math.round((views / max) * 100));
-          return (
-            <div key={point.date} className="group flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
-              <div className="relative flex w-full items-end justify-center">
-                <div
-                  className={cn(
-                    "w-full max-w-5 rounded-t-sm bg-gray-900 transition-colors group-hover:bg-primary",
-                    views === 0 && "bg-gray-200 group-hover:bg-gray-300",
-                  )}
-                  style={{ height: `${height}%` }}
-                />
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs shadow-sm group-hover:block">
-                  {formatStoreAnalyticsDate(point.date)}: {formatNumber(views)} views, {formatNumber(point.distinctUsers)} users
+      <Progress value={percent} />
+    </div>
+  );
+}
+
+function DeviceRows({ byDevice }: { byDevice: StoreAnalyticsByDevice }) {
+  const total = getDeviceTotal(byDevice);
+  const rows = [
+    { key: "mobile", label: "Mobile", icon: Smartphone, stats: byDevice.mobile },
+    { key: "desktop", label: "Web", icon: Monitor, stats: byDevice.desktop },
+    { key: "unknown", label: "Unclassified", icon: BarChart3, stats: byDevice.unknown },
+  ] as const;
+
+  return (
+    <div className="space-y-4">
+      {rows.map(({ key, label, icon: Icon, stats }) => {
+        const percent = total > 0 ? (stats.totalViews / total) * 100 : 0;
+        return (
+          <div key={key} className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                  <Icon className="h-4 w-4 text-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">{label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatNumber(stats.distinctUsers)} distinct viewers
+                  </p>
                 </div>
               </div>
+              <div className="text-right">
+                <p className="text-sm font-semibold tabular-nums text-foreground">
+                  {formatNumber(stats.totalViews)}
+                </p>
+                <p className="text-xs text-muted-foreground">{formatPercent(percent)}</p>
+              </div>
             </div>
-          );
-        })}
-      </div>
-      <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{points[0] ? formatStoreAnalyticsDate(points[0].date) : ""}</span>
-        <span>{points[points.length - 1] ? formatStoreAnalyticsDate(points[points.length - 1].date) : ""}</span>
-      </div>
+            <Progress value={percent} />
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 function EmptyAnalytics() {
   return (
-    <div className="rounded-md border border-dashed border-border bg-background px-6 py-10 text-center">
+    <div className="rounded-md border border-dashed border-border bg-background px-6 py-14 text-center">
       <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-secondary">
         <BarChart3 className="h-5 w-5 text-muted-foreground" />
       </div>
       <h3 className="text-sm font-semibold text-foreground">No analytics yet</h3>
       <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-        Store visits, product views, and product impressions will appear here once customers browse your public store.
+        Store visits, product views, and product impressions will appear once customers browse your
+        public store outside your authenticated owner session.
       </p>
     </div>
   );
@@ -168,6 +315,8 @@ function EmptyAnalytics() {
 
 export function StoreAnalyticsManager() {
   const [days, setDays] = React.useState("30");
+  const [activeTab, setActiveTab] = React.useState<AnalyticsTab>("overview");
+  const [chartGrouping, setChartGrouping] = React.useState<ChartGrouping>("daily");
   const [data, setData] = React.useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -193,27 +342,49 @@ export function StoreAnalyticsManager() {
     loadAnalytics();
   }, [loadAnalytics]);
 
-  const summary = data?.summary || emptySummary;
-  const byDevice = React.useMemo(
-    () => normaliseStoreAnalyticsByDevice(summary.byDevice),
-    [summary.byDevice]
+  const summary = data?.summary;
+  const webAnalytics = data?.webAnalytics;
+  const selectedPeriod = webAnalytics?.selectedPeriod;
+  const hasData = Boolean(
+    selectedPeriod && (selectedPeriod.totalViews > 0 || selectedPeriod.productImpressions > 0)
   );
-  const hasData = summary.totalViews > 0 || summary.productImpressions > 0;
-  const hasDeviceBreakdown =
-    byDevice.mobile.totalViews > 0 ||
-    byDevice.desktop.totalViews > 0 ||
-    byDevice.unknown.totalViews > 0;
   const analyticsTimezoneLabel = getStoreAnalyticsTimezoneShortLabel();
+  const topProducts = data?.topProducts ?? [];
+
+  const chartPoints = React.useMemo(() => {
+    const points = chartGrouping === "daily" ? webAnalytics?.daily ?? [] : webAnalytics?.weekly ?? [];
+    return points.map((point) => ({
+      label:
+        chartGrouping === "daily"
+          ? formatStoreAnalyticsDate(point.startDate)
+          : formatRange(point.startDate, point.endDate),
+      startDate: point.startDate,
+      endDate: point.endDate,
+      totalViews: point.totalViews,
+      totalDistinctViewers: point.totalDistinctViewers,
+      productImpressions: point.productImpressions,
+      storeViews: point.storeViews,
+      productViews: point.productViews,
+    }));
+  }, [chartGrouping, webAnalytics?.daily, webAnalytics?.weekly]);
+
+  if (loading && !data) {
+    return (
+      <div className="flex items-center justify-center rounded-md border border-border bg-background py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Store Analytics</h2>
-          <p className="text-sm text-muted-foreground">
-            Daily charts use Melbourne calendar days ({analyticsTimezoneLabel}). Counts use signed-in
-            users where available and anonymous browser visitors otherwise. IP addresses are not
-            stored.
+          <h2 className="text-base font-semibold text-foreground">Storefront analytics</h2>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Page views, distinct viewers, product engagement, and device split. Daily and weekly
+            buckets use Melbourne calendar time ({analyticsTimezoneLabel}); owner visits are
+            excluded.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -229,116 +400,370 @@ export function StoreAnalyticsManager() {
             </SelectContent>
           </Select>
           <Button type="button" variant="outline" size="sm" onClick={loadAnalytics} disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : "Refresh"}
+            {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            Refresh
           </Button>
         </div>
       </div>
 
-      {error && (
+      <nav className="border-b border-border/60" aria-label="Analytics sections">
+        <div className="-mb-px flex gap-6 overflow-x-auto pb-0">
+          {tabs.map((tab) => (
+            <AnalyticsTabButton
+              key={tab.value}
+              active={activeTab === tab.value}
+              count={tab.value === "products" ? topProducts.length : undefined}
+              icon={tab.icon}
+              label={tab.label}
+              onClick={() => setActiveTab(tab.value)}
+            />
+          ))}
+        </div>
+      </nav>
+
+      {error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
-      )}
+      ) : null}
 
-      {loading && !data ? (
-        <div className="flex items-center justify-center rounded-md border border-border bg-background py-16">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : !hasData ? (
+      {!data || !summary || !webAnalytics || !selectedPeriod ? null : !hasData ? (
         <EmptyAnalytics />
       ) : (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Metric
-              icon={Eye}
-              label="Total Views"
-              value={summary.totalViews}
-              sub={`${formatNumber(summary.totalDistinctUsers)} distinct users`}
-            />
-            <Metric
-              icon={Users}
-              label="Store Page"
-              value={summary.storeViews}
-              sub={`${formatNumber(summary.storeDistinctUsers)} distinct users`}
-            />
-            <Metric
-              icon={Package}
-              label="Product Views"
-              value={summary.productViews}
-              sub={`${formatNumber(summary.productDistinctUsers)} distinct users`}
-            />
-            <Metric
-              icon={MousePointerClick}
-              label="Impressions"
-              value={summary.productImpressions}
-              sub={`${formatNumber(summary.impressionDistinctUsers)} distinct users`}
-            />
-          </div>
-
-          <TrendBars points={data?.daily || []} />
-
-          {hasDeviceBreakdown && <StoreAnalyticsByDeviceBreakdown byDevice={byDevice} />}
-
-          <Card className="rounded-md border-border">
-            <CardContent className="p-0">
-              <div className="border-b border-border px-4 py-3">
-                <h3 className="text-sm font-semibold text-foreground">Top Products</h3>
-                <p className="text-xs text-muted-foreground">Ranked by product page views, with impressions for context.</p>
+        <div className="space-y-4">
+          {activeTab === "overview" ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <MetricCard
+                  icon={Eye}
+                  label="Page views"
+                  value={selectedPeriod.totalViews}
+                  detail={`${formatNumber(selectedPeriod.totalDistinctViewers)} distinct viewers`}
+                />
+                <MetricCard
+                  icon={Users}
+                  label="Distinct viewers"
+                  value={selectedPeriod.totalDistinctViewers}
+                  detail={formatRange(selectedPeriod.startDate, selectedPeriod.endDate)}
+                />
+                <MetricCard
+                  icon={Package}
+                  label="Product views"
+                  value={summary.productViews}
+                  detail={`${formatNumber(summary.productDistinctUsers)} product viewers`}
+                />
+                <MetricCard
+                  icon={MousePointerClick}
+                  label="Impressions"
+                  value={selectedPeriod.productImpressions}
+                  detail={`${formatPercent(getEngagementRate(summary.productViews, selectedPeriod.productImpressions))} view rate`}
+                />
+                <MetricCard
+                  icon={CalendarDays}
+                  label="This week"
+                  value={webAnalytics.currentWeek.totalViews}
+                  detail={`${formatNumber(webAnalytics.currentWeek.totalDistinctViewers)} distinct viewers`}
+                />
               </div>
-              <div className="divide-y divide-border">
-                {(data?.topProducts || []).length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card className="rounded-md border-border">
+                  <CardHeader className="border-b border-border/60 pb-3">
+                    <CardTitle className="text-sm font-semibold">Traffic mix</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-5 p-4">
+                    <BreakdownRow
+                      label="Store page views"
+                      value={selectedPeriod.storeViews}
+                      total={selectedPeriod.totalViews}
+                      detail="Visits to the public store profile."
+                    />
+                    <BreakdownRow
+                      label="Product page views"
+                      value={selectedPeriod.productViews}
+                      total={selectedPeriod.totalViews}
+                      detail="Clicks through to product detail pages."
+                    />
+                    <BreakdownRow
+                      label="Product impressions"
+                      value={selectedPeriod.productImpressions}
+                      total={Math.max(selectedPeriod.productImpressions, selectedPeriod.totalViews)}
+                      detail="Products seen on storefront carousels and grids."
+                    />
+                  </CardContent>
+                </Card>
+
+                <Card className="rounded-md border-border">
+                  <CardHeader className="border-b border-border/60 pb-3">
+                    <CardTitle className="text-sm font-semibold">Today and week</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-3 p-4 sm:grid-cols-2">
+                    <MetricCard
+                      icon={Eye}
+                      label="Today"
+                      value={webAnalytics.today.totalViews}
+                      detail={`${formatNumber(webAnalytics.today.totalDistinctViewers)} distinct viewers`}
+                    />
+                    <MetricCard
+                      icon={CalendarDays}
+                      label="This week"
+                      value={webAnalytics.currentWeek.totalViews}
+                      detail={`${formatNumber(webAnalytics.currentWeek.productImpressions)} impressions`}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          ) : null}
+
+          {activeTab === "traffic" ? (
+            <>
+              <Card className="rounded-md border-border">
+                <CardHeader className="flex flex-col gap-3 border-b border-border/60 pb-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle className="text-sm font-semibold">
+                      {chartGrouping === "daily" ? "Daily traffic" : "Weekly traffic"}
+                    </CardTitle>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Page views, distinct viewers, and impressions for the selected range.
+                    </p>
+                  </div>
+                  <ToggleGroup
+                    type="single"
+                    value={chartGrouping}
+                    onValueChange={(value) => {
+                      if (value === "daily" || value === "weekly") setChartGrouping(value);
+                    }}
+                    size="sm"
+                    variant="outline"
+                    spacing={0}
+                  >
+                    <ToggleGroupItem value="daily" aria-label="Group by day">
+                      Day
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="weekly" aria-label="Group by week">
+                      Week
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <ChartContainer config={trafficChartConfig} className="min-h-[320px] w-full">
+                    <AreaChart accessibilityLayer data={chartPoints} margin={{ left: 8, right: 8 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis
+                        dataKey="label"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        minTickGap={chartGrouping === "daily" ? 28 : 16}
+                      />
+                      <YAxis hide tickLine={false} axisLine={false} width={0} />
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            indicator="line"
+                            labelFormatter={(_, payload) => {
+                              const row = payload?.[0]?.payload as
+                                | { startDate?: string; endDate?: string }
+                                | undefined;
+                              return row?.startDate && row?.endDate
+                                ? formatRange(row.startDate, row.endDate)
+                                : "";
+                            }}
+                          />
+                        }
+                      />
+                      <ChartLegend content={<ChartLegendContent />} />
+                      <Area
+                        dataKey="totalViews"
+                        type="monotone"
+                        fill="var(--color-totalViews)"
+                        fillOpacity={0.2}
+                        stroke="var(--color-totalViews)"
+                        strokeWidth={2}
+                      />
+                      <Area
+                        dataKey="totalDistinctViewers"
+                        type="monotone"
+                        fill="var(--color-totalDistinctViewers)"
+                        fillOpacity={0.16}
+                        stroke="var(--color-totalDistinctViewers)"
+                        strokeWidth={2}
+                      />
+                      <Area
+                        dataKey="productImpressions"
+                        type="monotone"
+                        fill="var(--color-productImpressions)"
+                        fillOpacity={0.1}
+                        stroke="var(--color-productImpressions)"
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-md border-border">
+                <CardHeader className="border-b border-border/60 pb-3">
+                  <CardTitle className="text-sm font-semibold">Recent buckets</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="divide-y divide-border/60">
+                    {chartPoints.slice(-14).reverse().map((point) => (
+                      <div
+                        key={`${point.startDate}-${point.endDate}`}
+                        className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-[minmax(160px,1fr)_repeat(4,minmax(82px,auto))]"
+                      >
+                        <div>
+                          <p className="font-medium text-foreground">
+                            {formatRange(point.startDate, point.endDate)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="font-semibold tabular-nums text-foreground">
+                            {formatNumber(point.totalViews)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">views</p>
+                        </div>
+                        <div>
+                          <p className="font-semibold tabular-nums text-foreground">
+                            {formatNumber(point.totalDistinctViewers)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">viewers</p>
+                        </div>
+                        <div>
+                          <p className="font-semibold tabular-nums text-foreground">
+                            {formatNumber(point.storeViews)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">store</p>
+                        </div>
+                        <div>
+                          <p className="font-semibold tabular-nums text-foreground">
+                            {formatNumber(point.productViews)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">product</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
+
+          {activeTab === "products" ? (
+            <Card className="rounded-md border-border">
+              <CardHeader className="border-b border-border/60 pb-3">
+                <CardTitle className="text-sm font-semibold">Product engagement</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Ranked by product page views, with impressions and view rate for context.
+                </p>
+              </CardHeader>
+              <CardContent className="p-0">
+                {topProducts.length === 0 ? (
+                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
                     No product activity in this period.
                   </div>
                 ) : (
-                  data!.topProducts.map((product, index) => (
-                    <a
-                      key={product.productId}
-                      href={`/marketplace/product/${product.productId}`}
-                      className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-secondary/70"
-                    >
-                      <span className="w-6 text-sm font-semibold tabular-nums text-muted-foreground">{index + 1}</span>
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="relative h-11 w-11 flex-shrink-0 overflow-hidden rounded-md bg-secondary">
-                          {product.imageUrl ? (
-                            <Image
-                              src={product.imageUrl}
-                              alt=""
-                              fill
-                              sizes="44px"
-                              className="object-cover"
-                              unoptimized={shouldUnoptimizeProductImage(product.imageUrl)}
-                            />
-                          ) : (
-                            <Package className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-muted-foreground" />
-                          )}
+                  <div className="divide-y divide-border/60">
+                    {topProducts.map((product, index) => (
+                      <Link
+                        key={product.productId}
+                        href={`/marketplace/product/${product.productId}`}
+                        className="grid gap-3 px-4 py-3 transition-colors hover:bg-secondary/60 sm:grid-cols-[auto_minmax(0,1fr)_repeat(4,minmax(78px,auto))]"
+                      >
+                        <span className="w-6 text-sm font-semibold tabular-nums text-muted-foreground">
+                          {index + 1}
+                        </span>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md bg-secondary">
+                            {product.imageUrl ? (
+                              <Image
+                                src={product.imageUrl}
+                                alt=""
+                                fill
+                                sizes="44px"
+                                className="object-cover"
+                                unoptimized={shouldUnoptimizeProductImage(product.imageUrl)}
+                              />
+                            ) : (
+                              <Package className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">{product.name}</p>
+                            <p className="text-xs text-muted-foreground">{formatCurrency(product.price)}</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-foreground">{product.name}</p>
-                          <p className="text-xs text-muted-foreground">{formatCurrency(product.price) || "No price"}</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-4 text-right text-xs sm:gap-6">
                         <div>
                           <p className="font-semibold tabular-nums text-foreground">{formatNumber(product.views)}</p>
-                          <p className="text-muted-foreground">views</p>
+                          <p className="text-xs text-muted-foreground">views</p>
                         </div>
                         <div>
-                          <p className="font-semibold tabular-nums text-foreground">{formatNumber(product.distinctUsers)}</p>
-                          <p className="text-muted-foreground">users</p>
+                          <p className="font-semibold tabular-nums text-foreground">
+                            {formatNumber(product.distinctUsers)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">viewers</p>
                         </div>
                         <div>
-                          <p className="font-semibold tabular-nums text-foreground">{formatNumber(product.impressions)}</p>
-                          <p className="text-muted-foreground">impr.</p>
+                          <p className="font-semibold tabular-nums text-foreground">
+                            {formatNumber(product.impressions)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">impr.</p>
                         </div>
-                      </div>
-                    </a>
-                  ))
+                        <div>
+                          <p className="font-semibold tabular-nums text-foreground">
+                            {formatPercent(getEngagementRate(product.views, product.impressions))}
+                          </p>
+                          <p className="text-xs text-muted-foreground">view rate</p>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
                 )}
-              </div>
-            </CardContent>
-          </Card>
-        </>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {activeTab === "devices" ? (
+            <div className="grid gap-4 lg:grid-cols-3">
+              <Card className="rounded-md border-border">
+                <CardHeader className="border-b border-border/60 pb-3">
+                  <CardTitle className="text-sm font-semibold">Selected range</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {formatRange(selectedPeriod.startDate, selectedPeriod.endDate)}
+                  </p>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <DeviceRows byDevice={selectedPeriod.byDevice} />
+                </CardContent>
+              </Card>
+              <Card className="rounded-md border-border">
+                <CardHeader className="border-b border-border/60 pb-3">
+                  <CardTitle className="text-sm font-semibold">This week</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {formatRange(webAnalytics.currentWeek.startDate, webAnalytics.currentWeek.endDate)}
+                  </p>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <DeviceRows byDevice={webAnalytics.currentWeek.byDevice} />
+                </CardContent>
+              </Card>
+              <Card className="rounded-md border-border">
+                <CardHeader className="border-b border-border/60 pb-3">
+                  <CardTitle className="text-sm font-semibold">Today</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {formatRange(webAnalytics.today.startDate, webAnalytics.today.endDate)}
+                  </p>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <DeviceRows byDevice={webAnalytics.today.byDevice} />
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+        </div>
       )}
     </div>
   );

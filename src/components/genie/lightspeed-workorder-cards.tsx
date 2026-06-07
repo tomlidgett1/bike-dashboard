@@ -273,7 +273,13 @@ function WorkorderRow({
   );
 }
 
-export function LightspeedWorkorderCards({ payload }: { payload: GenieWorkorderCardsPayload }) {
+export function LightspeedWorkorderCards({
+  payload,
+  fullWidth = false,
+}: {
+  payload: GenieWorkorderCardsPayload;
+  fullWidth?: boolean;
+}) {
   const [expanded, setExpanded] = React.useState(false);
   const count = payload.workorders.length;
   const isScrollable = count > SCROLL_MAX_ITEMS;
@@ -288,7 +294,7 @@ export function LightspeedWorkorderCards({ payload }: { payload: GenieWorkorderC
       initial={{ opacity: 0, y: 8, scale: 0.99 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.3, ease: CARD_EASE }}
-      className="w-full max-w-md"
+      className={cn("w-full", fullWidth ? "max-w-none" : "max-w-md")}
     >
       <div className="overflow-hidden rounded-xl bg-white shadow-[0_4px_20px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
         <div className="flex items-center gap-2.5 px-3.5 py-3">

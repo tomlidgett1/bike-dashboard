@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLightspeedOverviewData } from "@/lib/lightspeed/not-synced-products";
+import { getWebTrackingAnalytics } from "@/lib/store/web-tracking-analytics";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 
 async function getInventoryStats(service: ReturnType<typeof createServiceRoleClient>, userId: string) {
@@ -108,9 +109,10 @@ export async function GET(request: NextRequest) {
   const topDays = Math.max(1, Math.min(Number(request.nextUrl.searchParams.get("topDays") || 7) || 7, 365));
 
   try {
-    const [inventory, lightspeed, chartAnalytics, topAnalytics] = await Promise.all([
+    const [inventory, lightspeed, webAnalytics, chartAnalytics, topAnalytics] = await Promise.all([
       getInventoryStats(service, user.id),
       getLightspeedOverviewData(service, user.id),
+      getWebTrackingAnalytics(service, user.id),
       service.rpc("get_store_analytics_summary", {
         p_store_owner_id: user.id,
         p_days: chartDays,
@@ -136,6 +138,7 @@ export async function GET(request: NextRequest) {
       topDays,
       inventory,
       lightspeed,
+      webAnalytics,
       analytics: chartAnalytics.data,
       topProductsWeek: (topAnalytics.data as { topProducts?: unknown[] })?.topProducts ?? [],
     });

@@ -21,7 +21,7 @@ export default function StoreHomePage() {
     <PageContainer size="wide">
       <PageHeader
         title="Home"
-        description="Store performance, marketplace reach, and what needs attention."
+        description="Website tracking, marketplace reach, and what needs attention."
         actions={<StoreSetupButton />}
       />
       <PageBody>

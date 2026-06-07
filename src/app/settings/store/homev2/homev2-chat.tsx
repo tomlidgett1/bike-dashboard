@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { createPortal, flushSync } from "react-dom";
-import { ArrowDown, ArrowUp, ArrowUpDown, AudioLines, BarChart3, Download, History, LineChart as LineChartIcon, Pencil, Plus, Square, Table2, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Download, History, LineChart as LineChartIcon, Pencil, Plus, Table2, Trash2, X } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { cn } from "@/lib/utils";
+import { HomeV2ChatInput } from "@/components/genie/homev2-chat-input";
 import { GenieProposalCard } from "@/components/genie/genie-proposal-card";
 import { LightspeedWorkorderCards } from "@/components/genie/lightspeed-workorder-cards";
 import { GenieStoreProductCards } from "@/components/genie/genie-store-product-cards";
@@ -24,6 +25,7 @@ import {
   upsertAnalysisQuery,
 } from "@/components/genie/genie-thinking-detail-sections";
 import type { GenieStoreProductPreview } from "@/lib/genie/store-product-previews";
+import { HomeV2MetricsCards } from "@/components/settings/homev2-metrics-cards";
 import { HomeV2SmartSuggestions } from "@/components/settings/homev2-smart-suggestions";
 import type {
   GenieAnalysisPlanPayload,
@@ -33,6 +35,7 @@ import type {
   GenieWorkorderCardsPayload,
 } from "@/lib/types/genie-agent";
 import { downloadChartCardAsPng, downloadTableCsv } from "@/lib/utils/genie-visual-export";
+import { consumeHomeV2PendingPrompt } from "@/lib/genie/homev2-navigation";
 import { compactGenieProgressText, liveGenieProgressPreview } from "@/lib/genie/progress-text";
 
 type ChatRole = "user" | "assistant";
@@ -1026,105 +1029,6 @@ function PromptQueueList({
   );
 }
 
-function ChatInput({
-  value,
-  isRunning,
-  compact,
-  onChange,
-  onSubmit,
-  onStop,
-}: {
-  value: string;
-  isRunning?: boolean;
-  compact?: boolean;
-  onChange: (value: string) => void;
-  onSubmit: () => void;
-  onStop?: () => void;
-}) {
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-  const hasText = value.trim().length > 0;
-  const queueMode = isRunning && hasText;
-  const canAct = isRunning || hasText;
-
-  React.useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, compact ? 132 : 160)}px`;
-  }, [compact, value]);
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (isRunning && !hasText) {
-          onStop?.();
-          return;
-        }
-        if (hasText) onSubmit();
-      }}
-      className="w-full"
-    >
-      <div
-        className={cn(
-          "flex w-full items-end gap-1 rounded-full border border-gray-200 bg-white px-2 py-2 shadow-sm",
-          compact ? "min-h-[56px]" : "min-h-[60px]",
-        )}
-      >
-        <button
-          type="button"
-          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-gray-100"
-          aria-label="Add"
-        >
-          <Plus className="h-5 w-5" />
-        </button>
-
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              if (isRunning && !hasText) {
-                onStop?.();
-                return;
-              }
-              if (hasText) onSubmit();
-            }
-          }}
-          rows={1}
-          placeholder={isRunning ? "Queue another prompt..." : "Ask anything"}
-          className="max-h-[132px] min-h-[36px] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-[15px] leading-snug text-foreground outline-none placeholder:text-gray-500"
-        />
-
-        <button
-          type={isRunning && !hasText ? "button" : "submit"}
-          disabled={!canAct}
-          onClick={isRunning && !hasText ? onStop : undefined}
-          className={cn(
-            "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
-            canAct ? "bg-gray-900 text-white hover:bg-gray-800" : "bg-gray-200 text-gray-400",
-          )}
-          aria-label={queueMode ? "Add to queue" : isRunning ? "Stop response" : "Send message"}
-        >
-          {isRunning && !hasText ? (
-            <Square className="h-3.5 w-3.5 fill-current" />
-          ) : (
-            <AudioLines className="h-4 w-4" />
-          )}
-        </button>
-      </div>
-
-      {compact ? (
-        <p className="mt-2 text-center text-xs text-gray-500">
-          Genie can make mistakes. Check important info.
-        </p>
-      ) : null}
-    </form>
-  );
-}
-
 export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   const [input, setInput] = React.useState("");
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
@@ -1140,6 +1044,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   const messagesRef = React.useRef<ChatMessage[]>([]);
   const isLoadingRef = React.useRef(false);
   const runSendRef = React.useRef<(text: string, clearInputField?: boolean) => Promise<void>>(async () => {});
+  const consumedPendingPromptRef = React.useRef(false);
   const hasStarted = messages.length > 0;
 
   React.useEffect(() => {
@@ -1583,6 +1488,16 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     runSendRef.current = runSend;
   }, [runSend]);
 
+  React.useEffect(() => {
+    if (consumedPendingPromptRef.current) return;
+    const pending = consumeHomeV2PendingPrompt();
+    if (!pending) return;
+    consumedPendingPromptRef.current = true;
+    queueMicrotask(() => {
+      void runSendRef.current(pending, false);
+    });
+  }, []);
+
   const submitPrompt = React.useCallback((rawText?: string) => {
     const text = (rawText ?? input).trim();
     if (!text) return;
@@ -1599,12 +1514,12 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   return (
     <div className="flex h-[calc(100svh-57px)] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]">
       {!hasStarted ? (
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-6 py-10">
-          <div className="mb-8 text-center">
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-              Welcome, today is {todayLabel}
-            </h1>
-          </div>
+        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center gap-7 px-6 py-10">
+          <h1 className="max-w-2xl text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            Welcome, today is {todayLabel}
+          </h1>
+
+          <HomeV2MetricsCards />
 
           <div className="w-full">
             <PromptQueueList
@@ -1612,7 +1527,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
               onUpdate={updateQueuedPrompt}
               onDelete={deleteQueuedPrompt}
             />
-            <ChatInput
+            <HomeV2ChatInput
               value={input}
               isRunning={isLoading}
               onChange={setInput}
@@ -1621,7 +1536,9 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             />
           </div>
 
-          <HomeV2SmartSuggestions />
+          <div className="w-full">
+            <HomeV2SmartSuggestions />
+          </div>
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1659,7 +1576,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 	                            <GenieStoreProductCards products={message.products} />
 	                          ) : null}
 	                          {message.workorders?.workorders.length ? (
-	                            <LightspeedWorkorderCards payload={message.workorders} />
+	                            <LightspeedWorkorderCards payload={message.workorders} fullWidth />
 	                          ) : null}
 	                          {message.charts?.map((chart, index) => <GenieChart key={`${chart.title}-${index}`} chart={chart} />)}
 	                          {message.tables?.map((table, index) => <GenieTable key={`${table.title}-${index}`} table={table} />)}
@@ -1744,7 +1661,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                 onDelete={deleteQueuedPrompt}
               />
 
-              <ChatInput
+              <HomeV2ChatInput
                 compact
                 value={input}
                 isRunning={isLoading}
