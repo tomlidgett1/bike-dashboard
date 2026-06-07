@@ -458,7 +458,7 @@ function CarouselRow({
 
   return (
     <section key={cat.id}>
-      <div className="flex items-center justify-between gap-2 mb-1.5">
+      <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-3">
           {logoUrl ? (
             <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
@@ -666,7 +666,7 @@ function ProductsTab({
     const hasUberCarousel = section.categories.some((cat) => cat.source === "uber");
 
     return (
-      <div key={section.id} className="bg-gray-200/60 border-y border-gray-300 -mx-5 sm:-mx-8 lg:-mx-10 px-5 sm:px-8 lg:px-10 pt-3 pb-3.5 space-y-3">
+      <div key={section.id} className="bg-gray-200/60 border-y border-gray-300 -mx-5 sm:-mx-8 lg:-mx-10 px-5 sm:px-8 lg:px-10 py-1 space-y-2">
         <div>
           <div className="flex items-center gap-3">
             {hasUberCarousel && <UberCarouselLogo className="h-7 px-2.5" />}
@@ -738,9 +738,9 @@ function ProductsTab({
     }
 
     return (
-      <div className="space-y-3">
+      <div className="space-y-2">
         {ordered}
-        {extras.length > 0 && <div className="space-y-3">{extras}</div>}
+        {extras}
       </div>
     );
   }
@@ -750,19 +750,9 @@ function ProductsTab({
   const standalonePlusSectionless = [...standaloneById.values()];
 
   return (
-    <div className="space-y-0">
-      {visibleSections.map((section, secIdx) => (
-        <div key={section.id}>
-          {secIdx > 0 && <div className="my-3" />}
-          {renderSection(section)}
-        </div>
-      ))}
-
-      {standalonePlusSectionless.length > 0 && (
-        <div className={cn("space-y-3", visibleSections.length > 0 && "mt-5")}>
-          {standalonePlusSectionless.map((cat) => renderCarousel(cat))}
-        </div>
-      )}
+    <div className="space-y-2">
+      {visibleSections.map((section) => renderSection(section))}
+      {standalonePlusSectionless.map((cat) => renderCarousel(cat))}
     </div>
   );
 }
