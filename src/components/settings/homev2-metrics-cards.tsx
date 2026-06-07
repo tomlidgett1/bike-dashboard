@@ -1,12 +1,21 @@
 "use client";
 
 import * as React from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { getStoreAnalyticsTimezoneShortLabel } from "@/lib/utils/format-store-analytics-date";
+import {
+  formatStoreAnalyticsDate,
+  getStoreAnalyticsTimezoneShortLabel,
+} from "@/lib/utils/format-store-analytics-date";
 
 interface OverviewMetrics {
   rolling7Days: {
-    totalViews: number;
+    startDate: string;
+    endDate: string;
     totalDistinctViewers: number;
   };
   inventory: {
@@ -19,29 +28,36 @@ function formatNumber(value: number | null | undefined) {
   return new Intl.NumberFormat("en-AU").format(value || 0);
 }
 
+function formatTrackingRange(startDate: string, endDate: string) {
+  if (startDate === endDate) return formatStoreAnalyticsDate(startDate);
+  return `${formatStoreAnalyticsDate(startDate)} – ${formatStoreAnalyticsDate(endDate)}`;
+}
+
 function MetricCell({
   value,
   label,
-  detail,
+  tooltip,
 }: {
   value: string;
   label: string;
-  detail?: string;
+  tooltip: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-col items-center justify-center px-3 py-3.5 text-center sm:px-4 sm:py-4">
-      <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground sm:text-2xl">
-        {value}
-      </p>
-      <p className="mt-1 text-[11px] font-medium leading-tight text-muted-foreground sm:text-xs">
-        {label}
-      </p>
-      {detail ? (
-        <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground/75 sm:text-[11px]">
-          {detail}
-        </p>
-      ) : null}
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex min-w-0 cursor-default flex-col items-center justify-center px-3 py-3.5 text-center sm:px-4 sm:py-4">
+          <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground sm:text-2xl">
+            {value}
+          </p>
+          <p className="mt-1 text-[11px] font-medium leading-tight text-muted-foreground sm:text-xs">
+            {label}
+          </p>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={8} className="max-w-[220px] text-center">
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -82,7 +98,8 @@ export function HomeV2MetricsCards({ className }: { className?: string }) {
 
         setMetrics({
           rolling7Days: {
-            totalViews: rolling7Days.totalViews,
+            startDate: rolling7Days.startDate,
+            endDate: rolling7Days.endDate,
             totalDistinctViewers: rolling7Days.totalDistinctViewers,
           },
           inventory: {
@@ -105,6 +122,10 @@ export function HomeV2MetricsCards({ className }: { className?: string }) {
 
   if (!loading && !metrics) return null;
 
+  const viewsTooltip = metrics
+    ? `Rolling 7 days · ${formatTrackingRange(metrics.rolling7Days.startDate, metrics.rolling7Days.endDate)} · ${analyticsTimezoneLabel}`
+    : "";
+
   return (
     <div className={cn("mx-auto w-full max-w-xl", className)}>
       {loading || !metrics ? (
@@ -114,21 +135,20 @@ export function HomeV2MetricsCards({ className }: { className?: string }) {
           <div className="grid grid-cols-3 divide-x divide-gray-200/70">
             <MetricCell
               value={formatNumber(metrics.rolling7Days.totalDistinctViewers)}
-              label="Distinct viewers"
-              detail={`${formatNumber(metrics.rolling7Days.totalViews)} page views`}
+              label="Distinct views"
+              tooltip={viewsTooltip}
             />
             <MetricCell
               value={formatNumber(metrics.inventory.marketplaceLive)}
               label="Live products"
+              tooltip="Approved and listed on the marketplace"
             />
             <MetricCell
               value={formatNumber(metrics.inventory.withoutApprovedPhotos)}
               label="Missing photos"
+              tooltip="Active products without an approved image"
             />
           </div>
-          <p className="border-t border-gray-200/70 bg-gray-50/50 px-4 py-2 text-center text-[10px] text-muted-foreground">
-            Rolling 7 days · {analyticsTimezoneLabel}
-          </p>
         </div>
       )}
     </div>
