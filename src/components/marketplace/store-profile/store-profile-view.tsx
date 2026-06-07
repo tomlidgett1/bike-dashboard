@@ -281,8 +281,8 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
         className="overflow-x-auto overflow-y-hidden scrollbar-hide snap-x snap-mandatory sm:snap-none"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch', overflowY: 'hidden' } as React.CSSProperties}
       >
-        {/* Single-row scroll track. The cards are top-aligned so a taller
-            off-screen card cannot reserve vertical space under shorter cards. */}
+        {/* Single-row scroll track — fixed slots + inCarousel disable the 300px
+            content-visibility placeholder that otherwise pads the row bottom. */}
         <div
           className={cn(
             "flex items-start gap-1.5",
@@ -294,14 +294,14 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
               key={product.id}
               data-analytics-product-id={product.id}
               className={cn(
-                "snap-start flex-none overflow-hidden",
-                "w-[42vw] h-[calc(42vw+40px)]",
+                "snap-start flex-none min-h-0 overflow-hidden",
+                "w-[42vw] h-[calc(42vw+40px)] max-h-[calc(42vw+40px)]",
                 catSize === 'featured' &&
-                  "sm:w-[clamp(170px,18vw,260px)] sm:h-[calc(clamp(170px,18vw,260px)+40px)]",
+                  "sm:w-[clamp(170px,18vw,260px)] sm:h-[calc(clamp(170px,18vw,260px)*0.75+2.75rem)] sm:max-h-[calc(clamp(170px,18vw,260px)*0.75+2.75rem)]",
                 catSize === 'compact' &&
-                  "sm:w-[clamp(118px,12vw,155px)] sm:h-[calc(clamp(118px,12vw,155px)+40px)]",
+                  "sm:w-[clamp(118px,12vw,155px)] sm:h-[calc(clamp(118px,12vw,155px)+40px)] sm:max-h-[calc(clamp(118px,12vw,155px)+40px)]",
                 catSize === 'normal' &&
-                  "sm:w-[clamp(145px,15vw,205px)] sm:h-[calc(clamp(145px,15vw,205px)+40px)]",
+                  "sm:w-[clamp(145px,15vw,205px)] sm:h-[calc(clamp(145px,15vw,205px)+40px)] sm:max-h-[calc(clamp(145px,15vw,205px)+40px)]",
               )}
             >
               <ProductCard
@@ -310,6 +310,7 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
                 hideStoreMeta
                 compact={cardCompact}
                 featuredMobile={cardFeatured}
+                inCarousel
                 storeId={storeId}
               />
             </div>

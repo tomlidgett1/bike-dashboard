@@ -165,9 +165,9 @@ export function ProductCarousel({
                 {displayedProducts.map((product, index) => (
                   <div
                     key={product.id}
-                    className="flex-shrink-0 w-[145px] xs:w-[160px] sm:w-[180px] md:w-[200px] lg:w-[220px] xl:w-[240px] snap-start"
+                    className="flex-shrink-0 min-h-0 overflow-hidden w-[145px] xs:w-[160px] sm:w-[180px] md:w-[200px] lg:w-[220px] xl:w-[240px] snap-start"
                   >
-                    <ProductCard product={product} priority={index < 6} />
+                    <ProductCard product={product} priority={index < 6} inCarousel />
                   </div>
                 ))}
                 {/* Spacer for mobile scroll end */}

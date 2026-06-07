@@ -1240,12 +1240,13 @@ function FeaturedCarouselBlock({
                   <div
                     key={product.id}
                     data-analytics-product-id={product.id}
-                    className="w-[42vw] h-[calc(42vw_+_40px)] overflow-hidden flex-shrink-0 snap-start"
+                    className="w-[42vw] h-[calc(42vw_+_40px)] max-h-[calc(42vw_+_40px)] min-h-0 overflow-hidden flex-shrink-0 snap-start"
                   >
                     <ProductCard
                       product={product}
                       priority={ri === 0 && i < 2}
                       hideStoreMeta
+                      inCarousel
                       storeId={storeId}
                     />
                   </div>

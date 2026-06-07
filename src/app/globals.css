@@ -320,6 +320,12 @@
     contain-intrinsic-size: auto 300px;
   }
 
+  /* Horizontal carousels use fixed-height slots — skip the 300px off-screen placeholder. */
+  .product-card-root--in-carousel {
+    content-visibility: visible;
+    contain-intrinsic-size: unset;
+  }
+
   /* Notion-style hover effect */
   .notion-hover {
     @apply transition-colors duration-150 ease-in-out;

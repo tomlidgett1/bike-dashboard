@@ -40,6 +40,8 @@ interface ProductCardProps {
   onImageDiscoveryClick?: (productId: string) => void;
   /** When set, appends ?store={storeId} to the product URL for store-context header */
   storeId?: string;
+  /** Fixed-height horizontal carousel — disables the 300px content-visibility placeholder */
+  inCarousel?: boolean;
 }
 
 type ListingImage = {
@@ -170,6 +172,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   onNavigate,
   onImageDiscoveryClick,
   storeId,
+  inCarousel = false,
 }) {
   const router = useRouter();
   const [imageError, setImageError] = React.useState(false);
@@ -307,6 +310,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
       onClick={handleClick}
       className={cn(
         "product-card-root block",
+        inCarousel && "product-card-root--in-carousel h-full overflow-hidden",
         isList && "w-full",
         !isList && featuredMobile && "sm:col-span-1"
       )}
@@ -562,6 +566,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
          prevProps.compact === nextProps.compact &&
          prevProps.isAdmin === nextProps.isAdmin &&
          prevProps.storeId === nextProps.storeId &&
+         prevProps.inCarousel === nextProps.inCarousel &&
          prevProps.priority === nextProps.priority &&
          prevProps.featuredMobile === nextProps.featuredMobile &&
          prevProps.layout === nextProps.layout;
