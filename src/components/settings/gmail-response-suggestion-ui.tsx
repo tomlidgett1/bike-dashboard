@@ -230,16 +230,31 @@ export function GmailConnectSuggestionCard({
   gmail: NonNullable<GmailSuggestionsResponse["gmail"]>;
 }) {
   const [opening, setOpening] = React.useState(false);
+  const [error, setError] = React.useState("");
 
-  function openConnect() {
-    const url = gmail.connectUrl?.trim();
-    if (!url) return;
+  async function openConnect() {
     setOpening(true);
-    window.open(url, "_blank", "noopener,noreferrer");
-    window.setTimeout(() => setOpening(false), 600);
+    setError("");
+    try {
+      let url = gmail.connectUrl?.trim();
+      if (!url) {
+        const res = await fetch("/api/composio/connect", { method: "POST" });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.url) {
+          setError(data?.error || "Could not start Gmail connection.");
+          return;
+        }
+        url = data.url as string;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      setError("Connection error. Please try again.");
+    } finally {
+      window.setTimeout(() => setOpening(false), 600);
+    }
   }
 
-  if (!gmail.configured || gmail.connected || !gmail.connectUrl) return null;
+  if (!gmail.configured || gmail.connected) return null;
 
   return (
     <div className={NEST_PICKUP_SUGGESTION_CARD_CLASS}>
@@ -247,10 +262,10 @@ export function GmailConnectSuggestionCard({
         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white ring-1 ring-black/[0.06]">
           <GmailLogo className="h-[13px] max-w-[16px]" />
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm text-gray-800">
+        <span className={cn("min-w-0 flex-1 truncate text-sm", error ? "text-red-600" : "text-gray-800")}>
           <span className="font-semibold text-gray-900">Gmail</span>
           <span className="text-gray-400"> · </span>
-          Connect inbox for reply suggestions
+          {error || "Connect inbox for reply suggestions"}
         </span>
       </div>
       <button

@@ -70,13 +70,13 @@ export function HomeV2SmartSuggestions() {
   const [showAddGmailCard, setShowAddGmailCard] = React.useState(false);
 
   const gmailConnectPayload = React.useMemo((): GmailConnectPayload | null => {
-    if (!gmailState?.configured || !gmailState.connectUrl) return null;
+    if (!gmailState?.configured) return null;
     if (!gmailState.connected) {
-      return { url: gmailState.connectUrl, reason: "status", can_add_more: true };
+      return { url: gmailState.connectUrl ?? "", reason: "status", can_add_more: true };
     }
     if (showAddGmailCard) {
       return {
-        url: gmailState.connectUrl,
+        url: gmailState.connectUrl ?? "",
         reason: "add_account",
         accounts: gmailState.accounts,
         can_add_more: true,
@@ -87,7 +87,7 @@ export function HomeV2SmartSuggestions() {
 
   const showGmailConnectCard = Boolean(gmailConnectPayload);
   const showAddGmailPrompt = Boolean(
-    gmailState?.configured && gmailState.connected && gmailState.connectUrl && !showAddGmailCard,
+    gmailState?.configured && gmailState.connected && !showAddGmailCard,
   );
 
   const initialLoad = React.useRef(true);
@@ -224,7 +224,7 @@ export function HomeV2SmartSuggestions() {
   const hasVisibleSuggestions =
     suggestions.length > 0
     || gmailSuggestions.length > 0
-    || showGmailConnectCard
+    || (showGmailConnectCard && !isInitialGmailConnect)
     || showAddGmailPrompt;
 
   const showSectionLabel =
@@ -259,10 +259,10 @@ export function HomeV2SmartSuggestions() {
         ) : null}
 
         <div className="space-y-2">
-          {showGmailConnectCard && gmailConnectPayload ? (
+          {showGmailConnectCard && gmailConnectPayload && !isInitialGmailConnect ? (
             <GmailConnectCard
               payload={gmailConnectPayload}
-              variant={isInitialGmailConnect ? "compact" : "default"}
+              variant="default"
               onConnected={() => {
                 setShowAddGmailCard(false);
                 void load({ silent: true });

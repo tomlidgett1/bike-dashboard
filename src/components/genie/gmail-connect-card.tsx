@@ -50,21 +50,49 @@ export function GmailConnectCard({
   payload: GmailConnectPayload;
   onConnected?: () => void;
   /** Compact row for home-page prompts when Gmail is not connected yet. */
-  variant?: "default" | "compact";
+  variant?: "default" | "compact" | "inline";
 }) {
   const [expanded, setExpanded] = React.useState(false);
-  const [status, setStatus] = React.useState<"idle" | "opening" | "error">("idle");
+  const [status, setStatus] = React.useState<"idle" | "opening" | "waiting" | "error">("idle");
   const [errorMsg, setErrorMsg] = React.useState("");
+  const mountedRef = React.useRef(true);
   const connectedAccounts = payload.accounts?.filter((account) => account.status === "ACTIVE") ?? [];
   const hasAccounts = connectedAccounts.length > 0;
   const copy = reasonCopy(payload.reason, hasAccounts);
   const useCompact = variant === "compact" && !hasAccounts && payload.reason !== "add_account";
+  const useInline = variant === "inline" && !hasAccounts && payload.reason !== "add_account";
 
   React.useEffect(() => {
-    if (useCompact) return;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (useCompact || useInline) return;
     const frame = requestAnimationFrame(() => setExpanded(true));
     return () => cancelAnimationFrame(frame);
-  }, [useCompact]);
+  }, [useCompact, useInline]);
+
+  const waitForConnection = React.useCallback(async () => {
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+      if (!mountedRef.current) return;
+      try {
+        const res = await fetch("/api/composio/status", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.connected) {
+          setStatus("idle");
+          onConnected?.();
+          return;
+        }
+      } catch {
+        // Keep polling; OAuth may still be redirecting in the other tab.
+      }
+    }
+    if (mountedRef.current) setStatus("idle");
+  }, [onConnected]);
 
   const openConnect = async () => {
     setStatus("opening");
@@ -82,13 +110,42 @@ export function GmailConnectCard({
         url = data.url as string;
       }
       window.open(url, "_blank", "noopener,noreferrer");
-      setStatus("idle");
-      onConnected?.();
+      setStatus("waiting");
+      void waitForConnection();
     } catch {
       setStatus("error");
       setErrorMsg("Connection error. Please try again.");
     }
   };
+
+  if (useInline) {
+    return (
+      <div className="flex shrink-0 flex-col items-end">
+        <button
+          type="button"
+          onClick={() => void openConnect()}
+          disabled={status === "opening" || status === "waiting"}
+          className={cn(
+            "mb-0.5 flex h-9 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-gray-600 transition-colors",
+            "hover:bg-gray-100 hover:text-gray-900",
+            status === "error" && "text-destructive hover:bg-red-50",
+          )}
+          title={status === "error" ? errorMsg : "Connect Gmail for inbox suggestions"}
+        >
+          {status === "opening" || status === "waiting" ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <>
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white ring-1 ring-black/[0.06]">
+                <GmailLogo className="h-[11px] max-w-[14px]" />
+              </span>
+              Connect Gmail
+            </>
+          )}
+        </button>
+      </div>
+    );
+  }
 
   if (useCompact) {
     return (
@@ -107,10 +164,10 @@ export function GmailConnectCard({
             variant="ghost"
             size="sm"
             onClick={() => void openConnect()}
-            disabled={status === "opening"}
+            disabled={status === "opening" || status === "waiting"}
             className="h-7 shrink-0 rounded-md px-2 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
           >
-            {status === "opening" ? (
+            {status === "opening" || status === "waiting" ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <>
@@ -187,16 +244,16 @@ export function GmailConnectCard({
             <div className="flex items-center justify-end gap-2">
               <Button
                 onClick={openConnect}
-                disabled={status === "opening"}
+                disabled={status === "opening" || status === "waiting"}
                 className={cn(
                   "h-9 rounded-full bg-gray-200 px-4 text-sm font-medium text-gray-900",
                   "hover:bg-gray-300",
                 )}
               >
-                {status === "opening" ? (
+                {status === "opening" || status === "waiting" ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Opening…
+                    {status === "waiting" ? "Waiting for Gmail…" : "Opening…"}
                   </>
                 ) : (
                   <>

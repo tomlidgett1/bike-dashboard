@@ -599,7 +599,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
       {/* 2b. Gmail search results */}
       <AnimatePresence>
-        {message.gmailEmails && message.gmailEmails.emails.length > 0 && (
+        {message.gmailEmails && message.gmailEmails.ui_mode !== "hidden" && (
           <motion.div
             key="gmail-emails"
             initial={{ opacity: 0, y: 6 }}

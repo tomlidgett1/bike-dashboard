@@ -4,7 +4,6 @@ import {
   getGmailConnection,
   isComposioConfigured,
   listGmailConnections,
-  mintGmailConnectLink,
   searchGmailEmails,
 } from '@/lib/composio/gmail'
 import {
@@ -167,16 +166,12 @@ export async function GET() {
 
     const connections = await listGmailConnections(auth.user.id)
     if (connections.length === 0) {
-      const link = await mintGmailConnectLink(auth.user.id).catch((error) => {
-        console.warn('[homev2-gmail-suggestions] connect link unavailable:', error)
-        return null
-      })
       return NextResponse.json({
         suggestions: [],
         gmail: {
           configured: true,
           connected: false,
-          connectUrl: link?.url ?? null,
+          connectUrl: null,
           accounts: [],
         },
       })
@@ -200,7 +195,7 @@ export async function GET() {
       gmail: {
         configured: true,
         connected: true,
-        connectUrl: (await mintGmailConnectLink(auth.user.id).catch(() => null))?.url ?? null,
+        connectUrl: null,
         accounts: connections.map((connection) => ({
           id: connection.id,
           label: connection.label,

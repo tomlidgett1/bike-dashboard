@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { isGmailConnectIntent, isGmailAddAccountIntent, isGmailTaskIntent, applyGmailPlanningPolicy } from '../src/lib/composio/gmail-intent'
 import { needsGmailTools } from '../src/lib/genie/agent-runtime-policy'
 import { isComposioConfigured } from '../src/lib/composio/client'
-import { extractEmailTimestampMs } from '../src/lib/composio/gmail'
+import { extractEmailTimestampMs, inferGmailCardMode } from '../src/lib/composio/gmail'
 import { buildContactAnalysis, parseFromField } from '../src/lib/composio/gmail-contact-analysis'
 import {
   decodeGmailBase64Url,
@@ -19,6 +19,7 @@ import {
   questionNeedsSentContext,
 } from '../src/lib/composio/gmail-reply-context'
 import { buildGmailAnswerReadiness, verifyQuestionAnswered } from '../src/lib/genie/answer-verification'
+import type { GmailEmailPreview, GmailEmailsPayload } from '../src/lib/types/genie-agent'
 
 const root = process.cwd()
 const agentRouteSource = readFileSync(join(root, 'src/app/api/genie/agent/route.ts'), 'utf8')
@@ -26,6 +27,10 @@ const homeV2ChatSource = readFileSync(join(root, 'src/app/settings/store/homev2/
 const applyRouteSource = readFileSync(join(root, 'src/app/api/genie/agent/apply/route.ts'), 'utf8')
 const toolkitSource = readFileSync(join(root, 'src/lib/composio/toolkit.ts'), 'utf8')
 const gmailSource = readFileSync(join(root, 'src/lib/composio/gmail.ts'), 'utf8')
+const composioStatusSource = readFileSync(join(root, 'src/app/api/composio/status/route.ts'), 'utf8')
+const homeV2GmailSuggestionsSource = readFileSync(join(root, 'src/app/api/store/homev2-gmail-suggestions/route.ts'), 'utf8')
+const gmailConnectCardSource = readFileSync(join(root, 'src/components/genie/gmail-connect-card.tsx'), 'utf8')
+const gmailEmailSearchCardSource = readFileSync(join(root, 'src/components/genie/gmail-email-search-card.tsx'), 'utf8')
 
 // ── Intent detection ──────────────────────────────────────────────────────────
 
@@ -254,12 +259,101 @@ const warrantyReadiness = buildGmailAnswerReadiness(
 )
 assert.equal(warrantyReadiness?.ready_to_answer, false, 'content question without bodies should not be ready')
 
+const uiEmail: GmailEmailPreview = {
+  message_id: 'ui-1',
+  thread_id: 'thread-1',
+  subject: 'Warranty claim update',
+  from: 'Joel Pearson <joel@apollobikes.com>',
+  to: 'sales@yellowjersey.test',
+  snippet: 'Trace 20 crankset spindle failure under warranty claim',
+  internal_date_ms: Date.parse('2026-06-01T00:00:00Z'),
+  date_label: '1 Jun 2026',
+  connected_account_id: 'acct_1',
+  mailbox_label: 'sales@yellowjersey.test',
+}
+
+const uiPayload = (patch: Partial<GmailEmailsPayload> = {}): GmailEmailsPayload => ({
+  title: 'Gmail search results',
+  query: 'from:apollobikes.com',
+  emails: [uiEmail],
+  scan_stats: {
+    total_matched: patch.emails?.length ?? 1,
+    pages_scanned: 1,
+    scan_mode: 'quick',
+    capped: false,
+    oldest_date_ms: uiEmail.internal_date_ms,
+    newest_date_ms: uiEmail.internal_date_ms,
+    oldest_date_label: uiEmail.date_label,
+    newest_date_label: uiEmail.date_label,
+  },
+  ...patch,
+})
+
+assert.equal(
+  inferGmailCardMode(
+    'who was our first apollo rep',
+    uiPayload({ contact_analysis: apolloLike ?? undefined }),
+  ),
+  'contact_analysis',
+  'rep/contact questions should show contact analysis instead of a generic email list',
+)
+assert.equal(
+  inferGmailCardMode(
+    'what was that warranty issue with apollo',
+    uiPayload({
+      message_bodies: [{ ...uiEmail, body_text: 'Trace 20 crankset spindle failure under warranty claim', body_truncated: false }],
+    }),
+  ),
+  'thread_context',
+  'body/evidence questions should show hydrated thread context',
+)
+assert.equal(
+  inferGmailCardMode(
+    'respond to Joel about the warranty claim',
+    uiPayload({
+      includes_sent_context: true,
+      message_bodies: [{ ...uiEmail, body_text: 'Prior sent pricing and warranty context', body_truncated: false }],
+    }),
+  ),
+  'reply_context',
+  'reply tasks should show reply context rather than a raw search card',
+)
+assert.equal(
+  inferGmailCardMode(
+    'show me emails from Apollo',
+    uiPayload(),
+  ),
+  'search_summary',
+  'explicit search/list requests should still show a compact search summary',
+)
+assert.equal(
+  inferGmailCardMode(
+    'what was that warranty issue with apollo',
+    uiPayload({
+      message_bodies: [],
+      answer_readiness: {
+        ready_to_answer: false,
+        gaps: ['Need full message bodies before answering.'],
+        criteria_checked: ['message bodies'],
+      },
+    }),
+  ),
+  'hidden',
+  'intermediate incomplete Gmail lookups should stay private instead of rendering poor UX cards',
+)
+
 assert.match(agentRouteSource, /verify_question_answered/, 'agent must expose answer verification tool')
 assert.match(agentRouteSource, /Have we actually answered/, 'agent prompt must require answer check')
 assert.match(agentRouteSource, /get_gmail_connection_status/, 'agent route must expose gmail status tool')
 assert.match(agentRouteSource, /listGmailConnections/, 'agent route must support multiple gmail accounts')
 assert.match(agentRouteSource, /connected_account_id/, 'search_gmail must accept optional mailbox filter')
 assert.match(gmailSource, /listGmailConnections/, 'gmail module must list all connections')
+assert.doesNotMatch(composioStatusSource, /mintGmailConnectLink/, 'read-only composio status must not mint OAuth links')
+assert.doesNotMatch(homeV2GmailSuggestionsSource, /mintGmailConnectLink/, 'gmail suggestions status must not mint OAuth links')
+assert.doesNotMatch(homeV2ChatSource, /api\/composio\/connect/, 'home chat mount must not create OAuth links before user click')
+assert.match(gmailConnectCardSource, /api\/composio\/connect/, 'connect card must create OAuth links on click')
+assert.match(gmailConnectCardSource, /waitForConnection/, 'connect card must confirm status before clearing')
+assert.match(agentRouteSource, /shouldMintConnectLink/, 'agent gmail status must guard connect-link minting')
 assert.match(gmailSource, /enrichWithSentContext|includes_sent_context/, 'gmail search must merge sent context for replies')
 assert.match(gmailSource, /buildImplicitGmailQuery|resolveSearchQuery/, 'gmail search must infer query from user question')
 assert.match(agentRouteSource, /isGmailTaskIntent/, 'agent route must use isGmailTaskIntent for gmail routing')
@@ -268,6 +362,15 @@ assert.match(agentRouteSource, /respond to \{name\}|in:sent context/, 'agent pla
 assert.match(toolkitSource, /allowMultiple/, 'composio connect link must allow multiple accounts')
 assert.match(agentRouteSource, /gmail_connect/, 'agent route must emit gmail_connect SSE event')
 assert.match(agentRouteSource, /needs_plan=true.*Gmail|Gmail.*needs_plan=true/i, 'orchestrator must require plan for gmail')
+assert.match(gmailSource, /inferGmailCardMode/, 'gmail module must infer context-aware UI modes')
+assert.match(gmailSource, /ui_summary/, 'gmail search payload must include a tailored UI summary')
+assert.match(agentRouteSource, /buildVisibleGmailPayload/, 'agent must filter gmail cards before streaming')
+assert.match(agentRouteSource, /ui_mode/, 'agent context must preserve gmail UI mode')
+assert.match(agentRouteSource, /total: payload\.scan_stats\?\.total_matched/, 'search_gmail tool output total must use full matched count')
+assert.match(gmailEmailSearchCardSource, /contact_analysis/, 'gmail card must render contact analysis mode')
+assert.match(gmailEmailSearchCardSource, /thread_context/, 'gmail card must render thread context mode')
+assert.match(gmailEmailSearchCardSource, /reply_context/, 'gmail card must render reply context mode')
+assert.match(gmailEmailSearchCardSource, /SearchSummaryView/, 'gmail card must render compact explicit search summaries')
 
 assert.match(homeV2ChatSource, /gmailEmails: message\.gmailEmails/, 'home page must round-trip gmail context')
 assert.match(agentRouteSource, /compactGmailForContext/, 'agent must inject gmail private context')

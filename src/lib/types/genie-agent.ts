@@ -184,6 +184,9 @@ export interface GmailEmailActionProposal {
   bcc?: string[];
   is_html?: boolean;
   connected_account_id?: string | null;
+  /** Gmail thread/message being replied to, carried for review and traceability. */
+  thread_id?: string | null;
+  reply_to_message_id?: string | null;
   /** Short human-readable description for the approval card. */
   description: string;
   /** Data categories shown in the approval card footer. */
@@ -193,6 +196,13 @@ export interface GmailEmailActionProposal {
 export type GmailSortOrder = 'newest' | 'oldest';
 
 export type GmailScanDepth = 'quick' | 'full';
+
+export type GmailCardMode =
+  | 'search_summary'
+  | 'contact_analysis'
+  | 'thread_context'
+  | 'reply_context'
+  | 'hidden';
 
 export type GmailSenderRoleHint = 'sales' | 'support' | 'automated' | 'unknown';
 
@@ -269,6 +279,10 @@ export interface GmailAgentContext {
 export interface GmailEmailsPayload {
   title: string;
   query: string;
+  /** Drives the UI projection: summary, contact analysis, evidence, reply context, or no card. */
+  ui_mode?: GmailCardMode;
+  /** One-line UI explanation tailored to the user question. */
+  ui_summary?: string;
   emails: GmailEmailPreview[];
   truncated?: boolean;
   connected_mailboxes?: Array<{

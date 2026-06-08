@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isComposioConfigured } from '@/lib/composio/client'
-import { listGmailConnections, mintGmailConnectLink } from '@/lib/composio/gmail'
+import { listGmailConnections } from '@/lib/composio/gmail'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,10 +34,6 @@ export async function GET() {
     }
 
     const accounts = await listGmailConnections(user.id)
-    const link = await mintGmailConnectLink(user.id).catch((error) => {
-      console.warn('[composio/status] connect link unavailable:', error)
-      return null
-    })
 
     return NextResponse.json({
       configured: true,
@@ -49,7 +45,7 @@ export async function GET() {
         email_address: account.email_address ?? null,
         status: account.status,
       })),
-      connectUrl: link?.url ?? null,
+      connectUrl: null,
       canAddMore: true,
     })
   } catch (error) {

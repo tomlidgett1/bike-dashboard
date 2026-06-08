@@ -770,10 +770,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
         const statusRes = await fetch("/api/composio/status");
         const status = await statusRes.json().catch(() => null);
         if (cancelled || !status?.configured || status?.connected) return;
-        const connectRes = await fetch("/api/composio/connect", { method: "POST" });
-        const connect = await connectRes.json().catch(() => null);
-        if (cancelled || !connect?.url) return;
-        setGmailConnectBanner({ url: connect.url, reason: "status" });
+        setGmailConnectBanner({ url: "", reason: "status" });
       } catch {
         // Gmail connect banner is optional — Genie can still prompt in chat.
       }
@@ -1294,6 +1291,14 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     void runSend(text, rawText === undefined);
   }, [input, runSend]);
 
+  const gmailConnectAccessory = gmailConnectBanner ? (
+    <GmailConnectCard
+      payload={gmailConnectBanner}
+      variant="inline"
+      onConnected={() => setGmailConnectBanner(null)}
+    />
+  ) : null;
+
   return (
     <div className="flex h-[calc(100svh-57px)] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]">
       {!hasStarted ? (
@@ -1323,6 +1328,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
               onChange={setInput}
               onSubmit={() => submitPrompt()}
               onStop={stopGeneration}
+              endAccessory={gmailConnectAccessory}
             />
           </div>
 
@@ -1374,7 +1380,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 	                          {message.workorders?.workorders.length ? (
 	                            <LightspeedWorkorderCards payload={message.workorders} fullWidth />
 	                          ) : null}
-	                          {message.gmailEmails?.emails.length ? (
+		                          {message.gmailEmails && message.gmailEmails.ui_mode !== "hidden" ? (
 	                            <GmailEmailSearchCard payload={message.gmailEmails} />
 	                          ) : null}
 	                          {message.gmailConnect ? (
@@ -1441,16 +1447,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                 onDelete={deleteQueuedPrompt}
               />
 
-              {gmailConnectBanner ? (
-                <div className="mb-2">
-                  <GmailConnectCard
-                    payload={gmailConnectBanner}
-                    variant="compact"
-                    onConnected={() => setGmailConnectBanner(null)}
-                  />
-                </div>
-              ) : null}
-
               <HomeV2ChatInput
                 compact
                 value={input}
@@ -1458,6 +1454,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                 onChange={setInput}
                 onSubmit={() => submitPrompt()}
                 onStop={stopGeneration}
+                endAccessory={gmailConnectAccessory}
               />
             </div>
           </div>

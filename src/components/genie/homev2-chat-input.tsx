@@ -14,6 +14,7 @@ export function HomeV2ChatInput({
   onStop,
   placeholder = "Ask anything",
   showDisclaimer = true,
+  endAccessory,
 }: {
   value: string;
   isRunning?: boolean;
@@ -24,6 +25,8 @@ export function HomeV2ChatInput({
   onStop?: () => void;
   placeholder?: string;
   showDisclaimer?: boolean;
+  /** Renders inside the input row, before the send/stop control (e.g. Connect Gmail). */
+  endAccessory?: React.ReactNode;
 }) {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const hasText = value.trim().length > 0;
@@ -87,6 +90,8 @@ export function HomeV2ChatInput({
           placeholder={isRunning ? "Queue another prompt..." : placeholder}
           className="max-h-[132px] min-h-[36px] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-[15px] leading-snug text-foreground outline-none placeholder:text-gray-500"
         />
+
+        {endAccessory}
 
         <button
           type={isRunning && !hasText ? "button" : "submit"}

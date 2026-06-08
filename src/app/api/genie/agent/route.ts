@@ -763,7 +763,7 @@ function compactGmailForContext(payload: GmailEmailsPayload): string {
   if (!payload?.emails?.length && !payload.agent_context?.message_bodies?.length) return ''
 
   const lines = [
-    `gmail title=${compactContextText(payload.title, 120)} query=${compactContextText(payload.query, 160)}`,
+    `gmail ui_mode=${payload.ui_mode ?? 'search_summary'} title=${compactContextText(payload.title, 120)} query=${compactContextText(payload.query, 160)}`,
     payload.connected_mailboxes?.length
       ? `mailboxes=${payload.connected_mailboxes.map((mailbox) => mailbox.email_address ?? mailbox.label).join(', ')}`
       : '',
@@ -801,6 +801,31 @@ function compactGmailForContext(payload: GmailEmailsPayload): string {
   }
 
   return lines.filter(Boolean).join('\n')
+}
+
+function gmailUiBodyExcerpt(bodyText: string): string {
+  return compactContextText(bodyText, 520)
+}
+
+function buildVisibleGmailPayload(payload: GmailEmailsPayload): GmailEmailsPayload | null {
+  if (payload.ui_mode === 'hidden') return null
+
+  const hasVisibleContent =
+    payload.emails.length > 0
+    || Boolean(payload.message_bodies?.length)
+    || Boolean(payload.contact_analysis)
+    || payload.scan_stats?.total_matched === 0
+
+  if (!hasVisibleContent) return null
+
+  return {
+    ...payload,
+    message_bodies: payload.message_bodies?.slice(0, 4).map((message) => ({
+      ...message,
+      body_text: gmailUiBodyExcerpt(message.body_text),
+      body_truncated: message.body_truncated || message.body_text.length > 520,
+    })),
+  }
 }
 
 function privateContextForMessage(message: Message): string {
@@ -10771,7 +10796,6 @@ function emitGmailConnect(
   extras?: Pick<GmailConnectPayload, 'accounts' | 'can_add_more'>,
 ) {
   const url = connectUrl?.trim()
-  if (!url && !extras?.accounts?.length) return
   emit({
     event: 'gmail_connect',
     gmail_connect: {
@@ -10795,11 +10819,15 @@ async function buildGmailEmailActionProposal(
     bcc?: string[]
     is_html?: boolean
     connected_account_id?: string
+    thread_id?: string
+    reply_to_message_id?: string
   },
 ): Promise<{ proposal?: GmailEmailActionProposal; output: object }> {
   const recipient = args.recipient_email.trim()
   const subject = args.subject.trim()
   const body = args.body.trim()
+  const threadId = args.thread_id?.trim() || null
+  const replyToMessageId = args.reply_to_message_id?.trim() || null
 
   if (!recipient) {
     return { output: { error: 'recipient_email is required.' } }
@@ -10853,8 +10881,14 @@ async function buildGmailEmailActionProposal(
     bcc: args.bcc,
     is_html: args.is_html,
     connected_account_id: connection.id,
+    thread_id: threadId,
+    reply_to_message_id: replyToMessageId,
     description,
-    sharing_data: [{ label: 'Emails', value: recipient }],
+    sharing_data: [
+      { label: 'Recipient', value: recipient },
+      ...(threadId ? [{ label: 'Thread', value: threadId }] : []),
+      ...(replyToMessageId ? [{ label: 'Source message', value: replyToMessageId }] : []),
+    ],
   }
 
   return { proposal, output: { staged: true, action: args.action, recipient_email: recipient } }
@@ -11835,10 +11869,6 @@ function buildAgentTools(
           return { configured: false, connected: false, message: 'Gmail integration is not configured on this environment.' }
         }
         const connections = await listGmailConnections(userId)
-        const link = await mintGmailConnectLink(userId).catch((error) => {
-          console.error('[gmail] mint connect link failed:', error)
-          return null
-        })
         const accounts = connections.map((connection) => ({
           id: connection.id,
           label: connection.label,
@@ -11846,6 +11876,13 @@ function buildAgentTools(
           status: connection.status,
         }))
         const showCard = args.show_connect_card ?? (wantsGmailConnectCard || connections.length === 0)
+        const shouldMintConnectLink = showCard && (connections.length === 0 || wantsGmailConnectCard || args.show_connect_card === true)
+        const link = shouldMintConnectLink
+          ? await mintGmailConnectLink(userId).catch((error) => {
+            console.error('[gmail] mint connect link failed:', error)
+            return null
+          })
+          : null
         if (showCard) {
           emitGmailConnect(emit, link?.url ?? null, connections.length > 0 ? 'add_account' : 'status', {
             accounts,
@@ -11915,9 +11952,8 @@ function buildAgentTools(
           user_question: args.user_question,
           connected_account_id: args.connected_account_id,
         })
-        if (payload.emails.length > 0 || payload.scan_stats?.scan_mode === 'full') {
-          const uiPayload = { ...payload }
-          delete uiPayload.message_bodies
+        const uiPayload = buildVisibleGmailPayload(payload)
+        if (uiPayload) {
           const agentContext = buildGmailAgentContextFromPayload(payload)
           emit({
             event: 'gmail_emails',
@@ -11932,7 +11968,7 @@ function buildAgentTools(
           query: payload.query,
           scan_depth: args.scan_depth ?? payload.scan_stats?.scan_mode ?? 'quick',
           sort_order: args.sort_order ?? 'newest',
-          total: payload.emails.length,
+          total: payload.scan_stats?.total_matched ?? payload.emails.length,
           truncated: payload.truncated ?? false,
           scan_stats: payload.scan_stats ?? null,
           connected_mailboxes: payload.connected_mailboxes ?? [],
