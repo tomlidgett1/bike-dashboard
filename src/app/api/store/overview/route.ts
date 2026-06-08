@@ -4,7 +4,7 @@ import { getWebTrackingAnalytics } from "@/lib/store/web-tracking-analytics";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 
 async function getInventoryStats(service: ReturnType<typeof createServiceRoleClient>, userId: string) {
-  const [liveRes, individualRes, totalRes, productsRes] = await Promise.all([
+  const [liveRes, individualRes, totalRes] = await Promise.all([
     service
       .from("marketplace_ready_products")
       .select("id", { count: "exact", head: true })
@@ -18,69 +18,20 @@ async function getInventoryStats(service: ReturnType<typeof createServiceRoleCli
       .from("products")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId),
-    service
-      .from("products")
-      .select(
-        `
-        id,
-        is_active,
-        listing_status,
-        listing_type,
-        qoh,
-        canonical_product_id,
-        selected_product_image_id,
-        product_images!product_id (
-          id,
-          approval_status,
-          is_primary,
-          sort_order,
-          source
-        ),
-        canonical_products!canonical_product_id (
-          product_images!canonical_product_id (
-            id,
-            approval_status,
-            is_primary,
-            sort_order,
-            source
-          )
-        )
-      `
-      )
-      .eq("user_id", userId)
-      .eq("is_active", true),
   ]);
 
   if (liveRes.error) throw liveRes.error;
   if (individualRes.error) throw individualRes.error;
   if (totalRes.error) throw totalRes.error;
-  if (productsRes.error) throw productsRes.error;
 
-  const { getMarketplaceReadiness } = await import("@/lib/marketplace/product-readiness");
-
-  let withoutApprovedPhotos = 0;
-  for (const row of productsRes.data ?? []) {
-    const canonicalImages =
-      (row.canonical_products as { product_images?: unknown[] } | null)?.product_images ?? [];
-    const readiness = getMarketplaceReadiness({
-      is_active: row.is_active,
-      listing_status: row.listing_status,
-      listing_type: row.listing_type,
-      qoh: row.qoh,
-      selected_product_image_id: row.selected_product_image_id,
-      productImages: (row.product_images as never[]) ?? [],
-      canonicalImages: canonicalImages as never[],
-    });
-    if (readiness.blockers.some((b) => b.id === "no_approved_image")) {
-      withoutApprovedPhotos += 1;
-    }
-  }
+  const marketplaceLive = liveRes.count ?? 0;
+  const totalProducts = totalRes.count ?? 0;
 
   return {
-    marketplaceLive: liveRes.count ?? 0,
+    marketplaceLive,
     individualListings: individualRes.count ?? 0,
-    totalProducts: totalRes.count ?? 0,
-    withoutApprovedPhotos,
+    totalProducts,
+    notYetLive: Math.max(0, totalProducts - marketplaceLive),
   };
 }
 

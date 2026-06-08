@@ -193,9 +193,7 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
           const id = event.productId as string;
           if (!id) return;
           if (event.event === "product_complete") {
-            if (event.success) {
-              const description = (event.description as string | null) ?? null;
-              const specs = (event.specs as string | null) ?? null;
+            if (event.bicycle_detected) {
               const isBicycle = event.is_bicycle as boolean | undefined;
               const bikeSpecs = event.bike_specs;
               const confidence = event.bicycle_confidence as
@@ -203,6 +201,28 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
                 | "medium"
                 | "low"
                 | undefined;
+
+              if (typeof isBicycle === "boolean") {
+                setProducts((prev) =>
+                  prev.map((p) =>
+                    p.id === id
+                      ? {
+                          ...p,
+                          is_bicycle: isBicycle,
+                          ...(bikeSpecs ? { bike_specs: bikeSpecs } : {}),
+                        }
+                      : p,
+                  ),
+                );
+              }
+              if (confidence) {
+                setAiBicycleHints((prev) => ({ ...prev, [id]: confidence }));
+              }
+            }
+
+            if (event.success) {
+              const description = (event.description as string | null) ?? null;
+              const specs = (event.specs as string | null) ?? null;
               setProducts((prev) =>
                 prev.map((p) =>
                   p.id === id
@@ -210,20 +230,10 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
                         ...p,
                         product_description: description ?? p.product_description,
                         product_specs: specs ?? p.product_specs,
-                        ...(typeof isBicycle === "boolean"
-                          ? { is_bicycle: isBicycle }
-                          : {}),
-                        ...(bikeSpecs ? { bike_specs: bikeSpecs } : {}),
                       }
                     : p,
                 ),
               );
-              if (typeof isBicycle === "boolean") {
-                setBicycleOverrides((prev) => ({ ...prev, [id]: isBicycle }));
-              }
-              if (confidence) {
-                setAiBicycleHints((prev) => ({ ...prev, [id]: confidence }));
-              }
               if (doDesc) setText(id, "description", { status: "done" });
               if (doSpecs) setText(id, "specs", { status: "done" });
             } else {

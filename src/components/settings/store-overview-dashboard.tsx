@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ImageOff, Loader2, Package, RefreshCw, Store, Users } from "lucide-react";
+import { Loader2, Package, PackageOpen, RefreshCw, Store, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/dashboard";
 import { HomeGenieFloatingPrompt } from "@/components/settings/home-genie-floating-prompt";
@@ -29,7 +29,7 @@ interface OverviewResponse {
   displayName: string;
   inventory: {
     marketplaceLive: number;
-    withoutApprovedPhotos: number;
+    notYetLive: number;
   };
   webAnalytics: WebTrackingAnalytics;
 }
@@ -146,10 +146,10 @@ export function StoreOverviewDashboard() {
           hint="Approved and listed on the marketplace"
         />
         <StatCard
-          label="Missing approved photos"
-          value={formatNumber(inventory.withoutApprovedPhotos)}
-          icon={ImageOff}
-          hint="Active products without an approved image"
+          label="Needs attention"
+          value={formatNumber(inventory.notYetLive)}
+          icon={PackageOpen}
+          hint="Products not yet live on the marketplace"
         />
       </div>
 

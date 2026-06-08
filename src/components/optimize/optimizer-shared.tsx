@@ -239,6 +239,29 @@ function mapProductRows(rows: ProductApiRow[]): OptimizerProduct[] {
   }));
 }
 
+export async function fetchLiveProductSoh(
+  productIds: string[],
+  options?: { signal?: AbortSignal },
+): Promise<Record<string, number>> {
+  if (productIds.length === 0) return {};
+
+  const params = new URLSearchParams({
+    page: "1",
+    pageSize: String(productIds.length),
+    status: "active",
+    ids: productIds.join(","),
+  });
+  const res = await fetch(`/api/products?${params}`, { signal: options?.signal });
+  if (!res.ok) return {};
+
+  const data = await res.json();
+  const sohById: Record<string, number> = {};
+  for (const row of (data.products ?? []) as Array<{ id: string; qoh?: number | null }>) {
+    sohById[row.id] = Math.max(0, Number(row.qoh) || 0);
+  }
+  return sohById;
+}
+
 export async function fetchOptimizerProductsBySearch(
   search: string,
   options?: { signal?: AbortSignal; pageSize?: number },
@@ -585,10 +608,24 @@ export function LightboxOverlay({
   url: string | null;
   onClose: () => void;
 }) {
+  React.useEffect(() => {
+    if (!url) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
+
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [url, onClose]);
+
   if (!url) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/85 p-6 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-foreground/85 p-6 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}

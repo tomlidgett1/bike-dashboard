@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { Reorder } from "framer-motion";
-import { Trash2, Edit2, GripVertical, Loader2, Upload, X, Tag } from "lucide-react";
+import { Trash2, Edit2, GripVertical, Loader2, Upload, X, Tag, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { StoreBrand } from "@/lib/types/store";
+import type { BrandLogoSearchResult } from "@/lib/store/brand-logo-serper";
+import { cn } from "@/lib/utils";
 
 interface BrandFormData {
   name: string;
@@ -43,6 +45,31 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
   const [deleteConfirmId, setDeleteConfirmId] = React.useState<string | null>(null);
   const [formData, setFormData] = React.useState<BrandFormData>({ name: '', logoUrl: '' });
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [logoSearchQuery, setLogoSearchQuery] = React.useState('');
+  const [logoSearchResults, setLogoSearchResults] = React.useState<BrandLogoSearchResult[]>([]);
+  const [logoSearching, setLogoSearching] = React.useState(false);
+  const [logoSearchError, setLogoSearchError] = React.useState<string | null>(null);
+  const [logoImportingUrl, setLogoImportingUrl] = React.useState<string | null>(null);
+
+  const resetLogoSearch = React.useCallback(() => {
+    setLogoSearchQuery('');
+    setLogoSearchResults([]);
+    setLogoSearchError(null);
+    setLogoSearching(false);
+    setLogoImportingUrl(null);
+  }, []);
+
+  const openBrandDialog = React.useCallback((brand: StoreBrand | null) => {
+    setEditingBrand(brand);
+    setFormData({
+      name: brand?.name ?? '',
+      logoUrl: brand?.logo_url ?? '',
+    });
+    setSaveError(null);
+    resetLogoSearch();
+    setLogoSearchQuery(brand?.name ? `${brand.name} logo` : '');
+    setIsDialogOpen(true);
+  }, [resetLogoSearch]);
 
   const fetchBrands = React.useCallback(async () => {
     try {
@@ -64,21 +91,80 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
   }, [fetchBrands]);
 
   const handleAddNew = React.useCallback(() => {
-    setEditingBrand(null);
-    setFormData({ name: '', logoUrl: '' });
-    setSaveError(null);
-    setIsDialogOpen(true);
-  }, []);
+    openBrandDialog(null);
+  }, [openBrandDialog]);
 
   React.useEffect(() => {
     if (addRequest > 0) handleAddNew();
   }, [addRequest, handleAddNew]);
 
   const handleEdit = (brand: StoreBrand) => {
-    setEditingBrand(brand);
-    setFormData({ name: brand.name, logoUrl: brand.logo_url || '' });
-    setSaveError(null);
-    setIsDialogOpen(true);
+    openBrandDialog(brand);
+  };
+
+  const handleLogoSearch = async () => {
+    const query = logoSearchQuery.trim() || (formData.name.trim() ? `${formData.name.trim()} logo` : '');
+    if (!query) {
+      setLogoSearchError('Enter a brand name or search query first');
+      return;
+    }
+
+    try {
+      setLogoSearching(true);
+      setLogoSearchError(null);
+      setLogoSearchResults([]);
+
+      const response = await fetch('/api/store/brands/search-logo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: logoSearchQuery.trim() || undefined,
+          brandName: formData.name.trim() || undefined,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setLogoSearchError(data.error || 'Logo search failed');
+        return;
+      }
+
+      setLogoSearchResults(Array.isArray(data.results) ? data.results : []);
+      if (!data.results?.length) {
+        setLogoSearchError('No logo images found — try a different search');
+      }
+    } catch (error) {
+      console.error('Error searching logos:', error);
+      setLogoSearchError('Logo search failed');
+    } finally {
+      setLogoSearching(false);
+    }
+  };
+
+  const handleSelectSerperLogo = async (result: BrandLogoSearchResult) => {
+    try {
+      setLogoImportingUrl(result.url);
+      setLogoSearchError(null);
+
+      const response = await fetch('/api/store/brands/import-logo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: result.url }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setLogoSearchError(data.error || 'Could not import logo');
+        return;
+      }
+
+      setFormData((prev) => ({ ...prev, logoUrl: data.url }));
+    } catch (error) {
+      console.error('Error importing logo:', error);
+      setLogoSearchError('Could not import logo');
+    } finally {
+      setLogoImportingUrl(null);
+    }
   };
 
   const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -252,15 +338,15 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
 
       {/* Add/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="flex max-h-[min(40rem,90vh)] w-full max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-lg animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
+          <DialogHeader className="shrink-0 px-6 pt-6">
             <DialogTitle>{editingBrand ? 'Edit Brand' : 'Add Brand'}</DialogTitle>
             <DialogDescription>
               {editingBrand ? 'Update the brand details below' : 'Add a brand that you stock in your store'}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5 py-4">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-4">
             {/* Logo Upload */}
             <div className="space-y-2">
               <Label>Brand Logo</Label>
@@ -323,6 +409,93 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
                   </p>
                 </div>
               </div>
+
+              <div className="rounded-md border border-gray-200 bg-white p-3">
+                <p className="text-xs font-medium text-gray-700">Search for a logo</p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  Find brand logos via Serper, then click one to add it
+                </p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    value={logoSearchQuery}
+                    onChange={(e) => setLogoSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void handleLogoSearch();
+                      }
+                    }}
+                    placeholder={formData.name.trim() ? `${formData.name.trim()} logo` : 'e.g. Shimano logo'}
+                    className="h-9 flex-1 rounded-md bg-white text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleLogoSearch()}
+                    disabled={logoSearching || logoImportingUrl !== null}
+                    className="h-9 shrink-0 rounded-md"
+                  >
+                    {logoSearching ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Searching…
+                      </>
+                    ) : (
+                      <>
+                        <Search className="size-4" />
+                        Search
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {logoSearchError ? (
+                  <p className="mt-2 text-xs text-destructive">{logoSearchError}</p>
+                ) : null}
+
+                {logoSearchResults.length > 0 ? (
+                  <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {logoSearchResults.map((result) => {
+                      const isImporting = logoImportingUrl === result.url;
+                      return (
+                        <button
+                          key={result.url}
+                          type="button"
+                          disabled={Boolean(logoImportingUrl)}
+                          onClick={() => void handleSelectSerperLogo(result)}
+                          className={cn(
+                            'overflow-hidden rounded-md border bg-white text-left transition-colors',
+                            isImporting ? 'border-gray-900 ring-1 ring-gray-900' : 'border-gray-200 hover:border-gray-400',
+                            logoImportingUrl && !isImporting && 'opacity-50',
+                          )}
+                        >
+                          <div className="relative flex aspect-square items-center justify-center bg-gray-50 p-2">
+                            <Image
+                              src={result.thumbnailUrl || result.url}
+                              alt={result.title || 'Logo result'}
+                              width={80}
+                              height={80}
+                              unoptimized
+                              className="max-h-full max-w-full object-contain"
+                            />
+                            {isImporting ? (
+                              <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                                <Loader2 className="h-5 w-5 animate-spin text-gray-600" />
+                              </div>
+                            ) : null}
+                          </div>
+                          {(result.domain || result.title) && (
+                            <p className="line-clamp-1 px-1.5 py-1 text-[10px] text-gray-500">
+                              {result.domain || result.title}
+                            </p>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             {/* Name */}
@@ -338,19 +511,19 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
           </div>
 
           {saveError && (
-            <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+            <p className="mx-6 mb-2 shrink-0 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {saveError}
             </p>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-gray-100 px-6 py-4">
             <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={!formData.name.trim() || saving || uploading}
+              disabled={!formData.name.trim() || saving || uploading || logoImportingUrl !== null}
             >
               {saving ? (
                 <>

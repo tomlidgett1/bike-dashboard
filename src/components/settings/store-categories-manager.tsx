@@ -1,7 +1,23 @@
 "use client";
 
 import * as React from "react";
-import { Reorder } from "framer-motion";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   Plus,
   Trash2,
@@ -98,6 +114,96 @@ function categoryPage(category: StoreCategory): StoreCarouselPage {
 
 function createPageLabel(page: StoreCarouselPage): string {
   return page === "bikes" ? "Bikes page" : "Products page";
+}
+
+function SortableCarouselCard({
+  category,
+  onEdit,
+  onDelete,
+  onRefresh,
+}: {
+  category: StoreCategory;
+  onEdit: () => void;
+  onDelete: () => void;
+  onRefresh?: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: category.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn("bg-white", isDragging && "opacity-60")}
+    >
+      <div className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-gray-50">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="flex-shrink-0 cursor-grab rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 active:cursor-grabbing"
+          aria-label={`Reorder ${category.name}`}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-50">
+          {category.source === "uber" ? (
+            <UberCarouselLogo />
+          ) : category.logo_url ? (
+            <img
+              src={category.logo_url}
+              alt=""
+              className="h-full w-full object-contain p-0.5"
+            />
+          ) : (
+            <Package className="h-4 w-4 text-gray-300" />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <h4 className="truncate text-sm font-medium text-gray-900">{category.name}</h4>
+          <p className="mt-0.5 text-xs text-gray-500">{carouselSummary(category)}</p>
+        </div>
+
+        <div className="flex flex-shrink-0 items-center gap-0.5">
+          {category.source === "lightspeed" && onRefresh ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onRefresh}
+              title="Refresh products from Lightspeed"
+            >
+              <RotateCcw className="size-4" />
+            </Button>
+          ) : null}
+          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
+            <Edit2 className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onDelete}
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function StoreCategoriesManager({
@@ -219,6 +325,11 @@ export function StoreCategoriesManager({
   const [selectedBrand, setSelectedBrand] = React.useState<string>('');
   const [brandDisplayName, setBrandDisplayName] = React.useState<string>('');
   const [brandListExpanded, setBrandListExpanded] = React.useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   // Fetch categories and auto-generated category names
   const fetchData = React.useCallback(async () => {
@@ -610,6 +721,17 @@ export function StoreCategoriesManager({
     }
   };
 
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = pageCategories.findIndex((category) => category.id === active.id);
+    const newIndex = pageCategories.findIndex((category) => category.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    handleReorder(arrayMove(pageCategories, oldIndex, newIndex));
+  };
+
   // Open brand carousel dialog — scans store's product brands on first open
   const handleAddBrandCarousel = async () => {
     setSelectedBrand('');
@@ -751,65 +873,33 @@ export function StoreCategoriesManager({
           </p>
         </div>
       ) : (
-        <Reorder.Group
-          axis="y"
-          values={pageCategories}
-          onReorder={handleReorder}
-          className="divide-y divide-gray-100 rounded-md border border-gray-200 bg-white"
-        >
-          {pageCategories.map((category) => (
-            <Reorder.Item key={category.id} value={category}>
-              <div className="flex cursor-move items-center gap-3 px-3 py-2.5 transition-colors hover:bg-gray-50">
-                <div className="flex-shrink-0 cursor-grab active:cursor-grabbing">
-                  <GripVertical className="h-4 w-4 text-gray-400" />
-                </div>
-
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-50">
-                  {category.source === "uber" ? (
-                    <UberCarouselLogo />
-                  ) : category.logo_url ? (
-                    <img
-                      src={category.logo_url}
-                      alt=""
-                      className="h-full w-full object-contain p-0.5"
-                    />
-                  ) : (
-                    <Package className="h-4 w-4 text-gray-300" />
-                  )}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <h4 className="truncate text-sm font-medium text-gray-900">{category.name}</h4>
-                  <p className="mt-0.5 text-xs text-gray-500">{carouselSummary(category)}</p>
-                </div>
-
-                <div className="flex flex-shrink-0 items-center gap-0.5">
-                  {category.source === "lightspeed" && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => handleRefreshCategoryProducts(category)}
-                      title="Refresh products from Lightspeed"
-                    >
-                      <RotateCcw className="size-4" />
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="icon-sm" onClick={() => handleEdit(category)}>
-                    <Edit2 className="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setDeleteConfirmId(category.id)}
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
+        <>
+          <p className="mb-4 text-xs text-gray-500">
+            Drag rows to reorder. Order applies to the {createPageLabel(activePage).toLowerCase()}.
+          </p>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext
+              items={pageCategories.map((category) => category.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 bg-white">
+                {pageCategories.map((category) => (
+                  <SortableCarouselCard
+                    key={category.id}
+                    category={category}
+                    onEdit={() => handleEdit(category)}
+                    onDelete={() => setDeleteConfirmId(category.id)}
+                    onRefresh={
+                      category.source === "lightspeed"
+                        ? () => handleRefreshCategoryProducts(category)
+                        : undefined
+                    }
+                  />
+                ))}
               </div>
-            </Reorder.Item>
-          ))}
-        </Reorder.Group>
+            </SortableContext>
+          </DndContext>
+        </>
       )}
 
       {/* Shared hidden file input for logo uploads */}

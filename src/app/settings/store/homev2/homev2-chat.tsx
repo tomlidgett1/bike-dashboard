@@ -13,7 +13,6 @@ import type { GeniePivotTablePayload } from "@/lib/genie/pivot-table";
 import { GenieProposalCard } from "@/components/genie/genie-proposal-card";
 import { LightspeedWorkorderCards } from "@/components/genie/lightspeed-workorder-cards";
 import { LightspeedCustomerProfileCard } from "@/components/genie/lightspeed-customer-profile-card";
-import { GmailEmailSearchCard } from "@/components/genie/gmail-email-search-card";
 import { GmailConnectCard } from "@/components/genie/gmail-connect-card";
 import { GenieStoreProductCards } from "@/components/genie/genie-store-product-cards";
 import { GenieWebImageCards } from "@/components/genie/genie-web-image-cards";
@@ -1418,9 +1417,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 	                          ) : null}
 	                          {message.workorders?.workorders.length ? (
 	                            <LightspeedWorkorderCards payload={message.workorders} fullWidth />
-	                          ) : null}
-		                          {message.gmailEmails && message.gmailEmails.ui_mode !== "hidden" ? (
-	                            <GmailEmailSearchCard payload={message.gmailEmails} />
 	                          ) : null}
 	                          {message.gmailConnect ? (
 	                            <GmailConnectCard

@@ -36,7 +36,6 @@ import {
   buildReplySearchPlan,
   buildSentContextQuery,
   extractCorrespondentHint,
-  isReplyOrComposeQuestion,
   questionNeedsSentContext,
 } from '@/lib/composio/gmail-reply-context'
 
@@ -523,31 +522,6 @@ function buildMultiMailboxTitle(query: string, sortOrder: GmailSortOrder, scanDe
   return mailboxCount > 1 ? `${base} · ${mailboxCount} mailboxes` : base
 }
 
-function normaliseQuestion(question: string | undefined): string {
-  return question?.toLowerCase().replace(/\s+/g, ' ').trim() ?? ''
-}
-
-function questionLooksLikeContactAnalysis(question: string | undefined): boolean {
-  const q = normaliseQuestion(question)
-  if (!q) return false
-  return (
-    /\b(first|earliest|initial|original|oldest)\b.*\b(rep|representative|contact|sales|account manager|supplier)\b/.test(q)
-    || /\b(who|which person)\b.*\b(rep|representative|contact|sales|account manager)\b/.test(q)
-    || /\b(sales|account)\s+(rep|representative|contact|manager)\b/.test(q)
-    || /\bsupplier contact\b/.test(q)
-  )
-}
-
-function questionExplicitlyWantsSearchResults(question: string | undefined): boolean {
-  const q = normaliseQuestion(question)
-  if (!q) return false
-  return (
-    /\b(search|find|show|list|pull up|look for|messages?|inbox)\b/.test(q)
-    || /\b(?:mail|emails?)\s+(?:from|to|about|matching|with)\b/.test(q)
-    || /\bsent\s+to\b/.test(q)
-  )
-}
-
 function buildGmailUiSummary(
   mode: GmailCardMode,
   payload: GmailEmailsPayload,
@@ -580,32 +554,10 @@ function buildGmailUiSummary(
 }
 
 export function inferGmailCardMode(
-  userQuestion: string | undefined,
-  payload: GmailEmailsPayload,
+  _userQuestion: string | undefined,
+  _payload: GmailEmailsPayload,
 ): GmailCardMode {
-  const explicitSearch = questionExplicitlyWantsSearchResults(userQuestion)
-  const needsContact = questionLooksLikeContactAnalysis(userQuestion)
-  const isReply = isReplyOrComposeQuestion(userQuestion) || questionNeedsSentContext(userQuestion)
-  const needsBody = questionNeedsEmailBody(userQuestion)
-  const ready = payload.answer_readiness?.ready_to_answer
-  const hasBodies = Boolean(payload.message_bodies?.length)
-  const total = payload.scan_stats?.total_matched ?? payload.emails.length
-
-  if (needsContact && payload.contact_analysis) {
-    return ready === false ? 'hidden' : 'contact_analysis'
-  }
-  if (isReply) {
-    if (ready === false && !hasBodies && !payload.includes_sent_context) return 'hidden'
-    return 'reply_context'
-  }
-  if (needsBody) {
-    if (hasBodies) return 'thread_context'
-    if (ready === false && !explicitSearch) return 'hidden'
-  }
-  if (!explicitSearch && ready === false) return 'hidden'
-  if (total === 0 || explicitSearch || !userQuestion?.trim()) return 'search_summary'
-  if (hasBodies) return 'thread_context'
-  return 'search_summary'
+  return 'hidden'
 }
 
 function attachGmailUiMode(

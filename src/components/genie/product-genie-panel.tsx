@@ -285,11 +285,12 @@ export function ProductGeniePanel() {
 
       <div
         className={cn(
-          "fixed right-3 top-[4%] z-50 flex max-h-[92vh] w-[min(420px,calc(100vw-24px))] flex-col overflow-hidden",
+          "fixed right-3 top-[1.5%] z-50 flex w-[min(420px,calc(100vw-24px))] max-w-[calc(100vw-24px)] flex-col overflow-hidden",
           "rounded-2xl border border-gray-200 bg-white shadow-xl",
           "animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out",
         )}
         style={{
+          height: "97vh",
           transform: isOpen ? "translateX(0)" : "translateX(calc(100% + 24px))",
           transition: "transform 0.38s cubic-bezier(0.32, 0.72, 0, 1)",
           pointerEvents: isOpen ? "auto" : "none",

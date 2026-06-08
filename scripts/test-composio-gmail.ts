@@ -29,8 +29,8 @@ const gmailSource = readFileSync(join(root, 'src/lib/composio/gmail.ts'), 'utf8'
 const composioStatusSource = readFileSync(join(root, 'src/app/api/composio/status/route.ts'), 'utf8')
 const homeV2GmailSuggestionsSource = readFileSync(join(root, 'src/app/api/store/homev2-gmail-suggestions/route.ts'), 'utf8')
 const gmailConnectCardSource = readFileSync(join(root, 'src/components/genie/gmail-connect-card.tsx'), 'utf8')
-const gmailEmailSearchCardSource = readFileSync(join(root, 'src/components/genie/gmail-email-search-card.tsx'), 'utf8')
 const gmailEmailActionCardSource = readFileSync(join(root, 'src/components/genie/gmail-email-action-card.tsx'), 'utf8')
+const geniePanelSource = readFileSync(join(root, 'src/components/genie/genie-panel.tsx'), 'utf8')
 
 // ── Reply/search helpers ─────────────────────────────────────────────────────
 
@@ -239,8 +239,8 @@ assert.equal(
     'who was our first apollo rep',
     uiPayload({ contact_analysis: apolloLike ?? undefined }),
   ),
-  'contact_analysis',
-  'rep/contact questions should show contact analysis instead of a generic email list',
+  'hidden',
+  'gmail search cards are not shown in Genie UI',
 )
 assert.equal(
   inferGmailCardMode(
@@ -249,8 +249,8 @@ assert.equal(
       message_bodies: [{ ...uiEmail, body_text: 'Trace 20 crankset spindle failure under warranty claim', body_truncated: false }],
     }),
   ),
-  'thread_context',
-  'body/evidence questions should show hydrated thread context',
+  'hidden',
+  'gmail search cards are not shown in Genie UI',
 )
 assert.equal(
   inferGmailCardMode(
@@ -260,16 +260,16 @@ assert.equal(
       message_bodies: [{ ...uiEmail, body_text: 'Prior sent pricing and warranty context', body_truncated: false }],
     }),
   ),
-  'reply_context',
-  'reply tasks should show reply context rather than a raw search card',
+  'hidden',
+  'gmail search cards are not shown in Genie UI',
 )
 assert.equal(
   inferGmailCardMode(
     'show me emails from Apollo',
     uiPayload(),
   ),
-  'search_summary',
-  'explicit search/list requests should still show a compact search summary',
+  'hidden',
+  'gmail search cards are not shown in Genie UI',
 )
 assert.equal(
   inferGmailCardMode(
@@ -331,10 +331,8 @@ assert.match(gmailSource, /ui_summary/, 'gmail search payload must include a tai
 assert.match(agentRouteSource, /buildVisibleGmailPayload/, 'agent must filter gmail cards before streaming')
 assert.match(agentRouteSource, /ui_mode/, 'agent context must preserve gmail UI mode')
 assert.match(agentRouteSource, /total: payload\.scan_stats\?\.total_matched/, 'search_gmail tool output total must use full matched count')
-assert.match(gmailEmailSearchCardSource, /contact_analysis/, 'gmail card must render contact analysis mode')
-assert.match(gmailEmailSearchCardSource, /thread_context/, 'gmail card must render thread context mode')
-assert.match(gmailEmailSearchCardSource, /reply_context/, 'gmail card must render reply context mode')
-assert.match(gmailEmailSearchCardSource, /SearchSummaryView/, 'gmail card must render compact explicit search summaries')
+assert.doesNotMatch(homeV2ChatSource, /GmailEmailSearchCard/, 'home chat must not render gmail search cards')
+assert.doesNotMatch(geniePanelSource, /GmailEmailSearchCard/, 'genie panel must not render gmail search cards')
 assert.match(gmailEmailActionCardSource, /proposal\.body/, 'gmail action card must show the email body')
 assert.match(gmailEmailActionCardSource, /whitespace-pre-wrap/, 'gmail action card must preserve email body formatting')
 assert.match(gmailEmailActionCardSource, /recipient_email/, 'gmail action card must show the recipient')

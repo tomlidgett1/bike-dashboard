@@ -216,11 +216,11 @@ export function HomeV2MetricsCards({ className }: { className?: string }) {
               tooltip="Approved and listed on the marketplace"
             />
             <MetricCell
-              value={metrics.inventory.withoutApprovedPhotos}
-              previousValue={previousMetrics?.inventory.withoutApprovedPhotos ?? null}
+              value={metrics.inventory.notYetLive}
+              previousValue={previousMetrics?.inventory.notYetLive ?? null}
               animate={animateValues}
-              label="Missing photos"
-              tooltip="Active products without an approved image"
+              label="Needs attention"
+              tooltip="Products in your catalogue not yet live on the marketplace — missing photos, inactive, out of stock, or other issues"
             />
           </div>
         </div>

@@ -14,12 +14,23 @@ import {
   ListChecks,
   Loader2,
   Package,
+  RefreshCw,
   Search,
   Sparkles,
   StopCircle,
   Type,
   X,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -36,6 +47,7 @@ import {
   fetchSerperCandidates,
 } from "@/lib/admin/image-qa-speed";
 import { cn } from "@/lib/utils";
+import { hasBikeSpecs, parseBikeSpecs } from "@/lib/types/bike-specs";
 import {
   emptyImageRun,
   hasDesc,
@@ -53,14 +65,26 @@ import {
   type ImageRun,
   type OptimizerProduct,
   type TextStatus,
+  fetchLiveProductSoh,
   fetchOptimizerProductsBySearch,
   useOptimizerCategories,
   useOptimizerProducts,
 } from "@/components/optimize/optimizer-shared";
 
-type WizardStep = "category" | "goal" | "batch" | "copy_batch" | "photos" | "done";
+type WizardStep =
+  | "category"
+  | "goal"
+  | "batch"
+  | "individual_pick"
+  | "individual_work"
+  | "copy_batch"
+  | "photos"
+  | "done";
 type OptimiseGoal = "copy" | "photos" | "both";
 type BatchSize = "individual" | 10 | 20 | 30 | "all";
+
+const PHOTOS_PAGE_SIZE = 10;
+const PHOTOS_PAGE_PRELOAD_CONCURRENCY = 5;
 
 type CopyRun = Record<CopyField, TextStatus> & {
   error?: string;
@@ -75,12 +99,12 @@ const emptyCopyRun = (): CopyRun => ({
 const DEFAULT_COPY_FIELDS: Record<CopyField, boolean> = {
   title: true,
   description: true,
-  specs: false,
+  specs: true,
 };
 
 function sliceQueueIds(ids: string[], batchSize: BatchSize): string[] {
   if (batchSize === "all") return ids;
-  if (batchSize === "individual") return ids.slice(0, 1);
+  if (batchSize === "individual") return ids;
   return ids.slice(0, batchSize);
 }
 
@@ -116,6 +140,52 @@ function needsPhotos(product: OptimizerProduct) {
   return !hasSerperImage(product);
 }
 
+function isProductBicycle(
+  product: OptimizerProduct,
+  bicycleOverrides: Record<string, boolean>,
+) {
+  return product.id in bicycleOverrides ? bicycleOverrides[product.id] : !!product.is_bicycle;
+}
+
+function applyBicycleDetectionFromEvent(
+  id: string,
+  event: Record<string, unknown>,
+  patchProduct: (productId: string, patch: Partial<OptimizerProduct>) => void,
+  setAiBicycleHints: React.Dispatch<
+    React.SetStateAction<Record<string, "high" | "medium" | "low">>
+  >,
+) {
+  if (!event.bicycle_detected) return;
+
+  const isBicycle = event.is_bicycle as boolean | undefined;
+  if (typeof isBicycle !== "boolean") return;
+
+  patchProduct(id, {
+    is_bicycle: isBicycle,
+    ...(event.bike_specs ? { bike_specs: event.bike_specs as OptimizerProduct["bike_specs"] } : {}),
+  });
+
+  const confidence = event.bicycle_confidence as "high" | "medium" | "low" | undefined;
+  if (confidence) {
+    setAiBicycleHints((prev) => ({ ...prev, [id]: confidence }));
+  }
+}
+
+function bikeSpecsPreview(bikeSpecs: unknown): string | null {
+  const parsed = parseBikeSpecs(bikeSpecs);
+  if (!hasBikeSpecs(parsed)) return null;
+
+  const lines: string[] = [];
+  for (const section of parsed!.sections) {
+    for (const spec of section.specs) {
+      lines.push(`${spec.label}: ${spec.value}`);
+      if (lines.length >= 4) return lines.join("\n");
+    }
+  }
+
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
 function productNeedsGoal(product: OptimizerProduct, goal: OptimiseGoal) {
   if (goal === "copy") return needsCopy(product);
   if (goal === "photos") return needsPhotos(product);
@@ -127,6 +197,30 @@ function goalLabel(goal: OptimiseGoal | null) {
   if (goal === "photos") return "Photos";
   if (goal === "both") return "Copy + photos";
   return "Choose job";
+}
+
+const COPY_FIELD_LABELS: Record<CopyField, string> = {
+  title: "title",
+  description: "description",
+  specs: "specs",
+};
+
+function getMissingIndividualCopyLabels(
+  product: OptimizerProduct,
+  copyFields: Record<CopyField, boolean>,
+): string[] {
+  const missing: string[] = [];
+  if (copyFields.title && !hasTitle(product)) missing.push(COPY_FIELD_LABELS.title);
+  if (copyFields.description && !hasDesc(product)) missing.push(COPY_FIELD_LABELS.description);
+  if (copyFields.specs && !hasSpecs(product)) missing.push(COPY_FIELD_LABELS.specs);
+  return missing;
+}
+
+function formatMissingCopyList(labels: string[]): string {
+  if (labels.length === 0) return "";
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
 }
 
 function formatMoney(value: number) {
@@ -158,8 +252,11 @@ export function CatalogueOptimiseModal({
   const [queueIds, setQueueIds] = React.useState<string[]>([]);
   const [photoQueueIds, setPhotoQueueIds] = React.useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = React.useState(0);
+  const [photoBatchPage, setPhotoBatchPage] = React.useState(0);
   const [selectedCopyIds, setSelectedCopyIds] = React.useState<Set<string>>(new Set());
   const [copySearch, setCopySearch] = React.useState("");
+  const [individualPickSearch, setIndividualPickSearch] = React.useState("");
+  const [individualHistory, setIndividualHistory] = React.useState<string[]>([]);
   const [copyFields, setCopyFields] = React.useState<Record<CopyField, boolean>>(DEFAULT_COPY_FIELDS);
   const [preloadingImages, setPreloadingImages] = React.useState(false);
   const [preloadProgress, setPreloadProgress] = React.useState({ done: 0, total: 0 });
@@ -169,7 +266,16 @@ export function CatalogueOptimiseModal({
   const [copyRuns, setCopyRuns] = React.useState<Record<string, CopyRun>>({});
   const [imageRuns, setImageRuns] = React.useState<Record<string, ImageRun>>({});
   const [copyRunning, setCopyRunning] = React.useState(false);
+  const [bicycleOverrides, setBicycleOverrides] = React.useState<Record<string, boolean>>({});
+  const [bicycleSaving, setBicycleSaving] = React.useState<Set<string>>(new Set());
+  const [aiBicycleHints, setAiBicycleHints] = React.useState<
+    Record<string, "high" | "medium" | "low">
+  >({});
+  const [bicycleDetectingIds, setBicycleDetectingIds] = React.useState<Set<string>>(
+    () => new Set(),
+  );
   const [lightbox, setLightbox] = React.useState<string | null>(null);
+  const [approveConfirmOpen, setApproveConfirmOpen] = React.useState(false);
 
   const { products, setProducts, loading } = useOptimizerProducts(
     category,
@@ -221,10 +327,15 @@ export function CatalogueOptimiseModal({
   }, [productSearch]);
 
   const copyAbortRef = React.useRef<AbortController | null>(null);
+  const sohRefreshAbortRef = React.useRef<AbortController | null>(null);
   const imageAbortRef = React.useRef<AbortController | null>(null);
   const imageCancelledRef = React.useRef(false);
   const preloadQueueImagesRef = React.useRef<
-    ((ids: string[], selectedGoal: OptimiseGoal) => Promise<void>) | null
+    ((
+      ids: string[],
+      selectedGoal: OptimiseGoal,
+      options?: { concurrency?: number },
+    ) => Promise<void>) | null
   >(null);
 
   const reset = React.useCallback(() => {
@@ -241,8 +352,11 @@ export function CatalogueOptimiseModal({
     setQueueIds([]);
     setPhotoQueueIds([]);
     setCurrentIndex(0);
+    setPhotoBatchPage(0);
     setSelectedCopyIds(new Set());
     setCopySearch("");
+    setIndividualPickSearch("");
+    setIndividualHistory([]);
     setCopyFields(DEFAULT_COPY_FIELDS);
     setPreloadingImages(false);
     setPreloadProgress({ done: 0, total: 0 });
@@ -250,9 +364,14 @@ export function CatalogueOptimiseModal({
     setSkippedIds(new Set());
     setFailedIds(new Set());
     setCopyRuns({});
+    setAiBicycleHints({});
+    setBicycleDetectingIds(new Set());
     setImageRuns({});
     setCopyRunning(false);
+    setBicycleOverrides({});
+    setBicycleSaving(new Set());
     setLightbox(null);
+    setApproveConfirmOpen(false);
     copyAbortRef.current?.abort();
     imageAbortRef.current?.abort();
   }, []);
@@ -260,6 +379,36 @@ export function CatalogueOptimiseModal({
   React.useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
+
+  React.useEffect(() => {
+    const sohIds =
+      step === "individual_pick"
+        ? pendingQueueIds
+        : step === "individual_work" || step === "copy_batch"
+          ? queueIds
+          : [];
+    if (sohIds.length === 0) return;
+
+    sohRefreshAbortRef.current?.abort();
+    const controller = new AbortController();
+    sohRefreshAbortRef.current = controller;
+
+    void fetchLiveProductSoh(sohIds, { signal: controller.signal }).then((sohById) => {
+      if (controller.signal.aborted || Object.keys(sohById).length === 0) return;
+      setProducts((prev) =>
+        prev.map((product) =>
+          product.id in sohById ? { ...product, qoh: sohById[product.id] } : product,
+        ),
+      );
+      setPinnedProduct((prev) =>
+        prev && prev.id in sohById ? { ...prev, qoh: sohById[prev.id] } : prev,
+      );
+    });
+
+    return () => {
+      controller.abort();
+    };
+  }, [step, queueIds, pendingQueueIds, setProducts]);
 
   const allCategory = React.useMemo<CategoryOption>(() => {
     return {
@@ -312,11 +461,54 @@ export function CatalogueOptimiseModal({
       .filter((product): product is OptimizerProduct => !!product);
   }, [catalogueProducts, queueIds]);
 
-  const currentProduct = React.useMemo(() => {
-    const id = photoQueueIds[currentIndex];
+  const photoPageIds = React.useMemo(() => {
+    const start = photoBatchPage * PHOTOS_PAGE_SIZE;
+    return photoQueueIds.slice(start, start + PHOTOS_PAGE_SIZE);
+  }, [photoBatchPage, photoQueueIds]);
+
+  const photoPageProducts = React.useMemo(() => {
+    return photoPageIds
+      .map((id) => catalogueProducts.find((product) => product.id === id))
+      .filter((product): product is OptimizerProduct => !!product);
+  }, [catalogueProducts, photoPageIds]);
+
+  const photoBatchPageCount = React.useMemo(
+    () => Math.max(1, Math.ceil(photoQueueIds.length / PHOTOS_PAGE_SIZE)),
+    [photoQueueIds.length],
+  );
+
+  const isLastPhotoBatchPage = photoBatchPage >= photoBatchPageCount - 1;
+
+  const photoPageReadyCount = React.useMemo(() => {
+    return photoPageProducts.filter((product) => {
+      const run = imageRuns[product.id];
+      return run?.phase === "ready" && !!run.primaryUrl;
+    }).length;
+  }, [imageRuns, photoPageProducts]);
+
+  const individualProduct = React.useMemo(() => {
+    const id = queueIds[0];
     if (!id) return null;
     return catalogueProducts.find((product) => product.id === id) ?? null;
-  }, [currentIndex, photoQueueIds, catalogueProducts]);
+  }, [catalogueProducts, queueIds]);
+
+  const missingIndividualCopyLabels = React.useMemo(() => {
+    if (!individualProduct || !goal || !needsCopyStep(goal)) return [];
+    return getMissingIndividualCopyLabels(individualProduct, copyFields);
+  }, [copyFields, goal, individualProduct]);
+
+  const individualApproveLabel = React.useMemo(() => {
+    if (pinnedProduct) return "Approve and finish";
+
+    const id = individualProduct?.id;
+    if (!id) return "Approve and next";
+
+    const remaining = pendingQueueIds.filter(
+      (pid) =>
+        pid !== id && !completedIds.has(pid) && !skippedIds.has(pid),
+    );
+    return remaining.length === 0 ? "Approve and finish" : "Approve and next";
+  }, [completedIds, individualProduct?.id, pendingQueueIds, pinnedProduct, skippedIds]);
 
   const filteredCopyProducts = React.useMemo(() => {
     const q = copySearch.trim().toLowerCase();
@@ -345,6 +537,43 @@ export function CatalogueOptimiseModal({
       );
     },
     [setProducts],
+  );
+
+  const toggleBicycle = React.useCallback(
+    async (product: OptimizerProduct, nextValue: boolean) => {
+      if (bicycleSaving.has(product.id)) return;
+
+      setBicycleSaving((prev) => new Set(prev).add(product.id));
+      setBicycleOverrides((prev) => ({ ...prev, [product.id]: nextValue }));
+      patchProduct(product.id, { is_bicycle: nextValue });
+
+      try {
+        const response = await fetch(`/api/products/${product.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_bicycle: nextValue }),
+        });
+        if (!response.ok) throw new Error("Failed to update bicycle flag");
+        const data = await response.json();
+        if (data.product) {
+          patchProduct(product.id, data.product);
+        }
+      } catch {
+        patchProduct(product.id, { is_bicycle: !!product.is_bicycle });
+        setBicycleOverrides((prev) => {
+          const next = { ...prev };
+          delete next[product.id];
+          return next;
+        });
+      } finally {
+        setBicycleSaving((prev) => {
+          const next = new Set(prev);
+          next.delete(product.id);
+          return next;
+        });
+      }
+    },
+    [bicycleSaving, patchProduct],
   );
 
   const patchCopyRun = React.useCallback((id: string, patch: Partial<CopyRun>) => {
@@ -406,14 +635,28 @@ export function CatalogueOptimiseModal({
       setSelectedCopyIds(new Set(ids));
       setCurrentIndex(0);
 
+      if (size === "individual") {
+        setPhotoQueueIds(ids);
+        setStep(ids.length > 0 ? "individual_work" : "individual_pick");
+        if (ids.length > 0 && shouldPreloadImages(nextGoal)) {
+          void preloadQueueImagesRef.current?.(ids, nextGoal);
+        }
+        return;
+      }
+
       if (nextGoal === "photos") {
         const nextPhotoIds = pinnedProduct
           ? ids
           : photoIdsFromQueue(ids, catalogueProducts);
         setPhotoQueueIds(nextPhotoIds);
+        setPhotoBatchPage(0);
         setStep(nextPhotoIds.length > 0 ? "photos" : "done");
         if (nextPhotoIds.length > 0) {
-          void preloadQueueImagesRef.current?.(nextPhotoIds, "photos");
+          void preloadQueueImagesRef.current?.(
+            nextPhotoIds.slice(0, PHOTOS_PAGE_SIZE),
+            "photos",
+            { concurrency: PHOTOS_PAGE_PRELOAD_CONCURRENCY },
+          );
         }
         return;
       }
@@ -444,6 +687,7 @@ export function CatalogueOptimiseModal({
     }
 
     if (pinnedProduct) {
+      setIndividualHistory([]);
       beginBatch(nextGoal, ids, "individual");
       return;
     }
@@ -451,11 +695,172 @@ export function CatalogueOptimiseModal({
     setStep("batch");
   };
 
+  const openIndividualProduct = React.useCallback(
+    (
+      productId: string,
+      options?: { preserveRuns?: boolean; recordHistory?: boolean },
+    ) => {
+      if (!goal) return;
+
+      const preserveRuns = options?.preserveRuns ?? false;
+      const recordHistory = options?.recordHistory ?? false;
+      const currentId = queueIds[0];
+
+      if (
+        recordHistory &&
+        step === "individual_work" &&
+        currentId &&
+        currentId !== productId
+      ) {
+        setIndividualHistory((prev) => [...prev, currentId]);
+      }
+
+      if (!preserveRuns) {
+        setCopyRuns((prev) => {
+          const next = { ...prev };
+          delete next[productId];
+          return next;
+        });
+        setImageRuns((prev) => {
+          const next = { ...prev };
+          delete next[productId];
+          return next;
+        });
+      }
+
+      setCopySearch("");
+      setBatchSize("individual");
+      setQueueIds([productId]);
+      setPhotoQueueIds([productId]);
+      setSelectedCopyIds(new Set([productId]));
+      setCurrentIndex(0);
+      setStep("individual_work");
+
+      if (shouldPreloadImages(goal)) {
+        void preloadQueueImagesRef.current?.([productId], goal);
+      }
+    },
+    [goal, queueIds, step],
+  );
+
+  const goBackIndividualProduct = React.useCallback(() => {
+    if (individualHistory.length > 0) {
+      const previousId = individualHistory[individualHistory.length - 1];
+      setIndividualHistory((prev) => prev.slice(0, -1));
+      setCompletedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(previousId);
+        return next;
+      });
+      setSkippedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(previousId);
+        return next;
+      });
+      openIndividualProduct(previousId, { preserveRuns: true, recordHistory: false });
+      return;
+    }
+
+    if (pinnedProduct) {
+      setStep("goal");
+      return;
+    }
+
+    setStep("individual_pick");
+  }, [individualHistory, openIndividualProduct, pinnedProduct]);
+
+  const routeAfterQueueEnd = React.useCallback(
+    (mark?: { id: string; kind: "completed" | "skipped" }) => {
+      if (batchSize !== "individual") {
+        if (mark?.kind === "completed") {
+          setCompletedIds((prev) => new Set([...prev, mark.id]));
+        } else if (mark?.kind === "skipped") {
+          setSkippedIds((prev) => new Set([...prev, mark.id]));
+        }
+        setStep("done");
+        return;
+      }
+
+      const nextCompleted =
+        mark?.kind === "completed"
+          ? new Set([...completedIds, mark.id])
+          : completedIds;
+      const nextSkipped =
+        mark?.kind === "skipped" ? new Set([...skippedIds, mark.id]) : skippedIds;
+
+      if (mark?.kind === "completed") setCompletedIds(nextCompleted);
+      if (mark?.kind === "skipped") setSkippedIds(nextSkipped);
+
+      const remaining = pendingQueueIds.filter(
+        (pid) => !nextCompleted.has(pid) && !nextSkipped.has(pid),
+      );
+
+      if (remaining.length === 0) {
+        setStep("done");
+        return;
+      }
+
+      openIndividualProduct(remaining[0], { recordHistory: true });
+    },
+    [batchSize, completedIds, openIndividualProduct, pendingQueueIds, skippedIds],
+  );
+
+  const handleBatchSizeSelect = (size: BatchSize) => {
+    setBatchSize(size);
+    if (size === "individual") {
+      setIndividualPickSearch("");
+      setIndividualHistory([]);
+      setStep("individual_pick");
+    }
+  };
+
   const handleBatchConfirm = (size: BatchSize) => {
-    if (!goal) return;
+    if (!goal || size === "individual") return;
     const ids = sliceQueueIds(pendingQueueIds, size);
     beginBatch(goal, ids, size);
   };
+
+  const handleIndividualProductSelect = (productId: string) => {
+    setIndividualHistory([]);
+    openIndividualProduct(productId);
+  };
+
+  const pendingPickProducts = React.useMemo(() => {
+    return pendingQueueIds
+      .map((id) => catalogueProducts.find((product) => product.id === id))
+      .filter((product): product is OptimizerProduct => !!product);
+  }, [catalogueProducts, pendingQueueIds]);
+
+  const availablePickProducts = React.useMemo(() => {
+    return pendingPickProducts.filter(
+      (product) => !completedIds.has(product.id) && !skippedIds.has(product.id),
+    );
+  }, [completedIds, pendingPickProducts, skippedIds]);
+
+  const filteredPickProducts = React.useMemo(() => {
+    const q = individualPickSearch.trim().toLowerCase();
+    if (!q) return availablePickProducts;
+    return availablePickProducts.filter((product) => {
+      const name = productLabel(product).toLowerCase();
+      return (
+        name.includes(q) ||
+        (product.brand || "").toLowerCase().includes(q) ||
+        (product.product_specs || "").toLowerCase().includes(q)
+      );
+    });
+  }, [availablePickProducts, individualPickSearch]);
+
+  const preloadPhotoPage = React.useCallback(
+    (page: number, ids: string[] = photoQueueIds) => {
+      const start = page * PHOTOS_PAGE_SIZE;
+      const pageIds = ids.slice(start, start + PHOTOS_PAGE_SIZE);
+      if (pageIds.length === 0 || !goal) return;
+      void preloadQueueImagesRef.current?.(pageIds, goal, {
+        concurrency: PHOTOS_PAGE_PRELOAD_CONCURRENCY,
+      });
+    },
+    [goal, photoQueueIds],
+  );
 
   const startPhotosFlow = React.useCallback(() => {
     const nextPhotoIds = pinnedProduct
@@ -463,33 +868,34 @@ export function CatalogueOptimiseModal({
       : photoIdsFromQueue(queueIds, catalogueProducts);
     setPhotoQueueIds(nextPhotoIds);
     setCurrentIndex(0);
+    setPhotoBatchPage(0);
     if (nextPhotoIds.length === 0) {
-      setStep("done");
+      const id = queueIds[0];
+      if (batchSize === "individual" && id) {
+        routeAfterQueueEnd({ id, kind: "completed" });
+      } else {
+        setStep(batchSize === "individual" ? "individual_pick" : "done");
+      }
       return;
     }
     setStep("photos");
-    void preloadQueueImagesRef.current?.(nextPhotoIds, goal ?? "photos");
-  }, [goal, catalogueProducts, pinnedProduct, queueIds]);
+    void preloadQueueImagesRef.current?.(
+      nextPhotoIds.slice(0, PHOTOS_PAGE_SIZE),
+      goal ?? "photos",
+      { concurrency: PHOTOS_PAGE_PRELOAD_CONCURRENCY },
+    );
+  }, [batchSize, goal, catalogueProducts, pinnedProduct, queueIds, routeAfterQueueEnd]);
 
-  const advance = React.useCallback(
-    (id: string, kind: "completed" | "skipped" = "completed") => {
-      if (kind === "completed") {
-        setCompletedIds((prev) => new Set([...prev, id]));
-      } else {
-        setSkippedIds((prev) => new Set([...prev, id]));
-      }
+  const goToNextPhotoBatchPage = React.useCallback(() => {
+    if (isLastPhotoBatchPage) {
+      setStep("done");
+      return;
+    }
 
-      setCurrentIndex((prev) => {
-        const next = prev + 1;
-        if (next >= photoQueueIds.length) {
-          setStep("done");
-          return prev;
-        }
-        return next;
-      });
-    },
-    [photoQueueIds.length],
-  );
+    const nextPage = photoBatchPage + 1;
+    setPhotoBatchPage(nextPage);
+    preloadPhotoPage(nextPage);
+  }, [isLastPhotoBatchPage, photoBatchPage, preloadPhotoPage]);
 
   const runTitlesBatch = React.useCallback(
     async (ids: string[]) => {
@@ -525,6 +931,12 @@ export function CatalogueOptimiseModal({
     async (ids: string[], mode: "description" | "specs" | "both") => {
       const doDesc = mode === "both" || mode === "description";
       const doSpecs = mode === "both" || mode === "specs";
+      const overrides = Object.fromEntries(
+        ids
+          .filter((id) => id in bicycleOverrides)
+          .map((id) => [id, bicycleOverrides[id]]),
+      );
+
       ids.forEach((id) => {
         if (doDesc) patchCopyRun(id, { description: "running", error: undefined });
         if (doSpecs) patchCopyRun(id, { specs: "running", error: undefined });
@@ -533,7 +945,7 @@ export function CatalogueOptimiseModal({
       const response = await fetch("/api/products/generate-product-descriptions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productIds: ids, mode }),
+        body: JSON.stringify({ productIds: ids, mode, bicycleOverrides: overrides }),
         signal: copyAbortRef.current?.signal,
       });
 
@@ -544,16 +956,15 @@ export function CatalogueOptimiseModal({
       await readSSE(response.body, (event) => {
         const id = event.productId as string;
         if (!id || event.event !== "product_complete") return;
+
+        applyBicycleDetectionFromEvent(id, event, patchProduct, setAiBicycleHints);
+
         if (event.success) {
           patchProduct(id, {
             ...(doDesc && event.description
               ? { product_description: event.description as string }
               : {}),
             ...(doSpecs && event.specs ? { product_specs: event.specs as string } : {}),
-            ...(typeof event.is_bicycle === "boolean"
-              ? { is_bicycle: event.is_bicycle as boolean }
-              : {}),
-            ...(event.bike_specs ? { bike_specs: event.bike_specs } : {}),
           });
           if (doDesc) patchCopyRun(id, { description: "done" });
           if (doSpecs) patchCopyRun(id, { specs: "done" });
@@ -565,7 +976,52 @@ export function CatalogueOptimiseModal({
         }
       });
     },
-    [patchCopyRun, patchProduct],
+    [bicycleOverrides, patchCopyRun, patchProduct],
+  );
+
+  const runBicycleDetectionBatch = React.useCallback(
+    async (ids: string[]) => {
+      const pending = ids.filter((id) => !(id in bicycleOverrides));
+      if (pending.length === 0) return;
+
+      const overrides = Object.fromEntries(
+        ids
+          .filter((id) => id in bicycleOverrides)
+          .map((id) => [id, bicycleOverrides[id]]),
+      );
+
+      setBicycleDetectingIds((prev) => new Set([...prev, ...pending]));
+
+      try {
+        const response = await fetch("/api/products/generate-product-descriptions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            productIds: pending,
+            mode: "bicycle",
+            bicycleOverrides: overrides,
+          }),
+          signal: copyAbortRef.current?.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error("Bicycle detection failed");
+        }
+
+        await readSSE(response.body, (event) => {
+          const id = event.productId as string;
+          if (!id || event.event !== "product_complete") return;
+          applyBicycleDetectionFromEvent(id, event, patchProduct, setAiBicycleHints);
+        });
+      } finally {
+        setBicycleDetectingIds((prev) => {
+          const next = new Set(prev);
+          pending.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+    },
+    [bicycleOverrides, patchProduct],
   );
 
   const runBulkCopy = React.useCallback(
@@ -589,6 +1045,8 @@ export function CatalogueOptimiseModal({
 
       try {
         const jobs: Promise<void>[] = [];
+        const runsCopyContent = copyFields.description || copyFields.specs;
+
         if (copyFields.title) jobs.push(runTitlesBatch(ids));
         if (copyFields.description && copyFields.specs) {
           jobs.push(runDescriptionsBatch(ids, "both"));
@@ -596,6 +1054,9 @@ export function CatalogueOptimiseModal({
           jobs.push(runDescriptionsBatch(ids, "description"));
         } else if (copyFields.specs) {
           jobs.push(runDescriptionsBatch(ids, "specs"));
+        }
+        if (!runsCopyContent) {
+          jobs.push(runBicycleDetectionBatch(ids));
         }
         await Promise.all(jobs);
       } catch (error) {
@@ -613,7 +1074,9 @@ export function CatalogueOptimiseModal({
     },
     [
       copyFields,
+      goal,
       patchCopyRun,
+      runBicycleDetectionBatch,
       runDescriptionsBatch,
       runTitlesBatch,
     ],
@@ -707,12 +1170,30 @@ export function CatalogueOptimiseModal({
     [patchImageRun],
   );
 
-  preloadQueueImagesRef.current = async (ids: string[], selectedGoal: OptimiseGoal) => {
+  preloadQueueImagesRef.current = async (
+    ids: string[],
+    selectedGoal: OptimiseGoal,
+    options?: { concurrency?: number },
+  ) => {
     if (!shouldPreloadImages(selectedGoal)) return;
+
+    const concurrency = options?.concurrency ?? IMAGE_CONCURRENCY;
+
+    const skipPhases = new Set<ImageRun["phase"]>([
+      "searching",
+      "selecting",
+      "ready",
+      "saving",
+      "done",
+    ]);
 
     const targets = ids
       .map((id) => catalogueProducts.find((product) => product.id === id))
-      .filter((product): product is OptimizerProduct => !!product && needsPhotos(product));
+      .filter((product): product is OptimizerProduct => {
+        if (!product || !needsPhotos(product)) return false;
+        const phase = imageRuns[product.id]?.phase;
+        return !phase || !skipPhases.has(phase);
+      });
 
     if (targets.length === 0) return;
 
@@ -720,8 +1201,8 @@ export function CatalogueOptimiseModal({
     setPreloadProgress({ done: 0, total: targets.length });
 
     let completed = 0;
-    for (let index = 0; index < targets.length; index += IMAGE_CONCURRENCY) {
-      const chunk = targets.slice(index, index + IMAGE_CONCURRENCY);
+    for (let index = 0; index < targets.length; index += concurrency) {
+      const chunk = targets.slice(index, index + concurrency);
       await Promise.all(
         chunk.map(async (product) => {
           await runImageSearch(product, { background: true });
@@ -792,15 +1273,43 @@ export function CatalogueOptimiseModal({
     [imageRuns, patchImageRun, patchProduct],
   );
 
-  const approveAndAdvance = React.useCallback(
-    (product: OptimizerProduct) => {
-      const run = imageRuns[product.id] ?? emptyImageRun();
-      if (product.canonical_product_id && run.phase === "ready" && run.primaryUrl) {
-        void approveImages(product, { ...run });
+  const approveAllReadyOnPhotoPage = React.useCallback(async () => {
+    const ready = photoPageProducts.filter((product) => {
+      const run = imageRuns[product.id];
+      return run?.phase === "ready" && !!run.primaryUrl;
+    });
+
+    await Promise.all(
+      ready.map((product) => approveImages(product, imageRuns[product.id])),
+    );
+  }, [approveImages, imageRuns, photoPageProducts]);
+
+  const finishIndividualWork = React.useCallback(
+    async (kind: "completed" | "skipped" = "completed") => {
+      const product = individualProduct;
+      if (!product) return;
+
+      if (kind === "completed" && goal && shouldPreloadImages(goal) && needsPhotos(product)) {
+        const run = imageRuns[product.id] ?? emptyImageRun();
+        if (run.phase === "ready" && run.primaryUrl) {
+          await approveImages(product, run);
+        }
       }
-      advance(product.id);
+
+      routeAfterQueueEnd({ id: product.id, kind });
     },
-    [advance, approveImages, imageRuns],
+    [approveImages, goal, imageRuns, individualProduct, routeAfterQueueEnd],
+  );
+
+  const requestFinishIndividualWork = React.useCallback(
+    (kind: "completed" | "skipped") => {
+      if (kind === "completed" && missingIndividualCopyLabels.length > 0) {
+        setApproveConfirmOpen(true);
+        return;
+      }
+      void finishIndividualWork(kind);
+    },
+    [finishIndividualWork, missingIndividualCopyLabels.length],
   );
 
   const updateImageRun = React.useCallback(
@@ -846,52 +1355,22 @@ export function CatalogueOptimiseModal({
     });
   };
 
-  const handlePrimary = () => {
-    if (!currentProduct || step !== "photos") return;
-
-    const run = imageRuns[currentProduct.id] ?? emptyImageRun();
-    if (!needsPhotos(currentProduct) || run.phase === "done") {
-      advance(currentProduct.id);
-      return;
-    }
-    if (run.phase === "ready") {
-      approveAndAdvance(currentProduct);
-      return;
-    }
-    if (run.phase === "idle" || run.phase === "error" || run.phase === "no_results") {
-      void runImageSearch(currentProduct, { background: true });
-      return;
-    }
-    if (IMG_BUSY.includes(run.phase)) {
-      advance(currentProduct.id, "skipped");
-    }
-  };
-
-  const currentImageRun = currentProduct
-    ? imageRuns[currentProduct.id] ?? emptyImageRun()
-    : emptyImageRun();
-
-  const primaryLabel = (() => {
-    if (copyRunning) return "Stop";
-    if (!currentProduct || step !== "photos") return "Continue";
-
-    const run = currentImageRun;
-    if (!needsPhotos(currentProduct) || run.phase === "done") return "Next";
-    if (run.phase === "ready") return "Approve & next";
-    if (IMG_BUSY.includes(run.phase)) return "Next";
-    return "Find photos";
-  })();
-
-  const primaryDisabled = step === "photos" && !currentProduct;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
         className={cn(
           "grid h-[min(820px,calc(100vh-1.5rem))] max-w-[calc(100vw-1.5rem)] grid-rows-[auto_1fr_auto] gap-0 overflow-hidden rounded-lg p-0",
-          step === "copy_batch" || step === "photos" ? "sm:max-w-6xl" : "sm:max-w-5xl",
+          step === "copy_batch" || step === "photos" || step === "individual_work"
+            ? "sm:max-w-6xl"
+            : "sm:max-w-5xl",
         )}
+        onEscapeKeyDown={(event) => {
+          if (lightbox) {
+            event.preventDefault();
+            setLightbox(null);
+          }
+        }}
       >
         <div className="flex items-center justify-between border-b border-border bg-background px-5 py-3.5">
           <DialogHeader className="gap-0 p-0 text-left">
@@ -909,7 +1388,14 @@ export function CatalogueOptimiseModal({
           </Button>
         </div>
 
-        <div className="min-h-0 overflow-y-auto">
+        <div
+          className={cn(
+            "min-h-0",
+            step === "category" || step === "individual_pick"
+              ? "flex flex-col overflow-hidden"
+              : "overflow-y-auto",
+          )}
+        >
           {step === "category" && (
             <CategoryStep
               categories={categoryRows}
@@ -940,11 +1426,67 @@ export function CatalogueOptimiseModal({
               totalAvailable={pendingQueueIds.length}
               goal={goal}
               selected={batchSize}
-              onSelect={setBatchSize}
+              onSelect={handleBatchSizeSelect}
             />
           )}
 
-          {step === "copy_batch" && goal && (
+          {step === "individual_pick" && goal && (
+            <IndividualPickStep
+              products={filteredPickProducts}
+              totalCount={availablePickProducts.length}
+              completedIds={completedIds}
+              skippedIds={skippedIds}
+              goal={goal}
+              search={individualPickSearch}
+              onSearchChange={setIndividualPickSearch}
+              onSelect={handleIndividualProductSelect}
+            />
+          )}
+
+          {step === "individual_work" && goal && (
+            <IndividualWorkStep
+              product={individualProduct}
+              goal={goal}
+              loading={loading}
+              copyRun={individualProduct ? copyRuns[individualProduct.id] : undefined}
+              copyFields={copyFields}
+              copyRunning={copyRunning}
+              imageRun={
+                individualProduct
+                  ? imageRuns[individualProduct.id] ?? emptyImageRun()
+                  : emptyImageRun()
+              }
+              imageRunning={
+                individualProduct
+                  ? IMG_BUSY.includes(imageRuns[individualProduct.id]?.phase ?? "idle")
+                  : false
+              }
+              preloadingImages={preloadingImages}
+              preloadProgress={preloadProgress}
+              bicycleOverrides={bicycleOverrides}
+              bicycleSaving={bicycleSaving}
+              aiBicycleHints={aiBicycleHints}
+              bicycleDetectingIds={bicycleDetectingIds}
+              onCopyFieldsChange={setCopyFields}
+              onToggleBicycle={toggleBicycle}
+              onRunImages={() =>
+                individualProduct && void runImageSearch(individualProduct, { background: true })
+              }
+              onImageUpdate={
+                individualProduct ? updateImageRun(individualProduct.id) : () => undefined
+              }
+              onApproveImages={() => {
+                if (!individualProduct) return;
+                const run = imageRuns[individualProduct.id] ?? emptyImageRun();
+                if (run.phase === "ready" && run.primaryUrl) {
+                  void approveImages(individualProduct, run);
+                }
+              }}
+              onLightbox={setLightbox}
+            />
+          )}
+
+          {step === "copy_batch" && goal && batchSize !== "individual" && (
             <CopyBatchStep
               products={filteredCopyProducts}
               totalCount={batchProducts.length}
@@ -957,26 +1499,27 @@ export function CatalogueOptimiseModal({
               onCopyFieldsChange={setCopyFields}
               onToggleSelect={toggleCopySelect}
               onToggleSelectAll={toggleCopySelectAll}
+              bicycleOverrides={bicycleOverrides}
+              bicycleSaving={bicycleSaving}
+              aiBicycleHints={aiBicycleHints}
+              bicycleDetectingIds={bicycleDetectingIds}
+              onToggleBicycle={toggleBicycle}
             />
           )}
 
-          {step === "photos" && goal && (
-            <PhotosStep
-              product={currentProduct}
-              imageRun={currentProduct ? imageRuns[currentProduct.id] ?? emptyImageRun() : emptyImageRun()}
+          {step === "photos" && goal && batchSize !== "individual" && (
+            <PhotosBatchStep
+              products={photoPageProducts}
+              pageIndex={photoBatchPage}
+              pageCount={photoBatchPageCount}
+              totalCount={photoQueueIds.length}
+              imageRuns={imageRuns}
               loading={loading}
-              index={currentIndex}
-              total={photoQueueIds.length}
-              imageRunning={IMG_BUSY.includes(currentImageRun.phase)}
               preloadingImages={preloadingImages}
               preloadProgress={preloadProgress}
-              onRunImages={() =>
-                currentProduct && void runImageSearch(currentProduct, { background: true })
-              }
-              onImageUpdate={
-                currentProduct ? updateImageRun(currentProduct.id) : () => undefined
-              }
-              onApproveImages={() => currentProduct && approveAndAdvance(currentProduct)}
+              onRunImages={(product) => void runImageSearch(product, { background: true })}
+              onImageUpdate={(productId) => updateImageRun(productId)}
+              onApproveImages={(product) => void approveImages(product)}
               onLightbox={setLightbox}
             />
           )}
@@ -1015,12 +1558,20 @@ export function CatalogueOptimiseModal({
                 size="sm"
                 disabled={copyRunning}
                 onClick={() => {
-                  if (step === "photos") {
+                  if (step === "individual_work") {
+                    goBackIndividualProduct();
+                  } else if (step === "photos") {
                     setStep(
-                      needsCopyStep(goal) ? "copy_batch" : pinnedProduct ? "goal" : "batch",
+                      needsCopyStep(goal)
+                        ? "copy_batch"
+                        : pinnedProduct
+                          ? "goal"
+                          : "batch",
                     );
                   } else if (step === "copy_batch") {
                     setStep(pinnedProduct ? "goal" : "batch");
+                  } else if (step === "individual_pick") {
+                    setStep("batch");
                   } else if (step === "batch") {
                     setStep("goal");
                   } else {
@@ -1033,15 +1584,27 @@ export function CatalogueOptimiseModal({
                 Back
               </Button>
             )}
-            {step === "photos" && currentProduct && (
+            {step === "individual_work" && individualProduct && (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 disabled={copyRunning}
-                onClick={() => advance(currentProduct.id, "skipped")}
+                onClick={() => void finishIndividualWork("skipped")}
               >
                 Skip
+              </Button>
+            )}
+            {step === "photos" && batchSize !== "individual" && photoPageProducts.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={copyRunning || preloadingImages}
+                onClick={() => void preloadPhotoPage(photoBatchPage)}
+              >
+                <RefreshCw className="size-4" />
+                Reload images
               </Button>
             )}
           </div>
@@ -1052,15 +1615,45 @@ export function CatalogueOptimiseModal({
                 Close
               </Button>
             ) : step === "batch" ? (
-              <Button
-                type="button"
-                size="sm"
-                disabled={!batchSize || pendingQueueIds.length === 0}
-                onClick={() => batchSize && handleBatchConfirm(batchSize)}
-              >
-                Next
-                <ChevronRight className="size-4" />
-              </Button>
+              batchSize && batchSize !== "individual" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={pendingQueueIds.length === 0}
+                  onClick={() => handleBatchConfirm(batchSize)}
+                >
+                  Next
+                  <ChevronRight className="size-4" />
+                </Button>
+              ) : null
+            ) : step === "individual_work" && individualProduct ? (
+              <>
+                {copyRunning ? (
+                  <Button type="button" size="sm" variant="outline" onClick={stopCurrent}>
+                    <StopCircle className="size-4" />
+                    Stop
+                  </Button>
+                ) : needsCopyStep(goal) ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={activeCopyFields.length === 0}
+                    onClick={() => void runBulkCopy([individualProduct.id])}
+                  >
+                    <Sparkles className="size-4" />
+                    Generate copy
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={copyRunning}
+                  onClick={() => requestFinishIndividualWork("completed")}
+                >
+                  <CheckCircle2 className="size-4" />
+                  {individualApproveLabel}
+                </Button>
+              </>
             ) : step === "copy_batch" ? (
               <>
                 {copyRunning ? (
@@ -1103,26 +1696,66 @@ export function CatalogueOptimiseModal({
                   </Button>
                 )}
               </>
-            ) : step === "photos" ? (
-              <Button
-                type="button"
-                size="sm"
-                disabled={primaryDisabled}
-                onClick={() => handlePrimary()}
-              >
-                {currentImageRun.phase === "ready" ? (
+            ) : step === "photos" && batchSize !== "individual" ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={preloadingImages || photoPageReadyCount === 0}
+                  onClick={() => void approveAllReadyOnPhotoPage()}
+                >
                   <CheckCircle2 className="size-4" />
-                ) : (
+                  Approve all ready
+                  {photoPageReadyCount > 0 ? ` (${photoPageReadyCount})` : ""}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={preloadingImages}
+                  onClick={goToNextPhotoBatchPage}
+                >
+                  {isLastPhotoBatchPage ? "Finish" : "Next 10"}
                   <ChevronRight className="size-4" />
-                )}
-                {primaryLabel}
-              </Button>
+                </Button>
+              </>
             ) : null}
           </div>
         </div>
 
         <LightboxOverlay url={lightbox} onClose={() => setLightbox(null)} />
       </DialogContent>
+
+      <AlertDialog open={approveConfirmOpen} onOpenChange={setApproveConfirmOpen}>
+        <AlertDialogContent className="rounded-md border border-border bg-white animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:max-w-md">
+          <AlertDialogHeader className="text-left">
+            <AlertDialogTitle>Continue without generating copy?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {individualProduct ? (
+                <>
+                  <span className="font-medium text-foreground">{productLabel(individualProduct)}</span>{" "}
+                  is still missing {formatMissingCopyList(missingIndividualCopyLabels)} for the fields
+                  you selected. Do you want to continue without generating copy?
+                </>
+              ) : (
+                "This product is still missing copy for the fields you selected. Do you want to continue?"
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-md">Go back</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-md"
+              onClick={() => {
+                setApproveConfirmOpen(false);
+                void finishIndividualWork("completed");
+              }}
+            >
+              Continue anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
@@ -1153,15 +1786,15 @@ function CategoryStep({
   const showProductResults = productSearch.trim().length > 0;
 
   return (
-    <div className="flex w-full flex-col gap-4 px-5 py-6">
-      <div>
+    <div className="flex h-full min-h-0 w-full flex-col gap-4 px-5 py-6">
+      <div className="shrink-0">
         <h2 className="text-lg font-semibold text-foreground">What do you want to optimise?</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Search for a product, or choose a category to work through in batches.
         </p>
       </div>
 
-      <div className="rounded-md border border-border bg-white p-4">
+      <div className="shrink-0 rounded-md border border-border bg-white p-4">
         <p className="text-sm font-medium text-foreground">Search for a product</p>
         <div className="relative mt-2">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -1174,7 +1807,7 @@ function CategoryStep({
         </div>
 
         {showProductResults ? (
-          <div className="mt-3">
+          <div className="mt-3 max-h-48 overflow-y-auto overscroll-contain">
             {productSearchLoading ? (
               <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
@@ -1216,14 +1849,14 @@ function CategoryStep({
       </div>
 
       {!showProductResults ? (
-        <>
-          <div className="flex items-center gap-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="flex shrink-0 items-center gap-3">
             <div className="h-px flex-1 bg-border" />
             <span className="text-xs font-medium text-muted-foreground">or browse by category</span>
             <div className="h-px flex-1 bg-border" />
           </div>
 
-          <div className="relative">
+          <div className="relative shrink-0">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -1236,39 +1869,41 @@ function CategoryStep({
           {loading ? (
             <CenteredState label="Loading categories" />
           ) : (
-            <div className="divide-y divide-border overflow-hidden rounded-md border border-border bg-background">
-              {categories.map((category) => {
-                const photoNeed = category.missingSerperImages || category.missingImages;
-                return (
-                  <button
-                    key={category.id}
-                    type="button"
-                    onClick={() => onSelect(category.id)}
-                    className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-muted/60"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        {category.id === "all" ? (
-                          <Layers className="size-4 text-muted-foreground" />
-                        ) : (
-                          <Package className="size-4 text-muted-foreground" />
-                        )}
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {category.name}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-md border border-border bg-background">
+              <div className="divide-y divide-border">
+                {categories.map((category) => {
+                  const photoNeed = category.missingSerperImages || category.missingImages;
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => onSelect(category.id)}
+                      className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-muted/60"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          {category.id === "all" ? (
+                            <Layers className="size-4 text-muted-foreground" />
+                          ) : (
+                            <Package className="size-4 text-muted-foreground" />
+                          )}
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {category.name}
+                          </p>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {category.count.toLocaleString()} products
+                          {photoNeed > 0 ? ` - ${photoNeed.toLocaleString()} need photos` : ""}
                         </p>
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {category.count.toLocaleString()} products
-                        {photoNeed > 0 ? ` - ${photoNeed.toLocaleString()} need photos` : ""}
-                      </p>
-                    </div>
-                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                  </button>
-                );
-              })}
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
-        </>
+        </div>
       ) : null}
     </div>
   );
@@ -1388,8 +2023,8 @@ function BatchStep({
     {
       id: "individual",
       title: "Individual",
-      description: "Work through one product at a time.",
-      count: Math.min(1, totalAvailable),
+      description: "Pick one product at a time and run full AI optimisation.",
+      count: totalAvailable,
     },
     {
       id: 10,
@@ -1459,19 +2094,314 @@ function BatchStep({
                 {option.description}
               </span>
               <span className="mt-auto pt-3 text-xs font-medium text-muted-foreground">
-                {option.count.toLocaleString()} in this batch
+                {option.id === "individual"
+                  ? `${option.count.toLocaleString()} to choose from`
+                  : `${option.count.toLocaleString()} in this batch`}
               </span>
             </button>
           );
         })}
       </div>
 
-      {goal === "photos" && selected && (
+      {goal === "photos" && selected && selected !== "individual" && (
         <div className="rounded-md border border-border bg-white px-4 py-3 text-sm text-muted-foreground">
           When you continue, Serper images for this batch will preload in the background so
           each product opens with photos ready to review.
         </div>
       )}
+    </div>
+  );
+}
+
+function IndividualPickStep({
+  products,
+  totalCount,
+  completedIds,
+  skippedIds,
+  goal,
+  search,
+  onSearchChange,
+  onSelect,
+}: {
+  products: OptimizerProduct[];
+  totalCount: number;
+  completedIds: Set<string>;
+  skippedIds: Set<string>;
+  goal: OptimiseGoal;
+  search: string;
+  onSearchChange: (value: string) => void;
+  onSelect: (productId: string) => void;
+}) {
+  const doneCount = completedIds.size + skippedIds.size;
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col gap-4 px-5 py-6">
+      <div className="shrink-0">
+        <h2 className="text-lg font-semibold text-foreground">Choose a product</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Work through products one at a time with full {goalLabel(goal).toLowerCase()}.
+          {doneCount > 0
+            ? ` ${doneCount.toLocaleString()} done, ${totalCount.toLocaleString()} remaining.`
+            : ` ${totalCount.toLocaleString()} product${totalCount === 1 ? "" : "s"} to go.`}
+        </p>
+      </div>
+
+      <div className="relative shrink-0">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search products"
+          className="pl-9"
+        />
+      </div>
+
+      {totalCount === 0 ? (
+        <div className="rounded-md border border-border bg-white px-4 py-8 text-center text-sm text-muted-foreground">
+          All products in this run are complete.
+        </div>
+      ) : products.length === 0 ? (
+        <div className="rounded-md border border-border bg-white px-4 py-8 text-center text-sm text-muted-foreground">
+          No products match your search.
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-md border border-border bg-background">
+          <div className="divide-y divide-border">
+            {products.map((product) => (
+              <button
+                key={product.id}
+                type="button"
+                onClick={() => onSelect(product.id)}
+                className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-muted/60"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {productLabel(product)}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {product.brand || "No brand"}
+                    {product.upc ? ` · ${product.upc}` : ""}
+                    {typeof product.qoh === "number" ? ` · SOH ${product.qoh}` : ""}
+                  </p>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IndividualWorkStep({
+  product,
+  goal,
+  loading,
+  copyRun,
+  copyFields,
+  copyRunning,
+  imageRun,
+  imageRunning,
+  preloadingImages,
+  preloadProgress,
+  bicycleOverrides,
+  bicycleSaving,
+  aiBicycleHints,
+  bicycleDetectingIds,
+  onCopyFieldsChange,
+  onToggleBicycle,
+  onRunImages,
+  onImageUpdate,
+  onApproveImages,
+  onLightbox,
+}: {
+  product: OptimizerProduct | null;
+  goal: OptimiseGoal;
+  loading: boolean;
+  copyRun: CopyRun | undefined;
+  copyFields: Record<CopyField, boolean>;
+  copyRunning: boolean;
+  imageRun: ImageRun;
+  imageRunning: boolean;
+  preloadingImages: boolean;
+  preloadProgress: { done: number; total: number };
+  bicycleOverrides: Record<string, boolean>;
+  bicycleSaving: Set<string>;
+  aiBicycleHints: Record<string, "high" | "medium" | "low">;
+  bicycleDetectingIds: Set<string>;
+  onCopyFieldsChange: (fields: Record<CopyField, boolean>) => void;
+  onToggleBicycle: (product: OptimizerProduct, nextValue: boolean) => void;
+  onRunImages: () => void;
+  onImageUpdate: (patch: Partial<ImageRun> | ((prev: ImageRun) => Partial<ImageRun>)) => void;
+  onApproveImages: () => void;
+  onLightbox: (url: string) => void;
+}) {
+  const showCopy = needsCopyStep(goal);
+  const showPhotos = goal === "photos" || goal === "both";
+
+  if (loading || !product) {
+    return <CenteredState label="Loading product" />;
+  }
+
+  const copyStatus = copyRunStatus(copyRun);
+  const bicycleChecked = isProductBicycle(product, bicycleOverrides);
+  const bicycleBusy = bicycleSaving.has(product.id);
+  const bicycleDetecting = bicycleDetectingIds.has(product.id);
+  const aiHint = aiBicycleHints[product.id];
+  const bikeSpecsText = bicycleChecked ? bikeSpecsPreview(product.bike_specs) : null;
+
+  const fieldOptions: Array<{
+    key: CopyField;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }> = [
+    { key: "title", label: "Title", icon: Type },
+    { key: "description", label: "Description", icon: FileText },
+    { key: "specs", label: "Specs", icon: ListChecks },
+  ];
+
+  return (
+    <div className="flex min-h-full flex-col">
+      <div className="border-b border-border px-5 py-5">
+        <h2 className="text-lg font-semibold text-foreground">Review & optimise</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Generate copy and select photos for this product on one page, then move to the next.
+        </p>
+      </div>
+
+      <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <aside className="border-b border-border bg-muted/25 p-5 lg:border-b-0 lg:border-r">
+          <ProductSummary product={product} onLightbox={onLightbox} />
+
+          {preloadingImages && preloadProgress.total > 0 && (
+            <div className="mt-4 rounded-md border border-border bg-white px-3 py-2 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <Loader2 className="size-3.5 animate-spin" />
+                Preloading photos {preloadProgress.done}/{preloadProgress.total}
+              </div>
+            </div>
+          )}
+        </aside>
+
+        <main className="min-w-0 space-y-5 p-5">
+          {showCopy ? (
+            <section className="rounded-md border border-border bg-background p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Copy</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Choose fields to generate, then review the results below.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  {fieldOptions.map(({ key, label, icon: Icon }) => (
+                    <label
+                      key={key}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground",
+                        copyRunning && "pointer-events-none opacity-60",
+                      )}
+                    >
+                      <Checkbox
+                        checked={copyFields[key]}
+                        disabled={copyRunning}
+                        onCheckedChange={(checked) =>
+                          onCopyFieldsChange({
+                            ...copyFields,
+                            [key]: checked === true,
+                          })
+                        }
+                        aria-label={label}
+                      />
+                      <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3 border-b border-border pb-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Checkbox
+                    checked={bicycleChecked}
+                    disabled={copyRunning || bicycleBusy || bicycleDetecting}
+                    onCheckedChange={(checked) => onToggleBicycle(product, checked === true)}
+                    aria-label={bicycleChecked ? "Mark as not a bicycle" : "Mark as bicycle"}
+                  />
+                  Bicycle
+                </label>
+                {bicycleDetecting ? (
+                  <span className="text-xs text-muted-foreground">AI detecting…</span>
+                ) : aiHint ? (
+                  <span className="text-xs text-muted-foreground">AI confidence: {aiHint}</span>
+                ) : null}
+                <div className="ml-auto flex items-center gap-2">
+                  {copyStatus === "running" && (
+                    <StatusBadge label="Generating…" tone="neutral" />
+                  )}
+                  {copyStatus === "done" && <StatusBadge label="Updated" tone="success" />}
+                  {copyStatus === "error" && <StatusBadge label="Failed" tone="danger" />}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">Title</p>
+                  <CopyBatchCell
+                    text={product.display_name || product.description}
+                    running={copyRun?.title === "running" || copyRun?.title === "queued"}
+                    error={copyRun?.title === "error"}
+                  />
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">Description</p>
+                  <CopyBatchCell
+                    text={product.product_description}
+                    running={copyRun?.description === "running" || copyRun?.description === "queued"}
+                    error={copyRun?.description === "error"}
+                  />
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">Specs</p>
+                  <CopyBatchCell
+                    text={product.product_specs}
+                    running={copyRun?.specs === "running" || copyRun?.specs === "queued"}
+                    error={copyRun?.specs === "error"}
+                  />
+                </div>
+              </div>
+
+              {bicycleChecked && bikeSpecsText ? (
+                <div className="mt-4">
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">Bike specs</p>
+                  <CopyBatchCell text={bikeSpecsText} />
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {showPhotos ? (
+            <section className="rounded-md border border-border bg-background p-4">
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-foreground">Photos</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Find images, pick a primary photo, and approve when ready.
+                </p>
+              </div>
+              <PhotoPanel
+                product={product}
+                imageRun={imageRun}
+                running={imageRunning}
+                onRunImages={onRunImages}
+                onImageUpdate={onImageUpdate}
+                onApproveImages={onApproveImages}
+                onLightbox={onLightbox}
+              />
+            </section>
+          ) : null}
+        </main>
+      </div>
     </div>
   );
 }
@@ -1488,6 +2418,11 @@ function CopyBatchStep({
   onCopyFieldsChange,
   onToggleSelect,
   onToggleSelectAll,
+  bicycleOverrides,
+  bicycleSaving,
+  aiBicycleHints,
+  bicycleDetectingIds,
+  onToggleBicycle,
 }: {
   products: OptimizerProduct[];
   totalCount: number;
@@ -1500,6 +2435,11 @@ function CopyBatchStep({
   onCopyFieldsChange: (fields: Record<CopyField, boolean>) => void;
   onToggleSelect: (id: string) => void;
   onToggleSelectAll: () => void;
+  bicycleOverrides: Record<string, boolean>;
+  bicycleSaving: Set<string>;
+  aiBicycleHints: Record<string, "high" | "medium" | "low">;
+  bicycleDetectingIds: Set<string>;
+  onToggleBicycle: (product: OptimizerProduct, nextValue: boolean) => void;
 }) {
   const fieldOptions: Array<{
     key: CopyField;
@@ -1511,12 +2451,20 @@ function CopyBatchStep({
     { key: "specs", label: "Specs", icon: ListChecks },
   ];
 
-  const toggleField = (key: CopyField) => {
-    onCopyFieldsChange({ ...copyFields, [key]: !copyFields[key] });
-  };
-
   const allVisibleSelected =
     products.length > 0 && products.every((product) => selectedIds.has(product.id));
+
+  const showBikeSpecsColumn = products.some(
+    (product) =>
+      isProductBicycle(product, bicycleOverrides) ||
+      !!product.bike_specs ||
+      !!aiBicycleHints[product.id] ||
+      bicycleDetectingIds.has(product.id),
+  );
+
+  const rowGridClass = showBikeSpecsColumn
+    ? "grid-cols-[40px_minmax(140px,1fr)_56px_64px_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_88px]"
+    : "grid-cols-[40px_minmax(140px,1fr)_56px_64px_minmax(0,1.15fr)_minmax(0,1.35fr)_minmax(0,1fr)_88px]";
 
   return (
     <div className="flex h-full min-h-0 flex-col px-5 py-5">
@@ -1530,26 +2478,31 @@ function CopyBatchStep({
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-muted-foreground">Generate:</span>
-            <div className="flex flex-wrap items-center bg-gray-100 p-0.5 rounded-md w-fit">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">Generate:</span>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               {fieldOptions.map(({ key, label, icon: Icon }) => (
-                <button
+                <label
                   key={key}
-                  type="button"
-                  disabled={running}
-                  onClick={() => toggleField(key)}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                    copyFields[key]
-                      ? "text-gray-800 bg-white shadow-sm"
-                      : "text-gray-600 hover:bg-gray-200/70",
+                    "flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground",
                     running && "pointer-events-none opacity-60",
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5" />
+                  <Checkbox
+                    checked={copyFields[key]}
+                    disabled={running}
+                    onCheckedChange={(checked) =>
+                      onCopyFieldsChange({
+                        ...copyFields,
+                        [key]: checked === true,
+                      })
+                    }
+                    aria-label={label}
+                  />
+                  <Icon className="h-3.5 w-3.5 text-muted-foreground" />
                   {label}
-                </button>
+                </label>
               ))}
             </div>
           </div>
@@ -1568,7 +2521,12 @@ function CopyBatchStep({
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-background">
-        <div className="sticky top-0 z-10 grid grid-cols-[40px_minmax(140px,1fr)_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_88px] gap-3 border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-medium text-muted-foreground">
+        <div
+          className={cn(
+            "sticky top-0 z-10 grid gap-3 border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-medium text-muted-foreground",
+            rowGridClass,
+          )}
+        >
           <div className="flex items-center">
             <Checkbox
               checked={allVisibleSelected}
@@ -1578,9 +2536,12 @@ function CopyBatchStep({
             />
           </div>
           <span>Product</span>
+          <span className="text-center">Bike</span>
+          <span className="text-center">SOH</span>
           <span>Title</span>
           <span>Description</span>
           <span>Specs</span>
+          {showBikeSpecsColumn ? <span>Bike specs</span> : null}
           <span className="text-right">Status</span>
         </div>
 
@@ -1594,11 +2555,16 @@ function CopyBatchStep({
               const run = copyRuns[product.id];
               const status = copyRunStatus(run);
               const name = productLabel(product);
+              const bicycleChecked = isProductBicycle(product, bicycleOverrides);
+              const bicycleBusy = bicycleSaving.has(product.id);
+              const bicycleDetecting = bicycleDetectingIds.has(product.id);
+              const aiHint = aiBicycleHints[product.id];
+              const bikeSpecsText = bicycleChecked ? bikeSpecsPreview(product.bike_specs) : null;
 
               return (
                 <div
                   key={product.id}
-                  className="grid grid-cols-[40px_minmax(140px,1fr)_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_88px] gap-3 px-4 py-3 text-sm"
+                  className={cn("grid gap-3 px-4 py-3 text-sm", rowGridClass)}
                 >
                   <div className="flex items-start pt-0.5">
                     <Checkbox
@@ -1616,6 +2582,24 @@ function CopyBatchStep({
                     </p>
                   </div>
 
+                  <div className="flex flex-col items-center justify-start gap-1 pt-0.5">
+                    <Checkbox
+                      checked={bicycleChecked}
+                      disabled={running || bicycleBusy || bicycleDetecting}
+                      onCheckedChange={(checked) =>
+                        onToggleBicycle(product, checked === true)
+                      }
+                      aria-label={bicycleChecked ? "Mark as not a bicycle" : "Mark as bicycle"}
+                    />
+                    {bicycleDetecting ? (
+                      <span className="text-[10px] text-muted-foreground">Detecting…</span>
+                    ) : aiHint ? (
+                      <span className="text-[10px] text-muted-foreground">AI {aiHint}</span>
+                    ) : null}
+                  </div>
+
+                  <CopyBatchSoh qoh={product.qoh} />
+
                   <CopyBatchCell
                     text={product.display_name || product.description}
                     running={run?.title === "running" || run?.title === "queued"}
@@ -1631,6 +2615,16 @@ function CopyBatchStep({
                     running={run?.specs === "running" || run?.specs === "queued"}
                     error={run?.specs === "error"}
                   />
+
+                  {showBikeSpecsColumn ? (
+                    bicycleDetecting ? (
+                      <p className="pt-0.5 text-xs text-muted-foreground">Detecting…</p>
+                    ) : bicycleChecked ? (
+                      <CopyBatchCell text={bikeSpecsText} />
+                    ) : (
+                      <p className="pt-0.5 text-xs text-muted-foreground">—</p>
+                    )
+                  ) : null}
 
                   <div className="flex items-start justify-end">
                     {status === "running" && (
@@ -1653,6 +2647,23 @@ function CopyBatchStep({
         {selectedIds.size} of {totalCount} selected
         {search.trim() ? ` · ${products.length} shown` : ""}
       </p>
+    </div>
+  );
+}
+
+function CopyBatchSoh({ qoh }: { qoh: number }) {
+  const value = Math.max(0, Number(qoh) || 0);
+
+  return (
+    <div className="flex items-start justify-center pt-0.5">
+      <span
+        className={cn(
+          "text-xs font-medium tabular-nums",
+          value <= 0 ? "text-amber-600" : "text-foreground",
+        )}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -1693,13 +2704,13 @@ function CopyBatchCell({
   );
 }
 
-function PhotosStep({
-  product,
-  imageRun,
+function PhotosBatchStep({
+  products,
+  pageIndex,
+  pageCount,
+  totalCount,
+  imageRuns,
   loading,
-  index,
-  total,
-  imageRunning,
   preloadingImages,
   preloadProgress,
   onRunImages,
@@ -1707,59 +2718,99 @@ function PhotosStep({
   onApproveImages,
   onLightbox,
 }: {
-  product: OptimizerProduct | null;
-  imageRun: ImageRun;
+  products: OptimizerProduct[];
+  pageIndex: number;
+  pageCount: number;
+  totalCount: number;
+  imageRuns: Record<string, ImageRun>;
   loading: boolean;
-  index: number;
-  total: number;
-  imageRunning: boolean;
   preloadingImages: boolean;
   preloadProgress: { done: number; total: number };
-  onRunImages: () => void;
-  onImageUpdate: (patch: Partial<ImageRun> | ((prev: ImageRun) => Partial<ImageRun>)) => void;
-  onApproveImages: () => void;
+  onRunImages: (product: OptimizerProduct) => void;
+  onImageUpdate: (
+    productId: string,
+  ) => (patch: Partial<ImageRun> | ((prev: ImageRun) => Partial<ImageRun>)) => void;
+  onApproveImages: (product: OptimizerProduct) => void;
   onLightbox: (url: string) => void;
 }) {
-  if (loading || !product) {
-    return <CenteredState label="Loading product" />;
+  const pageStart = pageIndex * PHOTOS_PAGE_SIZE + 1;
+  const pageEnd = Math.min((pageIndex + 1) * PHOTOS_PAGE_SIZE, totalCount);
+
+  if (loading && products.length === 0) {
+    return <CenteredState label="Loading products" />;
   }
 
   return (
-    <div className="flex min-h-full flex-col">
-      <div className="border-b border-border px-5 py-5">
-        <h2 className="text-lg font-semibold text-foreground">Review & approve photos</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Photo {index + 1} of {total}. Pick a primary image, remove any you don&apos;t want, then
-          approve.
-        </p>
-      </div>
+    <div className="flex h-full min-h-0 flex-col px-5 py-5">
+      <div className="mb-4 shrink-0 space-y-2">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Review & approve photos</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Page {pageIndex + 1} of {pageCount} · products {pageStart}–{pageEnd} of{" "}
+            {totalCount}. Images are preloaded for this page so you can approve in bulk.
+          </p>
+        </div>
 
-      <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside className="border-b border-border bg-muted/25 p-5 lg:border-b-0 lg:border-r">
-          <ProductSummary product={product} onLightbox={onLightbox} />
-
-          {preloadingImages && preloadProgress.total > 0 && (
-            <div className="mt-4 rounded-md border border-border bg-white px-3 py-2 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <Loader2 className="size-3.5 animate-spin" />
-                Preloading photos {preloadProgress.done}/{preloadProgress.total}
-              </div>
+        {preloadingImages && preloadProgress.total > 0 && (
+          <div className="rounded-md border border-border bg-white px-4 py-3 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <Loader2 className="size-4 animate-spin" />
+              Loading images for this page ({preloadProgress.done}/{preloadProgress.total})
             </div>
-          )}
-        </aside>
-
-        <main className="min-w-0 p-5">
-          <PhotoPanel
-            product={product}
-            imageRun={imageRun}
-            running={imageRunning}
-            onRunImages={onRunImages}
-            onImageUpdate={onImageUpdate}
-            onApproveImages={onApproveImages}
-            onLightbox={onLightbox}
-          />
-        </main>
+          </div>
+        )}
       </div>
+
+      {products.length === 0 ? (
+        <div className="rounded-md border border-border bg-white px-4 py-12 text-center text-sm text-muted-foreground">
+          No products on this page.
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid gap-4 xl:grid-cols-2">
+            {products.map((product) => {
+              const imageRun = imageRuns[product.id] ?? emptyImageRun();
+              const imageRunning = IMG_BUSY.includes(imageRun.phase);
+
+              return (
+                <div
+                  key={product.id}
+                  className="rounded-md border border-border bg-background p-4"
+                >
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {productLabel(product)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {product.brand || "No brand"}
+                        {typeof product.qoh === "number" ? ` · SOH ${product.qoh}` : ""}
+                      </p>
+                    </div>
+                    {imageRun.phase === "done" ? (
+                      <StatusBadge label="Approved" tone="success" />
+                    ) : imageRun.phase === "ready" ? (
+                      <StatusBadge label="Ready" tone="info" />
+                    ) : imageRunning ? (
+                      <StatusBadge label="Loading…" tone="neutral" />
+                    ) : null}
+                  </div>
+
+                  <PhotoPanel
+                    product={product}
+                    imageRun={imageRun}
+                    running={imageRunning}
+                    onRunImages={() => onRunImages(product)}
+                    onImageUpdate={onImageUpdate(product.id)}
+                    onApproveImages={() => onApproveImages(product)}
+                    onLightbox={onLightbox}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

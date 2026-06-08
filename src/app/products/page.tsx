@@ -24,7 +24,6 @@ import {
   XCircle,
   Star,
   MoreHorizontal,
-  ListFilter,
   PackageX,
   Trash2,
   X,
@@ -74,14 +73,12 @@ import { SyncProgressModal } from "@/components/lightspeed/sync-progress-modal";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
 import { useLightspeedSseSync } from "@/lib/hooks/use-lightspeed-sse-sync";
 import {
-  formatCanonicalCategory,
   formatLightspeedCategory,
-  isLightspeedProduct,
-  productSourceLabel,
 } from "@/lib/products/catalog-helpers";
 import {
   PageBody,
   PageContainer,
+  PageHeader,
   StatusBadge,
   type StatusTone,
 } from "@/components/dashboard";
@@ -155,28 +152,6 @@ interface ProductStats {
 }
 
 // ── Row helpers ──────────────────────────────────────────────────────────────
-
-function ProductMetric({
-  label,
-  value,
-  title,
-}: {
-  label: string;
-  value: string;
-  title?: string;
-}) {
-  return (
-    <div
-      title={title}
-      className="rounded-md border border-border/60 bg-background px-2 py-1"
-    >
-      <p className="text-[10px] font-medium leading-none text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-xs font-semibold tabular-nums leading-none text-foreground">
-        {value}
-      </p>
-    </div>
-  );
-}
 
 function hasImage(p: Product) {
   return !!(p.resolved_image_url || p.primary_image_url);
@@ -294,27 +269,6 @@ function SortButton({
   );
 }
 
-function SourceBadge({ product }: { product: Product }) {
-  const isLs = isLightspeedProduct(product);
-  return (
-    <StatusBadge
-      label={productSourceLabel(product)}
-      tone={isLs ? "info" : "neutral"}
-      className="whitespace-nowrap"
-    />
-  );
-}
-
-function CategoryCell({ value }: { value: string | null }) {
-  if (!value) {
-    return <span className="text-muted-foreground">—</span>;
-  }
-  return (
-    <span className="line-clamp-2 text-xs leading-snug text-muted-foreground" title={value}>
-      {value}
-    </span>
-  );
-}
 
 export default function ProductsPage() {
   const { isConnected: lightspeedConnected, isLoading: lightspeedLoading } =
@@ -335,7 +289,6 @@ export default function ProductsPage() {
   const [categoryFilter, setCategoryFilter] = React.useState<string>('');
   const [stockFilter, setStockFilter] = React.useState<string>('all');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
-  const [sourceFilter, setSourceFilter] = React.useState<string>('all');
   const [sortBy, setSortBy] = React.useState<string>('created_at');
   const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('desc');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -392,7 +345,6 @@ export default function ProductsPage() {
         category: categoryFilter,
         stock: stockFilter,
         status: statusFilter,
-        source: sourceFilter,
         sortBy: sortBy,
         sortOrder: sortOrder,
       });
@@ -410,7 +362,7 @@ export default function ProductsPage() {
       if (isInitialLoad) setLoading(false);
       setRefreshing(false);
     }
-  }, [pagination.pageSize, debouncedSearch, categoryFilter, stockFilter, statusFilter, sourceFilter, sortBy, sortOrder]);
+  }, [pagination.pageSize, debouncedSearch, categoryFilter, stockFilter, statusFilter, sortBy, sortOrder]);
 
   const refreshCatalogue = React.useCallback(async () => {
     await fetchStats();
@@ -434,7 +386,7 @@ export default function ProductsPage() {
   // Initial + filter-change fetch
   React.useEffect(() => {
     fetchProducts(1, loading);
-  }, [debouncedSearch, categoryFilter, stockFilter, statusFilter, sourceFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts, loading]);
+  }, [debouncedSearch, categoryFilter, stockFilter, statusFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts, loading]);
 
   // Load stats once on mount
   React.useEffect(() => { fetchStats(); }, [fetchStats]);
@@ -735,149 +687,106 @@ export default function ProductsPage() {
     search !== '' ||
     categoryFilter !== '' ||
     stockFilter !== 'all' ||
-    statusFilter !== 'all' ||
-    sourceFilter !== 'all';
+    statusFilter !== 'all';
   const clearFilters = () => {
     setSearch('');
     setCategoryFilter('');
     setStockFilter('all');
     setStatusFilter('all');
-    setSourceFilter('all');
   };
 
   const totalCount = stats?.total ?? pagination.total;
-  const lightspeedHint =
-    stats?.lightspeed != null && stats?.manual != null
-      ? `${stats.lightspeed.toLocaleString()} Lightspeed · ${stats.manual.toLocaleString()} manual`
-      : undefined;
 
   const rangeStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
   const rangeEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
 
-  const tableColSpan = 11;
+  const tableColSpan = 7;
 
-  const liveHint = stats
-    ? `${Math.round((stats.live / Math.max(stats.total, 1)) * 100)}% of catalogue · active with approved image`
-    : "Active with approved image";
+  const statsLine = stats
+    ? `${totalCount.toLocaleString()} products · ${stats.live.toLocaleString()} live on marketplace · ${stats.needsImages.toLocaleString()} need photos`
+    : `${totalCount.toLocaleString()} products`;
 
   return (
     <PageContainer size="full">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0 space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Products</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage inventory from Lightspeed and manual listings.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <ProductMetric
-              label="Total"
-              value={totalCount.toLocaleString()}
-              title={lightspeedHint ?? `${categories.length} categories`}
-            />
-            <ProductMetric
-              label="Live"
-              value={(stats?.live ?? 0).toLocaleString()}
-              title={liveHint}
-            />
-            <ProductMetric
-              label="Low stock"
-              value={(stats?.lowStock ?? 0).toLocaleString()}
-              title="At or below reorder point"
-            />
-            <ProductMetric
-              label="Needs images"
-              value={(stats?.needsImages ?? 0).toLocaleString()}
-              title="Hidden from marketplace"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
+      <PageHeader
+        title="Products"
+        description={statsLine}
+        actions={
+          <>
             <Button
-              variant="outline"
-              size="sm"
+              variant="ghost"
+              size="icon-sm"
               onClick={handleRefreshList}
               disabled={refreshing || loading || isSyncing}
+              aria-label="Refresh list"
             >
               <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-              Refresh
             </Button>
             {lightspeedLoading ? (
-              <Button variant="outline" size="sm" disabled>
+              <Button size="sm" disabled>
                 <Loader2 className="size-4 animate-spin" />
-              </Button>
-            ) : lightspeedConnected ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSyncInventory}
-                disabled={isSyncing}
-              >
-                <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
                 Sync
               </Button>
+            ) : lightspeedConnected ? (
+              <Button size="sm" onClick={handleSyncInventory} disabled={isSyncing}>
+                <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
+                Sync inventory
+              </Button>
             ) : (
-              <Button variant="outline" size="sm" asChild>
+              <Button size="sm" asChild>
                 <Link href="/connect-lightspeed">
                   <Zap className="size-4" />
-                  Connect POS
+                  Connect Lightspeed
                 </Link>
               </Button>
             )}
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <PageBody className="mt-4 space-y-0">
-        <section className="border-t border-border/60">
-          <div className="flex flex-col gap-3 border-b border-border/60 py-4 lg:flex-row lg:items-center">
-            <div className="relative w-full lg:max-w-xs">
+        <section className="rounded-md border border-border/60 bg-white">
+          <div className="flex flex-col gap-2 border-b border-border/60 px-3 py-3 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1 sm:max-w-md">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by name or SKU…"
+                placeholder="Search name or SKU…"
                 className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30"
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+            <div className="flex flex-wrap items-center gap-2">
               <Select value={categoryFilter || "all"} onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}>
-                <SelectTrigger size="sm" className="w-[150px]"><SelectValue placeholder="Category" /></SelectTrigger>
+                <SelectTrigger size="sm" className="w-[140px]">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All categories</SelectItem>
                   {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
 
-              <Select value={stockFilter} onValueChange={setStockFilter}>
-                <SelectTrigger size="sm" className="w-[130px]"><SelectValue placeholder="Stock" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All stock</SelectItem>
-                  <SelectItem value="in-stock">In stock</SelectItem>
-                  <SelectItem value="low-stock">Low stock</SelectItem>
-                </SelectContent>
-              </Select>
-
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger size="sm" className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                <SelectTrigger size="sm" className="w-[150px]">
-                  <SelectValue placeholder="Source" />
+                <SelectTrigger size="sm" className="w-[120px]">
+                  <SelectValue placeholder="Visibility" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All sources</SelectItem>
-                  <SelectItem value="lightspeed">Lightspeed</SelectItem>
-                  <SelectItem value="manual">Manual / other</SelectItem>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Hidden</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={stockFilter} onValueChange={setStockFilter}>
+                <SelectTrigger size="sm" className="w-[120px]">
+                  <SelectValue placeholder="Stock" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Any stock</SelectItem>
+                  <SelectItem value="in-stock">In stock</SelectItem>
+                  <SelectItem value="low-stock">Low stock</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -886,79 +795,48 @@ export default function ProductsPage() {
                   <X className="size-4" />
                   Clear
                 </Button>
-              ) : (
-                <Button variant="outline" size="icon-sm" disabled>
-                  <ListFilter className="size-4" />
-                </Button>
-              )}
+              ) : null}
             </div>
-        </div>
+          </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 py-2.5">
-          {selected.size > 0 ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-sm font-medium">{selected.size} selected</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Button variant="outline" size="xs" onClick={() => handleBulkActive(true)}>
-                  <Eye className="size-3.5" />
-                  Set active
-                </Button>
-                <Button variant="outline" size="xs" onClick={() => handleBulkActive(false)}>
-                  <EyeOff className="size-3.5" />
-                  Set inactive
-                </Button>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => openDeleteDialog("selected")}
-                >
-                  <Trash2 className="size-3.5" />
-                  Delete selected
-                </Button>
-              </div>
-              <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => setSelected(new Set())}>
-                Clear selection
-              </Button>
-            </div>
-          ) : (
-            <span className="text-xs text-muted-foreground">
-              {products.length > 0
-                ? "Select products to run bulk actions"
-                : "No products on this page"}
-            </span>
-          )}
-          {products.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Button variant="outline" size="xs" onClick={toggleAll}>
-                {allChecked ? "Deselect all" : "Select all on page"}
-              </Button>
-              <Button
-                variant="outline"
-                size="xs"
-                className="text-destructive hover:text-destructive"
-                onClick={() => openDeleteDialog("page")}
+          <AnimatePresence>
+            {selected.size > 0 ? (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                className="overflow-hidden border-b border-border/60"
               >
-                <Trash2 className="size-3.5" />
-                Delete all on page
-              </Button>
-              {pagination.total > products.length && (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => openDeleteDialog("all")}
-                >
-                  <Trash2 className="size-3.5" />
-                  Delete entire catalogue
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+                  <span className="text-sm font-medium text-foreground">{selected.size} selected</span>
+                  <Button variant="outline" size="xs" onClick={() => handleBulkActive(true)}>
+                    <Eye className="size-3.5" />
+                    Activate
+                  </Button>
+                  <Button variant="outline" size="xs" onClick={() => handleBulkActive(false)}>
+                    <EyeOff className="size-3.5" />
+                    Hide
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => openDeleteDialog("selected")}
+                  >
+                    <Trash2 className="size-3.5" />
+                    Delete
+                  </Button>
+                  <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => setSelected(new Set())}>
+                    Clear
+                  </Button>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
-        <div className="w-full overflow-x-auto">
-            <Table className="w-full min-w-full">
+          <div className="w-full overflow-x-auto">
+            <Table className="w-full">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-10 pl-3">
@@ -968,24 +846,17 @@ export default function ProductsPage() {
                       aria-label="Select all"
                     />
                   </TableHead>
-                  <TableHead className="w-[100px]">Source</TableHead>
-                  <TableHead className="min-w-[200px]"><SortButton label="Product" column="description" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} /></TableHead>
-                  <TableHead className="hidden min-w-[140px] md:table-cell">Lightspeed category</TableHead>
-                  <TableHead className="hidden min-w-[140px] lg:table-cell">Canonical category</TableHead>
-                  <TableHead className="text-right"><SortButton label="Price" column="price" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" /></TableHead>
-                  <TableHead className="text-right"><SortButton label="Stock" column="qoh" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" /></TableHead>
-                  <TableHead className="w-[72px] text-center">
-                    <span className="inline-flex items-center justify-center gap-1">
-                      <BikeIcon
-                        iconName={BICYCLE_PRODUCT_ICON}
-                        size={14}
-                        className="size-3.5 shrink-0 opacity-80"
-                      />
-                      Bicycle
-                    </span>
+                  <TableHead className="min-w-[240px]">
+                    <SortButton label="Product" column="description" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="w-[72px] text-center">Active</TableHead>
+                  <TableHead className="text-right">
+                    <SortButton label="Price" column="price" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
+                  </TableHead>
+                  <TableHead className="text-right">
+                    <SortButton label="Stock" column="qoh" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
+                  </TableHead>
                   <TableHead>Marketplace</TableHead>
+                  <TableHead className="w-[72px] text-center">Visible</TableHead>
                   <TableHead className="w-10 pr-3" />
                 </TableRow>
               </TableHeader>
@@ -1029,51 +900,35 @@ export default function ProductsPage() {
                             <Checkbox checked={checked} onCheckedChange={() => toggleOne(product.id)} aria-label={`Select ${product.description}`} />
                           </TableCell>
                           <TableCell>
-                            <SourceBadge product={product} />
-                          </TableCell>
-                          <TableCell>
                             <div className="flex items-center gap-3">
                               <ProductThumb product={product} onDiscover={handleDiscoverImages} />
                               <div className="min-w-0">
                                 <p className="truncate font-medium text-foreground">{product.description}</p>
-                                <p className="font-mono text-xs text-muted-foreground">
+                                <p className="truncate font-mono text-xs text-muted-foreground">
                                   {product.custom_sku || product.system_sku || "—"}
                                   {product.manufacturer_name ? (
-                                    <span className="ml-2 font-sans text-muted-foreground">
-                                      · {product.manufacturer_name}
-                                    </span>
+                                    <span className="ml-2 font-sans">{product.manufacturer_name}</span>
                                   ) : null}
                                 </p>
+                                {formatLightspeedCategory(product) ? (
+                                  <p className="truncate text-xs text-muted-foreground">
+                                    {formatLightspeedCategory(product)}
+                                  </p>
+                                ) : null}
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell className="hidden md:table-cell">
-                            <CategoryCell value={formatLightspeedCategory(product)} />
-                          </TableCell>
-                          <TableCell className="hidden lg:table-cell">
-                            <CategoryCell value={formatCanonicalCategory(product)} />
-                          </TableCell>
                           <TableCell className="text-right font-medium tabular-nums">${product.price.toFixed(2)}</TableCell>
                           <TableCell className="text-right tabular-nums"><StockCell qoh={product.qoh} reorder={product.reorder_point} /></TableCell>
-                          <TableCell className="text-center">
-                            <Switch
-                              size="sm"
-                              checked={!!product.is_bicycle}
-                              onCheckedChange={() =>
-                                handleToggleBicycle(product.id, !!product.is_bicycle)
-                              }
-                              aria-label={product.is_bicycle ? "Mark as not a bicycle" : "Mark as bicycle"}
-                            />
-                          </TableCell>
+                          <TableCell><StatusBadge label={status.label} tone={status.tone} /></TableCell>
                           <TableCell className="text-center">
                             <Switch
                               size="sm"
                               checked={product.is_active}
                               onCheckedChange={() => handleToggleActive(product.id, product.is_active)}
-                              aria-label={product.is_active ? "Deactivate product" : "Activate product"}
+                              aria-label={product.is_active ? "Hide product" : "Show product"}
                             />
                           </TableCell>
-                          <TableCell><StatusBadge label={status.label} tone={status.tone} /></TableCell>
                           <TableCell className="pr-3">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -1084,6 +939,14 @@ export default function ProductsPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-52">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={() => handleToggleBicycle(product.id, !!product.is_bicycle)}>
+                                  <BikeIcon
+                                    iconName={BICYCLE_PRODUCT_ICON}
+                                    size={16}
+                                    className="size-4 shrink-0"
+                                  />
+                                  {product.is_bicycle ? "Remove bicycle flag" : "Mark as bicycle"}
+                                </DropdownMenuItem>
                                 {product.is_bicycle ? (
                                   <DropdownMenuItem onClick={() => openBikeSpecsSheet(product)}>
                                     <BikeIcon
@@ -1094,6 +957,7 @@ export default function ProductsPage() {
                                     Bicycle specifications
                                   </DropdownMenuItem>
                                 ) : null}
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem disabled={!product.canonical_product_id} onClick={() => setImageManageProduct(product)}>
                                   <ImageIcon className="size-4" />
                                   Manage images
@@ -1114,7 +978,7 @@ export default function ProductsPage() {
             </Table>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-border/60 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-t border-border/60 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
             <p className="text-muted-foreground">
               {pagination.total > 0 ? (
                 <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{pagination.total.toLocaleString()}</span> products</>

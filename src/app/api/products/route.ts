@@ -41,6 +41,10 @@ export async function GET(request: NextRequest) {
     const statusFilter = searchParams.get('status') || 'all' // all, active, inactive
     const sourceFilter = searchParams.get('source') || 'all' // all, lightspeed, manual
     const listingTypeFilter = searchParams.get('listing_type') || '' // e.g. private_listing
+    const productIds = (searchParams.get('ids') || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
 
     // Calculate offset
     const from = (page - 1) * pageSize
@@ -78,6 +82,10 @@ export async function GET(request: NextRequest) {
         )
       `, { count: 'exact' })
       .eq('user_id', user.id)
+
+    if (productIds.length > 0) {
+      query = query.in('id', productIds)
+    }
 
     // Apply status filter
     if (statusFilter === 'active') {

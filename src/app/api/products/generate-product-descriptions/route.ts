@@ -248,7 +248,7 @@ export async function POST(request: NextRequest) {
       bicycleOverrides = {},
     }: {
       productIds: string[]
-      mode?: 'both' | 'description' | 'specs'
+      mode?: 'both' | 'description' | 'specs' | 'bicycle'
       bicycleOverrides?: Record<string, boolean>
     } = body
 
@@ -259,8 +259,9 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const runDesc = mode === 'both' || mode === 'description'
-    const runSpecs = mode === 'both' || mode === 'specs'
+    const runBicycleOnly = mode === 'bicycle'
+    const runDesc = !runBicycleOnly && (mode === 'both' || mode === 'description')
+    const runSpecs = !runBicycleOnly && (mode === 'both' || mode === 'specs')
 
     const { data: products, error: dbError } = await supabase
       .from('products')
@@ -309,6 +310,71 @@ export async function POST(request: NextRequest) {
                 (product as any).frame_size && `Size: ${(product as any).frame_size}`,
                 product.description && product.description !== productName && `Original description: ${product.description}`,
               ].filter(Boolean).join('\n')
+
+              if (runBicycleOnly) {
+                emit({ event: 'product_phase', productId: product.id, phase: 'bicycle' })
+
+                const detectionContext = [
+                  details,
+                  (product as { product_description?: string | null }).product_description &&
+                    `Description:\n${(product as { product_description?: string | null }).product_description!.slice(0, 600)}`,
+                  (product as { product_specs?: string | null }).product_specs &&
+                    `Specs:\n${(product as { product_specs?: string | null }).product_specs!.slice(0, 800)}`,
+                ]
+                  .filter(Boolean)
+                  .join('\n\n')
+
+                const detection = await detectBicycleProduct(openai, detectionContext)
+                const isBicycle =
+                  product.id in bicycleOverrides
+                    ? !!bicycleOverrides[product.id]
+                    : detection.is_bicycle
+
+                const existingSources =
+                  ((product as { product_spec_sources?: SpecSource[] | null })
+                    .product_spec_sources ?? []) as SpecSource[]
+
+                let bikeSpecs: BikeSpecsData | null = null
+                if (isBicycle) {
+                  bikeSpecs = syncBikeSpecsFromProductSpecs({
+                    productSpecs: (product as { product_specs?: string | null }).product_specs,
+                    existingBikeSpecs: (product as { bike_specs?: unknown }).bike_specs,
+                    productSpecSources: existingSources,
+                    brand,
+                  })
+                }
+
+                const updateData: Record<string, unknown> = { is_bicycle: isBicycle }
+                if (bikeSpecs) updateData.bike_specs = bikeSpecs
+
+                let saveError: string | null = null
+                const { error: dbSaveErr } = await supabase
+                  .from('products')
+                  .update(updateData)
+                  .eq('id', product.id)
+                  .eq('user_id', user.id)
+
+                if (dbSaveErr) saveError = 'Failed to save bicycle classification'
+
+                emit({
+                  event: 'product_complete',
+                  productId: product.id,
+                  success: !saveError,
+                  description: null,
+                  specs: null,
+                  sources: [],
+                  bicycle_detected: true,
+                  is_bicycle: isBicycle,
+                  bicycle_confidence: detection.confidence,
+                  bike_specs: bikeSpecs,
+                  error: saveError,
+                })
+
+                if (i < products.length - 1) {
+                  await new Promise(resolve => setTimeout(resolve, 200))
+                }
+                continue
+              }
 
               const searchTerms = [brand, (product as any).model, productName]
                 .filter(Boolean)
@@ -453,6 +519,7 @@ export async function POST(request: NextRequest) {
                 description: description || null,
                 specs: specs || null,
                 sources,
+                bicycle_detected: true,
                 is_bicycle: isBicycle,
                 bicycle_confidence: detection.confidence,
                 bike_specs: bikeSpecs,

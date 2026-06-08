@@ -11,7 +11,7 @@ export type HomeV2OverviewMetrics = {
   };
   inventory: {
     marketplaceLive: number;
-    withoutApprovedPhotos: number;
+    notYetLive: number;
   };
 };
 
@@ -21,7 +21,7 @@ type CachedHomeV2Metrics = {
   savedAt: string;
 };
 
-const CACHE_KEY = "yj_homev2_metrics_v2";
+const CACHE_KEY = "yj_homev2_metrics_v3";
 
 function isTrackingPeriodSummary(value: unknown): value is HomeV2OverviewMetrics["rolling7Days"] {
   if (!value || typeof value !== "object") return false;
@@ -40,7 +40,7 @@ function isHomeV2OverviewMetrics(value: unknown): value is HomeV2OverviewMetrics
     isTrackingPeriodSummary(metrics.rolling7Days) &&
     isTrackingPeriodSummary(metrics.today) &&
     typeof metrics.inventory?.marketplaceLive === "number" &&
-    typeof metrics.inventory?.withoutApprovedPhotos === "number"
+    typeof metrics.inventory?.notYetLive === "number"
   );
 }
 
@@ -114,7 +114,7 @@ export function parseHomeV2OverviewMetrics(json: unknown): HomeV2OverviewMetrics
     },
     inventory: {
       marketplaceLive: inventory.marketplaceLive,
-      withoutApprovedPhotos: inventory.withoutApprovedPhotos,
+      notYetLive: inventory.notYetLive,
     },
   };
 
@@ -129,6 +129,6 @@ export function homeV2MetricsChanged(
     previous.rolling7Days.totalDistinctViewers !== next.rolling7Days.totalDistinctViewers ||
     previous.today.totalDistinctViewers !== next.today.totalDistinctViewers ||
     previous.inventory.marketplaceLive !== next.inventory.marketplaceLive ||
-    previous.inventory.withoutApprovedPhotos !== next.inventory.withoutApprovedPhotos
+    previous.inventory.notYetLive !== next.inventory.notYetLive
   );
 }

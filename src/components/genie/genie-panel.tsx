@@ -29,7 +29,6 @@ import type {
   GmailAgentContext,
 } from '@/lib/types/genie-agent';
 import { mergeGmailAgentContext } from '@/lib/genie/gmail-agent-context';
-import { GmailEmailSearchCard } from '@/components/genie/gmail-email-search-card';
 import { GmailConnectCard } from '@/components/genie/gmail-connect-card';
 import { GenieChart, type GenieChartPayload } from '@/components/genie/genie-chart';
 import { GenieDataTable, type GenieTablePayload } from '@/components/genie/genie-data-table';
@@ -597,20 +596,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       </AnimatePresence>
 
-      {/* 2b. Gmail search results */}
-      <AnimatePresence>
-        {message.gmailEmails && message.gmailEmails.ui_mode !== "hidden" && (
-          <motion.div
-            key="gmail-emails"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <GmailEmailSearchCard payload={message.gmailEmails} />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* 2c. Gmail connect */}
+      {/* 2b. Gmail connect */}
       <AnimatePresence>
         {message.gmailConnect && (
           <motion.div

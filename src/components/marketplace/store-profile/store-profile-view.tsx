@@ -673,7 +673,7 @@ function ProductsTab({
     const hasUberCarousel = section.categories.some((cat) => cat.source === "uber");
 
     return (
-      <div key={section.id} className="bg-gray-200/60 border-y border-gray-300 -mx-4 xl:-mx-5 px-4 sm:px-4 lg:px-4 xl:px-5 py-1 space-y-2">
+      <div key={section.id} className="bg-gray-200/60 border-y border-gray-300 -mx-4 xl:-mx-5 px-4 sm:px-4 lg:px-4 xl:px-5 py-4 space-y-2">
         <div>
           <div className="flex items-center gap-3">
             {hasUberCarousel && <UberCarouselLogo className="h-7 px-2.5" />}
