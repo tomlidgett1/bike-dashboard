@@ -11,6 +11,7 @@
     "start": "node ./node_modules/next/dist/bin/next start",
     "lint": "eslint",
     "test:genie-orchestration": "tsx scripts/test-genie-orchestration.ts",
+    "test:genie-quality": "tsx scripts/eval-genie-quality.ts",
     "test:composio-gmail": "tsx --env-file=.env.local scripts/test-composio-gmail.ts",
     "check:google-oauth": "node --env-file=.env.local scripts/check-google-oauth.mjs",
     "check:apple-oauth": "node --env-file=.env.local scripts/check-apple-oauth.mjs",

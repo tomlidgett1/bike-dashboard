@@ -10,15 +10,14 @@
  * visit sections — with a live preview rendered by the very same component
  * that powers the public page (<StoreHomeTab>).
  *
- * Saves the whole config to PUT /api/store/homepage. Images upload to
- * POST /api/store/homepage/upload.
+ * Saves the whole config to PUT /api/store/homepage (debounced auto-save).
+ * Images upload to POST /api/store/homepage/upload.
  */
 
 import * as React from "react";
 import { Reorder } from "framer-motion";
 import {
   Loader2,
-  Save,
   ExternalLink,
   Plus,
   Trash2,
@@ -39,7 +38,6 @@ import {
   Images,
   MapPin,
   ListOrdered,
-  Eye,
   GalleryHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -147,6 +145,8 @@ function uid(): string {
     : Math.random().toString(36).slice(2);
 }
 
+const AUTO_SAVE_DELAY_MS = 800;
+
 // ============================================================
 // Main component
 // ============================================================
@@ -162,6 +162,63 @@ export function StoreHomepageManager() {
   const [savedAt, setSavedAt] = React.useState<number | null>(null);
   const [showPreview, setShowPreview] = React.useState(true);
   const [activeTab, setActiveTab] = React.useState<EditorTabId>("hero");
+
+  const configRef = React.useRef<StoreHomepageConfig | null>(null);
+  const savedSnapshotRef = React.useRef<string | null>(null);
+  const saveTimerRef = React.useRef<number | null>(null);
+  const saveAgainRef = React.useRef(false);
+
+  configRef.current = config;
+
+  const persistConfig = React.useCallback(async (configToSave: StoreHomepageConfig) => {
+    const snapshot = JSON.stringify(configToSave);
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/store/homepage", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: configToSave }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 503) setMigrated(false);
+        throw new Error(data?.error || "Failed to save");
+      }
+      savedSnapshotRef.current = snapshot;
+      setSavedAt(Date.now());
+      window.setTimeout(() => setSavedAt(null), 2500);
+
+      const latest = configRef.current;
+      if (latest && JSON.stringify(latest) !== snapshot) {
+        saveAgainRef.current = true;
+      }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+      if (saveAgainRef.current) {
+        saveAgainRef.current = false;
+        const latest = configRef.current;
+        if (latest && migrated) {
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = window.setTimeout(() => {
+            void persistConfig(latest);
+          }, AUTO_SAVE_DELAY_MS);
+        }
+      }
+    }
+  }, [migrated]);
+
+  const scheduleAutoSave = React.useCallback(() => {
+    if (!migrated || !configRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      const latest = configRef.current;
+      if (!latest) return;
+      void persistConfig(latest);
+    }, AUTO_SAVE_DELAY_MS);
+  }, [migrated, persistConfig]);
 
   const load = React.useCallback(async () => {
     if (!user?.id) return;
@@ -183,7 +240,9 @@ export function StoreHomepageManager() {
         setMigrated(cfgData.migrated !== false);
       }
       setStore(profile);
-      setConfig(resolveHomepageConfig(raw, profile));
+      const resolved = resolveHomepageConfig(raw, profile);
+      setConfig(resolved);
+      savedSnapshotRef.current = JSON.stringify(resolved);
     } catch (err) {
       console.error("Homepage manager load failed:", err);
       setLoadError(err instanceof Error ? err.message : "Failed to load");
@@ -196,30 +255,18 @@ export function StoreHomepageManager() {
     load();
   }, [load]);
 
-  // Mark the editor dirty whenever the config changes after first load.
-  const handleSave = async () => {
-    if (!config) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const res = await fetch("/api/store/homepage", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (res.status === 503) setMigrated(false);
-        throw new Error(data?.error || "Failed to save");
-      }
-      setSavedAt(Date.now());
-      setTimeout(() => setSavedAt(null), 2500);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  };
+  React.useEffect(() => {
+    if (loading || !config || !migrated) return;
+    const snapshot = JSON.stringify(config);
+    if (savedSnapshotRef.current === snapshot) return;
+    scheduleAutoSave();
+  }, [config, loading, migrated, scheduleAutoSave]);
+
+  React.useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
 
   const resetToDefaults = () => {
     if (store) setConfig(resolveHomepageConfig({}, store));
@@ -282,7 +329,7 @@ export function StoreHomepageManager() {
       <>
         {landingPageTitle}
         <PageBody>
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+          <div className="rounded-md border border-destructive/30 bg-white p-6 text-center">
             <AlertTriangle className="h-6 w-6 text-destructive mx-auto mb-2" />
             <p className="text-sm text-foreground font-medium">{loadError || "Couldn't load your home page settings"}</p>
             <Button variant="outline" size="sm" onClick={load} className="mt-4">
@@ -303,6 +350,21 @@ export function StoreHomepageManager() {
         description="Design the landing page customers see first on your storefront."
         actions={
           <div className="flex flex-wrap items-center justify-end gap-3">
+            {migrated ? (
+              <span className="inline-flex min-w-[92px] items-center gap-1.5 text-sm text-muted-foreground">
+                {saving ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Saving…
+                  </>
+                ) : savedAt ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-gray-600" />
+                    Saved
+                  </>
+                ) : null}
+              </span>
+            ) : null}
             <label className="flex cursor-pointer items-center gap-2.5">
               <Switch checked={config.enabled} onCheckedChange={setEnabled} />
               <span className="text-sm font-medium text-foreground">
@@ -314,16 +376,6 @@ export function StoreHomepageManager() {
                 <ExternalLink className="h-3.5 w-3.5" /> View live
               </a>
             </Button>
-            <Button onClick={handleSave} disabled={saving} size="sm" className="gap-1.5 min-w-[92px]">
-              {saving ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : savedAt ? (
-                <Check className="h-3.5 w-3.5" />
-              ) : (
-                <Save className="h-3.5 w-3.5" />
-              )}
-              {saving ? "Saving" : savedAt ? "Saved" : "Save"}
-            </Button>
           </div>
         }
       />
@@ -331,13 +383,13 @@ export function StoreHomepageManager() {
     <div className="space-y-5">
       {/* Migration warning */}
       {!migrated && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
-          <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <p className="font-medium text-amber-900">Saving isn&apos;t enabled yet</p>
-            <p className="text-amber-800 mt-0.5">
+        <div className="mb-4 flex items-start gap-3 rounded-md border border-gray-200 bg-white px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-600" />
+          <div className="text-sm text-gray-700">
+            <p className="font-medium text-gray-900">Saving isn&apos;t enabled yet</p>
+            <p className="mt-0.5">
               The database column for home pages hasn&apos;t been created. Run{" "}
-              <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">supabase db push</code>{" "}
+              <code className="rounded-md bg-gray-100 px-1 py-0.5 text-xs">supabase db push</code>{" "}
               to enable saving. You can still design your page below.
             </p>
           </div>
@@ -345,37 +397,35 @@ export function StoreHomepageManager() {
       )}
 
       {saveError && (
-        <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+        <div className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm text-red-700">
           {saveError}
-        </p>
+        </div>
       )}
 
-      <nav className="border-b border-border/60" aria-label="Landing page sections">
-        <div className="-mb-px flex gap-6 overflow-x-auto pb-0">
-          {EDITOR_TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
-                  isActive
-                    ? "border-foreground text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-                )}
-              >
-                <tab.icon className="size-4 shrink-0" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+      <div className="mb-4 flex max-w-full flex-wrap items-center gap-0.5 rounded-md bg-gray-100 p-0.5 w-fit">
+        {EDITOR_TABS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                isActive
+                  ? "bg-white text-gray-800 shadow-sm"
+                  : "text-gray-600 hover:bg-gray-200/70",
+              )}
+            >
+              <tab.icon className="h-3 w-3" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
       {activeTab === "theme" && (
-      <SectionCard icon={Palette} title="Theme" description="Accent colour used across buttons and highlights.">
+      <EditorSection title="Theme" description="Accent colour used across buttons and highlights.">
         <div className="flex items-center gap-3">
           <input
             type="color"
@@ -398,11 +448,11 @@ export function StoreHomepageManager() {
             Reset to Yellow Jersey
           </button>
         </div>
-      </SectionCard>
+      </EditorSection>
       )}
 
       {activeTab === "hero" && (
-      <SectionCard icon={ImageIcon} title="Hero" description="The first thing visitors see.">
+      <EditorSection title="Hero" description="The first thing visitors see.">
         <Field label="Layout">
           <Segmented
             value={config.hero.variant}
@@ -461,12 +511,11 @@ export function StoreHomepageManager() {
             )}
           </div>
         </Field>
-      </SectionCard>
+      </EditorSection>
       )}
 
       {activeTab === "announcement" && (
-      <SectionCard
-        icon={Megaphone}
+      <EditorSection
         title="Announcement bar"
         description="A thin strip above the hero — great for sales or notices."
         enabled={config.announcement.enabled}
@@ -478,22 +527,21 @@ export function StoreHomepageManager() {
           onChange={(v) => patchAnn({ text: v })}
           placeholder="Free local delivery on orders over $100"
         />
-      </SectionCard>
+      </EditorSection>
       )}
 
       {activeTab === "highlights" && (
-      <SectionCard
-        icon={Sparkles}
+      <EditorSection
         title="Highlights"
         description="Short selling points shown as a row of cards."
         enabled={config.highlights.enabled}
         onEnabledChange={(v) => patchHi({ enabled: v })}
       >
-        <Reorder.Group axis="y" values={config.highlights.items} onReorder={(items) => patchHi({ items })} className="space-y-2">
+        <Reorder.Group axis="y" values={config.highlights.items} onReorder={(items) => patchHi({ items })} className="divide-y divide-gray-100 rounded-md border border-gray-200 bg-white">
           {config.highlights.items.map((item) => (
-            <Reorder.Item key={item.id} value={item} className="rounded-lg border border-border bg-card p-3">
-              <div className="flex items-start gap-2">
-                <GripVertical className="h-4 w-4 text-muted-foreground/50 mt-2 flex-shrink-0 cursor-grab active:cursor-grabbing" />
+            <Reorder.Item key={item.id} value={item}>
+              <div className="flex items-start gap-2 px-3 py-2.5 transition-colors hover:bg-gray-50">
+                <GripVertical className="mt-2 h-4 w-4 flex-shrink-0 cursor-grab text-gray-400 active:cursor-grabbing" />
                 <div className="flex-1 space-y-2 min-w-0">
                   <IconPicker value={item.icon} onChange={(icon) => updateItem(config.highlights.items, item.id, { icon }, (items) => patchHi({ items }))} />
                   <Input
@@ -532,12 +580,11 @@ export function StoreHomepageManager() {
             }
           />
         )}
-      </SectionCard>
+      </EditorSection>
       )}
 
       {activeTab === "collections" && (
-      <SectionCard
-        icon={LayoutGrid}
+      <EditorSection
         title="Collections"
         description="Visual tiles that link into your product categories."
         enabled={config.collections.enabled}
@@ -562,11 +609,11 @@ export function StoreHomepageManager() {
         </label>
         {!config.collections.auto && (
           <div className="space-y-2">
-            <Reorder.Group axis="y" values={config.collections.items} onReorder={(items) => patchCol({ items })} className="space-y-2">
+            <Reorder.Group axis="y" values={config.collections.items} onReorder={(items) => patchCol({ items })} className="divide-y divide-gray-100 rounded-md border border-gray-200 bg-white">
               {config.collections.items.map((item) => (
-                <Reorder.Item key={item.id} value={item} className="rounded-lg border border-border bg-card p-3">
-                  <div className="flex items-start gap-2">
-                    <GripVertical className="h-4 w-4 text-muted-foreground/50 mt-2 flex-shrink-0 cursor-grab active:cursor-grabbing" />
+                <Reorder.Item key={item.id} value={item}>
+                  <div className="flex items-start gap-2 px-3 py-2.5 transition-colors hover:bg-gray-50">
+                    <GripVertical className="mt-2 h-4 w-4 flex-shrink-0 cursor-grab text-gray-400 active:cursor-grabbing" />
                     <div className="flex-1 min-w-0 space-y-2">
                       <Input
                         value={item.label}
@@ -626,12 +673,11 @@ export function StoreHomepageManager() {
             )}
           </div>
         )}
-      </SectionCard>
+      </EditorSection>
       )}
 
       {activeTab === "story" && (
-      <SectionCard
-        icon={BookOpen}
+      <EditorSection
         title="Our story"
         description="Tell visitors who you are."
         enabled={config.story.enabled}
@@ -650,12 +696,11 @@ export function StoreHomepageManager() {
             ]}
           />
         </Field>
-      </SectionCard>
+      </EditorSection>
       )}
 
       {activeTab === "services" && (
-      <SectionCard
-        icon={Wrench}
+      <EditorSection
         title="Services teaser"
         description="Highlights your workshop. Pulls your top services automatically."
         enabled={config.services.enabled}
@@ -670,12 +715,11 @@ export function StoreHomepageManager() {
             You have no services yet — add some under the Services tab and they&apos;ll appear here.
           </p>
         )}
-      </SectionCard>
+      </EditorSection>
       )}
 
       {activeTab === "gallery" && (
-      <SectionCard
-        icon={Images}
+      <EditorSection
         title="Gallery"
         description="A photo wall of your shop, team and rides."
         enabled={config.gallery.enabled}
@@ -683,10 +727,11 @@ export function StoreHomepageManager() {
       >
         <TextField label="Title" value={config.gallery.title} onChange={(v) => patchGal({ title: v })} />
         {config.gallery.images.length > 0 && (
-          <Reorder.Group axis="y" values={config.gallery.images} onReorder={(images) => patchGal({ images })} className="space-y-2">
+          <Reorder.Group axis="y" values={config.gallery.images} onReorder={(images) => patchGal({ images })} className="divide-y divide-gray-100 rounded-md border border-gray-200 bg-white">
             {config.gallery.images.map((img) => (
-              <Reorder.Item key={img.id} value={img} className="flex items-center gap-3 rounded-lg border border-border bg-card p-2">
-                <GripVertical className="h-4 w-4 text-muted-foreground/50 flex-shrink-0 cursor-grab active:cursor-grabbing" />
+              <Reorder.Item key={img.id} value={img}>
+                <div className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-gray-50">
+                <GripVertical className="h-4 w-4 flex-shrink-0 cursor-grab text-gray-400 active:cursor-grabbing" />
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={img.url} alt="" className="h-12 w-12 rounded object-cover flex-shrink-0" />
                 <Input
@@ -703,6 +748,7 @@ export function StoreHomepageManager() {
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
+                </div>
               </Reorder.Item>
             ))}
           </Reorder.Group>
@@ -710,24 +756,22 @@ export function StoreHomepageManager() {
         <GalleryUploader
           onAdd={(url) => patchGal({ images: [...config.gallery.images, { id: uid(), url } as HomeGalleryImage] })}
         />
-      </SectionCard>
+      </EditorSection>
       )}
 
       {activeTab === "visit" && (
-      <SectionCard
-        icon={MapPin}
+      <EditorSection
         title="Visit us"
         description="Address, phone and opening hours — pulled from your store."
         enabled={config.visit.enabled}
         onEnabledChange={(v) => patchVisit({ enabled: v })}
       >
         <TextField label="Title" value={config.visit.title} onChange={(v) => patchVisit({ title: v })} />
-      </SectionCard>
+      </EditorSection>
       )}
 
       {activeTab === "carousels" && (
-      <SectionCard
-        icon={GalleryHorizontal}
+      <EditorSection
         title="Featured carousels"
         description="Pin up to two product carousels to your home page."
         enabled={config.featured_carousels.enabled}
@@ -742,17 +786,17 @@ export function StoreHomepageManager() {
               {/* Products per row */}
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Products per row</Label>
-                <div className="flex gap-2">
+                <div className="flex w-fit items-center rounded-md bg-gray-100 p-0.5">
                   {([6, 8] as const).map((n) => (
                     <button
                       key={n}
                       type="button"
                       onClick={() => patchFeaturedCarousels({ per_row: n })}
                       className={cn(
-                        "flex-1 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors",
+                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                         config.featured_carousels.per_row === n
-                          ? "border-foreground bg-foreground text-background"
-                          : "border-input bg-background text-muted-foreground hover:bg-secondary"
+                          ? "bg-white text-gray-800 shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70",
                       )}
                     >
                       {n} per row
@@ -787,69 +831,66 @@ export function StoreHomepageManager() {
             </div>
           );
         })()}
-      </SectionCard>
+      </EditorSection>
       )}
 
       {activeTab === "layout" && (
-      <>
-      <SectionCard icon={Eye} title="Badges & indicators" description="Choose which status indicators appear on your public profile.">
-        <div className="flex items-center justify-between gap-4">
+      <div className="space-y-6">
+      <EditorSection title="Badges & indicators" description="Choose which status indicators appear on your public profile.">
+        <div className="flex items-center justify-between gap-4 rounded-md border border-gray-200 bg-white px-3 py-2.5">
           <div>
             <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-foreground">Hours on hero</p>
+              <p className="text-sm font-medium text-gray-900">Hours on hero</p>
               <span className={cn(
-                "text-xs font-medium px-1.5 py-0.5 rounded-full transition-opacity",
-                config.badges.show_hours_on_hero ? "bg-blue-50 text-blue-700" : "opacity-25 bg-gray-100 text-gray-500",
+                "rounded-md px-1.5 py-0.5 text-xs font-medium transition-opacity",
+                config.badges.show_hours_on_hero ? "bg-gray-100 text-gray-700" : "bg-gray-100 text-gray-400 opacity-50",
               )}>Mon 9:00–17:00</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">Show today&apos;s opening hours overlaid on the hero image.</p>
+            <p className="mt-0.5 text-xs text-gray-500">Show today&apos;s opening hours overlaid on the hero image.</p>
           </div>
           <Switch
             checked={config.badges.show_hours_on_hero}
             onCheckedChange={(v) => patchBadges({ show_hours_on_hero: v })}
           />
         </div>
-      </SectionCard>
+      </EditorSection>
 
-      {/* ── Section order ── */}
-      <SectionCard icon={ListOrdered} title="Section order" description="Drag to reorder how sections appear down the page.">
-        <Reorder.Group axis="y" values={config.section_order} onReorder={setSectionOrder} className="space-y-2">
+      <EditorSection title="Section order" description="Drag to reorder how sections appear down the page.">
+        <Reorder.Group axis="y" values={config.section_order} onReorder={setSectionOrder} className="divide-y divide-gray-100 rounded-md border border-gray-200 bg-white">
           {config.section_order.map((key) => (
-            <Reorder.Item
-              key={key}
-              value={key}
-              className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 cursor-grab active:cursor-grabbing"
-            >
-              <GripVertical className="h-4 w-4 text-muted-foreground/50" />
-              <span className="text-sm font-medium text-foreground">{SECTION_LABELS[key]}</span>
+            <Reorder.Item key={key} value={key}>
+              <div className="flex cursor-grab items-center gap-3 px-3 py-2.5 transition-colors hover:bg-gray-50 active:cursor-grabbing">
+              <GripVertical className="h-4 w-4 text-gray-400" />
+              <span className="text-sm font-medium text-gray-900">{SECTION_LABELS[key]}</span>
+              </div>
             </Reorder.Item>
           ))}
         </Reorder.Group>
-      </SectionCard>
+      </EditorSection>
 
       <div className="flex justify-end">
         <button
           type="button"
           onClick={resetToDefaults}
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+          className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800"
         >
           <RotateCcw className="h-3.5 w-3.5" /> Reset everything to defaults
         </button>
       </div>
-      </>
+      </div>
       )}
 
-      {/* ── Live preview ── */}
-      <div className="rounded-xl border border-border overflow-hidden">
-        <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      {/* Live preview */}
+      <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+        <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-3 py-2">
+          <div className="flex items-center gap-2 text-xs text-gray-500">
             <Home className="h-3.5 w-3.5" />
-            <span className="font-medium">Live preview</span>
+            <span className="font-medium text-gray-700">Live preview</span>
           </div>
           <button
             type="button"
             onClick={() => setShowPreview((v) => !v)}
-            className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+            className="cursor-pointer text-xs text-gray-500 hover:text-gray-800"
           >
             {showPreview ? "Hide" : "Show"}
           </button>
@@ -869,15 +910,13 @@ export function StoreHomepageManager() {
 // ============================================================
 // Reusable pieces
 // ============================================================
-function SectionCard({
-  icon: Icon,
+function EditorSection({
   title,
   description,
   enabled,
   onEnabledChange,
   children,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
   title: string;
   description?: string;
   enabled?: boolean;
@@ -887,20 +926,15 @@ function SectionCard({
   const hasToggle = onEnabledChange != null;
   const dimmed = hasToggle && enabled === false;
   return (
-    <div className="rounded-xl border border-border bg-card">
-      <div className="flex items-start justify-between gap-3 px-4 py-3.5 border-b border-border">
-        <div className="flex items-start gap-3 min-w-0">
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-secondary">
-            <Icon className="h-4 w-4 text-foreground" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-            {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
-          </div>
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-medium text-gray-900">{title}</h3>
+          {description && <p className="mt-0.5 text-xs text-gray-500">{description}</p>}
         </div>
-        {hasToggle && <Switch checked={!!enabled} onCheckedChange={onEnabledChange} className="mt-1 flex-shrink-0" />}
+        {hasToggle && <Switch checked={!!enabled} onCheckedChange={onEnabledChange} className="mt-0.5 flex-shrink-0" />}
       </div>
-      {!dimmed && <div className="p-4 space-y-4">{children}</div>}
+      {!dimmed && <div className="space-y-4">{children}</div>}
     </div>
   );
 }
@@ -960,15 +994,15 @@ function Segmented<T extends string>({
   options: { value: T; label: string }[];
 }) {
   return (
-    <div className="inline-flex rounded-md border border-input p-0.5">
+    <div className="flex w-fit items-center rounded-md bg-gray-100 p-0.5">
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
           className={cn(
-            "px-3 py-1.5 text-xs font-medium rounded cursor-pointer transition-colors",
-            value === o.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+            "cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            value === o.value ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:bg-gray-200/70",
           )}
         >
           {o.label}
@@ -983,7 +1017,7 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2.5 text-sm text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors cursor-pointer"
+      className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-gray-200 bg-white py-2.5 text-sm text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900"
     >
       <Plus className="h-4 w-4" /> {label}
     </button>
@@ -1002,8 +1036,8 @@ function IconPicker({ value, onChange }: { value: string; onChange: (icon: strin
             type="button"
             onClick={() => onChange(key)}
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-md border transition-colors cursor-pointer",
-              active ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30",
+              "flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border transition-colors",
+              active ? "border-gray-800 bg-gray-800 text-white" : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-800",
             )}
             aria-label={key}
           >

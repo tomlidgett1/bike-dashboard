@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight, ArrowRight, Store, User, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
@@ -102,8 +102,7 @@ export function RecommendationCarousel({
     return null;
   }
 
-  const IconComponent = icon === "sparkles" ? Sparkles : icon === "store" ? Store : User;
-  const showSellerLogo = !!seller && icon === "store";
+  const showSellerLogo = !!seller && icon === "store" && !!seller.logo_url && !sellerLogoError;
 
   return (
     <section
@@ -111,36 +110,34 @@ export function RecommendationCarousel({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Section Header - Compact on mobile */}
-      <div className="flex items-center justify-between mb-3 sm:mb-4">
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <div className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-md bg-gray-100 flex-shrink-0 overflow-hidden">
-            {showSellerLogo && seller.logo_url && !sellerLogoError ? (
+      {/* Section Header */}
+      <div className="mb-4 flex items-end justify-between gap-3 sm:mb-5">
+        <div className="flex min-w-0 items-center gap-3">
+          {showSellerLogo && (
+            <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gray-100 ring-1 ring-gray-200">
               <Image
-                src={seller.logo_url}
-                alt={seller.name}
+                src={seller!.logo_url!}
+                alt={seller!.name}
                 width={36}
                 height={36}
                 className="h-full w-full object-cover"
                 onError={() => setSellerLogoError(true)}
               />
-            ) : (
-              <IconComponent className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-gray-600" />
-            )}
-          </div>
-          
+            </div>
+          )}
+
           {/* Title */}
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{title}</h3>
+            <h2 className="flex items-baseline gap-2 text-lg font-semibold tracking-tight text-gray-900 sm:text-xl">
+              <span className="truncate">{title}</span>
               {!isLoading && products.length > 0 && (
-                <span className="text-xs sm:text-sm text-gray-500 flex-shrink-0">
-                  ({products.length})
+                <span className="shrink-0 text-sm font-normal text-gray-400">
+                  {products.length}
                 </span>
               )}
-            </div>
+            </h2>
             {subtitle && (
-              <p className="mt-0.5 text-xs sm:text-sm text-gray-500 truncate">{subtitle}</p>
+              <p className="mt-0.5 truncate text-sm text-gray-500">{subtitle}</p>
             )}
           </div>
         </div>
@@ -149,11 +146,11 @@ export function RecommendationCarousel({
         {seeAllHref && !isLoading && products.length > 4 && (
           <Link
             href={seeAllHref}
-            className="flex items-center gap-0.5 sm:gap-1 text-xs sm:text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors group flex-shrink-0"
+            className="group flex shrink-0 items-center gap-1 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900"
           >
             <span className="hidden sm:inline">{seeAllLabel}</span>
             <span className="sm:hidden">View all</span>
-            <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform group-hover:translate-x-0.5" />
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
         )}
       </div>
@@ -165,8 +162,8 @@ export function RecommendationCarousel({
           <button
             onClick={() => scroll('left')}
             className={cn(
-              "absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 z-20 w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors",
-              isHovered ? "opacity-100" : "opacity-70"
+              "absolute left-0 top-1/2 z-20 hidden h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white shadow-md transition-all duration-200 hover:bg-gray-50 sm:flex",
+              isHovered ? "opacity-100" : "opacity-0"
             )}
             aria-label="Scroll left"
           >
@@ -179,21 +176,13 @@ export function RecommendationCarousel({
           <button
             onClick={() => scroll('right')}
             className={cn(
-              "absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 z-20 w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors",
-              isHovered ? "opacity-100" : "opacity-70"
+              "absolute right-0 top-1/2 z-20 hidden h-9 w-9 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-gray-200 bg-white shadow-md transition-all duration-200 hover:bg-gray-50 sm:flex",
+              isHovered ? "opacity-100" : "opacity-0"
             )}
             aria-label="Scroll right"
           >
             <ChevronRight className="h-5 w-5 text-gray-700" />
           </button>
-        )}
-
-        {/* Gradient Fade Edges */}
-        {canScrollLeft && (
-          <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-gray-50 to-transparent z-10 pointer-events-none" />
-        )}
-        {canScrollRight && (
-          <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-gray-50 to-transparent z-10 pointer-events-none" />
         )}
 
         {/* Scrollable Container */}

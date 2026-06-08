@@ -3,18 +3,13 @@
 import * as React from "react";
 import { Reorder } from "framer-motion";
 import {
-  Plus,
   Trash2,
   Edit2,
   GripVertical,
   Loader2,
-  Clock,
-  Tag,
   Bike,
   Search,
   Check,
-  Package,
-  CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,7 +34,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { StoreRental } from "@/lib/types/store";
 import { StoreRentalBookingsPanel } from "@/components/settings/store-rental-bookings-panel";
@@ -59,7 +53,7 @@ interface RentalRow extends StoreRental {
   product_id: string;
 }
 
-type RentalsTab = "products" | "bookings";
+export type RentalsTab = "products" | "bookings";
 
 interface RentalFormData {
   product_id: string;
@@ -77,8 +71,9 @@ const BLANK_FORM: RentalFormData = {
   is_available: true,
 };
 
-const DIALOG_CLASS =
-  "flex h-[min(32rem,85vh)] max-h-[min(32rem,85vh)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl";
+/** Fixed-height rental form — body scrolls, header/footer stay put. */
+const RENTAL_DIALOG_CLASS =
+  "flex !flex-col h-[min(85vh,40rem)] max-h-[85vh] w-full max-w-[calc(100%-2rem)] gap-0 overflow-hidden p-0 sm:max-w-2xl";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en-AU", {
@@ -96,7 +91,33 @@ function productImage(product: RentalProduct) {
   return product.primary_image_url || product.card_url || product.thumbnail_url || null;
 }
 
-export function StoreRentalsManager() {
+function rentalSummary(rental: RentalRow): string {
+  const parts: string[] = [];
+
+  if (rental.price_per_hour != null) {
+    parts.push(`${formatPrice(rental.price_per_hour)}/hr`);
+  }
+
+  if (rental.price_per_day != null) {
+    parts.push(`${formatPrice(rental.price_per_day)}/day`);
+  }
+
+  parts.push(rental.is_available ? "Available" : "Unavailable");
+
+  if (rental.category) {
+    parts.push(rental.category);
+  }
+
+  return parts.join(" · ");
+}
+
+export function StoreRentalsManager({
+  activeTab = "products",
+  addRequest = 0,
+}: {
+  activeTab?: RentalsTab;
+  addRequest?: number;
+} = {}) {
   const [rentals, setRentals] = React.useState<RentalRow[]>([]);
   const [products, setProducts] = React.useState<RentalProduct[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -106,7 +127,6 @@ export function StoreRentalsManager() {
   const [deleteConfirmId, setDeleteConfirmId] = React.useState<string | null>(null);
   const [formData, setFormData] = React.useState<RentalFormData>(BLANK_FORM);
   const [productSearch, setProductSearch] = React.useState("");
-  const [activeTab, setActiveTab] = React.useState<RentalsTab>("products");
 
   const productById = React.useMemo(
     () => new Map(products.map((product) => [product.id, product])),
@@ -158,12 +178,16 @@ export function StoreRentalsManager() {
     fetchData();
   }, [fetchData]);
 
-  const openAdd = () => {
+  const openAdd = React.useCallback(() => {
     setEditingRental(null);
     setFormData(BLANK_FORM);
     setProductSearch("");
     setIsDialogOpen(true);
-  };
+  }, []);
+
+  React.useEffect(() => {
+    if (addRequest > 0) openAdd();
+  }, [addRequest, openAdd]);
 
   const openEdit = (rental: RentalRow) => {
     setEditingRental(rental);
@@ -275,118 +299,40 @@ export function StoreRentalsManager() {
     }
   };
 
-  const toggleAvailability = async (rental: RentalRow) => {
-    const next = !rental.is_available;
-    setRentals((prev) =>
-      prev.map((item) => (item.id === rental.id ? { ...item, is_available: next } : item)),
-    );
-    await fetch("/api/store/rentals", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: rental.id, is_available: next }),
-    }).catch(console.error);
-  };
-
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-          <button
-            type="button"
-            onClick={() => setActiveTab("products")}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-              activeTab === "products"
-                ? "text-gray-800 bg-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-200/70",
-            )}
-          >
-            <Package size={15} />
-            Add product
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("bookings")}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-              activeTab === "bookings"
-                ? "text-gray-800 bg-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-200/70",
-            )}
-          >
-            <CalendarDays size={15} />
-            Manage bookings
-          </button>
-        </div>
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
-        </div>
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
       </div>
     );
   }
 
+  if (activeTab === "bookings") {
+    return <StoreRentalBookingsPanel rentals={rentals} />;
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-        <button
-          type="button"
-          onClick={() => setActiveTab("products")}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-            activeTab === "products"
-              ? "text-gray-800 bg-white shadow-sm"
-              : "text-gray-600 hover:bg-gray-200/70",
-          )}
-        >
-          <Package size={15} />
-          Add product
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("bookings")}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-            activeTab === "bookings"
-              ? "text-gray-800 bg-white shadow-sm"
-              : "text-gray-600 hover:bg-gray-200/70",
-          )}
-        >
-          <CalendarDays size={15} />
-          Manage bookings
-        </button>
-      </div>
-
-      {activeTab === "bookings" ? (
-        <StoreRentalBookingsPanel rentals={rentals} />
-      ) : (
-        <>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          Pick products from your catalogue and set hire rates. Shown on your store&apos;s Rentals tab.
-        </p>
-        <Button onClick={openAdd} size="sm">
-          <Plus className="size-4" />
-          Add rental
-        </Button>
-      </div>
-
+    <>
       {rentals.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center space-y-2">
-            <Bike className="h-8 w-8 text-muted-foreground mx-auto" />
-            <p className="text-sm text-muted-foreground">No rental products yet</p>
-            <p className="text-xs text-muted-foreground">
-              Add bikes or gear from your inventory to offer them for hire.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+          <Bike className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+          <p className="text-sm text-gray-600">No rental products yet</p>
+          <p className="mt-1 text-xs text-gray-500">
+            Add bikes or gear from your inventory to offer them for hire
+          </p>
+        </div>
       ) : (
-        <Reorder.Group axis="y" values={rentals} onReorder={handleReorder} className="space-y-2">
+        <Reorder.Group
+          axis="y"
+          values={rentals}
+          onReorder={handleReorder}
+          className="divide-y divide-gray-100 rounded-md border border-gray-200 bg-white"
+        >
           {rentals.map((rental) => (
             <Reorder.Item key={rental.id} value={rental}>
-              <div className="flex items-center gap-3 p-3 border border-border rounded-md transition-colors cursor-move bg-card hover:bg-accent/40">
+              <div className="flex cursor-move items-center gap-3 px-3 py-2.5 transition-colors hover:bg-gray-50">
                 <div className="flex-shrink-0 cursor-grab active:cursor-grabbing">
-                  <GripVertical className="h-4 w-4 text-muted-foreground/50" />
+                  <GripVertical className="h-4 w-4 text-gray-400" />
                 </div>
 
                 {rental.image_url ? (
@@ -394,56 +340,20 @@ export function StoreRentalsManager() {
                   <img
                     src={rental.image_url}
                     alt={rental.name}
-                    className="h-12 w-12 rounded-md object-cover bg-muted flex-shrink-0"
+                    className="h-9 w-9 flex-shrink-0 rounded-md object-cover bg-gray-50"
                   />
                 ) : (
-                  <div className="h-12 w-12 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
-                    <Bike className="h-5 w-5 text-muted-foreground" />
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-gray-50">
+                    <Bike className="h-4 w-4 text-gray-300" />
                   </div>
                 )}
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-medium text-foreground truncate">{rental.name}</h4>
-                    <span
-                      className={cn(
-                        "flex-shrink-0 text-xs px-2 py-0.5 rounded-md font-medium",
-                        rental.is_available
-                          ? "bg-green-50 text-green-700"
-                          : "bg-gray-100 text-gray-500",
-                      )}
-                    >
-                      {rental.is_available ? "Available" : "Unavailable"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                    {rental.price_per_hour != null && (
-                      <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        {formatPrice(rental.price_per_hour)} / hr
-                      </span>
-                    )}
-                    {rental.price_per_day != null && (
-                      <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
-                        <Tag className="h-3 w-3" />
-                        {formatPrice(rental.price_per_day)} / day
-                      </span>
-                    )}
-                    {rental.category && (
-                      <span className="text-xs text-muted-foreground truncate">{rental.category}</span>
-                    )}
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <h4 className="truncate text-sm font-medium text-gray-900">{rental.name}</h4>
+                  <p className="mt-0.5 text-xs text-gray-500">{rentalSummary(rental)}</p>
                 </div>
 
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs h-8"
-                    onClick={() => toggleAvailability(rental)}
-                  >
-                    {rental.is_available ? "Mark unavailable" : "Mark available"}
-                  </Button>
+                <div className="flex flex-shrink-0 items-center gap-0.5">
                   <Button variant="ghost" size="icon-sm" onClick={() => openEdit(rental)}>
                     <Edit2 className="size-4" />
                   </Button>
@@ -451,7 +361,7 @@ export function StoreRentalsManager() {
                     variant="ghost"
                     size="icon-sm"
                     onClick={() => setDeleteConfirmId(rental.id)}
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="size-4" />
                   </Button>
@@ -463,8 +373,13 @@ export function StoreRentalsManager() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className={cn(DIALOG_CLASS, "animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out")}>
-          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border">
+        <DialogContent
+          className={cn(
+            RENTAL_DIALOG_CLASS,
+            "animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out",
+          )}
+        >
+          <DialogHeader className="shrink-0 space-y-1 px-6 pt-6 pb-2">
             <DialogTitle>{editingRental ? "Edit rental" : "Add rental product"}</DialogTitle>
             <DialogDescription>
               {editingRental
@@ -473,11 +388,12 @@ export function StoreRentalsManager() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-6 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-4">
+            <div className="flex flex-col gap-4 py-2">
             {!editingRental && (
-              <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <Label>Select product</Label>
-                <div className="relative shrink-0">
+                <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                   <Input
                     placeholder="Search products..."
@@ -486,7 +402,7 @@ export function StoreRentalsManager() {
                     className="pl-8"
                   />
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border">
+                <div className="rounded-md border border-border">
                   <div className="p-2 space-y-0.5">
                     {filteredProducts.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-8">
@@ -539,7 +455,7 @@ export function StoreRentalsManager() {
             )}
 
             {editingRental && selectedProduct && (
-              <div className="flex items-center gap-3 rounded-md border border-border bg-white p-3">
+              <div className="flex items-center gap-3 rounded-md border border-gray-200 bg-white p-3">
                 {rentalImage(editingRental) ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -561,7 +477,7 @@ export function StoreRentalsManager() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="price-per-hour">Price per hour (AUD)</Label>
                 <Input
@@ -592,7 +508,7 @@ export function StoreRentalsManager() {
               </div>
             </div>
 
-            <div className="space-y-2 shrink-0">
+            <div className="space-y-2">
               <Label htmlFor="rental-description">Rental description (optional)</Label>
               <Textarea
                 id="rental-description"
@@ -605,7 +521,7 @@ export function StoreRentalsManager() {
               />
             </div>
 
-            <label className="flex items-center gap-2 text-sm cursor-pointer shrink-0">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
               <Checkbox
                 checked={formData.is_available}
                 onCheckedChange={(checked) =>
@@ -614,13 +530,15 @@ export function StoreRentalsManager() {
               />
               Available to hire now
             </label>
+            </div>
           </div>
 
-          <DialogFooter className="shrink-0 px-6 py-4 border-t border-border">
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saving}>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-end">
+            <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>
             <Button
+              size="sm"
               onClick={handleSave}
               disabled={
                 saving ||
@@ -653,9 +571,7 @@ export function StoreRentalsManager() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-        </>
-      )}
-    </div>
+    </>
   );
 }
 

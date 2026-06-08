@@ -252,10 +252,23 @@
     color-scheme: light;
   }
 
-  /* Custom scrollbar - Notion style */
+  /* Discreet scrollbars — thin, low contrast, slightly stronger on hover */
+  html,
+  body,
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(55, 53, 47, 0.14) transparent;
+  }
+
+  html:hover,
+  body:hover,
+  *:hover {
+    scrollbar-color: rgba(55, 53, 47, 0.24) transparent;
+  }
+
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
 
   ::-webkit-scrollbar-track {
@@ -263,14 +276,36 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--muted-foreground);
-    border-radius: 4px;
-    opacity: 0.5;
+    background-color: rgba(55, 53, 47, 0.14);
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
   }
 
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--foreground);
+  *:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(55, 53, 47, 0.26);
   }
+
+  .dark html,
+  .dark body,
+  .dark * {
+    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  }
+
+  .dark html:hover,
+  .dark body:hover,
+  .dark *:hover {
+    scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.14);
+  }
+
+  .dark *:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.26);
+  }
+
   html {
     @apply font-sans;
   }

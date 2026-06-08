@@ -77,7 +77,7 @@ function StoreProductCard({ product }: { product: GenieStoreProductPreview }) {
 
 export function GenieStoreProductCards({
   products,
-  title = "Your products",
+  title = "Matched products",
   className,
 }: {
   products: GenieStoreProductPreview[];

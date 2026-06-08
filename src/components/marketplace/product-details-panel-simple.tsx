@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck, Globe } from "lucide-react";
+import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck, Globe, AlignLeft, ListChecks } from "lucide-react";
 import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,14 @@ import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
 import { BuyNowButton } from "./buy-now-button";
 import { AddToCartButton } from "./add-to-cart-button";
+import { ProductAskGenieButton } from "./product-ask-genie-button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import { formatStockOnHandLabel } from "@/lib/marketplace/stock-display";
+import { hasBikeSpecs, parseBikeSpecs } from "@/lib/types/bike-specs";
+import { SpecSources } from "@/components/products/spec-sources";
 import { cn } from "@/lib/utils";
 
 const PickupLocationMap = dynamic(
@@ -37,12 +40,12 @@ const EditProductDrawer = dynamic(
   { ssr: false },
 );
 
-// Adaptive spec row: short values inline (label ↔ value), long values stacked
+// Adaptive spec row: label ↔ value with a hairline divider
 function SpecRow({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="flex items-start gap-4 py-2.5">
-      <span className="text-sm text-gray-500 w-[110px] flex-shrink-0">{label}</span>
-      <span className="text-sm text-gray-900 flex-1 leading-relaxed">{String(value)}</span>
+    <div className="flex items-baseline gap-4 py-2.5">
+      <span className="w-[120px] flex-shrink-0 text-[13px] text-gray-500">{label}</span>
+      <span className="flex-1 text-[13px] font-medium leading-snug text-gray-900">{String(value)}</span>
     </div>
   );
 }
@@ -157,6 +160,9 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
     product.qoh,
     (product as { listing_type?: string }).listing_type,
   );
+  const showSpecsTab = !(
+    product.is_bicycle && hasBikeSpecs(parseBikeSpecs(product.bike_specs))
+  );
 
   // Sync product state with prop
   React.useEffect(() => {
@@ -171,36 +177,42 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
 
   return (
     <div className="bg-white pb-5 sm:pb-6">
-      {/* Header: Title, Price, Save/Share */}
-      <div className="px-4 pt-4 pb-3">
-        <h1 className="text-xl font-bold text-gray-900 leading-tight">
+      {/* Header: Title, Price, Meta */}
+      <div className="px-5 pt-5 pb-4">
+        <h1 className="text-[22px] font-semibold leading-snug tracking-tight text-gray-900">
           {(product as any).display_name || product.description}
         </h1>
-        <div className="flex items-center justify-between mt-2">
-          {(() => {
-            const live = resolveLivePrice(product);
-            const fmt = (v: number) => `$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-            return (
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <p className={`text-2xl font-bold ${live.onSale ? "text-red-600" : "text-gray-900"}`}>
-                  {fmt(live.price)}
-                </p>
-                {live.onSale && (
-                  <>
-                    <p className="text-lg font-medium text-gray-400 line-through">
-                      {fmt(live.originalPrice as number)}
-                    </p>
-                    <span className="inline-flex items-center rounded-md bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white">
-                      -{live.percentOff}%
-                    </span>
-                  </>
+
+        {(() => {
+          const live = resolveLivePrice(product);
+          const fmt = (v: number) =>
+            `$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          return (
+            <div className="mt-3 flex items-baseline gap-2.5 flex-wrap">
+              <p
+                className={cn(
+                  "text-[28px] font-semibold leading-none tracking-tight",
+                  live.onSale ? "text-red-600" : "text-gray-900",
                 )}
-              </div>
-            );
-          })()}
-          {!isSold && !isOwner && isUberDeliveryEligible && <UberDeliveryInlineBadge />}
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+              >
+                {fmt(live.price)}
+              </p>
+              {live.onSale && (
+                <>
+                  <p className="text-base font-medium text-gray-400 line-through">
+                    {fmt(live.originalPrice as number)}
+                  </p>
+                  <span className="inline-flex items-center rounded-md bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white">
+                    -{live.percentOff}%
+                  </span>
+                </>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Meta badges */}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
           {(product as any).listing_source === "online_catalog" && (
             <span className="inline-flex items-center gap-1 rounded-md bg-[#ffde59] px-2 py-1 text-xs font-medium text-gray-900">
               <Globe className="h-3 w-3" />
@@ -212,27 +224,31 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               className={cn(
                 "inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium",
                 stockLabel === "Out of stock"
-                  ? "border-gray-200 bg-gray-100 text-gray-600"
+                  ? "border-gray-200 bg-gray-100 text-gray-500"
                   : "border-gray-200 bg-white text-gray-700",
               )}
             >
               {stockLabel}
             </span>
           )}
-        </div>
-        {(product as any).pickup_location && (
-          <div className="flex items-center gap-1.5 mt-1.5">
-            <MapPin className="h-3.5 w-3.5 text-gray-400" />
-            <span className="text-xs text-gray-500">
-              {(product as any).pickup_location}
-              {(product as any).condition_rating && ` • ${(product as any).condition_rating}`}
+          {(product as any).condition_rating && (
+            <span className="inline-flex items-center rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700">
+              {(product as any).condition_rating}
             </span>
+          )}
+          {!isSold && !isOwner && isUberDeliveryEligible && <UberDeliveryInlineBadge />}
+        </div>
+
+        {(product as any).pickup_location && (
+          <div className="mt-2.5 flex items-center gap-1.5">
+            <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+            <span className="text-xs text-gray-500">{(product as any).pickup_location}</span>
           </div>
         )}
       </div>
 
       {/* Action Buttons */}
-      <div className="px-4 pb-3 space-y-2">
+      <div className="px-5 pb-4 space-y-2">
         {isSold ? (
           /* Sold View: Show sold banner */
           <div className="p-4 bg-gray-100 rounded-md text-center">
@@ -287,6 +303,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               fullWidth
               className="h-11 bg-white"
             />
+            <ProductAskGenieButton product={product} />
             <div className="flex gap-2">
               <div className="flex-1">
                 <MakeOfferButton
@@ -321,18 +338,27 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
         )}
       </div>
 
-      {/* Feature Badge - Buyer Protection */}
-      <div className="px-4 pb-3 flex items-center gap-3 text-xs text-gray-500">
-        <span className="flex items-center gap-1">
-          <Shield className="h-3 w-3 text-emerald-500" />
-          Buyer Protection Included
-        </span>
-      </div>
+      {/* Buyer Protection — trust container */}
+      {!isOwner && !isSold && (
+        <div className="px-5 pb-4">
+          <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-gray-50">
+              <Shield className="h-4 w-4 text-gray-500" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-gray-900">Buyer Protection included</p>
+              <p className="text-[11px] leading-snug text-gray-500">
+                Covered from secure payment through to delivery.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Seller Row - Compact */}
-      <div className="px-4 py-2.5 border-t border-gray-100 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="relative h-8 w-8 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
+      {/* Seller Row */}
+      <div className="mx-5 flex items-center justify-between gap-3 border-t border-gray-100 py-3.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gray-100">
             {product.store_logo_url && !logoError ? (
               <Image
                 src={product.store_logo_url}
@@ -348,51 +374,55 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
             )}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate">{product.store_name}</p>
+            <p className="truncate text-sm font-medium text-gray-900">{product.store_name}</p>
             <p className="text-xs text-gray-500">
               {product.store_account_type === 'bicycle_store' ? 'Bicycle Store' : 'Individual Seller'}
             </p>
           </div>
         </div>
-        <Link 
+        <Link
           href={`/marketplace/store/${product.user_id}`}
-          className="text-xs text-gray-500 hover:text-gray-700 flex items-center flex-shrink-0"
+          className="flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
         >
-          View Store
+          View store
           <ChevronRight className="h-3.5 w-3.5" />
         </Link>
       </div>
 
-      {/* Underline Tabs */}
-      <div className="px-4 pt-2 border-b border-gray-200">
-        <div className="flex">
+      {/* Tabs — pill design */}
+      <div className="px-5 pt-3">
+        <div className="flex w-fit items-center rounded-md bg-gray-100 p-0.5">
           <button
             onClick={() => setActiveTab('overview')}
             className={cn(
-              "flex-1 pb-2.5 text-sm font-medium border-b-2 transition-colors",
+              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
               activeTab === 'overview'
-                ? "border-gray-900 text-gray-900"
-                : "border-transparent text-gray-500 hover:text-gray-700"
+                ? "bg-white text-gray-800 shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70"
             )}
           >
+            <AlignLeft size={15} />
             Overview
           </button>
-          <button
-            onClick={() => setActiveTab('specs')}
-            className={cn(
-              "flex-1 pb-2.5 text-sm font-medium border-b-2 transition-colors",
-              activeTab === 'specs'
-                ? "border-gray-900 text-gray-900"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            )}
-          >
-            Specs
-          </button>
+          {showSpecsTab ? (
+            <button
+              onClick={() => setActiveTab('specs')}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                activeTab === 'specs'
+                  ? "bg-white text-gray-800 shadow-sm"
+                  : "text-gray-600 hover:bg-gray-200/70"
+              )}
+            >
+              <ListChecks size={15} />
+              Specs
+            </button>
+          ) : null}
         </div>
       </div>
 
       {/* Tab Content */}
-      <div className="px-4 py-4">
+      <div className="px-5 py-4">
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className="space-y-4">
@@ -419,8 +449,8 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               )}
 
               {/* Research with AI */}
-              <div className="pt-3">
-                <button 
+              <div className="pt-1">
+                <button
                   onClick={() => {
                     if (!user) {
                       openAuthModal();
@@ -428,9 +458,9 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                     }
                     setIsLearnOpen(true);
                   }}
-                  className="flex items-center gap-1.5 text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                 >
-                  <Sparkles className="h-4 w-4" />
+                  <Sparkles className="h-4 w-4 text-gray-500" />
                   Research with AI
                 </button>
               </div>
@@ -534,6 +564,13 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
           </div>
         )}
       </div>
+
+      {/* Official sources cited during AI copy generation */}
+      {(product as any).product_spec_sources?.length ? (
+        <div className="border-t border-gray-100 px-5 pb-5 pt-4">
+          <SpecSources sources={(product as any).product_spec_sources} />
+        </div>
+      ) : null}
 
       {/* AI Product Learn Panel */}
       {isLearnOpen && (

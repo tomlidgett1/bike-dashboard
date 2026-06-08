@@ -8,6 +8,14 @@ import { StoreProductContextHeader } from "@/components/marketplace/product-deta
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
 import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
 import { EnhancedImageGallery } from "@/components/marketplace/product-detail/enhanced-image-gallery";
+import { BikeSpecsDisplay } from "@/components/products/bike-specs-display";
+import { BrandAboutSection } from "@/components/marketplace/product-detail/brand-about-section";
+import { hasBikeSpecs, parseBikeSpecs } from "@/lib/types/bike-specs";
+import { getFeaturedBrandAbout } from "@/lib/marketplace/featured-brand-about";
+import {
+  BikeSpecExplorePanel,
+  type BikeSpecSelection,
+} from "@/components/marketplace/bike-spec-explore-panel";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -81,6 +89,7 @@ export function ProductPageClient({
   const [isLiked, setIsLiked] = React.useState(false);
   const [showBanner, setShowBanner] = React.useState(showUploadBanner);
   const [localProduct, setLocalProduct] = React.useState(product);
+  const [exploreSpec, setExploreSpec] = React.useState<BikeSpecSelection | null>(null);
 
   const isOwner = !!user && user.id === product.user_id;
 
@@ -159,6 +168,12 @@ export function ProductPageClient({
 
   // Show store header when the user arrived from a store page
   const showStoreHeader = !!fromStoreId && !!sellerInfo && sellerInfo.id === fromStoreId;
+  const showFullWidthBikeSpecs =
+    localProduct.is_bicycle && hasBikeSpecs(parseBikeSpecs(localProduct.bike_specs));
+  const featuredBrandAbout = React.useMemo(
+    () => getFeaturedBrandAbout(localProduct.brand || brandName),
+    [localProduct.brand, brandName],
+  );
 
   // Immersive layout — per-product opt-in (Store Settings → Products tab).
   if (product.immersive_page) {
@@ -179,12 +194,7 @@ export function ProductPageClient({
   return (
     <>
       {showStoreHeader ? (
-        <StoreProductContextHeader
-          storeId={fromStoreId!}
-          storeName={sellerInfo!.name}
-          storeLogo={sellerInfo!.logo_url}
-          accountType={sellerInfo!.account_type}
-        />
+        <StoreProductContextHeader storeId={fromStoreId!} />
       ) : (
         <MarketplaceHeader compactSearchOnMobile showFloatingButton={false} />
       )}
@@ -193,7 +203,7 @@ export function ProductPageClient({
       <div
         className={cn(
           "min-h-screen bg-white sm:bg-gray-50 pb-24 sm:pb-8",
-          showStoreHeader ? "pt-16 sm:pt-[72px]" : "pt-14 sm:pt-16"
+          !showStoreHeader && "pt-14 sm:pt-16"
         )}
       >
         {/* Upload Success Banner */}
@@ -206,7 +216,7 @@ export function ProductPageClient({
         
         <div>
           {/* Breadcrumbs - Hidden on mobile, shown on tablet+ */}
-          <div className="hidden sm:block max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 mb-4 sm:mb-6">
+          <div className="hidden sm:block max-w-[1536px] mx-auto px-4 sm:px-4 lg:px-3 xl:px-4 pt-4 sm:pt-6 mb-4 sm:mb-6">
             <ProductBreadcrumbs
               level1={product.marketplace_category}
               level2={product.marketplace_subcategory}
@@ -215,39 +225,70 @@ export function ProductPageClient({
             />
           </div>
 
-          {/* Two-Column Layout */}
-          <div className="lg:max-w-[1400px] lg:mx-auto lg:px-8">
-            <div className="grid grid-cols-1 lg:grid-cols-[60%_40%] lg:gap-8">
-              {/* Left Column - Image Gallery (Full-width on mobile) */}
-              <div className="w-full">
-                <EnhancedImageGallery
-                  images={images}
-                  productName={product.display_name || product.description}
-                  currentIndex={currentImageIndex}
-                  onIndexChange={setCurrentImageIndex}
-                  onLikeToggle={() => setIsLiked(!isLiked)}
-                  isLiked={isLiked}
-                  onShare={handleShare}
-                />
-              </div>
-
-              {/* Right Column - Floating card (all breakpoints; below hero on mobile) */}
-              <div className="mx-3 mt-4 mb-2 sm:mx-5 sm:mt-6 sm:mb-4 lg:mx-0 lg:mt-2 lg:mb-2 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:self-start rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-200/60 ring-1 ring-black/5 overflow-hidden">
-                <ProductDetailsPanelSimple product={localProduct} />
-                {isOwner && (
-                  <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
-                    <ProductOptimizeDrawer
-                      product={localProduct}
-                      onProductUpdate={(updates) => setLocalProduct((prev) => ({ ...prev, ...updates }))}
-                    />
+          {/* Hero + info panel */}
+          <div className="lg:max-w-[1536px] lg:mx-auto lg:pl-3 lg:pr-6 xl:pl-4 xl:pr-8">
+            <EnhancedImageGallery
+              images={images}
+              productName={product.display_name || product.description}
+              currentIndex={currentImageIndex}
+              onIndexChange={setCurrentImageIndex}
+              onLikeToggle={() => setIsLiked(!isLiked)}
+              isLiked={isLiked}
+              onShare={handleShare}
+              sidePanel={
+                <div className="mx-3 mt-4 mb-2 flex h-full max-h-full min-h-0 flex-col overflow-hidden bg-white sm:rounded-xl sm:border sm:border-gray-200 sm:mx-5 sm:mt-6 sm:mb-4 lg:mx-0 lg:mt-0 lg:mb-0 lg:h-full">
+                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
+                    <ProductDetailsPanelSimple product={localProduct} />
+                    {isOwner && (
+                      <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
+                        <ProductOptimizeDrawer
+                          product={localProduct}
+                          onProductUpdate={(updates) =>
+                            setLocalProduct((prev) => ({ ...prev, ...updates }))
+                          }
+                        />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              }
+            />
           </div>
 
+          {showFullWidthBikeSpecs && (
+            <BikeSpecsDisplay
+              variant="fullWidth"
+              bikeSpecs={localProduct.bike_specs}
+              className="mt-6 sm:mt-8"
+              interactive
+              onSpecClick={setExploreSpec}
+            />
+          )}
+
+          {featuredBrandAbout && (
+            <BrandAboutSection
+              brand={featuredBrandAbout}
+              className={showFullWidthBikeSpecs ? undefined : "mt-6 sm:mt-8"}
+            />
+          )}
+
+          <BikeSpecExplorePanel
+            isOpen={!!exploreSpec}
+            onClose={() => setExploreSpec(null)}
+            spec={exploreSpec}
+            productName={localProduct.display_name || localProduct.description}
+            brand={localProduct.brand || brandName}
+            model={undefined}
+            bikeType={localProduct.bike_type}
+          />
+
           {/* Recommendation Carousels */}
-          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 mt-8 sm:mt-12 pt-4 sm:pt-5 border-t border-gray-200">
+          <div
+            className={cn(
+              "mx-auto max-w-[1536px] divide-y divide-gray-100 border-t border-gray-200 bg-gray-50 px-4 sm:px-4 lg:px-4 xl:px-5",
+              showFullWidthBikeSpecs || featuredBrandAbout ? "mt-0" : "mt-8 sm:mt-12"
+            )}
+          >
             {/* Similar Items Carousel */}
             <RecommendationCarousel
               title="Similar Items"
@@ -256,6 +297,7 @@ export function ProductPageClient({
               icon="sparkles"
               seeAllHref={similarSeeAllHref}
               seeAllLabel="Browse Category"
+              className="py-8 sm:py-10"
             />
 
             {/* More from Seller Carousel */}
@@ -267,6 +309,7 @@ export function ProductPageClient({
               seeAllHref={sellerSeeAllHref}
               seeAllLabel="View All Listings"
               seller={sellerInfo}
+              className="py-8 sm:py-10"
             />
 
             {/* More from Brand Carousel */}
@@ -278,6 +321,7 @@ export function ProductPageClient({
                 icon="sparkles"
                 seeAllHref={`/marketplace?brand=${encodeURIComponent(brandName)}`}
                 seeAllLabel={`All ${brandName}`}
+                className="py-8 sm:py-10"
               />
             )}
           </div>

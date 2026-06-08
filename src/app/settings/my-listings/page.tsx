@@ -59,7 +59,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
-import { Card } from "@/components/ui/card";
 import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { useUserProfile } from "@/components/providers/profile-provider";
@@ -100,12 +99,12 @@ type TabType = "active" | "inactive" | "sold" | "expired";
 
 function StatusDot({ status }: { status: string }) {
   const colors: Record<string, string> = {
-    active: "bg-green-500",
-    inactive: "bg-muted-foreground/40",
-    sold: "bg-blue-500",
-    expired: "bg-amber-400",
-    published: "bg-green-500",
-    draft: "bg-muted-foreground/40",
+    active: "bg-gray-700",
+    inactive: "bg-gray-300",
+    sold: "bg-gray-500",
+    expired: "bg-gray-400",
+    published: "bg-gray-700",
+    draft: "bg-gray-300",
   };
   const labels: Record<string, string> = {
     active: "Active",
@@ -296,8 +295,8 @@ function MobileListingCard({
   const primaryImage = listing.primary_image_url || (Array.isArray(listing.images) && listing.images[0]?.url);
 
   return (
-    <div className="border-b last:border-b-0">
-      <div className="px-4 py-3 flex gap-3">
+    <div className="border-b border-gray-100 last:border-b-0">
+      <div className="flex gap-3 px-3 py-2.5 transition-colors hover:bg-gray-50">
         <Checkbox
           checked={selected}
           onCheckedChange={() => onToggleSelect(listing.id)}
@@ -580,31 +579,39 @@ export default function MyListingsPage() {
     onSelectBulk: () => setBulkUploadOpen(true),
   };
 
+  const tabBar = (
+    <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+      {TABS.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => setActiveTab(tab.id)}
+          className={cn(
+            "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+            activeTab === tab.id
+              ? "text-gray-800 bg-white shadow-sm"
+              : "text-gray-600 hover:bg-gray-200/70",
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
   const content = (
-    <Card className="gap-0 py-0">
-      {/* Toolbar: tabs + create */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-2.5">
-        <div className="flex gap-1">
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                activeTab === tab.id
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
+    <>
+      {!isVerifiedStore && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          {tabBar}
+          <CreateListingDropdown {...createListingProps} />
         </div>
-        <CreateListingDropdown {...createListingProps} />
-      </div>
+      )}
+
+      {isVerifiedStore && <div className="mb-4">{tabBar}</div>}
 
       {!loading && listings.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-3 py-2.5">
           {selected.size > 0 ? (
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-sm font-medium">{selected.size} selected</span>
@@ -657,31 +664,31 @@ export default function MyListingsPage() {
         </div>
       )}
 
-      {/* Error banner */}
       {error && (
-        <div className="px-4 sm:px-6 py-2 border-b">
-          <p className="text-xs text-destructive">{error}</p>
+        <div className="mb-4 rounded-md border border-red-200 bg-white px-3 py-2">
+          <p className="text-xs text-red-700">{error}</p>
         </div>
       )}
 
-      {/* Body */}
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
         </div>
       ) : listings.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 px-4 text-center gap-3">
-          <Package className="h-8 w-8 text-muted-foreground/40" />
-          <p className="text-xs text-muted-foreground">{EMPTY_MESSAGES[activeTab]}</p>
+        <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+          <Package className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+          <p className="text-sm text-gray-600">{EMPTY_MESSAGES[activeTab]}</p>
           {activeTab === "active" && (
-            <CreateListingDropdown {...createListingProps} />
+            <div className="mt-4 flex justify-center">
+              <CreateListingDropdown {...createListingProps} />
+            </div>
           )}
         </div>
       ) : (
-        <>
-          {/* Mobile cards */}
-          <div className="sm:hidden">
-            {listings.map(listing => (
+        <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+          {/* Mobile list */}
+          <div className="divide-y divide-gray-100 sm:hidden">
+            {listings.map((listing) => (
               <MobileListingCard
                 key={listing.id}
                 listing={listing}
@@ -868,16 +875,20 @@ export default function MyListingsPage() {
               </TableBody>
             </Table>
           </div>
-        </>
+        </div>
       )}
-    </Card>
+    </>
   );
 
   return (
     <>
       {isVerifiedStore ? (
         <PageContainer size="wide">
-          <PageHeader title="My listings" description="Manage your marketplace listings." />
+          <PageHeader
+            title="My listings"
+            description="Manage your marketplace listings."
+            actions={<CreateListingDropdown {...createListingProps} />}
+          />
           <PageBody>{content}</PageBody>
         </PageContainer>
       ) : (

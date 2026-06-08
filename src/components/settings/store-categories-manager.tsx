@@ -43,8 +43,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import type {
   StoreCategory,
   LightspeedCategoryOption,
@@ -52,6 +50,8 @@ import type {
   StoreCarouselPage,
 } from "@/lib/types/store";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
+import type { CarouselCreateRequest } from "@/components/settings/store-carousels-new-menu";
+import { cn } from "@/lib/utils";
 
 interface BrandOption {
   name: string;
@@ -66,11 +66,29 @@ interface BrandOption {
 interface CategoryFormData {
   name: string;
   productIds: string[];
+  storePage: StoreCarouselPage;
+  carouselSize: CarouselSize;
+  hideTitle: boolean;
+}
+
+function carouselSummary(category: StoreCategory): string {
+  if (category.source === "brand") {
+    return `Brand · ${category.brand_name ?? category.name}`;
+  }
+  if (category.source === "uber") {
+    return "Uber delivery · automatic products";
+  }
+  if (category.source === "lightspeed") {
+    return `${category.product_ids.length} products · Lightspeed`;
+  }
+  return `${category.product_ids.length} products · Custom`;
 }
 
 /** Fixed-height carousel form dialogs — body scrolls, header/footer stay put. */
 const PRODUCT_PICKER_DIALOG_CLASS =
-  "flex h-[min(32rem,85vh)] max-h-[min(32rem,85vh)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl";
+  "flex !flex-col h-[min(85vh,40rem)] max-h-[85vh] w-full max-w-[calc(100%-2rem)] gap-0 overflow-hidden p-0 sm:max-w-2xl";
+const EDIT_CAROUSEL_DIALOG_CLASS =
+  "flex !flex-col h-[min(85vh,40rem)] max-h-[85vh] w-full max-w-[calc(100%-2rem)] gap-0 overflow-hidden p-0 sm:max-w-2xl";
 const BRAND_CAROUSEL_DIALOG_CLASS =
   "flex h-[min(26rem,85vh)] max-h-[min(26rem,85vh)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg";
 
@@ -78,13 +96,25 @@ function categoryPage(category: StoreCategory): StoreCarouselPage {
   return category.store_page === "bikes" ? "bikes" : "products";
 }
 
+function createPageLabel(page: StoreCarouselPage): string {
+  return page === "bikes" ? "Bikes page" : "Products page";
+}
+
 export function StoreCategoriesManager({
   refreshKey,
   activePage = "products",
+  createRequest,
 }: {
   refreshKey?: number;
   activePage?: StoreCarouselPage;
+  createRequest?: CarouselCreateRequest | null;
 } = {}) {
+  const createPageRef = React.useRef<StoreCarouselPage>(activePage);
+  const getCreatePage = () => createPageRef.current;
+
+  React.useEffect(() => {
+    createPageRef.current = activePage;
+  }, [activePage]);
   const [categories, setCategories] = React.useState<StoreCategory[]>([]);
   const [products, setProducts] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -107,6 +137,9 @@ export function StoreCategoriesManager({
   const [formData, setFormData] = React.useState<CategoryFormData>({
     name: '',
     productIds: [],
+    storePage: 'products',
+    carouselSize: 'normal',
+    hideTitle: false,
   });
 
   // Product picker filter state
@@ -339,7 +372,7 @@ export function StoreCategoriesManager({
             source: 'lightspeed',
             lightspeed_category_id: lsCategory.id,
             product_ids: categoryProducts.map((p: any) => p.id),
-            store_page: activePage,
+            store_page: getCreatePage(),
           }),
         });
       });
@@ -401,7 +434,13 @@ export function StoreCategoriesManager({
 
   // Open add custom category dialog
   const handleAddCustom = () => {
-    setFormData({ name: '', productIds: [] });
+    setFormData({
+      name: '',
+      productIds: [],
+      storePage: getCreatePage(),
+      carouselSize: 'normal',
+      hideTitle: false,
+    });
     setProductSearch('');
     setProductSourceFilter('all');
     setIsAddDialogOpen(true);
@@ -421,7 +460,7 @@ export function StoreCategoriesManager({
           name: formData.name,
           source: 'custom',
           product_ids: formData.productIds,
-          store_page: activePage,
+          store_page: getCreatePage(),
         }),
       });
 
@@ -452,7 +491,7 @@ export function StoreCategoriesManager({
           name: 'Uber Delivery',
           source: 'uber',
           product_ids: [],
-          store_page: activePage,
+          store_page: getCreatePage(),
         }),
       });
 
@@ -470,6 +509,9 @@ export function StoreCategoriesManager({
     setFormData({
       name: category.name,
       productIds: category.product_ids,
+      storePage: categoryPage(category),
+      carouselSize: category.carousel_size ?? 'normal',
+      hideTitle: category.hide_title ?? false,
     });
     setProductSearch('');
     setProductSourceFilter('all');
@@ -490,6 +532,10 @@ export function StoreCategoriesManager({
           id: editingCategory.id,
           name: formData.name,
           product_ids: formData.productIds,
+          store_page: formData.storePage,
+          carousel_size: formData.carouselSize,
+          hide_title: formData.hideTitle,
+          ...(formData.storePage === 'bikes' ? { section_id: null } : {}),
         }),
       });
 
@@ -521,31 +567,6 @@ export function StoreCategoriesManager({
     }
   };
 
-  // Update carousel size (optimistic)
-  const handleCarouselSizeChange = async (category: StoreCategory, size: CarouselSize) => {
-    setCategories((prev) =>
-      prev.map((c) => (c.id === category.id ? { ...c, carousel_size: size } : c))
-    );
-    await fetch('/api/store/categories', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: category.id, carousel_size: size }),
-    });
-  };
-
-  // Update carousel title visibility (optimistic)
-  const handleHideTitleChange = async (category: StoreCategory) => {
-    const next = !category.hide_title;
-    setCategories((prev) =>
-      prev.map((c) => (c.id === category.id ? { ...c, hide_title: next } : c))
-    );
-    await fetch('/api/store/categories', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: category.id, hide_title: next }),
-    });
-  };
-
   const pageCategories = React.useMemo(
     () =>
       categories
@@ -554,30 +575,13 @@ export function StoreCategoriesManager({
     [categories, activePage],
   );
 
-  const handleStorePageChange = async (
-    category: StoreCategory,
-    nextPage: StoreCarouselPage,
-  ) => {
-    if (categoryPage(category) === nextPage) return;
-
-    setCategories((prev) =>
-      prev.map((item) =>
-        item.id === category.id
-          ? { ...item, store_page: nextPage, section_id: nextPage === "bikes" ? undefined : item.section_id }
-          : item,
-      ),
-    );
-
-    await fetch("/api/store/categories", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: category.id,
-        store_page: nextPage,
-        ...(nextPage === "bikes" ? { section_id: null } : {}),
-      }),
-    });
-  };
+  const editingCategoryLive = React.useMemo(
+    () =>
+      editingCategory
+        ? categories.find((category) => category.id === editingCategory.id) ?? editingCategory
+        : null,
+    [categories, editingCategory],
+  );
 
   // Handle reorder within the active storefront page
   const handleReorder = async (newOrder: StoreCategory[]) => {
@@ -651,7 +655,7 @@ export function StoreCategoriesManager({
           source: 'brand',
           brand_name: selectedBrand,
           product_ids: [],
-          store_page: activePage,
+          store_page: getCreatePage(),
         }),
       });
 
@@ -705,6 +709,27 @@ export function StoreCategoriesManager({
     });
   };
 
+  React.useEffect(() => {
+    if (!createRequest) return;
+
+    createPageRef.current = createRequest.storePage;
+
+    switch (createRequest.action) {
+      case "scan":
+        void handleScanLightspeed();
+        break;
+      case "brand":
+        void handleAddBrandCarousel();
+        break;
+      case "uber":
+        void handleAddUberCarousel();
+        break;
+      case "custom":
+        handleAddCustom();
+        break;
+    }
+  }, [createRequest?.id]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -714,194 +739,52 @@ export function StoreCategoriesManager({
   }
 
   return (
-    <div className="space-y-4">
-      {/* Action Buttons */}
-      <div className="flex gap-2 justify-end flex-wrap">
-        <Button
-          onClick={handleScanLightspeed}
-          variant="outline"
-          size="sm"
-          disabled={scanning}
-        >
-          {scanning ? (
-            <>
-              <Loader2 className="size-4 animate-spin" />
-              Scanning...
-            </>
-          ) : (
-            <>
-              <Scan className="size-4" />
-              Scan Lightspeed
-            </>
-          )}
-        </Button>
-        <Button onClick={handleAddBrandCarousel} variant="outline" size="sm">
-          <Tag className="size-4" />
-          Add Brand Carousel
-        </Button>
-        <Button onClick={handleAddUberCarousel} variant="outline" size="sm" disabled={saving}>
-          <Truck className="size-4" />
-          Add Uber Carousel
-        </Button>
-        <Button onClick={handleAddCustom} size="sm">
-          <Plus className="size-4" />
-          Add custom carousel
-        </Button>
-      </div>
-
-      {/* Carousels list */}
+    <>
       {pageCategories.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-sm text-muted-foreground">
-              {activePage === "bikes"
-                ? "No Bikes page carousels yet"
-                : "No Products page carousels yet"}
-            </p>
-          </CardContent>
-        </Card>
+        <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+          <Package className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+          <p className="text-sm text-gray-600">
+            {activePage === "bikes" ? "No Bikes page carousels yet" : "No Products page carousels yet"}
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            Use New in the top right to scan Lightspeed or add a carousel
+          </p>
+        </div>
       ) : (
         <Reorder.Group
           axis="y"
           values={pageCategories}
           onReorder={handleReorder}
-          className="space-y-2"
+          className="divide-y divide-gray-100 rounded-md border border-gray-200 bg-white"
         >
           {pageCategories.map((category) => (
             <Reorder.Item key={category.id} value={category}>
-              <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-foreground/20 hover:bg-accent/40 cursor-move">
-                <div className="flex-shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing">
-                  <GripVertical className="h-4 w-4" />
+              <div className="flex cursor-move items-center gap-3 px-3 py-2.5 transition-colors hover:bg-gray-50">
+                <div className="flex-shrink-0 cursor-grab active:cursor-grabbing">
+                  <GripVertical className="h-4 w-4 text-gray-400" />
                 </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-medium text-foreground truncate">
-                      {category.name}
-                    </h4>
-                    <Badge variant="secondary" className="text-xs flex-shrink-0 font-normal">
-                      {category.source === 'brand'
-                        ? `Brand: ${category.brand_name}`
-                        : category.source === 'uber'
-                          ? 'Uber'
-                          : category.source}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {category.source === 'brand'
-                      ? 'Matches products by brand automatically'
-                      : category.source === 'uber'
-                        ? 'Automatically shows every Uber-enabled product'
-                      : `${category.product_ids.length} products assigned`}
-                  </p>
-                  <div className="mt-2 flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-                    {(["products", "bikes"] as StoreCarouselPage[]).map((page) => {
-                      const isActive = categoryPage(category) === page;
-                      return (
-                        <button
-                          key={page}
-                          type="button"
-                          onClick={() => void handleStorePageChange(category, page)}
-                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                            isActive
-                              ? "text-gray-800 bg-white shadow-sm"
-                              : "text-gray-600 hover:bg-gray-200/70"
-                          }`}
-                        >
-                          {page === "bikes" ? "Bikes page" : "Products page"}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Logo upload + title toggle */}
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {uploadingLogoId === category.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-50">
+                  {category.source === "uber" ? (
+                    <UberCarouselLogo />
                   ) : category.logo_url ? (
-                    <div className="group relative h-8 w-20 flex items-center justify-center border border-border rounded-md bg-white overflow-hidden">
-                      <img src={category.logo_url} alt="" className="max-h-full max-w-full object-contain p-0.5" />
-                      <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          type="button"
-                          onClick={() => handleLogoClick(category.id)}
-                          className="text-white hover:text-gray-200 cursor-pointer"
-                          title="Replace logo"
-                        >
-                          <ImagePlus className="h-3 w-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveLogo(category.id)}
-                          className="text-white hover:text-red-300 cursor-pointer"
-                          title="Remove logo"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    </div>
+                    <img
+                      src={category.logo_url}
+                      alt=""
+                      className="h-full w-full object-contain p-0.5"
+                    />
                   ) : (
-                    category.source === 'uber' ? (
-                      <UberCarouselLogo />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleLogoClick(category.id)}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border rounded-md px-2 py-1 transition-colors cursor-pointer"
-                        title="Add carousel logo"
-                      >
-                        <ImagePlus className="h-3.5 w-3.5" />
-                        Logo
-                      </button>
-                    )
-                  )}
-                  {(category.logo_url || category.source === 'uber') && (
-                    <button
-                      type="button"
-                      title={category.hide_title ? 'Title hidden — click to show' : 'Title visible — click to hide'}
-                      onClick={() => handleHideTitleChange(category)}
-                      className={`text-xs px-2 py-1 rounded-md border transition-colors cursor-pointer ${
-                        category.hide_title
-                          ? 'border-dashed border-border text-muted-foreground hover:text-foreground'
-                          : 'border-border bg-muted text-foreground hover:bg-muted/70'
-                      }`}
-                    >
-                      {category.hide_title ? 'Title off' : 'Title on'}
-                    </button>
+                    <Package className="h-4 w-4 text-gray-300" />
                   )}
                 </div>
 
-                {/* Carousel size toggle */}
-                <div className="flex items-center rounded-md bg-muted p-0.5 overflow-hidden flex-shrink-0 text-xs font-medium">
-                  {(
-                    [
-                      { value: 'featured', label: 'Featured', count: 4 },
-                      { value: 'normal',   label: 'Normal',   count: 6 },
-                      { value: 'compact',  label: 'Compact',  count: 8 },
-                    ] as { value: CarouselSize; label: string; count: number }[]
-                  ).map(({ value, label, count }) => {
-                    const active = (category.carousel_size ?? 'normal') === value;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => handleCarouselSizeChange(category, value)}
-                        title={`${label} — shows ${count} products`}
-                        className={`rounded-[5px] px-2.5 py-1 cursor-pointer transition-colors ${
-                          active
-                            ? 'bg-background text-foreground shadow-sm'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                      >
-                        {label} <span className="opacity-60">({count})</span>
-                      </button>
-                    );
-                  })}
+                <div className="min-w-0 flex-1">
+                  <h4 className="truncate text-sm font-medium text-gray-900">{category.name}</h4>
+                  <p className="mt-0.5 text-xs text-gray-500">{carouselSummary(category)}</p>
                 </div>
 
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {category.source === 'lightspeed' && (
+                <div className="flex flex-shrink-0 items-center gap-0.5">
+                  {category.source === "lightspeed" && (
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -911,18 +794,14 @@ export function StoreCategoriesManager({
                       <RotateCcw className="size-4" />
                     </Button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => handleEdit(category)}
-                  >
+                  <Button variant="ghost" size="icon-sm" onClick={() => handleEdit(category)}>
                     <Edit2 className="size-4" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     onClick={() => setDeleteConfirmId(category.id)}
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="size-4" />
                   </Button>
@@ -948,7 +827,7 @@ export function StoreCategoriesManager({
           <DialogHeader>
             <DialogTitle>Import from Lightspeed</DialogTitle>
             <DialogDescription>
-              Select Lightspeed groups to add as carousels on your store. Products are assigned automatically.
+              Select Lightspeed groups to add as carousels on your {createPageLabel(getCreatePage())}. Products are assigned automatically.
             </DialogDescription>
           </DialogHeader>
 
@@ -1035,7 +914,7 @@ export function StoreCategoriesManager({
           <DialogHeader className="shrink-0 space-y-1 px-6 pt-6 pb-2">
             <DialogTitle>Add custom carousel</DialogTitle>
             <DialogDescription>
-              Create a custom carousel and select products to include
+              Create a custom carousel on your {createPageLabel(getCreatePage())} and select products to include.
             </DialogDescription>
           </DialogHeader>
 
@@ -1184,15 +1063,124 @@ export function StoreCategoriesManager({
 
       {/* Edit carousel dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className={PRODUCT_PICKER_DIALOG_CLASS}>
+        <DialogContent className={EDIT_CAROUSEL_DIALOG_CLASS}>
           <DialogHeader className="shrink-0 space-y-1 px-6 pt-6 pb-2">
             <DialogTitle>Edit carousel</DialogTitle>
             <DialogDescription>
-              Update carousel name and product selection
+              Update carousel settings{editingCategoryLive ? ` for ${editingCategoryLive.name}` : ""}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-6 pb-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-4">
+            <div className="flex flex-col gap-4">
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Show on</Label>
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                  {(["products", "bikes"] as StoreCarouselPage[]).map((page) => (
+                    <button
+                      key={page}
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, storePage: page }))}
+                      className={cn(
+                        "px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                        formData.storePage === page
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70",
+                      )}
+                    >
+                      {page === "bikes" ? "Bikes page" : "Products page"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Carousel size</Label>
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                  {(
+                    [
+                      { value: "featured", label: "Featured" },
+                      { value: "normal", label: "Normal" },
+                      { value: "compact", label: "Compact" },
+                    ] as { value: CarouselSize; label: string }[]
+                  ).map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, carouselSize: value }))}
+                      className={cn(
+                        "px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                        formData.carouselSize === value
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {editingCategoryLive && editingCategoryLive.source !== "uber" && (
+                <div className="space-y-2">
+                  <Label>Carousel logo</Label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+                      {uploadingLogoId === editingCategoryLive.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                      ) : editingCategoryLive.logo_url ? (
+                        <img
+                          src={editingCategoryLive.logo_url}
+                          alt=""
+                          className="h-full w-full object-contain p-0.5"
+                        />
+                      ) : (
+                        <ImagePlus className="h-4 w-4 text-gray-300" />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleLogoClick(editingCategoryLive.id)}
+                        disabled={uploadingLogoId === editingCategoryLive.id}
+                      >
+                        {editingCategoryLive.logo_url ? "Replace" : "Upload"}
+                      </Button>
+                      {editingCategoryLive.logo_url && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveLogo(editingCategoryLive.id)}
+                          disabled={uploadingLogoId === editingCategoryLive.id}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(editingCategoryLive?.logo_url || editingCategoryLive?.source === "uber") && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="hide-carousel-title"
+                    checked={formData.hideTitle}
+                    onCheckedChange={(checked) =>
+                      setFormData((prev) => ({ ...prev, hideTitle: checked === true }))
+                    }
+                  />
+                  <Label htmlFor="hide-carousel-title" className="font-normal">
+                    Hide carousel title on storefront
+                  </Label>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="edit-carousel-name">Carousel name *</Label>
               <Input
@@ -1202,8 +1190,11 @@ export function StoreCategoriesManager({
               />
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-2">
-              <div className="flex shrink-0 items-center justify-between gap-2">
+            {editingCategoryLive &&
+            (editingCategoryLive.source === "custom" ||
+              editingCategoryLive.source === "lightspeed") ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
                 <Label>Select Products ({formData.productIds.length} selected)</Label>
                 {filteredProducts.length > 0 && (
                   <button
@@ -1215,7 +1206,7 @@ export function StoreCategoriesManager({
                   </button>
                 )}
               </div>
-              <div className="shrink-0 space-y-2">
+              <div className="space-y-2">
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                   <Input
@@ -1247,7 +1238,7 @@ export function StoreCategoriesManager({
                   ))}
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border">
+              <div className="rounded-md border border-border">
                 <div className="p-2">
                   {filteredProducts.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
@@ -1286,11 +1277,11 @@ export function StoreCategoriesManager({
                                   {product.display_name || product.description}
                                 </p>
                                 {isPrivate ? (
-                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-amber-300 text-amber-700 bg-amber-50">Private</span>
+                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-md border border-amber-300 text-amber-700 bg-amber-50">Private</span>
                                 ) : isUber ? (
-                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-[#0eb462]/30 text-[#087a43] bg-[#0eb462]/10">Uber</span>
+                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-md border border-[#0eb462]/30 text-[#087a43] bg-[#0eb462]/10">Uber</span>
                                 ) : (
-                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full border border-blue-300 text-blue-700 bg-blue-50">Lightspeed</span>
+                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-md border border-blue-300 text-blue-700 bg-blue-50">Lightspeed</span>
                                 )}
                               </div>
                               <p className="text-xs text-muted-foreground">
@@ -1304,6 +1295,8 @@ export function StoreCategoriesManager({
                   )}
                 </div>
               </div>
+            </div>
+            ) : null}
             </div>
           </div>
 
@@ -1340,7 +1333,7 @@ export function StoreCategoriesManager({
           <DialogHeader className="shrink-0 space-y-1 px-6 pt-6 pb-2">
             <DialogTitle>Add Brand Carousel</DialogTitle>
             <DialogDescription>
-              Choose a brand — the carousel will automatically show all in-stock products from that brand.
+              Choose a brand — the carousel will automatically show all in-stock products from that brand on your {createPageLabel(getCreatePage())}.
             </DialogDescription>
           </DialogHeader>
 
@@ -1469,6 +1462,6 @@ export function StoreCategoriesManager({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

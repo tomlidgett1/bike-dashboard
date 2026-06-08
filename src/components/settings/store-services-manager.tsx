@@ -1,8 +1,24 @@
 "use client";
 
 import * as React from "react";
-import { motion, Reorder } from "framer-motion";
-import { Plus, Trash2, Edit2, GripVertical, Loader2, Star, Clock, DollarSign, X, Check, ListChecks } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  rectSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { Plus, Trash2, Edit2, GripVertical, Loader2, Star, Clock, X, Check, ListChecks, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,9 +41,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { StoreService } from "@/lib/types/store";
+import { ServiceCard } from "@/components/marketplace/store-profile/service-card";
+import { BRAND_YELLOW } from "@/lib/marketplace/homepage-config";
 
 // ============================================================
 // Store Services Manager
@@ -68,6 +85,10 @@ const DURATION_PRESETS = [
   { label: "Full day",value: "480" },
 ];
 
+/** Fixed-height service form — body scrolls, header/footer stay put. */
+const SERVICE_DIALOG_CLASS =
+  "flex !flex-col h-[min(85vh,40rem)] max-h-[85vh] w-full max-w-[calc(100%-2rem)] gap-0 overflow-hidden p-0 sm:max-w-md";
+
 // Placeholder examples for the "what's included" bullets
 const INCLUDE_EXAMPLES = [
   "Full drivetrain clean & degrease",
@@ -77,14 +98,76 @@ const INCLUDE_EXAMPLES = [
   "Frame wipe-down & safety check",
 ];
 
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `~${minutes} min`;
-  const hrs = minutes / 60;
-  const rounded = Math.round(hrs * 2) / 2;
-  return `~${rounded % 1 === 0 ? rounded : rounded.toFixed(1)} hr${rounded >= 2 ? "s" : ""}`;
+const STORE_ACCENT_TEXT = "#0a0a0a";
+
+function SortableServiceCard({
+  service,
+  accent,
+  onEdit,
+  onDelete,
+}: {
+  service: StoreService;
+  accent: string;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: service.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn("h-full", isDragging && "opacity-60")}
+    >
+      <div className="group relative h-full">
+        <div className="absolute right-3 top-3 z-10 flex items-center gap-0.5 rounded-md border border-gray-200 bg-white p-0.5 shadow-sm">
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="flex h-8 w-8 cursor-grab items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 active:cursor-grabbing"
+            aria-label={`Reorder ${service.name}`}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
+            <Edit2 className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onDelete}
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+
+        <ServiceCard
+          service={service}
+          accent={accent}
+          accentText={STORE_ACCENT_TEXT}
+          className="h-full"
+        />
+      </div>
+    </div>
+  );
 }
 
-export function StoreServicesManager() {
+export function StoreServicesManager({ addRequest = 0 }: { addRequest?: number }) {
   const [services, setServices] = React.useState<StoreService[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -92,15 +175,31 @@ export function StoreServicesManager() {
   const [editingService, setEditingService] = React.useState<StoreService | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = React.useState<string | null>(null);
   const [formData, setFormData] = React.useState<ServiceFormData>(BLANK_FORM);
+  const [accent, setAccent] = React.useState(BRAND_YELLOW);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   // ── Data fetching ──────────────────────────────────────────
   const fetchServices = React.useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/store/services");
-      if (res.ok) {
-        const data = await res.json();
+      const [servicesRes, homepageRes] = await Promise.all([
+        fetch("/api/store/services"),
+        fetch("/api/store/homepage"),
+      ]);
+      if (servicesRes.ok) {
+        const data = await servicesRes.json();
         setServices(data.services || []);
+      }
+      if (homepageRes.ok) {
+        const homepage = await homepageRes.json();
+        const nextAccent = homepage?.config?.theme?.accent;
+        if (typeof nextAccent === "string" && nextAccent.trim()) {
+          setAccent(nextAccent);
+        }
       }
     } catch (err) {
       console.error("Error fetching services:", err);
@@ -112,11 +211,15 @@ export function StoreServicesManager() {
   React.useEffect(() => { fetchServices(); }, [fetchServices]);
 
   // ── Dialog helpers ─────────────────────────────────────────
-  const openAdd = () => {
+  const openAdd = React.useCallback(() => {
     setEditingService(null);
     setFormData(BLANK_FORM);
     setIsDialogOpen(true);
-  };
+  }, []);
+
+  React.useEffect(() => {
+    if (addRequest > 0) openAdd();
+  }, [addRequest, openAdd]);
 
   const openEdit = (svc: StoreService) => {
     setEditingService(svc);
@@ -222,15 +325,15 @@ export function StoreServicesManager() {
     }
   };
 
-  // ── Toggle highlight inline ────────────────────────────────
-  const toggleHighlight = async (svc: StoreService) => {
-    const next = !svc.highlight;
-    setServices((prev) => prev.map((s) => s.id === svc.id ? { ...s, highlight: next } : s));
-    await fetch("/api/store/services", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: svc.id, highlight: next }),
-    }).catch(console.error);
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = services.findIndex((svc) => svc.id === active.id);
+    const newIndex = services.findIndex((svc) => svc.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    handleReorder(arrayMove(services, oldIndex, newIndex));
   };
 
   // ── Render ─────────────────────────────────────────────────
@@ -243,123 +346,42 @@ export function StoreServicesManager() {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          Drag to reorder · ★ to feature on the services tab
-        </p>
-        <Button onClick={openAdd} size="sm">
-          <Plus className="size-4" />
-          Add Service
-        </Button>
-      </div>
-
-      {/* List */}
+    <>
       {services.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-sm text-muted-foreground">No services added yet</p>
-          </CardContent>
-        </Card>
+        <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+          <Wrench className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+          <p className="text-sm text-gray-600">No services added yet</p>
+          <p className="mt-1 text-xs text-gray-500">
+            Add the services you offer, like repairs, fittings, or tune-ups
+          </p>
+        </div>
       ) : (
-        <Reorder.Group
-          axis="y"
-          values={services}
-          onReorder={handleReorder}
-          className="space-y-2"
-        >
-          {services.map((svc) => (
-            <Reorder.Item key={svc.id} value={svc}>
-              <div className={cn(
-                "flex items-center gap-3 p-3 border rounded-md transition-colors cursor-move bg-card",
-                svc.highlight
-                  ? "border-yellow-200 bg-yellow-50/60 hover:bg-yellow-50"
-                  : "border-border hover:bg-accent/40"
-              )}>
-                {/* Drag handle */}
-                <div className="flex-shrink-0 cursor-grab active:cursor-grabbing">
-                  <GripVertical className="h-4 w-4 text-muted-foreground/50" />
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    {svc.highlight && (
-                      <Star className="h-3 w-3 fill-yellow-400 text-yellow-400 flex-shrink-0" />
-                    )}
-                    <h4 className="text-sm font-medium text-foreground truncate">{svc.name}</h4>
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {svc.price != null && (
-                      <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground font-medium">
-                        <DollarSign className="h-3 w-3" />
-                        {svc.price_from ? "From " : ""}
-                        {svc.price % 1 === 0 ? svc.price.toFixed(0) : svc.price.toFixed(2)}
-                      </span>
-                    )}
-                    {svc.duration_minutes != null && (
-                      <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        {formatDuration(svc.duration_minutes)}
-                      </span>
-                    )}
-                    {svc.includes && svc.includes.length > 0 && (
-                      <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
-                        <ListChecks className="h-3 w-3" />
-                        {svc.includes.length} included
-                      </span>
-                    )}
-                    {svc.description && (
-                      <span className="text-xs text-muted-foreground line-clamp-1 truncate max-w-[180px]">
-                        {svc.description}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {/* Feature toggle */}
-                  <button
-                    type="button"
-                    title={svc.highlight ? "Remove feature" : "Feature this service"}
-                    onClick={() => toggleHighlight(svc)}
-                    className={cn(
-                      "h-8 w-8 flex items-center justify-center rounded-md transition-colors cursor-pointer",
-                      svc.highlight
-                        ? "text-yellow-500 hover:text-yellow-600 hover:bg-yellow-100"
-                        : "text-muted-foreground/40 hover:text-yellow-400 hover:bg-yellow-50"
-                    )}
-                  >
-                    <Star className={cn("h-3.5 w-3.5", svc.highlight && "fill-current")} />
-                  </button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => openEdit(svc)}
-                  >
-                    <Edit2 className="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setDeleteConfirmId(svc.id)}
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
+        <>
+          <p className="mb-4 text-xs text-gray-500">
+            Drag cards to reorder in any direction. Featured services show the Popular ribbon on your storefront.
+          </p>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={services.map((svc) => svc.id)} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {services.map((svc) => (
+                  <SortableServiceCard
+                    key={svc.id}
+                    service={svc}
+                    accent={accent}
+                    onEdit={() => openEdit(svc)}
+                    onDelete={() => setDeleteConfirmId(svc.id)}
+                  />
+                ))}
               </div>
-            </Reorder.Item>
-          ))}
-        </Reorder.Group>
+            </SortableContext>
+          </DndContext>
+        </>
       )}
 
       {/* ── Add / Edit dialog ─────────────────────────────── */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className={SERVICE_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 px-6 pt-6 pb-2">
             <DialogTitle>{editingService ? "Edit Service" : "Add Service"}</DialogTitle>
             <DialogDescription>
               {editingService
@@ -368,7 +390,8 @@ export function StoreServicesManager() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-4">
+            <div className="space-y-4 py-2">
             {/* Name */}
             <div className="space-y-1.5">
               <Label htmlFor="svc-name">Service name *</Label>
@@ -511,7 +534,7 @@ export function StoreServicesManager() {
             )}
 
             {/* Highlight toggle */}
-            <div className="rounded-lg border border-yellow-200 bg-yellow-50/60 p-3">
+            <div className="rounded-md border border-gray-200 bg-white p-3">
               <label className="flex items-start gap-2.5 cursor-pointer select-none">
                 <div
                   role="checkbox"
@@ -540,9 +563,10 @@ export function StoreServicesManager() {
                 </div>
               </label>
             </div>
+            </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-end">
             <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>
@@ -577,6 +601,6 @@ export function StoreServicesManager() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

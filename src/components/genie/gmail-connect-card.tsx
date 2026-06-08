@@ -45,9 +45,12 @@ function reasonCopy(
 export function GmailConnectCard({
   payload,
   onConnected,
+  variant = "default",
 }: {
   payload: GmailConnectPayload;
   onConnected?: () => void;
+  /** Compact row for home-page prompts when Gmail is not connected yet. */
+  variant?: "default" | "compact";
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const [status, setStatus] = React.useState<"idle" | "opening" | "error">("idle");
@@ -55,11 +58,13 @@ export function GmailConnectCard({
   const connectedAccounts = payload.accounts?.filter((account) => account.status === "ACTIVE") ?? [];
   const hasAccounts = connectedAccounts.length > 0;
   const copy = reasonCopy(payload.reason, hasAccounts);
+  const useCompact = variant === "compact" && !hasAccounts && payload.reason !== "add_account";
 
   React.useEffect(() => {
+    if (useCompact) return;
     const frame = requestAnimationFrame(() => setExpanded(true));
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [useCompact]);
 
   const openConnect = async () => {
     setStatus("opening");
@@ -84,6 +89,46 @@ export function GmailConnectCard({
       setErrorMsg("Connection error. Please try again.");
     }
   };
+
+  if (useCompact) {
+    return (
+      <div className="w-full">
+        <div className="flex w-full items-center justify-between gap-2 rounded-md border border-gray-200/80 bg-white px-2.5 py-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white ring-1 ring-black/[0.06]">
+              <GmailLogo className="h-[13px] max-w-[16px]" />
+            </span>
+            <span className="truncate text-xs text-gray-500">
+              Connect Gmail for inbox suggestions
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void openConnect()}
+            disabled={status === "opening"}
+            className="h-7 shrink-0 rounded-md px-2 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+          >
+            {status === "opening" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <>
+                Connect
+                <ExternalLink className="h-3 w-3" />
+              </>
+            )}
+          </Button>
+        </div>
+        {status === "error" ? (
+          <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
+            <AlertCircle className="h-3 w-3 shrink-0" />
+            {errorMsg}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <motion.div

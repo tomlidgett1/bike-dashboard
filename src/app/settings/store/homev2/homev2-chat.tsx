@@ -5,7 +5,6 @@ import Image from "next/image";
 import { createPortal, flushSync } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, History, Pencil, Plus, Trash2, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GenieChart, type GenieChartPayload } from "@/components/genie/genie-chart";
 import { GenieDataTable, type GenieTablePayload } from "@/components/genie/genie-data-table";
@@ -14,6 +13,7 @@ import { HomeV2ChatInput } from "@/components/genie/homev2-chat-input";
 import type { GeniePivotTablePayload } from "@/lib/genie/pivot-table";
 import { GenieProposalCard } from "@/components/genie/genie-proposal-card";
 import { LightspeedWorkorderCards } from "@/components/genie/lightspeed-workorder-cards";
+import { LightspeedCustomerProfileCard } from "@/components/genie/lightspeed-customer-profile-card";
 import { GmailEmailSearchCard } from "@/components/genie/gmail-email-search-card";
 import { GmailConnectCard } from "@/components/genie/gmail-connect-card";
 import { GenieStoreProductCards } from "@/components/genie/genie-store-product-cards";
@@ -32,6 +32,7 @@ import { HomeV2SmartSuggestions } from "@/components/settings/homev2-smart-sugge
 import type {
   GenieAnalysisPlanPayload,
   GenieAnalysisQueryPayload,
+  GenieCustomerProfilePayload,
   GenieProposal,
   GenieRawDebugLogEntry,
   GenieWorkorderCardsPayload,
@@ -42,6 +43,7 @@ import type {
 import { consumeHomeV2PendingPrompt } from "@/lib/genie/homev2-navigation";
 import { compactGenieProgressText, liveGenieProgressPreview } from "@/lib/genie/progress-text";
 import { mergeGmailAgentContext } from "@/lib/genie/gmail-agent-context";
+import { renderGenieMarkdown } from "@/lib/genie/render-markdown";
 
 type ChatRole = "user" | "assistant";
 
@@ -64,6 +66,7 @@ interface ChatMessage {
   products?: GenieStoreProductPreview[];
   webImages?: GenieWebImagePreview[];
   workorders?: GenieWorkorderCardsPayload;
+  customerProfile?: GenieCustomerProfilePayload;
   gmailEmails?: GmailEmailsPayload;
   gmailConnect?: GmailConnectPayload;
   status?: string;
@@ -99,14 +102,25 @@ const THINKING_SHIMMER_STYLE: React.CSSProperties = {
 };
 
 const PHASE_LABELS: Record<string, string> = {
+  context: "Reading context",
+  routing: "Routing",
+  routing_done: "Workflow",
+  setup: "Setup",
   planning: "Planning",
+  planning_done: "Planning",
   thinking: "Thinking",
   web_search: "Searching web",
   web_search_done: "Web search done",
+  image_search: "Finding images",
+  image_search_done: "Images",
   lightspeed_sales: "Sales",
   lightspeed_inventory: "Stock",
   lightspeed_customers: "Customers",
+  lightspeed_workorders: "Work orders",
+  customer_context: "Customer bike",
+  specialist: "Specialist",
   rechecking: "Retrying",
+  tool_done: "Result",
   responding: "Answering",
   tool: "Working",
   gmail: "Gmail",
@@ -164,99 +178,6 @@ function upsertLiveReasoningStep(steps: ProcessStep[] | undefined, step: Process
   return appendProcessStep(current, step);
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function renderMarkdown(text: string) {
-  const inline = (value: string) =>
-    escapeHtml(value)
-      .replace(/`([^`]+?)`/g, '<code class="rounded bg-background px-1 py-0.5 text-[0.85em] font-medium">$1</code>')
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*(.+?)\*/g, "<em>$1</em>");
-
-  const lines = text.split("\n");
-  const html: string[] = [];
-  let listType: "ul" | "ol" | null = null;
-
-  const closeList = () => {
-    if (!listType) return;
-    html.push(`</${listType}>`);
-    listType = null;
-  };
-
-  const isTableRow = (line: string) => {
-    const trimmed = line.trim();
-    return trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.slice(1, -1).includes("|");
-  };
-
-  const cells = (line: string) =>
-    line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
-
-  const isSeparator = (line: string) => isTableRow(line) && cells(line).every((cell) => /^:?-{3,}:?$/.test(cell));
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    const trimmed = line.trimStart();
-
-    if (isTableRow(line) && lines[index + 1] && isSeparator(lines[index + 1])) {
-      closeList();
-      const header = cells(line);
-      index += 2;
-      const rows: string[][] = [];
-      while (index < lines.length && isTableRow(lines[index])) {
-        rows.push(cells(lines[index]));
-        index++;
-      }
-      index--;
-      html.push('<div class="my-3 overflow-x-auto rounded-2xl border border-border/70 bg-background/70">');
-      html.push('<table class="w-max min-w-full border-collapse text-sm">');
-      html.push("<thead><tr>");
-      for (const head of header) html.push(`<th class="border-b border-border/70 px-3 py-2 text-left font-semibold text-foreground whitespace-nowrap">${inline(head)}</th>`);
-      html.push("</tr></thead><tbody>");
-      for (const row of rows) {
-        html.push('<tr class="border-t border-border/50">');
-        for (const cell of row) html.push(`<td class="px-3 py-2 align-top text-muted-foreground whitespace-nowrap">${inline(cell)}</td>`);
-        html.push("</tr>");
-      }
-      html.push("</tbody></table></div>");
-      continue;
-    }
-
-    const unordered = /^[•\-*]\s+/.test(trimmed);
-    const ordered = /^\d+\.\s+/.test(trimmed);
-
-    if (unordered || ordered) {
-      const nextType = ordered ? "ol" : "ul";
-      if (listType !== nextType) {
-        closeList();
-        listType = nextType;
-        html.push(`<${nextType} class="my-2 space-y-1 pl-5">`);
-      }
-      html.push(`<li class="${ordered ? "list-decimal" : "list-disc"} leading-relaxed">${inline(trimmed.replace(/^[•\-*]\s+/, "").replace(/^\d+\.\s+/, ""))}</li>`);
-      continue;
-    }
-
-    closeList();
-
-    if (!trimmed) {
-      html.push('<div class="h-2"></div>');
-    } else if (/^#{1,4}\s/.test(trimmed)) {
-      html.push(`<p class="mt-3 first:mt-0 text-base font-semibold leading-tight text-foreground">${inline(trimmed.replace(/^#{1,4}\s+/, ""))}</p>`);
-    } else {
-      html.push(`<p class="leading-relaxed">${inline(trimmed)}</p>`);
-    }
-  }
-
-  closeList();
-  return html.join("");
-}
-
 function AssistantMessageContent({ content }: { content: string }) {
   if (!content) return null;
 
@@ -264,7 +185,7 @@ function AssistantMessageContent({ content }: { content: string }) {
     <div className="max-w-3xl text-[15px] leading-relaxed">
       <div
         className="[&>p+p]:mt-2 [&_strong]:font-semibold"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+        dangerouslySetInnerHTML={{ __html: renderGenieMarkdown(content) }}
       />
     </div>
   );
@@ -330,14 +251,14 @@ function ProcessStepDetail({
         <div
           className={cn(
             "text-xs leading-relaxed text-gray-600 [&_strong]:font-semibold [&_strong]:text-gray-800 [&_ul]:my-1.5 [&_li]:my-0.5",
-            live && isLast ? "text-transparent bg-clip-text animate-[agent-text-shimmer_5.5s_linear_infinite]" : "",
+            live && isLast ? "text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]" : "",
           )}
           style={live && isLast ? {
             backgroundImage:
               "linear-gradient(90deg, #737373 0%, #737373 38%, #171717 50%, #737373 62%, #737373 100%)",
             backgroundSize: "220% 100%",
           } : undefined}
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(step.text) }}
+          dangerouslySetInnerHTML={{ __html: renderGenieMarkdown(step.text, { compact: true }) }}
         />
       </div>
     </div>
@@ -505,7 +426,6 @@ function ProcessTimelineBox({
 }) {
   const [panelOpen, setPanelOpen] = React.useState(false);
   const visibleSteps = steps
-    .filter((step) => step.phase !== "responding" && !/composing.*answer/i.test(step.text))
     .map((step) => ({
       ...step,
       text: step.kind === "status" ? normalizeStartupStatusText(step.text, step.phase) : step.text,
@@ -528,7 +448,7 @@ function ProcessTimelineBox({
         onClick={() => setPanelOpen(true)}
         className={cn(
           "w-fit max-w-3xl whitespace-normal border-0 bg-transparent p-0 text-left text-[15px] leading-relaxed text-gray-500",
-          live && "text-transparent bg-clip-text animate-[agent-text-shimmer_5.5s_linear_infinite]",
+          live && "text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]",
           !live && "text-gray-400 hover:text-gray-600",
         )}
         style={live ? THINKING_SHIMMER_STYLE : undefined}
@@ -1021,6 +941,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             products: message.products,
             webImages: message.webImages,
             workorders: message.workorders,
+            customerProfile: message.customerProfile,
             proposals: message.proposals,
             gmailEmails: message.gmailEmails,
             analysisPlan: message.analysisPlan,
@@ -1243,6 +1164,18 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             ));
           }
 
+          if (event.event === "customer_profile" && event.customer_profile) {
+            setMessages((current) => current.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    customerProfile: event.customer_profile as GenieCustomerProfilePayload,
+                    status: undefined,
+                  }
+                : message
+            ));
+          }
+
           if (event.event === "gmail_emails" && event.gmail_emails) {
             setMessages((current) => current.map((message) =>
               message.id === assistantId
@@ -1443,6 +1376,9 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 	                          {message.webImages?.length ? (
 	                            <GenieWebImageCards images={message.webImages} />
 	                          ) : null}
+	                          {message.customerProfile ? (
+	                            <LightspeedCustomerProfileCard profile={message.customerProfile} />
+	                          ) : null}
 	                          {message.workorders?.workorders.length ? (
 	                            <LightspeedWorkorderCards payload={message.workorders} fullWidth />
 	                          ) : null}
@@ -1514,9 +1450,10 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
               />
 
               {gmailConnectBanner ? (
-                <div className="mb-3">
+                <div className="mb-2">
                   <GmailConnectCard
                     payload={gmailConnectBanner}
+                    variant="compact"
                     onConnected={() => setGmailConnectBanner(null)}
                   />
                 </div>

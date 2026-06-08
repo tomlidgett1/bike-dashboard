@@ -1,40 +1,106 @@
 "use client";
 
 import * as React from "react";
-import { GalleryHorizontal, Store, Package, Bike } from "lucide-react";
-import { PageContainer, PageHeader, PageBody, SettingsSection } from "@/components/dashboard";
+import nextDynamic from "next/dynamic";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Plus, Package, Bike, Layers } from "lucide-react";
+import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
+import { Button } from "@/components/ui/button";
 import { StoreCategoriesManager } from "@/components/settings/store-categories-manager";
 import { AutoAssignCarouselsPanel } from "@/components/settings/auto-assign-carousels-panel";
-import { Sparkles } from "lucide-react";
+import {
+  StoreCarouselsNewMenu,
+  type CarouselCreateRequest,
+} from "@/components/settings/store-carousels-new-menu";
+import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
 import type { StoreCarouselPage } from "@/lib/types/store";
 import { cn } from "@/lib/utils";
 
+const StoreSectionsManager = nextDynamic(
+  () => import("@/components/settings/store-sections-manager").then((mod) => mod.StoreSectionsManager),
+  { ssr: false, loading: () => <SettingsManagerLoading className="min-h-64" /> },
+);
+
+type CarouselsTab = StoreCarouselPage | "sections";
+
+function tabFromParam(param: string | null): CarouselsTab {
+  if (param === "sections") return "sections";
+  if (param === "bikes") return "bikes";
+  return "products";
+}
+
+function tabToQuery(tab: CarouselsTab): string {
+  return tab === "products" ? "/settings/store/carousels" : `/settings/store/carousels?tab=${tab}`;
+}
+
 export function StoreCarouselsPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [refreshKey, setRefreshKey] = React.useState(0);
-  const [activePage, setActivePage] = React.useState<StoreCarouselPage>("products");
+  const [createRequest, setCreateRequest] = React.useState<CarouselCreateRequest | null>(null);
+  const [sectionCreateRequest, setSectionCreateRequest] = React.useState(0);
+  const [activeTab, setActiveTab] = React.useState<CarouselsTab>(() =>
+    tabFromParam(searchParams.get("tab")),
+  );
+
+  const carouselStorePage: StoreCarouselPage =
+    activeTab === "bikes" ? "bikes" : "products";
+
+  const handleCreateCarousel = React.useCallback(
+    (action: CarouselCreateRequest["action"], storePage: StoreCarouselPage) => {
+      setCreateRequest({ id: Date.now(), action, storePage });
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    setActiveTab(tabFromParam(searchParams.get("tab")));
+  }, [searchParams]);
+
+  const selectTab = (tab: CarouselsTab) => {
+    setActiveTab(tab);
+    router.replace(tabToQuery(tab), { scroll: false });
+  };
 
   return (
     <PageContainer size="wide">
       <PageHeader
         title="Carousels"
-        description="Manage product carousels for your Products and Bikes storefront tabs."
+        description="Manage carousels and page sections for your store."
+        actions={
+          <div className="flex items-center gap-2">
+            {activeTab === "sections" ? (
+              <Button
+                size="sm"
+                className="rounded-md"
+                onClick={() => setSectionCreateRequest((n) => n + 1)}
+              >
+                <Plus className="size-4" />
+                New section
+              </Button>
+            ) : (
+              <>
+                <AutoAssignCarouselsPanel
+                  variant="button"
+                  onApplied={() => setRefreshKey((k) => k + 1)}
+                />
+                <StoreCarouselsNewMenu
+                  defaultStorePage={carouselStorePage}
+                  onCreate={handleCreateCarousel}
+                />
+              </>
+            )}
+          </div>
+        }
       />
       <PageBody>
-        <SettingsSection
-          title="Auto-assign marketplace-ready products"
-          description="Organise products with approved photos into carousels. You approve every change before it is saved."
-          icon={Sparkles}
-        >
-          <AutoAssignCarouselsPanel onApplied={() => setRefreshKey((k) => k + 1)} />
-        </SettingsSection>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+        <div className="mb-4 flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
             <button
               type="button"
-              onClick={() => setActivePage("products")}
+              onClick={() => selectTab("products")}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                activePage === "products"
+                activeTab === "products"
                   ? "text-gray-800 bg-white shadow-sm"
                   : "text-gray-600 hover:bg-gray-200/70",
               )}
@@ -44,10 +110,10 @@ export function StoreCarouselsPageContent() {
             </button>
             <button
               type="button"
-              onClick={() => setActivePage("bikes")}
+              onClick={() => selectTab("bikes")}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                activePage === "bikes"
+                activeTab === "bikes"
                   ? "text-gray-800 bg-white shadow-sm"
                   : "text-gray-600 hover:bg-gray-200/70",
               )}
@@ -55,42 +121,30 @@ export function StoreCarouselsPageContent() {
               <Bike size={15} />
               Bikes page
             </button>
-          </div>
+            <button
+              type="button"
+              onClick={() => selectTab("sections")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                activeTab === "sections"
+                  ? "text-gray-800 bg-white shadow-sm"
+                  : "text-gray-600 hover:bg-gray-200/70",
+              )}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              Sections
+            </button>
         </div>
 
-        {activePage === "products" ? (
-          <div className="flex items-start gap-3 rounded-md border bg-white px-4 py-3">
-            <GalleryHorizontal className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium text-foreground">Featured carousel</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                The <strong>first carousel</strong> on the Products page is shown as the featured tile on your public store profile. Drag to reorder.
-              </p>
-            </div>
-          </div>
+        {activeTab === "sections" ? (
+          <StoreSectionsManager createSectionRequest={sectionCreateRequest} />
         ) : (
-          <div className="flex items-start gap-3 rounded-md border bg-white px-4 py-3">
-            <Bike className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium text-foreground">Bikes tab carousels</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Carousels here appear on the <strong>Bikes</strong> tab of your store landing page, to the right of Products.
-              </p>
-            </div>
-          </div>
+          <StoreCategoriesManager
+            refreshKey={refreshKey}
+            activePage={activeTab}
+            createRequest={createRequest}
+          />
         )}
-
-        <SettingsSection
-          title={activePage === "bikes" ? "Bikes page carousels" : "Products page carousels"}
-          description={
-            activePage === "bikes"
-              ? "Create and order carousels shown on your store Bikes tab."
-              : "Import from Lightspeed or create custom carousels for your Products tab."
-          }
-          icon={Store}
-        >
-          <StoreCategoriesManager refreshKey={refreshKey} activePage={activePage} />
-        </SettingsSection>
       </PageBody>
     </PageContainer>
   );

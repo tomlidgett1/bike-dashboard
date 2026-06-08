@@ -18,6 +18,14 @@ function shouldUsePhaseFallback(compact: string, original: string, max: number):
 
 function phaseFallback(phase?: string): string {
   switch (phase) {
+    case 'context':
+      return 'Reading context'
+    case 'routing':
+      return 'Choosing workflow'
+    case 'routing_done':
+      return 'Workflow selected'
+    case 'setup':
+      return 'Preparing tools'
     case 'planning':
     case 'planning_done':
       return 'Planning'
@@ -37,8 +45,20 @@ function phaseFallback(phase?: string): string {
       return 'Checking stock'
     case 'lightspeed_customers':
       return 'Checking customers'
+    case 'lightspeed_workorders':
+      return 'Checking work orders'
+    case 'customer_context':
+      return 'Checking customer bike'
+    case 'specialist':
+      return 'Specialist review'
     case 'rechecking':
       return 'Retrying lookup'
+    case 'tool_done':
+      return 'Tool result ready'
+    case 'gmail':
+      return 'Checking Gmail'
+    case 'gmail_done':
+      return 'Gmail done'
     case 'product_search':
       return 'Searching marketplace'
     case 'responding':
@@ -54,12 +74,31 @@ function applyPatternRules(text: string): string {
   let value = text.trim()
 
   const rules: Array<[RegExp, string | ((match: RegExpMatchArray) => string)]> = [
-    [/waiting for genie|reading your request/i, 'Thinking'],
+    [/waiting for genie/i, 'Thinking'],
+    [/reading your request|reading conversation context/i, 'Reading context'],
+    [/choosing (?:the )?(?:best )?workflow|classifying request/i, 'Choosing workflow'],
+    [/using model router/i, 'Checking best workflow'],
+    [/workflow selected: (.+)/i, (m) => `Workflow: ${quoteFragment(m[1], 5)}`],
+    [/preparing (?:\d+ )?(?:route )?tools|selecting route tools/i, 'Preparing tools'],
+    [/starting store agent|starting execution/i, 'Starting lookup'],
     [/planning the smart workflow/i, 'Planning'],
-    [/planning complete|planning fallback ready|starting execution/i, 'Running analysis'],
+    [/planning complete|planning fallback ready/i, 'Plan ready'],
+    [/planned (\d+) step/i, 'Planned $1 steps'],
     [/reasoning about the requested workflow/i, 'Thinking'],
     [/opening web search|searching the web|browsing cycling resources/i, 'Searching web'],
     [/web research done/i, 'Web search done'],
+    [/finding customer context for "(.+?)"/i, (m) => `Customer: ${quoteFragment(m[1])}`],
+    [/resolving customer bike context/i, 'Checking customer bike'],
+    [/reading customer bike records/i, 'Reading bike records'],
+    [/reading workorder bike records/i, 'Workorder bike links'],
+    [/reading previous customer sales/i, 'Reading customer sales'],
+    [/customer match weak, checking work orders/i, 'Checking work orders'],
+    [/reading customer work orders/i, 'Reading work orders'],
+    [/customer bike evidence ready/i, 'Bike evidence ready'],
+    [/checking fitment with mechanic specialist/i, 'Mechanic review'],
+    [/mechanic specialist check ready/i, 'Mechanic check ready'],
+    [/reviewing analysis with store specialist/i, 'Store analyst review'],
+    [/store analyst review ready/i, 'Analyst review ready'],
     [/writing the lightspeed lookup plan/i, 'Planning lookup'],
     [/choosing a second sql lookup strategy/i, 'Alternate query'],
     [/running the lightspeed sql report/i, 'Running SQL'],
@@ -73,6 +112,11 @@ function applyPatternRules(text: string): string {
     [/searching sql customer sales rows|listing customers from sql sales report/i, 'Finding customers'],
     [/querying sql product purchasers|finding purchasers of "(.+?)"/i, (m) => `Buyers: ${quoteFragment(m[1])}`],
     [/looking up the sql customer profile|looking up customer \d+ in the sql sales report/i, 'Customer profile'],
+    [/building customer profile for (.+)/i, (m) => `Profile: ${quoteFragment(m[1])}`],
+    [/resolving customer profile for "(.+?)"/i, (m) => `Resolving: ${quoteFragment(m[1])}`],
+    [/reading sales, bikes, and workshop history for (.+)/i, (m) => `History: ${quoteFragment(m[1])}`],
+    [/profiling (\d+) sale rows? and (\d+) work orders?/i, 'Profiling history'],
+    [/customer profile ready/i, 'Profile ready'],
     [/querying sql customer sales|querying sql sales for/i, 'Customer sales'],
     [/aggregating sql top customers|aggregating top customers from sql/i, 'Top customers'],
     [/reading your carousels/i, 'Carousels'],
@@ -80,6 +124,13 @@ function applyPatternRules(text: string): string {
     [/checking active discounts/i, 'Discounts'],
     [/looking up cost prices/i, 'Costs'],
     [/preparing changes/i, 'Preparing changes'],
+    [/tool result ready/i, 'Tool result ready'],
+    [/sql result ready/i, 'SQL result ready'],
+    [/stock result ready/i, 'Stock result ready'],
+    [/work order result ready/i, 'Work order result ready'],
+    [/gmail result ready/i, 'Gmail result ready'],
+    [/checking whether the answer is complete/i, 'Checking answer'],
+    [/writing the final answer|writing answer/i, 'Writing answer'],
     [/checking the marketplace/i, 'Marketplace search'],
     [/composing.*answer/i, 'Writing answer'],
 

@@ -29,7 +29,9 @@ export default async function StoreSettingsIndex({
   const dest =
     tab === "categories"
       ? "carousels"
-      : tab === "homev2"
+      : tab === "sections"
+        ? "carousels?tab=sections"
+        : tab === "homev2"
         ? "home"
         : tab && VALID.includes(tab)
           ? tab

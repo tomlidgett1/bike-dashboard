@@ -30,6 +30,7 @@ import { getHomepageIcon } from "@/components/marketplace/store-profile/homepage
 import { ServiceCard } from "@/components/marketplace/store-profile/service-card";
 import { ProductCard } from "@/components/marketplace/product-card";
 import { useProductImpressions } from "@/lib/tracking/store-analytics";
+import { STORE_PAGE_CONTENT_SHELL } from "@/components/marketplace/store-profile/store-profile-chrome";
 
 // ============================================================
 // Store Home Tab — the public landing page for a bicycle store.
@@ -101,7 +102,7 @@ function Reveal({
   );
 }
 
-const DEFAULT_CONTENT_SHELL = "px-5 sm:px-8 lg:px-10";
+const DEFAULT_CONTENT_SHELL = STORE_PAGE_CONTENT_SHELL;
 const StoreHomeShellContext = React.createContext(DEFAULT_CONTENT_SHELL);
 const MESSAGE_DIALOG_CLOSE_MS = 220;
 
@@ -239,7 +240,7 @@ function EditButton() {
   return (
     <a
       href="/settings/store?tab=home"
-      className="absolute top-4 right-5 sm:right-8 lg:right-10 z-10 inline-flex items-center gap-1.5 rounded-full bg-white/90 backdrop-blur-sm border border-black/[0.06] px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-white hover:shadow-md transition-all"
+      className="absolute top-4 right-4 xl:right-5 z-10 inline-flex items-center gap-1.5 rounded-full bg-white/90 backdrop-blur-sm border border-black/[0.06] px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-white hover:shadow-md transition-all"
     >
       <Settings2 className="h-3 w-3" />
       Edit

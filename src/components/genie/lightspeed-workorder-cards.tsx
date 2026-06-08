@@ -59,6 +59,10 @@ function workSummary(workorder: GenieWorkorderCard): string {
     const note = workorder.note.trim();
     return note.length > 72 ? `${note.slice(0, 69)}…` : note;
   }
+  if (workorder.internal_note.trim()) {
+    const note = workorder.internal_note.trim();
+    return note.length > 72 ? `${note.slice(0, 69)}…` : note;
+  }
   const itemNames = workorder.items
     .map((item) => item.description || item.note)
     .filter(Boolean)

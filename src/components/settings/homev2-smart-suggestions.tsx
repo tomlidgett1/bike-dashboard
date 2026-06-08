@@ -21,6 +21,7 @@ import {
   NestPickupConfirmDialog,
   NestPickupSuggestionCard,
 } from "@/components/settings/nest-pickup-suggestion-ui";
+import { cn } from "@/lib/utils";
 
 type SuggestionsResponse = {
   suggestions?: NestPickupSuggestion[];
@@ -216,11 +217,21 @@ export function HomeV2SmartSuggestions() {
     setActiveGmailSuggestion(null);
   }
 
+  const isInitialGmailConnect = Boolean(
+    gmailConnectPayload && !gmailState?.connected && gmailConnectPayload.reason === "status",
+  );
+
   const hasVisibleSuggestions =
     suggestions.length > 0
     || gmailSuggestions.length > 0
     || showGmailConnectCard
     || showAddGmailPrompt;
+
+  const showSectionLabel =
+    suggestions.length > 0
+    || gmailSuggestions.length > 0
+    || showAddGmailPrompt
+    || (showGmailConnectCard && !isInitialGmailConnect);
 
   if (loading && !hasVisibleSuggestions) {
     return (
@@ -236,8 +247,10 @@ export function HomeV2SmartSuggestions() {
 
   return (
     <>
-      <div className="mt-6 w-full max-w-3xl">
-        <p className="mb-2 text-center text-xs font-medium text-gray-500">Smart suggestions</p>
+      <div className={cn("w-full max-w-3xl", showSectionLabel ? "mt-6" : "mt-3")}>
+        {showSectionLabel ? (
+          <p className="mb-2 text-center text-xs font-medium text-gray-500">Smart suggestions</p>
+        ) : null}
 
         {actionError ? (
           <div className="mb-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-center text-xs text-red-600">
@@ -249,6 +262,7 @@ export function HomeV2SmartSuggestions() {
           {showGmailConnectCard && gmailConnectPayload ? (
             <GmailConnectCard
               payload={gmailConnectPayload}
+              variant={isInitialGmailConnect ? "compact" : "default"}
               onConnected={() => {
                 setShowAddGmailCard(false);
                 void load({ silent: true });

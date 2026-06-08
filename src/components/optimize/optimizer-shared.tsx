@@ -35,6 +35,8 @@ export interface OptimizerProduct {
   display_name: string | null;
   product_description: string | null;
   product_specs: string | null;
+  is_bicycle?: boolean | null;
+  bike_specs?: unknown;
   brand: string | null;
   upc: string | null;
   category_name: string | null;

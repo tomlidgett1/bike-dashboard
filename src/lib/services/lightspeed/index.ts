@@ -53,6 +53,11 @@ export type {
   LightspeedSaleLine,
   LightspeedSalePayment,
   LightspeedSalesResponse,
+
+  // Serialized / customer-owned bike types
+  LightspeedSerialized,
+  LightspeedSerializedResponse,
+  LightspeedCustomerBike,
   
   // Customer types
   LightspeedCustomer,
@@ -108,9 +113,8 @@ export {
 export {
   LightspeedClient,
   createLightspeedClient,
+  mapLightspeedSerializedBike,
 } from './lightspeed-client'
-
-
 
 
 

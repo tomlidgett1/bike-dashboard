@@ -90,6 +90,8 @@ export async function GET(
         seller_phone,
         seller_email,
         uber_delivery_enabled,
+        is_bicycle,
+        bike_specs,
         users!user_id (
           business_name,
           logo_url,

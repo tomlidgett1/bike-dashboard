@@ -38,6 +38,9 @@ import type {
   LightspeedWorkorderItemsResponse,
   LightspeedWorkorderWithRelations,
   LightspeedWorkordersResponse,
+  LightspeedSerialized,
+  LightspeedSerializedResponse,
+  LightspeedCustomerBike,
   LightspeedManufacturer,
   LightspeedManufacturersResponse,
   LightspeedVendor,
@@ -56,6 +59,26 @@ interface CursorOptions {
   maxPages?: number
   limit?: number
   onPage?: (progress: CursorPageProgress) => void
+}
+
+function cleanSerializedText(value: unknown): string | null {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim()
+  return text || null
+}
+
+export function mapLightspeedSerializedBike(record: LightspeedSerialized): LightspeedCustomerBike {
+  const itemId = cleanSerializedText(record.itemID)
+  return {
+    serializedId: String(record.serializedID ?? '').trim(),
+    label: cleanSerializedText(record.description) ?? cleanSerializedText(record.serial),
+    serial: cleanSerializedText(record.serial),
+    itemId: itemId && itemId !== '0' ? itemId : null,
+    saleLineId: cleanSerializedText(record.saleLineID),
+    customerId: cleanSerializedText(record.customerID),
+    colorName: cleanSerializedText(record.colorName),
+    sizeName: cleanSerializedText(record.sizeName),
+    updatedAt: cleanSerializedText(record.timeStamp),
+  }
 }
 
 // ============================================================
@@ -751,6 +774,55 @@ export class LightspeedClient {
       `/Account/${accountId}/Workorder/${workorderId}/WorkorderItem.json${queryString}`,
     )
     return this.ensureArray(response.WorkorderItem)
+  }
+
+  /**
+   * List Serialized rows owned by a customer. Bike shops often store the
+   * customer's bike as a free-text Serialized.description with itemID "0".
+   */
+  async getCustomerSerialized(
+    customerId: string,
+    params?: Omit<LightspeedQueryParams, 'customerID'>,
+  ): Promise<LightspeedSerialized[]> {
+    const accountId = await this.getAccountId()
+    const queryString = this.buildQueryString({
+      limit: 50,
+      ...params,
+      customerID: customerId,
+    })
+    const response = await this.request<LightspeedSerializedResponse>(
+      `/Account/${accountId}/Serialized.json${queryString}`,
+    )
+    return this.ensureArray(response.Serialized)
+  }
+
+  /**
+   * Fetch a single Serialized row, usually from a Workorder.serializedID link.
+   */
+  async getSerialized(serializedId: string): Promise<LightspeedSerialized | null> {
+    const accountId = await this.getAccountId()
+    try {
+      const response = await this.request<LightspeedSerializedResponse>(
+        `/Account/${accountId}/Serialized/${serializedId}.json`,
+      )
+      return this.ensureArray(response.Serialized)[0] ?? null
+    } catch {
+      return null
+    }
+  }
+
+  async getCustomerBikes(customerId: string): Promise<LightspeedCustomerBike[]> {
+    const serialized = await this.getCustomerSerialized(customerId)
+    return serialized
+      .map(mapLightspeedSerializedBike)
+      .filter(bike => Boolean(bike.serializedId))
+  }
+
+  async getSerializedBike(serializedId: string): Promise<LightspeedCustomerBike | null> {
+    const serialized = await this.getSerialized(serializedId)
+    if (!serialized) return null
+    const bike = mapLightspeedSerializedBike(serialized)
+    return bike.serializedId ? bike : null
   }
 
   /**

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
 import { ensureTitlePreservesSizes } from '@/lib/product-title-size-guard'
+import { brandWebsiteDomain, resolveBrandWebsite } from '@/lib/bikes/brand-websites'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
     // Fetch the products — must belong to this user
     const { data: products, error: dbError } = await supabase
       .from('products')
-      .select('id, description, display_name, brand, model, marketplace_category, price')
+      .select('id, description, display_name, brand, model, manufacturer_name, marketplace_category, price')
       .eq('user_id', user.id)
       .in('id', productIds)
 
@@ -114,11 +115,16 @@ export async function POST(request: NextRequest) {
             emit({ event: 'product_start', productId: product.id, index: i + 1, total: products.length })
 
             try {
+              const brand = product.brand || (product as any).manufacturer_name || undefined
+              const brandWebsite = resolveBrandWebsite(brand)
+              const brandDomain = brandWebsite ? brandWebsiteDomain(brandWebsite) : null
+
               const context = [
                 `Raw product name: ${rawName}`,
-                product.brand && `Brand: ${product.brand}`,
+                brand && `Brand: ${brand}`,
                 product.model && `Model: ${product.model}`,
                 product.marketplace_category && `Category: ${product.marketplace_category}`,
+                brandDomain && `Official manufacturer website: ${brandWebsite} (search site:${brandDomain} first for the exact official product name)`,
               ].filter(Boolean).join('\n')
 
               const response = await openai.responses.create({
@@ -126,7 +132,7 @@ export async function POST(request: NextRequest) {
                 instructions: TITLE_PROMPT,
                 tools: [{ type: 'web_search_preview' as const }],
                 tool_choice: 'required',
-                input: `Search the web for "${searchTerms}" then return the clean ecommerce title for this product:\n\n${context}\n\nReturn ONLY the title.`,
+                input: `Search the web for "${searchTerms}" — prioritising the official manufacturer website${brandDomain ? ` (site:${brandDomain})` : ''} — then return the clean ecommerce title for this product:\n\n${context}\n\nReturn ONLY the title.`,
               })
 
               const title = ensureTitlePreservesSizes(extractOutputText(response), {

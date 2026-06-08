@@ -46,6 +46,7 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         description,
         product_description,
         product_specs,
+        product_spec_sources,
         display_name,
         price,
         discount_percent,
@@ -107,6 +108,8 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         seller_phone,
         seller_email,
         uber_delivery_enabled,
+        is_bicycle,
+        bike_specs,
         users!user_id (
           business_name,
           name,

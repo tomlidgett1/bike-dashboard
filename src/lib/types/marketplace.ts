@@ -2,6 +2,8 @@
 // Marketplace Types
 // ============================================================
 
+import type { BikeSpecsData, BikeSpecSource } from '@/lib/types/bike-specs';
+
 // The two distinct "spaces" in the marketplace
 export type MarketplaceSpace = 'marketplace' | 'stores' | 'uber';
 
@@ -34,6 +36,7 @@ export interface MarketplaceProduct {
   description: string;
   product_description?: string | null; // AI-generated product description from web search enrichment
   product_specs?: string | null; // AI-generated comprehensive spec sheet
+  product_spec_sources?: BikeSpecSource[] | null; // Official sources cited during AI copy generation
   display_name?: string; // AI-cleaned product name for display
   price: number;
   // Discount pricing (store-managed, percentage-based, optional expiry).
@@ -88,6 +91,10 @@ export interface MarketplaceProduct {
   // Per-product opt-in to Uber Express delivery. Only effective for verified
   // bicycle stores; checkout revalidates the full cart server-side.
   uber_delivery_enabled?: boolean | null;
+
+  // Complete bicycle flag + structured component specifications
+  is_bicycle?: boolean | null;
+  bike_specs?: BikeSpecsData | null;
 
   // Bike-specific fields
   frame_size?: string;

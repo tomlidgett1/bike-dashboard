@@ -7,7 +7,6 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search,
-  Package,
   Image as ImageIcon,
   ImageOff,
   ChevronLeft,
@@ -27,7 +26,6 @@ import {
   MoreHorizontal,
   ListFilter,
   PackageX,
-  TriangleAlert,
   Trash2,
   X,
   Zap,
@@ -35,6 +33,7 @@ import {
 import Image from "next/image";
 import NextDynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
+import { BikeIcon, BICYCLE_PRODUCT_ICON } from "@/components/ui/bike-icon";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -83,8 +82,6 @@ import {
 import {
   PageBody,
   PageContainer,
-  PageHeader,
-  StatCard,
   StatusBadge,
   type StatusTone,
 } from "@/components/dashboard";
@@ -97,6 +94,10 @@ const DialogDescription = NextDynamic(() => import("@/components/ui/dialog").the
 const DialogHeader = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.DialogHeader), { ssr: false });
 const DialogTitle = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.DialogTitle), { ssr: false });
 const ImageGallery = NextDynamic(() => import("@/components/products/image-gallery").then((m) => m.ImageGallery), { ssr: false });
+const ProductBikeSpecsSheet = NextDynamic(
+  () => import("@/components/products/product-bike-specs-sheet").then((m) => m.ProductBikeSpecsSheet),
+  { ssr: false }
+);
 
 interface Product {
   id: string;
@@ -125,6 +126,9 @@ interface Product {
   listing_status: string | null;
   listing_type: string | null;
   marketplace_readiness?: MarketplaceReadiness;
+  is_bicycle?: boolean;
+  bike_specs?: unknown;
+  display_name?: string | null;
 }
 
 interface DiscoveredImage {
@@ -151,6 +155,28 @@ interface ProductStats {
 }
 
 // ── Row helpers ──────────────────────────────────────────────────────────────
+
+function ProductMetric({
+  label,
+  value,
+  title,
+}: {
+  label: string;
+  value: string;
+  title?: string;
+}) {
+  return (
+    <div
+      title={title}
+      className="rounded-md border border-border/60 bg-background px-2 py-1"
+    >
+      <p className="text-[10px] font-medium leading-none text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-xs font-semibold tabular-nums leading-none text-foreground">
+        {value}
+      </p>
+    </div>
+  );
+}
 
 function hasImage(p: Product) {
   return !!(p.resolved_image_url || p.primary_image_url);
@@ -318,6 +344,8 @@ export default function ProductsPage() {
   const [deleteMode, setDeleteMode] = React.useState<"selected" | "page" | "all">("selected");
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [imageManageProduct, setImageManageProduct] = React.useState<Product | null>(null);
+  const [bikeSpecsProduct, setBikeSpecsProduct] = React.useState<Product | null>(null);
+  const [bikeSpecsSheetOpen, setBikeSpecsSheetOpen] = React.useState(false);
 
   // Image discovery state
   const [discoveryModalOpen, setDiscoveryModalOpen] = React.useState(false);
@@ -467,6 +495,47 @@ export default function ProductsPage() {
       console.error('Error toggling product status:', error);
       setProducts(prev => prev.map(p => p.id === productId ? { ...p, is_active: currentStatus } : p));
     }
+  };
+
+  const openBikeSpecsSheet = (product: Product) => {
+    setBikeSpecsProduct(product);
+    setBikeSpecsSheetOpen(true);
+  };
+
+  const handleToggleBicycle = async (productId: string, currentValue: boolean) => {
+    const nextValue = !currentValue;
+    const product = products.find((p) => p.id === productId);
+    try {
+      setProducts(prev =>
+        prev.map(p => (p.id === productId ? { ...p, is_bicycle: nextValue } : p))
+      );
+      const response = await fetch(`/api/products/${productId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_bicycle: nextValue }),
+      });
+      if (!response.ok) throw new Error("Failed to update bicycle flag");
+      if (nextValue && product) {
+        openBikeSpecsSheet({ ...product, is_bicycle: true });
+      }
+    } catch (error) {
+      console.error("Error toggling bicycle flag:", error);
+      setProducts(prev =>
+        prev.map(p => (p.id === productId ? { ...p, is_bicycle: currentValue } : p))
+      );
+    }
+  };
+
+  const handleBikeSpecsUpdate = (
+    productId: string,
+    updates: { is_bicycle?: boolean; bike_specs?: unknown }
+  ) => {
+    setProducts(prev =>
+      prev.map(p => (p.id === productId ? { ...p, ...updates } : p))
+    );
+    setBikeSpecsProduct(prev =>
+      prev?.id === productId ? { ...prev, ...updates } : prev
+    );
   };
 
   const handleBulkActive = async (active: boolean) => {
@@ -685,14 +754,46 @@ export default function ProductsPage() {
   const rangeStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
   const rangeEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
 
-  const tableColSpan = 10;
+  const tableColSpan = 11;
+
+  const liveHint = stats
+    ? `${Math.round((stats.live / Math.max(stats.total, 1)) * 100)}% of catalogue · active with approved image`
+    : "Active with approved image";
 
   return (
     <PageContainer size="full">
-      <PageHeader
-        title="Products"
-        description="Manage inventory from Lightspeed and manual listings."
-        actions={
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0 space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Products</h1>
+          <p className="text-sm text-muted-foreground">
+            Manage inventory from Lightspeed and manual listings.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ProductMetric
+              label="Total"
+              value={totalCount.toLocaleString()}
+              title={lightspeedHint ?? `${categories.length} categories`}
+            />
+            <ProductMetric
+              label="Live"
+              value={(stats?.live ?? 0).toLocaleString()}
+              title={liveHint}
+            />
+            <ProductMetric
+              label="Low stock"
+              value={(stats?.lowStock ?? 0).toLocaleString()}
+              title="At or below reorder point"
+            />
+            <ProductMetric
+              label="Needs images"
+              value={(stats?.needsImages ?? 0).toLocaleString()}
+              title="Hidden from marketplace"
+            />
+          </div>
+
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -726,42 +827,11 @@ export default function ProductsPage() {
               </Button>
             )}
           </div>
-        }
-      />
-
-      <PageBody className="space-y-0">
-        <div className="grid grid-cols-2 gap-4 pb-6 xl:grid-cols-4">
-          <StatCard
-            label="Total products"
-            value={totalCount.toLocaleString()}
-            icon={Package}
-            hint={lightspeedHint ?? `${categories.length} categories`}
-          />
-          <StatCard
-            label="Live on marketplace"
-            value={(stats?.live ?? 0).toLocaleString()}
-            icon={Eye}
-            hint={
-              stats
-                ? `${Math.round((stats.live / Math.max(stats.total, 1)) * 100)}% of catalogue · active with approved image`
-                : "Active with approved image"
-            }
-          />
-          <StatCard
-            label="Low stock"
-            value={(stats?.lowStock ?? 0).toLocaleString()}
-            icon={TriangleAlert}
-            hint="at or below reorder point"
-          />
-          <StatCard
-            label="Needs images"
-            value={(stats?.needsImages ?? 0).toLocaleString()}
-            icon={ImageOff}
-            hint="hidden from marketplace"
-          />
         </div>
+      </div>
 
-        <section className="-mx-4 w-auto border-t border-border/60 sm:-mx-6 lg:-mx-8">
+      <PageBody className="mt-4 space-y-0">
+        <section className="border-t border-border/60">
           <div className="flex flex-col gap-3 border-b border-border/60 py-4 lg:flex-row lg:items-center">
             <div className="relative w-full lg:max-w-xs">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -904,6 +974,16 @@ export default function ProductsPage() {
                   <TableHead className="hidden min-w-[140px] lg:table-cell">Canonical category</TableHead>
                   <TableHead className="text-right"><SortButton label="Price" column="price" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" /></TableHead>
                   <TableHead className="text-right"><SortButton label="Stock" column="qoh" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" /></TableHead>
+                  <TableHead className="w-[72px] text-center">
+                    <span className="inline-flex items-center justify-center gap-1">
+                      <BikeIcon
+                        iconName={BICYCLE_PRODUCT_ICON}
+                        size={14}
+                        className="size-3.5 shrink-0 opacity-80"
+                      />
+                      Bicycle
+                    </span>
+                  </TableHead>
                   <TableHead className="w-[72px] text-center">Active</TableHead>
                   <TableHead>Marketplace</TableHead>
                   <TableHead className="w-10 pr-3" />
@@ -978,6 +1058,16 @@ export default function ProductsPage() {
                           <TableCell className="text-center">
                             <Switch
                               size="sm"
+                              checked={!!product.is_bicycle}
+                              onCheckedChange={() =>
+                                handleToggleBicycle(product.id, !!product.is_bicycle)
+                              }
+                              aria-label={product.is_bicycle ? "Mark as not a bicycle" : "Mark as bicycle"}
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Switch
+                              size="sm"
                               checked={product.is_active}
                               onCheckedChange={() => handleToggleActive(product.id, product.is_active)}
                               aria-label={product.is_active ? "Deactivate product" : "Activate product"}
@@ -994,6 +1084,16 @@ export default function ProductsPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-52">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                {product.is_bicycle ? (
+                                  <DropdownMenuItem onClick={() => openBikeSpecsSheet(product)}>
+                                    <BikeIcon
+                                      iconName={BICYCLE_PRODUCT_ICON}
+                                      size={16}
+                                      className="size-4 shrink-0"
+                                    />
+                                    Bicycle specifications
+                                  </DropdownMenuItem>
+                                ) : null}
                                 <DropdownMenuItem disabled={!product.canonical_product_id} onClick={() => setImageManageProduct(product)}>
                                   <ImageIcon className="size-4" />
                                   Manage images
@@ -1227,6 +1327,13 @@ export default function ProductsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ProductBikeSpecsSheet
+        open={bikeSpecsSheetOpen}
+        onOpenChange={setBikeSpecsSheetOpen}
+        product={bikeSpecsProduct}
+        onUpdate={handleBikeSpecsUpdate}
+      />
     </PageContainer>
   );
 }

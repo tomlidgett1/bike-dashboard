@@ -94,7 +94,11 @@ function buildPageItems(
   return items;
 }
 
-export function StoreSectionsManager() {
+export function StoreSectionsManager({
+  createSectionRequest = 0,
+}: {
+  createSectionRequest?: number;
+} = {}) {
   const [sections, setSections] = React.useState<SectionWithCategories[]>([]);
   const [standaloneCategories, setStandaloneCategories] = React.useState<StoreCategory[]>([]);
   const [pageItems, setPageItems] = React.useState<PageItem[]>([]);
@@ -180,12 +184,16 @@ export function StoreSectionsManager() {
   };
 
   // ── Create / edit section ──────────────────────────────────
-  const openCreate = () => {
+  const openCreate = React.useCallback(() => {
     setEditingSection(null);
     setFormName("");
     setFormDescription("");
     setIsDialogOpen(true);
-  };
+  }, []);
+
+  React.useEffect(() => {
+    if (createSectionRequest > 0) openCreate();
+  }, [createSectionRequest, openCreate]);
 
   const openEdit = (section: SectionWithCategories) => {
     setEditingSection(section);
@@ -333,38 +341,14 @@ export function StoreSectionsManager() {
   const hasContent = sections.length > 0 || standaloneCategories.length > 0;
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-0.5">
-          <p className="text-sm text-muted-foreground">
-            Drag to set the order sections and standalone carousels appear on your Products page.
-            Group carousels into sections using the controls inside each section.
-          </p>
-        </div>
-        <Button onClick={openCreate} size="sm" className="flex-shrink-0">
-          <Plus className="size-4" />
-          New Section
-        </Button>
-        <Button onClick={handleCreateUberSection} variant="outline" size="sm" disabled={saving} className="flex-shrink-0">
-          <Truck className="size-4" />
-          Uber Section
-        </Button>
-      </div>
-
+    <div className="space-y-4">
       {!hasContent ? (
-        <div className="rounded-lg border border-dashed border-border bg-muted/30 py-14 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Layers className="h-5 w-5 text-muted-foreground" />
-          </div>
-          <p className="text-sm font-medium text-foreground">No layout yet</p>
-          <p className="mt-1 text-xs text-muted-foreground max-w-xs mx-auto">
-            Create a section to group carousels, or add carousels in the Carousels tab — they'll appear here to position.
+        <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+          <Layers className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+          <p className="text-sm text-gray-600">No sections yet</p>
+          <p className="mt-1 text-xs text-gray-500">
+            Group carousels into sections, or add carousels on the Products or Bikes tabs
           </p>
-          <Button onClick={openCreate} variant="outline" size="sm" className="mt-4">
-            <Plus className="size-4" />
-            Create first section
-          </Button>
         </div>
       ) : (
         <Reorder.Group

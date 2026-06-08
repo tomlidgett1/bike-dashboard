@@ -15,6 +15,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { Agent, Runner, assistant as assistantMessage, tool, user as userMessage, webSearchTool, type AgentInputItem } from '@openai/agents'
 import { z } from 'zod'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server'
 import { compactGenieProgressText } from '@/lib/genie/progress-text'
 import {
@@ -28,13 +29,20 @@ import {
   type GenieOrchestrationDecision,
 } from '@/lib/genie/orchestration'
 import {
+  canRunParallelTools,
+  isBikeCompatibilityIntent,
+  maxToolConcurrencyForRoute,
+  shouldExposeHostedWebSearch,
+  toolNameSetForRoute,
+} from '@/lib/genie/agent-runtime-policy'
+import {
   buildInventoryProductPreviews,
   buildStorefrontProductPreviews,
   inventoryMatchesForPreview,
   resolveInventoryItemImageUrls,
   shouldEmitStoreProductPreviews,
 } from '@/lib/genie/store-product-previews'
-import { searchWebImages, maybeSearchWebImagesForUserMessage } from '@/lib/genie/web-image-search'
+import { searchWebImages } from '@/lib/genie/web-image-search'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
 import { resolveCategoryCreationTarget } from '@/lib/services/lightspeed/category-helpers'
 import {
@@ -45,11 +53,20 @@ import {
 import type {
   GenieAnalysisPlanPayload,
   GenieAnalysisQueryPayload,
+  GenieCustomerBikeProfile,
+  GenieCustomerProfileCandidate,
+  GenieCustomerProfileCustomer,
+  GenieCustomerProfilePayload,
+  GenieCustomerSaleLineProfile,
+  GenieCustomerSaleProfile,
+  GenieCustomerTopItemProfile,
+  GenieWorkorderCard,
   GenieWorkorderCardsPayload,
 } from '@/lib/types/genie-agent'
 import type {
   LightspeedCategory,
   LightspeedCustomer,
+  LightspeedCustomerBike,
   LightspeedItem,
   LightspeedItemShop,
   LightspeedSale,
@@ -72,8 +89,6 @@ import type {
 } from '@/lib/types/genie-agent'
 import { NEW_CAROUSEL_SLOT } from '@/lib/types/genie-agent'
 import {
-  executeGmailCreateDraft,
-  executeGmailSendEmail,
   getGmailConnection,
   isComposioConfigured,
   listGmailConnections,
@@ -81,27 +96,74 @@ import {
   readGmailMessages,
   searchGmailEmails,
 } from '@/lib/composio/gmail'
-import { applyGmailPlanningPolicy, isGmailAddAccountIntent, isGmailConnectIntent } from '@/lib/composio/gmail-intent'
+import { isGmailAddAccountIntent, isGmailConnectIntent } from '@/lib/composio/gmail-intent'
 import { GMAIL_SEARCH_PLAYBOOK } from '@/lib/composio/gmail-search-playbook'
 import { verifyQuestionAnswered } from '@/lib/genie/answer-verification'
 import { buildGmailAgentContextFromMessages, buildGmailAgentContextFromPayload } from '@/lib/genie/gmail-agent-context'
+import { persistGenieAgentRun } from '@/lib/genie/telemetry'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 600
 
 const PLANNER_MODEL = 'gpt-5.5'
-const EXECUTOR_MODEL = 'gpt-5.4-mini'
+const FAST_EXECUTOR_MODEL = 'gpt-5.4-mini'
+const STRATEGIC_EXECUTOR_MODEL = 'gpt-5.5'
+const EXECUTOR_MODEL = FAST_EXECUTOR_MODEL
 const ORCHESTRATOR_MODEL = 'gpt-5.4-nano'
 const SMART_AGENT_MAX_TURNS = 40
 const STRATEGIC_AGENT_MAX_TURNS = 60
 const STREAM_HEARTBEAT_MS = 15_000
 const STORE_TIME_ZONE = 'Australia/Brisbane'
 const STORE_UTC_OFFSET = '+10:00'
-const storeAgentRunner = new Runner({
-  tracingDisabled: true,
-  traceIncludeSensitiveData: false,
-})
+function createGenieRunner(args: {
+  requestId: string
+  userId: string
+  storeName: string
+  route?: GenieOrchestrationDecision['route'] | null
+  stage: string
+  workflowName: string
+}) {
+  return new Runner({
+    tracingDisabled: !isGenieTracingEnabled(),
+    traceIncludeSensitiveData: false,
+    workflowName: args.workflowName,
+    traceId: genieTraceId(args.requestId, args.stage),
+    groupId: args.userId,
+    traceMetadata: genieTraceMetadata({
+      requestId: args.requestId,
+      userId: args.userId,
+      storeName: args.storeName,
+      route: args.route,
+      stage: args.stage,
+    }),
+  })
+}
+
+function isGenieTracingEnabled(): boolean {
+  return process.env.GENIE_AGENT_TRACING?.toLowerCase() !== 'off'
+}
+
+function genieTraceMetadata(args: {
+  requestId: string
+  userId: string
+  storeName: string
+  route?: GenieOrchestrationDecision['route'] | null
+  stage?: string
+}) {
+  return {
+    request_id: args.requestId,
+    user_id: args.userId,
+    store_name: args.storeName,
+    route: args.route ?? 'unknown',
+    stage: args.stage ?? 'agent',
+    surface: 'home_genie',
+  }
+}
+
+function genieTraceId(requestId: string, stage: string): string {
+  return `trace_${requestId.replace(/-/g, '')}_${stage}`
+}
 
 const GenieExecutionPlanSchema = z.object({
   route: z.enum([
@@ -170,61 +232,258 @@ This plan was produced by the planning model. Use it to choose tools and argumen
 ${JSON.stringify(plan, null, 2)}`
 }
 
-function buildSystemPrompt(storeName: string, executionPlan: GenieExecutionPlan | null = null): string {
+function planMentionsTool(plan: GenieExecutionPlan | null, pattern: RegExp): boolean {
+  if (!plan) return false
+  return plan.primary_tools.some(toolName => pattern.test(toolName)) ||
+    plan.execution_steps.some(step => pattern.test(step))
+}
+
+function routeUsesGmail(
+  route: GenieOrchestrationDecision['route'],
+  latestUserMessage: string,
+  plan: GenieExecutionPlan | null,
+): boolean {
+  return (route === 'storefront_action' || route === 'mixed') &&
+    (
+      /\b(gmail|email|emails|inbox|mailbox|reply|draft|send)\b/i.test(latestUserMessage) ||
+      planMentionsTool(plan, /\bgmail\b|search_gmail|read_gmail|propose_gmail/i)
+    )
+}
+
+function routeUsesLightspeedSql(
+  route: GenieOrchestrationDecision['route'],
+  plan: GenieExecutionPlan | null,
+): boolean {
+  return route === 'lightspeed_sql' ||
+    route === 'business_analysis' ||
+    route === 'mixed' ||
+    planMentionsTool(plan, /run_lightspeed_sql|workorder|inventory|discount_candidates/i)
+}
+
+function routeUsesStorefront(
+  route: GenieOrchestrationDecision['route'],
+  plan: GenieExecutionPlan | null,
+): boolean {
+  return route === 'storefront_action' ||
+    route === 'mixed' ||
+    planMentionsTool(plan, /carousel|discount|price|brand|category|storefront|proposal/i)
+}
+
+function routeUsesWeb(route: GenieOrchestrationDecision['route'], plan: GenieExecutionPlan | null): boolean {
+  return route === 'web_research' ||
+    route === 'mixed' ||
+    planMentionsTool(plan, /web_search|search_web_images|competitor|compatibility/i)
+}
+
+function formatCapabilitiesForRoute(args: {
+  route: GenieOrchestrationDecision['route']
+  includeGmail: boolean
+  includeLightspeedSql: boolean
+  includeStorefront: boolean
+  includeWeb: boolean
+}): string {
+  const capabilities: string[] = []
+
+  if (args.includeStorefront) {
+    capabilities.push(
+      '1. Storefront merchandising — read and stage changes to Yellow Jersey carousels, discounts, product prices, and product selections. The store must review and Apply before anything changes.',
+      '2. Lightspeed catalogue write-back proposals — stage brand/category changes or new categories for approval; unknown brands/categories can be created on approval.',
+      '3. Product images — use store inventory images for own-stock visual requests and web image search for external bikes, parts, colours, or setup references.',
+    )
+  }
+
+  if (args.includeLightspeedSql) {
+    capabilities.push(
+      '4. Lightspeed reporting — answer sales, sold-product, customer, current-inventory, stock-on-hand, cost, gross-profit, margin, and live work-order questions from the synced reporting views and work-order tools.',
+      '5. Customer bike diagnostics — resolve named-customer fitment questions by combining customer profile availability, previous sales, active/finished work orders, public notes, internal notes, labour lines, parts, and likely bike model evidence before researching official compatibility sources.',
+      '6. Business analysis — run multi-pass bike-store profitability analysis across revenue, gross profit, category/product drivers, discounts, basket value, customer concentration, and stale inventory cash.',
+    )
+  }
+
+  if (args.includeWeb) {
+    capabilities.push(
+      '7. Cycling web research — search live public sources for current product, pricing, standards, compatibility, supplier, event, and market information.',
+    )
+  }
+
+  if (args.includeGmail) {
+    capabilities.push(
+      '8. Gmail — check connection status, search connected inboxes, read message bodies when needed, and stage sends/drafts for approval. Never send the user to the Composio dashboard.',
+    )
+  }
+
+  if (capabilities.length === 0) {
+    capabilities.push('1. Answer directly from conversation context. Do not pretend to use tools that are not available on this route.')
+  }
+
+  return capabilities.join('\n')
+}
+
+function formatWorkRulesForRoute(args: {
+  route: GenieOrchestrationDecision['route']
+  today: string
+  includeGmail: boolean
+  includeLightspeedSql: boolean
+  includeStorefront: boolean
+  includeWeb: boolean
+}): string {
+  const rules = [
+    '- Context first: every request may be a continuation. Read the recent conversation and any private structured context from previous Genie tool results before calling tools. If current context answers the question, answer directly instead of re-running slow tools. Resolve pronouns like "she", "he", "that bike", "those items", "that email", and "reply to them" against the most recent relevant structured context.',
+  ]
+
+  if (args.includeLightspeedSql) {
+    rules.push(
+      '- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, search_lightspeed_inventory is also available.',
+      '- For item-level inventory/stock answers, if a tool returns product_links or product_url values, name the products as Markdown links and keep the quantities/prices beside them. The UI may also render product cards, so do not duplicate a long catalogue listing in prose.',
+      '- For customer bike ownership/profile/history requests ("tell me about customer X", "customer X", "what bikes does X have", "X\'s bikes", "pull up this customer", "what do we know about X", lifetime spend, bikes owned, purchase history, service history, work-order history), call get_lightspeed_customer_profile first. It streams a profile card and dereferences customer/work-order Serialized bike records; keep the text answer to the key takeaways, risks, and any ambiguity.',
+      `- For work orders / repairs / service jobs: reuse recent private structured workorder context when it answers the follow-up. Otherwise use list_lightspeed_workorders (scope open for active jobs, finished for completed/pickup-ready, all if unclear) with include_details:true, or get_lightspeed_workorder for one ID. For every workorder question, inspect all returned workorder evidence before answering: note, internal_note, warranty, labour line notes, item/part descriptions, item notes, serialized_id, sale_id, customer details, status, and dates. For due-date questions, pass due_on as YYYY-MM-DD in ${STORE_TIME_ZONE} (today is ${args.today}). Keep text brief because the UI renders detailed work-order cards.`,
+      '- If a Lightspeed lookup returns no, weak, ambiguous, partial, or non-answering results, call record_lightspeed_recheck and try one materially different SQL/tool strategy before asking the user to clarify.',
+      '- For customer-specific bike fitment or compatibility, do not answer from web search alone. First use resolve_customer_bike_context to resolve the customer, live Lightspeed Serialized bike records linked by customerID, customer profile availability, previous sales, active/finished work orders, work-order serializedID links, work-order notes, prior parts, and likely bike model/year/build. Treat Serialized.description as the strongest usual bike-ownership signal, but not the only proof; still compare it against workorders and sales. Then use hosted web_search for official manufacturer manuals, technical docs, standards pages, or supplier tech pages for the exact standard/part. If the bike context is ambiguous, still provide conditional answers for each plausible bike with confidence and the exact shop-floor check needed; do not stop at only asking which bike.',
+    )
+  }
+
+  if (args.route === 'business_analysis') {
+    rules.push(
+      '- For broad business questions such as "how can we make more money", do not give generic advice. Run several targeted SQL queries before answering. Cover revenue trend, gross profit/margin trend, category/product profit drivers, discount leakage, average sale/basket indicators, top/repeat customers, low-margin/high-volume products, and stale/cash-tied-up inventory.',
+    )
+  }
+
+  if (args.includeStorefront) {
+    rules.push(
+      '- Read first before staging storefront changes: use get_store_carousels / search_store_products / get_product_costs / list_active_discounts as relevant, then call exactly one propose_* tool. You never apply changes yourself.',
+      '- Creating a carousel: choose a clear name, use match for description-based fills, product_ids only for specific picks, and position 1 for the featured/top slot when requested.',
+      '- For discount-candidate analysis: call find_discount_candidates with the requested count and do not stage a discount unless the user gives a concrete percent or explicitly asks to stage/apply it.',
+      '- For pricing: call get_product_costs first, then stage propose_price_update with markup_percent or explicit new_prices. Never propose a price below cost.',
+      '- For Lightspeed brand/category changes: stage approval proposals with search_lightspeed_products/search_lightspeed_inventory first, then propose_product_brand_category_update or propose_lightspeed_category_create.',
+    )
+  }
+
+  if (args.includeWeb) {
+    rules.push(
+      '- For current external questions, use web_search for public information only. Never use web search instead of Lightspeed tools for private store sales, inventory, stock-on-hand, or customer/work-order activity.',
+      '- For compatibility research, prefer official manufacturer pages, service manuals, technical PDFs, standards bodies, or supplier technical pages. Treat retailer listings, forum posts, AI snippets, and generic SEO articles as secondary only. Name the source type in the answer.',
+      '- For "our pricing vs competitors/market" questions, first identify the store products/prices with store tools, then use web_search for public comparable prices. Answer with matched examples, confidence, and where the store appears high, low, or in line.',
+      '- For product images: use show_product_images:true for specific own-stock visual requests; use search_web_images for external reference photos. Keep image work to a handful of clear matches.',
+    )
+  }
+
+  if (args.includeGmail) {
+    rules.push(
+      '- For Gmail: follow the hidden execution plan execution_steps in order. ANY inbox/mail question requires planned search_gmail passes before answering. For issue/warranty/what-happened questions, read bodies via search_gmail message_bodies or read_gmail_messages; never answer from subjects/snippets alone.',
+      '- Gmail follow-ups: for reply/send/draft to an email already shown, reuse private Gmail context and call propose_gmail_email with recipient_email, Re: subject, draft body, and connected_account_id when available. Do not re-search unless context is missing or the user names a different message.',
+    )
+  }
+
+  return rules.join('\n')
+}
+
+function formatAnswerContractForRoute(route: GenieOrchestrationDecision['route']): string {
+  if (route === 'business_analysis') {
+    return [
+      '- Use sections: **Executive Summary**, **Key Findings**, **Ranked Opportunities**, **Recommended Actions**, **Data Period / Caveats**.',
+      '- Lead with the commercial answer. Put the most actionable opportunities first, ranked by profit/cash impact and ease.',
+      '- Prefer compact tables for ranked opportunities; include units in headers and avoid more than 6 columns.',
+    ].join('\n')
+  }
+
+  if (route === 'lightspeed_sql') {
+    return [
+      '- Start with the direct result in 1-2 sentences or bullets.',
+      '- Include date range, filters, and key numbers when relevant.',
+      '- For specific stock/product availability answers, include product links when product_url/product_links are returned, and rely on product cards for visual detail.',
+      '- Use a table only for rankings, transaction lists, or comparisons; do not include a Plan section.',
+    ].join('\n')
+  }
+
+  if (route === 'storefront_action') {
+    return [
+      '- If a proposal is staged, say exactly what is staged and that the store can review & Apply. Do not duplicate every preview-card item.',
+      '- If answering without staging, give the direct recommendation and the store data that drove it.',
+      '- For Gmail, answer from the actual messages searched/read and clearly distinguish a drafted/staged email from a sent email.',
+    ].join('\n')
+  }
+
+  if (route === 'web_research') {
+    return [
+      '- Start with the bike/product answer, then the evidence and confidence.',
+      '- For compatibility, when multiple plausible models/builds remain, give conditional answers for each plausible bike/model instead of only asking a clarification. Label confidence and the verification needed for each option.',
+      '- Keep caveats short and concrete.',
+    ].join('\n')
+  }
+
+  if (route === 'mixed') {
+    return [
+      '- Separate private store evidence from public web evidence when both were used.',
+      '- For customer bike fitment, answer in this shape: **Likely answer**, **Bike evidence**, **Official compatibility evidence**, **Confidence / next check**. In **Likely answer**, if several customer bikes are plausible, include a compact conditional answer for each plausible bike rather than saying only that you cannot confirm. In **Bike evidence**, mention Lightspeed Serialized bike records first when present, then workorder/sales support or conflicts. If official evidence is missing for one option, say what is unknown for that option while still answering the options that can be supported.',
+      '- For pricing/market work, answer in this shape: **Store price**, **Market examples**, **Recommendation**, **Confidence**.',
+    ].join('\n')
+  }
+
+  return '- Answer directly and briefly.'
+}
+
+function buildSystemPrompt(
+  storeName: string,
+  executionPlan: GenieExecutionPlan | null = null,
+  route: GenieOrchestrationDecision['route'] = 'mixed',
+  latestUserMessage = '',
+): string {
   const today = getStoreToday()
+  const includeGmail = routeUsesGmail(route, latestUserMessage, executionPlan)
+  const includeLightspeedSql = routeUsesLightspeedSql(route, executionPlan)
+  const includeStorefront = routeUsesStorefront(route, executionPlan)
+  const includeWeb = routeUsesWeb(route, executionPlan)
+  const routeCapabilities = formatCapabilitiesForRoute({
+    route,
+    includeGmail,
+    includeLightspeedSql,
+    includeStorefront,
+    includeWeb,
+  })
+  const routeWorkRules = formatWorkRulesForRoute({
+    route,
+    today,
+    includeGmail,
+    includeLightspeedSql,
+    includeStorefront,
+    includeWeb,
+  })
+  const gmailPlaybook = includeGmail ? `\n\nGMAIL PLANNING REFERENCE\n${GMAIL_SEARCH_PLAYBOOK}` : ''
+  const lightspeedInstructions = includeLightspeedSql
+    ? `\n\nLIGHTSPEED INSTRUCTIONS\n${getLightspeedInstructions()}`
+    : ''
+
   return `You are the Yellow Jersey Store Agent — a sharp, efficient assistant that helps "${storeName}" manage their storefront on Yellow Jersey. Today is ${today}.
 
-WHAT YOU CAN DO
-1. Carousels — the rows of products on the store's public page. You can:
-   • Create a new carousel of products from a description (e.g. "make a 'Summer Sale' row of all Clif bars"). Give it a name and, optionally, where it sits.
-   • Rename an existing carousel.
-   • Reorder them, show/hide them, and set a size (featured | normal | compact). The FIRST carousel is the featured collection.
-2. Discounts — apply a percentage discount to one or more products (e.g. "50% off all Clif bars"), optionally with an end date after which it lapses.
-   • Recommend which products are best discount candidates right now by analysing stock, stale inventory, margin room, sales velocity, and competitor pricing.
-3. Pricing — view cost prices and adjust retail prices. You can:
-   • Answer questions about cost, margin, or markup for any products.
-   • Set retail prices to achieve a target markup % on cost (e.g. "set all Clif bars to 40% markup").
-   • Set specific retail prices for named products.
-   • Identify products with low margins or where cost exceeds/equals retail.
-4. Lightspeed activity — answer questions about synced Lightspeed sales, sold products, current inventory, stock on hand, item cost, gross profit, and margin from the SQL Lightspeed reporting views. For live repair/service work orders (open jobs, pickup-ready, in-progress, customer contact, line notes, parts on the order), use list_lightspeed_workorders and get_lightspeed_workorder — not SQL.
-5. Lightspeed customers — answer customer purchase-history, top-customer, and product-purchaser questions from the SQL sales report table. Full phone/email contact extraction requires a future customer/contact table.
-6. Business performance analysis — build detailed profitability and growth analysis using multiple focused Lightspeed SQL queries when the user asks how to make more money, improve margin, reduce cash tied up, grow revenue, or find opportunities.
-7. Lightspeed catalogue edits — you CAN stage product brand/category changes for Lightspeed write-back. Pass brand_name or category_name directly (preferred when the store names them); unknown brands/categories are created in Lightspeed on approval. For nested categories use category_path (e.g. "Accessories/Winter Clearance") or parent_category_name. Use list_lightspeed_categories to browse existing categories. Use search_lightspeed_products to find items, then propose_product_brand_category_update for product assignments, or propose_lightspeed_category_create to add a category without moving products. The store must review and approve before anything is written.
-8. Product images — when the user wants to SEE specific products ("show me", "what does it look like", "picture of", or they name 1–4 identifiable items), pass show_product_images:true on search_lightspeed_inventory or search_store_products for YOUR store stock. For external bikes, parts, gear, colours, or reference photos not tied to your inventory, use search_web_images with a specific query. Do NOT use either for rankings, totals, trends, stale-stock analysis, or broad "top N" questions.
-9. Web research — search the live web for current cycling, product, pricing, standards, compatibility, supplier, event, and market information when the answer depends on up-to-date external facts.
-10. Gmail — connect via get_gmail_connection_status (Connect Gmail card in chat). When connected, add another mailbox the same way — the card lists connected accounts and an Add another Gmail button. When connected, answer email questions by searching the real inbox. Every Gmail task runs through a hidden execution plan first — follow execution_steps for tool order and search passes. Stage send/draft with propose_gmail_email for approval only. NEVER send the user to the Composio dashboard — use the in-chat Connect card.
+ACTIVE ROUTE: ${route}
+
+WHAT YOU CAN DO ON THIS ROUTE
+${routeCapabilities}
+
+CYCLING EXPERTISE STANDARD
+- Think like a senior bicycle mechanic, product buyer, and store analyst. Be precise with bike standards, retail context, workshop realities, and what a store owner can act on today.
+- For compatibility, identify the exact bike/frame/model/year/build before naming parts. Check the relevant standard: BB shell, axle spacing, brake mount/pad shape, rotor size, drivetrain speed/freehub, headset, seatpost, shock hardware, tyre clearance, and wheel size.
+- For product advice, separate "known from store data", "known from manufacturer/public sources", and "inferred". State confidence when model/year/build evidence is incomplete.
+- Do not bluff obscure standards. If the exact bike cannot be identified from store history and public data, give conditional answers for each plausible bike/model with confidence, then ask one sharp clarification or shop-floor check to choose the right option.
+- Prefer bike-shop language over generic retail language: margin dollars, dead stock, sell-through, workshop bottlenecks, attachment sales, fitment risk, warranty risk, and customer lifetime value.
 
 HOW TO WORK
-- Context first: every request may be a continuation. Read the recent conversation and any private structured context from previous Genie tool results before calling tools. If the current question can be answered from that context, answer directly and do not re-run slow Lightspeed or web tools just to rediscover the same records. Resolve pronouns like "she", "he", "that bike", "those items", "these products", "that email", "this message", and "reply to them" against the most recent relevant structured context. Use tools only when the context is missing, stale by explicit user request, ambiguous, or insufficient for the answer.
-- Read first: call get_store_carousels / search_store_products / get_product_costs / list_active_discounts to ground yourself in the store's ACTUAL data before proposing anything.
-- Then propose: call exactly one propose_* tool to stage the change. You never apply changes yourself — the store reviews a preview and clicks Apply.
-- For pivot table or crosstab requests where the user specifies row fields, column fields, and values: use run_lightspeed_sql_query with visual.pivot_table. Return detail rows in SQL (do not pre-aggregate away the row/column dimensions), then set row_fields, column_fields, value_field, and aggregation (sum, count, avg, min, max, count_distinct). Example: row_fields ["category_name"], column_fields ["sale_month"], value_field "gross_sales", aggregation "sum".
-- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, search_lightspeed_inventory is also available. For work orders / repairs / service jobs: first reuse recent private structured workorder context when it answers the follow-up. Otherwise use list_lightspeed_workorders (scope open for active jobs, finished for completed/pickup-ready, all if unclear) with include_details:true, or get_lightspeed_workorder for one ID. For "what did X get done", "completed", "paid", or similar completed-work questions, use scope:"finished", query the customer name, include_details:true, and a small limit. For "due today", "due tomorrow", or any ETA date question, pass due_on as YYYY-MM-DD in ${STORE_TIME_ZONE} (today is ${today}) — do not load every open work order without a date filter. Always include a brief text summary even when work order cards render. The UI renders detailed Lightspeed work order cards automatically — keep your text answer brief (counts, highlights, next steps) and do not repeat every line item in prose. Use record_lightspeed_plan only for broad, complex, multi-pass Lightspeed analysis. If a lookup returns no, weak, ambiguous, partial, or non-answering results, call record_lightspeed_recheck and try one materially different SQL strategy before asking the user to clarify. These are answer-only tools; do not create proposals for Lightspeed reporting.
-- For broad business questions such as "how can we make more money", do not give generic advice. Run a multi-pass analysis with several targeted SQL queries before answering. Cover revenue trend, gross profit/margin trend, category/product profit drivers, discount leakage, average sale/basket indicators, top/repeat customers, low-margin/high-volume products, and inventory cash tied up. State data limitations clearly when customer-contact tables are not available.
-- For current external questions, use web_search. Use it for public information only. Never use web search instead of Lightspeed tools for store sales, sale lines, inventory, stock-on-hand, or private store activity.
-- For "our pricing vs other stores/competitors/market" questions, do not refuse. First use store pricing/product tools such as get_product_costs, search_store_products, or search_lightspeed_products to identify the store's relevant products and prices; then use web_search for public comparable prices. Answer with matched examples, confidence/limitations, and where the store appears high, low, or in line.
-- For customer-specific bike fitment or compatibility questions like "what bottom bracket does Jackson Trotman need on this bike", "what pads does Sarah need for her bike", or "what tyre size does this customer's Trek take": do not answer from web search alone. First resolve the customer, then inspect their sales history and work orders to identify the exact bike/model/year/build from sold bikes, service notes, work-order descriptions, and parts already used. Use web_search only after the bike context is grounded. If the bike cannot be confidently identified, ask one concise clarification and state what you checked.
-- Creating a carousel: choose a clear name (use the store's own words if they gave one), and pass "match" to fill it by description ("all Clif bars" → match:"Clif"); use product_ids only for specific picks. To place it, pass position (1 = top/featured slot); omit to add it at the end.
-- Renaming: use get_store_carousels to find the carousel id, then propose_rename_carousel with the new name.
-- For discounts by description ("all Clif bars"), pass the keyword as "match" and let the system find the products. Only pass product_ids if the store picked specific items.
-- For "which products should I discount", "if you had to discount N products", or discount-candidate analysis: first call find_discount_candidates with the requested count. For 10 requested products, use limit:10, not 20-30. The tool already returns price, cost, margin, stock, age, and recent sales signals, so do not run a second SQL detail query unless required fields are missing. If the user also asks what others sell them for, use web_search only after the final candidates are selected. Batch competitor-price searches where possible and avoid researching extra candidates the user did not ask for. Do not call propose_discount unless the user asks to apply a concrete discount percent or explicitly says to stage it.
-- Expiry: if the store gives a deadline ("until Sunday"), compute the ISO date from today (${today}) and pass it as ends_at. No deadline → omit it.
-- For pricing: call get_product_costs first to see cost data, then propose_price_update with either markup_percent (applied to cost) or explicit new_prices (id→price map). Prices are always rounded to 2 decimal places. Never propose a price below cost.
-- For Lightspeed brand/category changes: do not refuse by saying you cannot change Lightspeed directly. You can stage an approval proposal. Call search_lightspeed_products (or search_lightspeed_inventory) to find the item(s), then propose_product_brand_category_update with brand_name and/or category_name, category_path, or category_id. If the brand or category does not exist yet, pass the name or path anyway — it will be created in Lightspeed when the store approves. To create a category without assigning products, use propose_lightspeed_category_create. The Apply button performs the actual Lightspeed write-back.
-- For product images: pass show_product_images:true when the user wants to see specific store inventory visually. Use search_web_images for reference photos of bikes, parts, gear, colours, or setups that are not your in-stock items. Keep both to a handful of clear matches — never for aggregate analytics, rankings, or large result sets.
-- For Gmail: follow the hidden execution plan execution_steps in order. ANY inbox/mail question requires planned search_gmail passes before answering — never skip planning or guess from one scan. For issue/warranty/what-happened questions, read message bodies via search_gmail message_bodies or read_gmail_messages — never answer from subjects/snippets alone. For rep/contact questions use contact_analysis.earliest_likely_sales_contact. Connect/setup → get_gmail_connection_status. Send/draft → propose_gmail_email. Not connected → Connect Gmail card in chat.
-- Gmail follow-ups: when the user asks to reply, send, or draft a response to an email you already showed, reuse the prior turn's private gmail context (message_id, connected_account_id, from, subject, body). Call propose_gmail_email with recipient_email parsed from the sender's from field, Re: subject, and a draft body — do not re-search unless that context is missing or they name a different message.
-
-${GMAIL_SEARCH_PLAYBOOK}
+${routeWorkRules}${gmailPlaybook}
 
 STYLE
 - Concise and confident. No preamble, no "let me…".
+- Start with the answer, not the process. For analytical answers, use this order: direct answer, evidence/key numbers, recommendation/next action, caveats if needed.
 - Use clean Markdown in final answers: short headings, bullets, bold labels for important metrics, and compact tables only for rankings or comparisons.
+- Keep tables tight: 3-6 columns, ranked by usefulness, with units in headers. Do not use a table when two bullets are clearer.
+- For incomplete evidence, use a short "Checked" / "Gap" / "Next" shape instead of a vague apology.
 - After proposing, briefly say what's staged and that they can review & Apply. Don't restate every item — the preview card shows detail.
 - For Lightspeed answers, do not include a Plan section in the final answer. Give direct results for narrow questions; reserve planning status/tool output for broad or complex analysis only.
 - For strategic business analysis, produce an executive summary, key findings, ranked opportunities, recommended actions, and the exact data period used. Prefer tables for ranked opportunities and charts for trends when useful.
 - If a non-Lightspeed request is ambiguous or matches nothing, say so in one line and ask a single sharp question. For Lightspeed misses, recheck once with a different SQL strategy before asking.
-- Stay on storefront management and Lightspeed sales/inventory/cost/profit/margin/customer activity. Politely redirect anything else.
+- Stay on storefront management, Lightspeed sales/inventory/cost/profit/margin/customer activity, Gmail workflows, and cycling product/market/compatibility research. Politely redirect anything else.
+
+FINAL ANSWER CONTRACT
+${formatAnswerContractForRoute(route)}
 
 ANSWER VERIFICATION (mandatory before every final user-visible reply when using tools)
 - Ask yourself: "Have we actually answered the user's question?" If not, keep using tools — do not reply yet.
@@ -232,9 +491,7 @@ ANSWER VERIFICATION (mandatory before every final user-visible reply when using 
 - If verify_question_answered returns not_ready, do NOT reply to the user — run more tools / rechecks until gaps are closed, then verify again.
 - If a tool returns answer_readiness or recheck_required with gaps, treat those as remaining_gaps until resolved.
 - Never present partial tool output as a complete answer (e.g. warranty@ as "the rep" when the user asked for a sales rep).
-
-LIGHTSPEED INSTRUCTIONS
-${getLightspeedInstructions()}${formatExecutionPlanForPrompt(executionPlan)}`
+${lightspeedInstructions}${formatExecutionPlanForPrompt(executionPlan)}`
 }
 
 interface Message {
@@ -247,6 +504,7 @@ interface Message {
   gmailEmails?: GmailEmailsPayload
   products?: unknown[]
   workorders?: GenieWorkorderCardsPayload
+  customerProfile?: GenieCustomerProfilePayload
   analysisPlan?: GenieAnalysisPlanPayload
   analysisQueries?: GenieAnalysisQueryPayload[]
   sources?: unknown[]
@@ -360,6 +618,147 @@ function compactWorkordersForContext(payload: GenieWorkorderCardsPayload): strin
   ].join('\n')
 }
 
+function compactCustomerProfileForContext(profile: GenieCustomerProfilePayload): string {
+  const customer = profile.customer
+  const summary = profile.sales_summary
+  const lines = [
+    `customer_profile status=${profile.status} title=${compactContextText(profile.title, 160)} query=${compactContextText(profile.query, 120)}`,
+  ]
+
+  if (customer) {
+    lines.push([
+      `customer_id=${customer.customer_id}`,
+      `name=${compactContextText(customer.name, 160)}`,
+      customer.company ? `company=${compactContextText(customer.company, 120)}` : '',
+      customer.phones[0]?.number ? `phone=${compactContextText(customer.phones[0].number, 80)}` : '',
+      customer.emails[0]?.address ? `email=${compactContextText(customer.emails[0].address, 120)}` : '',
+      customer.addresses[0]?.address1 ? `address=${compactContextText([
+        customer.addresses[0].address1,
+        customer.addresses[0].city,
+        customer.addresses[0].state,
+        customer.addresses[0].zip,
+      ].filter(Boolean).join(', '), 180)}` : '',
+      customer.archived ? 'archived=true' : '',
+    ].filter(Boolean).join(', '))
+  }
+
+  if (summary) {
+    lines.push([
+      `sales sale_count=${summary.sale_count}`,
+      `total_spend=${summary.total_spend}`,
+      `gross_profit=${summary.gross_profit ?? 'unknown'}`,
+      `units=${summary.units}`,
+      `first_purchase_at=${summary.first_purchase_at ?? ''}`,
+      `last_purchase_at=${summary.last_purchase_at ?? ''}`,
+    ].join(', '))
+  }
+
+  if (profile.bikes.length) {
+    lines.push([
+      `bikes count=${profile.bikes.length}`,
+      ...profile.bikes.slice(0, 6).map(bike => [
+        `- serialized_id=${bike.serialized_id}`,
+        bike.label ? `label=${compactContextText(bike.label, 160)}` : '',
+        bike.serial ? `serial=${compactContextText(bike.serial, 80)}` : '',
+        bike.item_id ? `item_id=${bike.item_id}` : '',
+        `source=${bike.source}`,
+        bike.linked_workorder_ids.length ? `linked_workorders=${bike.linked_workorder_ids.join('|')}` : '',
+      ].filter(Boolean).join(', ')),
+    ].join('\n'))
+  }
+
+  if (profile.workorders.length) {
+    lines.push([
+      `profile_workorders count=${profile.workorders.length}`,
+      ...profile.workorders.slice(0, 5).map(workorder => [
+        `- #${workorder.workorder_id}`,
+        `status=${compactContextText(workorder.status_name, 80)}`,
+        workorder.time_in ? `time_in=${workorder.time_in}` : '',
+        workorder.eta_out ? `eta_out=${workorder.eta_out}` : '',
+        workorder.serialized_id ? `serialized_id=${workorder.serialized_id}` : '',
+        workorder.note ? `note=${compactContextText(workorder.note, 220)}` : '',
+        workorder.internal_note ? `internal_note=${compactContextText(workorder.internal_note, 220)}` : '',
+      ].filter(Boolean).join(', ')),
+    ].join('\n'))
+  }
+
+  if (profile.recent_sales.length) {
+    lines.push([
+      `recent_sales count=${profile.recent_sales.length}`,
+      ...profile.recent_sales.slice(0, 5).map(sale => [
+        `- sale_id=${sale.sale_id}`,
+        sale.ticket_number ? `ticket=${sale.ticket_number}` : '',
+        `date=${sale.completed_at ?? sale.completed_at_utc ?? ''}`,
+        `total=${sale.total}`,
+        sale.items ? `items=${compactContextText(sale.items, 180)}` : '',
+      ].filter(Boolean).join(', ')),
+    ].join('\n'))
+  }
+
+  if (profile.top_items.length) {
+    lines.push([
+      `top_items count=${profile.top_items.length}`,
+      ...profile.top_items.slice(0, 5).map(item => [
+        `- ${compactContextText(item.description, 160)}`,
+        item.sku ? `sku=${compactContextText(item.sku, 80)}` : '',
+        `qty=${item.quantity}`,
+        `gross_sales=${item.gross_sales}`,
+      ].filter(Boolean).join(', ')),
+    ].join('\n'))
+  }
+
+  lines.push([
+    `data_quality sales_rows_checked=${profile.data_quality.sales_rows_checked}`,
+    profile.data_quality.sales_row_limit_reached ? 'sales_row_limit_reached=true' : '',
+    profile.data_quality.workorders_truncated ? 'workorders_truncated=true' : '',
+    profile.data_quality.serialized_status === 'error'
+      ? `serialized_error=${compactContextText(profile.data_quality.serialized_error, 180)}`
+      : '',
+  ].filter(Boolean).join(', '))
+
+  return compactContextText(lines.filter(Boolean).join('\n'), 4_000)
+}
+
+function fullWorkorderForAgent(row: Awaited<ReturnType<typeof listGenieWorkorders>>['workorders'][number]) {
+  return {
+    workorder_id: row.workorder_id,
+    customer_id: row.customer_id,
+    customer_name: row.customer_name,
+    customer_phone: row.customer_phone,
+    customer_email: row.customer_email,
+    status_id: row.status_id,
+    status_name: row.status_name,
+    status_system_value: row.status_system_value,
+    is_finished: row.is_finished,
+    archived: row.archived,
+    time_in: row.time_in,
+    eta_out: row.eta_out,
+    updated_at: row.updated_at,
+    note: row.note,
+    internal_note: row.internal_note,
+    warranty: row.warranty,
+    serialized_id: row.serialized_id,
+    sale_id: row.sale_id,
+    employee_id: row.employee_id,
+    shop_id: row.shop_id,
+    lines: row.lines.map(line => ({
+      line_id: line.line_id,
+      note: line.note,
+      done: line.done,
+    })),
+    items: row.items.map(item => ({
+      item_id: item.item_id,
+      description: item.description,
+      sku: item.sku,
+      note: item.note,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      line_total: item.line_total,
+    })),
+    items_subtotal: row.items_subtotal,
+  }
+}
+
 function compactGmailForContext(payload: GmailEmailsPayload): string {
   if (!payload?.emails?.length && !payload.agent_context?.message_bodies?.length) return ''
 
@@ -413,6 +812,10 @@ function privateContextForMessage(message: Message): string {
 
   if (message.workorders?.workorders?.length) {
     sections.push(compactWorkordersForContext(message.workorders))
+  }
+
+  if (message.customerProfile) {
+    sections.push(compactCustomerProfileForContext(message.customerProfile))
   }
 
   if (message.products?.length) {
@@ -478,45 +881,87 @@ function toAgentInputMessages(messages: Message[]): AgentInputItem[] {
 }
 
 function buildOrchestratorInstructions(storeName: string): string {
-  return `You are the hidden router for the Yellow Jersey Store Agent for "${storeName}".
+  return `You are the only hidden router for the Yellow Jersey Store Agent for "${storeName}".
 Return only the structured routing decision required by the schema. Do not answer the user.
 
+This is the production routing gate. There is no deterministic router before you. A wrong route can hide the right tools from the executor, so classify from the full conversation with extreme care.
+
+Decision process:
+1. Read the latest user message and the prior conversation, including private structured context appended to prior assistant messages.
+2. Identify the work needed: private Lightspeed/store data, storefront proposal/action, Gmail, public web/current facts, strategic analysis, or no tools.
+3. Pick exactly one route from the schema and set needs_plan according to the planning rules.
+4. Use a short reason that names the decisive evidence, e.g. "customer profile lookup", "private price plus market comparison", "named customer bike fitment".
+
 Routes:
-- casual_chat: greetings, thanks, short follow-ups, meta questions like "what can you do?", basic clarification, and normal chat that does not need store data, Lightspeed data, web search, Gmail, or a storefront proposal.
-- lightspeed_sql: any request about Lightspeed sales, customers, sold products, sale transactions, revenue, profit, margin, cost, services sold, product purchasers, current inventory/stock availability, or live work orders / repairs / service jobs (open, in-progress, finished, pickup-ready, work order details).
-- storefront_action: requests to read/change Yellow Jersey storefront carousels, discounts, product prices, store product lists, staging Lightspeed product brand/category write-back proposals (including creating new Lightspeed categories), connecting or checking Gmail/Composio email, searching inbox, or sending email.
-- web_research: requests requiring current public external information, market facts, product compatibility, standards, events, suppliers, or internet lookup.
-- business_analysis: broad strategy requests about making the business more profitable, making more money, improving revenue, improving margin, finding opportunities, reducing wasted cash, reducing stale stock, or understanding what actions would improve the business.
-- mixed: requests combining multiple non-casual routes.
-- unsupported: off-topic requests outside store management, Lightspeed reporting, and cycling/store research.
+- casual_chat: greetings, thanks, basic capability questions, or normal chat that does not need store data, Lightspeed data, web search, Gmail, or a storefront proposal. Do not use casual_chat for any customer, bike, work-order, sales, inventory, email, pricing, compatibility, or action request.
+- lightspeed_sql: any request about Lightspeed sales, customers, customer profiles/history/lifetime spend/service history/bikes, sold products, sale transactions, revenue, profit, margin, cost, services sold, product purchasers, current inventory/stock availability, or live/historical work orders, repairs, service jobs, public notes, internal notes, labour lines, parts, statuses, or dates.
+- storefront_action: requests to read/change Yellow Jersey storefront carousels, discounts, product prices, store product lists, stage Lightspeed product brand/category write-back proposals, create new Lightspeed categories, connect/check Gmail/Composio email, search inbox, draft email, or send email.
+- web_research: requests requiring current public external information, market facts, product compatibility for a known public bike/product, standards, events, suppliers, recalls, MSRP/RRP, manuals, or internet lookup.
+- business_analysis: broad strategy requests about making the bike store more profitable, making more money, improving revenue, improving margin, ranking opportunities, reducing wasted cash, reducing stale stock, or deciding what actions would improve the business.
+- mixed: requests combining multiple non-casual routes, especially private store/customer data plus public web research.
+- unsupported: off-topic requests outside store management, Lightspeed reporting, Gmail/store operations, and cycling/store research.
+
+Critical routing doctrine:
+- Customer profile/history: "tell me about customer X", "customer X", "tell me about X" when X looks like a person, "what do we know about X", "pull up X", "profile for X", "history for X", lifetime spend, service history, work-order history, purchase history, or bikes owned = lightspeed_sql with needs_plan=false. The executor has a direct customer-profile flow after this route.
+- Customer bike ownership: "what bikes does X have/own/ride/use", "X's bikes", "what is X's bike", or "which bike is this customer's" = lightspeed_sql with needs_plan=false.
+- Customer bike fitment: if the question asks what part/standard/pad/tyre/freehub/bottom bracket/BB/headset/seatpost/axle/rotor/bearing a named customer or prior customer context needs, route=mixed. It needs private customer/bike/work-order evidence first and public official compatibility evidence second. Use needs_plan=false unless the user asks for a broad multi-step comparison.
+- Known public bike fitment: if the exact bike/model is already provided and no store/customer context is needed, route=web_research with needs_plan=false.
+- Work orders: any workorder/repair/service-job question, including "open", "finished", "archived", "today", "history", "notes", "internal notes", "what happened", "what did we do", or customer-specific work orders = lightspeed_sql. Use needs_plan=false unless it asks for broad multi-metric analysis.
+- Store reporting: stock, inventory, QOH, on hand, available, sold, sales, revenue, GP, margin, cost, average sale, best customers, top customers, who bought, product purchasers = lightspeed_sql. Use needs_plan=false for a narrow report.
+- Business strategy: "how can we make more money", "how do we improve profit/revenue/margin", "what opportunities should we focus on", "where is cash tied up", "dead/stale stock strategy" = business_analysis with needs_plan=true.
+- Storefront operations: make/create/rename/reorder/show/hide/move/feature a carousel, collection, homepage section, discount, sale, markdown, retail price, brand, category, product list, or approval proposal = storefront_action. Use needs_plan=false for a concrete single action; true for broad campaigns/homepage strategy.
+- Gmail/email: connect Gmail/Composio, check connection, search/summarise inbox, find supplier/customer emails, earliest/latest contact, invoices, issue/warranty correspondence, draft, reply, or send = storefront_action with needs_plan=true.
+- Market/competitor pricing: private "our price/stock/products" plus competitors/market/online/web price = mixed. Pure public market question without store data = web_research.
+- Visual lookup: "show me/photo/picture/what does it look like" for our stock/inventory = lightspeed_sql; for an external bike/product = web_research.
+- Current external facts: latest/current/new model/2025/2026/released/recall/supplier/distributor/MSRP/RRP/manual/standard = web_research unless private store data is also required.
 
 Continuation rule:
-- Route the latest user message in the context of the full conversation, including private structured context appended to prior assistant messages. Short follow-ups, pronouns, "this/that/these", "she/he/they", "that email", "reply to it", or "send that" inherit the route implied by the referenced prior store data, work order, product set, customer, gmail message, or web result. Do not classify a follow-up as casual_chat just because it is short.
+- Route the latest user message in the context of the full conversation. Short follow-ups, pronouns, "this/that/these", "same", "she/he/they", "that bike", "that customer", "that workorder", "that email", "reply to it", or "send that" inherit the route implied by the referenced prior structured context. Never classify a follow-up as casual_chat merely because it is short.
+- If prior context contains a resolved customer profile/workorder and the user asks "what about his bike?", "what did we do?", "when was that?", "tell me more", or similar, keep the relevant Lightspeed/mixed/Gmail route.
 
 Routing examples:
-- "How does our pricing compare to other stores/competitors/market?" = mixed, because it needs store pricing data plus live web research.
+- "Thanks" = casual_chat, needs_plan=false.
+- "What can you do?" = casual_chat, needs_plan=false.
+- "tell me about customer Jack Lloyd" = lightspeed_sql, needs_plan=false.
+- "customer Jack Lloyd" = lightspeed_sql, needs_plan=false.
+- "tell me about Jack Lloyd" = lightspeed_sql, needs_plan=false when Jack Lloyd is likely a customer/person, not a public bike model.
+- "what do we know about Sarah Down?" = lightspeed_sql, needs_plan=false.
+- "what bikes does Sarah Down have?" = lightspeed_sql, needs_plan=false.
+- "show me all workorders for Jack Lloyd" = lightspeed_sql, needs_plan=false.
+- "what internal notes are on his workorders?" after a customer/workorder answer = lightspeed_sql, needs_plan=false.
+- "what BB does Jack Lloyd need on his bike?" = mixed, needs_plan=false.
+- "What bottom bracket does Jackson Trotman need from his workorder?" = mixed, needs_plan=false.
+- "What bottom bracket does a Trek Madone Gen 8 need?" = web_research, needs_plan=false.
+- "What does a Trek Madone Gen 8 look like?" = web_research, needs_plan=false.
+- "Do we have Shimano chains in stock?" = lightspeed_sql, needs_plan=false.
+- "Who bought GP5000 tyres last year?" = lightspeed_sql, needs_plan=false.
+- "How can we make more money this quarter?" = business_analysis, needs_plan=true.
+- "How does our pricing compare to other stores/competitors/market?" = mixed, needs_plan=true.
 - "Are we overpriced on these products?" = mixed when it references competitors, market, online, or other stores; storefront_action if it only asks about internal cost/margin.
-- "What bottom bracket does Jackson Trotman need on this bike?" = mixed, because it needs private customer sales/work-order history to identify the bike, then public compatibility research.
-- "What brake pads does this customer's Trek need?" = mixed when customer context/history is needed; web_research only if the exact bike/model is already explicitly provided in the conversation.
-- "Connect my Gmail" or "connect composio gmail" = storefront_action with needs_plan=true (plan get_gmail_connection_status).
-- Any email/inbox/Gmail question (search, summarise, counts, earliest/latest contact, supplier correspondence, invoices, send, draft) = storefront_action with needs_plan=true — the planner must sequence Gmail tool calls before the executor runs.
+- "Make a Summer Sale carousel for all Clif bars" = storefront_action, needs_plan=false.
+- "Build a full homepage campaign for winter servicing" = storefront_action, needs_plan=true.
+- "Connect my Gmail" = storefront_action, needs_plan=true.
+- "Find the earliest email from Trek's rep and draft a reply" = storefront_action, needs_plan=true.
+- "Can you help with that?" = inherit from prior context; return null is not allowed by the schema, so choose the prior relevant route and planning flag.
 
 Planning rule:
 - route=casual_chat must have needs_plan=false.
 - route=business_analysis must have needs_plan=true.
-- route=lightspeed_sql should have needs_plan=false for narrow direct reporting, stock, customer, product, sales, cost, profit, margin, inventory, or SQL questions that can be answered with one focused tool call/query.
+- route=lightspeed_sql should have needs_plan=false for narrow direct reporting, stock, customer, product, sales, cost, profit, margin, inventory, work-order, customer-profile, or SQL questions that can be answered with one focused tool/query or one direct profile/workorder flow.
 - route=lightspeed_sql should have needs_plan=true only for complex multi-pass analysis, cross-metric diagnosis, trend/comparison work, or broad questions needing several SQL lenses.
 - route=storefront_action should have needs_plan=false for direct carousel, discount, price, product, or Lightspeed brand/category write-back proposals only.
-- ANY Gmail/email/inbox task (connect, search, summarise, send, draft, rep/contact research) under storefront_action MUST have needs_plan=true — never needs_plan=false for Gmail.
+- ANY Gmail/email/inbox task under storefront_action MUST have needs_plan=true.
 - route=storefront_action should have needs_plan=true for broad multi-step merchandising/homepage/campaign work and for all Gmail tasks.
 - route=web_research must have needs_plan=false. Execute web search directly.
-- route=mixed should have needs_plan=true only when the mixed request needs deliberate sequencing across private store data and web research, or is otherwise complex.
+- route=mixed should have needs_plan=true only when the mixed request needs deliberate sequencing across private store data and web research, or is otherwise complex. Standard customer-bike fitment should usually be mixed with needs_plan=false because the executor has a direct diagnostic workflow.
 
-Be conservative: if the request might require private store data, Lightspeed data, a proposal, or web search, do not classify it as casual_chat.`
+Be conservative: if a request might require private store data, Lightspeed data, a proposal, Gmail, or web search, do not classify it as casual_chat.`
 }
 
 async function createGenieOrchestrationDecision(args: {
   storeName: string
+  userId: string
+  requestId: string
   inputMessages: AgentInputItem[]
   signal: AbortSignal
 }): Promise<GenieOrchestrationDecision> {
@@ -534,7 +979,14 @@ async function createGenieOrchestrationDecision(args: {
   })
 
   try {
-    const result = await storeAgentRunner.run(orchestratorAgent, args.inputMessages, {
+    const runner = createGenieRunner({
+      requestId: args.requestId,
+      userId: args.userId,
+      storeName: args.storeName,
+      stage: 'router',
+      workflowName: 'Yellow Jersey Genie Router',
+    })
+    const result = await runner.run(orchestratorAgent, args.inputMessages, {
       maxTurns: 1,
       signal: args.signal,
     })
@@ -586,10 +1038,12 @@ Planning rules:
   - genie_lightspeed_inventory columns: ${GENIE_LIGHTSPEED_INVENTORY_SQL_SCHEMA.join(', ')}.
 - Do not plan live Lightspeed API calls for supported sales/customer/product reporting.
 - For current stock/inventory questions, use genie_lightspeed_inventory or search_lightspeed_inventory. Brand is brand_name; supplier is supplier_name. Do not call the live Lightspeed API for Genie inventory answers.
-- For customer contact details, note that phone/email/address need a future customer/contact table.
+- For broad customer profile/history requests, plan get_lightspeed_customer_profile first. It is the exception to the reporting rule because it gathers live contact details, total spend, bikes, recent sales, top items, and work orders with public/internal notes.
+- For any workorder / repair / service-job question, plan list_lightspeed_workorders or get_lightspeed_workorder with include_details:true unless recent private structured workorder context is sufficient. The executor must inspect note, internal_note, warranty, labour line notes, item descriptions, item notes, serialized_id, sale_id, customer details, status, and dates before answering.
+- For customer contact details, use search_lightspeed_customers or get_lightspeed_customer_profile; the live customer API can return phone/email/address when the Contact relation is available.
 - For strategic profitability analysis, include concrete phases for: revenue and gross profit trend, category/service contribution, product contribution, low-margin/high-volume lines, discount leakage, average sale value, customer concentration/repeat spend, and stale/cash-tied-up inventory from genie_lightspeed_inventory. It is acceptable to plan many focused SQL queries over multiple turns.
 - For discount-candidate analysis, plan find_discount_candidates first with the requested product count. Do not plan 20-30 candidates for a 10-product request. The discount candidate tool already returns SKU/name/brand/category, current price, unit cost, margin, QOH, stale movement, age, and recent sales. Plan a second SQL check only if the requested answer needs a field that tool does not return. For competitor pricing, plan batched web_search calls for only the final selected products and stop once each item has a good exact/comparable price or a clear "not found quickly" note. Do not plan propose_discount unless the user provided a discount percent and asked to stage/apply it.
-- For customer-specific bike fitment or compatibility questions, plan a grounded diagnostic workflow: resolve the customer by name with search_lightspeed_customers; inspect broad customer sales history with get_lightspeed_customer_sales for bike purchases and prior parts; inspect work orders with list_lightspeed_workorders using the customer name and include_details:true, scope all if needed; infer the most likely bike/model/year and confidence; then use web_search for the exact compatibility standard/part. If multiple plausible bikes remain, final_answer_shape must be clarifying_question.
+- For customer-specific bike fitment or compatibility questions, plan this exact grounded diagnostic workflow: call resolve_customer_bike_context with the customer/workorder clue and exact compatibility question; inspect its customer_bikes from live Lightspeed Serialized records, likely_bikes, workorders, sales history, part_or_standard_evidence, and official_research_queries; treat Serialized.description as the strongest usual customer-bike clue while remembering it can be incomplete/free text; then use hosted web_search using official_research_queries and prefer official manufacturer manuals, technical PDFs, service docs, standards bodies, or supplier technical pages; optionally call consult_cycling_compatibility_specialist after official source notes are gathered; call verify_question_answered. If multiple plausible bikes remain, final_answer_shape should still be summary: answer conditionally for each plausible bike/model, label confidence, and ask one sharp follow-up only as the final disambiguation check.
 - For "best customers", "top customers", or "highest spenders", plan one SQL query ranked by gross_sales unless the user asks for frequency or average value.
 - For "last 3 years" or similar relative ranges, use ${STORE_TIME_ZONE} and set start_date to the same month/day three years before ${today}; set end_date to ${today}.
 - For customer rankings, the correct grain is: aggregate line rows into distinct sale transactions first, then aggregate those sale totals by customer_id/customer_full_name. Exclude walk-in/unassigned customers unless the user asks to include them.
@@ -607,6 +1061,8 @@ ${GMAIL_SEARCH_PLAYBOOK}`
 
 async function createGenieExecutionPlan(args: {
   storeName: string
+  userId: string
+  requestId: string
   inputMessages: AgentInputItem[]
   route: GenieOrchestrationDecision['route']
   signal: AbortSignal
@@ -628,7 +1084,15 @@ async function createGenieExecutionPlan(args: {
   })
 
   try {
-    const result = await storeAgentRunner.run(plannerAgent, args.inputMessages, {
+    const runner = createGenieRunner({
+      requestId: args.requestId,
+      userId: args.userId,
+      storeName: args.storeName,
+      route: args.route,
+      stage: 'planner',
+      workflowName: 'Yellow Jersey Genie Planner',
+    })
+    const result = await runner.run(plannerAgent, args.inputMessages, {
       maxTurns: 1,
       signal: args.signal,
     })
@@ -4422,6 +4886,144 @@ function numericSqlCell(row: SqlResultRow, key: string): number | null {
   return toOptionalNum(row[key])
 }
 
+const GENIE_PRODUCT_CARD_LIMIT = 6
+const GENIE_PRODUCT_CARD_SCAN_LIMIT = 20
+
+interface InventoryProductCardMatch {
+  item_id: string
+  name: string
+  price?: number
+  category?: string | null
+  brand?: string | null
+  primary_image_url?: string | null
+  total_qoh?: number
+  is_in_stock?: boolean | null
+  system_sku?: string | null
+  custom_sku?: string | null
+  confidence?: string
+}
+
+function shouldAutoEmitInventoryProductCards(latestUserMessage: string): boolean {
+  const text = normalizeText(latestUserMessage)
+  if (!text) return false
+
+  const inventoryIntent = /\b(do we have|have any|in stock|stock|available|availability|on hand|qoh|sellable|carry|got any|price|how much|what .* cost)\b/.test(text)
+  const analyticsIntent = /\b(top|rank|ranking|aggregate|breakdown|trend|revenue|profit|margin|gross profit|stale|cash tied|sold|sales history|last month|last quarter|last year|all products|every product)\b/.test(text)
+
+  return inventoryIntent && !analyticsIntent
+}
+
+function firstSqlText(row: SqlResultRow, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = row[key]
+    if (value == null) continue
+    const text = String(value).trim()
+    if (text) return text
+  }
+  return null
+}
+
+function firstSqlNumber(row: SqlResultRow, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = toOptionalNum(row[key])
+    if (value != null) return value
+  }
+  return undefined
+}
+
+function firstSqlBoolean(row: SqlResultRow, keys: string[]): boolean | null {
+  for (const key of keys) {
+    const value = row[key]
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase().trim()
+      if (['true', 'yes', '1'].includes(normalized)) return true
+      if (['false', 'no', '0'].includes(normalized)) return false
+    }
+  }
+  return null
+}
+
+function inventoryPreviewMatchesFromSqlRows(rows: SqlResultRow[]): InventoryProductCardMatch[] {
+  return rows
+    .slice(0, GENIE_PRODUCT_CARD_SCAN_LIMIT)
+    .map(row => {
+      const itemId = firstSqlText(row, ['item_id', 'lightspeed_item_id'])
+      const name = firstSqlText(row, ['description', 'name', 'product_name', 'product'])
+      if (!itemId || !name) return null
+
+      const totalQoh = firstSqlNumber(row, ['total_qoh', 'qoh', 'quantity_on_hand', 'quantity'])
+      const isInStock = firstSqlBoolean(row, ['is_in_stock', 'in_stock']) ?? (totalQoh != null ? totalQoh > 0 : null)
+
+      return {
+        item_id: itemId,
+        name,
+        price: firstSqlNumber(row, ['online_price', 'default_price', 'price', 'current_price', 'retail']),
+        category: firstSqlText(row, ['category_path', 'category', 'category_name']),
+        brand: firstSqlText(row, ['brand_name', 'brand', 'manufacturer']),
+        primary_image_url: firstSqlText(row, ['primary_image_url', 'image_url']),
+        total_qoh: totalQoh,
+        is_in_stock: isInStock,
+        system_sku: firstSqlText(row, ['system_sku', 'sku']),
+        custom_sku: firstSqlText(row, ['custom_sku']),
+        confidence: 'strong',
+      }
+    })
+    .filter((match): match is NonNullable<typeof match> => match != null)
+}
+
+function productLinksFromPreviews(previews: Array<{
+  id: string
+  lightspeed_item_id?: string | null
+  name: string
+  sku: string | null
+  product_url: string | null
+}>) {
+  return previews.map(preview => ({
+    id: preview.id,
+    lightspeed_item_id: preview.lightspeed_item_id ?? null,
+    name: preview.name,
+    sku: preview.sku,
+    product_url: preview.product_url,
+    has_live_listing: Boolean(preview.product_url),
+  }))
+}
+
+async function maybeEmitInventoryProductCards(args: {
+  supabase: SupabaseClient
+  userId: string
+  latestUserMessage: string
+  query: string
+  matches: InventoryProductCardMatch[]
+  emit: Emit
+  force?: boolean
+}) {
+  const showCards = args.force || shouldAutoEmitInventoryProductCards(args.latestUserMessage)
+  const cardMatches = args.matches.filter(match => (
+    match.is_in_stock === true || (match.total_qoh ?? 0) > 0
+  ))
+  if (
+    !shouldEmitStoreProductPreviews(
+      args.query || args.latestUserMessage,
+      Math.min(cardMatches.length, GENIE_PRODUCT_CARD_LIMIT),
+      cardMatches.filter(match => Boolean(match.primary_image_url)).length,
+      showCards,
+    )
+  ) {
+    return []
+  }
+
+  const previews = await buildInventoryProductPreviews(args.supabase, args.userId, cardMatches, {
+    inStockOnly: true,
+    requireApprovedImage: true,
+  })
+  const visiblePreviews = previews.filter(preview => (
+    preview.in_stock === true && Boolean(preview.image)
+  ))
+  if (visiblePreviews.length > 0) args.emit({ event: 'products', products: visiblePreviews })
+  return visiblePreviews
+}
+
 async function executeGeneratedLightspeedSql(userId: string, sql: string, limit: number) {
   const admin = createServiceRoleClient()
   const { data, error } = await admin.rpc(GENIE_LIGHTSPEED_SQL_RPC, {
@@ -7931,6 +8533,7 @@ async function runLightspeedSqlQuery(
   },
   emit: Emit,
   visualPrefs: VisualPrefs,
+  latestUserMessage: string,
 ) {
   const sql = normalizeLightspeedReportSql(args.sql)
   const queryId = randomUUID()
@@ -8023,6 +8626,20 @@ async function runLightspeedSqlQuery(
   const chart = buildGenericSqlChart(rows, args.visual)
   emitVisuals(emit, visualPrefs, { table, chart, pivot_table: pivotTable })
 
+  const inventoryCardMatches = /\bgenie_lightspeed_inventory\b/i.test(sql)
+    ? inventoryPreviewMatchesFromSqlRows(rows)
+    : []
+  const inventoryProductPreviews = inventoryCardMatches.length > 0
+    ? await maybeEmitInventoryProductCards({
+        supabase: admin,
+        userId,
+        latestUserMessage,
+        query: args.purpose,
+        matches: inventoryCardMatches,
+        emit,
+      })
+    : []
+
   emitAnalysisQuery(emit, {
     id: queryId,
     tool_name: 'run_lightspeed_sql_query',
@@ -8043,6 +8660,8 @@ async function runLightspeedSqlQuery(
     row_limit: limit,
     limit_applied: limitApplied,
     rows,
+    product_links: productLinksFromPreviews(inventoryProductPreviews),
+    product_cards_emitted: inventoryProductPreviews.length > 0,
     available_columns: GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS,
     table_emitted: Boolean(table),
     pivot_table_emitted: Boolean(pivotTable),
@@ -8196,6 +8815,7 @@ LIMIT ${limit}
     },
     emit,
     visualPrefs,
+    'discount candidate analysis',
   )
 
   if (result.status !== 'ok') return result
@@ -8219,11 +8839,1710 @@ LIMIT ${limit}
   }
 }
 
+const BIKE_BRAND_NAMES = [
+  'avanti',
+  'bianchi',
+  'bmc',
+  'cannondale',
+  'canyon',
+  'cervelo',
+  'colnago',
+  'cube',
+  'factor',
+  'focus',
+  'giant',
+  'kona',
+  'lapierre',
+  'liv',
+  'malvern star',
+  'marin',
+  'merida',
+  'norco',
+  'orbea',
+  'pinarello',
+  'pivot',
+  'polygon',
+  'rocky mountain',
+  'salsa',
+  'santa cruz',
+  'scott',
+  'specialized',
+  'surly',
+  'trek',
+  'wilier',
+  'yeti',
+]
+
+const BIKE_CONTEXT_STOP_WORDS = new Set([
+  'and',
+  'bike',
+  'bikes',
+  'bicycle',
+  'bicycles',
+  'bottom',
+  'bracket',
+  'does',
+  'for',
+  'need',
+  'needs',
+  'the',
+  'their',
+  'this',
+  'what',
+  'which',
+  'with',
+  'workorder',
+  'workorders',
+])
+
+function compactBikeEvidenceText(value: unknown, maxLength = 220): string {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim()
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`
+}
+
+async function runInternalGenieSqlRows(args: {
+  userId: string
+  purpose: string
+  sql: string
+  limit: number
+  emit: Emit
+  toolName?: string
+}): Promise<{ status: 'ok'; rows: SqlResultRow[]; row_count: number; limit_applied: boolean } | { status: 'error'; rows: []; error: string }> {
+  const toolName = args.toolName ?? 'resolve_customer_bike_context'
+  const sql = normalizeLightspeedReportSql(args.sql)
+  const queryId = randomUUID()
+  emitAnalysisQuery(args.emit, {
+    id: queryId,
+    tool_name: toolName,
+    purpose: args.purpose,
+    sql,
+    status: 'running',
+  })
+
+  const validationError = validateLightspeedReportSql(sql)
+  if (validationError) {
+    emitAnalysisQuery(args.emit, {
+      id: queryId,
+      tool_name: toolName,
+      purpose: args.purpose,
+      sql,
+      status: 'rejected',
+      error: validationError,
+    })
+    return { status: 'error', rows: [], error: validationError }
+  }
+
+  try {
+    const result = await executeGeneratedLightspeedSql(args.userId, sql, clampSqlLimit(args.limit))
+    emitAnalysisQuery(args.emit, {
+      id: queryId,
+      tool_name: toolName,
+      purpose: args.purpose,
+      sql,
+      status: 'ok',
+      row_count: result.row_count,
+    })
+    return {
+      status: 'ok',
+      rows: result.rows,
+      row_count: result.row_count,
+      limit_applied: result.limit_applied,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    emitAnalysisQuery(args.emit, {
+      id: queryId,
+      tool_name: toolName,
+      purpose: args.purpose,
+      sql,
+      status: 'error',
+      error: message,
+    })
+    return { status: 'error', rows: [], error: message }
+  }
+}
+
+function customerSearchTokens(customerQuery: string): string[] {
+  return queryTokens(customerQuery)
+    .filter(token => token.length > 1 && !BIKE_CONTEXT_STOP_WORDS.has(token))
+    .slice(0, 6)
+}
+
+function buildCustomerCandidateSql(customerQuery: string): string {
+  const tokens = customerSearchTokens(customerQuery)
+  const normalized = normalizeText(customerQuery)
+  const tokenFilters = tokens.length
+    ? tokens.map(token => `LOWER(customer_full_name) LIKE ${sqlLiteral(`%${token}%`)}`).join(' AND ')
+    : `LOWER(customer_full_name) LIKE ${sqlLiteral(`%${normalized}%`)}`
+
+  return `
+SELECT
+  customer_id,
+  NULLIF(customer_full_name, '') AS customer_full_name,
+  COUNT(DISTINCT sale_id) AS sale_count,
+  ROUND(COALESCE(SUM(total), 0)::numeric, 2) AS gross_sales,
+  MAX(complete_time) AS last_sale_at
+FROM ${GENIE_LIGHTSPEED_SQL_VIEW}
+WHERE customer_id IS NOT NULL
+  AND customer_id <> ''
+  AND customer_full_name IS NOT NULL
+  AND ${tokenFilters}
+GROUP BY customer_id, customer_full_name
+ORDER BY
+  CASE WHEN LOWER(customer_full_name) = ${sqlLiteral(normalized)} THEN 0 ELSE 1 END,
+  last_sale_at DESC NULLS LAST,
+  sale_count DESC
+LIMIT 8`
+}
+
+function buildCustomerSalesHistorySql(customerId: string): string {
+  return `
+SELECT
+  complete_time::date AS sale_date,
+  complete_time,
+  sale_id,
+  ticket_number,
+  item_id,
+  sku,
+  description,
+  category,
+  quantity,
+  total
+FROM ${GENIE_LIGHTSPEED_SQL_VIEW}
+WHERE customer_id = ${sqlLiteral(customerId)}
+ORDER BY complete_time DESC NULLS LAST, sale_id DESC
+LIMIT 300`
+}
+
+type CustomerBikeLookupCandidate = {
+  customer_id: string
+  customer_full_name: string | null
+  company: string | null
+  source: 'lightspeed_customer_api' | 'sales_sql'
+  sale_count: number | null
+  gross_sales: number | null
+  last_sale_at: string | null
+}
+
+type SerializedBikeEvidence = LightspeedCustomerBike & {
+  source: 'customer_serialized' | 'workorder_serialized'
+  linkedWorkorderIds: string[]
+}
+
+type BikeContextCandidate = {
+  source: 'customer_serialized' | 'workorder_serialized' | 'sales_history' | 'workorder'
+  label: string
+  brand: string | null
+  score: number
+  evidence: string
+  serialized_id?: string | null
+  serial?: string | null
+  item_id?: string | null
+  updated_at?: string | null
+  linked_workorder_ids?: string[]
+  sale_date?: string | null
+  sale_id?: string | null
+  category?: string | null
+  sku?: string | null
+  workorder_id?: string | null
+  status_name?: string | null
+}
+
+function customerNameFromLightspeedCustomer(customer: LightspeedCustomer): string {
+  const name = [customer.firstName, customer.lastName]
+    .map(part => String(part ?? '').trim())
+    .filter(Boolean)
+    .join(' ')
+  return name || String(customer.company ?? '').trim() || `Customer ${String(customer.customerID ?? '').trim()}`
+}
+
+function customerCandidateFromLightspeedCustomer(customer: LightspeedCustomer): CustomerBikeLookupCandidate | null {
+  const customerId = String(customer.customerID ?? '').trim()
+  if (!customerId) return null
+  return {
+    customer_id: customerId,
+    customer_full_name: customerNameFromLightspeedCustomer(customer),
+    company: String(customer.company ?? '').trim() || null,
+    source: 'lightspeed_customer_api',
+    sale_count: null,
+    gross_sales: null,
+    last_sale_at: null,
+  }
+}
+
+function customerCandidateFromSalesRow(row: SqlResultRow): CustomerBikeLookupCandidate | null {
+  const customerId = String(row.customer_id ?? '').trim()
+  if (!customerId) return null
+  return {
+    customer_id: customerId,
+    customer_full_name: String(row.customer_full_name ?? '').trim() || null,
+    company: null,
+    source: 'sales_sql',
+    sale_count: Number(row.sale_count) || 0,
+    gross_sales: Number(row.gross_sales) || 0,
+    last_sale_at: String(row.last_sale_at ?? '').trim() || null,
+  }
+}
+
+function splitCustomerNameForLightspeed(customerQuery: string): { firstName: string | null; lastName: string | null } {
+  const tokens = customerQuery
+    .replace(/[^A-Za-z0-9'\-\s]+/g, ' ')
+    .split(/\s+/)
+    .map(token => token.trim())
+    .filter(token => token.length > 1 && !/\d/.test(token) && !BIKE_CONTEXT_STOP_WORDS.has(normalizeText(token)))
+    .slice(0, 4)
+  if (tokens.length === 0) return { firstName: null, lastName: null }
+  if (tokens.length === 1) return { firstName: tokens[0], lastName: tokens[0] }
+  return {
+    firstName: tokens[0],
+    lastName: tokens[tokens.length - 1],
+  }
+}
+
+function scoreCustomerLookupCandidate(candidate: CustomerBikeLookupCandidate, customerQuery: string, index: number): number {
+  const query = normalizeText(customerQuery)
+  const name = normalizeText(`${candidate.customer_full_name ?? ''} ${candidate.company ?? ''}`)
+  const tokens = customerSearchTokens(customerQuery)
+  let score = candidate.source === 'lightspeed_customer_api' ? 30 : 10
+  if (name && name === query) score += 100
+  if (tokens.length > 0 && tokens.every(token => name.includes(token))) score += 50
+  if (candidate.sale_count) score += Math.min(candidate.sale_count, 12)
+  return score - index * 0.01
+}
+
+function mergeCustomerLookupCandidates(args: {
+  apiCandidates: CustomerBikeLookupCandidate[]
+  salesCandidates: CustomerBikeLookupCandidate[]
+  customerQuery: string
+}) {
+  const byId = new Map<string, CustomerBikeLookupCandidate>()
+  for (const candidate of [...args.apiCandidates, ...args.salesCandidates]) {
+    const previous = byId.get(candidate.customer_id)
+    if (!previous) {
+      byId.set(candidate.customer_id, candidate)
+      continue
+    }
+    byId.set(candidate.customer_id, {
+      ...previous,
+      customer_full_name: previous.customer_full_name ?? candidate.customer_full_name,
+      company: previous.company ?? candidate.company,
+      source: previous.source === 'lightspeed_customer_api' ? previous.source : candidate.source,
+      sale_count: previous.sale_count ?? candidate.sale_count,
+      gross_sales: previous.gross_sales ?? candidate.gross_sales,
+      last_sale_at: previous.last_sale_at ?? candidate.last_sale_at,
+    })
+  }
+
+  return Array.from(byId.values())
+    .map((candidate, index) => ({
+      candidate,
+      score: scoreCustomerLookupCandidate(candidate, args.customerQuery, index),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .map(({ candidate }) => candidate)
+}
+
+async function fetchLightspeedCustomerCandidates(userId: string, customerQuery: string): Promise<CustomerBikeLookupCandidate[]> {
+  const cleaned = customerQuery.trim()
+  if (!cleaned) return []
+
+  const client = createLightspeedClient(userId)
+  const candidates: CustomerBikeLookupCandidate[] = []
+  const seen = new Set<string>()
+
+  async function addCustomers(customersPromise: Promise<LightspeedCustomer[]>) {
+    const customers = await customersPromise.catch(() => [])
+    for (const customer of customers) {
+      const candidate = customerCandidateFromLightspeedCustomer(customer)
+      if (!candidate || seen.has(candidate.customer_id)) continue
+      seen.add(candidate.customer_id)
+      candidates.push(candidate)
+    }
+  }
+
+  if (/^\d+$/.test(cleaned)) {
+    const customer = await client.getCustomer(cleaned, { load_relations: '["Contact"]' }).catch(() => null)
+    const candidate = customer ? customerCandidateFromLightspeedCustomer(customer) : null
+    return candidate ? [candidate] : []
+  }
+
+  const { firstName, lastName } = splitCustomerNameForLightspeed(cleaned)
+  if (firstName && lastName && firstName !== lastName) {
+    await addCustomers(client.getCustomers({ firstName, lastName, limit: 25 }))
+  }
+  if (lastName) {
+    const fallback = await client.getCustomers({ lastName, limit: 25 }).catch(() => [])
+    const firstToken = firstName ? normalizeText(firstName) : ''
+    for (const customer of fallback) {
+      const name = normalizeText(customerNameFromLightspeedCustomer(customer))
+      if (firstToken && !name.includes(firstToken)) continue
+      const candidate = customerCandidateFromLightspeedCustomer(customer)
+      if (!candidate || seen.has(candidate.customer_id)) continue
+      seen.add(candidate.customer_id)
+      candidates.push(candidate)
+    }
+  }
+  if (candidates.length === 0 && firstName) {
+    await addCustomers(client.getCustomers({ firstName, limit: 25 }))
+  }
+
+  return candidates
+}
+
+async function fetchCustomerSerializedBikeEvidence(userId: string, customerId: string): Promise<{
+  status: 'ok' | 'error'
+  bikes: SerializedBikeEvidence[]
+  error?: string
+}> {
+  if (!customerId) return { status: 'ok', bikes: [] }
+  try {
+    const client = createLightspeedClient(userId)
+    const bikes = await client.getCustomerBikes(customerId)
+    return {
+      status: 'ok',
+      bikes: bikes.map(bike => ({
+        ...bike,
+        source: 'customer_serialized' as const,
+        linkedWorkorderIds: [],
+      })),
+    }
+  } catch (error) {
+    return {
+      status: 'error',
+      bikes: [],
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+async function fetchWorkorderSerializedBikeEvidence(args: {
+  userId: string
+  workorders: Awaited<ReturnType<typeof listGenieWorkorders>>['workorders']
+}): Promise<SerializedBikeEvidence[]> {
+  const serializedIds = Array.from(new Set(
+    args.workorders
+      .map(workorder => String(workorder.serialized_id ?? '').trim())
+      .filter(id => id && id !== '0')
+  )).slice(0, 8)
+  if (serializedIds.length === 0) return []
+
+  const workorderIdsBySerializedId = new Map<string, string[]>()
+  for (const workorder of args.workorders) {
+    const serializedId = String(workorder.serialized_id ?? '').trim()
+    if (!serializedId || serializedId === '0') continue
+    const ids = workorderIdsBySerializedId.get(serializedId) ?? []
+    ids.push(workorder.workorder_id)
+    workorderIdsBySerializedId.set(serializedId, ids)
+  }
+
+  const client = createLightspeedClient(args.userId)
+  const results = await Promise.all(
+    serializedIds.map(async serializedId => ({
+      serializedId,
+      bike: await client.getSerializedBike(serializedId).catch(() => null),
+    })),
+  )
+
+  return results.flatMap(({ serializedId, bike }) => {
+    if (!bike) {
+      return [
+        {
+          serializedId,
+          label: null,
+          serial: null,
+          itemId: null,
+          saleLineId: null,
+          customerId: null,
+          colorName: null,
+          sizeName: null,
+          updatedAt: null,
+          source: 'workorder_serialized' as const,
+          linkedWorkorderIds: workorderIdsBySerializedId.get(serializedId) ?? [],
+        } satisfies SerializedBikeEvidence,
+      ]
+    }
+    return [
+      {
+        ...bike,
+        source: 'workorder_serialized' as const,
+        linkedWorkorderIds: workorderIdsBySerializedId.get(serializedId) ?? [],
+      } satisfies SerializedBikeEvidence,
+    ]
+  })
+}
+
+function mergeSerializedBikeEvidence(bikes: SerializedBikeEvidence[]): SerializedBikeEvidence[] {
+  const byId = new Map<string, SerializedBikeEvidence>()
+  for (const bike of bikes) {
+    const previous = byId.get(bike.serializedId)
+    if (!previous) {
+      byId.set(bike.serializedId, bike)
+      continue
+    }
+    byId.set(bike.serializedId, {
+      ...previous,
+      source: previous.source === 'customer_serialized' ? previous.source : bike.source,
+      label: previous.label ?? bike.label,
+      serial: previous.serial ?? bike.serial,
+      itemId: previous.itemId ?? bike.itemId,
+      saleLineId: previous.saleLineId ?? bike.saleLineId,
+      customerId: previous.customerId ?? bike.customerId,
+      colorName: previous.colorName ?? bike.colorName,
+      sizeName: previous.sizeName ?? bike.sizeName,
+      updatedAt: previous.updatedAt ?? bike.updatedAt,
+      linkedWorkorderIds: Array.from(new Set([
+        ...previous.linkedWorkorderIds,
+        ...bike.linkedWorkorderIds,
+      ])),
+    })
+  }
+  return Array.from(byId.values())
+}
+
+function detectBikeBrand(text: string): string | null {
+  const normalized = normalizeText(text)
+  for (const brand of BIKE_BRAND_NAMES) {
+    if (normalized.includes(brand)) return brand.replace(/\b\w/g, char => char.toUpperCase())
+  }
+  return null
+}
+
+function bikeEvidenceScore(text: string): number {
+  const normalized = normalizeText(text)
+  let score = 0
+  if (/\b(bike|bicycle|frame|frameset|e bike|ebike|road|gravel|mountain|mtb|triathlon|time trial|dual suspension|hardtail|commuter|hybrid)\b/.test(normalized)) score += 5
+  if (detectBikeBrand(text)) score += 4
+  if (/\b(20[0-3][0-9]|madone|domane|emonda|fuel|slash|rail|tarmac|roubaix|stumpjumper|epic|defy|tcr|revolt|trance|anthem|orca|terra|oiz|scultura|reacto|spark|scale|addict|foil|synapse|supersix|topstone|silex|big nine|big seven)\b/.test(normalized)) score += 3
+  if (/\b(bottom bracket|brake pad|disc pad|chain|cassette|tyre|tire|tube|helmet|glove|jersey|shoe|service|labou?r|fit|wash|tune|bleed)\b/.test(normalized)) score -= 3
+  return score
+}
+
+function compatibilityPartTokens(question: string): string[] {
+  const text = normalizeText(question)
+  if (/\b(bottom bracket|bb)\b/.test(text)) return ['bottom bracket', 'bb', 'crank', 'crankset', 'bearing']
+  if (/\b(brake|pad|disc pad)\b/.test(text)) return ['brake', 'pad', 'disc']
+  if (/\b(tyre|tire)\b/.test(text)) return ['tyre', 'tire', 'wheel', 'clearance']
+  if (/\b(freehub|cassette)\b/.test(text)) return ['freehub', 'cassette', 'hub', 'driver']
+  if (/\b(headset)\b/.test(text)) return ['headset', 'bearing', 'steerer']
+  if (/\b(seatpost|seat post)\b/.test(text)) return ['seatpost', 'seat post', 'diameter']
+  if (/\b(axle|thru axle|through axle)\b/.test(text)) return ['axle', 'thru', 'through']
+  if (/\b(rotor)\b/.test(text)) return ['rotor', 'disc', 'brake']
+  if (/\b(shock)\b/.test(text)) return ['shock', 'mount', 'hardware']
+  if (/\b(hanger|derailleur hanger)\b/.test(text)) return ['hanger', 'derailleur']
+  return meaningfulQueryTokens(question).slice(0, 6)
+}
+
+function rowTextForBikeContext(row: SqlResultRow): string {
+  return [
+    row.description,
+    row.category,
+    row.sku,
+    row.ticket_number,
+  ].map(value => String(value ?? '')).join(' ')
+}
+
+function bikeCandidatesFromSerializedBikes(bikes: SerializedBikeEvidence[]): BikeContextCandidate[] {
+  return bikes.flatMap(bike => {
+    const label = compactBikeEvidenceText(bike.label ?? bike.serial ?? '', 180)
+    if (!label) return []
+    const sourceText = bike.source === 'customer_serialized'
+      ? `Lightspeed Serialized customer bike ${bike.serializedId}`
+      : `Workorder-linked Serialized bike ${bike.serializedId}`
+    const details = [
+      sourceText,
+      label,
+      bike.serial ? `serial ${bike.serial}` : '',
+      bike.itemId ? `item ${bike.itemId}` : 'free-text bike record',
+      bike.colorName ? `colour ${bike.colorName}` : '',
+      bike.sizeName ? `size ${bike.sizeName}` : '',
+    ].filter(Boolean).join('; ')
+    return [
+      {
+        source: bike.source,
+        label,
+        brand: detectBikeBrand(label),
+        serialized_id: bike.serializedId,
+        serial: bike.serial,
+        item_id: bike.itemId,
+        updated_at: bike.updatedAt,
+        linked_workorder_ids: bike.linkedWorkorderIds,
+        score: 28 + Math.max(0, bikeEvidenceScore(label)),
+        evidence: compactBikeEvidenceText(details, 300),
+      } satisfies BikeContextCandidate,
+    ]
+  })
+}
+
+function bikeCandidatesFromSalesRows(rows: SqlResultRow[]): BikeContextCandidate[] {
+  return rows.flatMap(row => {
+    const text = rowTextForBikeContext(row)
+    const score = bikeEvidenceScore(text)
+    if (score < 4) return []
+    return [
+      {
+        source: 'sales_history' as const,
+        label: compactBikeEvidenceText(row.description, 180),
+        brand: detectBikeBrand(text),
+        sale_date: String(row.sale_date ?? '').trim() || null,
+        sale_id: String(row.sale_id ?? '').trim() || null,
+        category: compactBikeEvidenceText(row.category, 120) || null,
+        sku: compactBikeEvidenceText(row.sku, 80) || null,
+        score,
+        evidence: compactBikeEvidenceText(text, 260),
+      } satisfies BikeContextCandidate,
+    ]
+  })
+}
+
+function bikeCandidatesFromWorkorders(workorders: Awaited<ReturnType<typeof listGenieWorkorders>>['workorders']): BikeContextCandidate[] {
+  return workorders.flatMap(workorder => {
+    const evidenceChunks = [
+      workorder.note,
+      workorder.internal_note,
+      ...workorder.lines.map(line => line.note),
+      ...workorder.items.map(item => [item.description, item.sku, item.note].filter(Boolean).join(' ')),
+    ].map(value => String(value ?? '').trim()).filter(Boolean)
+
+    return evidenceChunks.flatMap(text => {
+      const score = bikeEvidenceScore(text) + 1
+      if (score < 4) return []
+      return [
+        {
+          source: 'workorder' as const,
+          label: compactBikeEvidenceText(text, 180),
+          brand: detectBikeBrand(text),
+          workorder_id: workorder.workorder_id,
+          status_name: workorder.status_name,
+          updated_at: workorder.updated_at || workorder.time_in || null,
+          score,
+          evidence: compactBikeEvidenceText(text, 260),
+        } satisfies BikeContextCandidate,
+      ]
+    })
+  })
+}
+
+function rankBikeCandidates(candidates: BikeContextCandidate[]) {
+  const byKey = new Map<string, {
+    label: string
+    brand: string | null
+    confidence_score: number
+    evidence_sources: string[]
+    evidence: string[]
+  }>()
+
+  for (const candidate of candidates) {
+    const key = normalizeText(`${candidate.brand ?? ''} ${candidate.label}`).slice(0, 120)
+    const previous = byKey.get(key)
+    const sourceLabel = candidate.source === 'customer_serialized'
+      ? `serialized ${candidate.serialized_id}`
+      : candidate.source === 'workorder_serialized'
+        ? `workorder serialized ${candidate.serialized_id}`
+        : candidate.source === 'workorder'
+          ? `workorder ${candidate.workorder_id}`
+          : `sale ${candidate.sale_id ?? candidate.sale_date ?? ''}`.trim()
+    if (!previous) {
+      byKey.set(key, {
+        label: candidate.label,
+        brand: candidate.brand,
+        confidence_score: candidate.score,
+        evidence_sources: [sourceLabel],
+        evidence: [candidate.evidence],
+      })
+      continue
+    }
+    previous.confidence_score += candidate.score
+    if (!previous.evidence_sources.includes(sourceLabel)) previous.evidence_sources.push(sourceLabel)
+    if (!previous.evidence.includes(candidate.evidence)) previous.evidence.push(candidate.evidence)
+  }
+
+  return Array.from(byKey.values())
+    .sort((a, b) => b.confidence_score - a.confidence_score)
+    .slice(0, 8)
+    .map(candidate => ({
+      ...candidate,
+      evidence_sources: candidate.evidence_sources.slice(0, 6),
+      evidence: candidate.evidence.slice(0, 5),
+    }))
+}
+
+function profileCandidateFromRow(row: {
+  customer_id?: unknown
+  name?: unknown
+  company?: unknown
+}): GenieCustomerProfileCandidate | null {
+  const customerId = String(row.customer_id ?? '').trim()
+  if (!customerId) return null
+  return {
+    customer_id: customerId,
+    name: String(row.name ?? '').trim() || `Customer ${customerId}`,
+    company: String(row.company ?? '').trim() || null,
+  }
+}
+
+function dedupeProfileCandidates(candidates: Array<GenieCustomerProfileCandidate | null | undefined>): GenieCustomerProfileCandidate[] {
+  const byId = new Map<string, GenieCustomerProfileCandidate>()
+  for (const candidate of candidates) {
+    if (!candidate?.customer_id) continue
+    const previous = byId.get(candidate.customer_id)
+    byId.set(candidate.customer_id, {
+      customer_id: candidate.customer_id,
+      name: previous?.name || candidate.name,
+      company: previous?.company ?? candidate.company,
+    })
+  }
+  return Array.from(byId.values())
+}
+
+function customerProfileFromRow(row: LightspeedCustomerRow | ReturnType<typeof salesReportCustomerBase>): GenieCustomerProfileCustomer {
+  return {
+    customer_id: String(row.customer_id ?? '').trim(),
+    name: String(row.name ?? '').trim() || `Customer ${String(row.customer_id ?? '').trim()}`,
+    company: String(row.company ?? '').trim() || null,
+    phones: Array.isArray(row.phones)
+      ? row.phones.map(phone => ({
+          number: String(phone.number ?? '').trim(),
+          use_type: phone.use_type ? String(phone.use_type).trim() : null,
+        })).filter(phone => phone.number)
+      : [],
+    emails: Array.isArray(row.emails)
+      ? row.emails.map(email => ({
+          address: String(email.address ?? '').trim(),
+          use_type: email.use_type ? String(email.use_type).trim() : null,
+        })).filter(email => email.address)
+      : [],
+    addresses: Array.isArray(row.addresses)
+      ? row.addresses.map(address => ({
+          address1: String(address.address1 ?? '').trim(),
+          city: address.city ? String(address.city).trim() : null,
+          state: address.state ? String(address.state).trim() : null,
+          zip: address.zip ? String(address.zip).trim() : null,
+          country: address.country ? String(address.country).trim() : null,
+        })).filter(address => address.address1 || address.city || address.zip)
+      : [],
+    no_email: Boolean(row.no_email),
+    no_phone: Boolean(row.no_phone),
+    no_mail: Boolean(row.no_mail),
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
+    archived: Boolean(row.archived),
+  }
+}
+
+async function resolveCustomerForProfile(
+  userId: string,
+  args: { customer_id?: string; query?: string },
+  emit?: Emit,
+): Promise<
+  | {
+      status: 'resolved'
+      customer_id: string
+      customer: GenieCustomerProfileCustomer
+      candidates: GenieCustomerProfileCandidate[]
+    }
+  | {
+      status: 'ambiguous' | 'not_found'
+      customer: null
+      candidates: GenieCustomerProfileCandidate[]
+    }
+> {
+  const query = String(args.query ?? '').trim()
+  const shouldPreferSql = !args.customer_id && query && !query.includes('@') && phoneDigits(query).length < 3
+
+  if (shouldPreferSql) {
+    const sqlResolved = await resolveSalesReportCustomer(userId, args, emit).catch(() => null)
+    if (sqlResolved?.status === 'resolved') {
+      const liveProfile = await getLightspeedCustomerProfile(userId, { customer_id: sqlResolved.customer_id }, emit).catch(() => null)
+      const customer = customerProfileFromRow(
+        liveProfile && 'customer' in liveProfile && liveProfile.customer
+          ? liveProfile.customer
+          : sqlResolved.customer,
+      )
+      return {
+        status: 'resolved',
+        customer_id: sqlResolved.customer_id,
+        customer,
+        candidates: dedupeProfileCandidates([
+          profileCandidateFromRow(customer),
+          ...sqlResolved.candidates.map(profileCandidateFromRow),
+        ]),
+      }
+    }
+
+    if (sqlResolved?.status === 'ambiguous') {
+      const liveResolved = await resolveLightspeedCustomer(userId, args, emit).catch(() => null)
+      if (liveResolved?.status === 'resolved') {
+        const customer = customerProfileFromRow(liveResolved.customer)
+        return {
+          status: 'resolved',
+          customer_id: liveResolved.customer_id,
+          customer,
+          candidates: dedupeProfileCandidates(liveResolved.candidates.map(profileCandidateFromRow)),
+        }
+      }
+      return {
+        status: 'ambiguous',
+        customer: null,
+        candidates: dedupeProfileCandidates([
+          ...sqlResolved.candidates.map(profileCandidateFromRow),
+          ...(liveResolved?.candidates ?? []).map(profileCandidateFromRow),
+        ]),
+      }
+    }
+  }
+
+  const liveResolved = await resolveLightspeedCustomer(userId, args, emit).catch(() => null)
+  if (liveResolved?.status === 'resolved') {
+    const customer = customerProfileFromRow(liveResolved.customer)
+    return {
+      status: 'resolved',
+      customer_id: liveResolved.customer_id,
+      customer,
+      candidates: dedupeProfileCandidates(liveResolved.candidates.map(profileCandidateFromRow)),
+    }
+  }
+
+  const sqlResolved = await resolveSalesReportCustomer(userId, args, emit).catch(() => null)
+  if (liveResolved?.status === 'ambiguous') {
+    return {
+      status: 'ambiguous',
+      customer: null,
+      candidates: dedupeProfileCandidates([
+        ...liveResolved.candidates.map(profileCandidateFromRow),
+        ...(sqlResolved?.candidates ?? []).map(profileCandidateFromRow),
+      ]),
+    }
+  }
+
+  if (sqlResolved?.status === 'resolved') {
+    const liveProfile = await getLightspeedCustomerProfile(userId, { customer_id: sqlResolved.customer_id }, emit).catch(() => null)
+    const customer = customerProfileFromRow(
+      liveProfile && 'customer' in liveProfile && liveProfile.customer
+        ? liveProfile.customer
+        : sqlResolved.customer,
+    )
+    return {
+      status: 'resolved',
+      customer_id: sqlResolved.customer_id,
+      customer,
+      candidates: dedupeProfileCandidates([
+        profileCandidateFromRow(customer),
+        ...sqlResolved.candidates.map(profileCandidateFromRow),
+      ]),
+    }
+  }
+
+  if (sqlResolved?.status === 'ambiguous') {
+    return {
+      status: 'ambiguous',
+      customer: null,
+      candidates: dedupeProfileCandidates(sqlResolved.candidates.map(profileCandidateFromRow)),
+    }
+  }
+
+  return {
+    status: 'not_found',
+    customer: null,
+    candidates: dedupeProfileCandidates([
+      ...(liveResolved?.candidates ?? []).map(profileCandidateFromRow),
+      ...(sqlResolved?.candidates ?? []).map(profileCandidateFromRow),
+    ]),
+  }
+}
+
+function serializedBikeProfile(bike: SerializedBikeEvidence): GenieCustomerBikeProfile {
+  return {
+    serialized_id: bike.serializedId,
+    label: bike.label,
+    serial: bike.serial,
+    item_id: bike.itemId,
+    updated_at: bike.updatedAt,
+    source: bike.source,
+    linked_workorder_ids: bike.linkedWorkorderIds,
+  }
+}
+
+function saleLineProfile(row: SalesReportLineRow): GenieCustomerSaleLineProfile {
+  return {
+    item_id: row.item_id ?? null,
+    description: row.description ?? null,
+    sku: row.sku ?? null,
+    category: row.category ?? null,
+    quantity: roundMoney(sqlLineQuantity(row)),
+    total: roundMoney(sqlLineTotal(row)),
+  }
+}
+
+function saleProfile(sale: GroupedSqlSale): GenieCustomerSaleProfile {
+  return {
+    sale_id: sale.sale_id,
+    completed_at: sale.completed_at,
+    completed_at_utc: sale.completed_at_utc,
+    ticket_number: sale.ticket_number,
+    items: salesReportItemsSummary(sale.lines),
+    units: roundMoney(sale.units),
+    subtotal: roundMoney(sale.subtotal),
+    discounts: roundMoney(sale.discounts),
+    total: roundMoney(sale.total),
+    gross_profit: roundMoney(sale.gross_profit),
+    lines: sale.lines.slice(0, 12).map(saleLineProfile),
+  }
+}
+
+function topCustomerItems(rows: SalesReportLineRow[]): GenieCustomerTopItemProfile[] {
+  const byItem = new Map<string, GenieCustomerTopItemProfile>()
+  for (const row of rows) {
+    const description = String(row.description ?? '').trim()
+    if (!description) continue
+    const quantity = sqlPositiveQuantity(row)
+    if (quantity <= 0) continue
+
+    const key = String(row.item_id || row.sku || description).trim().toLowerCase()
+    const existing = byItem.get(key)
+    const completeTime = row.complete_time ?? row.line_time ?? null
+    if (!existing) {
+      byItem.set(key, {
+        item_id: row.item_id ?? null,
+        description,
+        sku: row.sku ?? null,
+        category: row.category ?? null,
+        quantity: roundMoney(quantity),
+        gross_sales: roundMoney(Math.max(0, sqlLineRevenue(row))),
+        last_purchase_at: formatStoreDateTime(completeTime) ?? completeTime,
+      })
+      continue
+    }
+
+    existing.quantity = roundMoney(existing.quantity + quantity)
+    existing.gross_sales = roundMoney(existing.gross_sales + Math.max(0, sqlLineRevenue(row)))
+    if (completeTime && (!existing.last_purchase_at || completeTime > existing.last_purchase_at)) {
+      existing.last_purchase_at = formatStoreDateTime(completeTime) ?? completeTime
+    }
+  }
+
+  return Array.from(byItem.values())
+    .sort((a, b) => b.gross_sales - a.gross_sales || b.quantity - a.quantity)
+    .slice(0, 12)
+}
+
+function inferredBikeProfilesFromHistory(args: {
+  rows: SalesReportLineRow[]
+  workorders: Awaited<ReturnType<typeof listGenieWorkorders>>['workorders']
+  existingBikes: GenieCustomerBikeProfile[]
+}): GenieCustomerBikeProfile[] {
+  const existingLabels = new Set(
+    args.existingBikes
+      .map(bike => normalizeText(`${bike.label ?? ''} ${bike.serial ?? ''}`))
+      .filter(Boolean),
+  )
+  const candidates = new Map<string, { label: string; score: number; updated_at: string | null; linked_workorder_ids: string[] }>()
+
+  function addCandidate(label: string, score: number, updatedAt: string | null, workorderId?: string | null) {
+    const cleanLabel = compactBikeEvidenceText(label, 180)
+    if (!cleanLabel || score < 5) return
+    const key = normalizeText(cleanLabel).slice(0, 140)
+    if (!key || existingLabels.has(key)) return
+    const previous = candidates.get(key)
+    if (!previous) {
+      candidates.set(key, {
+        label: cleanLabel,
+        score,
+        updated_at: updatedAt,
+        linked_workorder_ids: workorderId ? [workorderId] : [],
+      })
+      return
+    }
+    previous.score += score
+    if (updatedAt && (!previous.updated_at || updatedAt > previous.updated_at)) previous.updated_at = updatedAt
+    if (workorderId && !previous.linked_workorder_ids.includes(workorderId)) previous.linked_workorder_ids.push(workorderId)
+  }
+
+  for (const row of args.rows.slice(0, 400)) {
+    const text = [row.description, row.category, row.sku].map(value => String(value ?? '').trim()).filter(Boolean).join(' ')
+    addCandidate(text, bikeEvidenceScore(text), row.complete_time ?? row.line_time ?? null)
+  }
+
+  for (const workorder of args.workorders.slice(0, 80)) {
+    const chunks = [
+      workorder.note,
+      workorder.internal_note,
+      ...workorder.lines.map(line => line.note),
+      ...workorder.items.map(item => [item.description, item.sku, item.note].filter(Boolean).join(' ')),
+    ].map(value => String(value ?? '').trim()).filter(Boolean)
+
+    for (const chunk of chunks) {
+      addCandidate(chunk, bikeEvidenceScore(chunk) + 1, workorder.updated_at || workorder.time_in || null, workorder.workorder_id)
+    }
+  }
+
+  return Array.from(candidates.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6)
+    .map((candidate, index) => ({
+      serialized_id: `inferred-${index + 1}`,
+      label: candidate.label,
+      serial: null,
+      item_id: null,
+      updated_at: candidate.updated_at ? formatStoreDateTime(candidate.updated_at) ?? candidate.updated_at : null,
+      source: 'sales_or_workorder_inference' as const,
+      linked_workorder_ids: candidate.linked_workorder_ids.slice(0, 6),
+    }))
+}
+
+function emptyCustomerProfile(args: {
+  title: string
+  query: string | null
+  status: 'ambiguous' | 'not_found'
+  candidates: GenieCustomerProfileCandidate[]
+}): GenieCustomerProfilePayload {
+  return {
+    title: args.title,
+    query: args.query,
+    status: args.status,
+    customer: null,
+    candidates: args.candidates,
+    sales_summary: null,
+    bikes: [],
+    workorders: [],
+    recent_sales: [],
+    top_items: [],
+    data_quality: {
+      sales_rows_checked: 0,
+      sales_row_limit_reached: false,
+      workorders_truncated: false,
+      serialized_status: 'ok',
+      serialized_error: null,
+    },
+  }
+}
+
+async function buildLightspeedCustomerProfile(
+  userId: string,
+  args: {
+    customer_id?: string
+    query?: string
+    include_workorders?: boolean
+    sales_row_limit?: number
+  },
+  emit?: Emit,
+): Promise<GenieCustomerProfilePayload> {
+  const query = String(args.query ?? args.customer_id ?? '').trim() || null
+  emitProgress(emit, 'lightspeed_customers', query ? `Resolving customer profile for "${query}"...` : 'Resolving customer profile...')
+
+  const resolved = await resolveCustomerForProfile(userId, args, emit)
+  if (resolved.status !== 'resolved') {
+    return emptyCustomerProfile({
+      title: resolved.status === 'ambiguous' ? 'Customer Profile - Choose a Customer' : 'Customer Profile - No Match',
+      query,
+      status: resolved.status,
+      candidates: resolved.candidates,
+    })
+  }
+
+  const customerId = resolved.customer_id
+  const includeWorkorders = args.include_workorders !== false
+  const salesRowLimit = Math.min(Math.max(args.sales_row_limit ?? 100_000, 1_000), SALES_REPORT_SQL_HARD_MAX_ROWS)
+
+  emitProgress(emit, 'lightspeed_customers', `Reading sales, bikes, and workshop history for ${resolved.customer.name}...`)
+  const [salesResult, customerSerializedResult, workorderList] = await Promise.all([
+    fetchSalesReportCustomerRows({ userId, customerId, maxRows: salesRowLimit, emit }),
+    fetchCustomerSerializedBikeEvidence(userId, customerId),
+    includeWorkorders
+      ? listGenieWorkorders(userId, {
+          scope: 'all',
+          customer_id: customerId,
+          limit: 100,
+          include_details: true,
+          include_archived: true,
+          max_pages_per_status: 8,
+        })
+      : Promise.resolve(null),
+  ])
+
+  const rawWorkorders = workorderList?.workorders ?? []
+  emitProgress(emit, 'lightspeed_customers', `Profiling ${plural(salesResult.rows.length, 'sale row')} and ${plural(rawWorkorders.length, 'work order')}...`)
+
+  let serializedStatus: GenieCustomerProfilePayload['data_quality']['serialized_status'] = customerSerializedResult.status
+  let serializedError = customerSerializedResult.status === 'error' ? customerSerializedResult.error ?? 'Serialized bike lookup failed' : null
+  let workorderSerializedBikes: SerializedBikeEvidence[] = []
+  if (includeWorkorders && rawWorkorders.length > 0) {
+    try {
+      workorderSerializedBikes = await fetchWorkorderSerializedBikeEvidence({ userId, workorders: rawWorkorders })
+    } catch (error) {
+      serializedStatus = 'error'
+      serializedError = error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  const directBikes = mergeSerializedBikeEvidence([
+    ...customerSerializedResult.bikes,
+    ...workorderSerializedBikes,
+  ]).map(serializedBikeProfile)
+  const inferredBikes = inferredBikeProfilesFromHistory({
+    rows: salesResult.rows,
+    workorders: rawWorkorders,
+    existingBikes: directBikes,
+  })
+  const bikes = [...directBikes, ...inferredBikes].slice(0, 14)
+  const sales = groupSalesReportRows(salesResult.rows)
+  const salesSummary = sales.length > 0
+    ? {
+        sale_count: sales.length,
+        total_spend: roundMoney(sales.reduce((sum, sale) => sum + sale.total, 0)),
+        subtotal: roundMoney(sales.reduce((sum, sale) => sum + sale.subtotal, 0)),
+        discounts: roundMoney(sales.reduce((sum, sale) => sum + sale.discounts, 0)),
+        gross_profit: roundMoney(sales.reduce((sum, sale) => sum + sale.gross_profit, 0)),
+        units: roundMoney(sales.reduce((sum, sale) => sum + sale.units, 0)),
+        average_sale: roundMoney(sales.reduce((sum, sale) => sum + sale.total, 0) / sales.length),
+        first_purchase_at: sales.at(-1)?.completed_at ?? sales.at(-1)?.completed_at_utc ?? null,
+        last_purchase_at: sales[0]?.completed_at ?? sales[0]?.completed_at_utc ?? null,
+      }
+    : {
+        sale_count: 0,
+        total_spend: 0,
+        subtotal: 0,
+        discounts: 0,
+        gross_profit: 0,
+        units: 0,
+        average_sale: 0,
+        first_purchase_at: null,
+        last_purchase_at: null,
+      }
+
+  return {
+    title: `Customer Profile - ${resolved.customer.name}`,
+    query,
+    status: 'resolved',
+    customer: resolved.customer,
+    candidates: resolved.candidates,
+    sales_summary: salesSummary,
+    bikes,
+    workorders: rawWorkorders.map(fullWorkorderForAgent) as GenieWorkorderCard[],
+    recent_sales: sales.slice(0, 12).map(saleProfile),
+    top_items: topCustomerItems(salesResult.rows),
+    data_quality: {
+      sales_rows_checked: salesResult.rows.length,
+      sales_row_limit_reached: salesResult.row_limit_reached,
+      workorders_truncated: Boolean(workorderList?.truncated),
+      serialized_status: serializedStatus,
+      serialized_error: serializedError,
+    },
+  }
+}
+
+function cleanCustomerBikeOwnershipQueryCandidate(value: string): string | null {
+  const query = value
+    .replace(/\bdo you think\b/gi, ' ')
+    .replace(/\b(?:customer|client|person|currently|current|right now|now|usually|normally|probably|maybe|possibly|think|reckon)\b/gi, ' ')
+    .replace(/[?!.:,;]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const queryNorm = normalizeText(query)
+  if (!queryNorm) return null
+  if (/\b(he|she|they|them|him|her|his|their|theirs|this|that|it|someone|somebody)\b/.test(queryNorm)) return null
+  if (/\b(we|us|our|store|stock|inventory)\b/.test(queryNorm)) return null
+  const tokens = queryTokens(query).filter(token => token.length >= 2)
+  if (!/^\d+$/.test(queryNorm) && (tokens.length === 0 || tokens.length > 5)) return null
+  return query
+}
+
+function extractCustomerBikeOwnershipQuery(text: string): string | null {
+  const raw = text.replace(/\s+/g, ' ').trim()
+  if (!raw) return null
+  const normalized = normalizeText(raw)
+  if (/\b(stock|inventory|qoh|on hand|in store|we have|our bikes|store has)\b/.test(normalized)) return null
+  if (/\b(bottom bracket|brake pads?|disc pads?|compatible|compatibility|fitment|need(?:s)? for|tyre|tire|freehub|cassette|hanger|headset)\b/.test(normalized)) return null
+
+  const patterns = [
+    /\bwhat\s+bikes?\s+does\s+(.+?)\s+(?:have|own|ride|use)\b/i,
+    /\bwhich\s+bikes?\s+does\s+(.+?)\s+(?:have|own|ride|use)\b/i,
+    /\bwhat\s+bikes?\s+has\s+(.+?)\s+(?:got|owned|purchased|bought)\b/i,
+    /\b(?:show|list|find|pull up|bring up)\s+(?:me\s+)?(.+?)(?:'s|’s|\s+s)\s+bikes?\b/i,
+    /\bbikes?\s+(?:owned by|for)\s+(.+?)(?:\?|$)/i,
+    /\bwhat\s+is\s+(.+?)(?:'s|’s|\s+s)\s+bike\b/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern)
+    const query = match?.[1] ? cleanCustomerBikeOwnershipQueryCandidate(match[1]) : null
+    if (!query) continue
+    return query
+  }
+
+  return null
+}
+
+function latestCustomerReferenceFromMessages(messages: Message[]): {
+  customer_id?: string
+  query: string
+  source: 'customer_profile' | 'workorders'
+} | null {
+  for (let index = messages.length - 2; index >= 0; index--) {
+    const message = messages[index]
+    if (!message || message.role !== 'assistant') continue
+
+    const profile = message.customerProfile
+    if (profile?.status === 'resolved' && profile.customer?.customer_id) {
+      return {
+        customer_id: profile.customer.customer_id,
+        query: profile.customer.name || profile.customer.customer_id,
+        source: 'customer_profile',
+      }
+    }
+
+    const workorder = message.workorders?.workorders.find(candidate =>
+      candidate.customer_id && candidate.customer_id !== '0',
+    )
+    if (workorder?.customer_id) {
+      return {
+        customer_id: workorder.customer_id,
+        query: workorder.customer_name || workorder.customer_id,
+        source: 'workorders',
+      }
+    }
+  }
+
+  return null
+}
+
+function isCustomerBikeOwnershipFollowUp(text: string): boolean {
+  const normalized = normalizeText(text)
+  if (!normalized) return false
+  if (/\b(bottom bracket|brake pads?|disc pads?|compatible|compatibility|fitment|need(?:s)? for|tyre|tire|freehub|cassette|hanger|headset)\b/.test(normalized)) {
+    return false
+  }
+  return (
+    /\b(bike|bikes|bicycle|bicycles|ride|rides|use|uses|using|own|owns|owned)\b/.test(normalized) &&
+    /\b(he|she|they|them|him|her|his|their|this|that|customer|client)\b/.test(normalized)
+  )
+}
+
+function resolveCustomerBikeOwnershipLookup(messages: Message[], latestUserMessage: string): {
+  customer_id?: string
+  query: string
+  source: 'latest_user' | 'customer_profile' | 'workorders'
+} | null {
+  const explicitQuery = extractCustomerBikeOwnershipQuery(latestUserMessage)
+  if (explicitQuery) {
+    return { query: explicitQuery, source: 'latest_user' }
+  }
+
+  if (!isCustomerBikeOwnershipFollowUp(latestUserMessage)) return null
+
+  const contextCustomer = latestCustomerReferenceFromMessages(messages)
+  if (!contextCustomer) return null
+  return contextCustomer
+}
+
+const WORKORDER_CUSTOMER_INTENT_RE = /\b(work ?orders?|jobs?|service|repair|repairs?|history|open|finished|complete|completed|done|due|today|tomorrow|pickup|ready|eta|note|notes?|internal|warranty|customer|client)\b/
+const WORKORDER_NON_CUSTOMER_TOPIC_RE = /\b(bike|serial|serialized|pads?|brake|rotors?|chain|cassette|tyre|tire|bottom bracket|bb|labou?r|part|parts)\b/
+
+function workorderCustomerLookupQuery(query: string): string | null {
+  const clean = query.replace(/\s+/g, ' ').trim()
+  if (!clean) return null
+  if (clean.includes('@') || phoneDigits(clean).length >= 7) return clean
+  if (/^#?\d+$/.test(clean)) return null
+
+  const normalized = normalizeText(clean)
+  const stripped = clean
+    .replace(/['’]s\b/gi, '')
+    .replace(/\b(show|find|list|pull|load|lookup|look|up|it|what|which|did|does|has|had|have|he|she|they|their|his|her|customer|client|person|for|of|about|with|all|any|the|a|an|work\s*orders?|workorders?|jobs?|service|repair|repairs?|history|open|finished|complete|completed|done|due|today|tomorrow|pickup|ready|eta|notes?|internal|warranty)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const lookupText = stripped || clean
+
+  if (!WORKORDER_CUSTOMER_INTENT_RE.test(normalized) && !WORKORDER_NON_CUSTOMER_TOPIC_RE.test(normalized)) {
+    const tokens = queryTokens(lookupText).filter(token => token.length >= 2)
+    return tokens.length >= 2 && tokens.length <= 5 ? lookupText : null
+  }
+  if (!stripped) return null
+
+  const strippedNormalized = normalizeText(stripped)
+  if (WORKORDER_NON_CUSTOMER_TOPIC_RE.test(strippedNormalized)) return null
+  const tokens = queryTokens(stripped).filter(token => token.length >= 2)
+  return tokens.length >= 2 && tokens.length <= 5 ? stripped : null
+}
+
+function shouldResolveWorkorderCustomerQuery(query: string): boolean {
+  return Boolean(workorderCustomerLookupQuery(query))
+}
+
+function cleanCustomerProfileQueryCandidate(value: string): string | null {
+  const query = value
+    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+    .replace(/\b(?:customer|client|profile|record|file|details|overview|summary|history|please)\b/gi, ' ')
+    .replace(/[?!.:,;]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!query) return null
+  const normalized = normalizeText(query)
+  if (/\b(we|us|our|store|stock|inventory|product|products|bike|bikes|workorder|workorders)\b/.test(normalized)) return null
+  const tokens = normalized.split(/\s+/).filter(Boolean)
+  if (!/^\d+$/.test(normalized) && (tokens.length === 0 || tokens.length > 6)) return null
+  return query
+}
+
+function extractCustomerProfileQuery(text: string): string | null {
+  const raw = text.replace(/\s+/g, ' ').trim()
+  if (!raw) return null
+
+  const patterns = [
+    /\b(?:tell me about|what do we know about|everything about)\s+(?:the\s+)?(?:customer|client)\s+(.+?)(?:\?|$)/i,
+    /\b(?:pull up|bring up|open|show me|look up|lookup|find)\s+(?:the\s+)?(?:customer|client|profile)\s+(.+?)(?:\?|$)/i,
+    /^(?:customer|client)\s+(.+?)(?:\?|$)/i,
+    /\b(?:customer history|profile|history|overview|details|record|file)\s+(?:for|of)\s+(.+?)(?:\?|$)/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern)
+    const query = match?.[1] ? cleanCustomerProfileQueryCandidate(match[1]) : null
+    if (query) return query
+  }
+
+  const namedTellMeAbout = raw.match(/\b(?:tell me about|what do we know about|everything about)\s+([A-Z][A-Za-z'’-]{1,40}(?:\s+[A-Z][A-Za-z'’-]{1,40}){1,4})(?:\?|$)/)
+  return namedTellMeAbout?.[1] ? cleanCustomerProfileQueryCandidate(namedTellMeAbout[1]) : null
+}
+
+function customerProfileAnswer(profile: GenieCustomerProfilePayload): string {
+  if (profile.status === 'ambiguous') {
+    const candidates = profile.candidates
+      .slice(0, 5)
+      .map(candidate => `- ${candidate.name}${candidate.company ? ` (${candidate.company})` : ''} - customer #${candidate.customer_id}`)
+      .join('\n')
+    return [
+      `I found multiple possible customers for "${profile.query ?? 'that customer'}".`,
+      candidates || 'No candidate details were returned.',
+      'Choose the customer ID and I can pull the full profile.',
+    ].filter(Boolean).join('\n')
+  }
+
+  if (profile.status === 'not_found' || !profile.customer) {
+    return `I could not find a matching Lightspeed customer for "${profile.query ?? 'that customer'}". Try the customer ID, phone number, or email.`
+  }
+
+  const summary = profile.sales_summary
+  const directBikes = profile.bikes.filter(bike => bike.source !== 'sales_or_workorder_inference')
+  const inferredBikeCount = profile.bikes.length - directBikes.length
+  const bikeLines = directBikes.slice(0, 5).map(bike => {
+    const label = bike.label?.trim() || `Serialized #${bike.serialized_id}`
+    const facts = [
+      bike.serial ? `serial ${bike.serial}` : '',
+      bike.linked_workorder_ids.length ? `WO ${bike.linked_workorder_ids.map(id => `#${id}`).join(', ')}` : '',
+    ].filter(Boolean).join('; ')
+    return `- ${label}${facts ? ` (${facts})` : ''}`
+  })
+  if (inferredBikeCount > 0) {
+    bikeLines.push(`- ${inferredBikeCount} weaker bike clue${inferredBikeCount === 1 ? '' : 's'} from sales/work-order text`)
+  }
+
+  const workorderLines = profile.workorders.slice(0, 4).map(workorder => [
+    `- #${workorder.workorder_id}`,
+    workorder.status_name,
+    workorder.time_in ? workorder.time_in.slice(0, 10) : '',
+    compactContextText(workorder.note || workorder.internal_note || '', 120),
+  ].filter(Boolean).join(' - '))
+
+  const topItemLines = profile.top_items.slice(0, 4).map(item =>
+    `- ${compactContextText(item.description, 120)} (${item.quantity} sold, $${Math.round(item.gross_sales)})`,
+  )
+
+  return [
+    `**Customer profile - ${profile.customer.name}**`,
+    [
+      `Customer #${profile.customer.customer_id}`,
+      summary ? `${summary.sale_count} sale${summary.sale_count === 1 ? '' : 's'}` : '',
+      summary ? `$${Math.round(summary.total_spend)} lifetime spend` : '',
+      summary?.last_purchase_at ? `last purchase ${summary.last_purchase_at.slice(0, 10)}` : '',
+    ].filter(Boolean).join(' | '),
+    bikeLines.length ? `\n**Bikes**\n${bikeLines.join('\n')}` : '\n**Bikes**\nNo bike records found in Serialized/work-order evidence.',
+    workorderLines.length ? `\n**Workshop history**\n${workorderLines.join('\n')}` : '',
+    topItemLines.length ? `\n**Top items**\n${topItemLines.join('\n')}` : '',
+    profile.data_quality.sales_row_limit_reached || profile.data_quality.workorders_truncated
+      ? '\nData note: profile results were truncated, so use the card for the loaded evidence and rerun with a narrower question if needed.'
+      : '',
+  ].filter(Boolean).join('\n')
+}
+
+function customerBikeProfileAnswer(profile: GenieCustomerProfilePayload): string {
+  if (profile.status === 'ambiguous') {
+    const candidates = profile.candidates
+      .slice(0, 5)
+      .map(candidate => `- ${candidate.name}${candidate.company ? ` (${candidate.company})` : ''} - customer #${candidate.customer_id}`)
+      .join('\n')
+    return [
+      `I found multiple possible customers for "${profile.query ?? 'that customer'}".`,
+      candidates || 'No candidate details were returned.',
+      'Choose the customer ID and I can pull the bike record.',
+    ].filter(Boolean).join('\n')
+  }
+
+  if (profile.status === 'not_found' || !profile.customer) {
+    return `I could not find a matching Lightspeed customer for "${profile.query ?? 'that customer'}". Try the customer ID, phone number, or email.`
+  }
+
+  const directBikes = profile.bikes.filter(bike => bike.source !== 'sales_or_workorder_inference')
+  const inferredBikes = profile.bikes.filter(bike => bike.source === 'sales_or_workorder_inference')
+  const bikeLine = (bike: GenieCustomerBikeProfile) => {
+    const label = bike.label?.trim() || `Serialized #${bike.serialized_id}`
+    const facts = [
+      bike.serial ? `serial ${bike.serial}` : '',
+      bike.item_id ? `item ${bike.item_id}` : '',
+      bike.linked_workorder_ids.length ? `linked work order ${bike.linked_workorder_ids.map(id => `#${id}`).join(', ')}` : '',
+      !bike.label?.trim() && bike.source === 'workorder_serialized' ? 'make/model not returned by Serialized API' : '',
+    ].filter(Boolean).join('; ')
+    return `- ${label}${facts ? ` (${facts})` : ''}`
+  }
+
+  if (directBikes.length > 0) {
+    return [
+      `${profile.customer.name} has ${directBikes.length} bike record${directBikes.length === 1 ? '' : 's'} in Lightspeed:`,
+      directBikes.map(bikeLine).join('\n'),
+      inferredBikes.length
+        ? `I also found ${inferredBikes.length} weaker inferred bike clue${inferredBikes.length === 1 ? '' : 's'} from sales/work-order text, but I would not treat those as confirmed owned bikes.`
+        : '',
+    ].filter(Boolean).join('\n\n')
+  }
+
+  if (inferredBikes.length > 0) {
+    return [
+      `${profile.customer.name} has no confirmed Serialized bike record in the data I could load.`,
+      `Possible bike clues from sales/work-order text:`,
+      inferredBikes.map(bikeLine).join('\n'),
+      'Treat these as clues, not confirmed owned-bike records.',
+    ].join('\n\n')
+  }
+
+  return `${profile.customer.name} has no confirmed bike records in the customer Serialized lookup, work-order Serialized links, or bike-like sales/work-order history I checked.`
+}
+
+function matchingPartEvidence(args: {
+  question: string
+  salesRows: SqlResultRow[]
+  workorders: Awaited<ReturnType<typeof listGenieWorkorders>>['workorders']
+}) {
+  const tokens = compatibilityPartTokens(args.question).map(normalizeText).filter(Boolean)
+  if (tokens.length === 0) return []
+
+  const salesEvidence = args.salesRows
+    .filter(row => {
+      const text = normalizeText(rowTextForBikeContext(row))
+      return tokens.some(token => text.includes(token))
+    })
+    .slice(0, 12)
+    .map(row => ({
+      source: 'sales_history',
+      sale_date: String(row.sale_date ?? '').trim() || null,
+      sale_id: String(row.sale_id ?? '').trim() || null,
+      description: compactBikeEvidenceText(row.description, 180),
+      category: compactBikeEvidenceText(row.category, 120) || null,
+      sku: compactBikeEvidenceText(row.sku, 80) || null,
+    }))
+
+  const workorderEvidence = args.workorders.flatMap(workorder => {
+    const chunks = [
+      workorder.note,
+      workorder.internal_note,
+      ...workorder.lines.map(line => line.note),
+      ...workorder.items.map(item => [item.description, item.sku, item.note].filter(Boolean).join(' ')),
+    ].map(value => compactBikeEvidenceText(value, 180)).filter(Boolean)
+
+    return chunks
+      .filter(chunk => {
+        const text = normalizeText(chunk)
+        return tokens.some(token => text.includes(token))
+      })
+      .slice(0, 8)
+      .map(chunk => ({
+        source: 'workorder',
+        workorder_id: workorder.workorder_id,
+        status_name: workorder.status_name,
+        evidence: chunk,
+      }))
+  }).slice(0, 12)
+
+  return [...salesEvidence, ...workorderEvidence].slice(0, 16)
+}
+
+async function fetchCustomerProfileSummary(userId: string, customerId: string) {
+  if (!customerId) return null
+  const client = createLightspeedClient(userId)
+  const customer = await client.getCustomer(customerId, { load_relations: '["Contact"]' }).catch(() => null)
+  if (!customer) return null
+  const name = [customer.firstName, customer.lastName].map(part => String(part ?? '').trim()).filter(Boolean).join(' ')
+  const phones = Array.isArray(customer.Contact?.Phones?.ContactPhone)
+    ? customer.Contact?.Phones?.ContactPhone
+    : customer.Contact?.Phones?.ContactPhone
+      ? [customer.Contact.Phones.ContactPhone]
+      : []
+  const emails = Array.isArray(customer.Contact?.Emails?.ContactEmail)
+    ? customer.Contact?.Emails?.ContactEmail
+    : customer.Contact?.Emails?.ContactEmail
+      ? [customer.Contact.Emails.ContactEmail]
+      : []
+  return {
+    customer_id: String(customer.customerID ?? customerId),
+    name: name || String(customer.company ?? '').trim() || null,
+    company: String(customer.company ?? '').trim() || null,
+    has_phone: phones.some(phone => String(phone.number ?? '').trim()),
+    has_email: emails.some(email => String(email.address ?? '').trim()),
+  }
+}
+
+function officialCompatibilityResearchQueries(args: {
+  compatibilityQuestion: string
+  bikeCandidates: ReturnType<typeof rankBikeCandidates>
+}) {
+  const part = compatibilityPartTokens(args.compatibilityQuestion).slice(0, 3).join(' ')
+  const top = args.bikeCandidates.slice(0, 3)
+  const queries = top.flatMap(candidate => {
+    const base = candidate.label
+    const brand = candidate.brand ?? ''
+    return [
+      `${base} ${part} official`,
+      `${brand} ${base} service manual ${part}`.trim(),
+      `${brand} ${base} technical manual ${part}`.trim(),
+    ]
+  })
+  return Array.from(new Set(
+    queries
+      .map(query => query.replace(/\s+/g, ' ').trim())
+      .filter(query => query.length > 8),
+  )).slice(0, 8)
+}
+
+async function resolveCustomerBikeContext(args: {
+  userId: string
+  emit: Emit
+  customer_query: string
+  compatibility_question: string
+  workorder_id?: string
+  include_finished_workorders?: boolean
+}) {
+  const customerQuery = args.customer_query.trim()
+  const compatibilityQuestion = args.compatibility_question.trim()
+  emitStatus(args.emit, 'customer_context', `Finding customer context for "${customerQuery}"`)
+
+  const [apiCustomerCandidates, candidateResult, workorderById, workorderList] = await Promise.all([
+    fetchLightspeedCustomerCandidates(args.userId, customerQuery).catch(() => []),
+    runInternalGenieSqlRows({
+      userId: args.userId,
+      emit: args.emit,
+      purpose: `Find Lightspeed customer candidates for ${customerQuery}`,
+      sql: buildCustomerCandidateSql(customerQuery),
+      limit: 8,
+    }),
+    args.workorder_id
+      ? getGenieWorkorder(args.userId, args.workorder_id).catch(() => null)
+      : Promise.resolve(null),
+    listGenieWorkorders(args.userId, {
+      scope: args.include_finished_workorders === false ? 'open' : 'all',
+      query: customerQuery,
+      limit: 12,
+      include_details: true,
+      max_pages_per_status: 5,
+    }).catch(() => ({
+      scope: 'all' as const,
+      statuses: [],
+      workorders: [],
+      total: 0,
+      truncated: false,
+    })),
+  ])
+
+  const sqlCustomerCandidates = candidateResult.status === 'ok'
+    ? candidateResult.rows.map(customerCandidateFromSalesRow).filter((candidate): candidate is CustomerBikeLookupCandidate => Boolean(candidate))
+    : []
+  const customerCandidates = mergeCustomerLookupCandidates({
+    apiCandidates: apiCustomerCandidates,
+    salesCandidates: sqlCustomerCandidates,
+    customerQuery,
+  })
+  const selectedCustomer = customerCandidates[0] ?? null
+  const selectedCustomerId = selectedCustomer ? selectedCustomer.customer_id : ''
+  const selectedCustomerName = selectedCustomer?.customer_full_name?.trim() || ''
+
+  const initialWorkorders = [
+    ...(workorderById ? [workorderById] : []),
+    ...workorderList.workorders.filter(workorder => workorder.workorder_id !== workorderById?.workorder_id),
+  ].slice(0, 12)
+  const workorderCustomer = initialWorkorders.find(workorder => workorder.customer_id && workorder.customer_id !== '0')
+  const effectiveCustomerId = selectedCustomerId || workorderCustomer?.customer_id || ''
+  const effectiveCustomerName = selectedCustomerName || workorderCustomer?.customer_name || customerQuery
+
+  emitStatus(args.emit, 'customer_context', effectiveCustomerId ? 'Reading customer bike records' : 'Customer match weak, checking work orders')
+  const [salesResult, customerSerializedResult, customerWorkorderList, profile] = await Promise.all([
+    effectiveCustomerId
+      ? runInternalGenieSqlRows({
+        userId: args.userId,
+        emit: args.emit,
+        purpose: `Read previous sales history for customer ${effectiveCustomerName}`,
+        sql: buildCustomerSalesHistorySql(effectiveCustomerId),
+        limit: 300,
+      })
+      : Promise.resolve({ status: 'ok' as const, rows: [], row_count: 0, limit_applied: false }),
+    effectiveCustomerId
+      ? fetchCustomerSerializedBikeEvidence(args.userId, effectiveCustomerId)
+      : Promise.resolve({ status: 'ok' as const, bikes: [] }),
+    effectiveCustomerId
+      ? listGenieWorkorders(args.userId, {
+        scope: args.include_finished_workorders === false ? 'open' : 'all',
+        customer_id: effectiveCustomerId,
+        limit: 12,
+        include_details: true,
+        max_pages_per_status: 3,
+      }).catch(() => ({
+        scope: 'all' as const,
+        statuses: [],
+        workorders: [],
+        total: 0,
+        truncated: false,
+      }))
+      : Promise.resolve({
+        scope: 'all' as const,
+        statuses: [],
+        workorders: [],
+        total: 0,
+        truncated: false,
+      }),
+    effectiveCustomerId ? fetchCustomerProfileSummary(args.userId, effectiveCustomerId) : Promise.resolve(null),
+  ])
+  const workorderByDetailId = new Map<string, typeof initialWorkorders[number]>()
+  for (const workorder of [...initialWorkorders, ...customerWorkorderList.workorders]) {
+    workorderByDetailId.set(workorder.workorder_id, workorder)
+  }
+  const workorders = Array.from(workorderByDetailId.values()).slice(0, 12)
+
+  emitStatus(args.emit, 'customer_context', 'Reading workorder bike records')
+  const workorderSerializedBikes = await fetchWorkorderSerializedBikeEvidence({
+    userId: args.userId,
+    workorders,
+  })
+  const salesRows = salesResult.status === 'ok' ? salesResult.rows : []
+  const serializedBikes = mergeSerializedBikeEvidence([
+    ...customerSerializedResult.bikes,
+    ...workorderSerializedBikes,
+  ])
+
+  const rankedBikeCandidates = rankBikeCandidates([
+    ...bikeCandidatesFromSerializedBikes(serializedBikes),
+    ...bikeCandidatesFromWorkorders(workorders),
+    ...bikeCandidatesFromSalesRows(salesRows),
+  ])
+  const partEvidence = matchingPartEvidence({
+    question: compatibilityQuestion,
+    salesRows,
+    workorders,
+  })
+  const confidence =
+    rankedBikeCandidates.length === 0
+      ? 'low'
+      : rankedBikeCandidates[0].confidence_score >= 18
+        ? 'high'
+        : rankedBikeCandidates[0].confidence_score >= 10
+          ? 'medium'
+          : 'low'
+  const ambiguity =
+    rankedBikeCandidates.length > 1 &&
+    rankedBikeCandidates[1].confidence_score >= rankedBikeCandidates[0].confidence_score * 0.75
+
+  return {
+    status: rankedBikeCandidates.length > 0 ? 'bike_context_found' : 'bike_context_not_found',
+    customer_query: customerQuery,
+    compatibility_question: compatibilityQuestion,
+    selected_customer: effectiveCustomerId
+      ? {
+        customer_id: effectiveCustomerId,
+        name: selectedCustomer?.customer_full_name ?? workorderCustomer?.customer_name ?? effectiveCustomerName,
+        source: selectedCustomer?.source ?? (workorderCustomer ? 'workorder' : null),
+        sale_count: selectedCustomer?.sale_count ?? null,
+        gross_sales: selectedCustomer?.gross_sales ?? null,
+        last_sale_at: selectedCustomer?.last_sale_at ?? null,
+      }
+      : null,
+    customer_candidates: customerCandidates.slice(0, 5),
+    customer_profile: profile,
+    customer_bikes: {
+      source: 'lightspeed_serialized_api',
+      rows_checked: serializedBikes.length,
+      api_status: customerSerializedResult.status,
+      api_error: customerSerializedResult.status === 'error' ? customerSerializedResult.error : null,
+      note: 'Lightspeed Serialized rows linked by customerID are usually the strongest bike-ownership indication, but Genie still checks workorders, sales history, and official compatibility sources before giving a fitment answer.',
+      matches: serializedBikes.map(bike => ({
+        serialized_id: bike.serializedId,
+        label: bike.label,
+        serial: bike.serial,
+        item_id: bike.itemId,
+        customer_id: bike.customerId,
+        updated_at: bike.updatedAt,
+        source: bike.source,
+        linked_workorder_ids: bike.linkedWorkorderIds,
+      })),
+    },
+    sales_history: {
+      rows_checked: salesRows.length,
+      limit_applied: salesResult.status === 'ok' ? salesResult.limit_applied : false,
+      recent_items: salesRows.slice(0, 24).map(row => ({
+        sale_date: row.sale_date ?? null,
+        description: compactBikeEvidenceText(row.description, 180),
+        category: compactBikeEvidenceText(row.category, 120) || null,
+        sku: compactBikeEvidenceText(row.sku, 80) || null,
+      })),
+    },
+    workorders: {
+      rows_checked: workorders.length,
+      truncated: workorderList.truncated || customerWorkorderList.truncated,
+      matches: workorders.map(workorder => ({
+        workorder_id: workorder.workorder_id,
+        status_name: workorder.status_name,
+        customer_name: workorder.customer_name,
+        serialized_id: workorder.serialized_id,
+        time_in: workorder.time_in,
+        eta_out: workorder.eta_out,
+        note: compactBikeEvidenceText(workorder.note, 260),
+        internal_note: compactBikeEvidenceText(workorder.internal_note, 200),
+        lines: workorder.lines.slice(0, 6).map(line => compactBikeEvidenceText(line.note, 160)).filter(Boolean),
+        items: workorder.items.slice(0, 8).map(item => ({
+          description: compactBikeEvidenceText(item.description, 140),
+          sku: item.sku,
+          note: compactBikeEvidenceText(item.note, 120),
+        })),
+      })),
+    },
+    bike_context: {
+      likely_bikes: rankedBikeCandidates,
+      confidence,
+      ambiguity,
+      part_or_standard_evidence: partEvidence,
+    },
+    official_research_required: true,
+    official_research_queries: officialCompatibilityResearchQueries({
+      compatibilityQuestion,
+      bikeCandidates: rankedBikeCandidates,
+    }),
+    required_next_steps: rankedBikeCandidates.length === 0
+      ? [
+        'Ask for the exact bike model/year or inspect the bike before naming a compatibility part.',
+        'If the customer has another work order ID, run this tool again with that workorder_id.',
+      ]
+      : [
+        'Use hosted web_search next and prefer official manufacturer manuals, tech docs, or standards pages.',
+        'For every plausible bike with official/public evidence, provide a conditional compatibility answer with confidence and the crank/frame check needed.',
+        ambiguity ? 'If official research cannot disambiguate the top bikes, answer each plausible bike separately and ask one final clarification to choose between them.' : '',
+      ].filter(Boolean),
+  }
+}
+
 // ── Agent SDK tools ──────────────────────────────────────────────────────────
 
 function emitWorkorderCards(emit: Emit, payload: GenieWorkorderCardsPayload | null) {
   if (!payload?.workorders.length) return
   emit({ event: 'workorders', workorders: payload })
+}
+
+function emitCustomerProfile(emit: Emit, payload: GenieCustomerProfilePayload | null) {
+  if (!payload) return
+  emit({ event: 'customer_profile', customer_profile: payload })
 }
 
 function emitGmailConnect(
@@ -8322,25 +10641,116 @@ async function buildGmailEmailActionProposal(
   return { proposal, output: { staged: true, action: args.action, recipient_email: recipient } }
 }
 
+function executorModelForRoute(route: GenieOrchestrationDecision['route'], planned: boolean): string {
+  if (route === 'business_analysis') return STRATEGIC_EXECUTOR_MODEL
+  if (route === 'mixed' && planned) return STRATEGIC_EXECUTOR_MODEL
+  return FAST_EXECUTOR_MODEL
+}
+
+function buildSpecialistAgentTools(route: GenieOrchestrationDecision['route'], latestUserMessage: string) {
+  const tools = []
+
+  if (isBikeCompatibilityIntent(latestUserMessage) || route === 'web_research' || route === 'mixed') {
+    const cyclingCompatibilityAgent = new Agent({
+      name: 'Yellow Jersey Cycling Compatibility Specialist',
+      model: FAST_EXECUTOR_MODEL,
+      instructions: [
+        'You are a senior bicycle mechanic and product standards specialist.',
+        'Review the supplied private bike evidence and public source notes. Identify the likely exact bike/frame, the standard or part needed, confidence, and any shop-floor verification still required.',
+        'If more than one customer bike is plausible, evaluate each plausible bike separately. Give conditional answers for each option instead of stopping at ambiguity.',
+        'Prefer manufacturer manuals, official tech docs, standards bodies, or supplier technical pages. Flag unsupported forum or retailer claims.',
+        'Be concise. Do not invent compatibility standards. If evidence is insufficient, say exactly what model/year/build detail is missing.',
+      ].join('\n'),
+      tools: [],
+      modelSettings: {
+        parallelToolCalls: false,
+        store: false,
+        reasoning: { effort: 'low', summary: 'auto' },
+        text: { verbosity: 'low' },
+      },
+    })
+
+    tools.push(cyclingCompatibilityAgent.asTool({
+      toolName: 'consult_cycling_compatibility_specialist',
+      toolDescription: 'Ask a senior bike-mechanic specialist to critique a compatibility answer after private bike evidence and official/public source notes have been gathered. Use for bottom brackets, brake pads, hangers, bearings, axles, headsets, tyre clearance, drivetrains, and other fitment-risk answers.',
+      parameters: z.object({
+        compatibility_question: z.string().min(3),
+        private_bike_evidence: z.string().min(3).describe('Customer sales/workorder evidence, exact bike candidates, and unresolved ambiguity.'),
+        official_source_notes: z.string().min(3).describe('Notes from official manufacturer/manual/technical pages or a clear statement that no official source was found.'),
+        draft_answer: z.string().optional().describe('Optional draft answer to critique before final response.'),
+      }),
+      runOptions: { maxTurns: 2, reasoningItemIdPolicy: 'omit' },
+      runConfig: {
+        tracingDisabled: !isGenieTracingEnabled(),
+        traceIncludeSensitiveData: false,
+        workflowName: 'Yellow Jersey Cycling Compatibility Specialist',
+      },
+    }))
+  }
+
+  if (route === 'business_analysis') {
+    const bikeStoreAnalystAgent = new Agent({
+      name: 'Yellow Jersey Bike Store Analyst',
+      model: STRATEGIC_EXECUTOR_MODEL,
+      instructions: [
+        'You are a bike-store commercial analyst. Translate Lightspeed evidence into ranked profit, cash, inventory, customer, and workshop opportunities.',
+        'Challenge generic advice. Every recommendation must connect to supplied numbers or explicitly state the missing data.',
+        'Rank by likely commercial impact, speed to execute, and operational risk for a bicycle retailer.',
+      ].join('\n'),
+      tools: [],
+      modelSettings: {
+        parallelToolCalls: false,
+        store: false,
+        reasoning: { effort: 'medium', summary: 'concise' },
+        text: { verbosity: 'medium' },
+      },
+    })
+
+    tools.push(bikeStoreAnalystAgent.asTool({
+      toolName: 'consult_bike_store_analyst',
+      toolDescription: 'Ask a specialist bike-store analyst to critique and rank a broad business-performance answer after the required Lightspeed SQL evidence has been gathered.',
+      parameters: z.object({
+        business_question: z.string().min(3),
+        data_evidence: z.string().min(3).describe('Condensed metrics from SQL/tool results.'),
+        draft_recommendations: z.string().min(3).describe('Draft ranked opportunities or findings to critique.'),
+      }),
+      runOptions: { maxTurns: 2, reasoningItemIdPolicy: 'omit' },
+      runConfig: {
+        tracingDisabled: !isGenieTracingEnabled(),
+        traceIncludeSensitiveData: false,
+        workflowName: 'Yellow Jersey Bike Store Analyst',
+      },
+    }))
+  }
+
+  return tools
+}
+
 function buildAgentTools(
   supabase: Supa,
   userId: string,
   emit: Emit,
   visualPrefs: VisualPrefs,
   latestUserMessage: string,
+  route: GenieOrchestrationDecision['route'],
 ) {
   const wantsGmailConnectCard =
     isGmailConnectIntent(latestUserMessage) || isGmailAddAccountIntent(latestUserMessage)
+  const allowedToolNames = toolNameSetForRoute(route, latestUserMessage)
   const proposalToolOutput = (result: { proposal?: GenieProposal; output: object }) => {
     if (result.proposal) emit({ event: 'proposal', proposal: result.proposal })
     return result.output
   }
 
   const tools = [
-    webSearchTool({
-      searchContextSize: 'low',
-      externalWebAccess: true,
-    }),
+    ...(shouldExposeHostedWebSearch(route)
+      ? [
+        webSearchTool({
+          searchContextSize: 'low',
+          externalWebAccess: true,
+        }),
+      ]
+      : []),
     tool({
       name: 'search_web_images',
       description: 'Search the web for reference product or cycling photos when the user wants to see what something looks like. Use for specific bikes, parts, gear, colours, setup examples, or "what does X look like" — not for analytics, rankings, or abstract non-visual questions. Prefer show_product_images on store inventory tools when the user wants to see their own stock.',
@@ -8364,6 +10774,26 @@ function buildAgentTools(
           })),
           message: result.message,
         }
+      },
+    }),
+    tool({
+      name: 'resolve_customer_bike_context',
+      description: 'Ground customer-specific bike compatibility questions before web research. Extensively checks the named customer, live Lightspeed Serialized bike records linked by customerID, workorder serializedID links, customer profile availability, previous sales, active and finished work orders, work-order notes, parts, and likely bike model evidence. Serialized.description is usually the strongest owned-bike indication, but it is not the only proof. Always use this before hosted web_search when the user asks what part/standard a customer needs and the exact bike is not already proven. If several bikes remain plausible, use the returned candidates to answer conditionally for each plausible bike.',
+      parameters: z.object({
+        customer_query: z.string().min(2).describe('Customer name, customer ID, or work-order customer phrase from the user question.'),
+        compatibility_question: z.string().min(3).describe('The exact compatibility/fitment question, e.g. "what bottom bracket do they need?".'),
+        workorder_id: z.string().optional().describe('Known workorder ID if the user referenced one.'),
+        include_finished_workorders: z.boolean().optional().describe('Defaults true. Set false only when the user explicitly asks for active/open jobs only.'),
+      }),
+      async execute(args) {
+        return resolveCustomerBikeContext({
+          userId,
+          emit,
+          customer_query: args.customer_query,
+          compatibility_question: args.compatibility_question,
+          workorder_id: args.workorder_id,
+          include_finished_workorders: args.include_finished_workorders,
+        })
       },
     }),
     tool({
@@ -8506,9 +10936,10 @@ function buildAgentTools(
       }),
       async execute(args) {
         emitStatus(emit, 'lightspeed_sales', `Running SQL report: ${args.purpose}`)
-        return runLightspeedSqlQuery(userId, args, emit, visualPrefs)
+        return runLightspeedSqlQuery(userId, args, emit, visualPrefs, latestUserMessage)
       },
     }),
+    ...buildSpecialistAgentTools(route, latestUserMessage),
     tool({
       name: 'get_lightspeed_sales_summary',
       description: 'Aggregate completed Lightspeed sales totals, net sales, total cost, gross profit, and gross margin for an ISO date range from the lightspeed_sales_report_lines SQL table.',
@@ -8604,7 +11035,7 @@ function buildAgentTools(
     }),
     tool({
       name: 'search_lightspeed_inventory',
-      description: 'Search the SQL Lightspeed inventory mirror by product, SKU, barcode, brand, supplier, or category. Use for current stock, availability, item detail, brand inventory, supplier inventory, price/cost, QOH, sellable quantity, and reorder questions. The mirror syncs every 10 minutes; do not call the live Lightspeed API from Genie. Pass show_product_images:true only when the user wants to see what specific products look like.',
+      description: 'Search the SQL Lightspeed inventory mirror by product, SKU, barcode, brand, supplier, or category. Use for current stock, availability, item detail, brand inventory, supplier inventory, price/cost, QOH, sellable quantity, and reorder questions. The mirror syncs every 10 minutes; do not call the live Lightspeed API from Genie. For small product availability lookups, this tool may stream product cards and return product_links/product_url values; use those URLs as Markdown links in the answer when present. Pass show_product_images:true when the user explicitly wants to see what specific products look like.',
       parameters: z.object({
         query: z.string(),
         limit: z.number().int().min(1).max(20).optional(),
@@ -8631,16 +11062,30 @@ function buildAgentTools(
             system_sku: match.system_sku != null ? String(match.system_sku) : null,
             custom_sku: match.custom_sku != null ? String(match.custom_sku) : null,
           })))
-          if (
-            shouldEmitStoreProductPreviews(
-              args.query,
-              previewMatches.length,
-              previewMatches.filter(match => Boolean(match.primary_image_url)).length,
-              args.show_product_images,
-            )
-          ) {
-            const previews = await buildInventoryProductPreviews(supabase, userId, previewMatches)
-            if (previews.length > 0) emit({ event: 'products', products: previews })
+          const previews = await maybeEmitInventoryProductCards({
+            supabase,
+            userId,
+            latestUserMessage,
+            query: args.query,
+            matches: previewMatches,
+            emit,
+            force: args.show_product_images,
+          })
+          if (previews.length > 0) {
+            const previewByItemId = new Map(previews.map(preview => [String(preview.lightspeed_item_id ?? ''), preview]))
+            return {
+              ...result,
+              matches: result.matches.map(match => {
+                const preview = previewByItemId.get(String(match.item_id ?? ''))
+                return {
+                  ...match,
+                  product_url: preview?.product_url ?? null,
+                  product_page_available: Boolean(preview?.product_url),
+                }
+              }),
+              product_links: productLinksFromPreviews(previews),
+              product_cards_emitted: true,
+            }
           }
         }
 
@@ -8706,13 +11151,18 @@ function buildAgentTools(
     }),
     tool({
       name: 'get_lightspeed_customer_profile',
-      description: 'Look up a customer by customer ID from the SQL sales report table. Contact fields such as phone, email, opt-out flags, and address are not available until a customer/contact table exists.',
+      description: 'Build and stream a full customer profile card for a store customer: live contact details, opt-out flags, lifetime spend, recent sales, top items, customer-owned Serialized bikes, work-order serializedID bike links, inferred bikes from history, and active/finished/archived work-order history including public notes, internal notes, labour lines, parts, serialized_id, sale_id, status, and dates. Use this first for "tell me about customer X", "customer X", "what bikes does X have", "X\'s bikes", "pull up customer", "what do we know about", customer history, lifetime spend, service history, bikes owned, and broad customer-profile requests.',
       parameters: z.object({
-        customer_id: z.string(),
+        customer_id: z.string().optional().describe('Exact Lightspeed customer ID when known.'),
+        query: z.string().optional().describe('Customer name, company, phone, email, or address when customer_id is unknown.'),
+        include_workorders: z.boolean().optional().describe('Defaults true. Set false only when the user explicitly asks for sales/contact only.'),
+        sales_row_limit: z.number().int().min(1000).max(SALES_REPORT_SQL_HARD_MAX_ROWS).optional().describe('Maximum customer sales report line rows to inspect. Defaults 100000.'),
       }),
       async execute(args) {
-        emitStatus(emit, 'lightspeed_customers', `Querying SQL customer profile lookup for ${args.customer_id}...`)
-        return getLightspeedCustomerProfileSql(userId, args, emit)
+        emitStatus(emit, 'lightspeed_customers', `Building customer profile for ${args.customer_id ?? args.query ?? 'selected customer'}...`)
+        const result = await buildLightspeedCustomerProfile(userId, args, emit)
+        emitCustomerProfile(emit, result)
+        return result
       },
     }),
     tool({
@@ -8993,9 +11443,11 @@ function buildAgentTools(
 
         const withImages = previewRows.filter(row => Boolean(row.primary_image_url))
         if (
-          shouldEmitStoreProductPreviews(query, withImages.length, withImages.length, show_product_images)
+          shouldEmitStoreProductPreviews(query, previewRows.length, withImages.length, show_product_images)
         ) {
-          const previews = await buildInventoryProductPreviews(supabase, userId, withImages)
+          const previews = await buildInventoryProductPreviews(supabase, userId, previewRows, {
+            requireApprovedImage: true,
+          })
           if (previews.length > 0) emit({ event: 'products', products: previews })
         }
 
@@ -9015,21 +11467,47 @@ function buildAgentTools(
     }),
     tool({
       name: 'list_lightspeed_workorders',
-      description: 'List live Lightspeed repair/service work orders with full details. Reuse recent private structured workorder context for follow-ups when it already answers the question. Use scope "open" for active/in-progress jobs, "finished" for completed, done, paid, or pickup-ready questions such as "what did X get done", or "all" only when the user truly needs active plus completed history. For named-customer bike fitment questions, query the customer name with include_details:true and use work-order notes/parts to identify the bike before web compatibility research. For due-date questions ("due today", ETA on a date), pass due_on as YYYY-MM-DD in the store timezone. Use small limits for named-customer lookups. Returns customer contact, status, dates, notes, labour lines, and parts. Answer-only — never create proposals.',
+      description: 'List live Lightspeed repair/service work orders with full details. Reuse recent private structured workorder context for follow-ups when it already answers the question. Use scope "open" for active/in-progress jobs, "finished" for completed, done, paid, or pickup-ready questions such as "what did X get done", or "all" only when the user truly needs active plus completed history. For every workorder question, inspect both note and internal_note plus warranty, labour line notes, item descriptions, item notes, serialized_id, sale_id, customer details, status, and dates before answering. For named-customer bike fitment questions, query the customer name with include_details:true and use work-order notes/parts to identify the bike before web compatibility research. For due-date questions ("due today", ETA on a date), pass due_on as YYYY-MM-DD in the store timezone. Use small limits for named-customer lookups. Answer-only — never create proposals.',
       parameters: z.object({
         scope: z.enum(['open', 'finished', 'all']).optional().describe('Defaults to open for active work orders.'),
         due_on: z.string().optional().describe('Filter by ETA out date (YYYY-MM-DD, store timezone). Use for "due today" and similar questions.'),
-        query: z.string().optional().describe('Optional filter on customer name, phone, work order ID, notes, or part descriptions.'),
+        customer_id: z.string().optional().describe('Exact Lightspeed customer ID. Prefer this over name filtering when known.'),
+        query: z.string().optional().describe('Optional filter on customer name, phone, work order ID, public note, internal note, labour line note, item note, or part descriptions.'),
         limit: z.number().int().min(1).max(100).optional(),
         include_details: z.boolean().optional().describe('Include lines, parts, and customer contact. Defaults to true.'),
+        include_archived: z.boolean().optional().describe('Include archived historical work orders. Defaults true for resolved customer history when scope is all or finished.'),
+        max_pages_per_status: z.number().int().min(1).max(8).optional(),
       }),
       async execute(args) {
-        const scope = args.scope ?? 'open'
         const dueOn = args.due_on?.trim() || ''
+        const originalQuery = args.query?.trim() || ''
+        const customerLookupQuery = originalQuery ? workorderCustomerLookupQuery(originalQuery) : null
+        const likelyCustomerQuery = originalQuery ? shouldResolveWorkorderCustomerQuery(originalQuery) : false
+        const scope = args.scope ?? (likelyCustomerQuery ? 'all' : 'open')
+        let customerId = args.customer_id?.trim() || ''
+        let query = originalQuery || undefined
+        let resolvedCustomerName: string | null = null
+
+        if (!customerId && customerLookupQuery) {
+          emitStatus(emit, 'lightspeed_customers', `Resolving customer profile for "${customerLookupQuery}"`)
+          const resolved = await resolveCustomerForProfile(userId, { query: customerLookupQuery }, emit)
+          if (resolved.status === 'resolved') {
+            customerId = resolved.customer_id
+            resolvedCustomerName = resolved.customer.name
+            query = undefined
+          } else if (customerLookupQuery !== originalQuery) {
+            query = customerLookupQuery
+          }
+        }
+
+        const includeArchived = args.include_archived ?? (Boolean(customerId) && scope !== 'open')
+        const limit = args.limit ?? (customerId ? 30 : undefined)
         emitStatus(
           emit,
           'lightspeed_workorders',
-          dueOn
+          customerId
+            ? `Loading work orders for ${resolvedCustomerName ?? `customer ${customerId}`}`
+            : dueOn
             ? `Loading work orders due ${dueOn}`
             : scope === 'open'
               ? 'Loading open work orders'
@@ -9038,9 +11516,12 @@ function buildAgentTools(
         const result = await listGenieWorkorders(userId, {
           scope,
           due_on: dueOn || undefined,
-          query: args.query,
-          limit: args.limit,
+          customer_id: customerId || undefined,
+          query,
+          limit,
           include_details: args.include_details,
+          include_archived: includeArchived,
+          max_pages_per_status: args.max_pages_per_status ?? (query ? 1 : undefined),
         })
         emitWorkorderCards(
           emit,
@@ -9053,25 +11534,18 @@ function buildAgentTools(
         )
         return {
           scope: result.scope,
+          customer_id: customerId || null,
+          customer_resolved_from_query: resolvedCustomerName,
+          include_archived: includeArchived,
           total: result.total,
           truncated: result.truncated,
-          workorders: result.workorders.map(row => ({
-            workorder_id: row.workorder_id,
-            customer_name: row.customer_name,
-            status_name: row.status_name,
-            is_finished: row.is_finished,
-            time_in: row.time_in,
-            eta_out: row.eta_out,
-            note: row.note,
-            line_count: row.lines.length,
-            item_count: row.items.length,
-          })),
+          workorders: result.workorders.map(fullWorkorderForAgent),
         }
       },
     }),
     tool({
       name: 'get_lightspeed_workorder',
-      description: 'Fetch one Lightspeed work order by ID with full details: customer, status, dates, notes, labour lines, and parts/items.',
+      description: 'Fetch one Lightspeed work order by ID with full details: customer, status, dates, public note, internal_note, warranty, labour line notes, item/part descriptions, item notes, serialized_id, sale_id, and totals. For every workorder answer, inspect all of these fields before responding.',
       parameters: z.object({
         workorder_id: z.string().min(1),
       }),
@@ -9091,10 +11565,7 @@ function buildAgentTools(
         )
         return {
           found: true,
-          workorder_id: workorder.workorder_id,
-          customer_name: workorder.customer_name,
-          status_name: workorder.status_name,
-          is_finished: workorder.is_finished,
+          workorder: fullWorkorderForAgent(workorder),
         }
       },
     }),
@@ -9226,7 +11697,8 @@ function buildAgentTools(
           connected_account_id: args.connected_account_id,
         })
         if (payload.emails.length > 0 || payload.scan_stats?.scan_mode === 'full') {
-          const { message_bodies: _agentBodies, ...uiPayload } = payload
+          const uiPayload = { ...payload }
+          delete uiPayload.message_bodies
           const agentContext = buildGmailAgentContextFromPayload(payload)
           emit({
             event: 'gmail_emails',
@@ -9316,13 +11788,18 @@ function buildAgentTools(
 
   return tools.filter(candidate => {
     const name = 'name' in candidate ? String(candidate.name) : ''
-    return !DEPRECATED_LIGHTSPEED_ANALYTICAL_TOOL_NAMES.has(name)
+    if (DEPRECATED_LIGHTSPEED_ANALYTICAL_TOOL_NAMES.has(name)) return false
+    if (!name) return true
+    return allowedToolNames.has(name)
   })
 }
 
 function statusForTool(toolName: string): { phase: string; text: string } {
   if (toolName === 'web_search' || toolName === 'web_search_preview' || toolName === 'web_search_call') return { phase: 'web_search', text: 'Searching web' }
   if (toolName === 'search_web_images') return { phase: 'image_search', text: 'Finding images' }
+  if (toolName === 'resolve_customer_bike_context') return { phase: 'customer_context', text: 'Resolving customer bike context' }
+  if (toolName === 'consult_cycling_compatibility_specialist') return { phase: 'specialist', text: 'Checking fitment with mechanic specialist' }
+  if (toolName === 'consult_bike_store_analyst') return { phase: 'specialist', text: 'Reviewing analysis with store specialist' }
   if (toolName === 'record_lightspeed_plan') return { phase: 'planning', text: 'Planning lookup' }
   if (toolName === 'record_lightspeed_recheck') return { phase: 'rechecking', text: 'Alternate query' }
   if (toolName === 'run_lightspeed_sql_query') return { phase: 'lightspeed_sales', text: 'Running SQL' }
@@ -9358,6 +11835,44 @@ function statusForTool(toolName: string): { phase: string; text: string } {
   if (toolName === 'get_gmail_connection_status') return { phase: 'gmail', text: 'Checking Gmail' }
   if (toolName.startsWith('propose_')) return { phase: 'tool', text: 'Preparing changes' }
   return { phase: 'tool', text: `Running ${toolName.replaceAll('_', ' ')}` }
+}
+
+function statusAfterTool(toolName: string): { phase: string; text: string } {
+  if (toolName === 'run_lightspeed_sql_query') return { phase: 'tool_done', text: 'SQL result ready' }
+  if (toolName === 'resolve_customer_bike_context') return { phase: 'tool_done', text: 'Customer bike evidence ready' }
+  if (toolName === 'consult_cycling_compatibility_specialist') return { phase: 'tool_done', text: 'Mechanic specialist check ready' }
+  if (toolName === 'consult_bike_store_analyst') return { phase: 'tool_done', text: 'Store analyst review ready' }
+  if (toolName === 'search_lightspeed_inventory' || toolName === 'search_lightspeed_products') return { phase: 'tool_done', text: 'Stock result ready' }
+  if (toolName === 'get_lightspeed_stale_inventory_cash' || toolName === 'find_discount_candidates') return { phase: 'tool_done', text: 'Inventory analysis ready' }
+  if (toolName === 'get_lightspeed_customer_profile') return { phase: 'tool_done', text: 'Customer profile ready' }
+  if (toolName === 'list_lightspeed_workorders' || toolName === 'get_lightspeed_workorder') return { phase: 'tool_done', text: 'Work order result ready' }
+  if (toolName === 'search_gmail' || toolName === 'read_gmail_messages' || toolName === 'get_gmail_connection_status') return { phase: 'gmail_done', text: 'Gmail result ready' }
+  if (toolName === 'search_web_images' || toolName === 'web_search' || toolName === 'web_search_preview' || toolName === 'web_search_call') return { phase: 'web_search_done', text: 'Web result ready' }
+  if (toolName === 'verify_question_answered') return { phase: 'responding', text: 'Checking whether the answer is complete' }
+  if (toolName === 'record_answer_recheck' || toolName === 'record_lightspeed_recheck') return { phase: 'rechecking', text: 'Recheck strategy ready' }
+  if (toolName.startsWith('propose_')) return { phase: 'tool_done', text: 'Proposal preview ready' }
+  return { phase: 'tool_done', text: 'Tool result ready' }
+}
+
+function statusForRoute(route: GenieOrchestrationDecision['route']): string {
+  if (route === 'lightspeed_sql') return 'Workflow selected: Lightspeed lookup'
+  if (route === 'storefront_action') return 'Workflow selected: Storefront action'
+  if (route === 'web_research') return 'Workflow selected: Web research'
+  if (route === 'business_analysis') return 'Workflow selected: Business analysis'
+  if (route === 'mixed') return 'Workflow selected: Store data plus research'
+  if (route === 'casual_chat') return 'Workflow selected: Direct answer'
+  if (route === 'unsupported') return 'Workflow selected: Redirect'
+  return 'Workflow selected'
+}
+
+function statusForExecutionStart(route: GenieOrchestrationDecision['route'], toolCount: number): string {
+  const suffix = toolCount > 0 ? ` with ${toolCount} tool${toolCount === 1 ? '' : 's'}` : ''
+  if (route === 'lightspeed_sql') return `Starting Lightspeed lookup${suffix}`
+  if (route === 'storefront_action') return `Starting storefront workflow${suffix}`
+  if (route === 'web_research') return `Starting web research${suffix}`
+  if (route === 'business_analysis') return `Starting business analysis${suffix}`
+  if (route === 'mixed') return `Starting mixed workflow${suffix}`
+  return `Starting store agent${suffix}`
 }
 
 function maxTurnsForRoute(route: GenieOrchestrationDecision['route'], planned: boolean): number {
@@ -9406,6 +11921,15 @@ export async function POST(request: NextRequest) {
         let lastStatusText = 'Working'
         let finalRoute: GenieOrchestrationDecision['route'] | null = null
         let plannerUsed = false
+        let orchestrationSource: 'model' | null = null
+        let routerInvoked = false
+        let executorModel: string | null = null
+        let firstTextAt: number | null = null
+        let runStatus: 'completed' | 'error' | 'cancelled' = 'completed'
+        let runErrorMessage: string | null = null
+        let toolCallCount = 0
+        const toolCallNames: Record<string, number> = {}
+        let activeToolName: string | null = null
         let streamClosed = false
         const write = (data: object) => {
           if (streamClosed) return
@@ -9447,31 +11971,28 @@ export async function POST(request: NextRequest) {
           }
         }, STREAM_HEARTBEAT_MS)
         try {
-          emit({ event: 'status', phase: 'thinking', text: 'Thinking' })
+          emit({ event: 'status', phase: 'context', text: 'Reading conversation context' })
 
           const latestUserMessage = latestUserText(messages)
-          const autoWebImages = await maybeSearchWebImagesForUserMessage(latestUserMessage)
-          if (autoWebImages) {
-            emit({ event: 'status', phase: 'image_search', text: 'Finding images' })
-            emit({ event: 'web_images', images: autoWebImages.images, query: autoWebImages.query })
-            emit({ event: 'status', phase: 'image_search_done', text: 'Images ready' })
-          }
-
           const inputMessages = toAgentInputMessages(messages)
           const orchestrationStartedAt = Date.now()
-          let orchestration = applyGmailPlanningPolicy(
-            await createGenieOrchestrationDecision({
-              storeName,
-              inputMessages,
-              signal: request.signal,
-            }),
-            latestUserMessage,
-          )
+          routerInvoked = true
+          orchestrationSource = 'model'
+          emit({ event: 'status', phase: 'routing', text: 'Choosing the best workflow' })
+          const orchestration = await createGenieOrchestrationDecision({
+            storeName,
+            userId: user.id,
+            requestId,
+            inputMessages,
+            signal: request.signal,
+          })
           finalRoute = orchestration.route
+          emit({ event: 'status', phase: 'routing_done', text: statusForRoute(orchestration.route) })
           console.info('[Genie Agent] orchestration', {
             requestId,
+            orchestration_source: orchestrationSource,
             router_model: ORCHESTRATOR_MODEL,
-            router_invoked: true,
+            router_invoked: routerInvoked,
             route: orchestration.route,
             needs_plan: orchestration.needs_plan,
             reason: orchestration.reason,
@@ -9494,7 +12015,15 @@ export async function POST(request: NextRequest) {
               },
             })
 
-            const casualStream = await storeAgentRunner.run(casualAgent, inputMessages, {
+            const casualRunner = createGenieRunner({
+              requestId,
+              userId: user.id,
+              storeName,
+              route: orchestration.route,
+              stage: 'casual',
+              workflowName: 'Yellow Jersey Genie Casual',
+            })
+            const casualStream = await casualRunner.run(casualAgent, inputMessages, {
               stream: true,
               maxTurns: 1,
               signal: request.signal,
@@ -9535,6 +12064,14 @@ export async function POST(request: NextRequest) {
               }
 
               if (rawType === 'output_text_delta' || rawType === 'response.output_text.delta') {
+                if (firstTextAt == null && delta) {
+                  firstTextAt = Date.now()
+                  console.info('[Genie Agent] first_text', {
+                    requestId,
+                    route: finalRoute,
+                    ms: firstTextAt - requestStartedAt,
+                  })
+                }
                 emit({ event: 'text_delta', text: delta })
               }
             }
@@ -9544,20 +12081,88 @@ export async function POST(request: NextRequest) {
             return
           }
 
+          const customerProfileQuery = extractCustomerProfileQuery(latestUserMessage)
+          if (customerProfileQuery && orchestration.route === 'lightspeed_sql') {
+            executorModel = 'direct_customer_profile'
+            toolCallCount += 1
+            toolCallNames.get_lightspeed_customer_profile = 1
+            emit({ event: 'status', phase: 'setup', text: 'Preparing customer profile' })
+            emit({ event: 'status', phase: 'lightspeed_customers', text: `Building customer profile for ${customerProfileQuery}` })
+            const profile = await buildLightspeedCustomerProfile(user.id, {
+              query: customerProfileQuery,
+              include_workorders: true,
+              sales_row_limit: 20_000,
+            }, emit)
+            emitCustomerProfile(emit, profile)
+            const answer = customerProfileAnswer(profile)
+            firstTextAt = Date.now()
+            console.info('[Genie Agent] first_text', {
+              requestId,
+              route: finalRoute,
+              ms: firstTextAt - requestStartedAt,
+              direct_path: 'customer_profile',
+            })
+            emit({ event: 'status', phase: 'responding', text: 'Writing answer' })
+            emit({ event: 'text_delta', text: answer })
+            emit({ event: 'done' })
+            return
+          }
+
+          const customerBikeLookup = resolveCustomerBikeOwnershipLookup(messages, latestUserMessage)
+          if (customerBikeLookup && orchestration.route === 'lightspeed_sql') {
+            executorModel = 'direct_customer_profile'
+            toolCallCount += 1
+            toolCallNames.get_lightspeed_customer_profile = 1
+            emit({ event: 'status', phase: 'setup', text: 'Preparing customer bike lookup' })
+            emit({
+              event: 'status',
+              phase: 'lightspeed_customers',
+              text: customerBikeLookup.source === 'latest_user'
+                ? `Building customer profile for ${customerBikeLookup.query}`
+                : `Using previous customer context for ${customerBikeLookup.query}`,
+            })
+            const profile = await buildLightspeedCustomerProfile(user.id, {
+              customer_id: customerBikeLookup.customer_id,
+              query: customerBikeLookup.query,
+              include_workorders: true,
+              sales_row_limit: 20_000,
+            }, emit)
+            emitCustomerProfile(emit, profile)
+            const answer = customerBikeProfileAnswer(profile)
+            firstTextAt = Date.now()
+            console.info('[Genie Agent] first_text', {
+              requestId,
+              route: finalRoute,
+              ms: firstTextAt - requestStartedAt,
+              direct_path: 'customer_bike_profile',
+            })
+            emit({ event: 'status', phase: 'responding', text: 'Writing answer' })
+            emit({ event: 'text_delta', text: answer })
+            emit({ event: 'done' })
+            return
+          }
+
           let executionPlan: GenieExecutionPlan | null = null
 
           if (orchestration.needs_plan) {
             plannerUsed = true
-            emit({ event: 'status', phase: 'planning', text: compactGenieProgressText('Planning', 'planning') })
+            emit({ event: 'status', phase: 'planning', text: 'Planning the smart workflow' })
             const planningStartedAt = Date.now()
             executionPlan = await createGenieExecutionPlan({
               storeName,
+              userId: user.id,
+              requestId,
               inputMessages,
               route: orchestration.route,
               signal: request.signal,
             })
             if (executionPlan) {
               emitAnalysisPlan(emit, toAnalysisPlanPayload(executionPlan))
+              emit({
+                event: 'status',
+                phase: 'planning_done',
+                text: `Planned ${executionPlan.execution_steps.length} steps`,
+              })
             }
             console.info('[Genie Agent] planning', {
               requestId,
@@ -9568,32 +12173,67 @@ export async function POST(request: NextRequest) {
             emit({
               event: 'status',
               phase: 'planning_done',
-              text: compactGenieProgressText('Running analysis', 'planning_done'),
+              text: 'Plan ready',
             })
           } else {
-            emit({ event: 'status', phase: 'thinking', text: 'Thinking' })
+            emit({ event: 'status', phase: 'setup', text: 'Preparing route tools' })
           }
+
+          executorModel = executorModelForRoute(orchestration.route, orchestration.needs_plan)
+          const agentTools = buildAgentTools(
+            supabase,
+            user.id,
+            emit,
+            visualPrefs,
+            latestUserMessage,
+            orchestration.route,
+          )
+          const agentToolNames = agentTools.map(candidate =>
+            'name' in candidate && candidate.name ? String(candidate.name) : 'hosted_web_search',
+          )
+          emit({
+            event: 'status',
+            phase: 'setup',
+            text: `Preparing ${agentTools.length} route tool${agentTools.length === 1 ? '' : 's'}`,
+          })
+          console.info('[Genie Agent] executor', {
+            requestId,
+            route: orchestration.route,
+            model: executorModel,
+            tool_count: agentTools.length,
+            tool_names: agentToolNames,
+            parallel_tool_calls: canRunParallelTools(orchestration.route),
+            max_tool_concurrency: maxToolConcurrencyForRoute(orchestration.route),
+          })
 
           const agent = new Agent({
             name: 'Yellow Jersey Store Agent',
-            model: EXECUTOR_MODEL,
-            instructions: buildSystemPrompt(storeName, executionPlan),
-            tools: buildAgentTools(supabase, user.id, emit, visualPrefs, latestUserMessage),
+            model: executorModel,
+            instructions: buildSystemPrompt(storeName, executionPlan, orchestration.route, latestUserMessage),
+            tools: agentTools,
             modelSettings: {
-              parallelToolCalls: false,
+              parallelToolCalls: canRunParallelTools(orchestration.route),
               store: false,
               reasoning: orchestration.needs_plan || orchestration.route === 'business_analysis'
                 ? { effort: 'medium', summary: 'concise' }
                 : { effort: 'low', summary: 'auto' },
-              text: { verbosity: 'low' },
+              text: { verbosity: orchestration.route === 'business_analysis' ? 'medium' : 'low' },
             },
           })
 
-          const agentStream = await storeAgentRunner.run(agent, inputMessages, {
+          const executorRunner = createGenieRunner({
+            requestId,
+            userId: user.id,
+            storeName,
+            route: orchestration.route,
+            stage: 'executor',
+            workflowName: 'Yellow Jersey Genie Executor',
+          })
+          const agentStream = await executorRunner.run(agent, inputMessages, {
             stream: true,
             maxTurns: maxTurnsForRoute(orchestration.route, orchestration.needs_plan),
             signal: request.signal,
-            toolExecution: { maxFunctionToolConcurrency: 1 },
+            toolExecution: { maxFunctionToolConcurrency: maxToolConcurrencyForRoute(orchestration.route) },
             toolNotFoundBehavior: 'return_error_to_model',
             reasoningItemIdPolicy: 'omit',
             errorHandlers: {
@@ -9604,6 +12244,12 @@ export async function POST(request: NextRequest) {
             },
           })
 
+          emit({
+            event: 'status',
+            phase: 'thinking',
+            text: statusForExecutionStart(orchestration.route, agentTools.length),
+          })
+
           for await (const event of agentStream) {
             if (event.type === 'run_item_stream_event') {
               const item = event.item as StreamToolItem
@@ -9612,10 +12258,15 @@ export async function POST(request: NextRequest) {
                 emit({ event: 'status', phase: 'thinking', text: compactGenieProgressText('Thinking', 'thinking') })
               }
               if (event.name === 'tool_called' && toolName) {
+                toolCallCount += 1
+                toolCallNames[toolName] = (toolCallNames[toolName] ?? 0) + 1
+                activeToolName = toolName
                 emit({ event: 'status', ...statusForTool(toolName) })
               }
               if (event.name === 'tool_output') {
-                emit({ event: 'status', phase: 'thinking', text: 'Preparing answer' })
+                emit({ event: 'status', ...statusAfterTool(activeToolName ?? 'tool') })
+                emit({ event: 'status', phase: 'responding', text: 'Checking whether the answer is complete' })
+                activeToolName = null
               }
             }
 
@@ -9674,6 +12325,14 @@ export async function POST(request: NextRequest) {
               }
 
               if (rawType === 'output_text_delta' || rawType === 'response.output_text.delta') {
+                if (firstTextAt == null && delta) {
+                  firstTextAt = Date.now()
+                  console.info('[Genie Agent] first_text', {
+                    requestId,
+                    route: finalRoute,
+                    ms: firstTextAt - requestStartedAt,
+                  })
+                }
                 emit({ event: 'text_delta', text: delta })
               }
             }
@@ -9683,18 +12342,50 @@ export async function POST(request: NextRequest) {
 
           emit({ event: 'done' })
         } catch (err) {
+          runStatus = request.signal.aborted ? 'cancelled' : 'error'
+          runErrorMessage = err instanceof Error ? err.message : 'Unknown error'
           try {
-            emit({ event: 'error', message: err instanceof Error ? err.message : 'Unknown error' })
+            emit({ event: 'error', message: runErrorMessage })
           } catch {
             streamClosed = true
           }
         } finally {
           clearInterval(heartbeatTimer)
+          const totalMs = Date.now() - requestStartedAt
           console.info('[Genie Agent] completed', {
             requestId,
             route: finalRoute,
             planner_used: plannerUsed,
-            ms: Date.now() - requestStartedAt,
+            orchestration_source: orchestrationSource,
+            router_invoked: routerInvoked,
+            executor_model: executorModel,
+            first_text_ms: firstTextAt == null ? null : firstTextAt - requestStartedAt,
+            tool_call_count: toolCallCount,
+            tool_call_names: toolCallNames,
+            status: runStatus,
+            trace_id: genieTraceId(requestId, 'executor'),
+            ms: totalMs,
+          })
+          await persistGenieAgentRun({
+            request_id: requestId,
+            user_id: user.id,
+            route: finalRoute,
+            status: runStatus,
+            orchestration_source: orchestrationSource,
+            router_invoked: routerInvoked,
+            planner_used: plannerUsed,
+            executor_model: executorModel,
+            first_text_ms: firstTextAt == null ? null : firstTextAt - requestStartedAt,
+            total_ms: totalMs,
+            tool_call_count: toolCallCount,
+            tool_call_names: toolCallNames,
+            trace_id: genieTraceId(requestId, 'executor'),
+            error_message: runErrorMessage,
+          }).catch(error => {
+            console.warn('[Genie Agent] telemetry insert failed', {
+              requestId,
+              error: error instanceof Error ? error.message : String(error),
+            })
           })
           if (!streamClosed) {
             streamClosed = true

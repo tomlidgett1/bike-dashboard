@@ -93,7 +93,7 @@ export function Topbar() {
   const showDeferredActions = useDeferredTopbarActions();
 
   return (
-    <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border/50 bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border/40 bg-background px-4 sm:px-6 lg:px-8">
       <SidebarTrigger className="-ml-1" />
       <Breadcrumb>
         <BreadcrumbList>

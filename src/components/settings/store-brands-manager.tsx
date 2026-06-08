@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { motion, Reorder } from "framer-motion";
-import { Plus, Trash2, Edit2, GripVertical, Loader2, Upload, X, Tag } from "lucide-react";
+import { Reorder } from "framer-motion";
+import { Trash2, Edit2, GripVertical, Loader2, Upload, X, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,7 +25,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent } from "@/components/ui/card";
 import type { StoreBrand } from "@/lib/types/store";
 
 interface BrandFormData {
@@ -33,7 +32,7 @@ interface BrandFormData {
   logoUrl: string;
 }
 
-export function StoreBrandsManager() {
+export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) {
   const [brands, setBrands] = React.useState<StoreBrand[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -64,12 +63,16 @@ export function StoreBrandsManager() {
     fetchBrands();
   }, [fetchBrands]);
 
-  const handleAddNew = () => {
+  const handleAddNew = React.useCallback(() => {
     setEditingBrand(null);
     setFormData({ name: '', logoUrl: '' });
     setSaveError(null);
     setIsDialogOpen(true);
-  };
+  }, []);
+
+  React.useEffect(() => {
+    if (addRequest > 0) handleAddNew();
+  }, [addRequest, handleAddNew]);
 
   const handleEdit = (brand: StoreBrand) => {
     setEditingBrand(brand);
@@ -184,73 +187,59 @@ export function StoreBrandsManager() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={handleAddNew} size="sm">
-          <Plus className="size-4" />
-          Add Brand
-        </Button>
-      </div>
-
+    <>
       {brands.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Tag className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">No brands added yet</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Add the brands you stock to showcase them on your store page
-            </p>
-          </CardContent>
-        </Card>
+        <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+          <Tag className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+          <p className="text-sm text-gray-600">No brands added yet</p>
+          <p className="mt-1 text-xs text-gray-500">
+            Add the brands you stock to showcase them on your store page
+          </p>
+        </div>
       ) : (
         <Reorder.Group
           axis="y"
           values={brands}
           onReorder={handleReorder}
-          className="space-y-2"
+          className="divide-y divide-gray-100 rounded-md border border-gray-200 bg-white"
         >
           {brands.map((brand) => (
             <Reorder.Item key={brand.id} value={brand}>
-              <div className="flex items-center gap-3 p-3 border border-border rounded-md hover:bg-accent/40 transition-colors cursor-move bg-card">
+              <div className="flex cursor-move items-center gap-3 px-3 py-2.5 transition-colors hover:bg-gray-50">
                 <div className="flex-shrink-0 cursor-grab active:cursor-grabbing">
-                  <GripVertical className="h-4 w-4 text-muted-foreground/60" />
+                  <GripVertical className="h-4 w-4 text-gray-400" />
                 </div>
 
-                {/* Logo preview */}
-                <div className="flex-shrink-0 h-10 w-10 rounded-md bg-muted border border-border overflow-hidden flex items-center justify-center">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-50">
                   {brand.logo_url ? (
                     <Image
                       src={brand.logo_url}
                       alt={brand.name}
-                      width={40}
-                      height={40}
-                      className="object-contain w-full h-full p-0.5"
+                      width={36}
+                      height={36}
+                      className="h-full w-full object-contain p-0.5"
                     />
                   ) : (
-                    <Tag className="h-4 w-4 text-muted-foreground/40" />
+                    <Tag className="h-4 w-4 text-gray-300" />
                   )}
                 </div>
 
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-foreground truncate">{brand.name}</h4>
+                <div className="min-w-0 flex-1">
+                  <h4 className="truncate text-sm font-medium text-gray-900">{brand.name}</h4>
                   {!brand.logo_url && (
-                    <p className="text-xs text-muted-foreground mt-0.5">No logo uploaded</p>
+                    <p className="mt-0.5 text-xs text-gray-500">No logo uploaded</p>
                   )}
                 </div>
 
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => handleEdit(brand)}
-                  >
+                <div className="flex flex-shrink-0 items-center gap-0.5">
+                  <Button variant="ghost" size="icon-sm" onClick={() => handleEdit(brand)}>
                     <Edit2 className="size-4" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     onClick={() => setDeleteConfirmId(brand.id)}
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="size-4" />
                   </Button>
@@ -396,6 +385,6 @@ export function StoreBrandsManager() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

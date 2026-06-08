@@ -35,9 +35,14 @@ const AUTO_ASSIGN_DIALOG_CLASS =
 
 interface AutoAssignCarouselsPanelProps {
   onApplied?: () => void;
+  /** Compact header button only — no summary card. */
+  variant?: "panel" | "button";
 }
 
-export function AutoAssignCarouselsPanel({ onApplied }: AutoAssignCarouselsPanelProps) {
+export function AutoAssignCarouselsPanel({
+  onApplied,
+  variant = "panel",
+}: AutoAssignCarouselsPanelProps) {
   const [loading, setLoading] = React.useState(true);
   const [scanning, setScanning] = React.useState(false);
   const [applying, setApplying] = React.useState(false);
@@ -156,6 +161,15 @@ export function AutoAssignCarouselsPanel({ onApplied }: AutoAssignCarouselsPanel
   };
 
   if (loading) {
+    if (variant === "button") {
+      return (
+        <Button size="sm" variant="outline" disabled className="rounded-md">
+          <Loader2 className="size-4 animate-spin" />
+          Auto-assign
+        </Button>
+      );
+    }
+
     return (
       <div className="flex items-center gap-2 rounded-md border bg-white px-4 py-3 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" />
@@ -169,6 +183,8 @@ export function AutoAssignCarouselsPanel({ onApplied }: AutoAssignCarouselsPanel
   const awaitingDynamicMatch = uncategorised > 0 && !hasActions;
 
   if (uncategorised === 0) {
+    if (variant === "button") return null;
+
     return (
       <div className="flex items-start gap-3 rounded-md border bg-white px-4 py-3">
         <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -179,6 +195,110 @@ export function AutoAssignCarouselsPanel({ onApplied }: AutoAssignCarouselsPanel
           </p>
         </div>
       </div>
+    );
+  }
+
+  const reviewButton = (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={scanning || !hasActions || awaitingDynamicMatch}
+      onClick={() => void handleReview()}
+      className="shrink-0 rounded-md"
+      title={
+        awaitingDynamicMatch
+          ? "These products already match existing carousels. Refresh from Lightspeed if counts look wrong."
+          : undefined
+      }
+    >
+      {scanning ? (
+        <>
+          <Loader2 className="size-4 animate-spin" />
+          Preparing…
+        </>
+      ) : (
+        <>
+          <Sparkles className="size-4" />
+          Auto-assign
+        </>
+      )}
+    </Button>
+  );
+
+  const previewDialog = (
+    <Dialog
+      open={previewOpen}
+      onOpenChange={(open) => {
+        setPreviewOpen(open);
+        if (!open) setReviewDrafts([]);
+      }}
+    >
+      <DialogContent className={AUTO_ASSIGN_DIALOG_CLASS}>
+        <DialogHeader className="shrink-0 space-y-1 border-b px-6 py-4 text-left">
+          <DialogTitle>Review auto-assign</DialogTitle>
+          <DialogDescription>
+            Choose Yes or No for each carousel, edit names, and deselect products. Only marketplace-ready
+            products are listed. {approvedActions.length} of {reviewDrafts.length} carousel
+            {reviewDrafts.length === 1 ? "" : "s"} selected
+            {approvedProductCount > 0
+              ? ` · ${approvedProductCount} product${approvedProductCount === 1 ? "" : "s"}`
+              : ""}
+            .
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
+          <div className="space-y-4">
+            {reviewDrafts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No changes to apply. Products may already be covered by dynamic Lightspeed or brand
+                carousels.
+              </p>
+            ) : (
+              reviewDrafts.map((draft) => (
+                <EditableActionCard
+                  key={draft.id}
+                  draft={draft}
+                  onUpdate={(patch) => updateDraft(draft.id, patch)}
+                  onToggleProduct={(productId) => toggleProduct(draft.id, productId)}
+                  onSelectAll={(selected) => setAllProducts(draft.id, selected)}
+                />
+              ))
+            )}
+          </div>
+        </div>
+
+        <DialogFooter className="shrink-0 flex-col gap-2 border-t bg-background px-6 py-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setPreviewOpen(false)} disabled={applying}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => void handleApply()}
+            disabled={applying || approvedActions.length === 0}
+          >
+            {applying ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Applying…
+              </>
+            ) : (
+              <>
+                Apply {approvedActions.length} carousel
+                {approvedActions.length === 1 ? "" : "s"}
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  if (variant === "button") {
+    return (
+      <>
+        {reviewButton}
+        {previewDialog}
+      </>
     );
   }
 
@@ -209,93 +329,11 @@ export function AutoAssignCarouselsPanel({ onApplied }: AutoAssignCarouselsPanel
             carousels from Lightspeed if counts look wrong.
           </p>
         ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={scanning || !hasActions}
-            onClick={() => void handleReview()}
-            className="shrink-0"
-          >
-            {scanning ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Preparing…
-              </>
-            ) : (
-              <>
-                <Sparkles className="size-4" />
-                Review auto-assign
-              </>
-            )}
-          </Button>
+          reviewButton
         )}
       </div>
 
-      <Dialog
-        open={previewOpen}
-        onOpenChange={(open) => {
-          setPreviewOpen(open);
-          if (!open) setReviewDrafts([]);
-        }}
-      >
-        <DialogContent className={AUTO_ASSIGN_DIALOG_CLASS}>
-          <DialogHeader className="shrink-0 space-y-1 border-b px-6 py-4 text-left">
-            <DialogTitle>Review auto-assign</DialogTitle>
-            <DialogDescription>
-              Choose Yes or No for each carousel, edit names, and deselect products. Only marketplace-ready
-              products are listed. {approvedActions.length} of {reviewDrafts.length} carousel
-              {reviewDrafts.length === 1 ? "" : "s"} selected
-              {approvedProductCount > 0
-                ? ` · ${approvedProductCount} product${approvedProductCount === 1 ? "" : "s"}`
-                : ""}
-              .
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
-            <div className="space-y-4">
-              {reviewDrafts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No changes to apply. Products may already be covered by dynamic Lightspeed or brand
-                  carousels.
-                </p>
-              ) : (
-                reviewDrafts.map((draft) => (
-                  <EditableActionCard
-                    key={draft.id}
-                    draft={draft}
-                    onUpdate={(patch) => updateDraft(draft.id, patch)}
-                    onToggleProduct={(productId) => toggleProduct(draft.id, productId)}
-                    onSelectAll={(selected) => setAllProducts(draft.id, selected)}
-                  />
-                ))
-              )}
-            </div>
-          </div>
-
-          <DialogFooter className="shrink-0 flex-col gap-2 border-t bg-background px-6 py-4 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => setPreviewOpen(false)} disabled={applying}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => void handleApply()}
-              disabled={applying || approvedActions.length === 0}
-            >
-              {applying ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Applying…
-                </>
-              ) : (
-                <>
-                  Apply {approvedActions.length} carousel
-                  {approvedActions.length === 1 ? "" : "s"}
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {previewDialog}
     </>
   );
 }

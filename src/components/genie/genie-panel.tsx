@@ -20,6 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type {
   GenieAnalysisPlanPayload,
   GenieAnalysisQueryPayload,
+  GenieCustomerProfilePayload,
   GenieProposal,
   GenieRawDebugLogEntry,
   GenieWorkorderCardsPayload,
@@ -36,6 +37,7 @@ import { GeniePivotTable } from '@/components/genie/genie-pivot-table';
 import { GenieProposalCard } from '@/components/genie/genie-proposal-card';
 import type { GeniePivotTablePayload } from '@/lib/genie/pivot-table';
 import { LightspeedWorkorderCards } from '@/components/genie/lightspeed-workorder-cards';
+import { LightspeedCustomerProfileCard } from '@/components/genie/lightspeed-customer-profile-card';
 import {
   GenieRawLogsSection,
   GenieThinkingDetailSections,
@@ -46,11 +48,17 @@ import {
 import { compactGenieProgressText, liveGenieProgressPreview } from '@/lib/genie/progress-text';
 import type { GenieWebImagePreview } from '@/lib/genie/web-image-search';
 import { GenieWebImageCards } from '@/components/genie/genie-web-image-cards';
+import { renderGenieMarkdown } from '@/lib/genie/render-markdown';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type StatusPhase =
+  | 'context'
+  | 'routing'
+  | 'routing_done'
+  | 'setup'
   | 'planning'
+  | 'planning_done'
   | 'thinking'
   | 'web_search'
   | 'web_search_done'
@@ -61,9 +69,14 @@ type StatusPhase =
   | 'lightspeed_inventory'
   | 'lightspeed_customers'
   | 'lightspeed_workorders'
+  | 'customer_context'
+  | 'specialist'
   | 'rechecking'
+  | 'tool_done'
   | 'tool'
-  | 'responding';
+  | 'responding'
+  | 'gmail'
+  | 'gmail_done';
 
 interface StatusStep { phase: StatusPhase; text: string }
 interface ProcessStep {
@@ -77,10 +90,12 @@ interface Citation { url: string; title: string }
 
 interface GenieProduct {
   id: string;
+  product_url?: string | null;
   name: string;
   category: string | null;
   price: number | null;
-  qoh: number;
+  qoh?: number;
+  in_stock?: boolean | null;
   listing_type?: string;
   condition?: string | null;
   image: string | null;
@@ -100,6 +115,7 @@ interface ChatMessage {
   products?: GenieProduct[];
   webImages?: GenieWebImagePreview[];
   workorders?: GenieWorkorderCardsPayload;
+  customerProfile?: GenieCustomerProfilePayload;
   gmailEmails?: GmailEmailsPayload;
   gmailConnect?: GmailConnectPayload;
   analysisPlan?: GenieAnalysisPlanPayload;
@@ -127,6 +143,7 @@ interface SavedMessage {
   products?: GenieProduct[];
   webImages?: GenieWebImagePreview[];
   workorders?: GenieWorkorderCardsPayload;
+  customerProfile?: GenieCustomerProfilePayload;
   gmailEmails?: GmailEmailsPayload;
   gmailConnect?: GmailConnectPayload;
   analysisPlan?: GenieAnalysisPlanPayload;
@@ -139,128 +156,6 @@ interface SavedMessage {
 function formatPrice(price: number | null | undefined): string {
   if (!price) return '';
   return `$${price.toFixed(2)}`;
-}
-
-function stripUrlsAndLinks(s: string): string {
-  // Markdown links [text](url) → just text
-  return s
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    // Bare URLs → remove entirely
-    .replace(/https?:\/\/[^\s<>"')\]]+/g, '');
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function parseMarkdown(text: string): string {
-  const inline = (s: string) =>
-    escapeHtml(stripUrlsAndLinks(s))
-      .replace(/`([^`]+?)`/g, '<code class="rounded bg-background px-1 py-0.5 text-[0.85em] font-medium">$1</code>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-  const lines = text.split('\n');
-  const out: string[] = [];
-  let inList = false;
-  let listType = 'ul';
-  let i = 0;
-
-  const isTableRow = (line: string) => {
-    const trimmed = line.trim();
-    return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.slice(1, -1).includes('|');
-  };
-
-  const splitTableRow = (line: string) =>
-    line
-      .trim()
-      .replace(/^\|/, '')
-      .replace(/\|$/, '')
-      .split('|')
-      .map(cell => cell.trim());
-
-  const isTableSeparator = (line: string) =>
-    isTableRow(line) && splitTableRow(line).every(cell => /^:?-{3,}:?$/.test(cell));
-
-  const closeList = () => {
-    if (!inList) return;
-    out.push(`</${listType}>`);
-    inList = false;
-  };
-
-  const renderTable = (rows: string[][]) => {
-    const [head, ...body] = rows;
-    if (!head || body.length === 0) return '';
-
-    return [
-      '<div class="my-2 overflow-x-auto rounded-md border border-border/70 bg-background/60">',
-      '<table class="w-max min-w-full border-collapse text-xs">',
-      '<thead><tr>',
-      ...head.map(cell => `<th class="border-b border-border/70 px-2 py-1.5 text-left font-semibold text-foreground whitespace-nowrap">${inline(cell)}</th>`),
-      '</tr></thead>',
-      '<tbody>',
-      ...body.map(row => [
-        '<tr class="border-t border-border/50">',
-        ...row.map(cell => `<td class="px-2 py-1.5 align-top text-muted-foreground whitespace-nowrap">${inline(cell)}</td>`),
-        '</tr>',
-      ].join('')),
-      '</tbody></table></div>',
-    ].join('');
-  };
-
-  while (i < lines.length) {
-    const line = lines[i];
-    const trimmed = line.trimStart();
-    const isUnordered = /^[•\-*]\s+/.test(trimmed);
-    const isOrdered = /^\d+\.\s+/.test(trimmed);
-    const isItem = isUnordered || isOrdered;
-
-    if (isTableRow(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
-      closeList();
-      const rows = [splitTableRow(line)];
-      i += 2;
-      while (i < lines.length && isTableRow(lines[i])) {
-        rows.push(splitTableRow(lines[i]));
-        i++;
-      }
-      out.push(renderTable(rows));
-      continue;
-    }
-
-    if (isItem) {
-      const newType = isOrdered ? 'ol' : 'ul';
-      if (!inList || listType !== newType) {
-        closeList();
-        out.push(`<${newType} class="pl-4 my-0.5 space-y-0">`);
-        inList = true;
-        listType = newType;
-      }
-      const content = inline(trimmed.replace(/^[•\-*]\s+/, '').replace(/^\d+\.\s+/, ''));
-      out.push(`<li class="${isOrdered ? 'list-decimal' : 'list-disc'} leading-snug text-sm">${content}</li>`);
-    } else {
-      closeList();
-      if (trimmed === '') {
-        if (i < lines.length - 1 && lines[i + 1]?.trim() !== '') out.push('<div class="h-1"></div>');
-      } else if (/^#{1,4}\s/.test(trimmed)) {
-        const headingText = trimmed.replace(/^#{1,4}\s+/, '');
-        out.push(`<p class="font-semibold text-sm leading-snug mt-1.5 first:mt-0">${inline(headingText)}</p>`);
-      } else if (/^---+$/.test(trimmed)) {
-        out.push('<hr class="my-2 border-border/70" />');
-      } else {
-        out.push(`<p class="leading-snug text-sm">${inline(trimmed)}</p>`);
-      }
-    }
-
-    i++;
-  }
-
-  closeList();
-  return out.join('');
 }
 
 function timeAgo(dateStr: string): string {
@@ -287,7 +182,12 @@ function GenieLogo({ className }: { className?: string }) {
 // ─── Shimmer Status ───────────────────────────────────────────────────────────
 
 const PHASE_LABELS: Partial<Record<StatusPhase, string>> = {
+  context: 'Reading context',
+  routing: 'Routing',
+  routing_done: 'Workflow',
+  setup: 'Setup',
   planning: 'Planning',
+  planning_done: 'Planning',
   thinking: 'Thinking',
   web_search: 'Searching web',
   web_search_done: 'Web search done',
@@ -297,8 +197,15 @@ const PHASE_LABELS: Partial<Record<StatusPhase, string>> = {
   lightspeed_sales: 'Sales',
   lightspeed_inventory: 'Stock',
   lightspeed_customers: 'Customers',
+  lightspeed_workorders: 'Work orders',
+  customer_context: 'Customer bike',
+  specialist: 'Specialist',
   rechecking: 'Retrying',
+  tool_done: 'Result',
+  tool: 'Working',
   responding: 'Answering',
+  gmail: 'Gmail',
+  gmail_done: 'Gmail',
 };
 
 function normalizeStartupStatusText(text: string, phase?: string): string {
@@ -492,7 +399,7 @@ function ProcessTimelineBox({
                     backgroundImage: 'linear-gradient(90deg, var(--muted-foreground) 0%, var(--muted-foreground) 38%, var(--primary) 50%, var(--muted-foreground) 62%, var(--muted-foreground) 100%)',
                     backgroundSize: '220% 100%',
                   } : undefined}
-                  dangerouslySetInnerHTML={{ __html: parseMarkdown(step.text) }}
+                  dangerouslySetInnerHTML={{ __html: renderGenieMarkdown(step.text, { compact: true, linkMode: 'text' }) }}
                 />
               </div>
             </div>
@@ -521,7 +428,7 @@ function ReasoningSummaryBox({ text }: { text: string }) {
       </div>
       <div
         className="max-h-24 overflow-hidden text-xs text-muted-foreground [&>p]:leading-snug [&>p+p]:mt-1 [&_strong]:text-foreground"
-        dangerouslySetInnerHTML={{ __html: parseMarkdown(text) }}
+        dangerouslySetInnerHTML={{ __html: renderGenieMarkdown(text, { compact: true, linkMode: 'text' }) }}
       />
     </motion.div>
   );
@@ -548,16 +455,22 @@ function SourcePill({ citation }: { citation: Citation }) {
 // ─── Product Card ──────────────────────────────────────────────────────────────
 
 function ProductCard({ product }: { product: GenieProduct }) {
-  return (
-    <motion.a href={`/marketplace/product/${product.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-      className="flex-shrink-0 w-[152px] rounded-md border border-border bg-card overflow-hidden shadow-xs hover:shadow-sm hover:border-primary/40 transition-all cursor-pointer">
+  const isInStock = product.in_stock === true || (product.qoh ?? 0) > 0;
+  const cardClassName = [
+    "flex-shrink-0 w-[152px] rounded-md border border-border bg-card overflow-hidden shadow-xs transition-all",
+    product.product_url ? "hover:shadow-sm hover:border-primary/40 cursor-pointer" : "",
+  ].filter(Boolean).join(" ");
+  const content = (
+    <>
       <div className="relative h-[96px] bg-muted flex items-center justify-center overflow-hidden">
         {product.image
           ? <Image src={product.image} alt={product.name} fill className="object-cover" sizes="152px" />
           : <Bike className="h-7 w-7 text-muted-foreground/30" />}
-        <div className="absolute top-1.5 right-1.5">
-          <span className="rounded-full bg-green-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">In Stock</span>
-        </div>
+        {isInStock ? (
+          <div className="absolute top-1.5 right-1.5">
+            <span className="rounded-full bg-green-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">In Stock</span>
+          </div>
+        ) : null}
       </div>
       <div className="p-2.5 space-y-0.5">
         <p className="text-xs font-medium leading-tight line-clamp-2 text-foreground">{product.name}</p>
@@ -568,8 +481,25 @@ function ProductCard({ product }: { product: GenieProduct }) {
             ? <span className="text-xs font-semibold text-foreground">{formatPrice(product.price)}</span>
             : <span className="text-[10px] text-muted-foreground">Price on request</span>}
         </div>
+        {!product.product_url && (
+          <p className="pt-1 text-[10px] text-muted-foreground">No live listing yet</p>
+        )}
       </div>
-    </motion.a>
+    </>
+  );
+
+  if (product.product_url) {
+    return (
+      <motion.a href={product.product_url} target="_blank" rel="noopener noreferrer" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={cardClassName}>
+        {content}
+      </motion.a>
+    );
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={cardClassName}>
+      {content}
+    </motion.div>
   );
 }
 
@@ -592,6 +522,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   const noProducts = !message.products || message.products.length === 0;
   const noWebImages = !message.webImages || message.webImages.length === 0;
   const noWorkorders = !message.workorders || message.workorders.workorders.length === 0;
+  const noCustomerProfile = !message.customerProfile;
   const noCharts = !message.charts || message.charts.length === 0;
   const noTables = !message.tables || message.tables.length === 0;
   const showProcessTimeline = Boolean(
@@ -601,7 +532,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     || message.rawDebugLogs?.length,
   );
   const showShimmer = message.isStreaming && message.currentStatus && !showProcessTimeline;
-  const showSpinner = message.isStreaming && !message.content && !message.currentStatus && noProducts && noWebImages && noWorkorders && noCharts && noTables && noProposals;
+  const showSpinner = message.isStreaming && !message.content && !message.currentStatus && noProducts && noWebImages && noWorkorders && noCustomerProfile && noCharts && noTables && noProposals;
   const showReasoning = message.isStreaming && !!message.reasoningSummary?.trim() && !showProcessTimeline;
 
   return (
@@ -638,7 +569,20 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         ) : null}
       </AnimatePresence>
 
-      {/* 2. Lightspeed work orders */}
+      {/* 2. Customer profile */}
+      <AnimatePresence>
+        {message.customerProfile && (
+          <motion.div
+            key="customer-profile"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <LightspeedCustomerProfileCard profile={message.customerProfile} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 3. Lightspeed work orders */}
       <AnimatePresence>
         {message.workorders && message.workorders.workorders.length > 0 && (
           <motion.div
@@ -757,7 +701,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             ) : message.content ? (
               <div
                 className="max-w-none [&>p+p]:mt-0.5 [&>p:first-child]:mt-0 [&_ul]:my-0.5 [&_ol]:my-0.5"
-                dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }}
+                dangerouslySetInnerHTML={{ __html: renderGenieMarkdown(message.content, { compact: true, linkMode: 'text' }) }}
               />
             ) : (
               <span className="text-muted-foreground text-xs">...</span>
@@ -873,6 +817,7 @@ export function GeniePanel() {
       const loaded: ChatMessage[] = savedMessages.map(m => ({
         id: crypto.randomUUID(), role: m.role, content: m.content ?? '',
         charts: m.charts, tables: m.tables, products: m.products, webImages: m.webImages, workorders: m.workorders,
+        customerProfile: m.customerProfile,
         analysisPlan: m.analysisPlan, analysisQueries: m.analysisQueries, sources: m.sources,
       }));
       setMessages(loaded);
@@ -932,6 +877,7 @@ export function GeniePanel() {
             products: m.products,
             webImages: m.webImages,
             workorders: m.workorders,
+            customerProfile: m.customerProfile,
             proposals: m.proposals,
             gmailEmails: m.gmailEmails,
             analysisPlan: m.analysisPlan,
@@ -1018,6 +964,7 @@ export function GeniePanel() {
         products: m.products,
         webImages: m.webImages,
         workorders: m.workorders,
+        customerProfile: m.customerProfile,
         proposals: m.proposals,
         gmailEmails: m.gmailEmails,
         analysisPlan: m.analysisPlan,
@@ -1136,6 +1083,13 @@ export function GeniePanel() {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
                   ? { ...m, workorders: parsed.workorders as GenieWorkorderCardsPayload }
+                  : m
+              ));
+            }
+            if (parsed.event === 'customer_profile' && parsed.customer_profile) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, customerProfile: parsed.customer_profile as GenieCustomerProfilePayload }
                   : m
               ));
             }
@@ -1299,7 +1253,7 @@ export function GeniePanel() {
         className={cn(
           'fixed right-3 top-[1.5%] z-50 flex flex-col',
           'max-w-[calc(100vw-24px)]',
-          'rounded-md overflow-hidden',
+          'rounded-2xl overflow-hidden',
           'shadow-xl border border-border bg-background',
         )}
         style={{

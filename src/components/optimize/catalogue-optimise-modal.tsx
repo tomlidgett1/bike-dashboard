@@ -550,6 +550,10 @@ export function CatalogueOptimiseModal({
               ? { product_description: event.description as string }
               : {}),
             ...(doSpecs && event.specs ? { product_specs: event.specs as string } : {}),
+            ...(typeof event.is_bicycle === "boolean"
+              ? { is_bicycle: event.is_bicycle as boolean }
+              : {}),
+            ...(event.bike_specs ? { bike_specs: event.bike_specs } : {}),
           });
           if (doDesc) patchCopyRun(id, { description: "done" });
           if (doSpecs) patchCopyRun(id, { specs: "done" });

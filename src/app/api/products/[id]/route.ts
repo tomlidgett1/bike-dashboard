@@ -7,6 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { refreshPublicMarketplaceAfterMutation } from '@/lib/server/refresh-public-marketplace'
+import { syncBikeSpecsFromProductSpecs } from '@/lib/bikes/sync-bike-specs-from-product-specs'
+import type { BikeSpecSource } from '@/lib/types/bike-specs'
 
 export async function PATCH(
   request: NextRequest,
@@ -30,7 +32,7 @@ export async function PATCH(
     // Validate that the product belongs to the user
     const { data: existingProduct, error: fetchError } = await supabase
       .from('products')
-      .select('id, user_id')
+      .select('id, user_id, product_specs, bike_specs, product_spec_sources, brand, manufacturer_name, is_bicycle')
       .eq('id', productId)
       .single()
 
@@ -55,6 +57,19 @@ export async function PATCH(
     if ('product_description' in body) updatePayload.product_description = body.product_description || null
     if ('product_specs' in body) updatePayload.product_specs = body.product_specs || null
     if ('immersive_page' in body) updatePayload.immersive_page = !!body.immersive_page
+    if ('is_bicycle' in body) updatePayload.is_bicycle = !!body.is_bicycle
+    if ('bike_specs' in body) updatePayload.bike_specs = body.bike_specs || null
+
+    if (body.is_bicycle === true && !('bike_specs' in body)) {
+      const synced = syncBikeSpecsFromProductSpecs({
+        productSpecs: existingProduct.product_specs,
+        existingBikeSpecs: existingProduct.bike_specs,
+        productSpecSources: (existingProduct.product_spec_sources ??
+          []) as BikeSpecSource[],
+        brand: existingProduct.brand || existingProduct.manufacturer_name,
+      })
+      if (synced) updatePayload.bike_specs = synced
+    }
 
     // Update the product
     const { data: updatedProduct, error: updateError } = await supabase

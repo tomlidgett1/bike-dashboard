@@ -2,6 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
+import { Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
 
@@ -11,5 +12,9 @@ const StoreCarouselsPageContent = nextDynamic(
 );
 
 export default function StoreCarouselsPage() {
-  return <StoreCarouselsPageContent />;
+  return (
+    <Suspense fallback={<SettingsManagerLoading className="m-6 min-h-72" />}>
+      <StoreCarouselsPageContent />
+    </Suspense>
+  );
 }

@@ -92,7 +92,6 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { SmartUploadModal } from "@/components/marketplace/sell/smart-upload-modal";
 import { FacebookImportModal } from "@/components/marketplace/sell/facebook-import-modal";
 import { BulkUploadSheet } from "@/components/marketplace/sell/bulk-upload-sheet";
-import { Card } from "@/components/ui/card";
 import {
   PageBody,
   PageContainer,
@@ -585,17 +584,12 @@ function StatusBadge({
 const ORDERS_SEARCH_INPUT_CLASS =
   "h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30";
 
-const UNDERLINE_TAB_BUTTON_CLASS =
-  "flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors";
-
-function underlineTabClass(isActive: boolean) {
-  return cn(
-    UNDERLINE_TAB_BUTTON_CLASS,
-    isActive
-      ? "border-foreground text-foreground"
-      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-  );
-}
+const PANEL_CLASS = "overflow-hidden rounded-md border border-gray-200 bg-white";
+const MOBILE_LIST_CLASS = "divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 bg-white";
+const MOBILE_ROW_CLASS =
+  "w-full cursor-pointer border-0 px-3 py-3 text-left transition-colors hover:bg-gray-50 active:bg-gray-50";
+const DESKTOP_ROW_CLASS =
+  "group w-full border-0 border-b border-gray-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-gray-50";
 
 const MAIN_TAB_ICONS: Record<
   MainTab,
@@ -630,8 +624,8 @@ function OrderFilterTabs<T extends string>({
   return (
     <div
       className={cn(
-        "-mb-px flex gap-4 overflow-x-auto",
-        fullWidth && "w-full",
+        "flex items-center rounded-md bg-gray-100 p-0.5",
+        fullWidth ? "w-full" : "w-fit",
         className,
       )}
     >
@@ -644,14 +638,14 @@ function OrderFilterTabs<T extends string>({
             type="button"
             onClick={() => onTabChange(tab.id)}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 border-b-2 pb-2.5 pt-1 text-sm font-medium transition-colors",
+              "flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
               fullWidth && "flex-1 justify-center",
               isActive
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+                ? "bg-white text-gray-800 shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70",
             )}
           >
-            {Icon ? <Icon className="size-4 shrink-0" /> : null}
+            {Icon ? <Icon className="h-3 w-3 shrink-0" /> : null}
             {tab.label}
           </button>
         );
@@ -707,11 +701,8 @@ function OrderManagementMainTabs({
   className?: string;
 }) {
   return (
-    <nav
-      className={cn("shrink-0 border-b border-border/60", className)}
-      aria-label="Order management sections"
-    >
-      <div className="-mb-px flex gap-6 overflow-x-auto pb-0">
+    <nav className={cn("mb-4", className)} aria-label="Order management sections">
+      <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-md bg-gray-100 p-0.5 w-fit">
         {tabs.map((tab) => {
           const Icon = MAIN_TAB_ICONS[tab.id];
           const isActive = activeTab === tab.id;
@@ -720,7 +711,12 @@ function OrderManagementMainTabs({
               key={tab.id}
               type="button"
               onClick={() => onTabChange(tab.id)}
-              className={underlineTabClass(isActive)}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-white text-gray-800 shadow-sm"
+                  : "text-gray-600 hover:bg-gray-200/70",
+              )}
             >
               <Icon className="size-4 shrink-0" />
               {tab.label}
@@ -842,11 +838,7 @@ function MobileCombinedOrderCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(event) => handleCardKeyDown(event, onClick)}
-      className={cn(
-        "w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors cursor-pointer",
-        "border-l-4",
-        accentColor
-      )}
+      className={cn(MOBILE_ROW_CLASS, "border-l-4", accentColor)}
     >
       <div className="flex gap-3">
         {/* Image */}
@@ -931,7 +923,7 @@ function PendingPaymentOfferCard({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors cursor-pointer"
+      className={MOBILE_ROW_CLASS}
     >
       <div className="flex gap-3">
         {/* Image - matches MobileOrderCard */}
@@ -991,7 +983,7 @@ function DesktopPendingPaymentCard({
   return (
     <button
       onClick={onClick}
-      className="w-full p-4 bg-card border border-border rounded-md hover:bg-accent/50 transition-colors text-left group"
+      className={DESKTOP_ROW_CLASS}
     >
       <div className="flex items-center gap-4">
         {/* Product Image */}
@@ -1058,7 +1050,7 @@ function SellerPendingOfferCard({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors cursor-pointer"
+      className={MOBILE_ROW_CLASS}
     >
       <div className="flex gap-3">
         <div className="relative h-16 w-16 rounded-md overflow-hidden bg-muted flex-shrink-0">
@@ -1114,7 +1106,7 @@ function DesktopSellerPendingCard({
   return (
     <button
       onClick={onClick}
-      className="w-full p-4 bg-card border border-border rounded-md hover:bg-accent/50 transition-colors text-left group"
+      className={DESKTOP_ROW_CLASS}
     >
       <div className="flex items-center gap-4">
         <div className="relative h-12 w-12 rounded-md overflow-hidden bg-muted flex-shrink-0">
@@ -1184,7 +1176,7 @@ function MobileOrderCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(event) => handleCardKeyDown(event, onClick)}
-      className="w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors cursor-pointer"
+      className={MOBILE_ROW_CLASS}
     >
       <div className="flex gap-3">
         {/* Image */}
@@ -1273,7 +1265,7 @@ function MobileListingCard({
   const status = listing.sold_at ? 'sold' : (listing.listing_status || 'active');
 
   return (
-    <div className="bg-card rounded-md border border-border p-3">
+    <div className="px-3 py-3 transition-colors hover:bg-gray-50">
       <div className="flex gap-3">
         <button onClick={onClick} className="relative h-16 w-16 rounded-md overflow-hidden bg-muted flex-shrink-0 cursor-pointer">
           {imageUrl ? (
@@ -1358,8 +1350,8 @@ function MobileDraftCard({
 
   return (
     <div className={cn(
-      "bg-card rounded-md border p-3 transition-colors",
-      isSelected ? "border-primary bg-primary/5" : "border-border"
+      "px-3 py-3 transition-colors",
+      isSelected ? "bg-gray-50" : "hover:bg-gray-50",
     )}>
       <div className="flex gap-3">
         <Checkbox
@@ -1886,10 +1878,10 @@ function DesktopOrdersTable({
 
   if (orders.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <ShoppingBag className="h-8 w-8 text-muted-foreground/40 mb-3" />
-        <p className="text-sm font-medium">No orders yet</p>
-        <p className="text-xs text-muted-foreground mt-1">
+      <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-gray-200 bg-white py-16 text-center">
+        <ShoppingBag className="mb-3 h-8 w-8 text-gray-300" />
+        <p className="text-sm font-medium text-gray-900">No orders yet</p>
+        <p className="mt-1 text-xs text-gray-500">
           {orderMode === 'buying' ? "Orders you've made will appear here" : "Orders you receive will appear here"}
         </p>
       </div>
@@ -2041,10 +2033,10 @@ function DesktopListingsTable({
 
   if (listings.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Tag className="h-8 w-8 text-muted-foreground/40 mb-3" />
-        <p className="text-sm font-medium">No listings yet</p>
-        <p className="text-sm text-muted-foreground mt-1">Start selling by creating your first listing</p>
+      <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-gray-200 bg-white py-16 text-center">
+        <Tag className="mb-3 h-8 w-8 text-gray-300" />
+        <p className="text-sm font-medium text-gray-900">No listings yet</p>
+        <p className="mt-1 text-xs text-gray-500">Start selling by creating your first listing</p>
       </div>
     );
   }
@@ -2176,10 +2168,10 @@ function GroupedOrdersView({
 
   if (groups.length === 0 && !hasPendingPayments && !hasSellerPending) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Package className="h-8 w-8 text-muted-foreground/40 mb-3" />
-        <p className="text-sm font-medium">No orders yet</p>
-        <p className="text-xs text-muted-foreground mt-1">Your buying and selling orders will appear here</p>
+      <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-gray-200 bg-white py-16 text-center">
+        <Package className="mb-3 h-8 w-8 text-gray-300" />
+        <p className="text-sm font-medium text-gray-900">No orders yet</p>
+        <p className="mt-1 text-xs text-gray-500">Your buying and selling orders will appear here</p>
       </div>
     );
   }
@@ -2188,7 +2180,7 @@ function GroupedOrdersView({
     <div className="space-y-6 p-4">
       {/* Pending Payment Offers - inline without heavy header */}
       {hasPendingPayments && (
-        <div className="space-y-2">
+        <div className={cn(MOBILE_LIST_CLASS, "mb-4")}>
           {pendingPaymentOffers.map((offer) => (
             <DesktopPendingPaymentCard
               key={offer.id}
@@ -2201,7 +2193,7 @@ function GroupedOrdersView({
       
       {/* Seller Pending Offers - awaiting buyer payment */}
       {hasSellerPending && (
-        <div className="space-y-2">
+        <div className={cn(MOBILE_LIST_CLASS, "mb-4")}>
           {sellerPendingOffers.map((offer) => (
             <DesktopSellerPendingCard
               key={offer.id}
@@ -2222,8 +2214,8 @@ function GroupedOrdersView({
               <span className="text-xs text-muted-foreground">({group.orders.length})</span>
             </div>
 
-            {/* Order Cards */}
-            <div className="space-y-2">
+            {/* Order rows */}
+            <div className={cn(PANEL_CLASS, "divide-y divide-gray-100")}>
               {group.orders.map((order) => {
                 const productImage = getProductImageUrl(order.product);
                 const productName = getProductName(order.product);
@@ -2244,7 +2236,7 @@ function GroupedOrdersView({
                     key={order.id}
                     onClick={() => onOrderClick(order)}
                     className={cn(
-                      "flex items-center gap-4 p-3 rounded-md border border-border bg-card hover:bg-accent/50 transition-colors cursor-pointer group",
+                      "group flex cursor-pointer items-center gap-4 px-3 py-3 transition-colors hover:bg-gray-50",
                       "border-l-4",
                       group.accentColor
                     )}
@@ -2396,7 +2388,7 @@ function MobileOfferCard({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-card rounded-md border border-border p-3 active:bg-accent transition-colors"
+      className={MOBILE_ROW_CLASS}
     >
       <div className="flex gap-3">
         <div className="relative h-16 w-16 rounded-md overflow-hidden bg-muted flex-shrink-0">
@@ -2456,10 +2448,10 @@ function DesktopOffersTable({
 
   if (filtered.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <DollarSign className="h-8 w-8 text-muted-foreground mb-3" />
-        <p className="text-sm font-medium">No offers</p>
-        <p className="text-xs text-muted-foreground mt-1">
+      <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-gray-200 bg-white py-16 text-center">
+        <DollarSign className="mb-3 h-8 w-8 text-gray-300" />
+        <p className="text-sm font-medium text-gray-900">No offers</p>
+        <p className="mt-1 text-xs text-gray-500">
           {mode === 'buying' ? 'Offers you\'ve sent will appear here' : 'Offers you\'ve received will appear here'}
         </p>
       </div>
@@ -2568,10 +2560,10 @@ function DesktopDraftsTable({
 
   if (drafts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <FileText className="h-8 w-8 text-muted-foreground/40 mb-3" />
-        <p className="text-sm font-medium">No drafts</p>
-        <p className="text-xs text-muted-foreground mt-1">Incomplete listings will appear here</p>
+      <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-gray-200 bg-white py-16 text-center">
+        <FileText className="mb-3 h-8 w-8 text-gray-300" />
+        <p className="text-sm font-medium text-gray-900">No drafts</p>
+        <p className="mt-1 text-xs text-gray-500">Incomplete listings will appear here</p>
       </div>
     );
   }
@@ -3452,9 +3444,9 @@ function OrderManagementPageContent() {
             <div className="hidden sm:block space-y-4">
                 {/* Orders Tab */}
                 {activeTab === 'orders' && (
-                  <Card className="gap-0 py-0">
+                  <div className={PANEL_CLASS}>
                     {/* Toolbar */}
-                    <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
+                    <div className="flex flex-col gap-3 border-b border-gray-200 p-4 lg:flex-row lg:items-center">
                       <OrderFilterTabs
                         activeTab={orderMode}
                         onTabChange={setOrderMode}
@@ -3487,8 +3479,7 @@ function OrderManagementPageContent() {
 
                     {/* Pending Payment Offers Section (Desktop - Buying mode only) */}
                     {orderMode === 'buying' && pendingPaymentOffers.length > 0 && (
-                      <div className="mb-4">
-                        <div className="grid gap-2">
+                      <div className={cn(MOBILE_LIST_CLASS, "mx-4 mb-4 mt-4")}>
                           {pendingPaymentOffers.map((offer) => (
                             <DesktopPendingPaymentCard
                               key={offer.id}
@@ -3496,14 +3487,11 @@ function OrderManagementPageContent() {
                               onClick={() => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
                             />
                           ))}
-                        </div>
                       </div>
                     )}
 
-                    {/* Seller Pending Offers Section (Desktop - Selling mode only) */}
                     {orderMode === 'selling' && sellerPendingOffers.length > 0 && (
-                      <div className="mb-4">
-                        <div className="grid gap-2">
+                      <div className={cn(MOBILE_LIST_CLASS, "mx-4 mb-4 mt-4")}>
                           {sellerPendingOffers.map((offer) => (
                             <DesktopSellerPendingCard
                               key={offer.id}
@@ -3511,7 +3499,6 @@ function OrderManagementPageContent() {
                               onClick={() => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
                             />
                           ))}
-                        </div>
                       </div>
                     )}
 
@@ -3547,13 +3534,13 @@ function OrderManagementPageContent() {
                         loading={ordersLoading} 
                       />
                     )}
-                  </Card>
+                  </div>
                 )}
 
                 {/* Listings Tab */}
                 {activeTab === 'listings' && (
-                  <Card className="gap-0 py-0">
-                    <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
+                  <div className={PANEL_CLASS}>
+                    <div className="flex flex-col gap-3 border-b border-gray-200 p-4 lg:flex-row lg:items-center">
                       <div className="relative w-full lg:max-w-xs">
                         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                         <input
@@ -3593,13 +3580,13 @@ function OrderManagementPageContent() {
                       togglingIds={togglingListingIds}
                       loading={listingsLoading} 
                     />
-                  </Card>
+                  </div>
                 )}
 
                 {/* Claims Tab */}
                 {activeTab === 'claims' && (
-                  <Card className="gap-0 py-0">
-                    <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
+                  <div className={PANEL_CLASS}>
+                    <div className="flex flex-col gap-3 border-b border-gray-200 p-4 lg:flex-row lg:items-center">
                       <Select value={ticketsFilter} onValueChange={(v) => setTicketsFilter(v as any)}>
                         <SelectTrigger className="w-[140px]">
                           <SelectValue placeholder="Status" />
@@ -3624,10 +3611,10 @@ function OrderManagementPageContent() {
                         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                       </div>
                     ) : tickets.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <LifeBuoy className="h-8 w-8 text-muted-foreground/40 mb-3" />
-                        <p className="text-sm font-medium">No support tickets</p>
-                        <p className="text-xs text-muted-foreground mt-1">Support tickets for your orders will appear here</p>
+                      <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-gray-200 bg-white py-16 text-center">
+                        <LifeBuoy className="mb-3 h-8 w-8 text-gray-300" />
+                        <p className="text-sm font-medium text-gray-900">No support tickets</p>
+                        <p className="mt-1 text-xs text-gray-500">Support tickets for your orders will appear here</p>
                       </div>
                     ) : (
                       <Table>
@@ -3697,13 +3684,13 @@ function OrderManagementPageContent() {
                         </TableBody>
                       </Table>
                     )}
-                  </Card>
+                  </div>
                 )}
 
                 {/* Drafts Tab */}
                 {!isVerifiedStore && activeTab === 'drafts' && (
-                  <Card className="gap-0 py-0">
-                    <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center justify-between">
+                  <div className={PANEL_CLASS}>
+                    <div className="flex flex-col gap-3 border-b border-gray-200 p-4 lg:flex-row lg:items-center justify-between">
                       <div className="flex items-center gap-3">
                         <p className="text-sm text-muted-foreground">
                           {drafts.length} draft{drafts.length !== 1 ? 's' : ''}
@@ -3738,13 +3725,13 @@ function OrderManagementPageContent() {
                       onToggleSelect={handleToggleSelectDraft}
                       onToggleSelectAll={handleToggleSelectAllDrafts}
                     />
-                  </Card>
+                  </div>
                 )}
 
                 {/* Offers Tab */}
                 {activeTab === 'offers' && (
-                  <Card className="gap-0 py-0">
-                    <div className="flex flex-col gap-3 border-b border-border/60 p-4 lg:flex-row lg:items-center">
+                  <div className={PANEL_CLASS}>
+                    <div className="flex flex-col gap-3 border-b border-gray-200 p-4 lg:flex-row lg:items-center">
                       <OrderFilterTabs
                         activeTab={offersMode}
                         onTabChange={setOffersMode}
@@ -3776,7 +3763,7 @@ function OrderManagementPageContent() {
                       loading={offersLoading}
                       onOfferClick={(offer) => router.push(`/messages?tab=offers&offer_id=${offer.id}`)}
                     />
-                  </Card>
+                  </div>
                 )}
             </div>
 
@@ -3816,10 +3803,10 @@ function OrderManagementPageContent() {
                   ) : orderMode === 'all' ? (
                     // Grouped view for 'all' mode
                     filteredGroupedOrders.length === 0 && pendingPaymentOffers.length === 0 && sellerPendingOffers.length === 0 ? (
-                      <div className="text-center py-12">
-                        <Package className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                        <p className="font-medium">{search ? 'No orders found' : 'No orders yet'}</p>
-                        <p className="text-sm text-muted-foreground mt-1">
+                      <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+                        <Package className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+                        <p className="text-sm font-medium text-gray-900">{search ? 'No orders found' : 'No orders yet'}</p>
+                        <p className="mt-1 text-xs text-gray-500">
                           {search ? 'Try a different search term' : 'Your buying and selling orders will appear here'}
                         </p>
                       </div>
@@ -3827,7 +3814,7 @@ function OrderManagementPageContent() {
                       <div className="space-y-5">
                         {/* Pending Payment Offers (All mode) - inline without title */}
                         {pendingPaymentOffers.length > 0 && (
-                          <div className="space-y-2">
+                          <div className={MOBILE_LIST_CLASS}>
                             {pendingPaymentOffers.map((offer) => (
                               <PendingPaymentOfferCard 
                                 key={offer.id} 
@@ -3840,7 +3827,7 @@ function OrderManagementPageContent() {
                         
                         {/* Seller Pending Offers (All mode) */}
                         {sellerPendingOffers.length > 0 && (
-                          <div className="space-y-2">
+                          <div className={MOBILE_LIST_CLASS}>
                             {sellerPendingOffers.map((offer) => (
                               <SellerPendingOfferCard 
                                 key={offer.id} 
@@ -3863,7 +3850,7 @@ function OrderManagementPageContent() {
                                 <span className="text-xs text-muted-foreground">({group.orders.length})</span>
                               </div>
                               {/* Orders */}
-                              <div className="space-y-2">
+                              <div className={MOBILE_LIST_CLASS}>
                                 {group.orders.map((order) => (
                                   <MobileCombinedOrderCard 
                                     key={order.id} 
@@ -3883,16 +3870,15 @@ function OrderManagementPageContent() {
                       </div>
                     )
                   ) : filteredOrders.length === 0 && pendingPaymentOffers.length === 0 && sellerPendingOffers.length === 0 ? (
-                    <div className="text-center py-12">
-                      <ShoppingBag className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                      <p className="font-medium">{search ? 'No orders found' : 'No orders yet'}</p>
-                      <p className="text-sm text-muted-foreground mt-1">
+                    <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+                      <ShoppingBag className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+                      <p className="text-sm font-medium text-gray-900">{search ? 'No orders found' : 'No orders yet'}</p>
+                      <p className="mt-1 text-xs text-gray-500">
                         {search ? 'Try a different search term' : (orderMode === 'buying' ? 'Start shopping' : 'List something to sell')}
                       </p>
                     </div>
                   ) : (
-                    <>
-                      {/* Pending Payment Offers - no title, just cards inline */}
+                    <div className={MOBILE_LIST_CLASS}>
                       {orderMode === 'buying' && pendingPaymentOffers.map((offer) => (
                         <PendingPaymentOfferCard 
                           key={offer.id} 
@@ -3923,7 +3909,7 @@ function OrderManagementPageContent() {
                           updatingOrderIds={updatingOrderIds}
                         />
                       ))}
-                    </>
+                    </div>
                   )}
                 </div>
               )}
@@ -3941,18 +3927,22 @@ function OrderManagementPageContent() {
                     </Button>
                   </div>
                   
-                  {/* Filter chips */}
-                  <div className="flex gap-2 overflow-x-auto pb-2">
+                  {/* Filter tabs */}
+                  <div className="mb-3 flex items-center rounded-md bg-gray-100 p-0.5 w-fit overflow-x-auto">
                     {(['all', 'active', 'sold', 'archived'] as const).map((f) => (
-                      <Button 
-                        key={f} 
-                        variant={listingsFilter === f ? 'secondary' : 'outline'} 
-                        size="sm" 
+                      <button
+                        key={f}
+                        type="button"
                         onClick={() => setListingsFilter(f)}
-                        className="flex-shrink-0"
+                        className={cn(
+                          "flex-shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                          listingsFilter === f
+                            ? "bg-white text-gray-800 shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70",
+                        )}
                       >
                         {f.charAt(0).toUpperCase() + f.slice(1)}
-                      </Button>
+                      </button>
                     ))}
                   </div>
 
@@ -3961,17 +3951,18 @@ function OrderManagementPageContent() {
                       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
                   ) : listings.length === 0 ? (
-                    <div className="text-center py-12">
-                      <Tag className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                      <p className="font-medium">No listings yet</p>
-                      <p className="text-sm text-muted-foreground mt-1">Create your first listing</p>
-                      <Button size="sm" className="mt-4" onClick={() => router.push('/marketplace/sell')}>
+                    <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+                      <Tag className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+                      <p className="text-sm font-medium text-gray-900">No listings yet</p>
+                      <p className="mt-1 text-xs text-gray-500">Create your first listing</p>
+                      <Button size="sm" className="mt-4 rounded-md" onClick={() => router.push('/marketplace/sell')}>
                         <Plus className="size-4" />
                         New Listing
                       </Button>
                     </div>
                   ) : (
-                    listings.map((listing) => {
+                    <div className={MOBILE_LIST_CLASS}>
+                    {listings.map((listing) => {
                       const isSold = listing.sold_at || listing.listing_status === 'sold';
                       const url = `/marketplace/product/${listing.id}${isSold ? '?fromPurchase=true' : ''}`;
                       return (
@@ -3986,7 +3977,8 @@ function OrderManagementPageContent() {
                           isToggling={togglingListingIds.has(listing.id)}
                         />
                       );
-                    })
+                    })}
+                    </div>
                   )}
                 </div>
               )}
@@ -3994,18 +3986,21 @@ function OrderManagementPageContent() {
               {/* Mobile Claims */}
               {activeTab === 'claims' && (
                 <div className="space-y-2">
-                  {/* Filter chips */}
-                  <div className="flex gap-2 overflow-x-auto pb-2">
+                  <div className="mb-3 flex items-center rounded-md bg-gray-100 p-0.5 w-fit overflow-x-auto">
                     {(['all', 'active', 'resolved', 'closed'] as const).map((f) => (
-                      <Button 
-                        key={f} 
-                        variant={ticketsFilter === f ? 'secondary' : 'outline'} 
-                        size="sm" 
+                      <button
+                        key={f}
+                        type="button"
                         onClick={() => setTicketsFilter(f)}
-                        className="flex-shrink-0"
+                        className={cn(
+                          "flex-shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                          ticketsFilter === f
+                            ? "bg-white text-gray-800 shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70",
+                        )}
                       >
                         {f.charAt(0).toUpperCase() + f.slice(1)}
-                      </Button>
+                      </button>
                     ))}
                   </div>
 
@@ -4014,19 +4009,21 @@ function OrderManagementPageContent() {
                       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
                   ) : tickets.length === 0 ? (
-                    <div className="text-center py-12">
-                      <LifeBuoy className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                      <p className="font-medium">No support tickets</p>
-                      <p className="text-sm text-muted-foreground mt-1">Support tickets for your orders will appear here</p>
+                    <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+                      <LifeBuoy className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+                      <p className="text-sm font-medium text-gray-900">No support tickets</p>
+                      <p className="mt-1 text-xs text-gray-500">Support tickets for your orders will appear here</p>
                     </div>
                   ) : (
-                    tickets.map((ticket) => (
+                    <div className={MOBILE_LIST_CLASS}>
+                    {tickets.map((ticket) => (
                       <MobileTicketCard
                         key={ticket.id}
                         ticket={ticket}
                         onClick={() => handleTicketClick(ticket)}
                       />
-                    ))
+                    ))}
+                    </div>
                   )}
                 </div>
               )}
@@ -4042,17 +4039,21 @@ function OrderManagementPageContent() {
                   />
 
                   {/* Filter chips */}
-                  <div className="flex gap-2 overflow-x-auto pb-1">
+                  <div className="mb-3 flex items-center rounded-md bg-gray-100 p-0.5 w-fit overflow-x-auto">
                     {(['all', 'pending', 'accepted', 'rejected'] as const).map((f) => (
-                      <Button
+                      <button
                         key={f}
-                        variant={offersFilter === f ? 'secondary' : 'outline'}
-                        size="sm"
+                        type="button"
                         onClick={() => setOffersFilter(f)}
-                        className="flex-shrink-0"
+                        className={cn(
+                          "flex-shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                          offersFilter === f
+                            ? "bg-white text-gray-800 shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70",
+                        )}
                       >
                         {f.charAt(0).toUpperCase() + f.slice(1)}
-                      </Button>
+                      </button>
                     ))}
                   </div>
 
@@ -4065,17 +4066,17 @@ function OrderManagementPageContent() {
                     const filtered = offersFilter === 'all' ? offers : offers.filter(o => o.status === offersFilter);
                     if (filtered.length === 0) {
                       return (
-                        <div className="text-center py-12">
-                          <DollarSign className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                          <p className="font-medium text-sm">No offers</p>
-                          <p className="text-xs text-muted-foreground mt-1">
+                        <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+                          <DollarSign className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+                          <p className="text-sm font-medium text-gray-900">No offers</p>
+                          <p className="mt-1 text-xs text-gray-500">
                             {offersMode === 'buying' ? 'Offers you\'ve sent will appear here' : 'Offers you\'ve received will appear here'}
                           </p>
                         </div>
                       );
                     }
                     return (
-                      <div className="space-y-2">
+                      <div className={MOBILE_LIST_CLASS}>
                         {filtered.map((offer) => (
                           <MobileOfferCard
                             key={offer.id}
@@ -4095,7 +4096,7 @@ function OrderManagementPageContent() {
                 <div className="space-y-3">
                   {/* Mobile Selection Actions */}
                   {drafts.length > 0 && !draftsLoading && (
-                    <div className="bg-card rounded-md border border-border p-3 flex items-center justify-between">
+                    <div className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         <Checkbox
                           checked={drafts.length > 0 && drafts.every(draft => selectedDraftIds.has(draft.id))}
@@ -4126,13 +4127,13 @@ function OrderManagementPageContent() {
                       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
                   ) : drafts.length === 0 ? (
-                    <div className="text-center py-12">
-                      <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                      <p className="font-medium">No drafts</p>
-                      <p className="text-sm text-muted-foreground mt-1">Incomplete listings will appear here</p>
+                    <div className="rounded-md border border-dashed border-gray-200 bg-white py-12 text-center">
+                      <FileText className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+                      <p className="text-sm font-medium text-gray-900">No drafts</p>
+                      <p className="mt-1 text-xs text-gray-500">Incomplete listings will appear here</p>
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className={MOBILE_LIST_CLASS}>
                       {drafts.map((draft) => (
                         <MobileDraftCard
                           key={draft.id}

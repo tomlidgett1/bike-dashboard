@@ -480,6 +480,45 @@ export interface LightspeedWorkordersResponse {
 }
 
 // ============================================================
+// Serialized / customer-owned bike Types
+// ============================================================
+
+export interface LightspeedSerialized {
+  serializedID: string
+  description?: string
+  serial?: string
+  colorName?: string
+  sizeName?: string
+  itemID?: string
+  saleLineID?: string
+  customerID?: string
+  timeStamp?: string
+}
+
+export interface LightspeedSerializedResponse {
+  Serialized?: LightspeedSerialized | LightspeedSerialized[]
+  '@attributes'?: {
+    count?: string
+    offset?: string
+    limit?: string
+    next?: string
+    previous?: string
+  }
+}
+
+export interface LightspeedCustomerBike {
+  serializedId: string
+  label: string | null
+  serial: string | null
+  itemId: string | null
+  saleLineId: string | null
+  customerId: string | null
+  colorName: string | null
+  sizeName: string | null
+  updatedAt: string | null
+}
+
+// ============================================================
 // Customer Types
 // ============================================================
 
@@ -722,7 +761,6 @@ export interface SyncOption {
   description: string
   enabled: boolean
 }
-
 
 
 

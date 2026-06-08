@@ -131,6 +131,7 @@ export type GenieWorkorderDetail = {
   employee_id: string
   shop_id: string
   sale_id: string | null
+  serialized_id: string | null
   lines: GenieWorkorderLine[]
   items: GenieWorkorderItem[]
   items_subtotal: number | null
@@ -139,10 +140,12 @@ export type GenieWorkorderDetail = {
 export type ListGenieWorkordersOptions = {
   scope?: GenieWorkorderScope
   query?: string
+  customer_id?: string
   /** ISO date (YYYY-MM-DD) in the store timezone — matches work order ETA out date. */
   due_on?: string
   limit?: number
   include_details?: boolean
+  include_archived?: boolean
   max_pages_per_status?: number
 }
 
@@ -333,6 +336,9 @@ async function enrichWorkorder(
     employee_id: String(workorder.employeeID ?? ''),
     shop_id: String(workorder.shopID ?? ''),
     sale_id: workorder.saleID ? String(workorder.saleID) : null,
+    serialized_id: String(workorder.serializedID ?? '').trim() && String(workorder.serializedID ?? '').trim() !== '0'
+      ? String(workorder.serializedID).trim()
+      : null,
     lines: includeDetails ? mapWorkorderLines(workorder) : [],
     items: mappedItems,
     items_subtotal: includeDetails ? itemsSubtotal(mappedItems) : null,
@@ -427,6 +433,7 @@ export async function listGenieWorkorders(
   const limit = Math.min(Math.max(options.limit ?? (options.query ? 8 : dueOn ? 30 : 40), 1), 100)
   const includeDetails = options.include_details !== false
   const query = options.query ? normalizeText(options.query) : ''
+  const customerId = String(options.customer_id ?? '').trim()
 
   const client = createLightspeedClient(userId)
   const statuses = await client.getWorkorderStatuses()
@@ -440,7 +447,34 @@ export async function listGenieWorkorders(
   }))
 
   let rawWorkorders: LightspeedWorkorderWithRelations[]
-  if (dueOn) {
+  if (customerId) {
+    const customerWorkorderParams = {
+      customerID: customerId,
+      sort: '-timeStamp',
+      load_relations: '["Customer","WorkorderLines","WorkorderStatus"]',
+    }
+    const customerWorkorderOptions = {
+      targetCount: Math.max(limit, 25),
+      limit: Math.min(Math.max(limit, 25), 100),
+      maxPages: options.max_pages_per_status ?? 3,
+    }
+    const batches = options.include_archived
+      ? await Promise.all([
+          client.getRecentWorkorders({ ...customerWorkorderParams, archived: 'false' }, customerWorkorderOptions),
+          client.getRecentWorkorders({ ...customerWorkorderParams, archived: 'true' }, customerWorkorderOptions).catch(() => []),
+        ])
+      : [
+          await client.getRecentWorkorders(
+            { ...customerWorkorderParams, archived: 'false' },
+            customerWorkorderOptions,
+          ),
+        ]
+    const byId = new Map<string, LightspeedWorkorderWithRelations>()
+    for (const workorder of batches.flat()) {
+      byId.set(String(workorder.workorderID), workorder)
+    }
+    rawWorkorders = [...byId.values()].sort((a, b) => parseTimestamp(b.timeStamp) - parseTimestamp(a.timeStamp))
+  } else if (dueOn) {
     rawWorkorders = await fetchRecentWorkordersUnscoped(userId, {
       targetCount: Math.max(limit * 8, 120),
       maxPages: options.max_pages_per_status ?? 4,

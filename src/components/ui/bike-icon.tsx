@@ -215,3 +215,24 @@ export function getCategoryIconName(categoryName: string): string {
   // Ultimate fallback - cassette for parts
   return "noun-bike-cassette-6991390.svg";
 }
+
+/** Structured bicycle spec section titles → icons */
+export const BIKE_SPEC_SECTION_ICON_MAP: Record<string, string> = {
+  General: "noun-road-bike-frame-6991314.svg",
+  Frame: "noun-road-bike-frame-6991314.svg",
+  Brakes: "noun-bike-brake-rotor-6991341.svg",
+  "Wheels & Tyres": "noun-bike-wheels-6991373.svg",
+  Cockpit: "noun-drop-bar-6991318.svg",
+  Groupset: "noun-bike-cassette-6991390.svg",
+  Saddle: "noun-bike-saddle-6991388.svg",
+};
+
+export const BICYCLE_PRODUCT_ICON = "noun-road-bike-frame-6991314.svg";
+export const AI_DISCOVER_ICON = "noun-bike-computer-6991376.svg";
+
+export function getBikeSpecSectionIconName(sectionTitle: string): string {
+  if (BIKE_SPEC_SECTION_ICON_MAP[sectionTitle]) {
+    return BIKE_SPEC_SECTION_ICON_MAP[sectionTitle];
+  }
+  return getCategoryIconName(sectionTitle);
+}

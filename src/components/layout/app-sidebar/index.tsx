@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ChevronRight,
   Database,
+  Home,
   LifeBuoy,
   MessageSquare,
   Package,
@@ -39,7 +40,6 @@ import {
   SidebarMenuSubItem,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
 import { NavUser } from "./nav-user";
 import { SidebarLightspeedStatus } from "./sidebar-lightspeed-status";
 import { SidebarViewStoreLink } from "./sidebar-view-store-link";
@@ -61,7 +61,7 @@ const NAV: NavGroup[] = [
   {
     label: "Store",
     items: [
-      { title: "Home", href: "/settings/store/home", icon: Sparkles, exact: true },
+      { title: "Home", href: "/settings/store/home", icon: Home, exact: true },
       { title: "Nest", href: "/settings/store/nest", icon: MessageSquare, exact: true },
       { title: "Products", href: "/products", icon: Package },
       {
@@ -70,7 +70,6 @@ const NAV: NavGroup[] = [
         items: [
           { title: "Landing page", href: "/settings/store/landing" },
           { title: "Carousels", href: "/settings/store/carousels" },
-          { title: "Sections", href: "/settings/store/sections" },
           { title: "Brands", href: "/settings/store/brands" },
           { title: "Services", href: "/settings/store/services" },
           { title: "Rentals", href: "/settings/store/rentals" },
@@ -218,22 +217,17 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader
-        className={cn(
-          "flex flex-col gap-0.5 px-3 pb-2 pt-0",
-          "group-data-[collapsible=icon]:gap-0.5 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:pb-2 group-data-[collapsible=icon]:pt-0",
-        )}
-      >
-        <div className="flex h-14 shrink-0 items-center">
+      <SidebarHeader className="gap-1 p-2">
+        <div className="flex h-11 shrink-0 items-center">
           <SidebarYjLogo />
         </div>
         <SidebarViewStoreLink />
       </SidebarHeader>
 
-      <SidebarContent className="gap-1">
+      <SidebarContent className="gap-0.5">
         {NAV.map((group) => (
-          <SidebarGroup key={group.label} className="px-2 py-1">
-            <SidebarGroupLabel className="h-7 px-2 text-xs text-sidebar-foreground/70">
+          <SidebarGroup key={group.label} className="p-2">
+            <SidebarGroupLabel className="h-7 text-xs text-sidebar-foreground/70">
               {group.label}
             </SidebarGroupLabel>
             <SidebarMenu>
@@ -258,7 +252,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           </SidebarGroup>
         ))}
 
-        <SidebarGroup className="mt-auto px-2 py-1">
+        <SidebarGroup className="mt-auto p-2">
           <SidebarMenu>
             {FOOTER_ITEMS.map((item) => (
               <FlatNavItem

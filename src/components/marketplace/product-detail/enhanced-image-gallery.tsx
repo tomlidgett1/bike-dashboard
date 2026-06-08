@@ -23,6 +23,8 @@ interface EnhancedImageGalleryProps {
   onLikeToggle?: () => void;
   isLiked?: boolean;
   onShare?: () => void;
+  /** Desktop only: place panel beside the main hero image (matched height). */
+  sidePanel?: React.ReactNode;
 }
 
 export function EnhancedImageGallery({
@@ -33,11 +35,29 @@ export function EnhancedImageGallery({
   onLikeToggle,
   isLiked = false,
   onShare,
+  sidePanel,
 }: EnhancedImageGalleryProps) {
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [fullscreenIndex, setFullscreenIndex] = React.useState(0);
   const [mobileImageIndex, setMobileImageIndex] = React.useState(0);
+  const [heroHeight, setHeroHeight] = React.useState<number | undefined>();
   const touchStartXRef = React.useRef<number | null>(null);
+  const heroRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!sidePanel) return;
+    const node = heroRef.current;
+    if (!node) return;
+
+    const updateHeight = () => {
+      setHeroHeight(node.getBoundingClientRect().height);
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [sidePanel, images.length]);
 
   // Next.js can only optimize images from hosts whitelisted in next.config.ts
   // (Cloudinary + Supabase). Raw external URLs — e.g. Serper-discovered retailer
@@ -125,6 +145,181 @@ export function EnhancedImageGallery({
       )}
     </div>
   );
+
+  const renderMainHero = () => (
+    <div className="aspect-[4/3]">
+      <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
+    </div>
+  );
+
+  const renderSecondaryGrid = () => {
+    const count = images.length;
+    if (count <= 1) return null;
+
+    if (count === 2) {
+      return (
+        <div className="aspect-[4/3]">
+          <GridImage src={images[1]} index={1} className="w-full h-full" />
+        </div>
+      );
+    }
+
+    if (count === 3) {
+      return (
+        <div className="grid grid-cols-2 gap-0.5 sm:gap-2">
+          <div className="aspect-square">
+            <GridImage src={images[1]} index={1} className="w-full h-full" />
+          </div>
+          <div className="aspect-square">
+            <GridImage src={images[2]} index={2} className="w-full h-full" />
+          </div>
+        </div>
+      );
+    }
+
+    const extraCount = count > 4 ? count - 4 : 0;
+
+    return (
+      <div className="grid grid-cols-3 gap-0.5 sm:gap-2">
+        <div className="aspect-square">
+          <GridImage src={images[1]} index={1} className="w-full h-full" />
+        </div>
+        <div className="aspect-square">
+          <GridImage src={images[2]} index={2} className="w-full h-full" />
+        </div>
+        <div className="aspect-square">
+          <GridImage
+            src={images[3]}
+            index={3}
+            className="w-full h-full"
+            showOverlay={extraCount > 0}
+            overlayCount={extraCount}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderActionButtons = (className?: string) => (
+    <div className={cn("absolute top-3 left-3 flex items-center gap-2 z-10", className)}>
+      {onLikeToggle && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onLikeToggle();
+          }}
+          className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
+        >
+          <Heart
+            className={cn(
+              "h-5 w-5 transition-colors",
+              isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
+            )}
+          />
+        </button>
+      )}
+      {onShare && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onShare();
+          }}
+          className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
+        >
+          <Share2 className="h-5 w-5 stroke-gray-700" />
+        </button>
+      )}
+    </div>
+  );
+
+  const renderFullscreenModal = () =>
+    isFullscreen ? (
+      <>
+        <div
+          className="fixed inset-0 bg-black z-[100]"
+          onClick={() => setIsFullscreen(false)}
+        />
+        <div
+          className="fixed inset-0 z-[101] flex items-center justify-center p-4"
+          onClick={() => setIsFullscreen(false)}
+        >
+          <div className="relative w-full h-full max-w-5xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <Image
+              src={images[fullscreenIndex]}
+              alt={`${productName} - Fullscreen`}
+              fill
+              unoptimized={!isOptimizableHost(images[fullscreenIndex])}
+              className="object-contain"
+              sizes="100vw"
+              priority
+              quality={90}
+            />
+          </div>
+
+          <button
+            onClick={() => setIsFullscreen(false)}
+            className="absolute top-4 right-4 p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
+          >
+            <X className="h-6 w-6 text-gray-900" />
+          </button>
+
+          {images.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrev();
+                }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
+              >
+                <ChevronLeft className="h-6 w-6 text-gray-900" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleNext();
+                }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
+              >
+                <ChevronRight className="h-6 w-6 text-gray-900" />
+              </button>
+            </>
+          )}
+
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/50 backdrop-blur-sm p-2 rounded-lg max-w-[90vw] overflow-x-auto">
+            {images.map((image, index) => (
+              <button
+                key={index}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFullscreenIndex(index);
+                }}
+                className={cn(
+                  "relative w-12 h-12 rounded-md overflow-hidden border-2 transition-all flex-shrink-0",
+                  index === fullscreenIndex
+                    ? "border-white"
+                    : "border-transparent opacity-60 hover:opacity-100"
+                )}
+              >
+                <Image
+                  src={image}
+                  alt={`Thumbnail ${index + 1}`}
+                  fill
+                  unoptimized={!isOptimizableHost(image)}
+                  className="object-cover"
+                  sizes="48px"
+                  quality={60}
+                />
+              </button>
+            ))}
+          </div>
+
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full text-sm font-medium">
+            {fullscreenIndex + 1} / {images.length}
+          </div>
+        </div>
+      </>
+    ) : null;
 
   // Render grid based on image count
   const renderImageGrid = () => {
@@ -256,6 +451,120 @@ export function EnhancedImageGallery({
     }
   };
 
+  if (sidePanel) {
+    return (
+      <>
+        {/* Mobile / tablet: stacked gallery + panel */}
+        <div className="lg:hidden">
+          <div className="sm:hidden relative">
+            <div className="relative aspect-square bg-gray-100 overflow-hidden">
+              <div
+                key={mobileImageIndex}
+                className="absolute inset-0 cursor-grab active:cursor-grabbing"
+                onClick={() => openFullscreen(mobileImageIndex)}
+                onTouchStart={(event) => {
+                  touchStartXRef.current = event.touches[0]?.clientX ?? null;
+                }}
+                onTouchEnd={handleMobileTouchEnd}
+              >
+                <Image
+                  src={images[mobileImageIndex]}
+                  alt={`${productName} - Image ${mobileImageIndex + 1}`}
+                  fill
+                  unoptimized={!isOptimizableHost(images[mobileImageIndex])}
+                  className="object-cover"
+                  sizes="100vw"
+                  priority={mobileImageIndex === 0}
+                  quality={85}
+                />
+              </div>
+
+              <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+                {onLikeToggle && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onLikeToggle();
+                    }}
+                    className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
+                  >
+                    <Heart
+                      className={cn(
+                        "h-5 w-5 transition-colors",
+                        isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
+                      )}
+                    />
+                  </button>
+                )}
+                {onShare && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onShare();
+                    }}
+                    className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
+                  >
+                    <Share2 className="h-5 w-5 stroke-gray-700" />
+                  </button>
+                )}
+              </div>
+
+              {images.length > 1 && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
+                  {images.map((_, index) => (
+                    <button
+                      key={index}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMobileImageIndex(index);
+                      }}
+                      className={cn(
+                        "rounded-full transition-all",
+                        index === mobileImageIndex
+                          ? "w-6 h-2 bg-white"
+                          : "w-2 h-2 bg-white/50"
+                      )}
+                      aria-label={`Go to image ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="hidden sm:block relative">
+            {renderImageGrid()}
+            {renderActionButtons()}
+          </div>
+
+          {sidePanel}
+        </div>
+
+        {/* Desktop: info panel locked to hero height; extra images stay in left column */}
+        <div className="hidden lg:flex lg:items-start lg:gap-x-3 xl:gap-x-4">
+          <div className="min-w-0 w-[62%]">
+            <div ref={heroRef} className="relative">
+              {renderMainHero()}
+              {renderActionButtons()}
+            </div>
+            {images.length > 1 ? (
+              <div className="mt-6">{renderSecondaryGrid()}</div>
+            ) : null}
+          </div>
+
+          <div
+            className="min-w-0 w-[38%] shrink-0 overflow-hidden"
+            style={heroHeight ? { height: heroHeight } : undefined}
+          >
+            {sidePanel}
+          </div>
+        </div>
+
+        {renderFullscreenModal()}
+      </>
+    );
+  }
+
   return (
     <>
       {/* Mobile: Swipeable Single Image */}
@@ -340,131 +649,10 @@ export function EnhancedImageGallery({
       {/* Desktop: Gallery Grid */}
       <div className="hidden sm:block relative">
         {renderImageGrid()}
-
-        {/* Like and Share Buttons - Top Left of first image */}
-        <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
-          {onLikeToggle && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onLikeToggle();
-              }}
-              className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
-            >
-              <Heart
-                className={cn(
-                  "h-5 w-5 transition-colors",
-                  isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
-                )}
-              />
-            </button>
-          )}
-          {onShare && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onShare();
-              }}
-              className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
-            >
-              <Share2 className="h-5 w-5 stroke-gray-700" />
-            </button>
-          )}
-        </div>
+        {renderActionButtons()}
       </div>
 
-      {/* Fullscreen Modal */}
-      {isFullscreen && (
-        <>
-          <div
-            className="fixed inset-0 bg-black z-[100]"
-            onClick={() => setIsFullscreen(false)}
-          />
-          <div
-            className="fixed inset-0 z-[101] flex items-center justify-center p-4"
-            onClick={() => setIsFullscreen(false)}
-          >
-              <div className="relative w-full h-full max-w-5xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
-                <Image
-                  src={images[fullscreenIndex]}
-                  alt={`${productName} - Fullscreen`}
-                  fill
-                  unoptimized={!isOptimizableHost(images[fullscreenIndex])}
-                  className="object-contain"
-                  sizes="100vw"
-                  priority
-                  quality={90}
-                />
-              </div>
-
-              {/* Close Button */}
-              <button
-                onClick={() => setIsFullscreen(false)}
-                className="absolute top-4 right-4 p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
-              >
-                <X className="h-6 w-6 text-gray-900" />
-              </button>
-
-              {/* Navigation in Fullscreen */}
-              {images.length > 1 && (
-                <>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePrev();
-                    }}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
-                  >
-                    <ChevronLeft className="h-6 w-6 text-gray-900" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleNext();
-                    }}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
-                  >
-                    <ChevronRight className="h-6 w-6 text-gray-900" />
-                  </button>
-                </>
-              )}
-
-              {/* Thumbnail Strip in Fullscreen */}
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/50 backdrop-blur-sm p-2 rounded-lg max-w-[90vw] overflow-x-auto">
-                {images.map((image, index) => (
-                  <button
-                    key={index}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFullscreenIndex(index);
-                    }}
-                    className={cn(
-                      "relative w-12 h-12 rounded-md overflow-hidden border-2 transition-all flex-shrink-0",
-                      index === fullscreenIndex
-                        ? "border-white"
-                        : "border-transparent opacity-60 hover:opacity-100"
-                    )}
-                  >
-                    <Image
-                      src={image}
-                      alt={`Thumbnail ${index + 1}`}
-                      fill
-                      unoptimized={!isOptimizableHost(image)}
-                      className="object-cover"
-                      sizes="48px"
-                      quality={60}
-                    />
-                  </button>
-                ))}
-              </div>
-
-              {/* Counter in Fullscreen */}
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full text-sm font-medium">
-                {fullscreenIndex + 1} / {images.length}
-              </div>
-          </div>
-        </>
-      )}
+      {renderFullscreenModal()}
     </>
   );
 }

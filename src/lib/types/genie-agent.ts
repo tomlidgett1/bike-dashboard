@@ -360,6 +360,7 @@ export interface GenieWorkorderCard {
   employee_id: string;
   shop_id: string;
   sale_id: string | null;
+  serialized_id: string | null;
   lines: GenieWorkorderLineCard[];
   items: GenieWorkorderItemCard[];
   items_subtotal: number | null;
@@ -370,6 +371,122 @@ export interface GenieWorkorderCardsPayload {
   scope: 'open' | 'finished' | 'all' | 'single';
   truncated?: boolean;
   workorders: GenieWorkorderCard[];
+}
+
+export interface GenieCustomerProfileCandidate {
+  customer_id: string;
+  name: string;
+  company: string | null;
+}
+
+export interface GenieCustomerProfileContactPhone {
+  number: string;
+  use_type: string | null;
+}
+
+export interface GenieCustomerProfileContactEmail {
+  address: string;
+  use_type: string | null;
+}
+
+export interface GenieCustomerProfileAddress {
+  address1: string;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  country: string | null;
+}
+
+export interface GenieCustomerProfileCustomer {
+  customer_id: string;
+  name: string;
+  company: string | null;
+  phones: GenieCustomerProfileContactPhone[];
+  emails: GenieCustomerProfileContactEmail[];
+  addresses: GenieCustomerProfileAddress[];
+  no_email: boolean;
+  no_phone: boolean;
+  no_mail: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  archived: boolean;
+}
+
+export interface GenieCustomerBikeProfile {
+  serialized_id: string;
+  label: string | null;
+  serial: string | null;
+  item_id: string | null;
+  updated_at: string | null;
+  source: 'customer_serialized' | 'workorder_serialized' | 'sales_or_workorder_inference';
+  linked_workorder_ids: string[];
+}
+
+export interface GenieCustomerSaleLineProfile {
+  item_id: string | null;
+  description: string | null;
+  sku: string | null;
+  category: string | null;
+  quantity: number;
+  total: number;
+}
+
+export interface GenieCustomerSaleProfile {
+  sale_id: string;
+  completed_at: string | null;
+  completed_at_utc: string | null;
+  ticket_number: string | null;
+  items: string | null;
+  units: number | null;
+  subtotal: number;
+  discounts: number;
+  total: number;
+  gross_profit: number | null;
+  lines: GenieCustomerSaleLineProfile[];
+}
+
+export interface GenieCustomerTopItemProfile {
+  item_id: string | null;
+  description: string;
+  sku: string | null;
+  category: string | null;
+  quantity: number;
+  gross_sales: number;
+  last_purchase_at: string | null;
+}
+
+export interface GenieCustomerSalesSummaryProfile {
+  sale_count: number;
+  total_spend: number;
+  subtotal: number;
+  discounts: number;
+  gross_profit: number | null;
+  units: number;
+  average_sale: number;
+  first_purchase_at: string | null;
+  last_purchase_at: string | null;
+}
+
+export interface GenieCustomerProfileDataQuality {
+  sales_rows_checked: number;
+  sales_row_limit_reached: boolean;
+  workorders_truncated: boolean;
+  serialized_status: 'ok' | 'error';
+  serialized_error: string | null;
+}
+
+export interface GenieCustomerProfilePayload {
+  title: string;
+  query: string | null;
+  status: 'resolved' | 'ambiguous' | 'not_found';
+  customer: GenieCustomerProfileCustomer | null;
+  candidates: GenieCustomerProfileCandidate[];
+  sales_summary: GenieCustomerSalesSummaryProfile | null;
+  bikes: GenieCustomerBikeProfile[];
+  workorders: GenieWorkorderCard[];
+  recent_sales: GenieCustomerSaleProfile[];
+  top_items: GenieCustomerTopItemProfile[];
+  data_quality: GenieCustomerProfileDataQuality;
 }
 
 /** Structured analysis plan streamed to the thinking/progress panel. */

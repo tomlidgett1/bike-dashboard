@@ -100,6 +100,11 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [runs, setRuns] = React.useState<Record<string, RowRun>>({});
   const [running, setRunning] = React.useState(false);
+  const [bicycleOverrides, setBicycleOverrides] = React.useState<Record<string, boolean>>({});
+  const [bicycleSaving, setBicycleSaving] = React.useState<Set<string>>(new Set());
+  const [aiBicycleHints, setAiBicycleHints] = React.useState<
+    Record<string, "high" | "medium" | "low">
+  >({});
 
   const abortRef = React.useRef<AbortController | null>(null);
 
@@ -167,6 +172,11 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
     async (ids: string[], mode: "both" | "description" | "specs") => {
       const doDesc = mode === "both" || mode === "description";
       const doSpecs = mode === "both" || mode === "specs";
+      const overrides = Object.fromEntries(
+        ids
+          .filter((id) => id in bicycleOverrides)
+          .map((id) => [id, bicycleOverrides[id]]),
+      );
       ids.forEach((id) => {
         if (doDesc) setText(id, "description", { status: "running", detail: "Writing" });
         if (doSpecs) setText(id, "specs", { status: "running", detail: "Writing" });
@@ -175,7 +185,7 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
         const res = await fetch("/api/products/generate-product-descriptions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productIds: ids, mode }),
+          body: JSON.stringify({ productIds: ids, mode, bicycleOverrides: overrides }),
           signal: abortRef.current?.signal,
         });
         if (!res.ok || !res.body) throw new Error("Failed to start generation");
@@ -186,6 +196,13 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
             if (event.success) {
               const description = (event.description as string | null) ?? null;
               const specs = (event.specs as string | null) ?? null;
+              const isBicycle = event.is_bicycle as boolean | undefined;
+              const bikeSpecs = event.bike_specs;
+              const confidence = event.bicycle_confidence as
+                | "high"
+                | "medium"
+                | "low"
+                | undefined;
               setProducts((prev) =>
                 prev.map((p) =>
                   p.id === id
@@ -193,10 +210,20 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
                         ...p,
                         product_description: description ?? p.product_description,
                         product_specs: specs ?? p.product_specs,
+                        ...(typeof isBicycle === "boolean"
+                          ? { is_bicycle: isBicycle }
+                          : {}),
+                        ...(bikeSpecs ? { bike_specs: bikeSpecs } : {}),
                       }
                     : p,
                 ),
               );
+              if (typeof isBicycle === "boolean") {
+                setBicycleOverrides((prev) => ({ ...prev, [id]: isBicycle }));
+              }
+              if (confidence) {
+                setAiBicycleHints((prev) => ({ ...prev, [id]: confidence }));
+              }
               if (doDesc) setText(id, "description", { status: "done" });
               if (doSpecs) setText(id, "specs", { status: "done" });
             } else {
@@ -214,7 +241,52 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
         });
       }
     },
-    [setText, setProducts],
+    [setText, setProducts, bicycleOverrides],
+  );
+
+  const toggleBicycle = React.useCallback(
+    async (product: OptimizerProduct, nextValue: boolean) => {
+      if (bicycleSaving.has(product.id)) return;
+
+      setBicycleSaving((prev) => new Set(prev).add(product.id));
+      setBicycleOverrides((prev) => ({ ...prev, [product.id]: nextValue }));
+      setProducts((prev) =>
+        prev.map((p) => (p.id === product.id ? { ...p, is_bicycle: nextValue } : p)),
+      );
+
+      try {
+        const res = await fetch(`/api/products/${product.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_bicycle: nextValue }),
+        });
+        if (!res.ok) throw new Error("Failed to update bicycle flag");
+        const data = await res.json();
+        if (data.product) {
+          setProducts((prev) =>
+            prev.map((p) => (p.id === product.id ? { ...p, ...data.product } : p)),
+          );
+        }
+      } catch {
+        setProducts((prev) =>
+          prev.map((p) =>
+            p.id === product.id ? { ...p, is_bicycle: !!product.is_bicycle } : p,
+          ),
+        );
+        setBicycleOverrides((prev) => {
+          const next = { ...prev };
+          delete next[product.id];
+          return next;
+        });
+      } finally {
+        setBicycleSaving((prev) => {
+          const next = new Set(prev);
+          next.delete(product.id);
+          return next;
+        });
+      }
+    },
+    [bicycleSaving, setProducts],
   );
 
   const filtered = React.useMemo(() => {
@@ -509,8 +581,9 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
         </OptimiseCenteredState>
       ) : (
         <OptimiseList>
-          <div className="hidden border-b border-border/60 py-2 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_80px_80px_80px_100px] sm:gap-3">
+          <div className="hidden border-b border-border/60 py-2 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_72px_80px_80px_80px_100px] sm:gap-3">
             <span>Product</span>
+            <span className="text-center">Bike</span>
             <span className="text-center">Title</span>
             <span className="text-center">Desc</span>
             <span className="text-center">Specs</span>
@@ -520,11 +593,15 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
               const run = runs[p.id] ?? emptyRun();
               const status = rowStatus(run);
               const name = productLabel(p);
+              const bicycleChecked =
+                p.id in bicycleOverrides ? bicycleOverrides[p.id] : !!p.is_bicycle;
+              const aiHint = aiBicycleHints[p.id];
+              const bicycleBusy = bicycleSaving.has(p.id);
 
               return (
                 <div
                   key={p.id}
-                  className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_80px_80px_80px_100px] sm:items-center sm:gap-3"
+                  className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_72px_80px_80px_80px_100px] sm:items-center sm:gap-3"
                 >
                   <div className="flex min-w-0 items-start gap-3">
                     <Checkbox
@@ -547,6 +624,22 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
                     >
                       <Ban className="size-4" />
                     </button>
+                  </div>
+
+                  <div className="flex flex-col items-center justify-center gap-1">
+                    <Checkbox
+                      checked={bicycleChecked}
+                      disabled={running || bicycleBusy}
+                      onCheckedChange={(checked) =>
+                        void toggleBicycle(p, checked === true)
+                      }
+                      aria-label={bicycleChecked ? "Mark as not a bicycle" : "Mark as bicycle"}
+                    />
+                    {aiHint ? (
+                      <span className="hidden text-[10px] text-muted-foreground sm:inline">
+                        AI
+                      </span>
+                    ) : null}
                   </div>
 
                   <FieldCell done={hasTitle(p)} run={run.title} />
