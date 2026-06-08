@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { isGmailConnectIntent, isGmailAddAccountIntent, isGmailTaskIntent, applyGmailPlanningPolicy } from '../src/lib/composio/gmail-intent'
-import { needsGmailTools } from '../src/lib/genie/agent-runtime-policy'
 import { isComposioConfigured } from '../src/lib/composio/client'
 import { extractEmailTimestampMs, inferGmailCardMode } from '../src/lib/composio/gmail'
 import { buildContactAnalysis, parseFromField } from '../src/lib/composio/gmail-contact-analysis'
@@ -32,54 +30,7 @@ const homeV2GmailSuggestionsSource = readFileSync(join(root, 'src/app/api/store/
 const gmailConnectCardSource = readFileSync(join(root, 'src/components/genie/gmail-connect-card.tsx'), 'utf8')
 const gmailEmailSearchCardSource = readFileSync(join(root, 'src/components/genie/gmail-email-search-card.tsx'), 'utf8')
 
-// ── Intent detection ──────────────────────────────────────────────────────────
-
-const connectCases = [
-  'connect my composio gmnail',
-  'connect my gmail',
-  'link composio email',
-  'set up gmail integration',
-  'authorise google mail',
-]
-
-for (const message of connectCases) {
-  assert.equal(isGmailConnectIntent(message), true, `should detect connect intent: ${message}`)
-}
-
-const addAccountCases = [
-  'add another gmail account',
-  'connect a second gmail',
-  'add more mailboxes',
-]
-
-for (const message of addAccountCases) {
-  assert.equal(isGmailAddAccountIntent(message), true, `should detect add account intent: ${message}`)
-}
-
-const nonConnectCases = [
-  'send email to tom@example.com say hi',
-  'search my inbox for invoices',
-  'hello',
-  'what can you do?',
-]
-
-for (const message of nonConnectCases) {
-  assert.equal(isGmailConnectIntent(message), false, `should not detect connect intent: ${message}`)
-}
-
-const gmailTaskCases = [
-  'who was our first apollo rep',
-  'search my inbox for invoices',
-  'connect my gmail',
-  'send an email to tom@example.com',
-  'how many emails from apollobikes.com',
-]
-
-for (const message of gmailTaskCases) {
-  assert.equal(isGmailTaskIntent(message), true, `should detect gmail task: ${message}`)
-}
-
-assert.equal(isGmailTaskIntent('what were our sales last month'), false, 'lightspeed sales should not be gmail task')
+// ── Reply/search helpers ─────────────────────────────────────────────────────
 
 const replyTaskCases = [
   'respond to Joel',
@@ -90,7 +41,6 @@ const replyTaskCases = [
 ]
 
 for (const message of replyTaskCases) {
-  assert.equal(isGmailTaskIntent(message), true, `should detect reply gmail task without "email" keyword: ${message}`)
   assert.equal(isReplyOrComposeQuestion(message), true, `should detect reply/compose question: ${message}`)
 }
 
@@ -104,12 +54,6 @@ assert.ok(questionNeedsSentContext('respond to Joel'), 'reply should need sent c
 
 const replyPlan = buildReplySearchPlan('respond to Joel')
 assert.ok(replyPlan.some((pass) => pass.query.includes('in:sent')), 'reply plan must include sent pass')
-
-const forcedReply = applyGmailPlanningPolicy(
-  { route: 'casual_chat', needs_plan: false, reason: 'greeting' },
-  'respond to Joel',
-)
-assert.equal(forcedReply.needs_plan, true, 'respond tasks must force needs_plan')
 
 const replyReadiness = buildGmailAnswerReadiness(
   'respond to Joel',
@@ -132,16 +76,6 @@ const replySearchOnly = verifyQuestionAnswered({
   remaining_gaps: [],
 })
 assert.equal(replySearchOnly.ready, false, 'search-only draft must fail respond verification')
-
-assert.equal(needsGmailTools('respond to Joel'), true, 'needsGmailTools must include respond without email keyword')
-assert.equal(needsGmailTools('hello'), false, 'casual chat should not need gmail tools')
-
-const forced = applyGmailPlanningPolicy(
-  { route: 'casual_chat', needs_plan: false, reason: 'greeting' },
-  'who was our first apollo rep',
-)
-assert.equal(forced.needs_plan, true, 'gmail tasks must force needs_plan')
-assert.equal(forced.route, 'storefront_action', 'gmail tasks must route to storefront_action')
 
 // ── Composio Gmail timestamp parsing ─────────────────────────────────────────
 
@@ -356,7 +290,11 @@ assert.match(gmailConnectCardSource, /waitForConnection/, 'connect card must con
 assert.match(agentRouteSource, /shouldMintConnectLink/, 'agent gmail status must guard connect-link minting')
 assert.match(gmailSource, /enrichWithSentContext|includes_sent_context/, 'gmail search must merge sent context for replies')
 assert.match(gmailSource, /buildImplicitGmailQuery|resolveSearchQuery/, 'gmail search must infer query from user question')
-assert.match(agentRouteSource, /isGmailTaskIntent/, 'agent route must use isGmailTaskIntent for gmail routing')
+assert.doesNotMatch(
+  agentRouteSource,
+  /isGmailTaskIntent|isGmailConnectIntent|isGmailAddAccountIntent|applyGmailPlanningPolicy/,
+  'agent route must not use deterministic Gmail intent helpers',
+)
 assert.match(agentRouteSource, /suggested_reply_passes|includes_sent_context/, 'search_gmail must expose reply metadata')
 assert.match(agentRouteSource, /respond to \{name\}|in:sent context/, 'agent planner must document respond workflow')
 assert.match(toolkitSource, /allowMultiple/, 'composio connect link must allow multiple accounts')
@@ -386,7 +324,7 @@ assert.match(applyRouteSource, /executeGmailSendEmail/, 'apply route must call c
 async function main() {
   const liveResult: Record<string, unknown> = {
     configured: isComposioConfigured(),
-    intent_cases: connectCases.length + nonConnectCases.length,
+    reply_helper_cases: replyTaskCases.length,
     wiring_checks: 10,
   }
 

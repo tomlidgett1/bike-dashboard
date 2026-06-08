@@ -108,6 +108,21 @@ assert.equal(
   false,
   'agent route must not mutate LLM router decisions with a post-router Gmail policy',
 )
+assert.doesNotMatch(
+  agentRouteSource,
+  /isGmailTaskIntent|isGmailConnectIntent|isGmailAddAccountIntent/,
+  'agent route must not use deterministic Gmail intent helpers',
+)
+assert.doesNotMatch(
+  agentRuntimePolicySource,
+  /needsGmailTools|gmail-intent|latestUserMessage/,
+  'runtime tool policy must not inspect message text for Gmail intent',
+)
+assert.match(
+  agentRouteSource,
+  /toolNameSetForRoute\(route, executionPlan\?\.primary_tools \?\? \[\]\)|toolNameSetForRoute\(orchestration\.route, executionPlan\?\.primary_tools \?\? \[\]\)/,
+  'Gmail tool exposure must come from LLM planner tool names',
+)
 assert.match(
   agentRouteSource,
   /router_invoked: routerInvoked/,
@@ -198,15 +213,15 @@ assert.match(
   /\.asTool\(\{/,
   'specialist agents must be implemented with Agent.asTool so the main agent remains in control',
 )
-assert.match(
+assert.doesNotMatch(
   agentRuntimePolicySource,
   /export function needsGmailTools/,
-  'storefront routes must not always expose Gmail tools',
+  'runtime policy must not expose deterministic Gmail intent helpers',
 )
 assert.match(
   agentRuntimePolicySource,
-  /if \(needsGmailTools\(latestUserMessage\)\) add\(GMAIL_TOOL_NAMES\)/,
-  'Gmail tools should be route-selected only for Gmail/email intents',
+  /planRequestsGmail/,
+  'Gmail tools must be selected from planner tool names, not message regexes',
 )
 assert.match(
   agentRouteSource,
@@ -260,8 +275,8 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /buildSystemPrompt\(storeName, executionPlan, orchestration\.route, latestUserMessage\)/,
-  'executor prompt must receive the route and latest message for route-specific prompt pruning',
+  /buildSystemPrompt\(storeName, executionPlan, orchestration\.route\)/,
+  'executor prompt must receive the route and LLM plan for route-specific prompt pruning',
 )
 assert.match(
   agentRouteSource,
@@ -922,6 +937,12 @@ const routerPromptFixtures: Array<{
     needs_plan: false,
   },
   {
+    name: 'supplier warranty email',
+    message: 'Email Apollo warranty and tell them we have a faulty Trace 30 frame',
+    route: 'storefront_action',
+    needs_plan: true,
+  },
+  {
     name: 'external visual',
     message: 'What does a Trek Madone Gen 8 look like?',
     route: 'web_research',
@@ -947,13 +968,14 @@ function assertToolPolicy(args: {
   name: string
   route: GenieOrchestrationDecision['route']
   message: string
+  plannedTools?: string[]
   includes: string[]
   excludes: string[]
   hostedWeb: boolean
   parallel: boolean
   concurrency: number
 }) {
-  const toolNames = toolNameSetForRoute(args.route, args.message)
+  const toolNames = toolNameSetForRoute(args.route, args.plannedTools ?? [])
   for (const toolName of args.includes) {
     assert.equal(toolNames.has(toolName), true, `${args.name}: should include ${toolName}`)
   }
@@ -980,6 +1002,7 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     name: 'gmail connect action',
     route: 'storefront_action',
     message: 'Connect my Gmail',
+    plannedTools: ['get_gmail_connection_status', 'search_gmail', 'propose_gmail_email'],
     includes: ['get_gmail_connection_status', 'search_gmail', 'propose_gmail_email', 'verify_question_answered'],
     excludes: ['run_lightspeed_sql_query', 'search_web_images'],
     hostedWeb: false,
@@ -1020,6 +1043,7 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     name: 'mixed pricing research',
     route: 'mixed',
     message: 'How does our pricing compare to competitors?',
+    plannedTools: ['run_lightspeed_sql_query', 'get_product_costs', 'search_store_products', 'search_web_images'],
     includes: ['run_lightspeed_sql_query', 'get_product_costs', 'search_store_products', 'search_web_images'],
     excludes: ['search_gmail', 'propose_discount'],
     hostedWeb: true,
@@ -1030,6 +1054,7 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     name: 'mixed proposal plus research',
     route: 'mixed',
     message: 'Stage a 20% discount and compare competitor pricing',
+    plannedTools: ['run_lightspeed_sql_query', 'search_web_images', 'propose_discount', 'propose_price_update'],
     includes: ['run_lightspeed_sql_query', 'search_web_images', 'propose_discount', 'propose_price_update'],
     excludes: ['search_gmail'],
     hostedWeb: true,

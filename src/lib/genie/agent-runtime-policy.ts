@@ -1,4 +1,3 @@
-import { isGmailAddAccountIntent, isGmailConnectIntent, isGmailTaskIntent } from '@/lib/composio/gmail-intent'
 import type { GenieOrchestrationDecision } from '@/lib/genie/orchestration'
 
 export const COMMON_AGENT_TOOL_NAMES = [
@@ -63,43 +62,46 @@ export const SPECIALIST_AGENT_TOOL_NAMES = [
   'consult_bike_store_analyst',
 ]
 
-export function needsGmailTools(latestUserMessage: string): boolean {
-  return isGmailTaskIntent(latestUserMessage)
+function plannedToolsText(plannedToolNames: Iterable<string> | undefined): string {
+  return Array.from(plannedToolNames ?? []).join(' ')
 }
 
-export function isBikeCompatibilityIntent(latestUserMessage: string): boolean {
-  return /\b(bottom bracket|bb|bb shell|bb standard|brake pads?|disc pads?|tyre size|tire size|freehub|cassette|chainring|derailleur hanger|hanger|headset|seatpost|seat post|thru axle|through axle|rotor size|shock size|bearing|bearings|compatible|compatibility|fitment|what .* need(?:s)? for|what\s+bb\b.*\bneed(?:s)?)\b/i.test(latestUserMessage)
-}
-
-export function isCustomerBikeCompatibilityIntent(latestUserMessage: string): boolean {
-  return isBikeCompatibilityIntent(latestUserMessage) &&
-    /\b(customer|client|work ?order|service history|purchase history|previous sales?|sold to|bought from us|their bike|his bike|her bike|this bike|that bike|what .* need(?:s)?|for [A-Z][a-z]+ [A-Z][a-z]+)\b/i.test(latestUserMessage)
+function planRequestsTool(plannedToolNames: Iterable<string> | undefined, pattern: RegExp): boolean {
+  return pattern.test(plannedToolsText(plannedToolNames))
 }
 
 export function toolNameSetForRoute(
   route: GenieOrchestrationDecision['route'],
-  latestUserMessage: string,
+  plannedToolNames?: Iterable<string>,
 ): Set<string> {
   const names = new Set(COMMON_AGENT_TOOL_NAMES)
   const add = (toolNames: string[]) => {
     for (const toolName of toolNames) names.add(toolName)
   }
+  const planRequestsGmail = planRequestsTool(plannedToolNames, /\bgmail\b|get_gmail_connection_status|search_gmail|read_gmail_messages|propose_gmail_email/i)
+  const planRequestsLightspeed = planRequestsTool(plannedToolNames, /record_lightspeed|run_lightspeed|get_lightspeed|search_lightspeed|list_lightspeed|workorder|inventory|sales|customer_profile|product_purchasers|stale_inventory/i)
+  const planRequestsStorefrontRead = planRequestsTool(plannedToolNames, /get_store|search_store|list_active_discounts|find_discount_candidates|get_product_costs|brands|categories|products/i)
+  const planRequestsStorefrontProposal = planRequestsTool(plannedToolNames, /propose_carousel|propose_create_carousel|propose_rename_carousel|propose_discount|propose_remove_discount|propose_price_update|propose_product_brand_category_update|propose_lightspeed_category_create|\bcarousel\b|\bdiscount\b|\bprice\b|\bbrand\b|\bcategory\b/i)
+  const planRequestsImageSearch = planRequestsTool(plannedToolNames, /search_web_images/i)
+  const planRequestsBikeStoreSpecialist = planRequestsTool(plannedToolNames, /consult_bike_store_analyst/i)
 
   if (route === 'lightspeed_sql') {
     add(LIGHTSPEED_READ_TOOL_NAMES)
+    if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
     return names
   }
 
   if (route === 'storefront_action') {
     add(STOREFRONT_READ_TOOL_NAMES)
     add(STOREFRONT_PROPOSAL_TOOL_NAMES)
-    if (needsGmailTools(latestUserMessage)) add(GMAIL_TOOL_NAMES)
+    if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
     return names
   }
 
   if (route === 'web_research') {
     add(WEB_RESEARCH_TOOL_NAMES)
-    if (isBikeCompatibilityIntent(latestUserMessage)) add(['consult_cycling_compatibility_specialist'])
+    add(['consult_cycling_compatibility_specialist'])
+    if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
     return names
   }
 
@@ -108,33 +110,26 @@ export function toolNameSetForRoute(
     add(LIGHTSPEED_READ_TOOL_NAMES)
     add(['find_discount_candidates', 'get_product_costs'])
     add(['consult_bike_store_analyst'])
+    if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
     return names
   }
 
   if (route === 'mixed') {
-    if (isCustomerBikeCompatibilityIntent(latestUserMessage)) {
-      add(CUSTOMER_BIKE_CONTEXT_TOOL_NAMES)
-      add(['consult_cycling_compatibility_specialist'])
-      if (needsGmailTools(latestUserMessage)) add(GMAIL_TOOL_NAMES)
-      return names
+    add(CUSTOMER_BIKE_CONTEXT_TOOL_NAMES)
+    add(['consult_cycling_compatibility_specialist'])
+    if (planRequestsBikeStoreSpecialist) add(['consult_bike_store_analyst'])
+    if (planRequestsLightspeed) {
+      add(['record_lightspeed_plan'])
+      add(LIGHTSPEED_READ_TOOL_NAMES)
     }
-
-    add(['record_lightspeed_plan'])
-    add(LIGHTSPEED_READ_TOOL_NAMES)
-    add(STOREFRONT_READ_TOOL_NAMES)
-    add(WEB_RESEARCH_TOOL_NAMES)
-    if (isCustomerBikeCompatibilityIntent(latestUserMessage)) add(CUSTOMER_BIKE_CONTEXT_TOOL_NAMES)
-    if (isBikeCompatibilityIntent(latestUserMessage)) add(['consult_cycling_compatibility_specialist'])
-    if (needsGmailTools(latestUserMessage)) add(GMAIL_TOOL_NAMES)
-    if (/\b(stage|apply|create|rename|reorder|show|hide|discount|price|brand|category|carousel)\b/i.test(latestUserMessage)) {
-      add(STOREFRONT_PROPOSAL_TOOL_NAMES)
-    }
+    if (planRequestsStorefrontRead) add(STOREFRONT_READ_TOOL_NAMES)
+    if (planRequestsImageSearch) add(WEB_RESEARCH_TOOL_NAMES)
+    if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
+    if (planRequestsStorefrontProposal) add(STOREFRONT_PROPOSAL_TOOL_NAMES)
     return names
   }
 
-  if (needsGmailTools(latestUserMessage)) {
-    add(GMAIL_TOOL_NAMES)
-  }
+  if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
 
   return names
 }

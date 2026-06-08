@@ -30,7 +30,6 @@ import {
 } from '@/lib/genie/orchestration'
 import {
   canRunParallelTools,
-  isBikeCompatibilityIntent,
   maxToolConcurrencyForRoute,
   shouldExposeHostedWebSearch,
   toolNameSetForRoute,
@@ -96,7 +95,6 @@ import {
   readGmailMessages,
   searchGmailEmails,
 } from '@/lib/composio/gmail'
-import { isGmailAddAccountIntent, isGmailConnectIntent, isGmailTaskIntent } from '@/lib/composio/gmail-intent'
 import { GMAIL_SEARCH_PLAYBOOK } from '@/lib/composio/gmail-search-playbook'
 import { verifyQuestionAnswered } from '@/lib/genie/answer-verification'
 import { buildGmailAgentContextFromMessages, buildGmailAgentContextFromPayload } from '@/lib/genie/gmail-agent-context'
@@ -240,10 +238,8 @@ function planMentionsTool(plan: GenieExecutionPlan | null, pattern: RegExp): boo
 
 function routeUsesGmail(
   route: GenieOrchestrationDecision['route'],
-  latestUserMessage: string,
   plan: GenieExecutionPlan | null,
 ): boolean {
-  if (isGmailTaskIntent(latestUserMessage)) return true
   return (route === 'storefront_action' || route === 'mixed') &&
     planMentionsTool(plan, /\bgmail\b|search_gmail|read_gmail|propose_gmail/i)
 }
@@ -426,10 +422,9 @@ function buildSystemPrompt(
   storeName: string,
   executionPlan: GenieExecutionPlan | null = null,
   route: GenieOrchestrationDecision['route'] = 'mixed',
-  latestUserMessage = '',
 ): string {
   const today = getStoreToday()
-  const includeGmail = routeUsesGmail(route, latestUserMessage, executionPlan)
+  const includeGmail = routeUsesGmail(route, executionPlan)
   const includeLightspeedSql = routeUsesLightspeedSql(route, executionPlan)
   const includeStorefront = routeUsesStorefront(route, executionPlan)
   const includeWeb = routeUsesWeb(route, executionPlan)
@@ -966,6 +961,7 @@ Routing examples:
 - "Make a Summer Sale carousel for all Clif bars" = storefront_action, needs_plan=false.
 - "Build a full homepage campaign for winter servicing" = storefront_action, needs_plan=true.
 - "Connect my Gmail" = storefront_action, needs_plan=true.
+- "Email Apollo warranty and tell them we have a faulty Trace 30 frame" = storefront_action, needs_plan=true.
 - "Respond to Joel" = storefront_action, needs_plan=true.
 - "Reply to Tom about the quote" = storefront_action, needs_plan=true.
 - "Find the earliest email from Trek's rep and draft a reply" = storefront_action, needs_plan=true.
@@ -10900,10 +10896,10 @@ function executorModelForRoute(route: GenieOrchestrationDecision['route'], plann
   return FAST_EXECUTOR_MODEL
 }
 
-function buildSpecialistAgentTools(route: GenieOrchestrationDecision['route'], latestUserMessage: string) {
+function buildSpecialistAgentTools(route: GenieOrchestrationDecision['route']) {
   const tools = []
 
-  if (isBikeCompatibilityIntent(latestUserMessage) || route === 'web_research' || route === 'mixed') {
+  if (route === 'web_research' || route === 'mixed') {
     const cyclingCompatibilityAgent = new Agent({
       name: 'Yellow Jersey Cycling Compatibility Specialist',
       model: FAST_EXECUTOR_MODEL,
@@ -10986,10 +10982,9 @@ function buildAgentTools(
   visualPrefs: VisualPrefs,
   latestUserMessage: string,
   route: GenieOrchestrationDecision['route'],
+  executionPlan: GenieExecutionPlan | null,
 ) {
-  const wantsGmailConnectCard =
-    isGmailConnectIntent(latestUserMessage) || isGmailAddAccountIntent(latestUserMessage)
-  const allowedToolNames = toolNameSetForRoute(route, latestUserMessage)
+  const allowedToolNames = toolNameSetForRoute(route, executionPlan?.primary_tools ?? [])
   const proposalToolOutput = (result: { proposal?: GenieProposal; output: object }) => {
     if (result.proposal) emit({ event: 'proposal', proposal: result.proposal })
     return result.output
@@ -11192,7 +11187,7 @@ function buildAgentTools(
         return runLightspeedSqlQuery(userId, args, emit, visualPrefs, latestUserMessage)
       },
     }),
-    ...buildSpecialistAgentTools(route, latestUserMessage),
+    ...buildSpecialistAgentTools(route),
     tool({
       name: 'get_lightspeed_sales_summary',
       description: 'Aggregate completed Lightspeed sales totals, net sales, total cost, gross profit, and gross margin for an ISO date range from the lightspeed_sales_report_lines SQL table.',
@@ -11875,8 +11870,8 @@ function buildAgentTools(
           email_address: connection.email_address ?? null,
           status: connection.status,
         }))
-        const showCard = args.show_connect_card ?? (wantsGmailConnectCard || connections.length === 0)
-        const shouldMintConnectLink = showCard && (connections.length === 0 || wantsGmailConnectCard || args.show_connect_card === true)
+        const showCard = args.show_connect_card ?? connections.length === 0
+        const shouldMintConnectLink = showCard && (connections.length === 0 || args.show_connect_card === true)
         const link = shouldMintConnectLink
           ? await mintGmailConnectLink(userId).catch((error) => {
             console.error('[gmail] mint connect link failed:', error)
@@ -12426,7 +12421,7 @@ export async function POST(request: NextRequest) {
 
           let executionPlan: GenieExecutionPlan | null = null
 
-          if (orchestration.needs_plan || isGmailTaskIntent(latestUserMessage)) {
+          if (orchestration.needs_plan) {
             plannerUsed = true
             emit({ event: 'status', phase: 'planning', text: 'Planning the smart workflow' })
             const planningStartedAt = Date.now()
@@ -12469,6 +12464,7 @@ export async function POST(request: NextRequest) {
             visualPrefs,
             latestUserMessage,
             orchestration.route,
+            executionPlan,
           )
           const agentToolNames = agentTools.map(candidate =>
             'name' in candidate && candidate.name ? String(candidate.name) : 'hosted_web_search',
@@ -12491,7 +12487,7 @@ export async function POST(request: NextRequest) {
           const agent = new Agent({
             name: 'Yellow Jersey Store Agent',
             model: executorModel,
-            instructions: buildSystemPrompt(storeName, executionPlan, orchestration.route, latestUserMessage),
+            instructions: buildSystemPrompt(storeName, executionPlan, orchestration.route),
             tools: agentTools,
             modelSettings: {
               parallelToolCalls: canRunParallelTools(orchestration.route),

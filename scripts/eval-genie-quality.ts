@@ -179,7 +179,7 @@ function runStaticEval() {
   )
 
   for (const testCase of staticCases) {
-    const tools = toolNameSetForRoute(testCase.expected_route, testCase.user)
+    const tools = toolNameSetForRoute(testCase.expected_route)
     for (const toolName of testCase.required_tools) {
       assert.equal(tools.has(toolName), true, `${testCase.name}: should expose ${toolName}`)
     }
