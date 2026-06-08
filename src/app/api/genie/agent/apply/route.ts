@@ -138,8 +138,9 @@ export async function POST(request: NextRequest) {
         .eq('user_id', user.id)
 
       if (owned && owned.length > 0) {
-        const ownedIds = new Set(owned.map((c: any) => c.id as string))
-        const curOrder = new Map(owned.map((c: any) => [c.id as string, c.display_order as number]))
+        const ownedRows = owned as Array<{ id: string; display_order: number }>
+        const ownedIds = new Set(ownedRows.map((c) => c.id))
+        const curOrder = new Map(ownedRows.map((c) => [c.id, c.display_order]))
 
         // Map sentinel → real id, keep only ids the store still owns, dedupe.
         const seen = new Set<string>()
@@ -149,8 +150,8 @@ export async function POST(request: NextRequest) {
           if (ownedIds.has(real) && !seen.has(real)) { seen.add(real); finalOrder.push(real) }
         }
         // Append any owned carousels the proposal didn't mention (e.g. added since).
-        for (const c of owned) {
-          const id = c.id as string
+        for (const c of ownedRows) {
+          const id = c.id
           if (!seen.has(id)) { seen.add(id); finalOrder.push(id) }
         }
 
@@ -488,6 +489,7 @@ export async function POST(request: NextRequest) {
         bcc: gmailProposal.bcc,
         is_html: gmailProposal.is_html,
         connected_account_id: gmailProposal.connected_account_id ?? undefined,
+        composio_session_id: gmailProposal.composio_session_id ?? undefined,
       }
 
       try {

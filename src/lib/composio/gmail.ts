@@ -1,8 +1,11 @@
 import {
-  getComposioClient,
-  getComposioUserId,
   isComposioConfigured,
 } from '@/lib/composio/client'
+import {
+  getOrCreateGmailComposioSession,
+  type ComposioSessionNotice,
+  type GmailComposioSessionExecutor,
+} from '@/lib/composio/session'
 import {
   listActiveConnections,
   listConnectedAccounts,
@@ -51,6 +54,11 @@ const MAX_SENDER_SUMMARY = 80
 const MAX_BODY_CHARS = 12_000
 const AUTO_HYDRATE_BODY_COUNT = 3
 const AUTO_HYDRATE_REPLY_COUNT = 5
+
+interface GmailComposioSessionOptions {
+  composio_session_id?: string
+  on_composio_session?: (notice: ComposioSessionNotice) => void | Promise<void>
+}
 
 export async function listGmailConnections(userId: string): Promise<ComposioConnectedAccount[]> {
   const { accounts, error } = await listConnectedAccountsSafe(userId)
@@ -186,7 +194,7 @@ interface GmailPageResult {
 }
 
 async function fetchGmailPage(
-  composioUserId: string,
+  session: GmailComposioSessionExecutor,
   connectedAccountId: string | undefined,
   args: {
     query: string
@@ -194,22 +202,14 @@ async function fetchGmailPage(
     maxResults: number
   },
 ): Promise<GmailPageResult> {
-  const composio = getComposioClient()
-  const executeArgs = {
-    userId: composioUserId,
-    connectedAccountId,
-    arguments: {
-      query: args.query,
-      max_results: args.maxResults,
-      ...(args.pageToken ? { page_token: args.pageToken } : {}),
-      ids_only: false,
-      include_payload: true,
-      verbose: false,
-    },
-    dangerouslySkipVersionCheck: true,
-  } as Parameters<typeof composio.tools.execute>[1]
-
-  const result = await composio.tools.execute('GMAIL_FETCH_EMAILS', executeArgs)
+  const result = await session.execute('GMAIL_FETCH_EMAILS', {
+    query: args.query,
+    max_results: args.maxResults,
+    ...(args.pageToken ? { page_token: args.pageToken } : {}),
+    ids_only: false,
+    include_payload: true,
+    verbose: false,
+  }, connectedAccountId)
   const data = unwrapToolResult(result)
   const messages = (
     Array.isArray(data.messages) ? data.messages : []
@@ -220,7 +220,7 @@ async function fetchGmailPage(
 }
 
 async function fetchAllGmailMatches(
-  composioUserId: string,
+  session: GmailComposioSessionExecutor,
   connectedAccountId: string | undefined,
   query: string,
 ): Promise<{ emails: GmailEmailPreview[]; pagesScanned: number; capped: boolean }> {
@@ -230,7 +230,7 @@ async function fetchAllGmailMatches(
   const emails: GmailEmailPreview[] = []
 
   while (pagesScanned < GMAIL_MAX_PAGES) {
-    const page = await fetchGmailPage(composioUserId, connectedAccountId, {
+    const page = await fetchGmailPage(session, connectedAccountId, {
       query,
       pageToken,
       maxResults: GMAIL_PAGE_SIZE,
@@ -340,22 +340,14 @@ function unwrapGmailMessage(raw: Record<string, unknown>): Record<string, unknow
 }
 
 async function fetchGmailMessageRaw(
-  composioUserId: string,
+  session: GmailComposioSessionExecutor,
   connectedAccountId: string | undefined,
   messageId: string,
 ): Promise<Record<string, unknown>> {
-  const composio = getComposioClient()
-  const executeArgs = {
-    userId: composioUserId,
-    connectedAccountId,
-    arguments: {
-      message_id: messageId,
-      format: 'full',
-    },
-    dangerouslySkipVersionCheck: true,
-  } as Parameters<typeof composio.tools.execute>[1]
-
-  const result = await composio.tools.execute('GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID', executeArgs)
+  const result = await session.execute('GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID', {
+    message_id: messageId,
+    format: 'full',
+  }, connectedAccountId)
   return unwrapGmailMessage(unwrapToolResult(result))
 }
 
@@ -379,9 +371,31 @@ export async function readGmailMessages(
     connected_account_id?: string
     messages?: Array<{ message_id: string; connected_account_id?: string }>
     max_body_chars?: number
-  },
+  } & GmailComposioSessionOptions,
 ): Promise<GmailMessageContent[]> {
-  const composioUserId = getComposioUserId(userId)
+  const connections = await listGmailConnections(userId)
+  const connectedAccountIds = args.connected_account_id
+    ? [args.connected_account_id]
+    : connections.map((connection) => connection.id)
+  const session = await getOrCreateGmailComposioSession({
+    userId,
+    sessionId: args.composio_session_id,
+    connectedAccountIds,
+    onSession: args.on_composio_session,
+  })
+  return readGmailMessagesWithSession(userId, args, session)
+}
+
+async function readGmailMessagesWithSession(
+  _userId: string,
+  args: {
+    message_ids?: string[]
+    connected_account_id?: string
+    messages?: Array<{ message_id: string; connected_account_id?: string }>
+    max_body_chars?: number
+  },
+  session: GmailComposioSessionExecutor,
+): Promise<GmailMessageContent[]> {
   const maxBodyChars = args.max_body_chars ?? MAX_BODY_CHARS
   const targets = args.messages?.length
     ? args.messages
@@ -396,7 +410,7 @@ export async function readGmailMessages(
   for (const target of targets.slice(0, 5)) {
     try {
       const raw = await fetchGmailMessageRaw(
-        composioUserId,
+        session,
         target.connected_account_id,
         target.message_id,
       )
@@ -423,6 +437,7 @@ export async function readGmailMessages(
 
 async function hydrateMessageBodiesForAgent(
   userId: string,
+  session: GmailComposioSessionExecutor,
   emails: GmailEmailPreview[],
   args: {
     user_question?: string
@@ -434,12 +449,12 @@ async function hydrateMessageBodiesForAgent(
   if ((!needsBody && !isReply) || emails.length === 0) return []
   const maxCount = args.max_count ?? (isReply ? AUTO_HYDRATE_REPLY_COUNT : AUTO_HYDRATE_BODY_COUNT)
   const targets = emails.slice(0, maxCount)
-  return readGmailMessages(userId, {
+  return readGmailMessagesWithSession(userId, {
     messages: targets.map((email) => ({
       message_id: email.message_id,
       connected_account_id: email.connected_account_id,
     })),
-  })
+  }, session)
 }
 
 function dedupeEmailsById(emails: GmailEmailPreview[]): GmailEmailPreview[] {
@@ -456,6 +471,7 @@ function dedupeEmailsById(emails: GmailEmailPreview[]): GmailEmailPreview[] {
 
 async function enrichWithSentContext(
   userId: string,
+  session: GmailComposioSessionExecutor,
   account: ComposioConnectedAccount,
   args: {
     user_question?: string
@@ -472,8 +488,7 @@ async function enrichWithSentContext(
   const sentQuery = buildSentContextQuery(hint)
   if (!sentQuery) return { emails: baseEmails, includesSentContext: false }
 
-  const composioUserId = getComposioUserId(userId)
-  const page = await fetchGmailPage(composioUserId, account.id, {
+  const page = await fetchGmailPage(session, account.id, {
     query: sentQuery,
     maxResults: Math.max(args.displayLimit, QUICK_PAGE_SIZE),
   })
@@ -653,6 +668,7 @@ function mergeSearchPayloads(
 
 async function searchGmailEmailsForAccount(
   userId: string,
+  session: GmailComposioSessionExecutor,
   account: ComposioConnectedAccount,
   args: {
     query?: string
@@ -666,13 +682,12 @@ async function searchGmailEmailsForAccount(
   const sortOrder = args.sort_order ?? 'newest'
   const scanDepth = args.scan_depth ?? 'quick'
   const displayLimit = clampDisplayLimit(args.max_results)
-  const composioUserId = getComposioUserId(userId)
   const connectedAccountId = account.id
   const mailboxLabel = account.email_address ?? account.label
 
   if (scanDepth === 'full') {
     const { emails: allEmails, pagesScanned, capped } = await fetchAllGmailMatches(
-      composioUserId,
+      session,
       connectedAccountId,
       query,
     )
@@ -680,7 +695,7 @@ async function searchGmailEmailsForAccount(
     let includesSentContext = false
 
     if (questionNeedsSentContext(args.user_question) && !query.includes('in:sent')) {
-      const enriched = await enrichWithSentContext(userId, account, {
+      const enriched = await enrichWithSentContext(userId, session, account, {
         user_question: args.user_question,
         sort_order: sortOrder,
         displayLimit,
@@ -693,7 +708,7 @@ async function searchGmailEmailsForAccount(
     const rawSummary = buildSenderSummary(sorted)
     const analysis = attachAnalysis(sorted, rawSummary)
     const displayEmails = sorted.slice(0, displayLimit)
-    const messageBodies = await hydrateMessageBodiesForAgent(userId, displayEmails, {
+    const messageBodies = await hydrateMessageBodiesForAgent(userId, session, displayEmails, {
       user_question: args.user_question,
     })
 
@@ -721,7 +736,7 @@ async function searchGmailEmailsForAccount(
     )
   }
 
-  const page = await fetchGmailPage(composioUserId, connectedAccountId, {
+  const page = await fetchGmailPage(session, connectedAccountId, {
     query,
     maxResults: Math.min(Math.max(displayLimit, QUICK_PAGE_SIZE), QUICK_PAGE_SIZE),
   })
@@ -729,7 +744,7 @@ async function searchGmailEmailsForAccount(
     sortEmails(extractEmailPreviews(page.messages), sortOrder),
     account,
   )
-  const enriched = await enrichWithSentContext(userId, account, {
+  const enriched = await enrichWithSentContext(userId, session, account, {
     user_question: args.user_question,
     sort_order: sortOrder,
     displayLimit,
@@ -741,7 +756,7 @@ async function searchGmailEmailsForAccount(
   const rawSummary = buildSenderSummary(pageEmails)
   const analysis = attachAnalysis(pageEmails, rawSummary)
   const displayEmails = pageEmails.slice(0, displayLimit)
-  const messageBodies = await hydrateMessageBodiesForAgent(userId, displayEmails, {
+  const messageBodies = await hydrateMessageBodiesForAgent(userId, session, displayEmails, {
     user_question: args.user_question,
   })
 
@@ -817,7 +832,7 @@ export async function searchGmailEmails(
     sort_order?: GmailSortOrder
     scan_depth?: GmailScanDepth
     user_question?: string
-  },
+  } & GmailComposioSessionOptions,
 ): Promise<GmailEmailsPayload> {
   const query = resolveSearchQuery(args)
   const sortOrder = args.sort_order ?? 'newest'
@@ -847,12 +862,19 @@ export async function searchGmailEmails(
     }
   }
 
+  const session = await getOrCreateGmailComposioSession({
+    userId,
+    sessionId: args.composio_session_id,
+    connectedAccountIds: connections.map((connection) => connection.id),
+    onSession: args.on_composio_session,
+  })
+
   if (connections.length === 1) {
-    return searchGmailEmailsForAccount(userId, connections[0], args)
+    return searchGmailEmailsForAccount(userId, session, connections[0], args)
   }
 
   const perMailbox = await Promise.all(
-    connections.map((connection) => searchGmailEmailsForAccount(userId, connection, args)),
+    connections.map((connection) => searchGmailEmailsForAccount(userId, session, connection, args)),
   )
 
   const merged = mergeSearchPayloads(
@@ -886,25 +908,22 @@ export async function executeGmailSendEmail(
     bcc?: string[]
     is_html?: boolean
     connected_account_id?: string
-  },
+  } & GmailComposioSessionOptions,
 ): Promise<Record<string, unknown>> {
-  const composio = getComposioClient()
-  const composioUserId = getComposioUserId(userId)
-  const executeArgs = {
-    userId: composioUserId,
-    connectedAccountId: args.connected_account_id,
-    arguments: {
-      recipient_email: args.recipient_email,
-      subject: args.subject,
-      body: args.body,
-      ...(args.cc?.length ? { cc: args.cc } : {}),
-      ...(args.bcc?.length ? { bcc: args.bcc } : {}),
-      ...(args.is_html ? { is_html: true } : {}),
-    },
-    dangerouslySkipVersionCheck: true,
-  } as Parameters<typeof composio.tools.execute>[1]
-
-  const result = await composio.tools.execute('GMAIL_SEND_EMAIL', executeArgs)
+  const session = await getOrCreateGmailComposioSession({
+    userId,
+    sessionId: args.composio_session_id,
+    connectedAccountIds: args.connected_account_id ? [args.connected_account_id] : undefined,
+    onSession: args.on_composio_session,
+  })
+  const result = await session.execute('GMAIL_SEND_EMAIL', {
+    recipient_email: args.recipient_email,
+    subject: args.subject,
+    body: args.body,
+    ...(args.cc?.length ? { cc: args.cc } : {}),
+    ...(args.bcc?.length ? { bcc: args.bcc } : {}),
+    ...(args.is_html ? { is_html: true } : {}),
+  }, args.connected_account_id)
   return unwrapToolResult(result)
 }
 
@@ -918,25 +937,22 @@ export async function executeGmailCreateDraft(
     bcc?: string[]
     is_html?: boolean
     connected_account_id?: string
-  },
+  } & GmailComposioSessionOptions,
 ): Promise<Record<string, unknown>> {
-  const composio = getComposioClient()
-  const composioUserId = getComposioUserId(userId)
-  const executeArgs = {
-    userId: composioUserId,
-    connectedAccountId: args.connected_account_id,
-    arguments: {
-      recipient_email: args.recipient_email,
-      subject: args.subject,
-      body: args.body,
-      ...(args.cc?.length ? { cc: args.cc } : {}),
-      ...(args.bcc?.length ? { bcc: args.bcc } : {}),
-      ...(args.is_html ? { is_html: true } : {}),
-    },
-    dangerouslySkipVersionCheck: true,
-  } as Parameters<typeof composio.tools.execute>[1]
-
-  const result = await composio.tools.execute('GMAIL_CREATE_EMAIL_DRAFT', executeArgs)
+  const session = await getOrCreateGmailComposioSession({
+    userId,
+    sessionId: args.composio_session_id,
+    connectedAccountIds: args.connected_account_id ? [args.connected_account_id] : undefined,
+    onSession: args.on_composio_session,
+  })
+  const result = await session.execute('GMAIL_CREATE_EMAIL_DRAFT', {
+    recipient_email: args.recipient_email,
+    subject: args.subject,
+    body: args.body,
+    ...(args.cc?.length ? { cc: args.cc } : {}),
+    ...(args.bcc?.length ? { bcc: args.bcc } : {}),
+    ...(args.is_html ? { is_html: true } : {}),
+  }, args.connected_account_id)
   return unwrapToolResult(result)
 }
 

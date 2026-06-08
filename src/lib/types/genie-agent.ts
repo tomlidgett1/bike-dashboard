@@ -184,6 +184,8 @@ export interface GmailEmailActionProposal {
   bcc?: string[];
   is_html?: boolean;
   connected_account_id?: string | null;
+  /** Composio tool-router session reused for this conversation, when available. */
+  composio_session_id?: string | null;
   /** Gmail thread/message being replied to, carried for review and traceability. */
   thread_id?: string | null;
   reply_to_message_id?: string | null;

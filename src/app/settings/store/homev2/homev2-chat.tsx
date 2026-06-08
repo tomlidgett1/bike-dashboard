@@ -88,6 +88,7 @@ interface SavedHomeV2Conversation {
   title: string;
   updatedAt: string;
   messages: ChatMessage[];
+  composioSessionIds?: Record<string, string>;
 }
 
 interface QueuedPrompt {
@@ -711,6 +712,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [conversations, setConversations] = React.useState<SavedHomeV2Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = React.useState<string | null>(null);
+  const [composioSessionIds, setComposioSessionIds] = React.useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = React.useState(false);
   const [queuedPrompts, setQueuedPrompts] = React.useState<QueuedPrompt[]>([]);
   const [lastMsgMinHeight, setLastMsgMinHeight] = React.useState<number | undefined>(undefined);
@@ -719,6 +721,8 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   const lastUserMessageRef = React.useRef<HTMLDivElement | null>(null);
   const abortRef = React.useRef<AbortController | null>(null);
   const messagesRef = React.useRef<ChatMessage[]>([]);
+  const activeConversationIdRef = React.useRef<string | null>(null);
+  const composioSessionIdsRef = React.useRef<Record<string, string>>({});
   const isLoadingRef = React.useRef(false);
   const runSendRef = React.useRef<(text: string, clearInputField?: boolean) => Promise<void>>(async () => {});
   const consumedPendingPromptRef = React.useRef(false);
@@ -727,6 +731,14 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   React.useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  React.useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  React.useEffect(() => {
+    composioSessionIdsRef.current = composioSessionIds;
+  }, [composioSessionIds]);
 
   React.useEffect(() => {
     isLoadingRef.current = isLoading;
@@ -792,6 +804,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       title: conversationTitle(messages),
       updatedAt: new Date().toISOString(),
       messages,
+      composioSessionIds,
     };
 
     setActiveConversationId(id);
@@ -800,7 +813,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       writeConversationHistory(next);
       return next;
     });
-  }, [activeConversationId, messages]);
+  }, [activeConversationId, composioSessionIds, messages]);
 
   const startNewChat = React.useCallback(() => {
     abortRef.current?.abort();
@@ -808,7 +821,10 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     setInput("");
     setMessages([]);
     setLastMsgMinHeight(undefined);
+    setComposioSessionIds({});
+    composioSessionIdsRef.current = {};
     setActiveConversationId(null);
+    activeConversationIdRef.current = null;
     isLoadingRef.current = false;
     setIsLoading(false);
   }, [clearPromptQueue]);
@@ -818,8 +834,11 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     clearPromptQueue();
     setInput("");
     setMessages(conversation.messages.map((message) => ({ ...message, isStreaming: false, status: undefined })));
+    setComposioSessionIds(conversation.composioSessionIds ?? {});
+    composioSessionIdsRef.current = conversation.composioSessionIds ?? {};
     setLastMsgMinHeight(undefined);
     setActiveConversationId(conversation.id);
+    activeConversationIdRef.current = conversation.id;
     isLoadingRef.current = false;
     setIsLoading(false);
   }, [clearPromptQueue]);
@@ -848,6 +867,11 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       processSteps: [createProcessStep("thinking", "Thinking")],
     };
 
+    const conversationId = activeConversationIdRef.current ?? crypto.randomUUID();
+    if (!activeConversationIdRef.current) {
+      activeConversationIdRef.current = conversationId;
+    }
+
     const nextMessages = [...messagesRef.current, userMessage];
     const containerHeight =
       scrollRef.current?.clientHeight ??
@@ -858,6 +882,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       messagesRef.current = updatedMessages;
       setLastMsgMinHeight(containerHeight);
       setMessages(updatedMessages);
+      setActiveConversationId(conversationId);
       if (clearInputField) setInput("");
     });
     isLoadingRef.current = true;
@@ -921,6 +946,8 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          conversation_id: conversationId,
+          composio_session_ids: composioSessionIdsRef.current,
           messages: nextMessages.map((message) => ({
             role: message.role,
             content: message.content,
@@ -1202,6 +1229,18 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                   }
                 : message
             ));
+          }
+
+          if (event.event === "composio_session") {
+            const toolkit = typeof event.toolkit === "string" ? event.toolkit : "";
+            const sessionId = typeof event.session_id === "string" ? event.session_id : "";
+            if (toolkit && sessionId) {
+              setComposioSessionIds((current) => {
+                const next = { ...current, [toolkit]: sessionId };
+                composioSessionIdsRef.current = next;
+                return next;
+              });
+            }
           }
 
           if (event.event === "done") {

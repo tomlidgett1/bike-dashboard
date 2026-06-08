@@ -24,6 +24,7 @@ const agentRouteSource = readFileSync(join(root, 'src/app/api/genie/agent/route.
 const homeV2ChatSource = readFileSync(join(root, 'src/app/settings/store/homev2/homev2-chat.tsx'), 'utf8')
 const applyRouteSource = readFileSync(join(root, 'src/app/api/genie/agent/apply/route.ts'), 'utf8')
 const toolkitSource = readFileSync(join(root, 'src/lib/composio/toolkit.ts'), 'utf8')
+const sessionSource = readFileSync(join(root, 'src/lib/composio/session.ts'), 'utf8')
 const gmailSource = readFileSync(join(root, 'src/lib/composio/gmail.ts'), 'utf8')
 const composioStatusSource = readFileSync(join(root, 'src/app/api/composio/status/route.ts'), 'utf8')
 const homeV2GmailSuggestionsSource = readFileSync(join(root, 'src/app/api/store/homev2-gmail-suggestions/route.ts'), 'utf8')
@@ -96,6 +97,13 @@ assert.match(agentRouteSource, /sort_order/, 'search_gmail must support sort_ord
 assert.match(agentRouteSource, /scan_depth/, 'search_gmail must support scan_depth for full-history scans')
 assert.match(agentRouteSource, /GMAIL_SEARCH_PLAYBOOK|sender_summary/, 'agent must include gmail search playbook')
 assert.match(gmailSource, /fetchAllGmailMatches/, 'gmail search must paginate for full scans')
+assert.match(sessionSource, /getOrCreateGmailComposioSession/, 'gmail integration must create or reuse Composio sessions')
+assert.match(sessionSource, /composio\.create\(composioUserId/, 'Composio Gmail flow must create tool-router sessions')
+assert.match(sessionSource, /composio\.use\(args\.sessionId/, 'Composio Gmail flow must reuse persisted tool-router sessions')
+assert.match(sessionSource, /session\.execute/, 'Gmail tools must execute through Composio sessions')
+assert.match(sessionSource, /multiAccount/, 'Gmail sessions must support multiple connected accounts')
+assert.match(sessionSource, /preload/, 'single-account Gmail sessions should preload the core Gmail tools')
+assert.doesNotMatch(gmailSource, /composio\.tools\.execute/, 'Gmail module must not bypass sessions with direct Composio execution')
 assert.match(gmailSource, /buildSenderSummary/, 'gmail search must build sender rollups')
 assert.match(gmailSource, /buildContactAnalysis|contact_analysis/, 'gmail search must include contact analysis')
 assert.match(agentRouteSource, /contact_analysis/, 'agent must expose contact_analysis from search_gmail')
@@ -314,10 +322,16 @@ assert.match(homeV2ChatSource, /gmailEmails: message\.gmailEmails/, 'home page m
 assert.match(agentRouteSource, /compactGmailForContext/, 'agent must inject gmail private context')
 assert.match(agentRouteSource, /add_account/, 'agent must emit gmail card for add-account flow')
 assert.match(homeV2ChatSource, /gmail_connect/, 'home page must handle gmail_connect SSE event')
+assert.match(homeV2ChatSource, /composio_session_ids/, 'home page must send persisted Composio session ids to Genie')
+assert.match(homeV2ChatSource, /event\.event === "composio_session"/, 'home page must persist streamed Composio session ids')
+assert.match(homeV2ChatSource, /composioSessionIds\?: Record<string, string>/, 'conversation history must store Composio session ids')
 assert.match(homeV2ChatSource, /GmailEmailActionCard|GenieProposalCard/, 'home page must render gmail send approval cards')
 
 assert.match(applyRouteSource, /gmail_email_action/, 'apply route must execute staged gmail sends')
 assert.match(applyRouteSource, /executeGmailSendEmail/, 'apply route must call composio send tool')
+assert.match(applyRouteSource, /composio_session_id/, 'apply route must execute Gmail approval through the stored Composio session')
+assert.match(agentRouteSource, /event: 'composio_session'/, 'agent route must stream Composio session ids')
+assert.match(agentRouteSource, /getOrCreateGmailComposioSession/, 'agent route must use Composio sessions for Gmail status/search/read flows')
 
 // ── Live Composio smoke (optional) ────────────────────────────────────────────
 

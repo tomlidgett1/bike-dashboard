@@ -95,6 +95,7 @@ import {
   readGmailMessages,
   searchGmailEmails,
 } from '@/lib/composio/gmail'
+import { getOrCreateGmailComposioSession, type ComposioSessionNotice } from '@/lib/composio/session'
 import { GMAIL_SEARCH_PLAYBOOK } from '@/lib/composio/gmail-search-playbook'
 import { verifyQuestionAnswered } from '@/lib/genie/answer-verification'
 import { buildGmailAgentContextFromMessages, buildGmailAgentContextFromPayload } from '@/lib/genie/gmail-agent-context'
@@ -503,6 +504,10 @@ interface Message {
   analysisPlan?: GenieAnalysisPlanPayload
   analysisQueries?: GenieAnalysisQueryPayload[]
   sources?: unknown[]
+}
+
+interface ComposioSessionIds {
+  gmail?: string
 }
 
 interface StreamToolItem {
@@ -10802,6 +10807,15 @@ function emitGmailConnect(
   })
 }
 
+function emitComposioSession(emit: Emit, notice: ComposioSessionNotice) {
+  emit({
+    event: 'composio_session',
+    toolkit: notice.toolkit,
+    session_id: notice.session_id,
+    reused: notice.reused,
+  })
+}
+
 async function buildGmailEmailActionProposal(
   userId: string,
   emit: Emit,
@@ -10815,6 +10829,7 @@ async function buildGmailEmailActionProposal(
     bcc?: string[]
     is_html?: boolean
     connected_account_id?: string
+    composio_session_id?: string
     thread_id?: string
     reply_to_message_id?: string
   },
@@ -10877,6 +10892,7 @@ async function buildGmailEmailActionProposal(
     bcc: args.bcc,
     is_html: args.is_html,
     connected_account_id: connection.id,
+    composio_session_id: args.composio_session_id?.trim() || null,
     thread_id: threadId,
     reply_to_message_id: replyToMessageId,
     description,
@@ -10983,8 +10999,14 @@ function buildAgentTools(
   latestUserMessage: string,
   route: GenieOrchestrationDecision['route'],
   executionPlan: GenieExecutionPlan | null,
+  composioSessionIds: ComposioSessionIds = {},
 ) {
   const allowedToolNames = toolNameSetForRoute(route, executionPlan?.primary_tools ?? [])
+  let gmailComposioSessionId = composioSessionIds.gmail?.trim() || undefined
+  const onGmailComposioSession = (notice: ComposioSessionNotice) => {
+    gmailComposioSessionId = notice.session_id
+    emitComposioSession(emit, notice)
+  }
   const proposalToolOutput = (result: { proposal?: GenieProposal; output: object }) => {
     if (result.proposal) emit({ event: 'proposal', proposal: result.proposal })
     return result.output
@@ -11864,6 +11886,14 @@ function buildAgentTools(
           return { configured: false, connected: false, message: 'Gmail integration is not configured on this environment.' }
         }
         const connections = await listGmailConnections(userId)
+        await getOrCreateGmailComposioSession({
+          userId,
+          sessionId: gmailComposioSessionId,
+          connectedAccountIds: connections.map((connection) => connection.id),
+          onSession: onGmailComposioSession,
+        }).catch((error) => {
+          console.warn('[gmail] composio session unavailable during status check:', error)
+        })
         const accounts = connections.map((connection) => ({
           id: connection.id,
           label: connection.label,
@@ -11946,6 +11976,8 @@ function buildAgentTools(
           scan_depth: args.scan_depth,
           user_question: args.user_question,
           connected_account_id: args.connected_account_id,
+          composio_session_id: gmailComposioSessionId,
+          on_composio_session: onGmailComposioSession,
         })
         const uiPayload = buildVisibleGmailPayload(payload)
         if (uiPayload) {
@@ -11998,6 +12030,8 @@ function buildAgentTools(
         const messages = await readGmailMessages(userId, {
           message_ids: args.message_ids,
           connected_account_id: args.connected_account_id ?? (connections.length === 1 ? connections[0].id : undefined),
+          composio_session_id: gmailComposioSessionId,
+          on_composio_session: onGmailComposioSession,
         })
         const agentContext = buildGmailAgentContextFromMessages(messages)
         if (agentContext.message_bodies?.length) {
@@ -12036,7 +12070,10 @@ function buildAgentTools(
           return { configured: false, connected: false, message: 'Gmail integration is not configured on this environment.' }
         }
         emitStatus(emit, 'gmail', args.action === 'draft' ? 'Preparing Gmail draft...' : 'Preparing Gmail send...')
-        return proposalToolOutput(await buildGmailEmailActionProposal(userId, emit, args))
+        return proposalToolOutput(await buildGmailEmailActionProposal(userId, emit, {
+          ...args,
+          composio_session_id: gmailComposioSessionId,
+        }))
       },
     }),
   ]
@@ -12141,7 +12178,18 @@ function maxTurnsForRoute(route: GenieOrchestrationDecision['route'], planned: b
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages }: { messages: Message[] } = await request.json()
+    const requestBody = await request.json()
+    const messages = Array.isArray(requestBody?.messages) ? requestBody.messages as Message[] : []
+    const conversationId = typeof requestBody?.conversation_id === 'string'
+      ? requestBody.conversation_id.trim()
+      : null
+    const composioSessionIds = (
+      requestBody?.composio_session_ids &&
+      typeof requestBody.composio_session_ids === 'object' &&
+      !Array.isArray(requestBody.composio_session_ids)
+    )
+      ? requestBody.composio_session_ids as ComposioSessionIds
+      : {}
     const supabase = await createClient()
 
     // ── Auth: verified bicycle store only ──────────────────────────────────
@@ -12245,6 +12293,7 @@ export async function POST(request: NextRequest) {
           emit({ event: 'status', phase: 'routing_done', text: statusForRoute(orchestration.route) })
           console.info('[Genie Agent] orchestration', {
             requestId,
+            conversation_id: conversationId,
             orchestration_source: orchestrationSource,
             router_model: ORCHESTRATOR_MODEL,
             router_invoked: routerInvoked,
@@ -12465,6 +12514,7 @@ export async function POST(request: NextRequest) {
             latestUserMessage,
             orchestration.route,
             executionPlan,
+            composioSessionIds,
           )
           const agentToolNames = agentTools.map(candidate =>
             'name' in candidate && candidate.name ? String(candidate.name) : 'hosted_web_search',
@@ -12476,6 +12526,7 @@ export async function POST(request: NextRequest) {
           })
           console.info('[Genie Agent] executor', {
             requestId,
+            conversation_id: conversationId,
             route: orchestration.route,
             model: executorModel,
             tool_count: agentTools.length,
@@ -12632,6 +12683,7 @@ export async function POST(request: NextRequest) {
           const totalMs = Date.now() - requestStartedAt
           console.info('[Genie Agent] completed', {
             requestId,
+            conversation_id: conversationId,
             route: finalRoute,
             planner_used: plannerUsed,
             orchestration_source: orchestrationSource,
