@@ -30,6 +30,7 @@ const composioStatusSource = readFileSync(join(root, 'src/app/api/composio/statu
 const homeV2GmailSuggestionsSource = readFileSync(join(root, 'src/app/api/store/homev2-gmail-suggestions/route.ts'), 'utf8')
 const gmailConnectCardSource = readFileSync(join(root, 'src/components/genie/gmail-connect-card.tsx'), 'utf8')
 const gmailEmailSearchCardSource = readFileSync(join(root, 'src/components/genie/gmail-email-search-card.tsx'), 'utf8')
+const gmailEmailActionCardSource = readFileSync(join(root, 'src/components/genie/gmail-email-action-card.tsx'), 'utf8')
 
 // ── Reply/search helpers ─────────────────────────────────────────────────────
 
@@ -103,9 +104,11 @@ assert.match(sessionSource, /composio\.use\(args\.sessionId/, 'Composio Gmail fl
 assert.match(sessionSource, /session\.execute/, 'Gmail tools must execute through Composio sessions')
 assert.match(sessionSource, /multiAccount/, 'Gmail sessions must support multiple connected accounts')
 assert.match(sessionSource, /preload/, 'single-account Gmail sessions should preload the core Gmail tools')
+assert.match(sessionSource, /connectedAccountId && accountIds\.length > 1/, 'Gmail session execution should pass account only when multi-account selection is active')
 assert.doesNotMatch(gmailSource, /composio\.tools\.execute/, 'Gmail module must not bypass sessions with direct Composio execution')
 assert.match(gmailSource, /buildSenderSummary/, 'gmail search must build sender rollups')
 assert.match(gmailSource, /buildContactAnalysis|contact_analysis/, 'gmail search must include contact analysis')
+assert.match(gmailSource, /requested connected account not found; searching all active Gmail accounts/, 'stale connected_account_id should fall back to active Gmail connections')
 assert.match(agentRouteSource, /contact_analysis/, 'agent must expose contact_analysis from search_gmail')
 assert.match(
   readFileSync(join(root, 'src/lib/composio/gmail-search-playbook.ts'), 'utf8'),
@@ -270,6 +273,21 @@ assert.equal(
 )
 assert.equal(
   inferGmailCardMode(
+    'send an email of business performance for last 30 days to tom@lidgett.net must be detailed',
+    uiPayload({
+      emails: [],
+      answer_readiness: {
+        ready_to_answer: false,
+        gaps: ['No emails matched this query — this was intermediate context.'],
+        criteria_checked: ['Matched emails: 0'],
+      },
+    }),
+  ),
+  'hidden',
+  'compose/report tasks should not render an empty Gmail search card',
+)
+assert.equal(
+  inferGmailCardMode(
     'what was that warranty issue with apollo',
     uiPayload({
       message_bodies: [],
@@ -317,6 +335,13 @@ assert.match(gmailEmailSearchCardSource, /contact_analysis/, 'gmail card must re
 assert.match(gmailEmailSearchCardSource, /thread_context/, 'gmail card must render thread context mode')
 assert.match(gmailEmailSearchCardSource, /reply_context/, 'gmail card must render reply context mode')
 assert.match(gmailEmailSearchCardSource, /SearchSummaryView/, 'gmail card must render compact explicit search summaries')
+assert.match(gmailEmailActionCardSource, /proposal\.body/, 'gmail action card must show the email body')
+assert.match(gmailEmailActionCardSource, /whitespace-pre-wrap/, 'gmail action card must preserve email body formatting')
+assert.match(gmailEmailActionCardSource, /recipient_email/, 'gmail action card must show the recipient')
+assert.match(gmailEmailActionCardSource, /Subject/, 'gmail action card must show the subject')
+assert.match(gmailEmailActionCardSource, /Deny/, 'gmail action card must keep a simple deny action')
+assert.match(gmailEmailActionCardSource, /Allow/, 'gmail action card must keep a simple allow action')
+assert.doesNotMatch(gmailEmailActionCardSource, /Details|Sharing data includes|Using tools comes with risks|composio\.dev/, 'gmail action card must not show the old verbose permission copy')
 
 assert.match(homeV2ChatSource, /gmailEmails: message\.gmailEmails/, 'home page must round-trip gmail context')
 assert.match(agentRouteSource, /compactGmailForContext/, 'agent must inject gmail private context')

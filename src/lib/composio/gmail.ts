@@ -541,7 +541,11 @@ function questionLooksLikeContactAnalysis(question: string | undefined): boolean
 function questionExplicitlyWantsSearchResults(question: string | undefined): boolean {
   const q = normaliseQuestion(question)
   if (!q) return false
-  return /\b(search|find|show|list|pull up|look for|emails?|messages?|inbox|mail from|sent to)\b/.test(q)
+  return (
+    /\b(search|find|show|list|pull up|look for|messages?|inbox)\b/.test(q)
+    || /\b(?:mail|emails?)\s+(?:from|to|about|matching|with)\b/.test(q)
+    || /\bsent\s+to\b/.test(q)
+  )
 }
 
 function buildGmailUiSummary(
@@ -838,43 +842,54 @@ export async function searchGmailEmails(
   const sortOrder = args.sort_order ?? 'newest'
   const scanDepth = args.scan_depth ?? 'quick'
 
+  const allConnections = await listGmailConnections(userId)
   const connections = args.connected_account_id
-    ? (await listGmailConnections(userId)).filter((connection) => connection.id === args.connected_account_id)
-    : await listGmailConnections(userId)
+    ? allConnections.filter((connection) => connection.id === args.connected_account_id)
+    : allConnections
+  const searchableConnections = connections.length > 0 ? connections : allConnections
 
-  if (connections.length === 0) {
-    return {
-      title: buildTitle(query, sortOrder, scanDepth),
-      query,
-      emails: [],
-      truncated: false,
-      scan_stats: {
-        total_matched: 0,
-        pages_scanned: 0,
-        scan_mode: scanDepth === 'full' ? 'full' : 'quick',
-        capped: false,
-        mailboxes_searched: 0,
-        oldest_date_ms: null,
-        newest_date_ms: null,
-        oldest_date_label: null,
-        newest_date_label: null,
+  if (args.connected_account_id && connections.length === 0 && allConnections.length > 0) {
+    console.warn('[gmail] requested connected account not found; searching all active Gmail accounts:', args.connected_account_id)
+  }
+
+  if (searchableConnections.length === 0) {
+    return buildSearchPayload(
+      {
+        title: buildTitle(query, sortOrder, scanDepth),
+        query,
+        emails: [],
+        truncated: false,
+        scan_stats: {
+          total_matched: 0,
+          pages_scanned: 0,
+          scan_mode: scanDepth === 'full' ? 'full' : 'quick',
+          capped: false,
+          mailboxes_searched: 0,
+          oldest_date_ms: null,
+          newest_date_ms: null,
+          oldest_date_label: null,
+          newest_date_label: null,
+        },
       },
-    }
+      args.user_question,
+      { sort_order: sortOrder, scan_depth: scanDepth },
+      [],
+    )
   }
 
   const session = await getOrCreateGmailComposioSession({
     userId,
     sessionId: args.composio_session_id,
-    connectedAccountIds: connections.map((connection) => connection.id),
+    connectedAccountIds: searchableConnections.map((connection) => connection.id),
     onSession: args.on_composio_session,
   })
 
-  if (connections.length === 1) {
-    return searchGmailEmailsForAccount(userId, session, connections[0], args)
+  if (searchableConnections.length === 1) {
+    return searchGmailEmailsForAccount(userId, session, searchableConnections[0], args)
   }
 
   const perMailbox = await Promise.all(
-    connections.map((connection) => searchGmailEmailsForAccount(userId, session, connection, args)),
+    searchableConnections.map((connection) => searchGmailEmailsForAccount(userId, session, connection, args)),
   )
 
   const merged = mergeSearchPayloads(
@@ -886,10 +901,10 @@ export async function searchGmailEmails(
       max_results: args.max_results ?? DEFAULT_DISPLAY_LIMIT,
       user_question: args.user_question,
     },
-    connections.length,
+    searchableConnections.length,
   )
 
-  merged.connected_mailboxes = connections.map((connection) => ({
+  merged.connected_mailboxes = searchableConnections.map((connection) => ({
     id: connection.id,
     label: connection.email_address ?? connection.label,
     email_address: connection.email_address ?? null,

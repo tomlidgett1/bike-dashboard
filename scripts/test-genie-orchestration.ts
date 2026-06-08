@@ -931,6 +931,12 @@ const routerPromptFixtures: Array<{
     needs_plan: true,
   },
   {
+    name: 'business report email',
+    message: 'Send an email of business performance for the last 30 days to tom@example.com',
+    route: 'mixed',
+    needs_plan: true,
+  },
+  {
     name: 'direct carousel',
     message: 'Make a Summer Sale carousel for all Clif bars',
     route: 'storefront_action',
@@ -963,6 +969,10 @@ for (const fixture of routerPromptFixtures) {
     `${fixture.name}: router prompt example must specify route and planner flag`,
   )
 }
+
+assert.match(agentRouteSource, /Business report email/, 'router must classify store-data email tasks as mixed')
+assert.match(agentRouteSource, /do NOT plan search_gmail/, 'planner must not search Gmail before new store-data emails')
+assert.doesNotMatch(agentRouteSource, /Use before ANY email answer/, 'Gmail search must not be described as mandatory for every email task')
 
 function assertToolPolicy(args: {
   name: string
@@ -1010,6 +1020,17 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     concurrency: 1,
   },
   {
+    name: 'store data email',
+    route: 'storefront_action',
+    message: 'send an email of business performance for last 30 days to tom@lidgett.net must be detailed',
+    plannedTools: ['run_lightspeed_sql_query', 'get_gmail_connection_status', 'propose_gmail_email', 'verify_question_answered'],
+    includes: ['record_lightspeed_plan', 'run_lightspeed_sql_query', 'get_gmail_connection_status', 'propose_gmail_email', 'verify_question_answered'],
+    excludes: ['search_gmail', 'read_gmail_messages', 'search_web_images'],
+    hostedWeb: false,
+    parallel: false,
+    concurrency: 1,
+  },
+  {
     name: 'lightspeed reporting',
     route: 'lightspeed_sql',
     message: 'Show top customers this year',
@@ -1046,6 +1067,17 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     plannedTools: ['run_lightspeed_sql_query', 'get_product_costs', 'search_store_products', 'search_web_images'],
     includes: ['run_lightspeed_sql_query', 'get_product_costs', 'search_store_products', 'search_web_images'],
     excludes: ['search_gmail', 'propose_discount'],
+    hostedWeb: true,
+    parallel: false,
+    concurrency: 1,
+  },
+  {
+    name: 'mixed store data email',
+    route: 'mixed',
+    message: 'Send an email of business performance for the last 30 days to tom@example.com',
+    plannedTools: ['run_lightspeed_sql_query', 'get_gmail_connection_status', 'propose_gmail_email', 'verify_question_answered'],
+    includes: ['record_lightspeed_plan', 'run_lightspeed_sql_query', 'get_gmail_connection_status', 'propose_gmail_email', 'verify_question_answered'],
+    excludes: ['search_gmail', 'read_gmail_messages'],
     hostedWeb: true,
     parallel: false,
     concurrency: 1,

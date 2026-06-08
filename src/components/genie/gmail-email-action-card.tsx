@@ -12,21 +12,18 @@ const CARD_EASE = [0.04, 0.62, 0.23, 0.98] as const;
 
 function actionTitle(proposal: GmailEmailActionProposal): string {
   if (proposal.action === "draft") {
-    return `Create email draft to ${proposal.recipient_email}?`;
+    return "Create Gmail draft?";
   }
-  return `Send email to ${proposal.recipient_email}?`;
+  return "Send Gmail email?";
 }
 
-function actionDescription(proposal: GmailEmailActionProposal): string {
-  const subject = proposal.subject.trim() || "(No subject)";
-  const bodyPreview = proposal.body.trim().slice(0, 120) || "(Empty body)";
-  const verb = proposal.action === "draft" ? "create a Gmail draft" : "send a Gmail email";
-  return `This will ${verb} addressed to ${proposal.recipient_email} with subject “${subject}” and body “${bodyPreview}”. No sensitive data is being shared yet.`;
+function recipientLine(values: string[] | undefined): string | null {
+  const clean = values?.map((value) => value.trim()).filter(Boolean) ?? [];
+  return clean.length ? clean.join(", ") : null;
 }
 
 export function GmailEmailActionCard({ proposal }: { proposal: GmailEmailActionProposal }) {
   const [expanded, setExpanded] = React.useState(false);
-  const [detailsOpen, setDetailsOpen] = React.useState(false);
   const [status, setStatus] = React.useState<"idle" | "applying" | "applied" | "denied" | "error">("idle");
   const [resultMsg, setResultMsg] = React.useState("");
 
@@ -64,16 +61,17 @@ export function GmailEmailActionCard({ proposal }: { proposal: GmailEmailActionP
     }
   };
 
-  const sharingRows = proposal.sharing_data?.length
-    ? proposal.sharing_data
-    : [{ label: "Emails", value: proposal.recipient_email }];
+  const ccLine = recipientLine(proposal.cc);
+  const bccLine = recipientLine(proposal.bcc);
+  const subject = proposal.subject.trim() || "(No subject)";
+  const body = proposal.body.trim() || "(Empty body)";
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8, scale: 0.99 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.3, ease: CARD_EASE }}
-      className="w-full max-w-md"
+      className="w-full max-w-xl"
     >
       <div className="relative overflow-hidden rounded-xl bg-white shadow-[0_4px_20px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
         <AnimatePresence>
@@ -102,44 +100,33 @@ export function GmailEmailActionCard({ proposal }: { proposal: GmailEmailActionP
             {actionTitle(proposal)}
           </h3>
 
-          <p className="mt-2 text-sm leading-relaxed text-gray-600">
-            {proposal.description || actionDescription(proposal)}{" "}
-            <button
-              type="button"
-              onClick={() => setDetailsOpen((open) => !open)}
-              className="font-medium text-gray-800 underline underline-offset-2 hover:text-gray-900"
-            >
-              Details
-            </button>
-          </p>
-
-          <AnimatePresence>
-            {detailsOpen ? (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.4, ease: CARD_EASE }}
-                className="overflow-hidden"
-              >
-                <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-700">
-                  <p><span className="font-medium text-gray-900">To:</span> {proposal.recipient_email}</p>
-                  <p className="mt-1"><span className="font-medium text-gray-900">Subject:</span> {proposal.subject || "(No subject)"}</p>
-                  <p className="mt-2 whitespace-pre-wrap leading-relaxed">{proposal.body || "(Empty body)"}</p>
-                </div>
-              </motion.div>
+          <div className="mt-3 space-y-1.5 text-sm">
+            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
+              <span className="text-gray-500">To</span>
+              <span className="break-words font-medium text-gray-900">{proposal.recipient_email}</span>
+            </div>
+            {ccLine ? (
+              <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
+                <span className="text-gray-500">Cc</span>
+                <span className="break-words font-medium text-gray-900">{ccLine}</span>
+              </div>
             ) : null}
-          </AnimatePresence>
+            {bccLine ? (
+              <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
+                <span className="text-gray-500">Bcc</span>
+                <span className="break-words font-medium text-gray-900">{bccLine}</span>
+              </div>
+            ) : null}
+            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
+              <span className="text-gray-500">Subject</span>
+              <span className="break-words font-medium text-gray-900">{subject}</span>
+            </div>
+          </div>
 
-          <div className="mt-4">
-            <p className="text-xs text-gray-500">Sharing data includes:</p>
-            <div className="mt-1.5 space-y-1">
-              {sharingRows.map((row) => (
-                <div key={`${row.label}-${row.value}`} className="flex items-center justify-between gap-3 text-sm">
-                  <span className="text-gray-500">{row.label}</span>
-                  <span className="truncate font-medium text-gray-900">{row.value}</span>
-                </div>
-              ))}
+          <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+            <div className="text-xs font-medium uppercase tracking-normal text-gray-500">Email</div>
+            <div className="mt-2 max-h-[min(24rem,55vh)] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-800">
+              {body}
             </div>
           </div>
         </div>
@@ -204,18 +191,6 @@ export function GmailEmailActionCard({ proposal }: { proposal: GmailEmailActionP
           </div>
         </motion.div>
       </div>
-
-      <p className="mt-3 text-center text-[11px] text-gray-400">
-        Using tools comes with risks.{" "}
-        <a
-          href="https://composio.dev"
-          target="_blank"
-          rel="noreferrer"
-          className="underline underline-offset-2 hover:text-gray-500"
-        >
-          Learn more
-        </a>
-      </p>
     </motion.div>
   );
 }

@@ -49,6 +49,19 @@ export const GMAIL_TOOL_NAMES = [
   'propose_gmail_email',
 ]
 
+const GMAIL_STATUS_TOOL_NAMES = [
+  'get_gmail_connection_status',
+]
+
+const GMAIL_CONTEXT_TOOL_NAMES = [
+  'search_gmail',
+  'read_gmail_messages',
+]
+
+const GMAIL_ACTION_TOOL_NAMES = [
+  'propose_gmail_email',
+]
+
 export const WEB_RESEARCH_TOOL_NAMES = [
   'search_web_images',
 ]
@@ -70,6 +83,26 @@ function planRequestsTool(plannedToolNames: Iterable<string> | undefined, patter
   return pattern.test(plannedToolsText(plannedToolNames))
 }
 
+function addPlannedGmailTools(
+  plannedToolNames: Iterable<string> | undefined,
+  add: (toolNames: string[]) => void,
+): void {
+  const genericGmail = planRequestsTool(plannedToolNames, /\bgmail\b/i)
+  const needsStatus = planRequestsTool(plannedToolNames, /get_gmail_connection_status/i)
+  const needsSearch = planRequestsTool(plannedToolNames, /search_gmail/i)
+  const needsRead = planRequestsTool(plannedToolNames, /read_gmail_messages/i)
+  const needsAction = planRequestsTool(plannedToolNames, /propose_gmail_email/i)
+
+  if (genericGmail && !needsStatus && !needsSearch && !needsRead && !needsAction) {
+    add(GMAIL_TOOL_NAMES)
+    return
+  }
+
+  if (needsStatus || needsSearch || needsRead || needsAction) add(GMAIL_STATUS_TOOL_NAMES)
+  if (needsSearch || needsRead) add(GMAIL_CONTEXT_TOOL_NAMES)
+  if (needsAction) add(GMAIL_ACTION_TOOL_NAMES)
+}
+
 export function toolNameSetForRoute(
   route: GenieOrchestrationDecision['route'],
   plannedToolNames?: Iterable<string>,
@@ -87,21 +120,26 @@ export function toolNameSetForRoute(
 
   if (route === 'lightspeed_sql') {
     add(LIGHTSPEED_READ_TOOL_NAMES)
-    if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
+    if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     return names
   }
 
   if (route === 'storefront_action') {
     add(STOREFRONT_READ_TOOL_NAMES)
     add(STOREFRONT_PROPOSAL_TOOL_NAMES)
-    if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
+    if (planRequestsLightspeed) {
+      add(['record_lightspeed_plan'])
+      add(LIGHTSPEED_READ_TOOL_NAMES)
+    }
+    if (planRequestsBikeStoreSpecialist) add(['consult_bike_store_analyst'])
+    if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     return names
   }
 
   if (route === 'web_research') {
     add(WEB_RESEARCH_TOOL_NAMES)
     add(['consult_cycling_compatibility_specialist'])
-    if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
+    if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     return names
   }
 
@@ -110,7 +148,7 @@ export function toolNameSetForRoute(
     add(LIGHTSPEED_READ_TOOL_NAMES)
     add(['find_discount_candidates', 'get_product_costs'])
     add(['consult_bike_store_analyst'])
-    if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
+    if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     return names
   }
 
@@ -124,12 +162,12 @@ export function toolNameSetForRoute(
     }
     if (planRequestsStorefrontRead) add(STOREFRONT_READ_TOOL_NAMES)
     if (planRequestsImageSearch) add(WEB_RESEARCH_TOOL_NAMES)
-    if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
+    if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     if (planRequestsStorefrontProposal) add(STOREFRONT_PROPOSAL_TOOL_NAMES)
     return names
   }
 
-  if (planRequestsGmail) add(GMAIL_TOOL_NAMES)
+  if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
 
   return names
 }

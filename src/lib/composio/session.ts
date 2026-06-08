@@ -12,6 +12,7 @@ export interface ComposioSessionNotice {
 export interface GmailComposioSessionExecutor {
   session_id: string
   reused: boolean
+  account_selection_enabled: boolean
   search(query: string): Promise<unknown>
   execute(
     toolSlug: string,
@@ -103,6 +104,7 @@ export async function getOrCreateGmailComposioSession(args: {
   return {
     session_id: session.sessionId,
     reused,
+    account_selection_enabled: accountIds.length > 1,
     async search(query: string) {
       return session.search({ query, toolkits: ['gmail'] })
     },
@@ -110,7 +112,7 @@ export async function getOrCreateGmailComposioSession(args: {
       const result = await session.execute(
         toolSlug,
         input,
-        connectedAccountId ? ({ account: connectedAccountId } as never) : undefined,
+        connectedAccountId && accountIds.length > 1 ? ({ account: connectedAccountId } as never) : undefined,
       )
       return result as Record<string, unknown>
     },

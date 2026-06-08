@@ -238,11 +238,10 @@ function planMentionsTool(plan: GenieExecutionPlan | null, pattern: RegExp): boo
 }
 
 function routeUsesGmail(
-  route: GenieOrchestrationDecision['route'],
+  _route: GenieOrchestrationDecision['route'],
   plan: GenieExecutionPlan | null,
 ): boolean {
-  return (route === 'storefront_action' || route === 'mixed') &&
-    planMentionsTool(plan, /\bgmail\b|search_gmail|read_gmail|propose_gmail/i)
+  return planMentionsTool(plan, /\bgmail\b|search_gmail|read_gmail|get_gmail_connection_status|propose_gmail/i)
 }
 
 function routeUsesLightspeedSql(
@@ -364,8 +363,9 @@ function formatWorkRulesForRoute(args: {
 
   if (args.includeGmail) {
     rules.push(
-      '- For Gmail: follow the hidden execution plan execution_steps in order. ANY inbox/mail question requires planned search_gmail passes before answering. For issue/warranty/what-happened questions, read bodies via search_gmail message_bodies or read_gmail_messages; never answer from subjects/snippets alone.',
-      '- Gmail reply/respond/draft/send (including "respond to Tom" with no "email" keyword): this is ALWAYS a Gmail task. Run thread search + in:sent context + read_gmail_messages, then propose_gmail_email with a complete draft. Do not stop after search.',
+      '- For Gmail: follow the hidden execution plan execution_steps in order. Inbox/search/history/thread questions require planned search_gmail passes before answering. For issue/warranty/what-happened questions, read bodies via search_gmail message_bodies or read_gmail_messages; never answer from subjects/snippets alone.',
+      '- New outbound emails whose content comes from store/Lightspeed data (for example "send a business performance report") do not need Gmail search. First gather the required store data with Lightspeed tools, then call propose_gmail_email with the complete grounded email body.',
+      '- Gmail reply/respond/follow-up to an existing person or thread (including "respond to Tom" with no "email" keyword) is ALWAYS a Gmail context task. Run thread search + in:sent context + read_gmail_messages, then propose_gmail_email with a complete draft. Do not stop after search.',
       '- Gmail follow-ups: for reply/send/draft to an email already shown, reuse private Gmail context and call propose_gmail_email with recipient_email, Re: subject, draft body, and connected_account_id when available. Do not re-search unless context is missing or the user names a different message.',
       '- When search_gmail returns suggested_reply_passes or includes_sent_context is false on a reply task, run the missing sent/thread passes before drafting.',
     )
@@ -934,8 +934,9 @@ Critical routing doctrine:
 - Work orders: any workorder/repair/service-job question, including "open", "finished", "archived", "today", "history", "notes", "internal notes", "what happened", "what did we do", or customer-specific work orders = lightspeed_sql. Use needs_plan=false unless it asks for broad multi-metric analysis.
 - Store reporting: stock, inventory, QOH, on hand, available, sold, sales, revenue, GP, margin, cost, average sale, best customers, top customers, who bought, product purchasers = lightspeed_sql. Use needs_plan=false for a narrow report.
 - Business strategy: "how can we make more money", "how do we improve profit/revenue/margin", "what opportunities should we focus on", "where is cash tied up", "dead/stale stock strategy" = business_analysis with needs_plan=true.
+- Business report email: requests to email/send/draft a sales, business performance, profit, inventory, customer, or Lightspeed report require both private store data and Gmail. Use route=mixed with needs_plan=true. The executor must gather the store/Lightspeed evidence first, then stage the Gmail email; this is not a Gmail-search-only task.
 - Storefront operations: make/create/rename/reorder/show/hide/move/feature a carousel, collection, homepage section, discount, sale, markdown, retail price, brand, category, product list, or approval proposal = storefront_action. Use needs_plan=false for a concrete single action; true for broad campaigns/homepage strategy.
-- Gmail/email: connect Gmail/Composio, check connection, search/summarise inbox, find supplier/customer emails, earliest/latest contact, invoices, issue/warranty correspondence, draft, reply, respond, write back, follow up, or send = storefront_action with needs_plan=true. "Respond to {name}" or "reply to {name}" without saying Gmail/email is still a Gmail task.
+- Gmail/email without private store/report data: connect Gmail/Composio, check connection, search/summarise inbox, find supplier/customer emails, earliest/latest contact, invoices, issue/warranty correspondence, draft, reply, respond, write back, follow up, or send a simple message = storefront_action with needs_plan=true. "Respond to {name}" or "reply to {name}" without saying Gmail/email is still a Gmail task.
 - Market/competitor pricing: private "our price/stock/products" plus competitors/market/online/web price = mixed. Pure public market question without store data = web_research.
 - Visual lookup: "show me/photo/picture/what does it look like" for our stock/inventory = lightspeed_sql; for an external bike/product = web_research.
 - Current external facts: latest/current/new model/2025/2026/released/recall/supplier/distributor/MSRP/RRP/manual/standard = web_research unless private store data is also required.
@@ -961,6 +962,7 @@ Routing examples:
 - "Do we have Shimano chains in stock?" = lightspeed_sql, needs_plan=false.
 - "Who bought GP5000 tyres last year?" = lightspeed_sql, needs_plan=false.
 - "How can we make more money this quarter?" = business_analysis, needs_plan=true.
+- "Send an email of business performance for the last 30 days to tom@example.com" = mixed, needs_plan=true.
 - "How does our pricing compare to other stores/competitors/market?" = mixed, needs_plan=true.
 - "Are we overpriced on these products?" = mixed when it references competitors, market, online, or other stores; storefront_action if it only asks about internal cost/margin.
 - "Make a Summer Sale carousel for all Clif bars" = storefront_action, needs_plan=false.
@@ -981,7 +983,7 @@ Planning rule:
 - ANY Gmail/email/inbox task under storefront_action MUST have needs_plan=true.
 - route=storefront_action should have needs_plan=true for broad multi-step merchandising/homepage/campaign work and for all Gmail tasks.
 - route=web_research must have needs_plan=false. Execute web search directly.
-- route=mixed should have needs_plan=true only when the mixed request needs deliberate sequencing across private store data and web research, or is otherwise complex. Standard customer-bike fitment should usually be mixed with needs_plan=false because the executor has a direct diagnostic workflow.
+- route=mixed should have needs_plan=true only when the mixed request needs deliberate sequencing across private store data plus Gmail or web research, or is otherwise complex. Standard customer-bike fitment should usually be mixed with needs_plan=false because the executor has a direct diagnostic workflow.
 
 Be conservative: if a request might require private store data, Lightspeed data, a proposal, Gmail, or web search, do not classify it as casual_chat.`
 }
@@ -1081,7 +1083,9 @@ Planning rules:
 - The final execution_steps entry MUST be: "Call verify_question_answered; only respond if ready."
 - primary_tools MUST include verify_question_answered for any task that uses other tools.
 - For broad strategy, set final_answer_shape to strategic_analysis.
-- For ANY Gmail/email/inbox task (including "respond to {name}" without saying Gmail), primary_tools must list the Gmail tools needed (get_gmail_connection_status, search_gmail, read_gmail_messages, propose_gmail_email for reply/compose). execution_steps must list each search_gmail pass explicitly (query, scan_depth, sort_order) — never one vague "check email" step. Reply/respond tasks MUST plan: (1) thread search from/to person, (2) in:sent to person for prior outbound context, (3) read_gmail_messages on best message_ids, (4) propose_gmail_email draft. For issue/warranty/summary/what-happened questions, plan search_gmail then read_gmail_messages on the top message_ids if bodies are needed. For rep/first-contact/supplier-history questions, plan 2–4 search passes: broad from:domain full scan; exclude warranty/support/noreply; sales-keyword pass; optional from:"Name" follow-up. Set sql_strategy to null and date_range null unless the question includes explicit calendar filters for the Gmail query. final_answer_shape is usually summary; use clarifying_question only if the plan cannot resolve ambiguity after planned searches.
+- For Gmail tasks, primary_tools must list the Gmail tools needed. Always include get_gmail_connection_status and propose_gmail_email for outbound draft/send tasks.
+- For NEW outbound emails whose body comes from store/Lightspeed analysis (for example "send a detailed business performance report for the last 30 days to tom@example.com"), do NOT plan search_gmail. Plan the required Lightspeed SQL/data passes first, then propose_gmail_email with the complete grounded body. primary_tools must include run_lightspeed_sql_query, get_gmail_connection_status, propose_gmail_email, and verify_question_answered.
+- For inbox/search/thread/reply/respond tasks (including "respond to {name}" without saying Gmail), primary_tools must include search_gmail and usually read_gmail_messages. execution_steps must list each search_gmail pass explicitly (query, scan_depth, sort_order) — never one vague "check email" step. Reply/respond tasks MUST plan: (1) thread search from/to person, (2) in:sent to person for prior outbound context, (3) read_gmail_messages on best message_ids, (4) propose_gmail_email draft. For issue/warranty/summary/what-happened questions, plan search_gmail then read_gmail_messages on the top message_ids if bodies are needed. For rep/first-contact/supplier-history questions, plan 2–4 search passes: broad from:domain full scan; exclude warranty/support/noreply; sales-keyword pass; optional from:"Name" follow-up. Set sql_strategy to null only when the task is purely Gmail; keep sql_strategy populated when the email body requires store/Lightspeed reporting. final_answer_shape is usually summary; use clarifying_question only if the plan cannot resolve ambiguity after planned searches.
 
 GMAIL PLANNING REFERENCE (embed in execution_steps, do not quote to user):
 ${GMAIL_SEARCH_PLAYBOOK}`
@@ -11942,7 +11946,7 @@ function buildAgentTools(
     }),
     tool({
       name: 'search_gmail',
-      description: 'Search connected Gmail with Gmail query syntax. Searches all connected mailboxes by default. Auto-merges in:sent context for reply/respond questions. Use before ANY email answer. scan_depth "full" paginates entire matching history. Returns emails, scan_stats, sender_summary, contact_analysis, message_bodies, correspondent_hint, suggested_reply_passes, includes_sent_context.',
+      description: 'Search connected Gmail with Gmail query syntax for inbox/search/history/thread/reply context. Searches all connected mailboxes by default. Auto-merges in:sent context for reply/respond questions. Do not use for a new outbound email whose body comes from store/Lightspeed data; gather that data first, then call propose_gmail_email. scan_depth "full" paginates entire matching history. Returns emails, scan_stats, sender_summary, contact_analysis, message_bodies, correspondent_hint, suggested_reply_passes, includes_sent_context.',
       parameters: z.object({
         query: z.string().optional().describe('Gmail search query (from:, to:, in:sent, in:anywhere, subject:, after:, etc.). Omit to infer from user_question (e.g. respond to Tom → from/to that person). Defaults to in:inbox only when no inference applies.'),
         scan_depth: z.enum(['quick', 'full']).optional().describe('full = paginate all matching mail for history/counts/earliest; quick = one page for recent previews.'),
@@ -12051,7 +12055,7 @@ function buildAgentTools(
     }),
     tool({
       name: 'propose_gmail_email',
-      description: 'Stage a Gmail send or draft for human approval. Never sends immediately — the store must Allow on the Gmail card. REQUIRED final step for respond/reply/draft/send requests after search + read bodies. Use action "send" or "draft" (prefer draft unless user asked to send now). For replies: Re: subject, recipient from incoming From, body grounded in read message_bodies and sent context.',
+      description: 'Stage a Gmail send or draft for human approval. Never sends immediately — the store must Allow on the Gmail card. For new outbound emails from store/Lightspeed analysis, call after the required data tools and include the complete grounded email body. For replies, call after Gmail search/read/sent context. Use action "send" or "draft" (prefer draft unless user asked to send now).',
       parameters: z.object({
         action: z.enum(['send', 'draft']),
         summary: z.string(),
