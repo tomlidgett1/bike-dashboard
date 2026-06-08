@@ -31,6 +31,7 @@ const backgroundRouteSource = readFileSync(join(root, 'src/app/api/genie/backgro
 const backgroundIdRouteSource = readFileSync(join(root, 'src/app/api/genie/background/[id]/route.ts'), 'utf8')
 const telemetryMigrationSource = readFileSync(join(root, 'supabase/migrations/20260608150000_add_genie_agent_runs.sql'), 'utf8')
 const backgroundMigrationSource = readFileSync(join(root, 'supabase/migrations/20260608151000_add_genie_background_jobs.sql'), 'utf8')
+const salesSummaryIndexMigrationSource = readFileSync(join(root, 'supabase/migrations/20260608162000_add_fast_genie_sales_summary_indexes.sql'), 'utf8')
 
 assert.match(
   orchestrationSource,
@@ -596,6 +597,51 @@ assert.match(
   agentRouteSource,
   /sales_row_limit: 20_000/,
   'direct customer bike lookups must use a bounded sales row cap for latency',
+)
+assert.match(
+  agentRouteSource,
+  /function resolveDirectSalesSummaryLookup/,
+  'single-day sales summary questions must have a narrow direct fast path',
+)
+assert.match(
+  agentRouteSource,
+  /const directSalesSummaryLookup = resolveDirectSalesSummaryLookup\(latestUserMessage\)/,
+  'direct sales summaries must execute after LLM routing but before generic agent exploration',
+)
+assert.match(
+  agentRouteSource,
+  /direct_path: 'direct_sales_summary'/,
+  'direct sales summary path must be logged for latency analysis',
+)
+assert.match(
+  agentRouteSource,
+  /toolCallNames\.direct_sales_summary = 1/,
+  'direct sales summary runs must be visible in telemetry tool counts',
+)
+assert.match(
+  agentRouteSource,
+  /DIRECT_SALES_SUMMARY_LINE_LIMIT = 10_000/,
+  'direct sales summaries must use a bounded line cap',
+)
+assert.match(
+  agentRouteSource,
+  /\.gte\('complete_time', startUtc\)[\s\S]*?\.lt\('complete_time', endExclusiveUtc\)/,
+  'direct sales summaries must use indexed UTC date bounds instead of generic SQL date casts',
+)
+assert.match(
+  salesSummaryIndexMigrationSource,
+  /lightspeed_sales_report_lines_user_complete_sale_cover_idx[\s\S]*customer_id[\s\S]*item_id[\s\S]*INCLUDE/,
+  'sales summary migration must add a covering date/sale index for fast Genie summaries',
+)
+assert.match(
+  salesSummaryIndexMigrationSource,
+  /lightspeed_sales_report_lines_user_customer_complete_cover_idx/,
+  'sales summary migration must add a customer/date covering index for customer profile and history speed',
+)
+assert.match(
+  salesSummaryIndexMigrationSource,
+  /lightspeed_sales_report_lines_user_item_complete_cover_idx/,
+  'sales summary migration must add an item/date covering index for product sales and purchaser speed',
 )
 assert.match(
   agentRouteSource,

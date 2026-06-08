@@ -18,6 +18,7 @@ Gmail query operators (combine as needed):
 - newer_than:7d · older_than:1y · has:attachment · filename:pdf
 - in:inbox · in:sent · in:anywhere · is:unread · is:starred · label:Name
 - OR / - (NOT): from:supplier.com OR from:other.com · -from:warranty · -from:support
+- For reply/respond tasks ALWAYS include sent context: run a second pass with in:sent to:person (or in:sent "Name") after the inbox/anywhere thread pass — match our prior tone and promises before drafting
 
 Question → query + scan pattern:
 - Latest/recent from someone → from:domain sort newest, scan_depth quick
@@ -28,6 +29,22 @@ Question → query + scan pattern:
 - Date range → always add after:/before: to the query AND use scan_depth full if the range may span many pages
 - Summarise a thread/topic → subject:keyword or quoted phrase, scan_depth quick unless user wants everything
 - Issue/warranty/fault/what happened → search to find the thread, then read_gmail_messages (or use message_bodies from search) for body_text — answer from the body, not subjects alone
+
+REPLY / RESPOND / DRAFT / SEND (CRITICAL — includes "respond to Tom", "reply to sarah@…", "get back to Joel"):
+These are Gmail tasks even when the user does not say "email" or "Gmail". Treat them as high-priority compose workflows.
+1. Parse who they mean (name or email from the user message). If unclear after one search pass, ask one sharp question — do not refuse.
+2. Thread pass: (from:person OR to:person) OR from:email OR to:email — scan_depth quick, sort_order newest — find the message to reply to.
+3. Sent pass (REQUIRED): in:sent to:person OR in:sent "Name" — scan_depth quick — read what we already promised/said; mirror tone and do not contradict prior outbound mail.
+4. read_gmail_messages on the best incoming message_id (and optionally the latest matching sent message_id) — body_text is mandatory before drafting.
+5. propose_gmail_email with action draft (default) or send only if the user explicitly asked to send now:
+   - recipient_email from the incoming From/To fields (reply to the external sender, not our mailbox)
+   - subject: Re: {original subject} (strip duplicate Re:)
+   - body: professional reply grounded in body_text; reference specifics from their mail and our sent history when relevant
+   - connected_account_id from the mailbox that received/sent the thread
+6. If the user said "respond/reply/draft" you MUST reach propose_gmail_email — searching alone is not enough.
+7. Follow-ups in chat: reuse private Gmail agent_context message_bodies; only re-search if the person/thread changed.
+
+When search_gmail returns suggested_reply_passes, run any pass not yet executed before drafting.
 
 REPS / ACCOUNT MANAGERS / "first contact" / "who was our rep" (CRITICAL — multi-pass):
 A single from:domain scan is NOT enough. warranty@, support@, and noreply@ are often the earliest emails but are NOT sales reps.

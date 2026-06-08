@@ -1,5 +1,9 @@
 import type { GmailEmailsPayload, GmailSortOrder, GmailScanDepth } from '@/lib/types/genie-agent'
 import { questionNeedsEmailBody } from '@/lib/composio/gmail-message-body'
+import {
+  isReplyOrComposeQuestion,
+  questionNeedsSentContext,
+} from '@/lib/composio/gmail-reply-context'
 
 export interface GmailAnswerReadiness {
   ready_to_answer: boolean
@@ -107,6 +111,35 @@ export function buildGmailAnswerReadiness(
     }
   }
 
+  if (isReplyOrComposeQuestion(userQuestion)) {
+    criteria_checked.push('Reply/compose/respond task detected')
+    const hint = payload.correspondent_hint
+    if (!hint?.name && !hint?.email) {
+      gaps.push(
+        'Could not infer who to reply to — run search_gmail with from:/to: for the person named in the question, or ask which thread if still ambiguous.',
+      )
+    } else {
+      criteria_checked.push(`Correspondent hint: ${hint.email ?? hint.name}`)
+    }
+
+    if (questionNeedsSentContext(userQuestion) && !payload.includes_sent_context) {
+      gaps.push(
+        'Reply tasks need sent-mail context — run search_gmail with in:sent (to: person) before drafting so the reply matches prior outbound tone and promises.',
+      )
+    }
+
+    const remainingPasses = payload.suggested_reply_passes?.filter(
+      (pass) => pass.purpose.toLowerCase().includes('sent'),
+    )
+    if (
+      questionNeedsSentContext(userQuestion)
+      && !payload.includes_sent_context
+      && remainingPasses?.length
+    ) {
+      criteria_checked.push(`Suggested sent pass: ${remainingPasses[0]?.query ?? 'in:sent'}`)
+    }
+  }
+
   return {
     ready_to_answer: gaps.length === 0,
     gaps,
@@ -155,6 +188,18 @@ export function verifyQuestionAnswered(input: VerifyQuestionAnsweredInput): Veri
       ['Draft admits missing email body content — read_gmail_messages and cite the fault/details from body_text.'],
       'Fetch full message bodies for the relevant message_ids, then verify again.',
     )
+  }
+
+  if (isReplyOrComposeQuestion(input.user_question)) {
+    const looksStaged =
+      /\b(staged|draft|ready for (your )?review|allow|approval|gmail card|proposed|review the)\b/i.test(draft)
+      || (/\b(subject|re:)\b/i.test(draft) && /\b[\w.+-]+@[\w.-]+\.\w{2,}\b/i.test(draft))
+    if (!looksStaged) {
+      return notReady(
+        ['Respond/reply/draft requests must end with propose_gmail_email — stage a draft for approval, not search results alone.'],
+        'Call propose_gmail_email with recipient, Re: subject, and full body grounded in read messages, then verify again.',
+      )
+    }
   }
 
   const wantsRep = /\b(rep|representative|account manager|sales contact|first contact)\b/.test(q)

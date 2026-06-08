@@ -297,6 +297,16 @@ export interface GmailEmailsPayload {
     gaps: string[];
     criteria_checked: string[];
   };
+  /** Hint parsed from a reply/respond user question — agent-only. */
+  correspondent_hint?: { name?: string; email?: string } | null;
+  /** Extra searches the agent should run before drafting a reply — agent-only. */
+  suggested_reply_passes?: Array<{
+    purpose: string;
+    query: string;
+    scan_depth: GmailScanDepth;
+    sort_order: GmailSortOrder;
+  }>;
+  includes_sent_context?: boolean;
 }
 
 /** Gmail OAuth connect card streamed when the store needs to authorise Gmail. */

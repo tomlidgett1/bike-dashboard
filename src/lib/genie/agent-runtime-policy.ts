@@ -1,4 +1,4 @@
-import { isGmailAddAccountIntent, isGmailConnectIntent } from '@/lib/composio/gmail-intent'
+import { isGmailAddAccountIntent, isGmailConnectIntent, isGmailTaskIntent } from '@/lib/composio/gmail-intent'
 import type { GenieOrchestrationDecision } from '@/lib/genie/orchestration'
 
 export const COMMON_AGENT_TOOL_NAMES = [
@@ -64,9 +64,7 @@ export const SPECIALIST_AGENT_TOOL_NAMES = [
 ]
 
 export function needsGmailTools(latestUserMessage: string): boolean {
-  return /\b(gmail|email|emails|inbox|mailbox|reply|draft|send|composio)\b/i.test(latestUserMessage) ||
-    isGmailConnectIntent(latestUserMessage) ||
-    isGmailAddAccountIntent(latestUserMessage)
+  return isGmailTaskIntent(latestUserMessage)
 }
 
 export function isBikeCompatibilityIntent(latestUserMessage: string): boolean {
@@ -117,6 +115,7 @@ export function toolNameSetForRoute(
     if (isCustomerBikeCompatibilityIntent(latestUserMessage)) {
       add(CUSTOMER_BIKE_CONTEXT_TOOL_NAMES)
       add(['consult_cycling_compatibility_specialist'])
+      if (needsGmailTools(latestUserMessage)) add(GMAIL_TOOL_NAMES)
       return names
     }
 
@@ -131,6 +130,10 @@ export function toolNameSetForRoute(
       add(STOREFRONT_PROPOSAL_TOOL_NAMES)
     }
     return names
+  }
+
+  if (needsGmailTools(latestUserMessage)) {
+    add(GMAIL_TOOL_NAMES)
   }
 
   return names

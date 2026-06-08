@@ -48,6 +48,7 @@ import {
 import { compactGenieProgressText, liveGenieProgressPreview } from '@/lib/genie/progress-text';
 import type { GenieWebImagePreview } from '@/lib/genie/web-image-search';
 import { GenieWebImageCards } from '@/components/genie/genie-web-image-cards';
+import { GenieProgressBrandIcon, resolveGenieProgressBrand } from '@/components/genie/genie-progress-brand';
 import { renderGenieMarkdown } from '@/lib/genie/render-markdown';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -264,14 +265,12 @@ function ShimmerStatus({ step }: { step: StatusStep }) {
     step.text || PHASE_LABELS[step.phase] || 'Working',
     step.phase,
   );
-  const isLightspeed = step.phase === 'lightspeed_sales' || step.phase === 'lightspeed_inventory' || step.phase === 'lightspeed_customers' || step.phase === 'rechecking';
+  const brand = resolveGenieProgressBrand(step.phase, step.text);
   return (
     <motion.div key={`${step.phase}:${label}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.25 }} className="flex items-center gap-2 py-1">
-      {isLightspeed ? (
-        <span className="flex h-4 w-4 shrink-0 overflow-hidden rounded-full">
-          <Image src="/ls.png" alt="Lightspeed" width={16} height={16} className="h-full w-full object-cover" />
-        </span>
+      {brand ? (
+        <GenieProgressBrandIcon phase={step.phase} text={step.text} />
       ) : null}
       <span
         className="text-xs font-medium text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]"
@@ -374,19 +373,22 @@ function ProcessTimelineBox({
             <div className="max-h-60 overflow-y-auto pr-1">
         {visibleSteps.map((step, index) => {
           const isLast = index === visibleSteps.length - 1;
-          const isLightspeed = step.phase === 'lightspeed_sales' || step.phase === 'lightspeed_inventory' || step.phase === 'lightspeed_customers' || step.phase === 'rechecking';
+          const brand = resolveGenieProgressBrand(step.phase, step.text);
           return (
             <div key={step.id} className="grid grid-cols-[18px_1fr] gap-2">
               <div className="relative flex justify-center">
                 <span className={cn(
                   'mt-1.5 h-2 w-2 rounded-full ring-2 ring-background',
-                  step.kind === 'reasoning' ? 'bg-amber-500' : isLightspeed ? 'bg-green-500' : 'bg-primary',
+                  step.kind === 'reasoning' ? 'bg-amber-500' : brand === 'lightspeed' ? 'bg-green-500' : 'bg-primary',
                   live && isLast ? 'animate-pulse' : '',
                 )} />
                 {!isLast ? <span className="absolute top-4 bottom-0 w-px bg-border" /> : null}
               </div>
               <div className="pb-2">
                 <div className="mb-0.5 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {brand ? (
+                    <GenieProgressBrandIcon phase={step.phase} text={step.text} />
+                  ) : null}
                   <span>{step.kind === 'reasoning' ? 'Reasoning' : (PHASE_LABELS[step.phase as StatusPhase] ?? step.phase).replace(/\.\.\.$/, '')}</span>
                   <span className="text-muted-foreground/60">{step.at}</span>
                 </div>

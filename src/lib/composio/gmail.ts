@@ -28,6 +28,13 @@ import {
   extractBodyTextFromMessage,
   questionNeedsEmailBody,
 } from '@/lib/composio/gmail-message-body'
+import {
+  buildImplicitGmailQuery,
+  buildReplySearchPlan,
+  buildSentContextQuery,
+  extractCorrespondentHint,
+  questionNeedsSentContext,
+} from '@/lib/composio/gmail-reply-context'
 
 export type { ComposioConnectedAccount }
 export { listConnectedAccounts, listConnectedAccountsSafe }
@@ -42,6 +49,7 @@ const MAX_DISPLAY_LIMIT = 50
 const MAX_SENDER_SUMMARY = 80
 const MAX_BODY_CHARS = 12_000
 const AUTO_HYDRATE_BODY_COUNT = 3
+const AUTO_HYDRATE_REPLY_COUNT = 5
 
 export async function listGmailConnections(userId: string): Promise<ComposioConnectedAccount[]> {
   const { accounts, error } = await listConnectedAccountsSafe(userId)
@@ -420,14 +428,66 @@ async function hydrateMessageBodiesForAgent(
     max_count?: number
   },
 ): Promise<GmailMessageContent[]> {
-  if (!questionNeedsEmailBody(args.user_question) || emails.length === 0) return []
-  const targets = emails.slice(0, args.max_count ?? AUTO_HYDRATE_BODY_COUNT)
+  const needsBody = questionNeedsEmailBody(args.user_question)
+  const isReply = questionNeedsSentContext(args.user_question)
+  if ((!needsBody && !isReply) || emails.length === 0) return []
+  const maxCount = args.max_count ?? (isReply ? AUTO_HYDRATE_REPLY_COUNT : AUTO_HYDRATE_BODY_COUNT)
+  const targets = emails.slice(0, maxCount)
   return readGmailMessages(userId, {
     messages: targets.map((email) => ({
       message_id: email.message_id,
       connected_account_id: email.connected_account_id,
     })),
   })
+}
+
+function dedupeEmailsById(emails: GmailEmailPreview[]): GmailEmailPreview[] {
+  const seen = new Set<string>()
+  const merged: GmailEmailPreview[] = []
+  for (const email of emails) {
+    const key = `${email.connected_account_id ?? ''}:${email.message_id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(email)
+  }
+  return merged
+}
+
+async function enrichWithSentContext(
+  userId: string,
+  account: ComposioConnectedAccount,
+  args: {
+    user_question?: string
+    sort_order: GmailSortOrder
+    displayLimit: number
+  },
+  baseEmails: GmailEmailPreview[],
+): Promise<{ emails: GmailEmailPreview[]; includesSentContext: boolean }> {
+  if (!questionNeedsSentContext(args.user_question)) {
+    return { emails: baseEmails, includesSentContext: false }
+  }
+
+  const hint = extractCorrespondentHint(args.user_question ?? '')
+  const sentQuery = buildSentContextQuery(hint)
+  if (!sentQuery) return { emails: baseEmails, includesSentContext: false }
+
+  const composioUserId = getComposioUserId(userId)
+  const page = await fetchGmailPage(composioUserId, account.id, {
+    query: sentQuery,
+    maxResults: Math.max(args.displayLimit, QUICK_PAGE_SIZE),
+  })
+  const sentEmails = tagEmailsForMailbox(
+    sortEmails(extractEmailPreviews(page.messages), args.sort_order),
+    account,
+  )
+
+  if (sentEmails.length === 0) return { emails: baseEmails, includesSentContext: false }
+
+  const merged = sortEmails(
+    dedupeEmailsById([...baseEmails, ...sentEmails]),
+    args.sort_order,
+  )
+  return { emails: merged, includesSentContext: true }
 }
 
 function tagEmailsForMailbox(
@@ -471,6 +531,7 @@ function mergeSearchPayloads(
   const totalMatched = payloads.reduce((sum, payload) => sum + (payload.scan_stats?.total_matched ?? payload.emails.length), 0)
   const pagesScanned = payloads.reduce((sum, payload) => sum + (payload.scan_stats?.pages_scanned ?? 1), 0)
   const capped = payloads.some((payload) => payload.scan_stats?.capped)
+  const includesSentContext = payloads.some((payload) => payload.includes_sent_context)
 
   return buildSearchPayload(
     {
@@ -492,6 +553,7 @@ function mergeSearchPayloads(
     args.user_question,
     { sort_order: args.sort_order, scan_depth: args.scan_depth },
     payloads.flatMap((payload) => payload.message_bodies ?? []),
+    includesSentContext,
   )
 }
 
@@ -506,7 +568,7 @@ async function searchGmailEmailsForAccount(
     user_question?: string
   },
 ): Promise<GmailEmailsPayload> {
-  const query = args.query?.trim() || 'in:inbox'
+  const query = resolveSearchQuery(args)
   const sortOrder = args.sort_order ?? 'newest'
   const scanDepth = args.scan_depth ?? 'quick'
   const displayLimit = clampDisplayLimit(args.max_results)
@@ -520,7 +582,19 @@ async function searchGmailEmailsForAccount(
       connectedAccountId,
       query,
     )
-    const sorted = tagEmailsForMailbox(sortEmails(allEmails, sortOrder), account)
+    let sorted = tagEmailsForMailbox(sortEmails(allEmails, sortOrder), account)
+    let includesSentContext = false
+
+    if (questionNeedsSentContext(args.user_question) && !query.includes('in:sent')) {
+      const enriched = await enrichWithSentContext(userId, account, {
+        user_question: args.user_question,
+        sort_order: sortOrder,
+        displayLimit,
+      }, sorted)
+      sorted = sortEmails(enriched.emails, sortOrder)
+      includesSentContext = enriched.includesSentContext
+    }
+
     const dateRange = dateRangeFromEmails(sorted)
     const rawSummary = buildSenderSummary(sorted)
     const analysis = attachAnalysis(sorted, rawSummary)
@@ -549,6 +623,7 @@ async function searchGmailEmailsForAccount(
       args.user_question,
       { sort_order: sortOrder, scan_depth: scanDepth },
       messageBodies,
+      includesSentContext,
     )
   }
 
@@ -556,10 +631,18 @@ async function searchGmailEmailsForAccount(
     query,
     maxResults: Math.min(Math.max(displayLimit, QUICK_PAGE_SIZE), QUICK_PAGE_SIZE),
   })
-  const pageEmails = tagEmailsForMailbox(
+  let pageEmails = tagEmailsForMailbox(
     sortEmails(extractEmailPreviews(page.messages), sortOrder),
     account,
   )
+  const enriched = await enrichWithSentContext(userId, account, {
+    user_question: args.user_question,
+    sort_order: sortOrder,
+    displayLimit,
+  }, pageEmails)
+  pageEmails = enriched.emails
+  const includesSentContext = enriched.includesSentContext
+
   const dateRange = dateRangeFromEmails(pageEmails)
   const rawSummary = buildSenderSummary(pageEmails)
   const analysis = attachAnalysis(pageEmails, rawSummary)
@@ -576,7 +659,7 @@ async function searchGmailEmailsForAccount(
       truncated: Boolean(page.nextPageToken) || pageEmails.length > displayLimit,
       scan_stats: {
         total_matched: pageEmails.length,
-        pages_scanned: 1,
+        pages_scanned: includesSentContext ? 2 : 1,
         scan_mode: 'quick',
         capped: false,
         mailboxes_searched: 1,
@@ -588,20 +671,46 @@ async function searchGmailEmailsForAccount(
     args.user_question,
     { sort_order: sortOrder, scan_depth: scanDepth },
     messageBodies,
+    includesSentContext,
   )
 }
+function resolveSearchQuery(args: { query?: string; user_question?: string }): string {
+  return args.query?.trim() || buildImplicitGmailQuery(args.user_question) || 'in:inbox'
+}
+
 function buildSearchPayload(
   base: Omit<GmailEmailsPayload, 'answer_readiness'>,
   userQuestion: string | undefined,
   searchArgs: { sort_order?: GmailSortOrder; scan_depth?: GmailScanDepth },
   messageBodies: GmailMessageContent[],
+  includesSentContext = false,
 ): GmailEmailsPayload {
-  const payload: GmailEmailsPayload = {
+  let payload: GmailEmailsPayload = {
     ...base,
     message_bodies: messageBodies.length > 0 ? messageBodies : undefined,
   }
   payload.answer_readiness = buildGmailAnswerReadiness(userQuestion, payload, searchArgs) ?? undefined
+  payload = attachReplyMetadata(payload, userQuestion, includesSentContext)
   return payload
+}
+
+function attachReplyMetadata(
+  payload: GmailEmailsPayload,
+  userQuestion: string | undefined,
+  includesSentContext: boolean,
+): GmailEmailsPayload {
+  if (!userQuestion?.trim()) return payload
+
+  const hint = extractCorrespondentHint(userQuestion)
+  const suggested = buildReplySearchPlan(userQuestion)
+  const hasHint = Boolean(hint.name || hint.email)
+
+  return {
+    ...payload,
+    correspondent_hint: hasHint ? hint : payload.correspondent_hint ?? null,
+    suggested_reply_passes: suggested.length > 0 ? suggested : payload.suggested_reply_passes,
+    includes_sent_context: includesSentContext || payload.includes_sent_context,
+  }
 }
 
 export async function searchGmailEmails(
@@ -615,7 +724,7 @@ export async function searchGmailEmails(
     user_question?: string
   },
 ): Promise<GmailEmailsPayload> {
-  const query = args.query?.trim() || 'in:inbox'
+  const query = resolveSearchQuery(args)
   const sortOrder = args.sort_order ?? 'newest'
   const scanDepth = args.scan_depth ?? 'quick'
 

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
 import { createPortal, flushSync } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, History, Pencil, Plus, Trash2, X } from "lucide-react";
@@ -43,6 +42,10 @@ import type {
 import { consumeHomeV2PendingPrompt } from "@/lib/genie/homev2-navigation";
 import { compactGenieProgressText, liveGenieProgressPreview } from "@/lib/genie/progress-text";
 import { mergeGmailAgentContext } from "@/lib/genie/gmail-agent-context";
+import {
+  GenieProgressBrandIcon,
+  resolveGenieProgressBrand,
+} from "@/components/genie/genie-progress-brand";
 import { renderGenieMarkdown } from "@/lib/genie/render-markdown";
 
 type ChatRole = "user" | "assistant";
@@ -191,25 +194,6 @@ function AssistantMessageContent({ content }: { content: string }) {
   );
 }
 
-function isLightspeedStatus(status: string) {
-  const text = status.toLowerCase();
-  return text.includes("lightspeed") || text.includes("sales") || text.includes("inventory") || text.includes("customer");
-}
-
-function LightspeedLogoTile() {
-  return (
-    <span className="flex h-4 w-4 shrink-0 overflow-hidden rounded-full">
-      <Image
-        src="/ls.png"
-        alt="Lightspeed"
-        width={16}
-        height={16}
-        className="h-full w-full object-cover"
-      />
-    </span>
-  );
-}
-
 function processStepLabel(step: ProcessStep) {
   if (step.kind === "reasoning") return "Reasoning";
   return PHASE_LABELS[step.phase] ?? step.phase;
@@ -224,12 +208,7 @@ function ProcessStepDetail({
   isLast: boolean;
   live?: boolean;
 }) {
-  const lightspeed =
-    step.phase === "lightspeed_sales"
-    || step.phase === "lightspeed_inventory"
-    || step.phase === "lightspeed_customers"
-    || step.phase === "rechecking"
-    || isLightspeedStatus(step.text);
+  const progressBrand = resolveGenieProgressBrand(step.phase, step.text);
 
   return (
     <div className="grid grid-cols-[18px_1fr] gap-2.5">
@@ -244,7 +223,9 @@ function ProcessStepDetail({
       </div>
       <div className="pb-3">
         <div className="mb-1 flex items-center gap-1.5 text-[10px] text-gray-400">
-          {lightspeed ? <LightspeedLogoTile /> : null}
+          {progressBrand ? (
+            <GenieProgressBrandIcon phase={step.phase} text={step.text} />
+          ) : null}
           <span className="font-medium text-gray-500">{processStepLabel(step)}</span>
           <span className="text-gray-300">{step.at}</span>
         </div>
@@ -447,14 +428,25 @@ function ProcessTimelineBox({
         type="button"
         onClick={() => setPanelOpen(true)}
         className={cn(
-          "w-fit max-w-3xl whitespace-normal border-0 bg-transparent p-0 text-left text-[15px] leading-relaxed text-gray-500",
-          live && "text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]",
+          "inline-flex max-w-3xl items-center gap-2 border-0 bg-transparent p-0 text-left",
           !live && "text-gray-400 hover:text-gray-600",
         )}
-        style={live ? THINKING_SHIMMER_STYLE : undefined}
         aria-label="Open thinking and progress details"
       >
-        {live ? progressText : "View thought process"}
+        {live && latestStep ? (
+          <GenieProgressBrandIcon phase={latestStep.phase} text={latestStep.text} />
+        ) : null}
+        <span
+          className={cn(
+            "whitespace-normal text-[15px] leading-relaxed",
+            live
+              ? "text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite] text-gray-500"
+              : "text-gray-400",
+          )}
+          style={live ? THINKING_SHIMMER_STYLE : undefined}
+        >
+          {live ? progressText : "View thought process"}
+        </span>
       </button>
 
       <ThinkingProgressPanel

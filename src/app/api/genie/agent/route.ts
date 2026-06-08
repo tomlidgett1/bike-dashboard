@@ -96,7 +96,7 @@ import {
   readGmailMessages,
   searchGmailEmails,
 } from '@/lib/composio/gmail'
-import { isGmailAddAccountIntent, isGmailConnectIntent } from '@/lib/composio/gmail-intent'
+import { isGmailAddAccountIntent, isGmailConnectIntent, isGmailTaskIntent } from '@/lib/composio/gmail-intent'
 import { GMAIL_SEARCH_PLAYBOOK } from '@/lib/composio/gmail-search-playbook'
 import { verifyQuestionAnswered } from '@/lib/genie/answer-verification'
 import { buildGmailAgentContextFromMessages, buildGmailAgentContextFromPayload } from '@/lib/genie/gmail-agent-context'
@@ -243,11 +243,9 @@ function routeUsesGmail(
   latestUserMessage: string,
   plan: GenieExecutionPlan | null,
 ): boolean {
+  if (isGmailTaskIntent(latestUserMessage)) return true
   return (route === 'storefront_action' || route === 'mixed') &&
-    (
-      /\b(gmail|email|emails|inbox|mailbox|reply|draft|send)\b/i.test(latestUserMessage) ||
-      planMentionsTool(plan, /\bgmail\b|search_gmail|read_gmail|propose_gmail/i)
-    )
+    planMentionsTool(plan, /\bgmail\b|search_gmail|read_gmail|propose_gmail/i)
 }
 
 function routeUsesLightspeedSql(
@@ -308,7 +306,7 @@ function formatCapabilitiesForRoute(args: {
 
   if (args.includeGmail) {
     capabilities.push(
-      '8. Gmail — check connection status, search connected inboxes, read message bodies when needed, and stage sends/drafts for approval. Never send the user to the Composio dashboard.',
+      '8. Gmail — full inbox intelligence: search all connected mailboxes (inbox, sent, anywhere), read bodies, analyse threads and correspondence history, and stage replies/sends/drafts for approval. Always include sent-mail context for reply/respond tasks. Never send the user to the Composio dashboard.',
     )
   }
 
@@ -370,7 +368,9 @@ function formatWorkRulesForRoute(args: {
   if (args.includeGmail) {
     rules.push(
       '- For Gmail: follow the hidden execution plan execution_steps in order. ANY inbox/mail question requires planned search_gmail passes before answering. For issue/warranty/what-happened questions, read bodies via search_gmail message_bodies or read_gmail_messages; never answer from subjects/snippets alone.',
+      '- Gmail reply/respond/draft/send (including "respond to Tom" with no "email" keyword): this is ALWAYS a Gmail task. Run thread search + in:sent context + read_gmail_messages, then propose_gmail_email with a complete draft. Do not stop after search.',
       '- Gmail follow-ups: for reply/send/draft to an email already shown, reuse private Gmail context and call propose_gmail_email with recipient_email, Re: subject, draft body, and connected_account_id when available. Do not re-search unless context is missing or the user names a different message.',
+      '- When search_gmail returns suggested_reply_passes or includes_sent_context is false on a reply task, run the missing sent/thread passes before drafting.',
     )
   }
 
@@ -910,7 +910,7 @@ Critical routing doctrine:
 - Store reporting: stock, inventory, QOH, on hand, available, sold, sales, revenue, GP, margin, cost, average sale, best customers, top customers, who bought, product purchasers = lightspeed_sql. Use needs_plan=false for a narrow report.
 - Business strategy: "how can we make more money", "how do we improve profit/revenue/margin", "what opportunities should we focus on", "where is cash tied up", "dead/stale stock strategy" = business_analysis with needs_plan=true.
 - Storefront operations: make/create/rename/reorder/show/hide/move/feature a carousel, collection, homepage section, discount, sale, markdown, retail price, brand, category, product list, or approval proposal = storefront_action. Use needs_plan=false for a concrete single action; true for broad campaigns/homepage strategy.
-- Gmail/email: connect Gmail/Composio, check connection, search/summarise inbox, find supplier/customer emails, earliest/latest contact, invoices, issue/warranty correspondence, draft, reply, or send = storefront_action with needs_plan=true.
+- Gmail/email: connect Gmail/Composio, check connection, search/summarise inbox, find supplier/customer emails, earliest/latest contact, invoices, issue/warranty correspondence, draft, reply, respond, write back, follow up, or send = storefront_action with needs_plan=true. "Respond to {name}" or "reply to {name}" without saying Gmail/email is still a Gmail task.
 - Market/competitor pricing: private "our price/stock/products" plus competitors/market/online/web price = mixed. Pure public market question without store data = web_research.
 - Visual lookup: "show me/photo/picture/what does it look like" for our stock/inventory = lightspeed_sql; for an external bike/product = web_research.
 - Current external facts: latest/current/new model/2025/2026/released/recall/supplier/distributor/MSRP/RRP/manual/standard = web_research unless private store data is also required.
@@ -941,6 +941,8 @@ Routing examples:
 - "Make a Summer Sale carousel for all Clif bars" = storefront_action, needs_plan=false.
 - "Build a full homepage campaign for winter servicing" = storefront_action, needs_plan=true.
 - "Connect my Gmail" = storefront_action, needs_plan=true.
+- "Respond to Joel" = storefront_action, needs_plan=true.
+- "Reply to Tom about the quote" = storefront_action, needs_plan=true.
 - "Find the earliest email from Trek's rep and draft a reply" = storefront_action, needs_plan=true.
 - "Can you help with that?" = inherit from prior context; return null is not allowed by the schema, so choose the prior relevant route and planning flag.
 
@@ -1053,7 +1055,7 @@ Planning rules:
 - The final execution_steps entry MUST be: "Call verify_question_answered; only respond if ready."
 - primary_tools MUST include verify_question_answered for any task that uses other tools.
 - For broad strategy, set final_answer_shape to strategic_analysis.
-- For ANY Gmail/email/inbox task, primary_tools must list the Gmail tools needed (get_gmail_connection_status, search_gmail, read_gmail_messages when body/content is needed, propose_gmail_email). execution_steps must list each search_gmail pass explicitly (query, scan_depth, sort_order) — never one vague "check email" step. For issue/warranty/summary/what-happened questions, plan search_gmail then read_gmail_messages on the top message_ids if bodies are needed. For rep/first-contact/supplier-history questions, plan 2–4 search passes: broad from:domain full scan; exclude warranty/support/noreply; sales-keyword pass; optional from:"Name" follow-up. Set sql_strategy to null and date_range null unless the question includes explicit calendar filters for the Gmail query. final_answer_shape is usually summary; use clarifying_question only if the plan cannot resolve ambiguity after planned searches.
+- For ANY Gmail/email/inbox task (including "respond to {name}" without saying Gmail), primary_tools must list the Gmail tools needed (get_gmail_connection_status, search_gmail, read_gmail_messages, propose_gmail_email for reply/compose). execution_steps must list each search_gmail pass explicitly (query, scan_depth, sort_order) — never one vague "check email" step. Reply/respond tasks MUST plan: (1) thread search from/to person, (2) in:sent to person for prior outbound context, (3) read_gmail_messages on best message_ids, (4) propose_gmail_email draft. For issue/warranty/summary/what-happened questions, plan search_gmail then read_gmail_messages on the top message_ids if bodies are needed. For rep/first-contact/supplier-history questions, plan 2–4 search passes: broad from:domain full scan; exclude warranty/support/noreply; sales-keyword pass; optional from:"Name" follow-up. Set sql_strategy to null and date_range null unless the question includes explicit calendar filters for the Gmail query. final_answer_shape is usually summary; use clarifying_question only if the plan cannot resolve ambiguity after planned searches.
 
 GMAIL PLANNING REFERENCE (embed in execution_steps, do not quote to user):
 ${GMAIL_SEARCH_PLAYBOOK}`
@@ -1399,6 +1401,16 @@ function roundMoney(value: number): number {
 
 function roundPercent(value: number): number {
   return Math.round(value * 10) / 10
+}
+
+const AUD_FORMATTER = new Intl.NumberFormat('en-AU', {
+  style: 'currency',
+  currency: 'AUD',
+  maximumFractionDigits: 2,
+})
+
+function formatAud(value: number): string {
+  return AUD_FORMATTER.format(value)
 }
 
 function visualPrefsForMessages(messages: Message[]): VisualPrefs {
@@ -4861,6 +4873,213 @@ function sqlCompletionFields(fetchResult: SalesReportFetchResult) {
     row_limit_reached: fetchResult.row_limit_reached,
     sales_report_coverage: fetchResult.coverage,
   }
+}
+
+interface DirectSalesSummaryLookup {
+  startDate: string
+  endDate: string
+  label: string
+}
+
+interface DirectSalesSummaryResult {
+  source: 'direct_sales_summary'
+  date_range: {
+    start_date: string
+    end_date: string
+    timezone: string
+  }
+  label: string
+  sale_count: number
+  line_count: number
+  gross_sales: number
+  net_sales: number
+  tax_estimate: number
+  discounts: number
+  total_cost: number
+  gross_profit: number
+  gross_margin_percent: number | null
+  average_sale_value: number
+  line_limit_reached: boolean
+}
+
+const DIRECT_SALES_SUMMARY_LINE_LIMIT = 10_000
+
+function resolveDirectSalesSummaryLookup(message: string): DirectSalesSummaryLookup | null {
+  const text = normalizeText(message)
+  if (!text) return null
+
+  const hasSalesIntent = /\b(any sales|sales?|takings?|revenue|turnover|gross sales|net sales|gross profit|profit|margin|made|took)\b/.test(text)
+  if (!hasSalesIntent) return null
+
+  const complexIntent = /\b(top|best|rank|ranking|list|every|each|transaction|transactions|receipt|receipts|orders?|line items?|products?|items?|services?|customers?|category|categories|breakdown|trend|chart|graph|compare|comparison|vs|versus|weekly|monthly|yearly|this month|last month|this week|last week|this year|last year|between|from .+ to)\b/.test(text)
+  if (complexIntent) return null
+
+  const today = getStoreToday()
+  const todayDate = isoDateToUtcDate(today)
+  if (/\byesterday\b/.test(text)) {
+    const date = isoDateFromUtcDate(addUtcDays(todayDate, -1))
+    return { startDate: date, endDate: date, label: 'yesterday' }
+  }
+
+  if (/\btoday\b/.test(text)) {
+    return { startDate: today, endDate: today, label: 'today' }
+  }
+
+  const explicitDate = message.match(/\b(20\d{2}-\d{2}-\d{2})\b/)?.[1]
+  if (explicitDate) {
+    return { startDate: explicitDate, endDate: explicitDate, label: explicitDate }
+  }
+
+  return null
+}
+
+function directSalesSummarySqlForDisplay(lookup: DirectSalesSummaryLookup): string {
+  const startUtc = storeLocalTimeToUtcTimestamp(lookup.startDate, '00:00:00')
+  const endExclusiveDate = isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(lookup.endDate), 1))
+  const endExclusiveUtc = storeLocalTimeToUtcTimestamp(endExclusiveDate, '00:00:00')
+  return [
+    'SELECT sale_id, total, subtotal, cost, profit, discount, quantity',
+    'FROM lightspeed_sales_report_lines',
+    'WHERE user_id = <current_store>',
+    `  AND complete_time >= ${sqlLiteral(startUtc)}`,
+    `  AND complete_time < ${sqlLiteral(endExclusiveUtc)}`,
+    'ORDER BY complete_time DESC',
+    `LIMIT ${DIRECT_SALES_SUMMARY_LINE_LIMIT}`,
+  ].join('\n')
+}
+
+async function getDirectSalesSummary(
+  userId: string,
+  lookup: DirectSalesSummaryLookup,
+  emit: Emit,
+  visualPrefs: VisualPrefs,
+): Promise<DirectSalesSummaryResult> {
+  const queryId = randomUUID()
+  const startUtc = storeLocalTimeToUtcTimestamp(lookup.startDate, '00:00:00')
+  const endExclusiveDate = isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(lookup.endDate), 1))
+  const endExclusiveUtc = storeLocalTimeToUtcTimestamp(endExclusiveDate, '00:00:00')
+  const sql = directSalesSummarySqlForDisplay(lookup)
+
+  emitAnalysisQuery(emit, {
+    id: queryId,
+    tool_name: 'direct_sales_summary',
+    purpose: `Fast sales summary for ${lookup.label}`,
+    sql,
+    status: 'running',
+  })
+
+  const admin = createServiceRoleClient()
+  const { data, error } = await admin
+    .from('lightspeed_sales_report_lines')
+    .select('sale_id,total,subtotal,cost,profit,discount,quantity')
+    .eq('user_id', userId)
+    .not('complete_time', 'is', null)
+    .gte('complete_time', startUtc)
+    .lt('complete_time', endExclusiveUtc)
+    .order('complete_time', { ascending: false })
+    .range(0, DIRECT_SALES_SUMMARY_LINE_LIMIT - 1)
+
+  if (error) {
+    emitAnalysisQuery(emit, {
+      id: queryId,
+      tool_name: 'direct_sales_summary',
+      purpose: `Fast sales summary for ${lookup.label}`,
+      sql,
+      status: 'error',
+      error: error.message,
+    })
+    throw new Error(`Fast sales summary failed: ${error.message}`)
+  }
+
+  const lines = Array.isArray(data) ? data : []
+  const saleIds = new Set(lines.map(line => String(line.sale_id ?? '')).filter(Boolean))
+  const grossSales = lines.reduce((sum, line) => sum + toNum(line.total), 0)
+  const netSales = lines.reduce((sum, line) => sum + toNum(line.subtotal), 0)
+  const discounts = lines.reduce((sum, line) => sum + toNum(line.discount), 0)
+  const totalCost = lines.reduce((sum, line) => sum + toNum(line.cost), 0)
+  const grossProfit = lines.reduce((sum, line) => {
+    const profit = toOptionalNum(line.profit)
+    return sum + (profit ?? (toNum(line.subtotal) - toNum(line.cost)))
+  }, 0)
+  const saleCount = saleIds.size
+  const lineLimitReached = lines.length >= DIRECT_SALES_SUMMARY_LINE_LIMIT
+  const result: DirectSalesSummaryResult = {
+    source: 'direct_sales_summary',
+    date_range: {
+      start_date: lookup.startDate,
+      end_date: lookup.endDate,
+      timezone: STORE_TIME_ZONE,
+    },
+    label: lookup.label,
+    sale_count: saleCount,
+    line_count: lines.length,
+    gross_sales: roundMoney(grossSales),
+    net_sales: roundMoney(netSales),
+    tax_estimate: roundMoney(grossSales - netSales),
+    discounts: roundMoney(discounts),
+    total_cost: roundMoney(totalCost),
+    gross_profit: roundMoney(grossProfit),
+    gross_margin_percent: netSales > 0 ? roundPercent((grossProfit / netSales) * 100) : null,
+    average_sale_value: saleCount > 0 ? roundMoney(grossSales / saleCount) : 0,
+    line_limit_reached: lineLimitReached,
+  }
+
+  emitAnalysisQuery(emit, {
+    id: queryId,
+    tool_name: 'direct_sales_summary',
+    purpose: `Fast sales summary for ${lookup.label}`,
+    sql,
+    status: 'ok',
+    row_count: 1,
+  })
+
+  if (visualPrefs.table) {
+    const table = buildGenericSqlTable([{
+      date: lookup.startDate === lookup.endDate ? lookup.startDate : `${lookup.startDate} to ${lookup.endDate}`,
+      sale_count: result.sale_count,
+      gross_sales: result.gross_sales,
+      net_sales: result.net_sales,
+      gross_profit: result.gross_profit,
+      gross_margin_percent: result.gross_margin_percent,
+      average_sale_value: result.average_sale_value,
+    }], {
+      table_title: 'Sales summary',
+      table_subtitle: `${lookup.label} · ${STORE_TIME_ZONE}`,
+    }, false)
+    if (table) emit({ event: 'table', table })
+  }
+
+  return result
+}
+
+function directSalesSummaryAnswer(result: DirectSalesSummaryResult): string {
+  const period = result.date_range.start_date === result.date_range.end_date
+    ? result.date_range.start_date
+    : `${result.date_range.start_date} to ${result.date_range.end_date}`
+  const margin = result.gross_margin_percent == null ? 'n/a' : `${result.gross_margin_percent}%`
+  const caveat = result.line_limit_reached
+    ? `\n\n**Caveat:** hit the ${DIRECT_SALES_SUMMARY_LINE_LIMIT.toLocaleString('en-AU')} line safety cap, so this should be rerun as a broader report.`
+    : ''
+
+  if (result.sale_count === 0) {
+    return [
+      `No — I found **0 completed sales** for **${result.label}**.`,
+      '',
+      `**Date range:** ${period} (${result.date_range.timezone})`,
+      `**Checked:** synced Lightspeed sales report.`,
+      caveat,
+    ].filter(Boolean).join('\n')
+  }
+
+  return [
+    `Yes — there were **${result.sale_count} completed sales** ${result.label}, totalling **${formatAud(result.gross_sales)} gross**.`,
+    '',
+    `- **Net sales:** ${formatAud(result.net_sales)}`,
+    `- **Gross profit:** ${formatAud(result.gross_profit)} (${margin} margin)`,
+    `- **Average sale:** ${formatAud(result.average_sale_value)}`,
+    `- **Date range:** ${period} (${result.date_range.timezone})`,
+    caveat,
+  ].filter(Boolean).join('\n')
 }
 
 function sqlLiteral(value: string): string {
@@ -11661,9 +11880,9 @@ function buildAgentTools(
     }),
     tool({
       name: 'search_gmail',
-      description: 'Search connected Gmail with Gmail query syntax. Searches all connected mailboxes by default. Use before ANY email answer. scan_depth "full" paginates entire matching history. Returns emails (with mailbox_label when multiple accounts), scan_stats, sender_summary, contact_analysis, and message_bodies.',
+      description: 'Search connected Gmail with Gmail query syntax. Searches all connected mailboxes by default. Auto-merges in:sent context for reply/respond questions. Use before ANY email answer. scan_depth "full" paginates entire matching history. Returns emails, scan_stats, sender_summary, contact_analysis, message_bodies, correspondent_hint, suggested_reply_passes, includes_sent_context.',
       parameters: z.object({
-        query: z.string().optional().describe('Gmail search query (from:, subject:, after:, before:, has:attachment, etc.). Defaults to in:inbox.'),
+        query: z.string().optional().describe('Gmail search query (from:, to:, in:sent, in:anywhere, subject:, after:, etc.). Omit to infer from user_question (e.g. respond to Tom → from/to that person). Defaults to in:inbox only when no inference applies.'),
         scan_depth: z.enum(['quick', 'full']).optional().describe('full = paginate all matching mail for history/counts/earliest; quick = one page for recent previews.'),
         max_results: z.number().int().min(1).max(50).optional().describe('Emails shown in the UI card only — does not limit full scans.'),
         sort_order: z.enum(['newest', 'oldest']).optional().describe('Sort scanned results by date. Use oldest for earliest/first questions after scan_depth full.'),
@@ -11721,6 +11940,9 @@ function buildAgentTools(
           contact_analysis: payload.contact_analysis ?? null,
           answer_readiness: payload.answer_readiness ?? null,
           message_bodies: payload.message_bodies ?? [],
+          correspondent_hint: payload.correspondent_hint ?? null,
+          suggested_reply_passes: payload.suggested_reply_passes ?? [],
+          includes_sent_context: payload.includes_sent_context ?? false,
           emails: payload.emails,
         }
       },
@@ -11764,7 +11986,7 @@ function buildAgentTools(
     }),
     tool({
       name: 'propose_gmail_email',
-      description: 'Stage a Gmail send or draft for human approval. Never sends immediately — the store must Allow on the Gmail card. Use action "send" or "draft". For replies, pass connected_account_id from prior gmail context when multiple mailboxes are connected.',
+      description: 'Stage a Gmail send or draft for human approval. Never sends immediately — the store must Allow on the Gmail card. REQUIRED final step for respond/reply/draft/send requests after search + read bodies. Use action "send" or "draft" (prefer draft unless user asked to send now). For replies: Re: subject, recipient from incoming From, body grounded in read message_bodies and sent context.',
       parameters: z.object({
         action: z.enum(['send', 'draft']),
         summary: z.string(),
@@ -11772,6 +11994,8 @@ function buildAgentTools(
         subject: z.string(),
         body: z.string(),
         connected_account_id: z.string().optional().describe('Composio connected account id from prior gmail context (emails[].connected_account_id).'),
+        thread_id: z.string().optional().describe('Gmail thread_id from the message being replied to, when available.'),
+        reply_to_message_id: z.string().optional().describe('Gmail message_id being replied to, for traceability.'),
         cc: z.array(z.string()).optional(),
         bcc: z.array(z.string()).optional(),
         is_html: z.boolean().optional(),
@@ -12142,9 +12366,31 @@ export async function POST(request: NextRequest) {
             return
           }
 
+          const directSalesSummaryLookup = resolveDirectSalesSummaryLookup(latestUserMessage)
+          if (directSalesSummaryLookup && orchestration.route === 'lightspeed_sql') {
+            executorModel = 'direct_sales_summary'
+            toolCallCount += 1
+            toolCallNames.direct_sales_summary = 1
+            emit({ event: 'status', phase: 'setup', text: 'Preparing fast sales summary' })
+            emit({ event: 'status', phase: 'lightspeed_sales', text: `Reading sales for ${directSalesSummaryLookup.label}` })
+            const result = await getDirectSalesSummary(user.id, directSalesSummaryLookup, emit, visualPrefs)
+            const answer = directSalesSummaryAnswer(result)
+            firstTextAt = Date.now()
+            console.info('[Genie Agent] first_text', {
+              requestId,
+              route: finalRoute,
+              ms: firstTextAt - requestStartedAt,
+              direct_path: 'direct_sales_summary',
+            })
+            emit({ event: 'status', phase: 'responding', text: 'Writing answer' })
+            emit({ event: 'text_delta', text: answer })
+            emit({ event: 'done' })
+            return
+          }
+
           let executionPlan: GenieExecutionPlan | null = null
 
-          if (orchestration.needs_plan) {
+          if (orchestration.needs_plan || isGmailTaskIntent(latestUserMessage)) {
             plannerUsed = true
             emit({ event: 'status', phase: 'planning', text: 'Planning the smart workflow' })
             const planningStartedAt = Date.now()

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isGmailConnectIntent, isGmailAddAccountIntent, isGmailTaskIntent, applyGmailPlanningPolicy } from '../src/lib/composio/gmail-intent'
+import { needsGmailTools } from '../src/lib/genie/agent-runtime-policy'
 import { isComposioConfigured } from '../src/lib/composio/client'
 import { extractEmailTimestampMs } from '../src/lib/composio/gmail'
 import { buildContactAnalysis, parseFromField } from '../src/lib/composio/gmail-contact-analysis'
@@ -10,6 +11,13 @@ import {
   extractBodyTextFromPayload,
   questionNeedsEmailBody,
 } from '../src/lib/composio/gmail-message-body'
+import {
+  buildImplicitGmailQuery,
+  buildReplySearchPlan,
+  extractCorrespondentHint,
+  isReplyOrComposeQuestion,
+  questionNeedsSentContext,
+} from '../src/lib/composio/gmail-reply-context'
 import { buildGmailAnswerReadiness, verifyQuestionAnswered } from '../src/lib/genie/answer-verification'
 
 const root = process.cwd()
@@ -67,6 +75,61 @@ for (const message of gmailTaskCases) {
 }
 
 assert.equal(isGmailTaskIntent('what were our sales last month'), false, 'lightspeed sales should not be gmail task')
+
+const replyTaskCases = [
+  'respond to Joel',
+  'respond to tom about the quote',
+  'reply to Sarah',
+  'write back to mike',
+  'follow up with Anna',
+]
+
+for (const message of replyTaskCases) {
+  assert.equal(isGmailTaskIntent(message), true, `should detect reply gmail task without "email" keyword: ${message}`)
+  assert.equal(isReplyOrComposeQuestion(message), true, `should detect reply/compose question: ${message}`)
+}
+
+assert.deepEqual(extractCorrespondentHint('respond to tom'), { name: 'Tom' })
+assert.deepEqual(extractCorrespondentHint('reply to Joel Pearson'), { name: 'Joel Pearson' })
+assert.deepEqual(extractCorrespondentHint('respond to joel@apollobikes.com'), { email: 'joel@apollobikes.com' })
+
+const implicitQuery = buildImplicitGmailQuery('respond to Joel')
+assert.ok(implicitQuery?.includes('Joel'), 'implicit query should target correspondent')
+assert.ok(questionNeedsSentContext('respond to Joel'), 'reply should need sent context')
+
+const replyPlan = buildReplySearchPlan('respond to Joel')
+assert.ok(replyPlan.some((pass) => pass.query.includes('in:sent')), 'reply plan must include sent pass')
+
+const forcedReply = applyGmailPlanningPolicy(
+  { route: 'casual_chat', needs_plan: false, reason: 'greeting' },
+  'respond to Joel',
+)
+assert.equal(forcedReply.needs_plan, true, 'respond tasks must force needs_plan')
+
+const replyReadiness = buildGmailAnswerReadiness(
+  'respond to Joel',
+  {
+    title: 'test',
+    query: 'from:"Joel"',
+    emails: [],
+    correspondent_hint: { name: 'Joel' },
+    includes_sent_context: false,
+    suggested_reply_passes: buildReplySearchPlan('respond to Joel'),
+    scan_stats: { total_matched: 2, pages_scanned: 1, scan_mode: 'quick', capped: false, oldest_date_ms: null, newest_date_ms: null, oldest_date_label: null, newest_date_label: null },
+  },
+  { scan_depth: 'quick', sort_order: 'newest' },
+)
+assert.equal(replyReadiness?.ready_to_answer, false, 'reply without sent context should not be ready')
+
+const replySearchOnly = verifyQuestionAnswered({
+  user_question: 'respond to Joel',
+  draft_answer: 'I found 3 emails from Joel in your inbox about the wheel quote.',
+  remaining_gaps: [],
+})
+assert.equal(replySearchOnly.ready, false, 'search-only draft must fail respond verification')
+
+assert.equal(needsGmailTools('respond to Joel'), true, 'needsGmailTools must include respond without email keyword')
+assert.equal(needsGmailTools('hello'), false, 'casual chat should not need gmail tools')
 
 const forced = applyGmailPlanningPolicy(
   { route: 'casual_chat', needs_plan: false, reason: 'greeting' },
@@ -197,7 +260,11 @@ assert.match(agentRouteSource, /get_gmail_connection_status/, 'agent route must 
 assert.match(agentRouteSource, /listGmailConnections/, 'agent route must support multiple gmail accounts')
 assert.match(agentRouteSource, /connected_account_id/, 'search_gmail must accept optional mailbox filter')
 assert.match(gmailSource, /listGmailConnections/, 'gmail module must list all connections')
-assert.match(gmailSource, /mergeSearchPayloads/, 'gmail search must merge multi-mailbox results')
+assert.match(gmailSource, /enrichWithSentContext|includes_sent_context/, 'gmail search must merge sent context for replies')
+assert.match(gmailSource, /buildImplicitGmailQuery|resolveSearchQuery/, 'gmail search must infer query from user question')
+assert.match(agentRouteSource, /isGmailTaskIntent/, 'agent route must use isGmailTaskIntent for gmail routing')
+assert.match(agentRouteSource, /suggested_reply_passes|includes_sent_context/, 'search_gmail must expose reply metadata')
+assert.match(agentRouteSource, /respond to \{name\}|in:sent context/, 'agent planner must document respond workflow')
 assert.match(toolkitSource, /allowMultiple/, 'composio connect link must allow multiple accounts')
 assert.match(agentRouteSource, /gmail_connect/, 'agent route must emit gmail_connect SSE event')
 assert.match(agentRouteSource, /needs_plan=true.*Gmail|Gmail.*needs_plan=true/i, 'orchestrator must require plan for gmail')

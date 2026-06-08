@@ -87,5 +87,5 @@ export function extractBodyTextFromMessage(raw: Record<string, unknown>): string
 export function questionNeedsEmailBody(question: string | undefined): boolean {
   if (!question?.trim()) return false
   const q = question.toLowerCase()
-  return /\b(issue|fault|defect|problem|warranty|what happened|what did|what was|what is|summar|summary|body|said|details|exact|why|broken|describe|explain|thread|reply|forward|content|complaint|recall|damage)\b/.test(q)
+  return /\b(issue|fault|defect|problem|warranty|what happened|what did|what was|what is|summar|summary|body|said|details|exact|why|broken|describe|explain|thread|reply|respond|forward|content|complaint|recall|damage|draft|compose|write back|follow up)\b/.test(q)
 }
