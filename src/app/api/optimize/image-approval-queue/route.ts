@@ -36,6 +36,8 @@ export async function GET(request: NextRequest) {
         brand,
         category_name,
         listing_source,
+        custom_sku,
+        system_sku,
         price,
         qoh,
         is_bicycle,

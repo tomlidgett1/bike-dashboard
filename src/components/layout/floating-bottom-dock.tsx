@@ -33,6 +33,14 @@ const LazyFloatingImageApprovalCard = dynamic(
   { ssr: false },
 );
 
+const LazyFloatingTomFeedbackButton = dynamic(
+  () =>
+    import("@/components/feedback/floating-tom-feedback-button").then(
+      (mod) => mod.FloatingTomFeedbackButton,
+    ),
+  { ssr: false },
+);
+
 const HOME_PATH = "/settings/store/home";
 const STORE_PAGE_PREFIX = "/marketplace/store/";
 
@@ -71,8 +79,9 @@ export function FloatingBottomDock({ loadImageApproval }: { loadImageApproval: b
 
   const showOptimize = optimizeJobs.visibleJobs.length > 0;
   const showGenie = !isOnHome && genieJobs.visibleJobs.length > 0;
+  const showTomFeedback = isStoreDashboardPath(pathname);
 
-  if (!showOptimize && !showGenie && !loadImageApproval) {
+  if (!showOptimize && !showGenie && !loadImageApproval && !showTomFeedback) {
     return null;
   }
 
@@ -84,13 +93,18 @@ export function FloatingBottomDock({ loadImageApproval }: { loadImageApproval: b
           "sm:bottom-[calc(1.5rem+3.5rem+0.75rem+env(safe-area-inset-bottom,0px))]",
       )}
     >
+      {showTomFeedback ? (
+        <div className="pointer-events-auto w-fit">
+          <LazyFloatingTomFeedbackButton />
+        </div>
+      ) : null}
       {showOptimize ? (
         <div className="pointer-events-auto w-fit max-w-[min(100vw-2rem,22rem)]">
           <LazyFloatingOptimizeJobsCard />
         </div>
       ) : null}
       {loadImageApproval ? (
-        <div className="pointer-events-auto w-fit max-w-[min(100vw-2rem,44rem)]">
+        <div className="pointer-events-auto w-fit max-w-[calc(100vw-2rem)]">
           <LazyFloatingImageApprovalCard />
         </div>
       ) : null}

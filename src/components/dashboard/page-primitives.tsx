@@ -5,6 +5,7 @@
 // everywhere. Change it here → it changes everywhere.
 // ─────────────────────────────────────────────────────────────────────────────
 import * as React from "react";
+import { dashboardHorizontalPadding } from "@/lib/layout/dashboard-padding";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,7 +26,8 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8",
+        "mx-auto w-full py-6 lg:py-8",
+        dashboardHorizontalPadding,
         size === "narrow"
           ? "max-w-4xl"
           : size === "full"

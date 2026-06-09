@@ -17,7 +17,9 @@ import { MessagesDropdown } from "./messages-dropdown";
 import { NestMessagesDropdown } from "./nest-messages-dropdown";
 import { StoreSetupButton } from "@/components/settings/store-setup-button";
 import { useAuth } from "@/components/providers/auth-provider";
+import { dashboardHorizontalPadding } from "@/lib/layout/dashboard-padding";
 import { isStoreDashboardPath } from "@/lib/routes/store-dashboard";
+import { cn } from "@/lib/utils";
 
 // Route → breadcrumb labels. Falls back to a title-cased last segment.
 const CRUMBS: Record<string, { section: string; page: string }> = {
@@ -93,7 +95,12 @@ export function Topbar() {
   const showDeferredActions = useDeferredTopbarActions();
 
   return (
-    <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border/40 bg-background px-4 sm:px-6 lg:px-8">
+    <header
+      className={cn(
+        "sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border/40 bg-background",
+        dashboardHorizontalPadding,
+      )}
+    >
       <SidebarTrigger className="-ml-1" />
       <Breadcrumb>
         <BreadcrumbList>

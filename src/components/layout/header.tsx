@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import { PageHeader } from "@/components/dashboard";
+import { dashboardHorizontalPadding } from "@/lib/layout/dashboard-padding";
+import { cn } from "@/lib/utils";
 
 interface HeaderProps {
   title: React.ReactNode;
@@ -18,7 +20,7 @@ interface HeaderProps {
  */
 export function Header({ title, description, actions }: HeaderProps) {
   return (
-    <div className="px-4 pt-6 lg:px-8 lg:pt-8">
+    <div className={cn(dashboardHorizontalPadding, "pt-6 lg:pt-8")}>
       <PageHeader title={title} description={description} actions={actions} />
     </div>
   );

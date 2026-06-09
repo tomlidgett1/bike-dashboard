@@ -35,6 +35,8 @@ export type ImageApprovalProduct = {
   brand: string | null;
   category_name: string | null;
   listing_source: string | null;
+  custom_sku: string | null;
+  system_sku: string | null;
   price: number;
   qoh: number;
   is_bicycle?: boolean | null;
@@ -129,6 +131,14 @@ export function isReadyForImageApproval(product: ImageApprovalProduct) {
 
 export function productLabel(p: ImageApprovalProduct) {
   return p.display_name?.trim() || p.description;
+}
+
+export function lightspeedSku(p: ImageApprovalProduct) {
+  return p.custom_sku?.trim() || p.system_sku?.trim() || null;
+}
+
+export function lightspeedProductName(p: ImageApprovalProduct) {
+  return p.description?.trim() || null;
 }
 
 const SERPER_CACHE_CHUNK = 50;

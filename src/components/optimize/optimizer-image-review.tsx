@@ -50,7 +50,7 @@ export function OptimizerImageReview({
   onLightbox: (url: string) => void;
   saving: boolean;
   hideApproveAction?: boolean;
-  size?: "default" | "large";
+  size?: "default" | "large" | "compact";
 }) {
   const editable = img.phase === "ready";
   const done = img.phase === "done";
@@ -99,16 +99,31 @@ export function OptimizerImageReview({
 
   const extra = img.candidates.filter((c) => !img.selectedUrls.includes(c.url));
   const selectedGridClass =
-    size === "large"
-      ? "grid grid-cols-2 gap-4 sm:grid-cols-3"
-      : "grid grid-cols-4 gap-2 sm:grid-cols-6";
+    size === "compact"
+      ? "flex gap-1.5 overflow-x-auto pb-0.5"
+      : size === "large"
+        ? "grid grid-cols-2 gap-4 sm:grid-cols-3"
+        : "grid grid-cols-4 gap-2 sm:grid-cols-6";
+  const extraScrollClass =
+    size === "compact"
+      ? "max-h-14 overflow-x-auto pb-0.5"
+      : size === "large"
+        ? "max-h-96 overflow-y-auto"
+        : "max-h-72 overflow-y-auto";
   const extraGridClass =
-    size === "large"
-      ? "grid max-h-96 grid-cols-3 gap-3 overflow-y-auto sm:grid-cols-4"
-      : "grid max-h-72 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6";
+    size === "compact"
+      ? "flex w-full gap-1.5"
+      : size === "large"
+        ? "grid w-full grid-cols-3 gap-3 sm:grid-cols-4"
+        : "grid w-full grid-cols-4 gap-2 sm:grid-cols-6";
+  const thumbClass =
+    size === "compact"
+      ? "relative h-14 w-14 shrink-0 overflow-hidden rounded-md border bg-muted"
+      : "group relative aspect-square w-full min-w-0 cursor-zoom-in overflow-hidden rounded-md border bg-muted";
 
   return (
-    <div className="space-y-3">
+    <div className={cn("w-full min-w-0", size === "compact" ? "space-y-1" : "space-y-3")}>
+      {size !== "compact" ? (
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           {done ? (
@@ -152,15 +167,39 @@ export function OptimizerImageReview({
           </div>
         )}
       </div>
+      ) : (
+        <div className="flex items-center justify-end gap-1">
+          {editable && (
+            <button
+              type="button"
+              disabled={img.reloading}
+              onClick={onToggleAdditional}
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:bg-accent disabled:opacity-50"
+            >
+              {img.reloading ? (
+                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-2.5 w-2.5" />
+              )}
+              More
+            </button>
+          )}
+        </div>
+      )}
 
       {!hasCanonical && (
-        <p className="inline-flex items-center gap-1 text-xs text-destructive">
-          <AlertCircle className="h-3 w-3" />
+        <p
+          className={cn(
+            "inline-flex items-center gap-1 text-destructive",
+            size === "compact" ? "text-[10px]" : "text-xs",
+          )}
+        >
+          <AlertCircle className={size === "compact" ? "h-2.5 w-2.5" : "h-3 w-3"} />
           Can&apos;t save — sync from Lightspeed first.
         </p>
       )}
 
-      <div className={selectedGridClass}>
+      <div className={cn(selectedGridClass, size !== "compact" && "w-full")}>
         {img.selectedUrls.map((url) => {
           const candidate = img.candidates.find((c) => c.url === url);
           const isEnhanced = !!img.enhancedUrls?.[url];
@@ -181,9 +220,12 @@ export function OptimizerImageReview({
               onClick={() => onLightbox(fullSrc)}
               onKeyDown={(e) => e.key === "Enter" && onLightbox(fullSrc)}
               className={cn(
-                "group relative aspect-square cursor-zoom-in overflow-hidden rounded-md border bg-muted",
+                thumbClass,
+                size !== "compact" && "cursor-zoom-in",
                 primary
-                  ? "border-primary ring-2 ring-primary ring-offset-1 ring-offset-background"
+                  ? size === "compact"
+                    ? "border-primary ring-1 ring-primary"
+                    : "border-primary ring-2 ring-primary ring-offset-1 ring-offset-background"
                   : "border-border",
               )}
             >
@@ -265,25 +307,38 @@ export function OptimizerImageReview({
       {editable && img.showAdditional && (
         <div>
           {extra.length === 0 ? (
-            <p className="text-center text-xs text-muted-foreground">
-              No more candidates — all results are already selected.
+            <p
+              className={cn(
+                "text-center text-muted-foreground",
+                size === "compact" ? "text-[10px]" : "text-xs",
+              )}
+            >
+              No more candidates.
             </p>
           ) : (
             <>
-              <div className="mb-2 flex items-center gap-2">
-                <div className="h-px flex-1 bg-border" />
-                <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  More candidates
-                </span>
-                <div className="h-px flex-1 bg-border" />
-              </div>
-              <div className={extraGridClass}>
+              {size !== "compact" ? (
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    More candidates
+                  </span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+              ) : null}
+              <div className={extraScrollClass}>
+                <div className={extraGridClass}>
                 {extra.map((c) => {
                   const atMax = img.selectedUrls.length >= MAX_SELECTED_IMAGES;
                   return (
                     <div
                       key={c.url}
-                      className="group relative aspect-square overflow-hidden rounded-md border border-dashed border-border bg-muted/50"
+                      className={cn(
+                        "group overflow-hidden rounded-md border border-dashed border-border bg-muted/50",
+                        size === "compact"
+                          ? "relative h-12 w-12 shrink-0"
+                          : "relative aspect-square w-full min-w-0",
+                      )}
                     >
                       <Image
                         src={c.thumbnailUrl || c.url}
@@ -316,6 +371,7 @@ export function OptimizerImageReview({
                     </div>
                   );
                 })}
+                </div>
               </div>
             </>
           )}

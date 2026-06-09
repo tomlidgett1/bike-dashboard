@@ -45,6 +45,16 @@ import type { OrderNotification } from '@/lib/hooks/use-order-notifications';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
+import {
+  StoreHeaderDropdownBody,
+  StoreHeaderDropdownEmpty,
+  StoreHeaderDropdownFooter,
+  StoreHeaderDropdownFooterAction,
+  StoreHeaderDropdownHeader,
+  StoreHeaderDropdownItem,
+  storeHeaderDropdownContentClass,
+  useStoreHeaderDropdownStyle,
+} from '@/components/layout/store-header-dropdown-panel';
 
 type LegacyProductImage = {
   thumbnailUrl?: string | null;
@@ -202,10 +212,12 @@ function getProductName(notification: OrderNotification): string {
 // Shared notification item component
 function NotificationItem({ 
   notification, 
-  onClick 
+  onClick,
+  useStoreStyle = false,
 }: { 
   notification: OrderNotification; 
   onClick: () => void;
+  useStoreStyle?: boolean;
 }) {
   const display = getNotificationDisplay(notification.type);
   const Icon = display.icon;
@@ -213,72 +225,124 @@ function NotificationItem({
   const productName = getProductName(notification);
   const orderNumber = notification.purchase?.order_number || notification.ticket?.purchase?.order_number;
 
+  const content = (
+    <div className="flex items-start gap-3">
+      <div className="relative shrink-0">
+        {productImage ? (
+          <div
+            className={cn(
+              'relative h-12 w-12 overflow-hidden rounded-md bg-gray-100',
+              useStoreStyle ? 'ring-1 ring-gray-200' : 'bg-muted ring-1 ring-border/50',
+            )}
+          >
+            <Image
+              src={productImage}
+              alt={productName}
+              fill
+              className="object-cover"
+              sizes="48px"
+            />
+            <div
+              className={cn(
+                'absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full',
+                display.color,
+              )}
+            >
+              <Icon className="h-2.5 w-2.5 text-white" />
+            </div>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              'flex h-12 w-12 items-center justify-center rounded-md',
+              useStoreStyle
+                ? 'bg-gray-100 ring-1 ring-gray-200'
+                : 'bg-muted ring-1 ring-border/50',
+            )}
+          >
+            <Icon
+              className={cn(
+                'h-5 w-5',
+                useStoreStyle ? 'text-gray-500' : 'text-muted-foreground',
+              )}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p
+          className={cn(
+            'text-sm font-medium',
+            useStoreStyle ? 'text-gray-800' : 'text-foreground',
+          )}
+        >
+          {display.title}
+        </p>
+        <p
+          className={cn(
+            'mt-0.5 truncate text-sm',
+            useStoreStyle ? 'text-gray-500' : 'text-muted-foreground',
+          )}
+        >
+          {notification.type === 'voucher_received' && notification.voucher
+            ? notification.voucher.description
+            : productName}
+        </p>
+        {orderNumber ? (
+          <p
+            className={cn(
+              'mt-0.5 text-xs',
+              useStoreStyle ? 'text-gray-500' : 'text-muted-foreground',
+            )}
+          >
+            Order #{orderNumber}
+          </p>
+        ) : null}
+        <p
+          className={cn(
+            'mt-1 text-xs',
+            useStoreStyle ? 'text-gray-400' : 'text-muted-foreground/70',
+          )}
+        >
+          {formatDistanceToNow(new Date(notification.created_at), {
+            addSuffix: true,
+          })}
+        </p>
+      </div>
+
+      {!notification.is_read ? (
+        <div
+          className={cn(
+            'mt-1.5 h-2 w-2 shrink-0 rounded-full',
+            useStoreStyle ? 'bg-gray-800' : 'bg-primary',
+          )}
+        />
+      ) : null}
+    </div>
+  );
+
+  if (useStoreStyle) {
+    return (
+      <StoreHeaderDropdownItem
+        onClick={onClick}
+        className={cn(!notification.is_read && 'bg-gray-50')}
+      >
+        {content}
+      </StoreHeaderDropdownItem>
+    );
+  }
+
   return (
     <button
       onClick={onClick}
       className={cn(
-        'w-full rounded-xl p-2.5 text-left transition-colors cursor-pointer outline-none',
+        'w-full cursor-pointer rounded-xl p-2.5 text-left outline-none transition-colors',
         'hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/30',
-        !notification.is_read && 'bg-muted/50'
+        !notification.is_read && 'bg-muted/50',
       )}
     >
-      <div className="flex items-start gap-3">
-        {/* Product Image or Icon */}
-        <div className="flex-shrink-0 relative">
-          {productImage ? (
-            <div className="w-12 h-12 rounded-xl overflow-hidden bg-muted relative ring-1 ring-border/50">
-              <Image 
-                src={productImage} 
-                alt={productName} 
-                fill 
-                className="object-cover" 
-                sizes="48px"
-              />
-              {/* Icon badge */}
-              <div className={cn(
-                "absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center",
-                display.color
-              )}>
-                <Icon className="h-2.5 w-2.5 text-white" />
-              </div>
-            </div>
-          ) : (
-            <div className={cn(
-              "w-12 h-12 rounded-xl flex items-center justify-center bg-muted ring-1 ring-border/50"
-            )}>
-              <Icon className="h-5 w-5 text-muted-foreground" />
-            </div>
-          )}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground">
-            {display.title}
-          </p>
-          <p className="text-sm text-muted-foreground truncate mt-0.5">
-            {notification.type === 'voucher_received' && notification.voucher
-              ? notification.voucher.description
-              : productName
-            }
-          </p>
-          {orderNumber && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Order #{orderNumber}
-            </p>
-          )}
-          <p className="text-xs text-muted-foreground/70 mt-1">
-            {formatDistanceToNow(new Date(notification.created_at), {
-              addSuffix: true,
-            })}
-          </p>
-        </div>
-
-        {/* Unread Indicator */}
-        {!notification.is_read && (
-          <div className="flex-shrink-0 w-2 h-2 rounded-full bg-primary mt-1.5" />
-        )}
-      </div>
+      {content}
     </button>
   );
 }
@@ -286,6 +350,7 @@ function NotificationItem({
 export function NotificationsDropdown() {
   const router = useRouter();
   const { openConversation } = useMessages();
+  const useStoreStyle = useStoreHeaderDropdownStyle();
   const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
   
@@ -338,18 +403,31 @@ export function NotificationsDropdown() {
   };
 
   // Notification content - shared between dropdown and sheet
-  const renderNotificationContent = () => (
+  const renderNotificationContent = (storePanel = false) => (
     <>
       {notifications.length === 0 ? (
-        <div className="px-8 py-10 text-center text-muted-foreground">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
-            <Bell className="h-5 w-5" />
+        storePanel ? (
+          <StoreHeaderDropdownEmpty icon={Bell} message="No notifications yet" />
+        ) : (
+          <div className="px-8 py-10 text-center text-muted-foreground">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
+              <Bell className="h-5 w-5" />
+            </div>
+            <p className="font-medium text-foreground">No notifications yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              You&apos;ll be notified about order and claim updates here
+            </p>
           </div>
-          <p className="font-medium text-foreground">No notifications yet</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            You&apos;ll be notified about order and claim updates here
-          </p>
-        </div>
+        )
+      ) : storePanel ? (
+        notifications.map((notification) => (
+          <NotificationItem
+            key={notification.id}
+            notification={notification}
+            onClick={() => handleNotificationClick(notification)}
+            useStoreStyle
+          />
+        ))
       ) : (
         <div className="space-y-1 p-1.5">
           {notifications.map((notification) => (
@@ -448,47 +526,88 @@ export function NotificationsDropdown() {
       <DropdownMenuContent
         align="end"
         sideOffset={8}
-        className="w-96 overflow-hidden rounded-2xl border border-border/50 bg-popover p-0 text-popover-foreground shadow-2xl shadow-black/15 ring-0"
+        className={cn(
+          useStoreStyle
+            ? storeHeaderDropdownContentClass
+            : 'w-96 overflow-hidden rounded-2xl border border-border/50 bg-popover p-0 text-popover-foreground shadow-2xl shadow-black/15 ring-0',
+        )}
       >
-        <DropdownMenuLabel className="px-4 py-3 font-normal">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-foreground">Notifications</span>
-            <div className="flex items-center gap-2">
-              {unreadCount > 0 && (
-                <>
-                  <span className="text-xs text-muted-foreground">
-                    {unreadCount} unread
-                  </span>
-                  <button 
-                    onClick={handleMarkAllRead}
-                    className="text-xs text-primary hover:text-primary/80 font-medium cursor-pointer"
-                  >
-                    Mark all read
-                  </button>
-                </>
-              )}
-            </div>
+        {useStoreStyle ? (
+          <StoreHeaderDropdownHeader
+            title="Notifications"
+            actions={
+              unreadCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={handleMarkAllRead}
+                  className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
+                >
+                  Mark all read
+                </button>
+              ) : null
+            }
+            subtitle={
+              unreadCount > 0 ? (
+                <p className="mt-1 text-xs text-gray-500">{unreadCount} unread</p>
+              ) : null
+            }
+          />
+        ) : (
+          <>
+            <DropdownMenuLabel className="px-4 py-3 font-normal">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-foreground">Notifications</span>
+                <div className="flex items-center gap-2">
+                  {unreadCount > 0 && (
+                    <>
+                      <span className="text-xs text-muted-foreground">
+                        {unreadCount} unread
+                      </span>
+                      <button
+                        onClick={handleMarkAllRead}
+                        className="cursor-pointer text-xs font-medium text-primary hover:text-primary/80"
+                      >
+                        Mark all read
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator className="mx-0 my-0 bg-border/60" />
+          </>
+        )}
+
+        {useStoreStyle ? (
+          <StoreHeaderDropdownBody className="sm:max-h-[400px]">
+            {renderNotificationContent(true)}
+          </StoreHeaderDropdownBody>
+        ) : (
+          <div className="max-h-[400px] overflow-y-auto bg-popover">
+            {renderNotificationContent()}
           </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator className="mx-0 my-0 bg-border/60" />
+        )}
 
-        {/* Notifications List */}
-        <div className="max-h-[400px] overflow-y-auto bg-popover">
-          {renderNotificationContent()}
-        </div>
-
-        <DropdownMenuSeparator className="mx-0 my-0 bg-border/60" />
-
-        {/* View All Button */}
-        <div className="p-2">
-          <Button
-            variant="ghost"
-            className="w-full rounded-lg text-sm cursor-pointer"
-            onClick={handleViewAll}
-          >
-            View All
-          </Button>
-        </div>
+        {useStoreStyle ? (
+          <StoreHeaderDropdownFooter>
+            <StoreHeaderDropdownFooterAction onClick={handleViewAll}>
+              View All
+            </StoreHeaderDropdownFooterAction>
+          </StoreHeaderDropdownFooter>
+        ) : (
+          <>
+            <DropdownMenuSeparator className="mx-0 my-0 bg-border/60" />
+            <div className="p-2">
+              <Button
+                variant="ghost"
+                className="w-full cursor-pointer rounded-lg text-sm"
+                onClick={handleViewAll}
+              >
+                View All
+              </Button>
+            </div>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
