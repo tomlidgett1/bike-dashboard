@@ -91,45 +91,19 @@ async function tryGetProductsFromPublicCards(
   const cursorCreatedAt = searchParams.get('cursorCreatedAt');
   const cursorId = searchParams.get('cursorId');
   const canUseCursor = sortBy === 'newest' && !search && !!cursorCreatedAt && !!cursorId;
-  const searchWindowSize = page * pageSize + 1;
+
+  // The public card feed is a materialized view and can briefly lag behind
+  // marketplace_ready_products after image approvals or view changes. For
+  // explicit searches and store-specific browsing, correctness is more important
+  // than using the feed cache: otherwise intersecting ranked search IDs or
+  // selecting a store can collapse a full result set down to stale cards.
+  if (search?.trim() || storeId) {
+    return null;
+  }
 
   const supabase = createPublicSupabaseClient();
-  let searchResults: string[] | null = null;
 
   try {
-    if (search?.trim()) {
-      const { data: searchData, error: searchError } = await supabase
-        .rpc('search_marketplace_products', {
-          search_query: search.trim(),
-          similarity_threshold: 0.15,
-        });
-
-      if (!searchError && searchData) {
-        const matchedIds = searchData.map((r: any) => r.product_id).filter(Boolean) as string[];
-        if (matchedIds.length === 0) {
-          return NextResponse.json({
-            products: [],
-            pagination: {
-              page,
-              pageSize,
-              total: 0,
-              totalPages: 0,
-              hasMore: false,
-              nextCursor: null,
-            },
-          });
-        }
-
-        if (searchWindowSize > 200) {
-          return null;
-        }
-
-        searchResults = matchedIds;
-      } else if (searchError) {
-        console.warn('[MARKETPLACE API] Search RPC failed on public-card fast path:', searchError.message);
-      }
-    }
-
     let query = supabase
       .from('public_marketplace_cards')
       .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
@@ -182,36 +156,24 @@ async function tryGetProductsFromPublicCards(
     if (excludeBicycleStores) {
       query = query.or('store_account_type.is.null,store_account_type.neq.bicycle_store');
     }
-    if (searchResults?.length) {
-      query = query
-        .in('id', searchResults.slice(0, searchWindowSize))
-        .limit(searchWindowSize);
-    } else if (search?.trim()) {
-      query = query.or(`display_name.ilike.%${search.trim()}%,description.ilike.%${search.trim()}%`);
+
+    switch (sortBy) {
+      case 'price_asc':
+        query = query.order('price', { ascending: true }).order('id', { ascending: true });
+        break;
+      case 'price_desc':
+        query = query.order('price', { ascending: false }).order('id', { ascending: false });
+        break;
+      case 'oldest':
+        query = query.order('created_at', { ascending: true }).order('id', { ascending: true });
+        break;
+      case 'newest':
+      default:
+        query = query.order('created_at', { ascending: false }).order('id', { ascending: false });
+        break;
     }
 
-    if (!searchResults?.length) {
-      switch (sortBy) {
-        case 'price_asc':
-          query = query.order('price', { ascending: true }).order('id', { ascending: true });
-          break;
-        case 'price_desc':
-          query = query.order('price', { ascending: false }).order('id', { ascending: false });
-          break;
-        case 'oldest':
-          query = query.order('created_at', { ascending: true }).order('id', { ascending: true });
-          break;
-        case 'newest':
-        default:
-          query = query.order('created_at', { ascending: false }).order('id', { ascending: false });
-          break;
-      }
-    }
-
-    if (searchResults?.length) {
-      // Ranked search IDs are sorted in memory below; avoid applying a database
-      // range without an equivalent ORDER BY because it can drop top-ranked rows.
-    } else if (canUseCursor) {
+    if (canUseCursor) {
       query = query
         .or(`created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`)
         .limit(pageSize + 1);
@@ -228,18 +190,7 @@ async function tryGetProductsFromPublicCards(
       return null;
     }
 
-    let rows = ((data || []) as PublicMarketplaceCardRow[]);
-
-    if (searchResults?.length) {
-      const orderMap = new Map(searchResults.map((id, index) => [id, index]));
-      rows = rows.sort((a, b) => {
-        const orderA = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-        const orderB = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
-        return orderA - orderB;
-      });
-      const from = (page - 1) * pageSize;
-      rows = rows.slice(from, from + pageSize + 1);
-    }
+    const rows = ((data || []) as PublicMarketplaceCardRow[]);
 
     const hasMore = rows.length > pageSize;
     const pageRows = rows.slice(0, pageSize);

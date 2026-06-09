@@ -32,7 +32,7 @@ export function StoreCategoryPills({
 
   return (
     <div className={cn(className)}>
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide mt-2 -mx-1 px-1">
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-0.5">
         {/* All Products Pill */}
         <button
           onClick={() => onCategoryChange(null)}

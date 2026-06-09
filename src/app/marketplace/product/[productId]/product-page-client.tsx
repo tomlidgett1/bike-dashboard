@@ -200,12 +200,7 @@ export function ProductPageClient({
       )}
       
       {/* Main Content */}
-      <div
-        className={cn(
-          "min-h-screen bg-white sm:bg-gray-50 pb-24 sm:pb-8",
-          !showStoreHeader && "pt-14 sm:pt-16"
-        )}
-      >
+      <div className="min-h-screen bg-white sm:bg-gray-50 pb-24 sm:pb-8">
         {/* Upload Success Banner */}
         {showBanner && (
           <ProductUploadSuccessBanner

@@ -590,7 +590,7 @@ export default function DraftsPage() {
         <>
           <MarketplaceHeader compactSearchOnMobile />
           <MarketplaceLayout showFooter={false}>
-            <div className="min-h-screen bg-background pt-16 sm:pt-16 pb-24 sm:pb-8">
+            <div className="min-h-screen bg-background pb-24 sm:pb-8">
               {draftsBody}
             </div>
           </MarketplaceLayout>

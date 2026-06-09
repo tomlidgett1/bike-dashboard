@@ -97,7 +97,7 @@ function UsedProductsPageContent() {
 
       <MarketplaceLayout showFooter={false}>
         {/* Main Content - Add top padding to account for fixed header */}
-        <div className="px-3 sm:px-6 py-4 sm:py-8 pt-16 sm:pt-20">
+        <div className="px-3 sm:px-6 py-4 sm:py-8 pt-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

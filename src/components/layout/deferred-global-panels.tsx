@@ -60,7 +60,7 @@ export function DeferredGlobalPanels() {
       {(cart.isOpen || cart.pendingReplacement || cart.buyNowItem) && <LazyCartDrawer />}
       {messages.isOpen && <LazyMessagesPanel />}
       {(upload.isUploading || upload.stage !== "idle") && <LazyFloatingUploadBar />}
-      <LazyFloatingBottomDock loadImageApproval={loadIdlePanels} />
+      <LazyFloatingBottomDock />
       {loadIdlePanels && <LazyGeniePortal />}
     </>
   );

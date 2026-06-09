@@ -3,6 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
 import { AgentHeaderButton } from "@/components/genie/agent-header-button";
 import {
   Breadcrumb,
@@ -16,10 +17,19 @@ import { NotificationsDropdown } from "./notifications-dropdown";
 import { MessagesDropdown } from "./messages-dropdown";
 import { NestMessagesDropdown } from "./nest-messages-dropdown";
 import { StoreSetupButton } from "@/components/settings/store-setup-button";
+import { FloatingTomFeedbackButton } from "@/components/feedback/floating-tom-feedback-button";
 import { useAuth } from "@/components/providers/auth-provider";
-import { dashboardHorizontalPadding } from "@/lib/layout/dashboard-padding";
+import { dashboardTopbarPadding } from "@/lib/layout/dashboard-padding";
 import { isStoreDashboardPath } from "@/lib/routes/store-dashboard";
 import { cn } from "@/lib/utils";
+
+const LazyFloatingImageApprovalCard = dynamic(
+  () =>
+    import("@/components/optimize/floating-image-approval-card").then(
+      (mod) => mod.FloatingImageApprovalCard,
+    ),
+  { ssr: false },
+);
 
 // Route → breadcrumb labels. Falls back to a title-cased last segment.
 const CRUMBS: Record<string, { section: string; page: string }> = {
@@ -98,7 +108,7 @@ export function Topbar() {
     <header
       className={cn(
         "sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border/40 bg-background",
-        dashboardHorizontalPadding,
+        dashboardTopbarPadding,
       )}
     >
       <SidebarTrigger className="-ml-1" />
@@ -123,6 +133,12 @@ export function Topbar() {
       </Breadcrumb>
 
       <div className="ml-auto flex items-center gap-1">
+        {showAgentInHeader && user ? (
+          <FloatingTomFeedbackButton placement="header" />
+        ) : null}
+        {showAgentInHeader && showDeferredActions ? (
+          <LazyFloatingImageApprovalCard placement="header" />
+        ) : null}
         {showAgentInHeader ? <AgentHeaderButton /> : null}
         {showDeferredActions ? (
           <>

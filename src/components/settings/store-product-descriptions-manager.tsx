@@ -5,16 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
   CheckCircle2,
-  AlertCircle,
   Loader2,
   Search,
   Package,
-  ChevronDown,
-  ChevronUp,
   X,
-  RotateCcw,
-  Dot,
-  Globe,
   PenLine,
   Zap,
   ListChecks,
@@ -23,121 +17,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { SafeProductImage } from "@/components/settings/safe-product-image";
+import {
+  StoreProductContentTable,
+  type DescriptionProduct,
+  type GenerateMode,
+  type GenState,
+} from "@/components/settings/store-product-content-table";
 
-interface DescriptionProduct {
-  id: string;
-  description: string;
-  display_name?: string | null;
-  product_description?: string | null;
-  product_specs?: string | null;
-  brand?: string | null;
-  model?: string | null;
-  marketplace_category?: string | null;
-  price: number;
-  qoh: number;
-  primary_image_url: string | null;
-  resolved_image_url: string | null;
-  is_active: boolean;
-}
-
-type GenStatus = 'idle' | 'searching' | 'writing_desc' | 'writing_specs' | 'done' | 'error';
-
-interface GenState {
-  status: GenStatus;
-  description: string | null;
-  specs: string | null;
-  error: string | null;
-}
-
-// ── Inline bold renderer ──────────────────────────────────────────────────
-function InlineText({ text }: { text: string }) {
-  const parts = text.split(/\*\*(.+?)\*\*/g);
-  if (parts.length === 1) return <>{text}</>;
-  return (
-    <>
-      {parts.map((part, i) =>
-        i % 2 === 1
-          ? <strong key={i} className="font-semibold text-foreground">{part}</strong>
-          : part || null
-      )}
-    </>
-  );
-}
-
-// ── Markdown block renderer (xs text for settings panel) ─────────────────
-function ContentPreview({ text }: { text: string }) {
-  const blocks = text.split(/\n{2,}/).filter(b => b.trim());
-  return (
-    <div className="space-y-2.5">
-      {blocks.map((block, bi) => {
-        const lines = block.trim().split('\n').map(l => l.trim()).filter(Boolean);
-        if (lines.length === 1 && /^#{1,3}\s/.test(lines[0])) {
-          return (
-            <h4 key={bi} className="text-xs font-semibold text-foreground">
-              <InlineText text={lines[0].replace(/^#+\s/, '')} />
-            </h4>
-          );
-        }
-        const isBullet = (l: string) => /^[•\-\*]\s/.test(l);
-        const bulletLines = lines.filter(isBullet);
-        const nonBulletLines = lines.filter(l => !isBullet(l));
-        if (bulletLines.length > 0) {
-          const rawHeader = nonBulletLines.length === 1 ? nonBulletLines[0] : null;
-          const header = rawHeader?.replace(/^\*\*(.+)\*\*$/, '$1') ?? rawHeader;
-          return (
-            <div key={bi} className="space-y-1">
-              {header && (
-                <p className="text-xs font-semibold text-foreground">
-                  <InlineText text={header} />
-                </p>
-              )}
-              <ul className="space-y-0.5">
-                {bulletLines.map((line, li) => (
-                  <li key={li} className="flex gap-1.5 text-xs text-muted-foreground leading-relaxed">
-                    <span className="text-muted-foreground mt-[2px] flex-shrink-0 select-none">•</span>
-                    <span><InlineText text={line.replace(/^[•\-\*]\s/, '')} /></span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          );
-        }
-        return (
-          <p key={bi} className="text-xs text-muted-foreground leading-relaxed">
-            <InlineText text={lines.join(' ')} />
-          </p>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── Status label during generation ───────────────────────────────────────
-const STATUS_LABEL: Record<GenStatus, string> = {
-  idle: '',
-  searching: 'Searching web...',
-  writing_desc: 'Writing description...',
-  writing_specs: 'Writing specs...',
-  done: 'Done',
-  error: 'Failed',
-};
-
-const STATUS_ICON: Record<GenStatus, React.ReactNode> = {
-  idle: null,
-  searching: <Globe className="h-3 w-3 animate-pulse" />,
-  writing_desc: <PenLine className="h-3 w-3 animate-pulse" />,
-  writing_specs: <ListChecks className="h-3 w-3 animate-pulse" />,
-  done: <CheckCircle2 className="h-3 w-3" />,
-  error: <AlertCircle className="h-3 w-3" />,
-};
-
-type GenerateMode = 'both' | 'description' | 'specs'
-
-const MODE_CONFIG: Record<GenerateMode, { label: string; icon: React.ReactNode; color: string }> = {
-  both:        { label: 'Description & Specs', icon: <Sparkles className="h-3 w-3" />,  color: "text-foreground" },
-  description: { label: 'Description only',   icon: <PenLine className="h-3 w-3" />,    color: 'text-emerald-700' },
-  specs:       { label: 'Specs only',          icon: <ListChecks className="h-3 w-3" />, color: 'text-blue-700' },
+const MODE_CONFIG: Record<GenerateMode, { label: string; icon: React.ReactNode }> = {
+  both: { label: "Description & Specs", icon: <Sparkles className="h-3 w-3" /> },
+  description: { label: "Description only", icon: <PenLine className="h-3 w-3" /> },
+  specs: { label: "Specs only", icon: <ListChecks className="h-3 w-3" /> },
 }
 
 // ── Main component ────────────────────────────────────────────────────────
@@ -206,7 +96,12 @@ export function StoreProductDescriptionsManager() {
       list = list.filter(p =>
         (p.display_name || p.description).toLowerCase().includes(q) ||
         p.brand?.toLowerCase().includes(q) ||
-        p.marketplace_category?.toLowerCase().includes(q)
+        p.marketplace_category?.toLowerCase().includes(q) ||
+        p.marketplace_subcategory?.toLowerCase().includes(q) ||
+        p.category_name?.toLowerCase().includes(q) ||
+        p.full_category_path?.toLowerCase().includes(q) ||
+        p.custom_sku?.toLowerCase().includes(q) ||
+        p.system_sku?.toLowerCase().includes(q)
       );
     }
     if (filter === 'needs') list = list.filter(p => !p.product_description || !p.product_specs);
@@ -229,6 +124,18 @@ export function StoreProductDescriptionsManager() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleVisibleSelection = (ids: string[], shouldSelect: boolean) => {
+    if (isGenerating) return;
+    setSelected(prev => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (shouldSelect) next.add(id);
+        else next.delete(id);
+      }
       return next;
     });
   };
@@ -370,336 +277,182 @@ export function StoreProductDescriptionsManager() {
     ? Math.round((stats.withBoth / stats.total) * 100)
     : 0;
 
+  const summaryItems = [
+    { label: "Total products", value: stats.total.toLocaleString(), detail: `${filtered.length.toLocaleString()} shown` },
+    { label: "Content complete", value: stats.withBoth.toLocaleString(), detail: `${coveragePct}% AI coverage` },
+    { label: "Needs content", value: stats.needsAny.toLocaleString(), detail: `${stats.missingDesc} descriptions, ${stats.missingSpecs} specs` },
+  ];
+
+  const filterTabs: Array<{ id: typeof filter; label: string; count: number; icon: React.ReactNode }> = [
+    { id: "all", label: "All", count: stats.total, icon: <Package className="h-3 w-3" /> },
+    { id: "needs", label: "Needs content", count: stats.needsAny, icon: <Zap className="h-3 w-3" /> },
+    { id: "has", label: "Complete", count: stats.withBoth, icon: <CheckCircle2 className="h-3 w-3" /> },
+  ];
+
   return (
-    <div className="space-y-5">
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-md border border-border bg-muted p-3 text-center">
-          <p className="text-xl font-bold text-foreground">{stats.total}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Total Products</p>
+    <div className="space-y-0">
+      <div className="space-y-4 px-6 py-5">
+        <div className="grid gap-2 md:grid-cols-3">
+          {summaryItems.map((item) => (
+            <div key={item.label} className="rounded-md border border-border bg-background px-3 py-2.5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-medium text-muted-foreground">{item.label}</p>
+                  <p className="mt-1 text-xl font-semibold tracking-tight text-foreground">{item.value}</p>
+                </div>
+                <Badge variant="outline" className="rounded-md border-border bg-background text-[10px] text-muted-foreground">
+                  {item.detail}
+                </Badge>
+              </div>
+            </div>
+          ))}
         </div>
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-center">
-          <p className="text-xl font-bold text-emerald-700">{stats.withBoth}</p>
-          <p className="text-xs text-emerald-600 mt-0.5">Fully Generated</p>
-        </div>
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-center">
-          <p className="text-xl font-bold text-amber-700">{stats.needsAny}</p>
-          <p className="text-xs text-amber-600 mt-0.5">Needs Content</p>
-        </div>
-      </div>
 
-      {/* Sub-stats for desc vs specs */}
-      <div className="flex gap-4 text-xs text-muted-foreground">
-        <span>
-          <span className="font-medium text-foreground">{stats.total - stats.missingDesc}</span> with description
-        </span>
-        <span className="text-muted-foreground/40">·</span>
-        <span>
-          <span className="font-medium text-foreground">{stats.total - stats.missingSpecs}</span> with specs
-        </span>
-      </div>
-
-      {/* Progress bar */}
-      {stats.total > 0 && (
-        <div>
-          <div className="flex justify-between mb-1">
-            <span className="text-xs text-muted-foreground">Full AI coverage</span>
-            <span className="text-xs font-medium text-foreground">{coveragePct}%</span>
+        {stats.total > 0 ? (
+          <div>
+            <div className="mb-1 flex justify-between">
+              <span className="text-xs text-muted-foreground">Full AI content coverage</span>
+              <span className="text-xs font-medium text-foreground">{coveragePct}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-md bg-muted">
+              <motion.div
+                className="h-full rounded-md bg-foreground"
+                initial={{ width: 0 }}
+                animate={{ width: `${coveragePct}%` }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+              />
+            </div>
           </div>
-          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-            <motion.div
-              className="h-full rounded-full bg-emerald-500"
-              initial={{ width: 0 }}
-              animate={{ width: `${coveragePct}%` }}
-              transition={{ duration: 0.6, ease: 'easeOut' }}
-            />
+        ) : null}
+
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Generate</p>
+            <div className="flex w-fit items-center rounded-md bg-gray-100 p-0.5">
+              {(Object.keys(MODE_CONFIG) as GenerateMode[]).map((nextMode) => (
+                <button
+                  key={nextMode}
+                  type="button"
+                  onClick={() => setMode(nextMode)}
+                  disabled={isGenerating}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    mode === nextMode
+                      ? "bg-white text-gray-800 shadow-sm"
+                      : "text-gray-600 hover:bg-gray-200/70 disabled:opacity-50"
+                  )}
+                >
+                  {MODE_CONFIG[nextMode].icon}
+                  {MODE_CONFIG[nextMode].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-1 flex-col gap-2 lg:flex-row lg:items-center xl:max-w-3xl">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search name, SKU, brand or category..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="h-8 rounded-md pl-8 text-xs"
+              />
+            </div>
+            {needsContentIds.length > 0 && !isGenerating ? (
+              <Button onClick={() => generateDescriptions(needsContentIds)} size="sm" className="rounded-md whitespace-nowrap">
+                <Zap className="size-4" />
+                Generate Missing ({needsContentIds.length})
+              </Button>
+            ) : null}
           </div>
         </div>
-      )}
 
-      {/* Mode selector */}
-      <div>
-        <p className="text-xs text-muted-foreground mb-2">Generate</p>
-        <div className="flex gap-0.5 p-1 bg-muted rounded-md w-fit text-xs">
-          {(Object.keys(MODE_CONFIG) as GenerateMode[]).map(m => (
+        <div className="flex w-fit items-center rounded-md bg-gray-100 p-0.5">
+          {filterTabs.map((tab) => (
             <button
-              key={m}
-              onClick={() => setMode(m)}
-              disabled={isGenerating}
+              key={tab.id}
+              type="button"
+              onClick={() => setFilter(tab.id)}
               className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1.5 rounded font-medium transition-all",
-                mode === m
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground disabled:opacity-50"
+                "flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                filter === tab.id ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:bg-gray-200/70"
               )}
             >
-              {MODE_CONFIG[m].icon}
-              {MODE_CONFIG[m].label}
+              {tab.icon}
+              {tab.label}
+              <span className="font-mono text-[10px] text-muted-foreground">{tab.count.toLocaleString()}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder="Search products..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-8 h-8 text-sm"
-          />
-        </div>
-        {needsContentIds.length > 0 && !isGenerating && (
-          <Button
-            onClick={() => generateDescriptions(needsContentIds)}
-            size="sm"
-            className="whitespace-nowrap"
-          >
-            <Zap className="size-4" />
-            Generate All ({needsContentIds.length})
-          </Button>
-        )}
-      </div>
-
-      {/* Filter tabs */}
-      <div className="flex gap-0.5 p-1 bg-muted rounded-md w-fit text-xs">
-        {(['all', 'needs', 'has'] as const).map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={cn(
-              "px-2.5 py-1 rounded font-medium transition-all",
-              filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {f === 'all' && `All (${stats.total})`}
-            {f === 'needs' && `Needs content (${stats.needsAny})`}
-            {f === 'has' && `Fully generated (${stats.withBoth})`}
-          </button>
-        ))}
-      </div>
-
-      {/* Selected action banner */}
       <AnimatePresence>
-        {selected.size > 0 && !isGenerating && (
+        {selected.size > 0 && !isGenerating ? (
           <motion.div
-            initial={{ opacity: 0, y: -8, height: 0 }}
-            animate={{ opacity: 1, y: 0, height: 'auto' }}
-            exit={{ opacity: 0, y: -8, height: 0 }}
-            className="overflow-hidden"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+            className="overflow-hidden border-t border-border/60"
           >
-            <div className="flex items-center gap-3 px-3 py-2 bg-foreground text-background rounded-md">
-              <span className="text-xs font-medium">{selected.size} selected</span>
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() => generateDescriptions(Array.from(selected))}
-                className="bg-background text-foreground hover:bg-background/90"
-              >
+            <div className="mx-6 my-3 flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2">
+              <span className="text-xs font-medium text-foreground">{selected.size} selected</span>
+              <Button size="xs" variant="outline" onClick={() => generateDescriptions(Array.from(selected))} className="rounded-md">
                 <Sparkles className="size-3.5" />
                 Generate selected ({MODE_CONFIG[mode].label.toLowerCase()})
               </Button>
               <button
+                type="button"
                 onClick={() => setSelected(new Set())}
-                className="ml-auto text-background/60 hover:text-background transition-colors"
+                className="ml-auto rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Clear selected products"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
-      {/* Generating banner */}
       <AnimatePresence>
-        {isGenerating && (
+        {isGenerating ? (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+            className="overflow-hidden border-t border-border/60"
           >
-            <div className="flex items-center justify-between px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-md">
-              <div className="flex items-center gap-2 text-xs text-blue-700">
+            <div className="mx-6 my-3 flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Generating {MODE_CONFIG[mode].label.toLowerCase()} with AI...
               </div>
               <button
+                type="button"
                 onClick={stopGeneration}
-                className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                className="rounded-md px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
               >
                 Stop
               </button>
             </div>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
-      {/* Product list */}
-      <div className="space-y-2">
-        {filtered.length === 0 ? (
-          <div className="py-12 text-center">
-            <Package className="h-7 w-7 text-muted-foreground/40 mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">No products match your filter</p>
-          </div>
-        ) : (
-          filtered.map(product => {
-            const genState = genStates[product.id];
-            const isActive = !!genState && genState.status !== 'idle';
-            const hasDesc = !!product.product_description;
-            const hasSpecs = !!product.product_specs;
-            const hasBoth = hasDesc && hasSpecs;
-            const name = product.display_name || product.description;
-            const imageUrl = product.resolved_image_url || product.primary_image_url;
-            const isExpanded = expandedIds.has(product.id);
-            const previewDesc = genState?.description || product.product_description;
-            const previewSpecs = genState?.specs || product.product_specs;
-
-            return (
-              <motion.div
-                key={product.id}
-                layout
-                className={cn(
-                  "rounded-md border transition-colors",
-                  isActive && genState.status === 'done' ? "border-emerald-200 bg-emerald-50/40" :
-                  isActive && genState.status === 'error' ? "border-red-200 bg-red-50/30" :
-                  isActive ? "border-blue-200 bg-blue-50/30" :
-                  selected.has(product.id) ? "border-foreground/30 bg-accent" :
-                  "border-border bg-card hover:border-foreground/20"
-                )}
-              >
-                <div className="flex items-center gap-3 px-3 py-2.5">
-                  {/* Checkbox */}
-                  <input
-                    type="checkbox"
-                    checked={selected.has(product.id)}
-                    onChange={() => toggleSelect(product.id)}
-                    disabled={isGenerating}
-                    className="h-3.5 w-3.5 rounded border-border text-foreground cursor-pointer flex-shrink-0"
-                  />
-
-                  {/* Image */}
-                  <div className="h-9 w-9 rounded bg-muted flex-shrink-0 overflow-hidden">
-                    {imageUrl ? (
-                      <SafeProductImage src={imageUrl} alt={name} width={36} height={36} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center">
-                        <Package className="h-3.5 w-3.5 text-muted-foreground" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate leading-tight">{name}</p>
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {[product.brand, product.marketplace_category].filter(Boolean).join(' · ')}
-                      {product.price ? ` · $${product.price.toLocaleString('en-AU')}` : ''}
-                    </p>
-                  </div>
-
-                  {/* Status */}
-                  <div className="flex-shrink-0 flex items-center gap-1.5">
-                    {isActive ? (
-                      <span className={cn(
-                        "flex items-center gap-1 text-xs",
-                        genState.status === 'done' ? "text-emerald-600" :
-                        genState.status === 'error' ? "text-red-600" :
-                        "text-blue-600"
-                      )}>
-                        {STATUS_ICON[genState.status]}
-                        <span className="hidden sm:inline">{STATUS_LABEL[genState.status]}</span>
-                      </span>
-                    ) : (
-                      <>
-                        {/* Description badge */}
-                        <Badge className={cn(
-                          "text-xs border-0 gap-1 py-0 h-5",
-                          hasDesc
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-muted text-muted-foreground"
-                        )}>
-                          {hasDesc ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Dot className="h-3 w-3 -mx-0.5" />}
-                          Desc
-                        </Badge>
-                        {/* Specs badge */}
-                        <Badge className={cn(
-                          "text-xs border-0 gap-1 py-0 h-5",
-                          hasSpecs
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-muted text-muted-foreground"
-                        )}>
-                          {hasSpecs ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Dot className="h-3 w-3 -mx-0.5" />}
-                          Specs
-                        </Badge>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {!isGenerating && (
-                      <button
-                        onClick={() => generateDescriptions([product.id])}
-                        title={`Generate ${MODE_CONFIG[mode].label.toLowerCase()}`}
-                        className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {(mode === 'description' ? hasDesc : mode === 'specs' ? hasSpecs : hasBoth)
-                          ? <RotateCcw className="h-3.5 w-3.5" />
-                          : <Sparkles className="h-3.5 w-3.5" />}
-                      </button>
-                    )}
-                    {(previewDesc || previewSpecs) && (
-                      <button
-                        onClick={() => toggleExpand(product.id)}
-                        className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Expandable preview */}
-                <AnimatePresence>
-                  {isExpanded && (previewDesc || previewSpecs) && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="mx-3 mb-3 rounded bg-muted border border-border divide-y divide-border">
-                        {previewDesc && (
-                          <div className="p-3">
-                            <div className="flex items-center gap-1.5 mb-2">
-                              <Sparkles className="h-3 w-3 text-emerald-500" />
-                              <span className="text-xs font-medium text-muted-foreground">Description</span>
-                            </div>
-                            <ContentPreview text={previewDesc} />
-                          </div>
-                        )}
-                        {previewSpecs && (
-                          <div className="p-3">
-                            <div className="flex items-center gap-1.5 mb-2">
-                              <ListChecks className="h-3 w-3 text-blue-500" />
-                              <span className="text-xs font-medium text-muted-foreground">Specifications</span>
-                            </div>
-                            <ContentPreview text={previewSpecs} />
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            );
-          })
-        )}
-      </div>
+      <StoreProductContentTable
+        products={filtered}
+        selected={selected}
+        genStates={genStates}
+        expandedIds={expandedIds}
+        mode={mode}
+        isGenerating={isGenerating}
+        onToggleSelect={toggleSelect}
+        onToggleVisibleSelection={toggleVisibleSelection}
+        onToggleExpand={toggleExpand}
+        onGenerate={(ids) => generateDescriptions(ids)}
+      />
     </div>
   );
 }

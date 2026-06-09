@@ -25,15 +25,23 @@ import {
   Star,
   MoreHorizontal,
   PackageX,
+  Package,
   Trash2,
   X,
-  Zap,
+  Pencil,
+  Tags,
 } from "lucide-react";
 import Image from "next/image";
 import NextDynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { BikeIcon, BICYCLE_PRODUCT_ICON } from "@/components/ui/bike-icon";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+} from "@tanstack/react-table";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,14 +57,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
@@ -69,9 +69,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { SyncProgressModal } from "@/components/lightspeed/sync-progress-modal";
-import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
-import { useLightspeedSseSync } from "@/lib/hooks/use-lightspeed-sse-sync";
 import {
   formatLightspeedCategory,
 } from "@/lib/products/catalog-helpers";
@@ -93,6 +90,10 @@ const DialogTitle = NextDynamic(() => import("@/components/ui/dialog").then((m) 
 const ImageGallery = NextDynamic(() => import("@/components/products/image-gallery").then((m) => m.ImageGallery), { ssr: false });
 const ProductBikeSpecsSheet = NextDynamic(
   () => import("@/components/products/product-bike-specs-sheet").then((m) => m.ProductBikeSpecsSheet),
+  { ssr: false }
+);
+const EditProductPanel = NextDynamic(
+  () => import("@/components/products/edit-product-panel").then((m) => m.EditProductPanel),
   { ssr: false }
 );
 
@@ -189,19 +190,25 @@ function isExternal(url: string | null | undefined) {
   return !url.includes("res.cloudinary.com") && !url.includes("supabase.co");
 }
 
+function isCloudinaryUrl(url: string | null | undefined) {
+  return !!url && url.includes("res.cloudinary.com");
+}
+
 function ProductThumb({ product, onDiscover }: { product: Product; onDiscover: (p: Product) => void }) {
   const src = product.resolved_image_url || product.primary_image_url;
 
   if (src) {
     return (
-      <div className="size-10 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-border">
+      <div className="size-8 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-border">
         <Image
           src={src}
           alt={product.description}
-          width={40}
-          height={40}
+          width={32}
+          height={32}
           className="size-full object-cover"
-          unoptimized={isExternal(product.resolved_image_url) && isExternal(product.primary_image_url)}
+          loading="lazy"
+          sizes="32px"
+          unoptimized={isCloudinaryUrl(src) || isExternal(src)}
         />
       </div>
     );
@@ -214,27 +221,12 @@ function ProductThumb({ product, onDiscover }: { product: Product; onDiscover: (
       disabled={!product.canonical_product_id}
       title={product.canonical_product_id ? "Discover images with AI" : "Needs catalog match first"}
       className={cn(
-        "flex size-10 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors",
+        "flex size-8 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors",
         product.canonical_product_id && "hover:border-primary hover:text-primary"
       )}
     >
-      <ImageOff className="size-4" />
+      <ImageOff className="size-3.5" />
     </button>
-  );
-}
-
-function StockCell({ qoh, reorder }: { qoh: number; reorder: number }) {
-  if (qoh <= 0) {
-    return <span className="font-medium text-rose-600 dark:text-rose-400">Out of stock</span>;
-  }
-  if (qoh <= reorder) {
-    return <span className="font-medium text-amber-600 dark:text-amber-400">{qoh} · Low</span>;
-  }
-  return (
-    <span className="font-medium text-foreground">
-      {qoh}
-      <span className="ml-1 font-normal text-muted-foreground">in stock</span>
-    </span>
   );
 }
 
@@ -259,7 +251,7 @@ function SortButton({
     <button
       onClick={() => onSort(column)}
       className={cn(
-        "-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground",
+        "-mx-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground",
         align === "right" && "ml-auto flex-row-reverse"
       )}
     >
@@ -269,18 +261,88 @@ function SortButton({
   );
 }
 
+function formatProductCurrency(value: number | null | undefined) {
+  if (!value) return "—";
+  return value.toLocaleString("en-AU", {
+    style: "currency",
+    currency: "AUD",
+    minimumFractionDigits: value >= 100 ? 0 : 2,
+    maximumFractionDigits: value >= 100 ? 0 : 2,
+  });
+}
+
+function formatSource(product: Product) {
+  if (product.lightspeed_item_id) return "Lightspeed";
+  if (product.listing_source) return product.listing_source.replace(/_/g, " ");
+  return "Manual";
+}
+
+function marginPercent(product: Product) {
+  if (!product.price || !product.default_cost) return null;
+  return Math.round(((product.price - product.default_cost) / product.price) * 100);
+}
+
+function productColumnClassName(columnId: string) {
+  switch (columnId) {
+    case "select":
+      return "w-9 min-w-9";
+    case "edit":
+      return "min-w-[78px]";
+    case "product":
+      return "min-w-[310px]";
+    case "brand":
+      return "min-w-[120px]";
+    case "category":
+      return "min-w-[210px]";
+    case "source":
+      return "min-w-[115px]";
+    case "price":
+      return "min-w-[120px] text-right";
+    case "stock":
+      return "min-w-[125px] text-right";
+    case "image":
+      return "min-w-[95px]";
+    case "bike":
+      return "min-w-[80px]";
+    case "marketplace":
+      return "min-w-[120px]";
+    case "visible":
+      return "min-w-[76px] text-center";
+    case "actions":
+      return "min-w-[120px] text-right";
+    default:
+      return "min-w-[120px]";
+  }
+}
+
+function MiniLabel({
+  children,
+  muted = false,
+}: {
+  children: React.ReactNode;
+  muted?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 items-center gap-1 rounded-md border border-border bg-white px-1.5 text-[10px] font-medium",
+        muted ? "text-muted-foreground" : "text-foreground"
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 
 export default function ProductsPage() {
-  const { isConnected: lightspeedConnected, isLoading: lightspeedLoading } =
-    useLightspeedConnection({ autoFetch: true, pollInterval: 60000 });
-
   const [products, setProducts] = React.useState<Product[]>([]);
   const [stats, setStats] = React.useState<ProductStats | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [pagination, setPagination] = React.useState<PaginationInfo>({
     page: 1,
-    pageSize: 20,
+    pageSize: 100,
     total: 0,
     totalPages: 0,
   });
@@ -289,6 +351,7 @@ export default function ProductsPage() {
   const [categoryFilter, setCategoryFilter] = React.useState<string>('');
   const [stockFilter, setStockFilter] = React.useState<string>('all');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
+  const [imageFilter, setImageFilter] = React.useState<string>('all');
   const [sortBy, setSortBy] = React.useState<string>('created_at');
   const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('desc');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -296,6 +359,13 @@ export default function ProductsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [deleteMode, setDeleteMode] = React.useState<"selected" | "page" | "all">("selected");
   const [isDeleting, setIsDeleting] = React.useState(false);
+  const [editModalOpen, setEditModalOpen] = React.useState(false);
+  const [editProductId, setEditProductId] = React.useState<string | null>(null);
+
+  const openEditModal = React.useCallback((id?: string | null) => {
+    setEditProductId(id ?? null);
+    setEditModalOpen(true);
+  }, []);
   const [imageManageProduct, setImageManageProduct] = React.useState<Product | null>(null);
   const [bikeSpecsProduct, setBikeSpecsProduct] = React.useState<Product | null>(null);
   const [bikeSpecsSheetOpen, setBikeSpecsSheetOpen] = React.useState(false);
@@ -310,6 +380,9 @@ export default function ProductsPage() {
   const paginationRef = React.useRef(pagination);
   const sortByRef = React.useRef(sortBy);
   const sortOrderRef = React.useRef(sortOrder);
+  const tableViewportRef = React.useRef<HTMLDivElement | null>(null);
+  const tableScrollFrameRef = React.useRef<number | null>(null);
+  const [tableViewport, setTableViewport] = React.useState({ scrollTop: 0, height: 640 });
 
   React.useEffect(() => { paginationRef.current = pagination; }, [pagination]);
   React.useEffect(() => { sortByRef.current = sortBy; }, [sortBy]);
@@ -345,6 +418,7 @@ export default function ProductsPage() {
         category: categoryFilter,
         stock: stockFilter,
         status: statusFilter,
+        image: imageFilter,
         sortBy: sortBy,
         sortOrder: sortOrder,
       });
@@ -362,31 +436,12 @@ export default function ProductsPage() {
       if (isInitialLoad) setLoading(false);
       setRefreshing(false);
     }
-  }, [pagination.pageSize, debouncedSearch, categoryFilter, stockFilter, statusFilter, sortBy, sortOrder]);
-
-  const refreshCatalogue = React.useCallback(async () => {
-    await fetchStats();
-    await fetchProducts(paginationRef.current.page);
-  }, [fetchStats, fetchProducts]);
-
-  const {
-    modalOpen: syncModalOpen,
-    status: syncStatus,
-    progress: syncProgress,
-    phase: syncPhase,
-    message: syncMessage,
-    result: syncResult,
-    error: syncError,
-    runSync,
-    closeModal: closeSyncModal,
-  } = useLightspeedSseSync(refreshCatalogue);
-
-  const isSyncing = syncStatus === "syncing";
+  }, [pagination.pageSize, debouncedSearch, categoryFilter, stockFilter, statusFilter, imageFilter, sortBy, sortOrder]);
 
   // Initial + filter-change fetch
   React.useEffect(() => {
     fetchProducts(1, loading);
-  }, [debouncedSearch, categoryFilter, stockFilter, statusFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts, loading]);
+  }, [debouncedSearch, categoryFilter, stockFilter, statusFilter, imageFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts, loading]);
 
   // Load stats once on mount
   React.useEffect(() => { fetchStats(); }, [fetchStats]);
@@ -422,11 +477,6 @@ export default function ProductsPage() {
     fetchStats();
   }, [fetchProducts, fetchStats]);
 
-  const handleSyncInventory = React.useCallback(() => {
-    if (!lightspeedConnected) return;
-    runSync({});
-  }, [lightspeedConnected, runSync]);
-
   const handlePageChange = React.useCallback((newPage: number) => {
     setSelected(new Set());
     fetchProducts(newPage);
@@ -440,7 +490,10 @@ export default function ProductsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: !currentStatus }),
       });
-      if (!response.ok) throw new Error('Failed to update product status');
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.error || 'Failed to update product status');
+      }
       fetchProducts(paginationRef.current.page);
       fetchStats();
     } catch (error) {
@@ -617,7 +670,7 @@ export default function ProductsPage() {
     }
   };
 
-  const handleToggleImageApproval = async (imageId: string, currentStatus: string) => {
+  const handleToggleImageApproval = async (imageId: string, currentStatus: DiscoveredImage["approval_status"]) => {
     const newStatus = currentStatus === 'pending' ? 'approved' : currentStatus === 'approved' ? 'rejected' : 'pending';
     setDiscoveredImages(prev => prev.map(img => img.id === imageId ? { ...img, approval_status: newStatus } : img));
     try {
@@ -627,7 +680,7 @@ export default function ProductsPage() {
       if (error) throw error;
     } catch (error) {
       console.error('[APPROVE] Error updating image:', error);
-      setDiscoveredImages(prev => prev.map(img => img.id === imageId ? { ...img, approval_status: currentStatus as any } : img));
+      setDiscoveredImages(prev => prev.map(img => img.id === imageId ? { ...img, approval_status: currentStatus } : img));
     }
   };
 
@@ -687,12 +740,14 @@ export default function ProductsPage() {
     search !== '' ||
     categoryFilter !== '' ||
     stockFilter !== 'all' ||
-    statusFilter !== 'all';
+    statusFilter !== 'all' ||
+    imageFilter !== 'all';
   const clearFilters = () => {
     setSearch('');
     setCategoryFilter('');
     setStockFilter('all');
     setStatusFilter('all');
+    setImageFilter('all');
   };
 
   const totalCount = stats?.total ?? pagination.total;
@@ -700,15 +755,332 @@ export default function ProductsPage() {
   const rangeStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
   const rangeEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
 
-  const tableColSpan = 7;
-
   const statsLine = stats
     ? `${totalCount.toLocaleString()} products · ${stats.live.toLocaleString()} live on marketplace · ${stats.needsImages.toLocaleString()} need photos`
     : `${totalCount.toLocaleString()} products`;
 
+  const productColumns: ColumnDef<Product>[] = [
+      {
+        id: "select",
+        enableSorting: false,
+        header: () => (
+          <Checkbox
+            checked={allChecked ? true : someChecked ? "indeterminate" : false}
+            onCheckedChange={toggleAll}
+            aria-label="Select all"
+          />
+        ),
+        cell: ({ row }) => {
+          const product = row.original;
+          return (
+            <Checkbox
+              checked={selected.has(product.id)}
+              onCheckedChange={() => toggleOne(product.id)}
+              aria-label={`Select ${product.description}`}
+            />
+          );
+        },
+      },
+      {
+        id: "edit",
+        enableSorting: false,
+        header: "Edit",
+        cell: ({ row }) => (
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            onClick={() => openEditModal(row.original.id)}
+            className="rounded-md"
+          >
+            <Pencil className="size-3" />
+            Edit
+          </Button>
+        ),
+      },
+      {
+        id: "marketplace",
+        accessorFn: (product) => deriveStatus(product).label,
+        header: "Marketplace",
+        cell: ({ row }) => {
+          const status = deriveStatus(row.original);
+          return <StatusBadge label={status.label} tone={status.tone} className="h-5 rounded-md text-[10px]" />;
+        },
+      },
+      {
+        id: "product",
+        accessorKey: "description",
+        header: () => (
+          <SortButton label="Product" column="description" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+        ),
+        cell: ({ row }) => {
+          const product = row.original;
+          return (
+            <div className="flex min-w-0 items-center gap-2.5">
+              <ProductThumb product={product} onDiscover={handleDiscoverImages} />
+              <div className="min-w-0">
+                <Link
+                  href={`/marketplace/product/${product.id}`}
+                  className="block max-w-[280px] truncate text-left text-[11px] font-semibold leading-tight text-foreground transition-colors hover:text-primary hover:underline"
+                >
+                  {product.display_name || product.description}
+                </Link>
+                <p className="mt-0.5 truncate font-mono text-[10px] leading-tight text-muted-foreground">
+                  {product.custom_sku || product.system_sku || "No SKU"}
+                </p>
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        id: "visible",
+        accessorFn: (product) => Number(product.is_active),
+        header: "Visible",
+        cell: ({ row }) => (
+          <Switch
+            size="sm"
+            checked={row.original.is_active}
+            onCheckedChange={() => handleToggleActive(row.original.id, row.original.is_active)}
+            aria-label={row.original.is_active ? "Hide product" : "Show product"}
+          />
+        ),
+      },
+      {
+        id: "bike",
+        accessorFn: (product) => Number(!!product.is_bicycle),
+        header: "Bike",
+        cell: ({ row }) => (
+          <button
+            type="button"
+            onClick={() => handleToggleBicycle(row.original.id, !!row.original.is_bicycle)}
+            className={cn(
+              "inline-flex h-5 items-center gap-1 rounded-md border border-border bg-white px-1.5 text-[10px] font-medium transition-colors hover:bg-muted",
+              row.original.is_bicycle ? "text-foreground" : "text-muted-foreground"
+            )}
+            aria-label={row.original.is_bicycle ? "Mark as not a bike" : "Mark as bike"}
+          >
+            <BikeIcon
+              iconName={BICYCLE_PRODUCT_ICON}
+              size={12}
+              className="size-3 shrink-0"
+            />
+            {row.original.is_bicycle ? "Bike" : "Other"}
+          </button>
+        ),
+      },
+      {
+        id: "brand",
+        accessorFn: (product) => product.manufacturer_name || "",
+        header: "Brand",
+        cell: ({ row }) => (
+          <span className="block max-w-[130px] truncate text-[11px] text-muted-foreground" title={row.original.manufacturer_name || undefined}>
+            {row.original.manufacturer_name || "—"}
+          </span>
+        ),
+      },
+      {
+        id: "category",
+        accessorFn: (product) => product.marketplace_category || product.category_name || "",
+        header: "Category",
+        cell: ({ row }) => {
+          const product = row.original;
+          const marketplaceCategory = [
+            product.marketplace_category,
+            product.marketplace_subcategory,
+            product.marketplace_level_3_category,
+          ].filter(Boolean).join(" / ");
+          const lightspeedCategory = formatLightspeedCategory(product);
+          return (
+            <div className="max-w-[230px]">
+              <p className="truncate text-[11px] leading-tight text-foreground" title={marketplaceCategory || lightspeedCategory || undefined}>
+                {marketplaceCategory || lightspeedCategory || "Uncategorised"}
+              </p>
+              {marketplaceCategory && lightspeedCategory ? (
+                <p className="mt-0.5 truncate text-[10px] leading-tight text-muted-foreground" title={lightspeedCategory}>
+                  {lightspeedCategory}
+                </p>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
+        id: "source",
+        accessorFn: formatSource,
+        header: "Source",
+        cell: ({ row }) => (
+          <span className="text-[11px] capitalize leading-tight text-muted-foreground">{formatSource(row.original)}</span>
+        ),
+      },
+      {
+        id: "price",
+        accessorKey: "price",
+        header: () => (
+          <SortButton label="Price" column="price" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
+        ),
+        cell: ({ row }) => {
+          const product = row.original;
+          const margin = marginPercent(product);
+          return (
+            <div className="text-right">
+              <p className="font-mono text-[11px] font-semibold tabular-nums text-foreground">{formatProductCurrency(product.price)}</p>
+              <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+                {product.default_cost ? `${formatProductCurrency(product.default_cost)} cost` : "No cost"}
+                {margin != null ? ` · ${margin}%` : ""}
+              </p>
+            </div>
+          );
+        },
+      },
+      {
+        id: "stock",
+        accessorKey: "qoh",
+        header: () => (
+          <SortButton label="Stock" column="qoh" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
+        ),
+        cell: ({ row }) => {
+          const product = row.original;
+          const lowStock = product.qoh > 0 && product.reorder_point > 0 && product.qoh <= product.reorder_point;
+          return (
+            <div className="text-right">
+              <p className={cn("font-mono text-[11px] font-semibold tabular-nums text-foreground", lowStock && "text-amber-700")}>
+                {product.qoh <= 0 ? "Out" : product.qoh.toLocaleString()}
+              </p>
+              <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+                {product.sellable.toLocaleString()} sell · r{product.reorder_point.toLocaleString()}
+              </p>
+            </div>
+          );
+        },
+      },
+      {
+        id: "image",
+        accessorFn: (product) => Number(hasImage(product)),
+        header: "Image",
+        cell: ({ row }) => (
+          <MiniLabel muted={!hasImage(row.original)}>
+            <span className={cn("size-1.5 rounded-full", hasImage(row.original) ? "bg-emerald-500" : "bg-muted-foreground/40")} />
+            {hasImage(row.original) ? "Ready" : "Missing"}
+          </MiniLabel>
+        ),
+      },
+      {
+        id: "actions",
+        enableSorting: false,
+        header: "",
+        cell: ({ row }) => {
+          const product = row.original;
+          return (
+            <div className="flex justify-end gap-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon-xs" className="rounded-md text-muted-foreground">
+                    <MoreHorizontal className="size-3.5" />
+                    <span className="sr-only">More actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => openEditModal(product.id)}>
+                    <Pencil className="size-4" />
+                    Edit product
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => handleToggleBicycle(product.id, !!product.is_bicycle)}>
+                    <BikeIcon
+                      iconName={BICYCLE_PRODUCT_ICON}
+                      size={16}
+                      className="size-4 shrink-0"
+                    />
+                    {product.is_bicycle ? "Remove bicycle flag" : "Mark as bicycle"}
+                  </DropdownMenuItem>
+                  {product.is_bicycle ? (
+                    <DropdownMenuItem onClick={() => openBikeSpecsSheet(product)}>
+                      <BikeIcon
+                        iconName={BICYCLE_PRODUCT_ICON}
+                        size={16}
+                        className="size-4 shrink-0"
+                      />
+                      Bicycle specifications
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled={!product.canonical_product_id} onClick={() => setImageManageProduct(product)}>
+                    <ImageIcon className="size-4" />
+                    Manage images
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={!product.canonical_product_id} onClick={() => handleDiscoverImages(product)}>
+                    <Sparkles className="size-4" />
+                    Discover images
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        },
+      },
+    ];
+
+  // TanStack Table owns the dense grid structure; server query params still own catalogue sorting/filtering.
+  const productTable = useReactTable({
+    data: products,
+    columns: productColumns,
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: (row) => row.id,
+  });
+
+  const tableColSpan = productTable.getAllLeafColumns().length;
+  const tableRows = productTable.getRowModel().rows;
+  const rowHeight = 43;
+  const overscan = 10;
+  const virtualStart = Math.max(0, Math.floor(tableViewport.scrollTop / rowHeight) - overscan);
+  const virtualEnd = Math.min(
+    tableRows.length,
+    Math.ceil((tableViewport.scrollTop + tableViewport.height) / rowHeight) + overscan
+  );
+  const virtualRows = tableRows.slice(virtualStart, virtualEnd);
+  const topSpacerHeight = virtualStart * rowHeight;
+  const bottomSpacerHeight = Math.max(0, (tableRows.length - virtualEnd) * rowHeight);
+
+  const syncTableViewport = React.useCallback(() => {
+    const element = tableViewportRef.current;
+    if (!element) return;
+    setTableViewport({
+      scrollTop: element.scrollTop,
+      height: element.clientHeight || 640,
+    });
+  }, []);
+
+  const handleTableScroll = React.useCallback(() => {
+    if (tableScrollFrameRef.current != null) return;
+    tableScrollFrameRef.current = window.requestAnimationFrame(() => {
+      tableScrollFrameRef.current = null;
+      syncTableViewport();
+    });
+  }, [syncTableViewport]);
+
+  React.useEffect(() => {
+    syncTableViewport();
+    const element = tableViewportRef.current;
+    if (!element) return;
+
+    const resizeObserver = new ResizeObserver(syncTableViewport);
+    resizeObserver.observe(element);
+
+    return () => {
+      resizeObserver.disconnect();
+      if (tableScrollFrameRef.current != null) {
+        window.cancelAnimationFrame(tableScrollFrameRef.current);
+        tableScrollFrameRef.current = null;
+      }
+    };
+  }, [products.length, pagination.pageSize, syncTableViewport]);
+
   return (
-    <PageContainer size="full">
+    <PageContainer size="full" className="!px-0 md:!px-0">
       <PageHeader
+        className="px-4 md:px-5"
         title="Products"
         description={statsLine}
         actions={
@@ -717,62 +1089,50 @@ export default function ProductsPage() {
               variant="ghost"
               size="icon-sm"
               onClick={handleRefreshList}
-              disabled={refreshing || loading || isSyncing}
+              disabled={refreshing || loading}
               aria-label="Refresh list"
             >
               <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
             </Button>
-            {lightspeedLoading ? (
-              <Button size="sm" disabled>
-                <Loader2 className="size-4 animate-spin" />
-                Sync
-              </Button>
-            ) : lightspeedConnected ? (
-              <Button size="sm" onClick={handleSyncInventory} disabled={isSyncing}>
-                <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
-                Sync inventory
-              </Button>
-            ) : (
-              <Button size="sm" asChild>
-                <Link href="/connect-lightspeed">
-                  <Zap className="size-4" />
-                  Connect Lightspeed
-                </Link>
-              </Button>
-            )}
+            <Button variant="outline" size="sm" onClick={() => openEditModal()}>
+              <Pencil className="size-4" />
+              Edit product
+            </Button>
           </>
         }
       />
 
       <PageBody className="mt-4 space-y-0">
-        <section className="rounded-md border border-border/60 bg-white">
-          <div className="flex flex-col gap-2 border-b border-border/60 px-3 py-3 sm:flex-row sm:items-center">
-            <div className="relative min-w-0 flex-1 sm:max-w-md">
+        <section className="flex min-h-[calc(100vh-170px)] flex-col bg-white">
+          <div className="flex flex-col gap-2 border-y border-border/60 px-4 py-3 sm:flex-row sm:items-center md:px-5">
+            <div className="relative min-w-0 flex-1 sm:max-w-[360px] lg:max-w-[420px] xl:max-w-[460px]">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name or SKU…"
+                placeholder="Search name, SKU, brand, category, year, source or status..."
                 className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30"
               />
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
               <Select value={categoryFilter || "all"} onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}>
-                <SelectTrigger size="sm" className="w-[140px]">
+                <SelectTrigger size="sm" className="w-[190px] shrink-0">
+                  <Tags className="size-3.5 text-muted-foreground" />
                   <SelectValue placeholder="Category" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
                   <SelectItem value="all">All categories</SelectItem>
                   {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
 
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger size="sm" className="w-[120px]">
+                <SelectTrigger size="sm" className="w-[120px] shrink-0">
+                  <Eye className="size-3.5 text-muted-foreground" />
                   <SelectValue placeholder="Visibility" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
                   <SelectItem value="all">All</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="inactive">Hidden</SelectItem>
@@ -780,13 +1140,26 @@ export default function ProductsPage() {
               </Select>
 
               <Select value={stockFilter} onValueChange={setStockFilter}>
-                <SelectTrigger size="sm" className="w-[120px]">
+                <SelectTrigger size="sm" className="w-[145px] shrink-0">
+                  <Package className="size-3.5 text-muted-foreground" />
                   <SelectValue placeholder="Stock" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
                   <SelectItem value="all">Any stock</SelectItem>
                   <SelectItem value="in-stock">In stock</SelectItem>
                   <SelectItem value="low-stock">Low stock</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={imageFilter} onValueChange={setImageFilter}>
+                <SelectTrigger size="sm" className="w-[155px] shrink-0">
+                  <ImageIcon className="size-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="Images" />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
+                  <SelectItem value="all">Any images</SelectItem>
+                  <SelectItem value="approved">Approved photos</SelectItem>
+                  <SelectItem value="needs-images">Needs images</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -808,7 +1181,7 @@ export default function ProductsPage() {
                 transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
                 className="overflow-hidden border-b border-border/60"
               >
-                <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+                <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 md:px-5">
                   <span className="text-sm font-medium text-foreground">{selected.size} selected</span>
                   <Button variant="outline" size="xs" onClick={() => handleBulkActive(true)}>
                     <Eye className="size-3.5" />
@@ -835,41 +1208,39 @@ export default function ProductsPage() {
             ) : null}
           </AnimatePresence>
 
-          <div className="w-full overflow-x-auto">
-            <Table className="w-full">
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-10 pl-3">
-                    <Checkbox
-                      checked={allChecked ? true : someChecked ? "indeterminate" : false}
-                      onCheckedChange={toggleAll}
-                      aria-label="Select all"
-                    />
-                  </TableHead>
-                  <TableHead className="min-w-[240px]">
-                    <SortButton label="Product" column="description" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
-                  <TableHead className="text-right">
-                    <SortButton label="Price" column="price" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
-                  </TableHead>
-                  <TableHead className="text-right">
-                    <SortButton label="Stock" column="qoh" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
-                  </TableHead>
-                  <TableHead>Marketplace</TableHead>
-                  <TableHead className="w-[72px] text-center">Visible</TableHead>
-                  <TableHead className="w-10 pr-3" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+          <div
+            ref={tableViewportRef}
+            onScroll={handleTableScroll}
+            className="min-h-[420px] flex-1 overflow-auto"
+          >
+            <table className="w-max min-w-full border-collapse text-[11px]">
+              <thead className="sticky top-0 z-10 bg-muted/35">
+                {productTable.getHeaderGroups().map((headerGroup) => (
+                  <tr key={headerGroup.id} className="border-b border-border/70">
+                    {headerGroup.headers.map((header) => (
+                      <th
+                        key={header.id}
+                        className={cn(
+                          productColumnClassName(header.column.id),
+                          "px-2 py-1.5 text-left align-middle font-semibold text-muted-foreground first:pl-4 last:pr-0 md:first:pl-5"
+                        )}
+                      >
+                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                      </th>
+                    ))}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
                 {loading ? (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={tableColSpan} className="h-64 text-center">
+                  <tr className="border-b border-border/50">
+                    <td colSpan={tableColSpan} className="h-64 text-center">
                       <Loader2 className="mx-auto size-7 animate-spin text-muted-foreground" />
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 ) : products.length === 0 ? (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={tableColSpan} className="h-64 text-center">
+                  <tr className="border-b border-border/50">
+                    <td colSpan={tableColSpan} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <PackageX className="size-8" />
                         <p className="text-sm font-medium text-foreground">No products found</p>
@@ -878,107 +1249,49 @@ export default function ProductsPage() {
                         </p>
                         {hasFilters && <Button variant="outline" size="sm" onClick={clearFilters}>Clear filters</Button>}
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 ) : (
-                  <AnimatePresence mode="popLayout">
-                    {products.map((product) => {
-                      const status = deriveStatus(product);
-                      const checked = selected.has(product.id);
-                      return (
-                        <motion.tr
-                          key={product.id}
-                          layout
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.15 }}
-                          data-state={checked ? "selected" : undefined}
-                          className="group border-b border-border/50 transition-colors hover:bg-muted/40 data-[state=selected]:bg-muted/50"
-                        >
-                          <TableCell className="pl-3">
-                            <Checkbox checked={checked} onCheckedChange={() => toggleOne(product.id)} aria-label={`Select ${product.description}`} />
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <ProductThumb product={product} onDiscover={handleDiscoverImages} />
-                              <div className="min-w-0">
-                                <p className="truncate font-medium text-foreground">{product.description}</p>
-                                <p className="truncate font-mono text-xs text-muted-foreground">
-                                  {product.custom_sku || product.system_sku || "—"}
-                                  {product.manufacturer_name ? (
-                                    <span className="ml-2 font-sans">{product.manufacturer_name}</span>
-                                  ) : null}
-                                </p>
-                                {formatLightspeedCategory(product) ? (
-                                  <p className="truncate text-xs text-muted-foreground">
-                                    {formatLightspeedCategory(product)}
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-medium tabular-nums">${product.price.toFixed(2)}</TableCell>
-                          <TableCell className="text-right tabular-nums"><StockCell qoh={product.qoh} reorder={product.reorder_point} /></TableCell>
-                          <TableCell><StatusBadge label={status.label} tone={status.tone} /></TableCell>
-                          <TableCell className="text-center">
-                            <Switch
-                              size="sm"
-                              checked={product.is_active}
-                              onCheckedChange={() => handleToggleActive(product.id, product.is_active)}
-                              aria-label={product.is_active ? "Hide product" : "Show product"}
-                            />
-                          </TableCell>
-                          <TableCell className="pr-3">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon-sm" className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100">
-                                  <MoreHorizontal className="size-4" />
-                                  <span className="sr-only">Actions</span>
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-52">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={() => handleToggleBicycle(product.id, !!product.is_bicycle)}>
-                                  <BikeIcon
-                                    iconName={BICYCLE_PRODUCT_ICON}
-                                    size={16}
-                                    className="size-4 shrink-0"
-                                  />
-                                  {product.is_bicycle ? "Remove bicycle flag" : "Mark as bicycle"}
-                                </DropdownMenuItem>
-                                {product.is_bicycle ? (
-                                  <DropdownMenuItem onClick={() => openBikeSpecsSheet(product)}>
-                                    <BikeIcon
-                                      iconName={BICYCLE_PRODUCT_ICON}
-                                      size={16}
-                                      className="size-4 shrink-0"
-                                    />
-                                    Bicycle specifications
-                                  </DropdownMenuItem>
-                                ) : null}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem disabled={!product.canonical_product_id} onClick={() => setImageManageProduct(product)}>
-                                  <ImageIcon className="size-4" />
-                                  Manage images
-                                </DropdownMenuItem>
-                                <DropdownMenuItem disabled={!product.canonical_product_id} onClick={() => handleDiscoverImages(product)}>
-                                  <Sparkles className="size-4" />
-                                  Discover images
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </motion.tr>
-                      );
-                    })}
-                  </AnimatePresence>
+                  <>
+                    {topSpacerHeight > 0 ? (
+                      <tr aria-hidden="true">
+                        <td colSpan={tableColSpan} style={{ height: topSpacerHeight, padding: 0 }} />
+                      </tr>
+                    ) : null}
+                    {virtualRows.map((row) => {
+                    const checked = selected.has(row.original.id);
+                    return (
+                      <tr
+                        key={row.id}
+                        data-state={checked ? "selected" : undefined}
+                        className="group border-b border-border/50 bg-white transition-colors hover:bg-muted/30 data-[state=selected]:bg-muted/45"
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <td
+                            key={cell.id}
+                            className={cn(
+                              productColumnClassName(cell.column.id),
+                              "px-2 py-1.5 align-middle text-muted-foreground first:pl-4 last:pr-0 md:first:pl-5"
+                            )}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                    {bottomSpacerHeight > 0 ? (
+                      <tr aria-hidden="true">
+                        <td colSpan={tableColSpan} style={{ height: bottomSpacerHeight, padding: 0 }} />
+                      </tr>
+                    ) : null}
+                  </>
                 )}
-              </TableBody>
-            </Table>
-        </div>
+              </tbody>
+            </table>
+          </div>
 
-        <div className="flex flex-col gap-3 border-t border-border/60 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="sticky bottom-0 z-20 flex flex-col gap-3 border-t border-border/60 bg-white px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between md:px-5">
             <p className="text-muted-foreground">
               {pagination.total > 0 ? (
                 <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{pagination.total.toLocaleString()}</span> products</>
@@ -988,11 +1301,13 @@ export default function ProductsPage() {
               <span className="hidden text-muted-foreground sm:inline">Rows per page</span>
               <Select value={pagination.pageSize.toString()} onValueChange={handlePageSizeChange}>
                 <SelectTrigger size="sm" className="w-[72px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
                   <SelectItem value="10">10</SelectItem>
                   <SelectItem value="20">20</SelectItem>
                   <SelectItem value="50">50</SelectItem>
                   <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="200">200</SelectItem>
+                  <SelectItem value="350">350</SelectItem>
                 </SelectContent>
               </Select>
               <div className="flex items-center gap-1">
@@ -1008,25 +1323,6 @@ export default function ProductsPage() {
           </div>
         </section>
       </PageBody>
-
-      <SyncProgressModal
-        isOpen={syncModalOpen}
-        onClose={closeSyncModal}
-        status={syncStatus}
-        progress={syncProgress}
-        phase={syncPhase}
-        message={syncMessage}
-        result={
-          syncResult
-            ? {
-                itemsSynced: syncResult.itemsSynced ?? 0,
-                itemsWithStock: syncResult.itemsWithStock ?? 0,
-                totalItems: syncResult.totalItems ?? 0,
-              }
-            : undefined
-        }
-        error={syncError}
-      />
 
       {/* Manage images dialog (controlled) */}
       <Dialog open={!!imageManageProduct} onOpenChange={(open: boolean) => !open && setImageManageProduct(null)}>
@@ -1197,6 +1493,16 @@ export default function ProductsPage() {
         onOpenChange={setBikeSpecsSheetOpen}
         product={bikeSpecsProduct}
         onUpdate={handleBikeSpecsUpdate}
+      />
+
+      <EditProductPanel
+        productId={editProductId}
+        open={editModalOpen}
+        onOpenChange={(isOpen) => {
+          setEditModalOpen(isOpen);
+          if (!isOpen) setEditProductId(null);
+        }}
+        onSaved={handleRefreshList}
       />
     </PageContainer>
   );

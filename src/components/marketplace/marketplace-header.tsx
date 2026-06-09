@@ -359,11 +359,9 @@ export function MarketplaceHeader({
 
   return (
     <>
-      {/* Floating pill header wrapper */}
-      <div className="marketplace-top-header relative z-40 bg-white px-0 pt-0 sm:fixed sm:top-0 sm:left-0 sm:right-0 sm:bg-gray-50 sm:px-4 sm:pt-2">
-      <header
-        className="overflow-hidden rounded-none border-x-0 border-t-0 border-b border-gray-200 bg-white sm:rounded-full sm:border sm:bg-white/95 sm:backdrop-blur-md"
-      >
+      {/* Standard full-width sticky header */}
+      <div className="sticky top-0 z-50 w-full border-b border-gray-200 bg-white">
+      <header className="marketplace-top-header relative overflow-visible bg-white">
         {/* Navigation Loading Bar */}
         {isNavigating && (
           <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#ffde59] overflow-hidden animate-pulse">
@@ -371,7 +369,7 @@ export function MarketplaceHeader({
             <div className="absolute inset-y-0 left-1/3 w-1/3 bg-[#f0cf45]" />
           </div>
         )}
-        <div className="px-4 sm:px-5">
+        <div className="px-4 sm:px-6">
           <div className="flex h-12 sm:h-14 items-center min-w-0">
             {/* Left: Logo */}
             <button
@@ -391,7 +389,7 @@ export function MarketplaceHeader({
             {/* Search — guests: left-aligned after logo; signed-in: centred */}
             <div
               className={cn(
-                "flex-1 flex items-center min-w-0",
+                "flex-1 flex items-center min-w-0 overflow-visible",
                 isGuestLayout
                   ? "justify-start gap-2 pl-2 sm:pl-3 pr-2"
                   : "justify-center px-3 sm:px-4"
@@ -406,10 +404,10 @@ export function MarketplaceHeader({
               >
                 <InstantSearch listingType={searchListingType} spaceContext={currentSpace} />
               </div>
-              {/* Desktop search pill */}
+              {/* Desktop search */}
               <div
                 className={cn(
-                  "hidden lg:flex items-center border border-gray-200 rounded-full h-9 px-2 min-w-0",
+                  "hidden lg:flex items-center border border-gray-200 rounded-md h-9 px-2 min-w-0",
                   "[&_input]:!border-0 [&_input]:!bg-transparent [&_input]:!shadow-none",
                   "[&_input]:!ring-0 [&_input:focus]:!ring-0 [&_input:focus]:!border-0",
                   "[&_input]:!h-8",
@@ -473,7 +471,7 @@ export function MarketplaceHeader({
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      className="group rounded-full bg-[#ffde59] hover:bg-[#f5cf3f] text-gray-900 font-semibold h-9 pl-1.5 pr-3.5 text-sm shadow-sm hover:shadow-md hover:-translate-y-px transition-all duration-200"
+                      className="group rounded-md bg-[#ffde59] hover:bg-[#f5cf3f] text-gray-900 font-semibold h-9 pl-1.5 pr-3.5 text-sm shadow-sm hover:shadow-md hover:-translate-y-px transition-all duration-200"
                     >
                       <span className="flex items-center justify-center h-6 w-6 rounded-full bg-gray-900 mr-2">
                         <Plus className="h-3.5 w-3.5 text-white" strokeWidth={2.75} />
@@ -538,7 +536,7 @@ export function MarketplaceHeader({
           </div>
         </div>
       </header>
-      </div>{/* end floating pill wrapper */}
+      </div>
 
       {/* Mobile Space Navigator removed - now integrated into UnifiedFilterBar */}
 

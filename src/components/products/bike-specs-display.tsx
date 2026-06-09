@@ -1,10 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BikeIcon, getBikeSpecSectionIconName } from "@/components/ui/bike-icon";
-import { hasBikeSpecs, parseBikeSpecs, type BikeSpecsData } from "@/lib/types/bike-specs";
+import {
+  BikeIcon,
+  getBikeSpecLabelIconName,
+} from "@/components/ui/bike-icon";
+import {
+  hasBikeSpecs,
+  parseBikeSpecs,
+  type BikeSpecsData,
+} from "@/lib/types/bike-specs";
 import type { BikeSpecSelection } from "@/components/marketplace/bike-spec-explore-panel";
 import { SpecSources, orderOfficialFirst } from "@/components/products/spec-sources";
 
@@ -18,7 +24,26 @@ interface BikeSpecsDisplayProps {
 
 type SpecItem = { label: string; value: string };
 
-function SpecRow({
+type FlatSpec = {
+  spec: SpecItem;
+  sectionTitle: string;
+};
+
+function flattenSpecs(sections: BikeSpecsData["sections"]): FlatSpec[] {
+  return sections.flatMap((section) =>
+    section.specs.map((spec) => ({
+      spec,
+      sectionTitle: section.title,
+    }))
+  );
+}
+
+function splitIntoColumns(items: FlatSpec[]): [FlatSpec[], FlatSpec[]] {
+  const midpoint = Math.ceil(items.length / 2);
+  return [items.slice(0, midpoint), items.slice(midpoint)];
+}
+
+function FocusSpecRow({
   spec,
   sectionTitle,
   interactive,
@@ -29,15 +54,22 @@ function SpecRow({
   interactive?: boolean;
   onSpecClick?: (spec: BikeSpecSelection) => void;
 }) {
-  const inner = (
+  const iconName = getBikeSpecLabelIconName(spec.label, sectionTitle);
+
+  const content = (
     <>
-      <span className="w-2/5 shrink-0 text-[13px] leading-snug text-gray-500">
+      <BikeIcon
+        iconName={iconName}
+        size={22}
+        className="mt-0.5 size-[22px] shrink-0 opacity-50"
+      />
+      <span className="text-[13px] font-bold uppercase leading-snug tracking-wide text-gray-900">
         {spec.label}
       </span>
       <span
         className={cn(
-          "flex-1 text-[13px] font-medium leading-snug text-gray-900",
-          interactive && "group-hover:text-black"
+          "text-[13px] leading-relaxed text-gray-600",
+          interactive && "group-hover:text-gray-900"
         )}
       >
         {spec.value}
@@ -45,59 +77,103 @@ function SpecRow({
     </>
   );
 
+  const rowClassName =
+    "grid grid-cols-[1.375rem_minmax(8.5rem,10rem)_1fr] items-start gap-x-4 border-b border-gray-200/70 py-4 last:border-b-0 sm:gap-x-5";
+
   if (!interactive || !onSpecClick) {
-    return (
-      <div className="flex items-baseline gap-3 border-b border-gray-100 py-2.5 last:border-b-0">
-        {inner}
-      </div>
-    );
+    return <div className={rowClassName}>{content}</div>;
   }
 
   return (
     <button
       type="button"
-      onClick={() => onSpecClick({ label: spec.label, value: spec.value, sectionTitle })}
-      className="group flex w-full items-baseline gap-3 border-b border-gray-100 py-2.5 text-left transition-colors last:border-b-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2"
+      onClick={() =>
+        onSpecClick({ label: spec.label, value: spec.value, sectionTitle })
+      }
+      className={cn(
+        rowClassName,
+        "group text-left transition-colors hover:bg-gray-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2"
+      )}
     >
-      {inner}
-      <ChevronRight className="size-4 shrink-0 -translate-x-1 self-center text-gray-300 opacity-0 transition-all group-hover:translate-x-0 group-hover:text-gray-500 group-hover:opacity-100" />
+      {content}
     </button>
   );
 }
 
-function SpecSection({
-  title,
-  specs,
+function FocusSpecColumn({
+  items,
   interactive,
   onSpecClick,
 }: {
-  title: string;
-  specs: SpecItem[];
+  items: FlatSpec[];
   interactive?: boolean;
   onSpecClick?: (spec: BikeSpecSelection) => void;
 }) {
   return (
-    <section className="mb-8 break-inside-avoid">
-      <div className="mb-1 flex items-center gap-2 border-b border-gray-200 pb-2.5">
-        <BikeIcon
-          iconName={getBikeSpecSectionIconName(title)}
-          size={16}
-          className="size-4 shrink-0 opacity-70"
+    <div className="min-w-0">
+      {items.map(({ spec, sectionTitle }, index) => (
+        <FocusSpecRow
+          key={`${sectionTitle}-${spec.label}-${index}`}
+          spec={spec}
+          sectionTitle={sectionTitle}
+          interactive={interactive}
+          onSpecClick={onSpecClick}
         />
-        <h3 className="text-sm font-semibold tracking-tight text-gray-900">{title}</h3>
-      </div>
-      <div>
-        {specs.map((spec, index) => (
-          <SpecRow
-            key={`${spec.label}-${index}`}
-            spec={spec}
-            sectionTitle={title}
-            interactive={interactive}
-            onSpecClick={onSpecClick}
+      ))}
+    </div>
+  );
+}
+
+function SpecAnnotation({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "pointer-events-none select-none text-[#ffde59]",
+        className
+      )}
+      aria-hidden="true"
+    >
+      <div className="-rotate-[7deg]">
+        <span className="block whitespace-nowrap font-handwriting text-2xl font-bold leading-none sm:text-[1.7rem]">
+          Click me to learn more!
+        </span>
+        <svg
+          viewBox="0 0 150 60"
+          fill="none"
+          className="ml-auto mr-6 mt-0.5 h-10 w-28"
+        >
+          <path
+            d="M140 14 C 104 2, 44 4, 26 48"
+            stroke="currentColor"
+            strokeWidth="4"
+            strokeLinecap="round"
           />
-        ))}
+          <path
+            d="M26 48 L 47 45 M26 48 L 34 27"
+            stroke="currentColor"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </div>
-    </section>
+    </div>
+  );
+}
+
+function SpecDisclaimer({ hasWeightSpec }: { hasWeightSpec: boolean }) {
+  return (
+    <div className="mt-8 space-y-1 text-xs italic leading-relaxed text-gray-500">
+      <p>
+        * Subject to technical modification without notice. Errors and omissions
+        excepted.
+      </p>
+      {hasWeightSpec ? (
+        <p>
+          ** Weight in size M, of standard specification and without pedals.
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -116,31 +192,38 @@ export function BikeSpecsDisplay({
 
   const sections = parsed!.sections;
   const sources = parsed!.metadata?.sources ?? [];
+  const flatSpecs = flattenSpecs(sections);
+  const [leftColumn, rightColumn] = splitIntoColumns(flatSpecs);
+  const hasWeightSpec = flatSpecs.some(({ spec }) =>
+    spec.label.toLowerCase().includes("weight")
+  );
 
   if (variant === "fullWidth") {
     return (
       <section className={cn("border-t border-gray-200 bg-white", className)}>
-        <div className="mx-auto max-w-[1536px] px-4 py-10 sm:px-4 lg:px-4 xl:px-5">
-          <div className="mb-8 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <h2 className="text-xl font-semibold tracking-tight text-gray-900">
-              Specifications
-            </h2>
-            {interactive ? (
-              <p className="text-sm text-gray-400">Tap any spec to explore the part</p>
-            ) : null}
+        <div className="relative mx-auto max-w-[1536px] px-4 py-10 sm:px-4 lg:px-4 xl:px-5">
+          <h2 className="mb-6 text-xl font-semibold tracking-tight text-gray-900">
+            Specifications
+          </h2>
+
+          {interactive ? (
+            <SpecAnnotation className="absolute right-4 top-6 hidden sm:block xl:right-5" />
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-x-16 lg:grid-cols-2 xl:gap-x-24">
+            <FocusSpecColumn
+              items={leftColumn}
+              interactive={interactive}
+              onSpecClick={onSpecClick}
+            />
+            <FocusSpecColumn
+              items={rightColumn}
+              interactive={interactive}
+              onSpecClick={onSpecClick}
+            />
           </div>
 
-          <div className="columns-1 gap-x-12 sm:columns-2 xl:columns-3">
-            {sections.map((section) => (
-              <SpecSection
-                key={section.title}
-                title={section.title}
-                specs={section.specs}
-                interactive={interactive}
-                onSpecClick={onSpecClick}
-              />
-            ))}
-          </div>
+          <SpecDisclaimer hasWeightSpec={hasWeightSpec} />
 
           {sources.length > 0 ? (
             <SpecSources
@@ -154,21 +237,23 @@ export function BikeSpecsDisplay({
   }
 
   return (
-    <div className={cn("border-t border-gray-200 px-4 py-5 sm:px-5", className)}>
+    <div className={cn("border-t border-gray-200 bg-white px-4 py-5 sm:px-5", className)}>
       <h2 className="mb-6 text-base font-semibold tracking-tight text-gray-900">
         Specifications
       </h2>
-      <div className="columns-1 gap-x-10 sm:columns-2">
-        {sections.map((section) => (
-          <SpecSection
-            key={section.title}
-            title={section.title}
-            specs={section.specs}
-            interactive={interactive}
-            onSpecClick={onSpecClick}
-          />
-        ))}
+      <div className="grid grid-cols-1 gap-x-10 sm:grid-cols-2">
+        <FocusSpecColumn
+          items={leftColumn}
+          interactive={interactive}
+          onSpecClick={onSpecClick}
+        />
+        <FocusSpecColumn
+          items={rightColumn}
+          interactive={interactive}
+          onSpecClick={onSpecClick}
+        />
       </div>
+      <SpecDisclaimer hasWeightSpec={hasWeightSpec} />
     </div>
   );
 }

@@ -169,7 +169,7 @@ export function UnifiedFilterBar({
   const activeFilterCount = countActiveFilters(browseFilters);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {/* ════════════════════════════════════════
           ROW 1 — space tabs.
           Category pills are NOT here; they live in Row 2.
@@ -217,7 +217,7 @@ export function UnifiedFilterBar({
       </div>
 
       {/* Desktop — filters always visible, no toggle button */}
-      <div className="hidden sm:flex items-center gap-3">
+      <div className="hidden sm:flex items-center gap-2.5">
         <div className="h-11 rounded-full bg-white border border-gray-200 shadow-sm p-1 inline-flex flex-shrink-0">
           <button
             type="button"
@@ -291,7 +291,7 @@ export function UnifiedFilterBar({
       {showBrowseChrome && !suppressCategoryBrowse && (
         <div className="hidden sm:block">
           {breadcrumbs.length > 0 && (
-            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide mb-2">
+            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide mb-1.5">
               <button
                 type="button"
                 onClick={clearAllCategories}

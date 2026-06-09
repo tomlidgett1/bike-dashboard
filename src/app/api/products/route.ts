@@ -15,6 +15,43 @@ import {
   MANUAL_SOURCE_OR_FILTER,
 } from '@/lib/products/catalog-helpers'
 
+function escapeSearchTerm(term: string) {
+  return term.replace(/[%_]/g, (match) => `\\${match}`).replace(/,/g, ' ')
+}
+
+function buildSearchOr(term: string) {
+  const escaped = escapeSearchTerm(term)
+  const fields = [
+    'description',
+    'display_name',
+    'custom_sku',
+    'system_sku',
+    'lightspeed_item_id',
+    'manufacturer_name',
+    'category_name',
+    'full_category_path',
+    'marketplace_category',
+    'marketplace_subcategory',
+    'marketplace_level_3_category',
+    'model_year',
+    'listing_status',
+    'listing_source',
+  ]
+
+  return fields.map((field) => `${field}.ilike.%${escaped}%`).join(',')
+}
+
+type ProductImageRow = {
+  id: string
+  cloudinary_public_id?: string | null
+  cloudinary_url?: string | null
+  external_url?: string | null
+  is_primary?: boolean | null
+  approval_status?: string | null
+  sort_order?: number | null
+  source?: string | null
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Get authenticated user
@@ -39,6 +76,7 @@ export async function GET(request: NextRequest) {
     const lsCategoryId = searchParams.get('ls_category_id') || ''
     const stockFilter = searchParams.get('stock') || 'all' // all, in-stock, low-stock
     const statusFilter = searchParams.get('status') || 'all' // all, active, inactive
+    const imageFilter = searchParams.get('image') || 'all' // all, approved, needs-images
     const sourceFilter = searchParams.get('source') || 'all' // all, lightspeed, manual
     const listingTypeFilter = searchParams.get('listing_type') || '' // e.g. private_listing
     const productIds = (searchParams.get('ids') || '')
@@ -95,11 +133,17 @@ export async function GET(request: NextRequest) {
     }
     // If 'all', no filter applied
 
-    // Apply search filter
+    // Apply search filter. Each token must match at least one searchable field,
+    // which makes multi-word searches far more useful than a single broad OR.
     if (search) {
-      query = query.or(
-        `description.ilike.%${search}%,display_name.ilike.%${search}%,custom_sku.ilike.%${search}%,system_sku.ilike.%${search}%`,
-      )
+      const terms = search
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+
+      for (const term of terms) {
+        query = query.or(buildSearchOr(term))
+      }
     }
 
     // Apply category filter
@@ -131,8 +175,12 @@ export async function GET(request: NextRequest) {
     // Apply sorting
     query = query.order(sortBy, { ascending: sortOrder === 'asc' })
 
-    // Apply pagination
-    query = query.range(from, to)
+    const postProcessImageFilter = imageFilter === 'approved' || imageFilter === 'needs-images'
+
+    // Image readiness depends on product + canonical image joins, so when that
+    // filter is active we fetch a wider candidate set, resolve readiness, then
+    // paginate the filtered result in-memory.
+    query = postProcessImageFilter ? query.range(0, 9999) : query.range(from, to)
 
     const { data, error, count } = await query
 
@@ -165,7 +213,7 @@ export async function GET(request: NextRequest) {
     const uniqueCategories = [...new Set(categories?.map(c => c.category_name).filter(Boolean))]
 
     // Process products to add resolved image URLs from product_images table
-    const processedProducts = (data || []).map((product, idx) => {
+    let processedProducts = (data || []).map((product, idx) => {
       let resolvedImageUrl = null;
       
       // Debug first product
@@ -194,12 +242,13 @@ export async function GET(request: NextRequest) {
       
       // Get approved images from canonical product_images
       if (product.canonical_products?.product_images && Array.isArray(product.canonical_products.product_images)) {
-        const approvedImages = product.canonical_products.product_images.filter(
-          (img: any) => img.approval_status === 'approved' || img.approval_status === null
+        const canonicalProductImages = product.canonical_products.product_images as ProductImageRow[]
+        const approvedImages = canonicalProductImages.filter(
+          (img) => img.approval_status === 'approved' || img.approval_status === null
         );
         
         // Find primary image or use first approved
-        const primaryImage = approvedImages.find((img: any) => img.is_primary) || approvedImages[0];
+        const primaryImage = approvedImages.find((img) => img.is_primary) || approvedImages[0];
         
         if (primaryImage) {
           // Compute the 100px thumbnail from the public_id (single source of truth)
@@ -210,9 +259,10 @@ export async function GET(request: NextRequest) {
         }
       }
       
-      // Fallback to cached_image_url (populated by trigger)
+      // Fallback to cached URLs populated by triggers. Prefer the tiny thumbnail
+      // so catalogue tables do not pull larger card/hero images.
       if (!resolvedImageUrl) {
-        resolvedImageUrl = product.cached_image_url || product.cached_thumbnail_url;
+        resolvedImageUrl = product.cached_thumbnail_url || product.cached_image_url;
       }
       
       const productImages = Array.isArray(product.product_images)
@@ -256,16 +306,30 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    console.log('[Products API] Total products:', processedProducts.length)
-    console.log('[Products API] Products with images:', processedProducts.filter(p => p.resolved_image_url).length)
+    if (postProcessImageFilter) {
+      processedProducts = processedProducts.filter((product) => {
+        const needsImage = product.marketplace_readiness.blockers.some(
+          (blocker: { id: string }) => blocker.id === 'no_approved_image',
+        )
+        return imageFilter === 'approved' ? !needsImage : needsImage
+      })
+    }
+
+    const filteredCount = postProcessImageFilter ? processedProducts.length : count || 0
+    const paginatedProducts = postProcessImageFilter
+      ? processedProducts.slice(from, to + 1)
+      : processedProducts
+
+    console.log('[Products API] Total products:', paginatedProducts.length)
+    console.log('[Products API] Products with images:', paginatedProducts.filter(p => p.resolved_image_url).length)
 
     return NextResponse.json({
-      products: processedProducts,
+      products: paginatedProducts,
       pagination: {
         page,
         pageSize,
-        total: count || 0,
-        totalPages: Math.ceil((count || 0) / pageSize),
+        total: filteredCount,
+        totalPages: Math.ceil(filteredCount / pageSize),
       },
       categories: uniqueCategories,
     })

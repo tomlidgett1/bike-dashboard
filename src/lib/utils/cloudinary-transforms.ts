@@ -1,3 +1,5 @@
+import { normaliseRotationDegrees } from "@/lib/utils/cloudinary-rotation";
+
 // f_auto lets Cloudinary negotiate AVIF/WebP/JPEG per the browser's Accept header
 // (AVIF is ~20-30% smaller than WebP), so we never hardcode a single format.
 export const CLOUDINARY_IMAGE_TRANSFORMS = {
@@ -239,6 +241,25 @@ function resolveCloudName(
   return raw?.trim() || undefined;
 }
 
+/** Rotate a stored public_id clockwise (updates the a_90/a_180/a_270 prefix). */
+export function rotateCloudinaryPublicIdClockwise(
+  publicId: string | null | undefined
+): string | null {
+  if (!publicId) return null;
+
+  const parsed = parseTransformPublicId(publicId);
+  const rotIdx = parsed.preTransforms.findIndex((t) => /^a_(90|180|270)$/.test(t));
+  const currentDeg =
+    rotIdx >= 0 ? normaliseRotationDegrees(Number(parsed.preTransforms[rotIdx].slice(2))) : 0;
+  const nextDeg = normaliseRotationDegrees(currentDeg + 90);
+  const otherPre =
+    rotIdx >= 0 ? parsed.preTransforms.filter((_, i) => i !== rotIdx) : [...parsed.preTransforms];
+  const nextPre = nextDeg ? [`a_${nextDeg}`, ...otherPre] : otherPre;
+
+  if (nextPre.length === 0) return parsed.rawId;
+  return `${nextPre.join("/")}/${parsed.rawId}`;
+}
+
 export function buildCloudinaryImageUrl(
   publicId: string | null | undefined,
   slot: CloudinaryImageSlot,
@@ -248,7 +269,11 @@ export function buildCloudinaryImageUrl(
   if (!publicId || !cn) return null;
 
   const parsed = parseTransformPublicId(publicId);
-  const transforms = [...parsed.preTransforms, CLOUDINARY_IMAGE_TRANSFORMS[slot]].join("/");
+  const hasManualRotation = parsed.preTransforms.some((t) => /^a_(90|180|270)$/.test(t));
+  const slotTransform = hasManualRotation
+    ? CLOUDINARY_IMAGE_TRANSFORMS[slot].replace(/^a_auto,/, "")
+    : CLOUDINARY_IMAGE_TRANSFORMS[slot];
+  const transforms = [...parsed.preTransforms, slotTransform].join("/");
 
   return `https://res.cloudinary.com/${cn}/image/upload/${transforms}/${parsed.rawId}`;
 }

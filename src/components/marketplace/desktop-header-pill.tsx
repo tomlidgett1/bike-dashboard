@@ -97,7 +97,7 @@ function DesktopHeaderPillContent() {
             <Link
               href="/marketplace"
               className={cn(
-                "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
                 pathname === "/marketplace"
                   ? "text-gray-900 bg-gray-100"
                   : "text-gray-700 hover:bg-gray-100"
@@ -108,7 +108,7 @@ function DesktopHeaderPillContent() {
             <Link
               href={`/marketplace/store/${profile?.user_id || user?.id}`}
               className={cn(
-                "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
                 pathname.startsWith("/marketplace/store/")
                   ? "text-gray-900 bg-gray-100"
                   : "text-gray-700 hover:bg-gray-100"
@@ -119,7 +119,7 @@ function DesktopHeaderPillContent() {
             <Link
               href={getPurchasesRoute()}
               className={cn(
-                "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
                 pathname === "/marketplace/purchases" ||
                 pathname === "/settings/purchases" ||
                 pathname.startsWith("/marketplace/purchases/") ||
@@ -133,7 +133,7 @@ function DesktopHeaderPillContent() {
             <Link
               href={getSettingsRoute()}
               className={cn(
-                "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
                 pathname === "/settings" ||
                 pathname === "/marketplace/settings" ||
                 (pathname.startsWith("/settings/") &&
@@ -248,7 +248,7 @@ function DesktopHeaderPillContent() {
                   <Link
                     href="/marketplace"
                     className={cn(
-                      "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                      "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
                       pathname === "/marketplace" &&
                         spaceParam !== "stores" &&
                         spaceParam !== "uber"
@@ -261,7 +261,7 @@ function DesktopHeaderPillContent() {
                   <Link
                     href="/marketplace?space=stores"
                     className={cn(
-                      "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                      "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
                       pathname === "/marketplace" && spaceParam === "stores"
                         ? "text-gray-900 bg-gray-100"
                         : "text-gray-700 hover:bg-gray-100"
@@ -272,7 +272,7 @@ function DesktopHeaderPillContent() {
                   <Link
                     href="/marketplace/help"
                     className={cn(
-                      "px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap",
+                      "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
                       pathname.startsWith("/marketplace/help")
                         ? "text-gray-900 bg-gray-100"
                         : "text-gray-700 hover:bg-gray-100"
@@ -289,13 +289,13 @@ function DesktopHeaderPillContent() {
               <Button
                 variant="ghost"
                 onClick={() => openAuthModal({ mode: "signin" })}
-                className="rounded-full text-sm font-medium hover:bg-gray-100 h-9 px-4"
+                className="rounded-md text-sm font-medium hover:bg-gray-100 h-9 px-4"
               >
                 Sign in
               </Button>
               <Button
                 onClick={() => openAuthModal({ mode: "signup" })}
-                className="rounded-full bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-semibold h-9 px-4 text-sm shadow-sm hover:shadow-md transition-all"
+                className="rounded-md bg-[#ffde59] hover:bg-[#f0cf45] text-gray-900 font-semibold h-9 px-4 text-sm shadow-sm hover:shadow-md transition-all"
               >
                 Create account
               </Button>

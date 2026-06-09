@@ -227,7 +227,7 @@ export default function MarketplaceSettingsPage() {
       <>
         <MarketplaceHeader compactSearchOnMobile />
         <MarketplaceLayout showSidebar={false}>
-          <div className="min-h-screen bg-gray-50 pt-16 sm:pt-16 pb-24 sm:pb-8">
+          <div className="min-h-screen bg-gray-50 pb-24 sm:pb-8">
             <div className="flex items-center justify-center py-24">
               <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
             </div>
@@ -254,7 +254,7 @@ export default function MarketplaceSettingsPage() {
   return (
     <>
       {/* Mobile View - iOS-style settings */}
-      <div className="sm:hidden min-h-screen bg-gray-50 pt-16">
+      <div className="sm:hidden min-h-screen bg-gray-50">
         <MarketplaceHeader compactSearchOnMobile />
         <MobileSettingsView
           formData={formData}
@@ -273,7 +273,7 @@ export default function MarketplaceSettingsPage() {
         <MarketplaceHeader compactSearchOnMobile />
 
         <MarketplaceLayout showSidebar={false}>
-          <div className="min-h-screen bg-gray-50 pt-16">
+          <div className="min-h-screen bg-gray-50">
             <main className="px-6 py-8">
               <div className="mx-auto max-w-4xl space-y-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

@@ -25,22 +25,6 @@ const LazyFloatingGenieJobsPill = dynamic(
   { ssr: false },
 );
 
-const LazyFloatingImageApprovalCard = dynamic(
-  () =>
-    import("@/components/optimize/floating-image-approval-card").then(
-      (mod) => mod.FloatingImageApprovalCard,
-    ),
-  { ssr: false },
-);
-
-const LazyFloatingTomFeedbackButton = dynamic(
-  () =>
-    import("@/components/feedback/floating-tom-feedback-button").then(
-      (mod) => mod.FloatingTomFeedbackButton,
-    ),
-  { ssr: false },
-);
-
 const HOME_PATH = "/settings/store/home";
 const STORE_PAGE_PREFIX = "/marketplace/store/";
 
@@ -61,10 +45,10 @@ function isGenieFloatingOrbVisible(
 
 /**
  * Stacks bottom-right progress panels in a single column so they never overlap.
- * Order (bottom → top): optimise jobs, image approval, Genie jobs.
+ * Order (bottom → top): optimise jobs, Genie jobs.
  * Sits above the Genie floating orb when that orb is shown.
  */
-export function FloatingBottomDock({ loadImageApproval }: { loadImageApproval: boolean }) {
+export function FloatingBottomDock() {
   const pathname = usePathname();
   const { isOpen, isExpanded, productContext } = useGenie();
   const optimizeJobs = useOptimizeJobs();
@@ -79,9 +63,7 @@ export function FloatingBottomDock({ loadImageApproval }: { loadImageApproval: b
 
   const showOptimize = optimizeJobs.visibleJobs.length > 0;
   const showGenie = !isOnHome && genieJobs.visibleJobs.length > 0;
-  const showTomFeedback = isStoreDashboardPath(pathname);
-
-  if (!showOptimize && !showGenie && !loadImageApproval && !showTomFeedback) {
+  if (!showOptimize && !showGenie) {
     return null;
   }
 
@@ -93,19 +75,9 @@ export function FloatingBottomDock({ loadImageApproval }: { loadImageApproval: b
           "sm:bottom-[calc(1.5rem+3.5rem+0.75rem+env(safe-area-inset-bottom,0px))]",
       )}
     >
-      {showTomFeedback ? (
-        <div className="pointer-events-auto w-fit">
-          <LazyFloatingTomFeedbackButton />
-        </div>
-      ) : null}
       {showOptimize ? (
         <div className="pointer-events-auto w-fit max-w-[min(100vw-2rem,22rem)]">
           <LazyFloatingOptimizeJobsCard />
-        </div>
-      ) : null}
-      {loadImageApproval ? (
-        <div className="pointer-events-auto w-fit max-w-[calc(100vw-2rem)]">
-          <LazyFloatingImageApprovalCard />
         </div>
       ) : null}
       {showGenie ? (

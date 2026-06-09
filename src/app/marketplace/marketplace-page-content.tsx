@@ -720,6 +720,10 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       if (isUberView) {
         params.set('uberOnly', 'true');
       }
+
+      if (selectedStoreId) {
+        params.set('storeId', selectedStoreId);
+      }
       
       if (advancedFilters.minPrice) params.set('minPrice', advancedFilters.minPrice);
       if (advancedFilters.maxPrice) params.set('maxPrice', advancedFilters.maxPrice);
@@ -1183,8 +1187,104 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         {/* Sentinel div for scroll tracking - invisible marker */}
         <div ref={sentinelRef} className="sm:hidden h-px" aria-hidden="true" />
 
-        <div className="px-3 sm:px-6 py-4 sm:py-8 pt-4 sm:pt-20 pb-24 sm:pb-8">
-          <div className="space-y-4">
+        {/* Desktop filter chrome — sits directly under the sticky header */}
+        <div className="hidden sm:block border-b border-gray-200 bg-gray-50">
+          <div className="space-y-1.5 px-4 py-3 sm:px-6">
+            {isStoresView && (
+              <>
+                <UnifiedFilterBar
+                  currentSpace={currentSpace}
+                  viewMode={viewMode}
+                  onViewModeChange={handleViewModeChange}
+                  selectedLevel1={selectedLevel1}
+                  selectedLevel2={selectedLevel2}
+                  selectedLevel3={selectedLevel3}
+                  onLevel1Change={handleLevel1Change}
+                  onLevel2Change={handleLevel2Change}
+                  onLevel3Change={handleLevel3Change}
+                  listingTypeFilter={listingTypeFilter}
+                  onListingTypeChange={handleListingTypeChange}
+                  categoryPillsRef={categoryPillsRef}
+                  onNavigateToStores={handleNavigateToAllStores}
+                  onNavigateToUber={handleNavigateToUber}
+                  selectedStoreId={selectedStoreId}
+                  onStoreSelect={handleNavigateToStore}
+                  browseFilters={advancedFilters}
+                  onBrowseFiltersChange={handleAdvancedFiltersChange}
+                  onBrowseFiltersApply={handleAdvancedFiltersApply}
+                  onBrowseFiltersReset={handleAdvancedFiltersReset}
+                  productGridLayout={productGridLayout}
+                  onProductGridLayoutChange={setProductGridLayout}
+                  dynamicCategories={storesViewCategories}
+                  categoriesLoading={storesViewCategoriesLoading}
+                  suppressCategoryBrowse={isProductSearchActive}
+                  additionalFilters={
+                    <AdvancedFilters
+                      filters={advancedFilters}
+                      onFiltersChange={handleAdvancedFiltersChange}
+                      onApply={handleAdvancedFiltersApply}
+                      onReset={handleAdvancedFiltersReset}
+                      activeFilterCount={activeFilterCount}
+                      listingTypeFilter={listingTypeFilter}
+                      onListingTypeChange={handleListingTypeChange}
+                    />
+                  }
+                />
+                {selectedStoreId && storeCategories.length > 0 && !isProductSearchActive && (
+                  <StoreCategoryPills
+                    categories={storeCategories}
+                    selectedCategory={selectedStoreCategory}
+                    onCategoryChange={setSelectedStoreCategory}
+                  />
+                )}
+              </>
+            )}
+            {(isMarketplaceView || isUberView) && (
+              <UnifiedFilterBar
+                currentSpace={currentSpace}
+                viewMode={viewMode}
+                onViewModeChange={handleViewModeChange}
+                selectedLevel1={selectedLevel1}
+                selectedLevel2={selectedLevel2}
+                selectedLevel3={selectedLevel3}
+                onLevel1Change={handleLevel1Change}
+                onLevel2Change={handleLevel2Change}
+                onLevel3Change={handleLevel3Change}
+                listingTypeFilter={listingTypeFilter}
+                onListingTypeChange={handleListingTypeChange}
+                productCount={!searchQuery ? totalCount : undefined}
+                categoryPillsRef={categoryPillsRef}
+                onNavigateToStores={handleNavigateToAllStores}
+                onNavigateToUber={handleNavigateToUber}
+                selectedStoreId={selectedStoreId}
+                onStoreSelect={handleNavigateToStore}
+                browseFilters={advancedFilters}
+                onBrowseFiltersChange={handleAdvancedFiltersChange}
+                onBrowseFiltersApply={handleAdvancedFiltersApply}
+                onBrowseFiltersReset={handleAdvancedFiltersReset}
+                productGridLayout={productGridLayout}
+                onProductGridLayoutChange={setProductGridLayout}
+                dynamicCategories={isUberView ? storesViewCategories : marketplaceCategories}
+                categoriesLoading={isUberView ? storesViewCategoriesLoading : loading}
+                suppressCategoryBrowse={isProductSearchActive}
+                additionalFilters={
+                  <AdvancedFilters
+                    filters={advancedFilters}
+                    onFiltersChange={handleAdvancedFiltersChange}
+                    onApply={handleAdvancedFiltersApply}
+                    onReset={handleAdvancedFiltersReset}
+                    activeFilterCount={activeFilterCount}
+                    listingTypeFilter={listingTypeFilter}
+                    onListingTypeChange={handleListingTypeChange}
+                  />
+                }
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="px-4 pb-24 sm:px-6 sm:pb-8">
+          <div className="space-y-3 pt-4 sm:pt-5">
             {/* Promo Banners - Marketplace and Bike Stores (hidden while searching) */}
             {MARKETPLACE_PROMO_BANNERS_ENABLED &&
               (isMarketplaceView || isStoresView) &&
@@ -1200,56 +1300,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
             {/* Stores View - Products from Stores with Store Filter */}
             {isStoresView && (
-              <div className="space-y-3 sm:space-y-4">
-                {/* Desktop: main tabs + store pills grouped tightly */}
-                <div className="hidden sm:block space-y-2.5">
-                  <UnifiedFilterBar
-                    currentSpace={currentSpace}
-                    viewMode={viewMode}
-                    onViewModeChange={handleViewModeChange}
-                    selectedLevel1={selectedLevel1}
-                    selectedLevel2={selectedLevel2}
-                    selectedLevel3={selectedLevel3}
-                    onLevel1Change={handleLevel1Change}
-                    onLevel2Change={handleLevel2Change}
-                    onLevel3Change={handleLevel3Change}
-                    listingTypeFilter={listingTypeFilter}
-                    onListingTypeChange={handleListingTypeChange}
-                    categoryPillsRef={categoryPillsRef}
-                    onNavigateToStores={handleNavigateToAllStores}
-                    onNavigateToUber={handleNavigateToUber}
-                    selectedStoreId={selectedStoreId}
-                    onStoreSelect={handleNavigateToStore}
-                    browseFilters={advancedFilters}
-                    onBrowseFiltersChange={handleAdvancedFiltersChange}
-                    onBrowseFiltersApply={handleAdvancedFiltersApply}
-                    onBrowseFiltersReset={handleAdvancedFiltersReset}
-                    productGridLayout={productGridLayout}
-                    onProductGridLayoutChange={setProductGridLayout}
-                    dynamicCategories={storesViewCategories}
-                    categoriesLoading={storesViewCategoriesLoading}
-                    suppressCategoryBrowse={isProductSearchActive}
-                    additionalFilters={
-                      <AdvancedFilters
-                        filters={advancedFilters}
-                        onFiltersChange={handleAdvancedFiltersChange}
-                        onApply={handleAdvancedFiltersApply}
-                        onReset={handleAdvancedFiltersReset}
-                        activeFilterCount={activeFilterCount}
-                        listingTypeFilter={listingTypeFilter}
-                        onListingTypeChange={handleListingTypeChange}
-                      />
-                    }
-                  />
-                  {selectedStoreId && storeCategories.length > 0 && !isProductSearchActive && (
-                    <StoreCategoryPills
-                      categories={storeCategories}
-                      selectedCategory={selectedStoreCategory}
-                      onCategoryChange={setSelectedStoreCategory}
-                    />
-                  )}
-                </div>
-
+              <div className="space-y-2">
                 {/* Store identity strip — shown when a specific store is selected */}
                 {selectedStore && (
                   <div className="flex items-center justify-between gap-3 px-0.5">
@@ -1321,51 +1372,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
             {/* Products View - Shown for both Marketplace and Stores space */}
             {(
               <>
-                {/* Desktop Filter Bar - View modes, categories */}
-                {(isMarketplaceView || isUberView) && (
-                  <div className="hidden sm:block">
-                    <UnifiedFilterBar
-                      currentSpace={currentSpace}
-                      viewMode={viewMode}
-                      onViewModeChange={handleViewModeChange}
-                      selectedLevel1={selectedLevel1}
-                      selectedLevel2={selectedLevel2}
-                      selectedLevel3={selectedLevel3}
-                      onLevel1Change={handleLevel1Change}
-                      onLevel2Change={handleLevel2Change}
-                      onLevel3Change={handleLevel3Change}
-                      listingTypeFilter={listingTypeFilter}
-                      onListingTypeChange={handleListingTypeChange}
-                      productCount={!searchQuery ? totalCount : undefined}
-                      categoryPillsRef={categoryPillsRef}
-                      onNavigateToStores={handleNavigateToAllStores}
-                      onNavigateToUber={handleNavigateToUber}
-                      selectedStoreId={selectedStoreId}
-                      onStoreSelect={handleNavigateToStore}
-                      browseFilters={advancedFilters}
-                      onBrowseFiltersChange={handleAdvancedFiltersChange}
-                      onBrowseFiltersApply={handleAdvancedFiltersApply}
-                      onBrowseFiltersReset={handleAdvancedFiltersReset}
-                      productGridLayout={productGridLayout}
-                      onProductGridLayoutChange={setProductGridLayout}
-                      dynamicCategories={isUberView ? storesViewCategories : marketplaceCategories}
-                      categoriesLoading={isUberView ? storesViewCategoriesLoading : loading}
-                      suppressCategoryBrowse={isProductSearchActive}
-                      additionalFilters={
-                        <AdvancedFilters
-                          filters={advancedFilters}
-                          onFiltersChange={handleAdvancedFiltersChange}
-                          onApply={handleAdvancedFiltersApply}
-                          onReset={handleAdvancedFiltersReset}
-                          activeFilterCount={activeFilterCount}
-                          listingTypeFilter={listingTypeFilter}
-                          onListingTypeChange={handleListingTypeChange}
-                        />
-                      }
-                    />
-                  </div>
-                )}
-
                 {/* Active Advanced Filters Summary */}
                 {viewMode === 'all' && activeFilterCount > 0 && !isProductSearchActive && (
                   <div className="flex items-center gap-2 flex-wrap animate-in fade-in slide-in-from-top-2 duration-200">
@@ -1450,7 +1456,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   </div>
                 )}
 
-                <div className="space-y-4">
+                <div className="space-y-3">
                     {isProductSearchActive && (
                       <div className="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
                         <div className="flex min-w-0 items-center gap-2">

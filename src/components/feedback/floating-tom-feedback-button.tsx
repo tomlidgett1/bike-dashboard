@@ -70,7 +70,11 @@ function buildFeedbackContext({
   };
 }
 
-export function FloatingTomFeedbackButton() {
+export function FloatingTomFeedbackButton({
+  placement = "floating",
+}: {
+  placement?: "floating" | "header";
+}) {
   const pathname = usePathname() ?? "/";
   const { user } = useAuth();
   const { profile } = useUserProfile();
@@ -159,18 +163,26 @@ export function FloatingTomFeedbackButton() {
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          "pointer-events-auto inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-md transition-colors hover:bg-gray-50",
+          "inline-flex items-center gap-1.5 rounded-[28px] border border-gray-200 bg-white font-medium text-gray-800 transition-colors hover:bg-gray-50",
+          placement === "header"
+            ? "h-8 px-3 text-xs"
+            : "pointer-events-auto gap-2 px-3 py-2 text-sm shadow-md",
         )}
         aria-label="Tom feedback"
       >
-        <MessageSquarePlus className="h-4 w-4 text-gray-600" />
+        <MessageSquarePlus
+          className={cn(
+            "text-gray-600",
+            placement === "header" ? "h-3.5 w-3.5" : "h-4 w-4",
+          )}
+        />
         Tom feedback
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           overlayClassName="animate-in fade-in duration-200"
-          className="max-h-[min(40rem,90vh)] overflow-y-auto rounded-md bg-white sm:max-w-lg animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
+          className="max-h-[min(40rem,90vh)] overflow-y-auto rounded-[28px] border border-gray-200 bg-white sm:max-w-lg animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
         >
           <DialogHeader>
             <DialogTitle>Tom feedback</DialogTitle>

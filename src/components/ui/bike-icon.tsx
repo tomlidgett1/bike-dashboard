@@ -236,3 +236,82 @@ export function getBikeSpecSectionIconName(sectionTitle: string): string {
   }
   return getCategoryIconName(sectionTitle);
 }
+
+/** Individual spec labels (e.g. FRAME, SHIFTER) → line icons */
+const BIKE_SPEC_LABEL_ICON_MAP: Record<string, string> = {
+  frame: "noun-road-bike-frame-6991314.svg",
+  shifter: "noun-shifter-6991383.svg",
+  shifters: "noun-shifter-6991383.svg",
+  "front derailleur": "noun-front-derailleur-6991391.svg",
+  "rear derailleur": "noun-rear-delailleur-6991404.svg",
+  derailleur: "noun-rear-delailleur-6991404.svg",
+  cassette: "noun-bike-cassette-6991390.svg",
+  chain: "noun-bike-chain-6991402.svg",
+  crankset: "noun-chainring-6991385.svg",
+  crank: "noun-chainring-6991385.svg",
+  "bottom bracket": "noun-bottom-bracket-6991386.svg",
+  handlebar: "noun-drop-bar-6991318.svg",
+  handlebars: "noun-drop-bar-6991318.svg",
+  headset: "noun-bike-headset-6991384.svg",
+  saddle: "noun-bike-saddle-6991388.svg",
+  seatpost: "noun-seatpost-6991399.svg",
+  "seat post": "noun-seatpost-6991399.svg",
+  brakes: "noun-bike-brake-6991377.svg",
+  brake: "noun-bike-brake-6991377.svg",
+  "disc brake rotors": "noun-bike-brake-rotor-6991341.svg",
+  rotors: "noun-bike-brake-rotor-6991341.svg",
+  wheelset: "noun-bike-wheels-6991373.svg",
+  wheels: "noun-bike-wheels-6991373.svg",
+  tyres: "noun-bike-tire-6991392.svg",
+  tires: "noun-bike-tire-6991392.svg",
+  weight: "noun-bike-stand-6991329.svg",
+  fork: "noun-bike-shock-absorber-6991333.svg",
+  stem: "noun-bike-stem-6991380.svg",
+  pedals: "noun-bike-pedal-6991389.svg",
+  groupset: "noun-bike-cassette-6991390.svg",
+  motor: "noun-e-bike-motor-6991340.svg",
+  battery: "noun-e-bike-battery-6991320.svg",
+};
+
+export function getBikeSpecLabelIconName(
+  label: string,
+  sectionTitle?: string
+): string {
+  const normalized = label.toLowerCase().trim();
+
+  if (BIKE_SPEC_LABEL_ICON_MAP[normalized]) {
+    return BIKE_SPEC_LABEL_ICON_MAP[normalized];
+  }
+
+  for (const [key, icon] of Object.entries(BIKE_SPEC_LABEL_ICON_MAP)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return icon;
+    }
+  }
+
+  if (normalized.includes("derailleur")) {
+    return normalized.includes("front")
+      ? "noun-front-derailleur-6991391.svg"
+      : "noun-rear-delailleur-6991404.svg";
+  }
+  if (normalized.includes("brake")) {
+    return normalized.includes("rotor")
+      ? "noun-bike-brake-rotor-6991341.svg"
+      : "noun-bike-brake-6991377.svg";
+  }
+  if (normalized.includes("tyre") || normalized.includes("tire")) {
+    return "noun-bike-tire-6991392.svg";
+  }
+  if (normalized.includes("wheel")) {
+    return "noun-bike-wheels-6991373.svg";
+  }
+  if (normalized.includes("weight")) {
+    return "noun-bike-stand-6991329.svg";
+  }
+
+  if (sectionTitle) {
+    return getBikeSpecSectionIconName(sectionTitle);
+  }
+
+  return getCategoryIconName(label);
+}

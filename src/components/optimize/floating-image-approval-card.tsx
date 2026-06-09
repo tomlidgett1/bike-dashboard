@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import {
   buildSpeedSearchQuery,
@@ -307,10 +308,14 @@ function mapToOptimizerProduct(product: ImageApprovalProduct): OptimizerProduct 
   };
 }
 
-export function FloatingImageApprovalCard() {
+export function FloatingImageApprovalCard({
+  placement = "floating",
+}: {
+  placement?: "floating" | "header";
+}) {
   const [queue, setQueue] = React.useState<ImageApprovalProduct[]>([]);
   const [loading, setLoading] = React.useState(true);
-  const [cardHidden, setCardHidden] = React.useState(false);
+  const [cardHidden, setCardHidden] = React.useState(true);
   const [index, setIndex] = React.useState(0);
   const [imageRuns, setImageRuns] = React.useState<Record<string, ImageRun>>({});
   const [lightbox, setLightbox] = React.useState<string | null>(null);
@@ -828,27 +833,48 @@ export function FloatingImageApprovalCard() {
   const canApprove =
     currentRun.phase === "ready" && !!currentRun.primaryUrl && !enhanceBusy;
 
-  if (cardHidden) {
-    return (
-      <button
-        type="button"
-        onClick={() => setCardHidden(false)}
-        className="inline-flex w-fit items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-800 shadow-lg transition hover:bg-gray-50"
-        aria-label="Show image approval queue"
+  const showHeaderPill = placement === "header" && queue.length > 0;
+
+  const pillButton = (
+    <button
+      type="button"
+      onClick={() => setCardHidden(false)}
+      className={cn(
+        "inline-flex items-center font-medium text-gray-800 transition-colors hover:bg-gray-50",
+        placement === "header"
+          ? "h-8 gap-1.5 rounded-[28px] border border-gray-200 bg-white px-3 text-xs"
+          : "w-fit gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-lg",
+        showHeaderPill && !cardHidden && "bg-gray-50",
+      )}
+      aria-label="Show image approval queue"
+    >
+      <ImageIcon
+        className={cn(
+          "text-gray-500",
+          placement === "header" ? "h-3.5 w-3.5" : "h-4 w-4",
+        )}
+      />
+      Approve image
+      <span
+        className={cn(
+          "rounded-md bg-gray-100 font-medium text-gray-700",
+          placement === "header"
+            ? "px-1 py-0.5 text-[10px]"
+            : "px-1.5 py-0.5 text-xs",
+        )}
       >
-        <ImageIcon className="h-4 w-4 text-gray-500" />
-        Approve image
-        <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700">
-          {readyCount}
-        </span>
-      </button>
-    );
+        {readyCount}
+      </span>
+    </button>
+  );
+
+  if (cardHidden) {
+    return pillButton;
   }
 
   const panelMaxHeight = "max-h-[min(82vh,40rem)]";
 
-  return (
-    <>
+  const panel = (
       <AnimatePresence>
         <motion.div
           key="image-approval-cards"
@@ -1100,38 +1126,65 @@ export function FloatingImageApprovalCard() {
           </div>
         </motion.div>
       </AnimatePresence>
+  );
 
-      <AnimatePresence>
-        {lightbox ? (
+  const lightboxOverlay = (
+    <AnimatePresence>
+      {lightbox ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 p-6"
+          onClick={() => setLightbox(null)}
+        >
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 p-6"
-            onClick={() => setLightbox(null)}
+            initial={{ opacity: 0, y: 16, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.95 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="relative h-[min(80vh,640px)] w-full max-w-3xl overflow-hidden rounded-md bg-white"
+            onClick={(event) => event.stopPropagation()}
           >
-            <motion.div
-              initial={{ opacity: 0, y: 16, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 16, scale: 0.95 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
-              className="relative h-[min(80vh,640px)] w-full max-w-3xl overflow-hidden rounded-md bg-white"
-              onClick={(event) => event.stopPropagation()}
+            <button
+              type="button"
+              onClick={() => setLightbox(null)}
+              className="absolute right-3 top-3 z-10 rounded-full bg-white/90 p-1.5 text-gray-600 shadow-sm"
+              aria-label="Close preview"
             >
-              <button
-                type="button"
-                onClick={() => setLightbox(null)}
-                className="absolute right-3 top-3 z-10 rounded-full bg-white/90 p-1.5 text-gray-600 shadow-sm"
-                aria-label="Close preview"
-              >
-                <X className="h-4 w-4" />
-              </button>
-              <Image src={lightbox} alt="" fill unoptimized className="object-contain" />
-            </motion.div>
+              <X className="h-4 w-4" />
+            </button>
+            <Image src={lightbox} alt="" fill unoptimized className="object-contain" />
           </motion.div>
-        ) : null}
-      </AnimatePresence>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+
+  if (placement === "header") {
+    if (typeof document === "undefined") return pillButton;
+
+    return (
+      <>
+        {pillButton}
+        {createPortal(
+          <div className="pointer-events-none fixed bottom-6 right-6 z-[100] max-w-[calc(100vw-2rem)]">
+            <div className="pointer-events-auto">
+              {panel}
+              {lightboxOverlay}
+            </div>
+          </div>,
+          document.body,
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {panel}
+      {lightboxOverlay}
     </>
   );
 }

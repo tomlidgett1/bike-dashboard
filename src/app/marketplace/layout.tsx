@@ -7,7 +7,7 @@ export default function MarketplaceRouteLayout({
 }) {
   return (
     <ForceLightChrome>
-      <div className="marketplace-light-surface min-h-dvh min-h-screen overflow-x-hidden bg-white text-foreground sm:bg-gray-50">
+      <div className="marketplace-light-surface min-h-dvh min-h-screen overflow-x-clip bg-white text-foreground sm:bg-gray-50">
         {children}
       </div>
     </ForceLightChrome>

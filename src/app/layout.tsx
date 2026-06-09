@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Inter } from "next/font/google";
+import { JetBrains_Mono, Inter, Caveat } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { ProfileProvider } from "@/components/providers/profile-provider";
@@ -30,6 +30,12 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const caveat = Caveat({
+  variable: "--font-handwriting",
+  subsets: ["latin"],
+  weight: ["600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -72,7 +78,7 @@ export default async function RootLayout({
         <link rel="dns-prefetch" href="https://frjcluhuictnbimitvrm.supabase.co" />
       </head>
       <body
-        className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased touch-manipulation`}
+        className={`${inter.variable} ${jetbrainsMono.variable} ${caveat.variable} font-sans antialiased touch-manipulation`}
         style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as any}
       >
         <ThemeProvider

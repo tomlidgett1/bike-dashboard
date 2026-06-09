@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, X, Loader2, Package, Store, ArrowRight, Sparkles, Clock, Trash2 } from "lucide-react";
@@ -178,7 +179,13 @@ export function InstantSearch({
   const [recentSearches, setRecentSearches] = React.useState<string[]>([]);
   const [isFocused, setIsFocused] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const anchorRef = React.useRef<HTMLDivElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const [dropdownPosition, setDropdownPosition] = React.useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
   const cacheRef = React.useRef<Map<string, SearchResults>>(new Map());
   const aiCacheRef = React.useRef<Map<string, AISearchResult>>(new Map());
   const abortControllerRef = React.useRef<AbortController | null>(null);
@@ -610,6 +617,37 @@ export function InstantSearch({
   // When in mobileFullPage mode, treat as if not mobile for dropdown positioning
   const useMobileSheet = isMobile && !mobileFullPage;
 
+  const shouldAnchorDropdown =
+    !mobileFullPage && !useMobileSheet && showDropdown;
+
+  React.useLayoutEffect(() => {
+    if (!shouldAnchorDropdown) {
+      setDropdownPosition(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+
+      const rect = anchor.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.bottom + 8,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [shouldAnchorDropdown, query, recentSearches.length]);
+
   // Prevent body scroll when mobile dropdown is open (only for sheet mode)
   React.useEffect(() => {
     if (useMobileSheet && showDropdown && query.length >= 1) {
@@ -896,6 +934,51 @@ export function InstantSearch({
     </>
   );
 
+  const renderAnchoredDropdown = (
+    open: boolean,
+    content: React.ReactNode,
+    sheetMotionY: number,
+    desktopClassName?: string,
+  ) => {
+    const panel = (
+      <AnimatePresence>
+        {open && (useMobileSheet || dropdownPosition) && (
+          <motion.div
+            ref={dropdownRef}
+            initial={{ opacity: 0, y: useMobileSheet ? sheetMotionY : 0 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: useMobileSheet ? sheetMotionY : 0 }}
+            transition={{ duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] }}
+            className={cn(
+              "bg-white overflow-y-auto",
+              useMobileSheet &&
+                "fixed inset-x-0 bottom-0 top-16 z-[70] rounded-t-2xl border-t border-gray-200 shadow-2xl",
+              !useMobileSheet &&
+                "z-[100] rounded-md border border-gray-200 shadow-2xl max-h-[70vh]",
+              desktopClassName,
+            )}
+            style={
+              !useMobileSheet && dropdownPosition
+                ? {
+                    position: "fixed",
+                    top: dropdownPosition.top,
+                    left: dropdownPosition.left,
+                    width: dropdownPosition.width,
+                  }
+                : undefined
+            }
+          >
+            {content}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+
+    if (useMobileSheet) return panel;
+    if (typeof document === "undefined") return null;
+    return createPortal(panel, document.body);
+  };
+
   return (
     <div className={cn("relative w-full flex flex-col", mobileFullPage ? "h-full" : "")}>
       {/* Search Input Row */}
@@ -908,7 +991,10 @@ export function InstantSearch({
         {leftSlot}
         
         {/* Search Input */}
-        <div className={cn("relative", leftSlot ? "flex-1 min-w-0" : "")}>
+        <div
+          ref={anchorRef}
+          className={cn("relative", leftSlot ? "flex-1 min-w-0" : "")}
+        >
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" />
           
           <Input
@@ -998,40 +1084,26 @@ export function InstantSearch({
           </AnimatePresence>
 
           {/* Recent Searches Dropdown - Shows when focused with no query */}
-          <AnimatePresence>
-            {showDropdown && query.length < 2 && recentSearches.length > 0 && (
-              <motion.div
-                ref={dropdownRef}
-                initial={{ opacity: 0, y: useMobileSheet ? 20 : -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: useMobileSheet ? 20 : -8 }}
-                transition={{ duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] }}
-                className={cn(
-                  "bg-white z-[70] overflow-y-auto",
-                  useMobileSheet && "fixed inset-x-0 bottom-0 top-16 rounded-t-2xl border-t border-gray-200 shadow-2xl",
-                  !useMobileSheet && "absolute top-full left-0 right-0 mt-2 rounded-md border border-gray-200 shadow-xl overflow-hidden"
-                )}
-              >
-                {/* Mobile Close Handle (only in sheet mode) */}
-                {useMobileSheet && (
-                  <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-900">
-                      Search
-                    </p>
-                    <button
-                      onClick={() => setShowDropdown(false)}
-                      className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
-                      aria-label="Close search"
-                    >
-                      <X className="h-5 w-5 text-gray-600" />
-                    </button>
-                  </div>
-                )}
-
-                {renderRecentSearchesContent()}
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {renderAnchoredDropdown(
+            showDropdown && query.length < 2 && recentSearches.length > 0,
+            <>
+              {useMobileSheet && (
+                <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-900">Search</p>
+                  <button
+                    onClick={() => setShowDropdown(false)}
+                    className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
+                    aria-label="Close search"
+                  >
+                    <X className="h-5 w-5 text-gray-600" />
+                  </button>
+                </div>
+              )}
+              {renderRecentSearchesContent()}
+            </>,
+            20,
+            "overflow-hidden",
+          )}
 
           {/* Mobile Backdrop for Search Results (only in sheet mode) */}
           <AnimatePresence>
@@ -1048,40 +1120,25 @@ export function InstantSearch({
           </AnimatePresence>
 
           {/* Dropdown Results - Shows INSTANTLY */}
-          <AnimatePresence>
-            {showDropdown && query.length >= 2 && (
-              <motion.div
-                ref={dropdownRef}
-                initial={{ opacity: 0, y: useMobileSheet ? 20 : 0 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: useMobileSheet ? 20 : 0 }}
-                transition={{ duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] }}
-                className={cn(
-                  "bg-white z-[70] overflow-y-auto",
-                  useMobileSheet && "fixed inset-x-0 bottom-0 top-16 rounded-t-2xl border-t border-gray-200 shadow-2xl",
-                  !useMobileSheet && "absolute top-full left-0 right-0 mt-2 rounded-md border border-gray-200 shadow-2xl max-h-[70vh]"
-                )}
-              >
-                {/* Mobile Close Handle (only in sheet mode) */}
-                {useMobileSheet && (
-                  <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-900">
-                      Search Results
-                    </p>
-                    <button
-                      onClick={() => setShowDropdown(false)}
-                      className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
-                      aria-label="Close search"
-                    >
-                      <X className="h-5 w-5 text-gray-600" />
-                    </button>
-                  </div>
-                )}
-
-                {renderResultsContent()}
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {renderAnchoredDropdown(
+            showDropdown && query.length >= 2,
+            <>
+              {useMobileSheet && (
+                <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-900">Search Results</p>
+                  <button
+                    onClick={() => setShowDropdown(false)}
+                    className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
+                    aria-label="Close search"
+                  >
+                    <X className="h-5 w-5 text-gray-600" />
+                  </button>
+                </div>
+              )}
+              {renderResultsContent()}
+            </>,
+            20,
+          )}
         </>
       )}
     </div>
