@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-function conversationTitle(messages: Record<string, unknown>[], prompt: string): string {
+type ConversationMessage = {
+  role?: string;
+  content?: unknown;
+};
+
+function conversationTitle(messages: ConversationMessage[], prompt: string): string {
   const firstUser = messages.find((message) => message.role === "user");
   const raw = String(firstUser?.content ?? prompt).trim();
   if (!raw) return "Conversation";
@@ -16,7 +21,7 @@ export async function ensureGenieConversation(
   params: {
     userId: string;
     conversationId: string | null;
-    messages: Record<string, unknown>[];
+    messages: ConversationMessage[];
     prompt: string;
   },
 ): Promise<string | null> {
