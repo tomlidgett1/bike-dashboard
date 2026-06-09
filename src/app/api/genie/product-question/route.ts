@@ -203,6 +203,7 @@ Shopper question: ${latestUserMessage}`;
                 user_location: { type: "approximate" as const, country: "AU" },
               },
             ],
+            tool_choice: "required",
             input: [
               ...inputMessages.slice(0, -1),
               { role: "user" as const, content: contextPrefix },

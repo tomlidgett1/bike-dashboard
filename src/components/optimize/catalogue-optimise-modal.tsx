@@ -46,6 +46,11 @@ import {
   buildSpeedSearchQuery,
   fetchSerperCandidates,
 } from "@/lib/admin/image-qa-speed";
+import {
+  imageRunFromSerperCache,
+  type SerperAiSelectionCache,
+  type SerperImageCacheEntry,
+} from "@/lib/optimize/serper-image-cache";
 import { cn } from "@/lib/utils";
 import { hasBikeSpecs, parseBikeSpecs } from "@/lib/types/bike-specs";
 import {
@@ -58,7 +63,6 @@ import {
   IMAGE_CONCURRENCY,
   LightboxOverlay,
   productLabel,
-  readSSE,
   toSpeedProduct,
   type CategoryOption,
   type CopyField,
@@ -70,6 +74,10 @@ import {
   useOptimizerCategories,
   useOptimizerProducts,
 } from "@/components/optimize/optimizer-shared";
+import {
+  useOptimizeJobs,
+  type OptimizeJob,
+} from "@/components/providers/optimize-jobs-provider";
 
 type WizardStep =
   | "category"
@@ -123,6 +131,74 @@ function photoIdsFromQueue(ids: string[], products: OptimizerProduct[]) {
   });
 }
 
+const SERPER_CACHE_CHUNK = 50;
+
+async function fetchSerperCaches(
+  canonicalIds: string[],
+): Promise<Record<string, SerperImageCacheEntry>> {
+  const unique = [...new Set(canonicalIds.filter(Boolean))];
+  if (unique.length === 0) return {};
+
+  const caches: Record<string, SerperImageCacheEntry> = {};
+  for (let index = 0; index < unique.length; index += SERPER_CACHE_CHUNK) {
+    const chunk = unique.slice(index, index + SERPER_CACHE_CHUNK);
+    const response = await fetch(
+      `/api/optimize/serper-cache?canonicalIds=${encodeURIComponent(chunk.join(","))}`,
+    );
+    if (!response.ok) continue;
+    const data = await response.json();
+    Object.assign(caches, data.caches ?? {});
+  }
+
+  return caches;
+}
+
+function saveSerperCache(
+  canonicalProductId: string,
+  payload: {
+    searchQuery: string;
+    candidates: ImageRun["candidates"];
+    aiSelection: SerperAiSelectionCache | null;
+  },
+) {
+  void fetch("/api/optimize/serper-cache", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      canonicalProductId,
+      searchQuery: payload.searchQuery,
+      candidates: payload.candidates,
+      aiSelection: payload.aiSelection,
+    }),
+  });
+}
+
+type CategoryPreloadState = {
+  categoryId: string;
+  categoryName: string;
+  running: boolean;
+  done: number;
+  total: number;
+  failed: number;
+  skipped: number;
+  error?: string;
+  message?: string;
+};
+
+function jobToCategoryPreload(job: OptimizeJob): CategoryPreloadState {
+  return {
+    categoryId: job.categoryId || "",
+    categoryName: job.categoryName || "Category",
+    running: job.status === "queued" || job.status === "running",
+    done: job.done,
+    total: job.total,
+    failed: job.failed,
+    skipped: job.skipped,
+    error: job.errorMessage ?? undefined,
+    message: job.message ?? undefined,
+  };
+}
+
 function copyRunStatus(run: CopyRun | undefined): "idle" | "running" | "done" | "error" {
   if (!run) return "idle";
   const steps = [run.title, run.description, run.specs];
@@ -145,30 +221,6 @@ function isProductBicycle(
   bicycleOverrides: Record<string, boolean>,
 ) {
   return product.id in bicycleOverrides ? bicycleOverrides[product.id] : !!product.is_bicycle;
-}
-
-function applyBicycleDetectionFromEvent(
-  id: string,
-  event: Record<string, unknown>,
-  patchProduct: (productId: string, patch: Partial<OptimizerProduct>) => void,
-  setAiBicycleHints: React.Dispatch<
-    React.SetStateAction<Record<string, "high" | "medium" | "low">>
-  >,
-) {
-  if (!event.bicycle_detected) return;
-
-  const isBicycle = event.is_bicycle as boolean | undefined;
-  if (typeof isBicycle !== "boolean") return;
-
-  patchProduct(id, {
-    is_bicycle: isBicycle,
-    ...(event.bike_specs ? { bike_specs: event.bike_specs as OptimizerProduct["bike_specs"] } : {}),
-  });
-
-  const confidence = event.bicycle_confidence as "high" | "medium" | "low" | undefined;
-  if (confidence) {
-    setAiBicycleHints((prev) => ({ ...prev, [id]: confidence }));
-  }
 }
 
 function bikeSpecsPreview(bikeSpecs: unknown): string | null {
@@ -239,6 +291,16 @@ export function CatalogueOptimiseModal({
   onOpenChange: (open: boolean) => void;
 }) {
   const { categories, loadingCats } = useOptimizerCategories();
+  const {
+    startCategoryPreload,
+    startCategoryCopy,
+    startCopyBatch,
+    cancelJob,
+    jobs,
+    getCategoryPreload,
+    getCategoryCopy,
+    getActiveCopyJob,
+  } = useOptimizeJobs();
   const [step, setStep] = React.useState<WizardStep>("category");
   const [category, setCategory] = React.useState("");
   const [goal, setGoal] = React.useState<OptimiseGoal | null>(null);
@@ -265,7 +327,9 @@ export function CatalogueOptimiseModal({
   const [failedIds, setFailedIds] = React.useState<Set<string>>(new Set());
   const [copyRuns, setCopyRuns] = React.useState<Record<string, CopyRun>>({});
   const [imageRuns, setImageRuns] = React.useState<Record<string, ImageRun>>({});
-  const [copyRunning, setCopyRunning] = React.useState(false);
+  const activeCopyJob = React.useMemo(() => getActiveCopyJob(), [getActiveCopyJob, jobs]);
+  const copyRunning = !!activeCopyJob;
+  const copyActiveIds = activeCopyJob?.metadata?.productIds ?? [];
   const [bicycleOverrides, setBicycleOverrides] = React.useState<Record<string, boolean>>({});
   const [bicycleSaving, setBicycleSaving] = React.useState<Set<string>>(new Set());
   const [aiBicycleHints, setAiBicycleHints] = React.useState<
@@ -326,7 +390,6 @@ export function CatalogueOptimiseModal({
     };
   }, [productSearch]);
 
-  const copyAbortRef = React.useRef<AbortController | null>(null);
   const sohRefreshAbortRef = React.useRef<AbortController | null>(null);
   const imageAbortRef = React.useRef<AbortController | null>(null);
   const imageCancelledRef = React.useRef(false);
@@ -367,12 +430,10 @@ export function CatalogueOptimiseModal({
     setAiBicycleHints({});
     setBicycleDetectingIds(new Set());
     setImageRuns({});
-    setCopyRunning(false);
     setBicycleOverrides({});
     setBicycleSaving(new Set());
     setLightbox(null);
     setApproveConfirmOpen(false);
-    copyAbortRef.current?.abort();
     imageAbortRef.current?.abort();
   }, []);
 
@@ -393,17 +454,22 @@ export function CatalogueOptimiseModal({
     const controller = new AbortController();
     sohRefreshAbortRef.current = controller;
 
-    void fetchLiveProductSoh(sohIds, { signal: controller.signal }).then((sohById) => {
-      if (controller.signal.aborted || Object.keys(sohById).length === 0) return;
-      setProducts((prev) =>
-        prev.map((product) =>
-          product.id in sohById ? { ...product, qoh: sohById[product.id] } : product,
-        ),
-      );
-      setPinnedProduct((prev) =>
-        prev && prev.id in sohById ? { ...prev, qoh: sohById[prev.id] } : prev,
-      );
-    });
+    void fetchLiveProductSoh(sohIds, { signal: controller.signal })
+      .then((sohById) => {
+        if (controller.signal.aborted || Object.keys(sohById).length === 0) return;
+        setProducts((prev) =>
+          prev.map((product) =>
+            product.id in sohById ? { ...product, qoh: sohById[product.id] } : product,
+          ),
+        );
+        setPinnedProduct((prev) =>
+          prev && prev.id in sohById ? { ...prev, qoh: sohById[prev.id] } : prev,
+        );
+      })
+      .catch((error) => {
+        if ((error as Error).name === "AbortError") return;
+        console.error("[soh-refresh]", error);
+      });
 
     return () => {
       controller.abort();
@@ -420,6 +486,7 @@ export function CatalogueOptimiseModal({
         (sum, item) => sum + item.missingSerperImages,
         0,
       ),
+      missingCopy: categories.reduce((sum, item) => sum + item.missingCopy, 0),
     };
   }, [categories]);
 
@@ -850,16 +917,47 @@ export function CatalogueOptimiseModal({
     });
   }, [availablePickProducts, individualPickSearch]);
 
+  const hydrateImageRunsFromCache = React.useCallback(
+    async (targetProducts: OptimizerProduct[]) => {
+      const needsHydration = targetProducts.filter((product) => {
+        if (!product.canonical_product_id || !needsPhotos(product)) return false;
+        const phase = imageRuns[product.id]?.phase ?? "idle";
+        return phase === "idle" || phase === "error" || phase === "no_results";
+      });
+      if (needsHydration.length === 0) return;
+
+      const caches = await fetchSerperCaches(
+        needsHydration
+          .map((product) => product.canonical_product_id)
+          .filter((id): id is string => !!id),
+      );
+
+      for (const product of needsHydration) {
+        const canonicalId = product.canonical_product_id;
+        if (!canonicalId) continue;
+        const cached = imageRunFromSerperCache(caches[canonicalId]);
+        if (!cached) continue;
+        patchImageRun(product.id, { ...emptyImageRun(), ...cached });
+      }
+    },
+    [imageRuns, patchImageRun],
+  );
+
   const preloadPhotoPage = React.useCallback(
     (page: number, ids: string[] = photoQueueIds) => {
       const start = page * PHOTOS_PAGE_SIZE;
       const pageIds = ids.slice(start, start + PHOTOS_PAGE_SIZE);
       if (pageIds.length === 0 || !goal) return;
-      void preloadQueueImagesRef.current?.(pageIds, goal, {
-        concurrency: PHOTOS_PAGE_PRELOAD_CONCURRENCY,
+      const pageProducts = pageIds
+        .map((id) => catalogueProducts.find((product) => product.id === id))
+        .filter((product): product is OptimizerProduct => !!product);
+      void hydrateImageRunsFromCache(pageProducts).then(() => {
+        void preloadQueueImagesRef.current?.(pageIds, goal, {
+          concurrency: PHOTOS_PAGE_PRELOAD_CONCURRENCY,
+        });
       });
     },
-    [goal, photoQueueIds],
+    [catalogueProducts, goal, hydrateImageRunsFromCache, photoQueueIds],
   );
 
   const startPhotosFlow = React.useCallback(() => {
@@ -879,12 +977,26 @@ export function CatalogueOptimiseModal({
       return;
     }
     setStep("photos");
-    void preloadQueueImagesRef.current?.(
-      nextPhotoIds.slice(0, PHOTOS_PAGE_SIZE),
-      goal ?? "photos",
-      { concurrency: PHOTOS_PAGE_PRELOAD_CONCURRENCY },
-    );
-  }, [batchSize, goal, catalogueProducts, pinnedProduct, queueIds, routeAfterQueueEnd]);
+    const firstPageProducts = nextPhotoIds
+      .slice(0, PHOTOS_PAGE_SIZE)
+      .map((id) => catalogueProducts.find((product) => product.id === id))
+      .filter((product): product is OptimizerProduct => !!product);
+    void hydrateImageRunsFromCache(firstPageProducts).then(() => {
+      void preloadQueueImagesRef.current?.(
+        nextPhotoIds.slice(0, PHOTOS_PAGE_SIZE),
+        goal ?? "photos",
+        { concurrency: PHOTOS_PAGE_PRELOAD_CONCURRENCY },
+      );
+    });
+  }, [
+    batchSize,
+    goal,
+    catalogueProducts,
+    hydrateImageRunsFromCache,
+    pinnedProduct,
+    queueIds,
+    routeAfterQueueEnd,
+  ]);
 
   const goToNextPhotoBatchPage = React.useCallback(() => {
     if (isLastPhotoBatchPage) {
@@ -897,132 +1009,54 @@ export function CatalogueOptimiseModal({
     preloadPhotoPage(nextPage);
   }, [isLastPhotoBatchPage, photoBatchPage, preloadPhotoPage]);
 
-  const runTitlesBatch = React.useCallback(
-    async (ids: string[]) => {
-      ids.forEach((id) => patchCopyRun(id, { title: "running", error: undefined }));
-      const response = await fetch("/api/products/generate-titles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productIds: ids }),
-        signal: copyAbortRef.current?.signal,
-      });
+  const categoryPreload = React.useMemo(() => {
+    const running = jobs.find(
+      (job) =>
+        job.jobType === "category_image_preload" &&
+        (job.status === "queued" || job.status === "running"),
+    );
+    if (running) return jobToCategoryPreload(running);
 
-      if (!response.ok || !response.body) throw new Error("Title generation failed");
+    const recent = jobs.find((job) => {
+      if (job.jobType !== "category_image_preload") return false;
+      if (job.status === "failed") return true;
+      if (job.status !== "completed" || !job.completedAt) return false;
+      return Date.now() - new Date(job.completedAt).getTime() < 5 * 60 * 1000;
+    });
 
-      await readSSE(response.body, (event) => {
-        const id = event.productId as string;
-        if (!id || event.event !== "product_complete") return;
-        if (event.success && event.title) {
-          patchProduct(id, { display_name: event.title as string });
-          patchCopyRun(id, { title: "done" });
-        } else {
-          patchCopyRun(id, {
-            title: "error",
-            error: (event.error as string) || "Title generation failed",
-          });
-          setFailedIds((prev) => new Set([...prev, id]));
-        }
-      });
-    },
-    [patchCopyRun, patchProduct],
-  );
+    return recent ? jobToCategoryPreload(recent) : null;
+  }, [jobs]);
 
-  const runDescriptionsBatch = React.useCallback(
-    async (ids: string[], mode: "description" | "specs" | "both") => {
-      const doDesc = mode === "both" || mode === "description";
-      const doSpecs = mode === "both" || mode === "specs";
-      const overrides = Object.fromEntries(
-        ids
-          .filter((id) => id in bicycleOverrides)
-          .map((id) => [id, bicycleOverrides[id]]),
-      );
-
-      ids.forEach((id) => {
-        if (doDesc) patchCopyRun(id, { description: "running", error: undefined });
-        if (doSpecs) patchCopyRun(id, { specs: "running", error: undefined });
-      });
-
-      const response = await fetch("/api/products/generate-product-descriptions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productIds: ids, mode, bicycleOverrides: overrides }),
-        signal: copyAbortRef.current?.signal,
-      });
-
-      if (!response.ok || !response.body) {
-        throw new Error("Description generation failed");
-      }
-
-      await readSSE(response.body, (event) => {
-        const id = event.productId as string;
-        if (!id || event.event !== "product_complete") return;
-
-        applyBicycleDetectionFromEvent(id, event, patchProduct, setAiBicycleHints);
-
-        if (event.success) {
-          patchProduct(id, {
-            ...(doDesc && event.description
-              ? { product_description: event.description as string }
-              : {}),
-            ...(doSpecs && event.specs ? { product_specs: event.specs as string } : {}),
-          });
-          if (doDesc) patchCopyRun(id, { description: "done" });
-          if (doSpecs) patchCopyRun(id, { specs: "done" });
-        } else {
-          const message = (event.error as string) || "Generation failed";
-          if (doDesc) patchCopyRun(id, { description: "error", error: message });
-          if (doSpecs) patchCopyRun(id, { specs: "error", error: message });
-          setFailedIds((prev) => new Set([...prev, id]));
-        }
-      });
-    },
-    [bicycleOverrides, patchCopyRun, patchProduct],
-  );
-
-  const runBicycleDetectionBatch = React.useCallback(
-    async (ids: string[]) => {
-      const pending = ids.filter((id) => !(id in bicycleOverrides));
-      if (pending.length === 0) return;
-
-      const overrides = Object.fromEntries(
-        ids
-          .filter((id) => id in bicycleOverrides)
-          .map((id) => [id, bicycleOverrides[id]]),
-      );
-
-      setBicycleDetectingIds((prev) => new Set([...prev, ...pending]));
-
+  const runCategoryImagePreload = React.useCallback(
+    async (categoryId: string, categoryName: string, options?: { force?: boolean }) => {
       try {
-        const response = await fetch("/api/products/generate-product-descriptions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            productIds: pending,
-            mode: "bicycle",
-            bicycleOverrides: overrides,
-          }),
-          signal: copyAbortRef.current?.signal,
-        });
-
-        if (!response.ok || !response.body) {
-          throw new Error("Bicycle detection failed");
-        }
-
-        await readSSE(response.body, (event) => {
-          const id = event.productId as string;
-          if (!id || event.event !== "product_complete") return;
-          applyBicycleDetectionFromEvent(id, event, patchProduct, setAiBicycleHints);
-        });
-      } finally {
-        setBicycleDetectingIds((prev) => {
-          const next = new Set(prev);
-          pending.forEach((id) => next.delete(id));
-          return next;
-        });
+        await startCategoryPreload(categoryId, categoryName, options);
+      } catch (error) {
+        console.error("[category-preload]", error);
       }
     },
-    [bicycleOverrides, patchProduct],
+    [startCategoryPreload],
   );
+
+  const runCategoryCopy = React.useCallback(
+    async (categoryId: string, categoryName: string) => {
+      try {
+        await startCategoryCopy(categoryId, categoryName);
+      } catch (error) {
+        console.error("[category-copy]", error);
+      }
+    },
+    [startCategoryCopy],
+  );
+
+  const stopCategoryPreload = React.useCallback(() => {
+    const running = jobs.find(
+      (job) =>
+        job.jobType === "category_image_preload" &&
+        (job.status === "queued" || job.status === "running"),
+    );
+    if (running) void cancelJob(running.id);
+  }, [jobs, cancelJob]);
 
   const runBulkCopy = React.useCallback(
     async (ids: string[]) => {
@@ -1030,9 +1064,6 @@ export function CatalogueOptimiseModal({
         (field) => copyFields[field],
       );
       if (ids.length === 0 || fields.length === 0) return;
-
-      setCopyRunning(true);
-      copyAbortRef.current = new AbortController();
 
       ids.forEach((id) => {
         patchCopyRun(id, {
@@ -1043,47 +1074,121 @@ export function CatalogueOptimiseModal({
         });
       });
 
-      try {
-        const jobs: Promise<void>[] = [];
-        const runsCopyContent = copyFields.description || copyFields.specs;
+      const overrides = Object.fromEntries(
+        ids.filter((id) => id in bicycleOverrides).map((id) => [id, bicycleOverrides[id]]),
+      );
 
-        if (copyFields.title) jobs.push(runTitlesBatch(ids));
-        if (copyFields.description && copyFields.specs) {
-          jobs.push(runDescriptionsBatch(ids, "both"));
-        } else if (copyFields.description) {
-          jobs.push(runDescriptionsBatch(ids, "description"));
-        } else if (copyFields.specs) {
-          jobs.push(runDescriptionsBatch(ids, "specs"));
-        }
-        if (!runsCopyContent) {
-          jobs.push(runBicycleDetectionBatch(ids));
-        }
-        await Promise.all(jobs);
+      const labelProduct = ids.length === 1 ? catalogueProducts.find((p) => p.id === ids[0]) : null;
+
+      try {
+        await startCopyBatch({
+          productIds: ids,
+          copyFields: {
+            title: copyFields.title,
+            description: copyFields.description,
+            specs: copyFields.specs,
+          },
+          bicycleOverrides: overrides,
+          label: labelProduct
+            ? `Copy · ${productLabel(labelProduct)}`
+            : `Copy · ${ids.length} products`,
+        });
       } catch (error) {
-        if ((error as Error).name !== "AbortError") {
-          ids.forEach((id) =>
-            patchCopyRun(id, {
-              error: error instanceof Error ? error.message : "Copy generation failed",
-            }),
-          );
-        }
-      } finally {
-        setCopyRunning(false);
-        copyAbortRef.current = null;
+        ids.forEach((id) =>
+          patchCopyRun(id, {
+            error: error instanceof Error ? error.message : "Copy generation failed",
+          }),
+        );
       }
     },
-    [
-      copyFields,
-      goal,
-      patchCopyRun,
-      runBicycleDetectionBatch,
-      runDescriptionsBatch,
-      runTitlesBatch,
-    ],
+    [bicycleOverrides, catalogueProducts, copyFields, patchCopyRun, startCopyBatch],
   );
 
+  React.useEffect(() => {
+    const job =
+      jobs.find((item) => item.jobType === "copy_batch" && item.metadata) ?? null;
+    if (!job?.metadata) return;
+
+    const { productIds, copyFields: fields, completedProductIds = [], failedProductIds = [] } =
+      job.metadata;
+    const running = job.status === "queued" || job.status === "running";
+
+    setCopyRuns((prev) => {
+      const next = { ...prev };
+      for (const id of productIds) {
+        const existing = next[id] ?? emptyCopyRun();
+        if (completedProductIds.includes(id)) {
+          next[id] = {
+            title: fields.title ? "done" : existing.title,
+            description: fields.description ? "done" : existing.description,
+            specs: fields.specs ? "done" : existing.specs,
+          };
+        } else if (failedProductIds.includes(id)) {
+          next[id] = {
+            title: fields.title ? "error" : existing.title,
+            description: fields.description ? "error" : existing.description,
+            specs: fields.specs ? "error" : existing.specs,
+            error: "Generation failed",
+          };
+        } else if (running) {
+          next[id] = {
+            title: fields.title ? "running" : existing.title,
+            description: fields.description ? "running" : existing.description,
+            specs: fields.specs ? "running" : existing.specs,
+          };
+        }
+      }
+      return next;
+    });
+  }, [jobs]);
+
+  React.useEffect(() => {
+    if (!activeCopyJob || !copyRunning) return;
+    const ids = activeCopyJob.metadata?.productIds ?? [];
+    if (ids.length === 0) return;
+
+    let cancelled = false;
+
+    const refreshProducts = async () => {
+      const params = new URLSearchParams({
+        page: "1",
+        pageSize: String(Math.max(ids.length, 1)),
+        ids: ids.join(","),
+      });
+
+      const response = await fetch(`/api/products?${params}`);
+      if (!response.ok || cancelled) return;
+
+      const json = (await response.json()) as { products?: OptimizerProduct[] };
+      const rows = json.products ?? [];
+      if (rows.length === 0 || cancelled) return;
+
+      setProducts((prev) => {
+        const byId = new Map(prev.map((product) => [product.id, product]));
+        for (const row of rows) {
+          const existing = byId.get(row.id);
+          byId.set(row.id, existing ? { ...existing, ...row } : row);
+        }
+        return [...byId.values()];
+      });
+    };
+
+    void refreshProducts();
+    const interval = window.setInterval(() => {
+      void refreshProducts();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeCopyJob?.id, copyRunning, setProducts]);
+
   const runImageSearch = React.useCallback(
-    async (product: OptimizerProduct, options?: { background?: boolean }) => {
+    async (
+      product: OptimizerProduct,
+      options?: { background?: boolean; cacheEntry?: SerperImageCacheEntry | null },
+    ) => {
       const background = options?.background ?? false;
 
       if (!product.canonical_product_id) {
@@ -1102,17 +1207,38 @@ export function CatalogueOptimiseModal({
       if (!background) {
         imageAbortRef.current = controller;
       }
-      patchImageRun(product.id, { ...emptyImageRun(), phase: "searching" });
-
       try {
         const speedProduct = toSpeedProduct(product);
         const searchQuery = buildSpeedSearchQuery(speedProduct);
-        const candidates = await fetchSerperCandidates(speedProduct, searchQuery);
+        let cacheEntry = options?.cacheEntry ?? null;
+
+        if (!cacheEntry && product.canonical_product_id) {
+          const caches = await fetchSerperCaches([product.canonical_product_id]);
+          cacheEntry = caches[product.canonical_product_id] ?? null;
+        }
+
+        const cachedRun = imageRunFromSerperCache(cacheEntry ?? undefined);
+        if (cachedRun?.phase === "ready") {
+          patchImageRun(product.id, { ...emptyImageRun(), ...cachedRun });
+          return true;
+        }
+
+        let candidates = cacheEntry?.candidates ?? [];
+        if (candidates.length === 0) {
+          patchImageRun(product.id, { ...emptyImageRun(), phase: "searching" });
+          candidates = await fetchSerperCandidates(speedProduct, searchQuery);
+        }
+
         if (!background && imageCancelledRef.current) return false;
         if (candidates.length === 0) {
           patchImageRun(product.id, {
             phase: "no_results",
             error: "No images found",
+          });
+          saveSerperCache(product.canonical_product_id, {
+            searchQuery,
+            candidates: [],
+            aiSelection: null,
           });
           if (!background) {
             setFailedIds((prev) => new Set([...prev, product.id]));
@@ -1148,6 +1274,16 @@ export function CatalogueOptimiseModal({
           primaryUrl: json.primaryUrl,
           reasoning: json.reasoning,
           error: undefined,
+        });
+        saveSerperCache(product.canonical_product_id, {
+          searchQuery: cacheEntry?.searchQuery || searchQuery,
+          candidates,
+          aiSelection: {
+            selectedCandidates: json.selectedCandidates,
+            selectedUrls: json.selectedUrls,
+            primaryUrl: json.primaryUrl,
+            reasoning: json.reasoning,
+          },
         });
         return true;
       } catch (error) {
@@ -1197,17 +1333,40 @@ export function CatalogueOptimiseModal({
 
     if (targets.length === 0) return;
 
+    const caches = await fetchSerperCaches(
+      targets
+        .map((product) => product.canonical_product_id)
+        .filter((id): id is string => !!id),
+    );
+
+    const pending: OptimizerProduct[] = [];
+    for (const product of targets) {
+      const canonicalId = product.canonical_product_id;
+      const cached = canonicalId ? imageRunFromSerperCache(caches[canonicalId]) : null;
+      if (cached?.phase === "ready") {
+        patchImageRun(product.id, { ...emptyImageRun(), ...cached });
+        continue;
+      }
+      pending.push(product);
+    }
+
+    if (pending.length === 0) return;
+
     setPreloadingImages(true);
-    setPreloadProgress({ done: 0, total: targets.length });
+    setPreloadProgress({ done: 0, total: pending.length });
 
     let completed = 0;
-    for (let index = 0; index < targets.length; index += concurrency) {
-      const chunk = targets.slice(index, index + concurrency);
+    for (let index = 0; index < pending.length; index += concurrency) {
+      const chunk = pending.slice(index, index + concurrency);
       await Promise.all(
         chunk.map(async (product) => {
-          await runImageSearch(product, { background: true });
+          const canonicalId = product.canonical_product_id;
+          await runImageSearch(product, {
+            background: true,
+            cacheEntry: canonicalId ? caches[canonicalId] ?? null : null,
+          });
           completed += 1;
-          setPreloadProgress({ done: completed, total: targets.length });
+          setPreloadProgress({ done: completed, total: pending.length });
         }),
       );
     }
@@ -1320,16 +1479,22 @@ export function CatalogueOptimiseModal({
   );
 
   const stopCurrent = () => {
-    copyAbortRef.current?.abort();
+    if (activeCopyJob) {
+      void cancelJob(activeCopyJob.id);
+    }
     imageCancelledRef.current = true;
     imageAbortRef.current?.abort();
-    setCopyRunning(false);
   };
 
   const activeCopyFields = React.useMemo(
     () => (Object.keys(copyFields) as CopyField[]).filter((field) => copyFields[field]),
     [copyFields],
   );
+
+  const copyBackgroundProgress = React.useMemo(() => {
+    if (!copyRunning || !activeCopyJob || copyActiveIds.length === 0) return null;
+    return { done: activeCopyJob.done, total: activeCopyJob.total || copyActiveIds.length };
+  }, [activeCopyJob, copyActiveIds.length, copyRunning]);
 
   const toggleCopySelect = (id: string) => {
     setSelectedCopyIds((prev) => {
@@ -1408,6 +1573,16 @@ export function CatalogueOptimiseModal({
               productSearchResults={productSearchResults}
               productSearchLoading={productSearchLoading}
               onProductSelect={handleProductSelect}
+              categoryPreload={categoryPreload}
+              onPreloadCategory={(categoryId, categoryName) =>
+                void runCategoryImagePreload(categoryId, categoryName)
+              }
+              onPreloadCopy={(categoryId, categoryName) =>
+                void runCategoryCopy(categoryId, categoryName)
+              }
+              onStopPreload={stopCategoryPreload}
+              getCategoryPreload={getCategoryPreload}
+              getCategoryCopy={getCategoryCopy}
             />
           )}
 
@@ -1486,6 +1661,13 @@ export function CatalogueOptimiseModal({
             />
           )}
 
+          {copyBackgroundProgress && (step === "copy_batch" || step === "photos") ? (
+            <BackgroundCopyBanner
+              progress={copyBackgroundProgress}
+              onStop={stopCurrent}
+            />
+          ) : null}
+
           {step === "copy_batch" && goal && batchSize !== "individual" && (
             <CopyBatchStep
               products={filteredCopyProducts}
@@ -1556,7 +1738,6 @@ export function CatalogueOptimiseModal({
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={copyRunning}
                 onClick={() => {
                   if (step === "individual_work") {
                     goBackIndividualProduct();
@@ -1676,22 +1857,12 @@ export function CatalogueOptimiseModal({
                   </Button>
                 )}
                 {goal === "both" ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={copyRunning}
-                    onClick={startPhotosFlow}
-                  >
-                    Continue to photos
+                  <Button type="button" size="sm" onClick={startPhotosFlow}>
+                    {copyRunning ? "Continue to photos (copy in background)" : "Continue to photos"}
                     <ChevronRight className="size-4" />
                   </Button>
                 ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={copyRunning}
-                    onClick={() => setStep("done")}
-                  >
+                  <Button type="button" size="sm" onClick={() => setStep("done")}>
                     Finish
                   </Button>
                 )}
@@ -1760,6 +1931,34 @@ export function CatalogueOptimiseModal({
   );
 }
 
+function BackgroundCopyBanner({
+  progress,
+  onStop,
+}: {
+  progress: { done: number; total: number };
+  onStop: () => void;
+}) {
+  return (
+    <div className="border-b border-border bg-white px-5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-white px-4 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">Copy generating in background</p>
+            <p className="text-xs text-muted-foreground">
+              {progress.done} of {progress.total} products complete. You can keep reviewing photos.
+            </p>
+          </div>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={onStop}>
+          <StopCircle className="size-4" />
+          Stop copy
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function CategoryStep({
   categories,
   loading,
@@ -1771,6 +1970,12 @@ function CategoryStep({
   productSearchResults,
   productSearchLoading,
   onProductSelect,
+  categoryPreload,
+  onPreloadCategory,
+  onPreloadCopy,
+  onStopPreload,
+  getCategoryPreload,
+  getCategoryCopy,
 }: {
   categories: CategoryOption[];
   loading: boolean;
@@ -1782,6 +1987,12 @@ function CategoryStep({
   productSearchResults: OptimizerProduct[];
   productSearchLoading: boolean;
   onProductSelect: (product: OptimizerProduct) => void;
+  categoryPreload: CategoryPreloadState | null;
+  onPreloadCategory: (categoryId: string, categoryName: string) => void;
+  onPreloadCopy: (categoryId: string, categoryName: string) => void;
+  onStopPreload: () => void;
+  getCategoryPreload: (categoryId: string) => OptimizeJob | null;
+  getCategoryCopy: (categoryId: string) => OptimizeJob | null;
 }) {
   const showProductResults = productSearch.trim().length > 0;
 
@@ -1866,6 +2077,45 @@ function CategoryStep({
             />
           </div>
 
+          {categoryPreload ? (
+            <div className="shrink-0 rounded-md border border-border bg-white px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    {categoryPreload.error
+                      ? `Preload failed for ${categoryPreload.categoryName}`
+                      : categoryPreload.running
+                        ? `Preloading images for ${categoryPreload.categoryName}`
+                        : `Preload finished for ${categoryPreload.categoryName}`}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {categoryPreload.error ? (
+                      categoryPreload.error
+                    ) : (
+                      <>
+                        {categoryPreload.message ||
+                          `${categoryPreload.done} of ${categoryPreload.total || "…"} products`}
+                        {categoryPreload.total > 0
+                          ? ` · ${categoryPreload.done} of ${categoryPreload.total} done`
+                          : null}
+                        {categoryPreload.skipped > 0
+                          ? ` · ${categoryPreload.skipped} already cached or approved`
+                          : ""}
+                        {categoryPreload.failed > 0 ? ` · ${categoryPreload.failed} failed` : ""}
+                      </>
+                    )}
+                  </p>
+                </div>
+                {categoryPreload.running ? (
+                  <Button type="button" variant="outline" size="sm" onClick={onStopPreload}>
+                    <StopCircle className="size-4" />
+                    Stop
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           {loading ? (
             <CenteredState label="Loading categories" />
           ) : (
@@ -1873,31 +2123,83 @@ function CategoryStep({
               <div className="divide-y divide-border">
                 {categories.map((category) => {
                   const photoNeed = category.missingSerperImages || category.missingImages;
+                  const copyNeed = category.missingCopy;
+                  const preloadJob = getCategoryPreload(category.id);
+                  const copyJob = getCategoryCopy(category.id);
+                  const isPreloadingThis =
+                    !!preloadJob &&
+                    (preloadJob.status === "queued" || preloadJob.status === "running");
+                  const isCopyingThis =
+                    !!copyJob &&
+                    (copyJob.status === "queued" || copyJob.status === "running");
+                  const canPreload = category.id !== "all" && photoNeed > 0;
+                  const canLoadCopy = category.id !== "all" && copyNeed > 0;
                   return (
-                    <button
+                    <div
                       key={category.id}
-                      type="button"
-                      onClick={() => onSelect(category.id)}
-                      className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-muted/60"
+                      className="flex items-center gap-2 px-4 py-3 transition hover:bg-muted/60"
                     >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          {category.id === "all" ? (
-                            <Layers className="size-4 text-muted-foreground" />
-                          ) : (
-                            <Package className="size-4 text-muted-foreground" />
-                          )}
-                          <p className="truncate text-sm font-medium text-foreground">
-                            {category.name}
+                      <button
+                        type="button"
+                        onClick={() => onSelect(category.id)}
+                        className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            {category.id === "all" ? (
+                              <Layers className="size-4 text-muted-foreground" />
+                            ) : (
+                              <Package className="size-4 text-muted-foreground" />
+                            )}
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {category.name}
+                            </p>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {category.count.toLocaleString()} products
+                            {copyNeed > 0 ? ` - ${copyNeed.toLocaleString()} need copy` : ""}
+                            {photoNeed > 0 ? ` - ${photoNeed.toLocaleString()} need photos` : ""}
                           </p>
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {category.count.toLocaleString()} products
-                          {photoNeed > 0 ? ` - ${photoNeed.toLocaleString()} need photos` : ""}
-                        </p>
-                      </div>
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                    </button>
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                      </button>
+                      {canLoadCopy || canPreload ? (
+                        <div className="flex shrink-0 flex-col gap-1.5 sm:flex-row">
+                          {canLoadCopy ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={isCopyingThis}
+                              onClick={() => onPreloadCopy(category.id, category.name)}
+                            >
+                              {isCopyingThis ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <Type className="size-4" />
+                              )}
+                              Load copy
+                            </Button>
+                          ) : null}
+                          {canPreload ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={isPreloadingThis}
+                              onClick={() => onPreloadCategory(category.id, category.name)}
+                            >
+                              {isPreloadingThis ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <ImageIcon className="size-4" />
+                              )}
+                              Load images
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>
@@ -2472,8 +2774,8 @@ function CopyBatchStep({
         <div>
           <h2 className="text-lg font-semibold text-foreground">Review & generate copy</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Select products, choose fields to generate, then run AI on the batch. Preview every
-            title, description, and spec before continuing to photos.
+            Select products, choose fields to generate, then run AI on the batch. You can continue
+            to photos while copy finishes in the background.
           </p>
         </div>
 

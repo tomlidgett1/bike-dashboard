@@ -1,5 +1,7 @@
-import type { GenieChartPayload } from "@/components/genie/genie-chart";
-import type { GenieTablePayload } from "@/components/genie/genie-data-table";
+import type {
+  GenieChartPayload,
+  GenieTablePayload,
+} from "@/lib/genie/visual-payloads";
 import type { GeniePivotTablePayload } from "@/lib/genie/pivot-table";
 import type { DashboardWidgetQuerySource } from "@/lib/dashboard/dashboard-query-visual";
 import type { VisualDateFormat, VisualValueFormat } from "@/lib/genie/visual-format";

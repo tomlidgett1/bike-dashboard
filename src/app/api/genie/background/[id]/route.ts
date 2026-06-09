@@ -36,7 +36,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
     const { data: job, error } = await auth.supabase
       .from('genie_background_jobs')
-      .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, created_at, updated_at, started_at, completed_at')
+      .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, message, progress_phase, job_type, metadata, created_at, updated_at, started_at, completed_at')
       .eq('id', id)
       .eq('user_id', auth.user.id)
       .single()
@@ -64,7 +64,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         })
         .eq('id', id)
         .eq('user_id', auth.user.id)
-        .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, created_at, updated_at, started_at, completed_at')
+        .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, message, progress_phase, job_type, metadata, created_at, updated_at, started_at, completed_at')
         .single()
 
       if (updateError) throw updateError
@@ -106,7 +106,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
       })
       .eq('id', id)
       .eq('user_id', auth.user.id)
-      .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, created_at, updated_at, started_at, completed_at')
+      .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, message, progress_phase, job_type, metadata, created_at, updated_at, started_at, completed_at')
       .single()
 
     if (error) throw error

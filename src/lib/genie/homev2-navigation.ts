@@ -1,4 +1,9 @@
 export const HOMEV2_PENDING_PROMPT_KEY = "homev2-pending-prompt";
+export const HOMEV2_CONVERSATION_QUERY = "conversation";
+
+export function homeConversationUrl(conversationId: string) {
+  return `/settings/store/home?${HOMEV2_CONVERSATION_QUERY}=${encodeURIComponent(conversationId)}`;
+}
 
 export function queueHomeV2Prompt(prompt: string) {
   const trimmed = prompt.trim();

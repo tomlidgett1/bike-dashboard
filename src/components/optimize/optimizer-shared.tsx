@@ -76,6 +76,7 @@ export interface CategoryOption {
   count: number;
   missingImages: number;
   missingSerperImages: number;
+  missingCopy: number;
 }
 
 export type ImagePhase =
@@ -124,6 +125,20 @@ export const emptyImageRun = (): ImageRun => ({
   selectedUrls: [],
   primaryUrl: null,
 });
+
+/** Map selected URLs/candidates through enhancedUrls for approval saves. */
+export function imageRunWithEnhancedUrls(run: ImageRun) {
+  const mapUrl = (url: string) => run.enhancedUrls?.[url] ?? url;
+  return {
+    selectedUrls: run.selectedUrls.map(mapUrl),
+    selectedCandidates: run.selectedCandidates.map((candidate) => {
+      const enhanced = run.enhancedUrls?.[candidate.url];
+      if (!enhanced) return candidate;
+      return { ...candidate, url: enhanced, thumbnailUrl: enhanced };
+    }),
+    primaryCandidateUrl: run.primaryUrl ? mapUrl(run.primaryUrl) : null,
+  };
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -239,6 +254,10 @@ function mapProductRows(rows: ProductApiRow[]): OptimizerProduct[] {
   }));
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 export async function fetchLiveProductSoh(
   productIds: string[],
   options?: { signal?: AbortSignal },
@@ -251,7 +270,13 @@ export async function fetchLiveProductSoh(
     status: "active",
     ids: productIds.join(","),
   });
-  const res = await fetch(`/api/products?${params}`, { signal: options?.signal });
+  let res: Response;
+  try {
+    res = await fetch(`/api/products?${params}`, { signal: options?.signal });
+  } catch (error) {
+    if (isAbortError(error)) return {};
+    throw error;
+  }
   if (!res.ok) return {};
 
   const data = await res.json();
@@ -272,10 +297,15 @@ export async function fetchOptimizerProductsBySearch(
     status: "active",
     search,
   });
-  const res = await fetch(`/api/products?${params}`, { signal: options?.signal });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return mapProductRows((data.products ?? []) as ProductApiRow[]);
+  try {
+    const res = await fetch(`/api/products?${params}`, { signal: options?.signal });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return mapProductRows((data.products ?? []) as ProductApiRow[]);
+  } catch (error) {
+    if (isAbortError(error)) return [];
+    throw error;
+  }
 }
 
 // ── Hooks ───────────────────────────────────────────────────────────────────
@@ -289,16 +319,18 @@ export function useOptimizerCategories() {
     (async () => {
       setLoading(true);
       try {
-        const [scanRes, summaryRes] = await Promise.all([
+        const [scanRes, imageSummaryRes, copySummaryRes] = await Promise.all([
           fetch("/api/lightspeed/categories/scan"),
           fetch("/api/store/image-summary"),
+          fetch("/api/store/copy-summary"),
         ]);
         const scanData = await scanRes.json();
-        const summaryData = await summaryRes.json();
+        const imageSummaryData = await imageSummaryRes.json();
+        const copySummaryData = await copySummaryRes.json();
         const raw: Array<{ id?: string; name?: string; product_count?: number }> =
           scanData.categories ?? [];
         const missingMap = new Map<string, { missing: number; missing_serper: number }>(
-          (summaryData.summary ?? []).map(
+          (imageSummaryData.summary ?? []).map(
             (s: {
               ls_category_id: string;
               missing_images: number;
@@ -310,6 +342,12 @@ export function useOptimizerCategories() {
               ] as [string, { missing: number; missing_serper: number }],
           ),
         );
+        const copyMap = new Map<string, number>(
+          (copySummaryData.summary ?? []).map(
+            (s: { ls_category_id: string; missing_copy: number }) =>
+              [s.ls_category_id, s.missing_copy ?? 0] as [string, number],
+          ),
+        );
         const opts: CategoryOption[] = raw
           .filter((c) => c.id)
           .map((c) => ({
@@ -318,6 +356,7 @@ export function useOptimizerCategories() {
             count: c.product_count ?? 0,
             missingImages: missingMap.get(c.id!)?.missing ?? 0,
             missingSerperImages: missingMap.get(c.id!)?.missing_serper ?? 0,
+            missingCopy: copyMap.get(c.id!) ?? 0,
           }));
         if (!cancelled) setCategories(opts);
       } catch {

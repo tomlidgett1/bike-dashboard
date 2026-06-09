@@ -29,7 +29,7 @@ import {
   type VisualDateFormat,
   type VisualValueFormat,
 } from "@/lib/genie/visual-format";
-import type { GenieTableColumn } from "@/components/genie/genie-data-table";
+import type { GenieTableColumn } from "@/lib/genie/visual-payloads";
 
 interface DashboardWidgetSettingsDialogProps {
   widget: DashboardWidget;

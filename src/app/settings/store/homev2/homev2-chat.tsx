@@ -5,8 +5,8 @@ import { createPortal, flushSync } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, History, Pencil, Plus, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { GenieChart, type GenieChartPayload } from "@/components/genie/genie-chart";
-import { GenieDataTable, type GenieTablePayload } from "@/components/genie/genie-data-table";
+import { GenieChart } from "@/components/genie/genie-chart";
+import { GenieDataTable } from "@/components/genie/genie-data-table";
 import { GeniePivotTable } from "@/components/genie/genie-pivot-table";
 import { HomeV2ChatInput } from "@/components/genie/homev2-chat-input";
 import type { GeniePivotTablePayload } from "@/lib/genie/pivot-table";
@@ -20,9 +20,6 @@ import type { GenieWebImagePreview } from "@/lib/genie/web-image-search";
 import {
   GenieRawLogsViewer,
   GenieThinkingDetailSections,
-  appendRawDebugLog,
-  mergeAnalysisPlan,
-  upsertAnalysisQuery,
 } from "@/components/genie/genie-thinking-detail-sections";
 import type { GenieStoreProductPreview } from "@/lib/genie/store-product-previews";
 import { HomeV2MetricsCards } from "@/components/settings/homev2-metrics-cards";
@@ -36,16 +33,40 @@ import type {
   GenieWorkorderCardsPayload,
   GmailEmailsPayload,
   GmailConnectPayload,
-  GmailAgentContext,
 } from "@/lib/types/genie-agent";
-import { consumeHomeV2PendingPrompt } from "@/lib/genie/homev2-navigation";
+import {
+  HOMEV2_CONVERSATION_QUERY,
+  consumeHomeV2PendingPrompt,
+} from "@/lib/genie/homev2-navigation";
+import {
+  type HomeV2SavedConversation,
+  buildMinimalHomeV2Conversation,
+  conversationHasAssistantBody,
+  homeConversationTitle,
+  mapApiConversationToSaved,
+  mergeCompletedJobIntoConversation,
+  normalizeMessageContent,
+  readConversationHistory,
+  sanitizeStoredMessages,
+  writeConversationHistory,
+} from "@/lib/genie/homev2-conversation-storage";
+import type { GenieJob } from "@/lib/genie/genie-job-types";
+import { useSearchParams } from "next/navigation";
 import { compactGenieProgressText, liveGenieProgressPreview } from "@/lib/genie/progress-text";
-import { mergeGmailAgentContext } from "@/lib/genie/gmail-agent-context";
 import {
   GenieProgressBrandIcon,
   resolveGenieProgressBrand,
 } from "@/components/genie/genie-progress-brand";
 import { renderGenieMarkdown } from "@/lib/genie/render-markdown";
+import { useGenieJobs } from "@/components/providers/genie-jobs-provider";
+import {
+  isGenieJobRunning,
+  mergeGenieJobIntoAssistantMessage,
+} from "@/lib/genie/sync-genie-job-message";
+import type {
+  GenieChartPayload,
+  GenieTablePayload,
+} from "@/lib/genie/visual-payloads";
 
 type ChatRole = "user" | "assistant";
 
@@ -80,14 +101,7 @@ interface ChatMessage {
   rawDebugLogs?: GenieRawDebugLogEntry[];
   isStreaming?: boolean;
   error?: string;
-}
-
-interface SavedHomeV2Conversation {
-  id: string;
-  title: string;
-  updatedAt: string;
-  messages: ChatMessage[];
-  composioSessionIds?: Record<string, string>;
+  backgroundJobId?: string;
 }
 
 interface QueuedPrompt {
@@ -95,7 +109,6 @@ interface QueuedPrompt {
   text: string;
 }
 
-const HISTORY_STORAGE_KEY = "homev2-genie-conversations";
 const APP_HEADER_OFFSET_PX = 57;
 
 const THINKING_SHIMMER_STYLE: React.CSSProperties = {
@@ -182,13 +195,14 @@ function upsertLiveReasoningStep(steps: ProcessStep[] | undefined, step: Process
 }
 
 function AssistantMessageContent({ content }: { content: string }) {
-  if (!content) return null;
+  const normalized = normalizeMessageContent(content);
+  if (!normalized.trim()) return null;
 
   return (
-    <div className="max-w-3xl text-[15px] leading-relaxed">
+    <div className="max-w-3xl text-[15px] leading-relaxed" dir="ltr" style={{ unicodeBidi: "isolate" }}>
       <div
         className="[&>p+p]:mt-2 [&_strong]:font-semibold"
-        dangerouslySetInnerHTML={{ __html: renderGenieMarkdown(content) }}
+        dangerouslySetInnerHTML={{ __html: renderGenieMarkdown(normalized) }}
       />
     </div>
   );
@@ -463,27 +477,6 @@ function ProcessTimelineBox({
   );
 }
 
-function readConversationHistory(): SavedHomeV2Conversation[] {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(HISTORY_STORAGE_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.slice(0, 20) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeConversationHistory(conversations: SavedHomeV2Conversation[]) {
-  window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(conversations.slice(0, 20)));
-}
-
-function conversationTitle(messages: ChatMessage[]) {
-  const firstUser = messages.find((message) => message.role === "user")?.content.trim();
-  if (!firstUser) return "New conversation";
-  return firstUser.length > 58 ? `${firstUser.slice(0, 57)}…` : firstUser;
-}
-
 function conversationTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -502,9 +495,9 @@ function ConversationHistoryDropdown({
   showNewChat = false,
   onNewChat,
 }: {
-  conversations: SavedHomeV2Conversation[];
+  conversations: HomeV2SavedConversation[];
   activeConversationId: string | null;
-  onSelect: (conversation: SavedHomeV2Conversation) => void;
+  onSelect: (conversation: HomeV2SavedConversation) => void;
   showNewChat?: boolean;
   onNewChat?: () => void;
 }) {
@@ -707,9 +700,13 @@ function PromptQueueList({
 }
 
 export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
+  const searchParams = useSearchParams();
+  const { jobs, startAgentBackgroundJob, cancelJob } = useGenieJobs();
+  const appliedGenieJobsRef = React.useRef(new Set<string>());
+  const lastOpenedConversationRef = React.useRef<{ id: string; complete: boolean } | null>(null);
   const [input, setInput] = React.useState("");
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
-  const [conversations, setConversations] = React.useState<SavedHomeV2Conversation[]>([]);
+  const [conversations, setConversations] = React.useState<HomeV2SavedConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = React.useState<string | null>(null);
   const [composioSessionIds, setComposioSessionIds] = React.useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = React.useState(false);
@@ -798,11 +795,30 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     if (!messages.some((message) => message.role === "user")) return;
 
     const id = activeConversationId ?? crypto.randomUUID();
-    const nextConversation: SavedHomeV2Conversation = {
+    const nextConversation: HomeV2SavedConversation = {
       id,
-      title: conversationTitle(messages),
+      title: homeConversationTitle(messages),
       updatedAt: new Date().toISOString(),
-      messages,
+      messages: sanitizeStoredMessages(
+        messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          charts: message.charts,
+          tables: message.tables,
+          pivotTables: message.pivotTables,
+          proposals: message.proposals,
+          products: message.products,
+          webImages: message.webImages,
+          workorders: message.workorders,
+          customerProfile: message.customerProfile,
+          gmailEmails: message.gmailEmails,
+          analysisPlan: message.analysisPlan,
+          analysisQueries: message.analysisQueries,
+          isStreaming: message.isStreaming,
+          error: message.error,
+        })),
+      ),
       composioSessionIds,
     };
 
@@ -828,11 +844,30 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     setIsLoading(false);
   }, [clearPromptQueue]);
 
-  const loadConversation = React.useCallback((conversation: SavedHomeV2Conversation) => {
+  const loadConversation = React.useCallback((conversation: HomeV2SavedConversation) => {
     abortRef.current?.abort();
     clearPromptQueue();
     setInput("");
-    setMessages(conversation.messages.map((message) => ({ ...message, isStreaming: false, status: undefined })));
+    setMessages(
+      sanitizeStoredMessages(conversation.messages).map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        charts: message.charts as ChatMessage["charts"],
+        tables: message.tables as ChatMessage["tables"],
+        pivotTables: message.pivotTables as ChatMessage["pivotTables"],
+        proposals: message.proposals as ChatMessage["proposals"],
+        products: message.products as ChatMessage["products"],
+        webImages: message.webImages as ChatMessage["webImages"],
+        workorders: message.workorders as ChatMessage["workorders"],
+        customerProfile: message.customerProfile as ChatMessage["customerProfile"],
+        gmailEmails: message.gmailEmails as ChatMessage["gmailEmails"],
+        analysisPlan: message.analysisPlan as ChatMessage["analysisPlan"],
+        analysisQueries: message.analysisQueries as ChatMessage["analysisQueries"],
+        isStreaming: false,
+        error: message.error,
+      })),
+    );
     setComposioSessionIds(conversation.composioSessionIds ?? {});
     composioSessionIdsRef.current = conversation.composioSessionIds ?? {};
     setLastMsgMinHeight(undefined);
@@ -842,9 +877,159 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     setIsLoading(false);
   }, [clearPromptQueue]);
 
+  React.useEffect(() => {
+    const requestedId = searchParams.get(HOMEV2_CONVERSATION_QUERY)?.trim();
+    if (!requestedId) return;
+
+    const conversationJobs = jobs.filter(
+      (job) => job.conversationId === requestedId && job.metadata.source === "homev2",
+    );
+    const matchingJob =
+      conversationJobs.find(
+        (job) => job.status === "completed" && job.result?.assistantMessage,
+      ) ??
+      conversationJobs.find((job) => job.status === "queued" || job.status === "running");
+
+    const lastOpened = lastOpenedConversationRef.current;
+    if (lastOpened?.id === requestedId && lastOpened.complete) return;
+    if (
+      lastOpened?.id === requestedId &&
+      !lastOpened.complete &&
+      matchingJob &&
+      matchingJob.status !== "completed"
+    ) {
+      return;
+    }
+
+    const openResolvedConversation = (conversation: HomeV2SavedConversation) => {
+      const isComplete = conversationHasAssistantBody(conversation);
+      lastOpenedConversationRef.current = { id: requestedId, complete: isComplete };
+      setConversations((current) => {
+        const next = [
+          conversation,
+          ...current.filter((entry) => entry.id !== conversation.id),
+        ].slice(0, 20);
+        writeConversationHistory(next);
+        return next;
+      });
+      loadConversation(conversation);
+    };
+
+    const resolveConversation = async (job?: GenieJob) => {
+      const cached = readConversationHistory().find((conversation) => conversation.id === requestedId);
+      let conversation: HomeV2SavedConversation | null = null;
+
+      try {
+        const response = await fetch(`/api/genie/conversations/${requestedId}`);
+        if (response.ok) {
+          const data = (await response.json()) as {
+            id: string;
+            title?: string;
+            messages?: unknown[];
+            created_at?: string;
+          };
+          conversation = mapApiConversationToSaved(
+            data,
+            job?.metadata.composio_session_ids,
+          );
+        }
+      } catch {
+        // Fall back to cached conversation below.
+      }
+
+      if (!conversation && cached) {
+        conversation = cached;
+      }
+
+      if (!conversation && job) {
+        conversation = buildMinimalHomeV2Conversation(job);
+      }
+
+      if (!conversation) return null;
+
+      conversation = {
+        ...conversation,
+        messages: sanitizeStoredMessages(conversation.messages),
+      };
+
+      if (job?.status === "completed" && job.result?.assistantMessage) {
+        conversation = mergeCompletedJobIntoConversation(conversation, job);
+      }
+
+      return conversation;
+    };
+
+    let cancelled = false;
+    void resolveConversation(matchingJob).then((conversation) => {
+      if (cancelled || !conversation) return;
+      openResolvedConversation(conversation);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, loadConversation, jobs]);
+
   const stopGeneration = React.useCallback(() => {
     abortRef.current?.abort();
-  }, []);
+    const runningJob = messagesRef.current.find((message) => message.backgroundJobId)?.backgroundJobId;
+    if (runningJob) void cancelJob(runningJob);
+  }, [cancelJob]);
+
+  React.useEffect(() => {
+    for (const job of jobs) {
+      const assistantId = job.metadata.client_assistant_id;
+      if (!assistantId) continue;
+
+      if (job.status === "completed" || job.status === "failed") {
+        if (appliedGenieJobsRef.current.has(job.id)) continue;
+        appliedGenieJobsRef.current.add(job.id);
+      }
+
+      setMessages((current) => {
+        const target = current.find((message) => message.id === assistantId);
+        if (!target) return current;
+        let merged = mergeGenieJobIntoAssistantMessage(target, job);
+        if (isGenieJobRunning(job) && job.message) {
+          const step = createProcessStep(job.progressPhase ?? "thinking", job.message);
+          merged = {
+            ...merged,
+            processSteps: appendProcessStep(target.processSteps, step),
+          };
+        }
+        if (
+          target.status === merged.status &&
+          target.content === merged.content &&
+          target.isStreaming === merged.isStreaming &&
+          target.error === merged.error &&
+          target.processSteps?.length === (merged as ChatMessage).processSteps?.length
+        ) {
+          return current;
+        }
+        const next = current.map((message) => (message.id === assistantId ? merged : message));
+        messagesRef.current = next;
+        return next;
+      });
+
+      if (job.metadata.composio_session_ids) {
+        setComposioSessionIds((current) => {
+          const next = { ...current, ...job.metadata.composio_session_ids };
+          composioSessionIdsRef.current = next;
+          return next;
+        });
+      }
+    }
+  }, [jobs]);
+
+  React.useEffect(() => {
+    const streaming = messages.some((message) => message.isStreaming);
+    if (isLoadingRef.current === streaming) return;
+    isLoadingRef.current = streaming;
+    setIsLoading(streaming);
+    if (!streaming) {
+      processPromptQueue();
+    }
+  }, [messages, processPromptQueue]);
 
   const runSend = React.useCallback(async (text: string, clearInputField = true) => {
     const trimmed = text.trim();
@@ -903,404 +1088,57 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     snapLatestUserToTop();
     requestAnimationFrame(snapLatestUserToTop);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const streamState = { pending: "", rafId: null as number | null };
-    const flushText = () => {
-      if (streamState.pending) {
-        const chunk = streamState.pending;
-        streamState.pending = "";
+    try {
+      const jobId = await startAgentBackgroundJob({
+        messages: nextMessages.map((message) => ({
+          role: message.role,
+          content: message.content,
+          charts: message.charts,
+          tables: message.tables,
+          pivotTables: message.pivotTables,
+          products: message.products,
+          webImages: message.webImages,
+          workorders: message.workorders,
+          customerProfile: message.customerProfile,
+          proposals: message.proposals,
+          gmailEmails: message.gmailEmails,
+          analysisPlan: message.analysisPlan,
+          analysisQueries: message.analysisQueries,
+        })),
+        prompt: trimmed,
+        conversationId,
+        composioSessionIds: composioSessionIdsRef.current,
+        clientAssistantId: assistantId,
+        source: "homev2",
+      });
+
+      if (jobId) {
         setMessages((current) => current.map((message) =>
           message.id === assistantId
-            ? { ...message, content: `${message.content}${chunk}`, status: undefined }
+            ? { ...message, backgroundJobId: jobId }
             : message
         ));
       }
-      streamState.rafId = null;
-    };
-    const queueTextDelta = (text: string) => {
-      if (!text) return;
-      streamState.pending += text;
-      if (streamState.rafId === null) {
-        streamState.rafId = requestAnimationFrame(flushText);
-      }
-    };
-    const flushPendingText = () => {
-      if (streamState.rafId !== null) {
-        cancelAnimationFrame(streamState.rafId);
-        flushText();
-      }
-    };
-
-    const recordStreamEvent = (payload: Record<string, unknown>) => {
+    } catch (error) {
       setMessages((current) => current.map((message) =>
         message.id === assistantId
-          ? { ...message, rawDebugLogs: appendRawDebugLog(message.rawDebugLogs, payload) }
+          ? {
+              ...message,
+              isStreaming: false,
+              status: undefined,
+              error: error instanceof Error ? error.message : "Failed to start Genie.",
+            }
           : message
       ));
-    };
-
-    try {
-      const response = await fetch("/api/genie/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          conversation_id: conversationId,
-          composio_session_ids: composioSessionIdsRef.current,
-          messages: nextMessages.map((message) => ({
-            role: message.role,
-            content: message.content,
-            charts: message.charts,
-            tables: message.tables,
-            pivotTables: message.pivotTables,
-            products: message.products,
-            webImages: message.webImages,
-            workorders: message.workorders,
-            customerProfile: message.customerProfile,
-            proposals: message.proposals,
-            gmailEmails: message.gmailEmails,
-            analysisPlan: message.analysisPlan,
-            analysisQueries: message.analysisQueries,
-          })),
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-
-      recordStreamEvent({
-        event: "_stream_start",
-        endpoint: "/api/genie/agent",
-        user_message: trimmed,
-        request_messages_count: nextMessages.length,
-        http_status: response.status,
-      });
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const raw = line.slice(6).trim();
-          if (!raw) continue;
-
-          let event: Record<string, unknown>;
-          try {
-            event = JSON.parse(raw);
-          } catch {
-            recordStreamEvent({ event: "_sse_parse_error", raw });
-            continue;
-          }
-
-          recordStreamEvent(event);
-
-          if (event.event === "status") {
-            const phase = String(event.phase ?? "tool");
-            const text = normalizeStartupStatusText(String(event.text ?? "Working"), phase);
-            const step = createProcessStep(phase, text);
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    status: text,
-                    statusPhase: phase,
-                    processSteps: appendProcessStep(message.processSteps, step),
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "heartbeat") {
-            const text = normalizeStartupStatusText(String(event.text ?? "Still working"), "thinking");
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId && message.isStreaming
-                ? {
-                    ...message,
-                    status: text,
-                    statusPhase: "thinking",
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "reasoning_delta") {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? (() => {
-                    const reasoningSummary = `${message.reasoningSummary ?? ""}${event.text ?? ""}`;
-                    return {
-                      ...message,
-                      reasoningSummary,
-                      processSteps: upsertLiveReasoningStep(
-                        message.processSteps,
-                        createProcessStep("thinking", reasoningSummary, "reasoning"),
-                      ),
-                    };
-                  })()
-                : message
-            ));
-          }
-
-          if (event.event === "reasoning_done") {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? (() => {
-                    const reasoningSummary = String(event.text ?? message.reasoningSummary ?? "");
-                    const phase = reasoningSummary.trim().startsWith("- ") ? "planning" : "thinking";
-                    return {
-                      ...message,
-                      reasoningSummary,
-                      processSteps: upsertLiveReasoningStep(
-                        message.processSteps,
-                        createProcessStep(phase, reasoningSummary, "reasoning"),
-                      ),
-                    };
-                  })()
-                : message
-            ));
-          }
-
-          if (event.event === "analysis_plan" && event.plan) {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    analysisPlan: mergeAnalysisPlan(
-                      message.analysisPlan,
-                      event.plan as GenieAnalysisPlanPayload,
-                    ),
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "analysis_query" && event.query) {
-            const query = event.query as GenieAnalysisQueryPayload;
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    analysisQueries: upsertAnalysisQuery(
-                      message.analysisQueries,
-                      query,
-                    ),
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "text_delta") {
-            queueTextDelta(String(event.text ?? ""));
-          }
-
-          if (event.event === "chart" && event.chart) {
-            const chart = event.chart as GenieChartPayload;
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? { ...message, charts: [...(message.charts ?? []), chart] }
-                : message
-            ));
-          }
-
-          if (event.event === "table" && event.table) {
-            const table = event.table as GenieTablePayload;
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? { ...message, tables: [...(message.tables ?? []), table] }
-                : message
-            ));
-          }
-
-          if (event.event === "pivot_table" && event.pivot_table) {
-            const pivotTable = event.pivot_table as GeniePivotTablePayload;
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    pivotTables: [...(message.pivotTables ?? []), pivotTable],
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "proposal" && event.proposal) {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    proposals: [...(message.proposals ?? []), event.proposal as GenieProposal],
-                    status: undefined,
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "products" && Array.isArray(event.products) && event.products.length > 0) {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    products: event.products as GenieStoreProductPreview[],
-                    status: undefined,
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "web_images" && Array.isArray(event.images) && event.images.length > 0) {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    webImages: event.images as GenieWebImagePreview[],
-                    status: undefined,
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "workorders" && event.workorders) {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    workorders: event.workorders as GenieWorkorderCardsPayload,
-                    status: undefined,
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "customer_profile" && event.customer_profile) {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    customerProfile: event.customer_profile as GenieCustomerProfilePayload,
-                    status: undefined,
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "gmail_emails" && event.gmail_emails) {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    gmailEmails: event.gmail_emails as GmailEmailsPayload,
-                    status: undefined,
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "gmail_agent_context" && event.gmail_agent_context) {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    gmailEmails: mergeGmailAgentContext(
-                      message.gmailEmails,
-                      event.gmail_agent_context as GmailAgentContext,
-                    ),
-                    status: undefined,
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "gmail_connect" && event.gmail_connect) {
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    gmailConnect: event.gmail_connect as GmailConnectPayload,
-                    status: undefined,
-                  }
-                : message
-            ));
-          }
-
-          if (event.event === "composio_session") {
-            const toolkit = typeof event.toolkit === "string" ? event.toolkit : "";
-            const sessionId = typeof event.session_id === "string" ? event.session_id : "";
-            if (toolkit && sessionId) {
-              setComposioSessionIds((current) => {
-                const next = { ...current, [toolkit]: sessionId };
-                composioSessionIdsRef.current = next;
-                return next;
-              });
-            }
-          }
-
-          if (event.event === "done") {
-            flushPendingText();
-            setMessages((current) => current.map((message) =>
-              message.id === assistantId ? { ...message, isStreaming: false, status: undefined } : message
-            ));
-          }
-
-          if (event.event === "error") {
-            throw new Error(typeof event.message === "string" ? event.message : "Genie failed");
-          }
-        }
-      }
-
-      flushPendingText();
-      recordStreamEvent({ event: "_stream_end" });
-      setMessages((current) => current.map((message) =>
-        message.id === assistantId ? { ...message, isStreaming: false, status: undefined } : message
-      ));
-    } catch (error) {
-      if (streamState.rafId !== null) {
-        cancelAnimationFrame(streamState.rafId);
-        streamState.rafId = null;
-      }
-      if ((error as Error).name === "AbortError") {
-        recordStreamEvent({ event: "_stream_aborted" });
-        flushPendingText();
-        setMessages((current) => current.map((message) =>
-          message.isStreaming ? { ...message, isStreaming: false, status: undefined } : message
-        ));
-      } else {
-        recordStreamEvent({
-          event: "_stream_error",
-          message: error instanceof Error ? error.message : String(error),
-        });
-        flushPendingText();
-        setMessages((current) => current.map((message) =>
-          message.id === assistantId
-            ? {
-                ...message,
-                isStreaming: false,
-                status: undefined,
-                error: "Something went wrong. Please try again.",
-              }
-            : message
-        ));
-      }
     } finally {
-      isLoadingRef.current = false;
-      setIsLoading(false);
-      abortRef.current = null;
       flushSync(() => {
         setMessages((current) => {
           messagesRef.current = current;
           return current;
         });
       });
-      processPromptQueue();
     }
-  }, [processPromptQueue]);
+  }, [startAgentBackgroundJob]);
 
   React.useEffect(() => {
     runSendRef.current = runSend;

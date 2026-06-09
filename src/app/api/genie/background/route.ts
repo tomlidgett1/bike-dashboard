@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { startGenieBackgroundResponse, type GenieBackgroundMessage } from '@/lib/genie/background-jobs'
+import { ensureGenieConversation } from '@/lib/genie/ensure-genie-conversation'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -48,7 +49,7 @@ export async function GET() {
 
     const { data, error } = await auth.supabase
       .from('genie_background_jobs')
-      .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, created_at, updated_at, started_at, completed_at')
+      .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, message, progress_phase, job_type, metadata, created_at, updated_at, started_at, completed_at')
       .eq('user_id', auth.user.id)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -74,7 +75,14 @@ export async function POST(request: NextRequest) {
     }
 
     const route = typeof body.route === 'string' ? body.route : null
-    const conversationId = typeof body.conversation_id === 'string' ? body.conversation_id : null
+    const requestedConversationId =
+      typeof body.conversation_id === 'string' ? body.conversation_id : null
+    const conversationId = await ensureGenieConversation(auth.supabase, {
+      userId: auth.user.id,
+      conversationId: requestedConversationId,
+      messages,
+      prompt,
+    })
     const { data: job, error: insertError } = await auth.supabase
       .from('genie_background_jobs')
       .insert({
@@ -85,7 +93,7 @@ export async function POST(request: NextRequest) {
         prompt,
         messages,
       })
-      .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, created_at, updated_at, started_at, completed_at')
+      .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, message, progress_phase, job_type, metadata, created_at, updated_at, started_at, completed_at')
       .single()
 
     if (insertError) throw insertError
@@ -116,7 +124,7 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', job.id)
       .eq('user_id', auth.user.id)
-      .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, created_at, updated_at, started_at, completed_at')
+      .select('id, conversation_id, route, status, prompt, result, error_message, openai_response_id, message, progress_phase, job_type, metadata, created_at, updated_at, started_at, completed_at')
       .single()
 
     if (updateError) throw updateError

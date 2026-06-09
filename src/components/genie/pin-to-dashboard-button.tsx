@@ -5,8 +5,10 @@ import Link from "next/link";
 import { LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { GenieChartPayload } from "@/components/genie/genie-chart";
-import type { GenieTablePayload } from "@/components/genie/genie-data-table";
+import type {
+  GenieChartPayload,
+  GenieTablePayload,
+} from "@/lib/genie/visual-payloads";
 import type { GeniePivotTablePayload } from "@/lib/genie/pivot-table";
 import {
   mergeVisualArgsWithWidget,

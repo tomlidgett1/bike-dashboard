@@ -1,5 +1,7 @@
-import type { GenieChartPayload } from "@/components/genie/genie-chart";
-import type { GenieTablePayload } from "@/components/genie/genie-data-table";
+import type {
+  GenieChartPayload,
+  GenieTablePayload,
+} from "@/lib/genie/visual-payloads";
 import {
   buildPivotTableFromRows,
   type GeniePivotTableConfig,

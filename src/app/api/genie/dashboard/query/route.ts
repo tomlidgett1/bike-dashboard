@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
-import type { GenieChartPayload } from "@/components/genie/genie-chart";
-import type { GenieTablePayload } from "@/components/genie/genie-data-table";
+import type {
+  GenieChartPayload,
+  GenieTablePayload,
+} from "@/lib/genie/visual-payloads";
 import type { GeniePivotTablePayload } from "@/lib/genie/pivot-table";
 import type { DashboardWidgetPayload } from "@/lib/dashboard/store-dashboard";
 import { mergeVisualArgsWithWidget } from "@/lib/dashboard/dashboard-query-visual";

@@ -30,8 +30,8 @@ import type {
 } from '@/lib/types/genie-agent';
 import { mergeGmailAgentContext } from '@/lib/genie/gmail-agent-context';
 import { GmailConnectCard } from '@/components/genie/gmail-connect-card';
-import { GenieChart, type GenieChartPayload } from '@/components/genie/genie-chart';
-import { GenieDataTable, type GenieTablePayload } from '@/components/genie/genie-data-table';
+import { GenieChart } from '@/components/genie/genie-chart';
+import { GenieDataTable } from '@/components/genie/genie-data-table';
 import { GeniePivotTable } from '@/components/genie/genie-pivot-table';
 import { GenieProposalCard } from '@/components/genie/genie-proposal-card';
 import type { GeniePivotTablePayload } from '@/lib/genie/pivot-table';
@@ -40,15 +40,23 @@ import { LightspeedCustomerProfileCard } from '@/components/genie/lightspeed-cus
 import {
   GenieRawLogsSection,
   GenieThinkingDetailSections,
+} from '@/components/genie/genie-thinking-detail-sections';
+import {
   appendRawDebugLog,
   mergeAnalysisPlan,
   upsertAnalysisQuery,
-} from '@/components/genie/genie-thinking-detail-sections';
+} from '@/lib/genie/analysis-events';
 import { compactGenieProgressText, liveGenieProgressPreview } from '@/lib/genie/progress-text';
 import type { GenieWebImagePreview } from '@/lib/genie/web-image-search';
 import { GenieWebImageCards } from '@/components/genie/genie-web-image-cards';
 import { GenieProgressBrandIcon, resolveGenieProgressBrand } from '@/components/genie/genie-progress-brand';
 import { renderGenieMarkdown } from '@/lib/genie/render-markdown';
+import { useGenieJobs } from '@/components/providers/genie-jobs-provider';
+import { mergeGenieJobIntoAssistantMessage } from '@/lib/genie/sync-genie-job-message';
+import type {
+  GenieChartPayload,
+  GenieTablePayload,
+} from '@/lib/genie/visual-payloads';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,6 +133,7 @@ interface ChatMessage {
   proposals?: GenieProposal[];
   isStreaming?: boolean;
   error?: string;
+  backgroundJobId?: string;
 }
 
 interface SavedConversation {
@@ -756,6 +765,8 @@ export function GeniePanel() {
   const { isOpen, isExpanded, close, toggleExpand, launchAsAgent, acknowledgeAgentLaunch } = useGenie();
   const { user } = useAuth();
   const { profile } = useUserProfile();
+  const { jobs, startAgentBackgroundJob, cancelJob } = useGenieJobs();
+  const appliedGenieJobsRef = useRef(new Set<string>());
 
   // Store Agent mode is only offered to verified bicycle stores.
   const isStore = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
@@ -787,6 +798,33 @@ export function GeniePanel() {
   useEffect(() => { if (isOpen) setTimeout(() => inputRef.current?.focus(), 300); }, [isOpen]);
   useEffect(() => { if (!isOpen) abortRef.current?.abort(); }, [isOpen]);
   useEffect(() => { if (view === 'history' && user) loadConversationList(); }, [view, user]);
+
+  useEffect(() => {
+    for (const job of jobs) {
+      const assistantId = job.metadata.client_assistant_id;
+      if (!assistantId) continue;
+
+      if (job.status === 'completed' || job.status === 'failed') {
+        if (appliedGenieJobsRef.current.has(job.id)) continue;
+        appliedGenieJobsRef.current.add(job.id);
+      }
+
+      setMessages((current) => {
+        const target = current.find((message) => message.id === assistantId);
+        if (!target) return current;
+        const merged = mergeGenieJobIntoAssistantMessage(target, job);
+        if (
+          target.content === merged.content &&
+          target.isStreaming === merged.isStreaming &&
+          target.error === merged.error &&
+          target.currentStatus?.text === merged.currentStatus?.text
+        ) {
+          return current;
+        }
+        return current.map((message) => (message.id === assistantId ? merged : message));
+      });
+    }
+  }, [jobs]);
 
   const loadConversationList = async () => {
     setHistoryLoading(true);
@@ -918,6 +956,57 @@ export function GeniePanel() {
         const containerRect = container.getBoundingClientRect();
         container.scrollTo({ top: container.scrollTop + (elRect.top - containerRect.top) - 12, behavior: 'smooth' });
       }
+    }
+
+    if (agentMode) {
+      const history = [...messages, userMsg].map((message) => ({
+        role: message.role,
+        content: message.content,
+        charts: message.charts,
+        tables: message.tables,
+        pivotTables: message.pivotTables,
+        products: message.products,
+        webImages: message.webImages,
+        workorders: message.workorders,
+        customerProfile: message.customerProfile,
+        proposals: message.proposals,
+        gmailEmails: message.gmailEmails,
+        analysisPlan: message.analysisPlan,
+        analysisQueries: message.analysisQueries,
+        sources: message.sources,
+      }));
+
+      try {
+        const jobId = await startAgentBackgroundJob({
+          messages: history,
+          prompt: text.trim(),
+          conversationId,
+          clientAssistantId: assistantId,
+          source: 'panel',
+        });
+        setMessages((prev) => prev.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                backgroundJobId: jobId ?? undefined,
+                processSteps: [createProcessStep('thinking', 'Thinking')],
+              }
+            : message
+        ));
+      } catch (error) {
+        setMessages((prev) => prev.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                isStreaming: false,
+                error: error instanceof Error ? error.message : 'Failed to start Genie.',
+              }
+            : message
+        ));
+      } finally {
+        setIsLoading(false);
+      }
+      return;
     }
 
     const controller = new AbortController();
@@ -1214,7 +1303,7 @@ export function GeniePanel() {
       setIsLoading(false);
       abortRef.current = null;
     }
-  }, [isLoading, messages, conversationId, saveConversation, isStore, mode]);
+  }, [isLoading, messages, conversationId, saveConversation, isStore, mode, startAgentBackgroundJob]);
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); sendMessage(input); };
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

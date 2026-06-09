@@ -52,6 +52,11 @@ export function OptimizerImageReview({
 }) {
   const editable = img.phase === "ready";
   const done = img.phase === "done";
+  const [loadedDisplaySrcs, setLoadedDisplaySrcs] = React.useState<Record<string, boolean>>({});
+
+  React.useEffect(() => {
+    setLoadedDisplaySrcs({});
+  }, [img.selectedUrls.join("|"), JSON.stringify(img.enhancedUrls ?? {})]);
 
   if (img.phase === "no_results" || img.phase === "error") {
     return (
@@ -146,6 +151,8 @@ export function OptimizerImageReview({
           const fullSrc = isEnhanced ? img.enhancedUrls![url] : url;
           const primary = url === img.primaryUrl;
           const isEnhancing = (img.enhancingUrls ?? []).includes(url);
+          const displayLoaded = !!loadedDisplaySrcs[displaySrc];
+          const showEnhanceOverlay = isEnhancing || (isEnhanced && !displayLoaded);
           return (
             <div
               key={url}
@@ -161,19 +168,30 @@ export function OptimizerImageReview({
                   : "border-border",
               )}
             >
-              <Image src={displaySrc} alt="" fill unoptimized className="object-cover" />
+              <Image
+                src={displaySrc}
+                alt=""
+                fill
+                unoptimized
+                className="object-cover"
+                onLoad={() => {
+                  setLoadedDisplaySrcs((prev) =>
+                    prev[displaySrc] ? prev : { ...prev, [displaySrc]: true },
+                  );
+                }}
+              />
               {primary && (
                 <span className="absolute left-1 top-1 inline-flex items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground shadow-sm">
                   <Star className="h-2.5 w-2.5 fill-current" />
                   Primary
                 </span>
               )}
-              {isEnhancing && (
+              {showEnhanceOverlay && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/70">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
               )}
-              {editable && !isEnhancing && (
+              {editable && !showEnhanceOverlay && (
                 <>
                   {img.selectedUrls.length > 1 && (
                     <button

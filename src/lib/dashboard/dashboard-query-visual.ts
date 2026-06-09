@@ -1,6 +1,4 @@
-import type { GenieChartPayload } from "@/components/genie/genie-chart";
-import type { GenieTablePayload } from "@/components/genie/genie-data-table";
-import type { GeniePivotTablePayload } from "@/lib/genie/pivot-table";
+import type { GenieChartPayload } from "@/lib/genie/visual-payloads";
 import type {
   DashboardSqlVisualType,
   LightspeedSqlVisualArgs,

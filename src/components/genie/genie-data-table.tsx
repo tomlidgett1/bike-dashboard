@@ -19,22 +19,13 @@ import {
   type VisualDateFormat,
   type VisualValueFormat,
 } from "@/lib/genie/visual-format";
+import type {
+  GenieTableColumn,
+  GenieTablePayload,
+} from "@/lib/genie/visual-payloads";
 
 export type { VisualValueFormat };
-
-export interface GenieTableColumn {
-  key: string;
-  label: string;
-  align?: "left" | "right";
-  format?: VisualValueFormat;
-}
-
-export interface GenieTablePayload {
-  title: string;
-  subtitle?: string;
-  columns: GenieTableColumn[];
-  rows: Array<Record<string, string | number | null>>;
-}
+export type { GenieTableColumn, GenieTablePayload };
 
 type GenieTableRow = Record<string, string | number | null>;
 

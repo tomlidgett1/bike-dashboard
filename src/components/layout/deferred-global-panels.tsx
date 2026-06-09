@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import { useCart } from "@/components/providers/cart-provider";
 import { useMessages } from "@/components/providers/messages-provider";
 import { useUpload } from "@/components/providers/upload-provider";
+import { useOptimizeJobs } from "@/components/providers/optimize-jobs-provider";
+import { useGenieJobs } from "@/components/providers/genie-jobs-provider";
 
 const LazyCartDrawer = dynamic(
   () => import("@/components/marketplace/cart-drawer").then((mod) => mod.CartDrawer),
@@ -26,10 +28,36 @@ const LazyFloatingUploadBar = dynamic(
   { ssr: false }
 );
 
+const LazyFloatingOptimizeJobsCard = dynamic(
+  () =>
+    import("@/components/optimize/floating-optimize-jobs-card").then(
+      (mod) => mod.FloatingOptimizeJobsCard,
+    ),
+  { ssr: false }
+);
+
+const LazyFloatingGenieJobsPill = dynamic(
+  () =>
+    import("@/components/genie/floating-genie-jobs-pill").then(
+      (mod) => mod.FloatingGenieJobsPill,
+    ),
+  { ssr: false }
+);
+
+const LazyFloatingImageApprovalCard = dynamic(
+  () =>
+    import("@/components/optimize/floating-image-approval-card").then(
+      (mod) => mod.FloatingImageApprovalCard,
+    ),
+  { ssr: false }
+);
+
 export function DeferredGlobalPanels() {
   const cart = useCart();
   const messages = useMessages();
   const upload = useUpload();
+  const optimizeJobs = useOptimizeJobs();
+  const genieJobs = useGenieJobs();
   const [loadIdlePanels, setLoadIdlePanels] = React.useState(false);
 
   React.useEffect(() => {
@@ -52,6 +80,9 @@ export function DeferredGlobalPanels() {
       {(cart.isOpen || cart.pendingReplacement || cart.buyNowItem) && <LazyCartDrawer />}
       {messages.isOpen && <LazyMessagesPanel />}
       {(upload.isUploading || upload.stage !== "idle") && <LazyFloatingUploadBar />}
+      {optimizeJobs.visibleJobs.length > 0 && <LazyFloatingOptimizeJobsCard />}
+      {genieJobs.visibleJobs.length > 0 && <LazyFloatingGenieJobsPill />}
+      {loadIdlePanels && <LazyFloatingImageApprovalCard />}
       {loadIdlePanels && <LazyGeniePortal />}
     </>
   );

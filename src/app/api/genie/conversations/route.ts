@@ -48,18 +48,14 @@ export async function POST(request: NextRequest) {
 
     let result
     if (id) {
-      // Update existing
       const { data, error } = await supabase
         .from('genie_conversations')
-        .update(payload)
-        .eq('id', id)
-        .eq('user_id', user.id)
+        .upsert({ id, ...payload }, { onConflict: 'id' })
         .select('id')
         .single()
       if (error) throw error
       result = data
     } else {
-      // Create new
       const { data, error } = await supabase
         .from('genie_conversations')
         .insert(payload)

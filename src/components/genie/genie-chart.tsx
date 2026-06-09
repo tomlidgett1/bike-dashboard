@@ -23,8 +23,13 @@ import { CanvasRenderer } from "echarts/renderers";
 import type { ComposeOption, ECharts } from "echarts/core";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { VisualValueFormat } from "@/components/genie/genie-data-table";
 import { downloadChartCardAsPng } from "@/lib/utils/genie-visual-export";
+import type {
+  GenieChartPayload,
+  GenieChartPoint,
+  GenieChartSeries,
+} from "@/lib/genie/visual-payloads";
+import type { VisualValueFormat } from "@/lib/genie/visual-format";
 
 echarts.use([
   EChartsBarChart,
@@ -36,26 +41,7 @@ echarts.use([
   TooltipComponent,
 ]);
 
-export interface GenieChartSeries {
-  key: string;
-  label: string;
-  color?: string;
-}
-
-export interface GenieChartPoint {
-  label: string;
-  [key: string]: string | number | null;
-}
-
-export interface GenieChartPayload {
-  kind: "bar" | "line";
-  title: string;
-  subtitle?: string;
-  xKey: "label";
-  series: GenieChartSeries[];
-  data: GenieChartPoint[];
-  valueFormatter?: VisualValueFormat;
-}
+export type { GenieChartPayload, GenieChartPoint, GenieChartSeries };
 
 type GenieChartOption = ComposeOption<
   | BarSeriesOption

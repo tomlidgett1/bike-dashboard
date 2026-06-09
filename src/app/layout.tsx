@@ -7,6 +7,8 @@ import { MobileNavProvider } from "@/components/providers/mobile-nav-provider";
 import { AuthModalProvider } from "@/components/providers/auth-modal-provider";
 import { SellModalProvider } from "@/components/providers/sell-modal-provider";
 import { UploadProvider } from "@/components/providers/upload-provider";
+import { OptimizeJobsProvider } from "@/components/providers/optimize-jobs-provider";
+import { GenieJobsProvider } from "@/components/providers/genie-jobs-provider";
 import { OrderNotificationsProvider } from "@/components/providers/order-notifications-provider";
 import { MessagesProvider } from "@/components/providers/messages-provider";
 import { NestNotificationsProvider } from "@/components/providers/nest-notifications-provider";
@@ -85,6 +87,8 @@ export default async function RootLayout({
                 <AuthModalProvider>
                   <SellModalProvider>
                     <UploadProvider>
+                      <OptimizeJobsProvider>
+                      <GenieJobsProvider>
                       <MobileNavProvider>
                         <MessagesProvider>
                           <NestNotificationsProvider>
@@ -98,6 +102,8 @@ export default async function RootLayout({
                           </NestNotificationsProvider>
                         </MessagesProvider>
                       </MobileNavProvider>
+                      </GenieJobsProvider>
+                      </OptimizeJobsProvider>
                     </UploadProvider>
                   </SellModalProvider>
                 </AuthModalProvider>

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { HomeV2Chat } from "../homev2/homev2-chat";
 
 export const dynamic = "force-dynamic";
@@ -13,5 +14,9 @@ function getTodayLabel() {
 }
 
 export default function StoreHomePage() {
-  return <HomeV2Chat todayLabel={getTodayLabel()} />;
+  return (
+    <Suspense fallback={null}>
+      <HomeV2Chat todayLabel={getTodayLabel()} />
+    </Suspense>
+  );
 }
