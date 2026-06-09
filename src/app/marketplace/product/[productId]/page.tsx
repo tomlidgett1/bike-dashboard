@@ -4,7 +4,11 @@ import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
 import { ProductPageClient } from "./product-page-client";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
-import { getProductImages, toJsonbFormat } from "@/lib/services/product-images";
+import {
+  getProductImages,
+  orderProductImagesForPublicDisplay,
+  toJsonbFormat,
+} from "@/lib/services/product-images";
 import { resolveProductImage, getProductImageSlotUrl } from "@/lib/services/image-resolver";
 import { toCurrentHeroPublicId } from "@/lib/utils/cloudinary-transforms";
 import {
@@ -154,18 +158,18 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
     ]);
     
     if (productImages.length > 0) {
+      const orderedImages = orderProductImagesForPublicDisplay(
+        productImages,
+        product.selected_product_image_id,
+      );
       // Convert to JSONB format for backwards compatibility with client
-      imagesForClient = toJsonbFormat(productImages) as any;
+      imagesForClient = toJsonbFormat(orderedImages) as any;
       
-      const primaryImage =
-        productImages.find(img => img.id === product.selected_product_image_id) ||
-        productImages.find(img => img.is_primary) ||
-        productImages[0];
+      const primaryImage = orderedImages[0];
       // Single source of truth: the web_hero variant is computed from the public_id.
       primaryImageUrl = getProductImageSlotUrl(primaryImage, 'web_hero');
 
-      allImages = productImages
-        .sort((a, b) => a.sort_order - b.sort_order)
+      allImages = orderedImages
         .map(img => getProductImageSlotUrl(img, 'web_hero'))
         .filter((url): url is string => !!url && !url.startsWith('blob:'));
     }

@@ -32,6 +32,7 @@ export function OptimizerImageReview({
   onEnhance,
   onToggleAdditional,
   onApprove,
+  onEnhanceDisplayReady,
   onLightbox,
   saving,
   hideApproveAction = false,
@@ -45,6 +46,7 @@ export function OptimizerImageReview({
   onEnhance: (url: string) => void;
   onToggleAdditional: () => void;
   onApprove: () => void;
+  onEnhanceDisplayReady?: (originalUrl: string) => void;
   onLightbox: (url: string) => void;
   saving: boolean;
   hideApproveAction?: boolean;
@@ -57,6 +59,23 @@ export function OptimizerImageReview({
   React.useEffect(() => {
     setLoadedDisplaySrcs({});
   }, [img.selectedUrls.join("|"), JSON.stringify(img.enhancedUrls ?? {})]);
+
+  React.useEffect(() => {
+    if (!onEnhanceDisplayReady) return;
+    for (const url of img.selectedUrls) {
+      const enhanced = img.enhancedUrls?.[url];
+      if (!enhanced) continue;
+      if ((img.enhancingUrls ?? []).includes(url) && loadedDisplaySrcs[enhanced]) {
+        onEnhanceDisplayReady(url);
+      }
+    }
+  }, [
+    img.enhancingUrls,
+    img.enhancedUrls,
+    img.selectedUrls,
+    loadedDisplaySrcs,
+    onEnhanceDisplayReady,
+  ]);
 
   if (img.phase === "no_results" || img.phase === "error") {
     return (
@@ -178,6 +197,9 @@ export function OptimizerImageReview({
                   setLoadedDisplaySrcs((prev) =>
                     prev[displaySrc] ? prev : { ...prev, [displaySrc]: true },
                   );
+                  if (isEnhanced) {
+                    onEnhanceDisplayReady?.(url);
+                  }
                 }}
               />
               {primary && (

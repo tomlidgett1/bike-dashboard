@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, ChevronUp, Loader2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Loader2, StopCircle, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
 import {
   useOptimizeJobs,
   type OptimizeJob,
@@ -218,12 +219,15 @@ function JobProgressBar({
 function JobDetail({
   job,
   onDismiss,
+  onCancel,
   showTitle = true,
 }: {
   job: OptimizeJob;
   onDismiss: () => void;
+  onCancel: () => void;
   showTitle?: boolean;
 }) {
+  const running = jobIsRunning(job);
   const steps = progressSteps(job);
 
   return (
@@ -253,15 +257,22 @@ function JobDetail({
         ))}
       </ul>
 
-      {!jobIsRunning(job) ? (
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="mt-3 text-xs font-medium text-gray-500 transition hover:text-gray-800"
-        >
-          Dismiss
-        </button>
-      ) : null}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {running ? (
+          <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+            <StopCircle className="size-4" />
+            Stop
+          </Button>
+        ) : (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
+          >
+            Dismiss
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -271,11 +282,13 @@ function JobCompactRow({
   expanded,
   onToggle,
   onDismiss,
+  onCancel,
 }: {
   job: OptimizeJob;
   expanded: boolean;
   onToggle: () => void;
   onDismiss: () => void;
+  onCancel: () => void;
 }) {
   const running = jobIsRunning(job);
   const percent = jobProgressPercent(job);
@@ -307,6 +320,31 @@ function JobCompactRow({
             ) : running ? (
               <span className="text-xs text-gray-500">{percent}%</span>
             ) : null}
+            {running ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCancel();
+                }}
+                className="rounded-md p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+                aria-label="Stop job"
+              >
+                <StopCircle className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDismiss();
+                }}
+                className="rounded-md p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Dismiss job"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
             <ChevronDown
               className={cn(
                 "h-4 w-4 text-gray-400 transition-transform duration-200",
@@ -330,7 +368,12 @@ function JobCompactRow({
             }}
             className="overflow-hidden border-t border-gray-100 bg-gray-50/60"
           >
-            <JobDetail job={job} onDismiss={onDismiss} showTitle={false} />
+            <JobDetail
+              job={job}
+              onDismiss={onDismiss}
+              onCancel={onCancel}
+              showTitle={false}
+            />
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -374,7 +417,8 @@ function collapsedPillLabel(jobs: OptimizeJob[]) {
 }
 
 export function FloatingOptimizeJobsCard() {
-  const { visibleJobs, cardHidden, setCardHidden, dismissJob } = useOptimizeJobs();
+  const { visibleJobs, cardHidden, setCardHidden, dismissJob, cancelJob } =
+    useOptimizeJobs();
   const [expandedJobIds, setExpandedJobIds] = React.useState<Set<string>>(() => new Set());
   const hasRunning = visibleJobs.some(jobIsRunning);
   const hasComplete = visibleJobs.some((job) => job.status === "completed");
@@ -422,7 +466,7 @@ export function FloatingOptimizeJobsCard() {
       <button
         type="button"
         onClick={() => setCardHidden(false)}
-        className="fixed bottom-6 right-6 z-[100] flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium shadow-lg transition hover:bg-gray-50"
+        className="inline-flex w-fit items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-800 shadow-lg transition hover:bg-gray-50"
         aria-label="Show optimise progress"
       >
         {hasRunning ? (
@@ -456,7 +500,7 @@ export function FloatingOptimizeJobsCard() {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 16, scale: 0.98 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
-        className="fixed bottom-6 right-6 z-[100] w-[min(100vw-2rem,22rem)]"
+        className="w-[min(100vw-2rem,22rem)]"
       >
         <div className="flex max-h-[min(70vh,28rem)] flex-col overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-xl">
           <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
@@ -492,6 +536,7 @@ export function FloatingOptimizeJobsCard() {
                   expanded={expandedJobIds.has(job.id)}
                   onToggle={() => toggleExpanded(job.id)}
                   onDismiss={() => dismissJob(job.id)}
+                  onCancel={() => void cancelJob(job.id)}
                 />
               ))
             ) : (
@@ -499,6 +544,7 @@ export function FloatingOptimizeJobsCard() {
                 <JobDetail
                   job={visibleJobs[0]}
                   onDismiss={() => dismissJob(visibleJobs[0].id)}
+                  onCancel={() => void cancelJob(visibleJobs[0].id)}
                 />
               </div>
             )}

@@ -2,6 +2,10 @@
 
 import * as React from "react";
 import type { CopyBatchFields, CopyBatchJobMetadata } from "@/lib/optimize/copy-batch-job-types";
+import {
+  loadOptimizeDismissedIds,
+  saveOptimizeDismissedIds,
+} from "@/lib/floating-panel-dismiss";
 
 export type OptimizeJobStatus =
   | "queued"
@@ -92,14 +96,27 @@ export function useOptimizeJobs() {
 
 export function OptimizeJobsProvider({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = React.useState<OptimizeJob[]>([]);
-  const [dismissedIds, setDismissedIds] = React.useState<Set<string>>(() => new Set());
+  const [dismissedIds, setDismissedIds] = React.useState<Set<string>>(() =>
+    loadOptimizeDismissedIds(),
+  );
   const [cardHidden, setCardHidden] = React.useState(false);
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const dismissedRef = React.useRef(dismissedIds);
+  dismissedRef.current = dismissedIds;
+
+  React.useEffect(() => {
+    saveOptimizeDismissedIds(dismissedIds);
+  }, [dismissedIds]);
+
   const mergeJobs = React.useCallback((incoming: OptimizeJob[]) => {
+    const dismissed = dismissedRef.current;
     setJobs((prev) => {
-      const byId = new Map(prev.map((job) => [job.id, job]));
+      const byId = new Map(
+        prev.filter((job) => !dismissed.has(job.id)).map((job) => [job.id, job]),
+      );
       for (const job of incoming) {
+        if (dismissed.has(job.id)) continue;
         byId.set(job.id, job);
       }
       return [...byId.values()].sort(
@@ -114,9 +131,14 @@ export function OptimizeJobsProvider({ children }: { children: React.ReactNode }
       if (!response.ok) return;
 
       const json = (await response.json()) as { jobs?: Record<string, unknown>[] };
+      const dismissed = dismissedRef.current;
       const active = (json.jobs || [])
         .map(mapJob)
-        .filter((job) => isActive(job) || job.status === "completed" || job.status === "failed");
+        .filter(
+          (job) =>
+            !dismissed.has(job.id) &&
+            (isActive(job) || job.status === "completed" || job.status === "failed"),
+        );
 
       mergeJobs(active.slice(0, 10));
     } catch {
@@ -136,8 +158,10 @@ export function OptimizeJobsProvider({ children }: { children: React.ReactNode }
         const trackedActiveIds = new Set(
           prev.filter((job) => isActive(job)).map((job) => job.id),
         );
+        const dismissed = dismissedRef.current;
         const toMerge = incoming.filter(
-          (job) => isActive(job) || trackedActiveIds.has(job.id),
+          (job) =>
+            !dismissed.has(job.id) && (isActive(job) || trackedActiveIds.has(job.id)),
         );
         const byId = new Map(prev.map((job) => [job.id, job]));
         for (const job of toMerge) {
@@ -363,7 +387,12 @@ export function OptimizeJobsProvider({ children }: { children: React.ReactNode }
   }, [refreshActiveJobs]);
 
   const dismissJob = React.useCallback((jobId: string) => {
-    setDismissedIds((prev) => new Set(prev).add(jobId));
+    setDismissedIds((prev) => {
+      const next = new Set(prev);
+      next.add(jobId);
+      return next;
+    });
+    setJobs((prev) => prev.filter((job) => job.id !== jobId));
   }, []);
 
   const getCategoryPreload = React.useCallback(

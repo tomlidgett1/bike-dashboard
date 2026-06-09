@@ -6,9 +6,7 @@ import { usePathname } from "next/navigation";
 import { Check, ChevronUp, Loader2, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useGenieJobs, type GenieJob } from "@/components/providers/genie-jobs-provider";
-import { useOptimizeJobs } from "@/components/providers/optimize-jobs-provider";
 import { homeConversationUrl } from "@/lib/genie/homev2-navigation";
-import { cn } from "@/lib/utils";
 
 const HOME_PATH = "/settings/store/home";
 
@@ -191,14 +189,10 @@ function collapsedPillLabel(hasRunning: boolean, hasComplete: boolean) {
 export function FloatingGenieJobsPill() {
   const pathname = usePathname();
   const { visibleJobs, pillHidden, setPillHidden, dismissJob, cancelJob } = useGenieJobs();
-  const optimizeJobs = useOptimizeJobs();
   const wasOnHomeRef = React.useRef(pathname === HOME_PATH);
   const isOnHome = pathname === HOME_PATH;
   const hasRunning = visibleJobs.some(jobIsRunning);
   const hasComplete = visibleJobs.some((job) => job.status === "completed");
-  const optimizeVisible =
-    optimizeJobs.visibleJobs.length > 0 && !optimizeJobs.cardHidden;
-  const positionClass = optimizeVisible ? "bottom-32" : "bottom-6";
   const pillLabel = collapsedPillLabel(hasRunning, hasComplete);
 
   React.useEffect(() => {
@@ -218,10 +212,7 @@ export function FloatingGenieJobsPill() {
       <button
         type="button"
         onClick={() => setPillHidden(false)}
-        className={cn(
-          "fixed right-6 z-[100] flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium shadow-lg transition hover:bg-gray-50",
-          positionClass,
-        )}
+        className="inline-flex w-fit items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-800 shadow-lg transition hover:bg-gray-50"
         aria-label="Show Genie progress"
       >
         {hasRunning ? (
@@ -255,7 +246,7 @@ export function FloatingGenieJobsPill() {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 16, scale: 0.98 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
-        className={cn("fixed right-6 z-[100] w-[min(100vw-2rem,22rem)]", positionClass)}
+        className="w-[min(100vw-2rem,22rem)]"
       >
         <div className="overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-xl">
           <div className="flex items-center justify-between px-5 pb-2 pt-4">

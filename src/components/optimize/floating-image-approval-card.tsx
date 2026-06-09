@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useOptimizeJobs } from "@/components/providers/optimize-jobs-provider";
 import { OptimizerImageReview } from "@/components/optimize/optimizer-image-review";
 import {
   emptyImageRun,
@@ -74,7 +73,6 @@ function mapToOptimizerProduct(product: ImageApprovalProduct): OptimizerProduct 
 }
 
 export function FloatingImageApprovalCard() {
-  const optimizeJobs = useOptimizeJobs();
   const [queue, setQueue] = React.useState<ImageApprovalProduct[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [cardHidden, setCardHidden] = React.useState(false);
@@ -357,7 +355,6 @@ export function FloatingImageApprovalCard() {
         const enhancedUrl = json.url as string;
         patchImageRun(productId, (prev) => ({
           enhancedUrls: { ...(prev.enhancedUrls ?? {}), [url]: enhancedUrl },
-          enhancingUrls: (prev.enhancingUrls ?? []).filter((item) => item !== url),
         }));
       } catch {
         patchImageRun(productId, (prev) => ({
@@ -367,6 +364,18 @@ export function FloatingImageApprovalCard() {
     },
     [current?.id, currentProduct?.canonical_product_id, patchImageRun],
   );
+
+  const onEnhanceDisplayReady = React.useCallback(
+    (originalUrl: string) => {
+      if (!current?.id) return;
+      patchImageRun(current.id, (prev) => ({
+        enhancingUrls: (prev.enhancingUrls ?? []).filter((item) => item !== originalUrl),
+      }));
+    },
+    [current?.id, patchImageRun],
+  );
+
+  const enhanceBusy = (currentRun.enhancingUrls?.length ?? 0) > 0;
 
   React.useEffect(() => {
     if (cardHidden || !current) return;
@@ -382,7 +391,7 @@ export function FloatingImageApprovalCard() {
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
         goPrev();
-      } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !enhanceBusy) {
         event.preventDefault();
         approveAndNext();
       }
@@ -390,7 +399,7 @@ export function FloatingImageApprovalCard() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [approveAndNext, cardHidden, current, goNext, goPrev, lightbox]);
+  }, [approveAndNext, cardHidden, current, enhanceBusy, goNext, goPrev, lightbox]);
 
   if (loading && queue.length === 0) {
     return null;
@@ -403,19 +412,15 @@ export function FloatingImageApprovalCard() {
   const readyCount = queue.length;
   const positionLabel = `${index + 1} of ${readyCount}`;
   const imageBusy = IMG_BUSY.includes(currentRun.phase);
-  const canApprove = currentRun.phase === "ready" && !!currentRun.primaryUrl;
-  const positionClass =
-    optimizeJobs.visibleJobs.length > 0 ? "bottom-24" : "bottom-6";
+  const canApprove =
+    currentRun.phase === "ready" && !!currentRun.primaryUrl && !enhanceBusy;
 
   if (cardHidden) {
     return (
       <button
         type="button"
         onClick={() => setCardHidden(false)}
-        className={cn(
-          "fixed right-6 z-[100] flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-800 shadow-lg transition hover:bg-gray-50",
-          positionClass,
-        )}
+        className="inline-flex w-fit items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-800 shadow-lg transition hover:bg-gray-50"
         aria-label="Show image approval queue"
       >
         <ImageIcon className="h-4 w-4 text-gray-500" />
@@ -435,10 +440,7 @@ export function FloatingImageApprovalCard() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 16, scale: 0.98 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
-          className={cn(
-            "fixed right-6 z-[100] w-[min(100vw-2rem,44rem)]",
-            positionClass,
-          )}
+          className="w-[min(100vw-2rem,44rem)]"
         >
           <div className="flex max-h-[min(82vh,40rem)] flex-col overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-xl">
             <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
@@ -552,6 +554,7 @@ export function FloatingImageApprovalCard() {
                         onEnhance={(url) => void enhanceImage(url)}
                         onToggleAdditional={toggleAdditional}
                         onApprove={() => void approveAndNext()}
+                        onEnhanceDisplayReady={onEnhanceDisplayReady}
                         onLightbox={setLightbox}
                       />
                     )}
@@ -587,7 +590,11 @@ export function FloatingImageApprovalCard() {
                       disabled={!canApprove || imageBusy}
                       onClick={approveAndNext}
                     >
-                      <Check className="h-4 w-4" />
+                      {enhanceBusy ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4" />
+                      )}
                       Approve &amp; next
                     </Button>
                   </div>

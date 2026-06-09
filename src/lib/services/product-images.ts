@@ -8,7 +8,11 @@
  */
 
 import { SupabaseClient } from "@supabase/supabase-js";
-import { getProductImageSlotUrl, resolveProductImage } from "@/lib/services/image-resolver";
+import {
+  getProductImageSlotUrl,
+  hasCloudinaryImageDelivery,
+  resolveProductImage,
+} from "@/lib/services/image-resolver";
 import {
   buildCloudinaryVariantUrls,
   buildCloudinaryImageUrl,
@@ -122,41 +126,36 @@ export async function getProductCardUrl(
   productId: string,
   canonicalProductId?: string | null
 ): Promise<string | null> {
-  const toCard = (row: { cloudinary_public_id: string | null; cloudinary_url: string | null; external_url: string | null } | null) => {
+  const toCard = (rows: ProductImage[] | null) => {
+    const row = orderProductImagesForPublicDisplay(rows ?? [])[0];
     if (!row) return null;
     const publicId = row.cloudinary_public_id || extractCloudinaryPublicId(row.cloudinary_url);
-    return buildCloudinaryImageUrl(publicId, "grid_card") || row.external_url || row.cloudinary_url;
+    return buildCloudinaryImageUrl(publicId, "grid_card") || row.cloudinary_url || row.external_url;
   };
 
   // Try product_id first
   const { data: byProductId } = await supabase
     .from("product_images")
-    .select("cloudinary_public_id, cloudinary_url, external_url, is_primary")
+    .select("id, product_id, canonical_product_id, cloudinary_public_id, cloudinary_url, external_url, is_primary, sort_order, approval_status, source, created_at")
     .eq("product_id", productId)
     .eq("approval_status", "approved")
-    .order("is_primary", { ascending: false })
-    .order("sort_order", { ascending: true })
-    .limit(1)
-    .single();
+    .order("sort_order", { ascending: true });
 
-  if (byProductId) {
-    return toCard(byProductId);
+  if (byProductId && byProductId.length > 0) {
+    return toCard(byProductId as ProductImage[]);
   }
 
   // Fall back to canonical_product_id
   if (canonicalProductId) {
     const { data: byCanonicalId } = await supabase
       .from("product_images")
-      .select("cloudinary_public_id, cloudinary_url, external_url, is_primary")
+      .select("id, product_id, canonical_product_id, cloudinary_public_id, cloudinary_url, external_url, is_primary, sort_order, approval_status, source, created_at")
       .eq("canonical_product_id", canonicalProductId)
       .eq("approval_status", "approved")
-      .order("is_primary", { ascending: false })
-      .order("sort_order", { ascending: true })
-      .limit(1)
-      .single();
+      .order("sort_order", { ascending: true });
 
-    if (byCanonicalId) {
-      return toCard(byCanonicalId);
+    if (byCanonicalId && byCanonicalId.length > 0) {
+      return toCard(byCanonicalId as ProductImage[]);
     }
   }
 
@@ -167,19 +166,45 @@ function isDisplayableImage(image: ProductImage): boolean {
   return image.approval_status === "approved" || image.approval_status == null;
 }
 
+/**
+ * Public marketplace surfaces should prefer images we control through Cloudinary.
+ * Raw retailer/CDN URLs can disappear or block hotlinking after approval. Keep
+ * them only as a last resort for products that have no Cloudinary-backed images.
+ */
+export function reliableProductImagesForPublicDisplay(images: ProductImage[]): ProductImage[] {
+  const displayable = images.filter(isDisplayableImage);
+  const durable = displayable.filter(hasCloudinaryImageDelivery);
+  return durable.length > 0 ? durable : displayable;
+}
+
+function publicDisplayRank(
+  image: ProductImage,
+  selectedProductImageId?: string | null,
+): number {
+  if (image.id === selectedProductImageId) return 0;
+  if (image.is_primary) return 1;
+  if (hasCloudinaryImageDelivery(image)) return 2;
+  return 3;
+}
+
+export function orderProductImagesForPublicDisplay(
+  images: ProductImage[],
+  selectedProductImageId?: string | null,
+): ProductImage[] {
+  return reliableProductImagesForPublicDisplay(images).sort((a, b) => {
+    const rankDiff =
+      publicDisplayRank(a, selectedProductImageId) -
+      publicDisplayRank(b, selectedProductImageId);
+    if (rankDiff !== 0) return rankDiff;
+    return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+  });
+}
+
 function pickPrimaryProductImage(
   images: ProductImage[],
   selectedProductImageId?: string | null,
 ): ProductImage | null {
-  const approved = images.filter(isDisplayableImage);
-  if (approved.length === 0) return null;
-  const sorted = [...approved].sort((a, b) => a.sort_order - b.sort_order);
-  return (
-    sorted.find((img) => img.id === selectedProductImageId) ||
-    sorted.find((img) => img.is_primary) ||
-    sorted[0] ||
-    null
-  );
+  return orderProductImagesForPublicDisplay(images, selectedProductImageId)[0] || null;
 }
 
 type MarketplaceReadyImageRow = {
@@ -417,41 +442,36 @@ export async function getProductThumbnailUrl(
   productId: string,
   canonicalProductId?: string | null
 ): Promise<string | null> {
-  const toThumb = (row: { cloudinary_public_id: string | null; cloudinary_url: string | null; external_url: string | null } | null) => {
+  const toThumb = (rows: ProductImage[] | null) => {
+    const row = orderProductImagesForPublicDisplay(rows ?? [])[0];
     if (!row) return null;
     const publicId = row.cloudinary_public_id || extractCloudinaryPublicId(row.cloudinary_url);
-    return buildCloudinaryImageUrl(publicId, "thumbnail") || row.external_url || row.cloudinary_url;
+    return buildCloudinaryImageUrl(publicId, "thumbnail") || row.cloudinary_url || row.external_url;
   };
 
   // Try product_id first
   const { data: byProductId } = await supabase
     .from("product_images")
-    .select("cloudinary_public_id, cloudinary_url, external_url, is_primary")
+    .select("id, product_id, canonical_product_id, cloudinary_public_id, cloudinary_url, external_url, is_primary, sort_order, approval_status, source, created_at")
     .eq("product_id", productId)
     .eq("approval_status", "approved")
-    .order("is_primary", { ascending: false })
-    .order("sort_order", { ascending: true })
-    .limit(1)
-    .single();
+    .order("sort_order", { ascending: true });
 
-  if (byProductId) {
-    return toThumb(byProductId);
+  if (byProductId && byProductId.length > 0) {
+    return toThumb(byProductId as ProductImage[]);
   }
 
   // Fall back to canonical_product_id
   if (canonicalProductId) {
     const { data: byCanonicalId } = await supabase
       .from("product_images")
-      .select("cloudinary_public_id, cloudinary_url, external_url, is_primary")
+      .select("id, product_id, canonical_product_id, cloudinary_public_id, cloudinary_url, external_url, is_primary, sort_order, approval_status, source, created_at")
       .eq("canonical_product_id", canonicalProductId)
       .eq("approval_status", "approved")
-      .order("is_primary", { ascending: false })
-      .order("sort_order", { ascending: true })
-      .limit(1)
-      .single();
+      .order("sort_order", { ascending: true });
 
-    if (byCanonicalId) {
-      return toThumb(byCanonicalId);
+    if (byCanonicalId && byCanonicalId.length > 0) {
+      return toThumb(byCanonicalId as ProductImage[]);
     }
   }
 

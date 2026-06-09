@@ -9,6 +9,7 @@ import type {
   GenieJobStatus,
 } from "@/lib/genie/genie-job-types";
 import { persistCompletedHomeV2Job } from "@/lib/genie/homev2-conversation-storage";
+import { loadGenieDismissedIds, saveGenieDismissedIds } from "@/lib/floating-panel-dismiss";
 
 export type { GenieJob };
 
@@ -72,15 +73,28 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isOnHome = pathname === HOME_PATH;
   const [jobs, setJobs] = React.useState<GenieJob[]>([]);
-  const [dismissedIds, setDismissedIds] = React.useState<Set<string>>(() => new Set());
+  const [dismissedIds, setDismissedIds] = React.useState<Set<string>>(() =>
+    loadGenieDismissedIds(),
+  );
   const [pillHidden, setPillHidden] = React.useState(true);
   const [nowMs, setNowMs] = React.useState(0);
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const dismissedRef = React.useRef(dismissedIds);
+  dismissedRef.current = dismissedIds;
+
+  React.useEffect(() => {
+    saveGenieDismissedIds(dismissedIds);
+  }, [dismissedIds]);
+
   const mergeJobs = React.useCallback((incoming: GenieJob[]) => {
+    const dismissed = dismissedRef.current;
     setJobs((prev) => {
-      const byId = new Map(prev.map((job) => [job.id, job]));
+      const byId = new Map(
+        prev.filter((job) => !dismissed.has(job.id)).map((job) => [job.id, job]),
+      );
       for (const job of incoming) {
+        if (dismissed.has(job.id)) continue;
         byId.set(job.id, job);
       }
       return [...byId.values()].sort(
@@ -98,13 +112,15 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
       setNowMs(now);
       const json = (await response.json()) as { jobs?: Record<string, unknown>[] };
       const incoming = (json.jobs ?? []).map(mapJob);
+      const dismissed = dismissedRef.current;
       const tracked = incoming.filter(
         (job) =>
-          isActive(job) ||
-          job.status === "failed" ||
-          (job.status === "completed" &&
-            job.completedAt &&
-            now - new Date(job.completedAt).getTime() < 10 * 60 * 1000),
+          !dismissed.has(job.id) &&
+          (isActive(job) ||
+            job.status === "failed" ||
+            (job.status === "completed" &&
+              job.completedAt &&
+              now - new Date(job.completedAt).getTime() < 10 * 60 * 1000)),
       );
       const nextJobs = tracked.slice(0, 12);
       mergeJobs(nextJobs);
@@ -221,7 +237,12 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
   );
 
   const dismissJob = React.useCallback((jobId: string) => {
-    setDismissedIds((prev) => new Set(prev).add(jobId));
+    setDismissedIds((prev) => {
+      const next = new Set(prev);
+      next.add(jobId);
+      return next;
+    });
+    setJobs((prev) => prev.filter((job) => job.id !== jobId));
   }, []);
 
   const getJob = React.useCallback(

@@ -34,6 +34,10 @@ export function isApprovedImage(image: ResolvableProductImage | null | undefined
   return !!image && (image.approval_status == null || image.approval_status === "approved");
 }
 
+export function hasCloudinaryImageDelivery(image: ResolvableProductImage | null | undefined): boolean {
+  return !!(image?.cloudinary_public_id || extractCloudinaryPublicId(image?.cloudinary_url));
+}
+
 export function getProductImageSlotUrl(
   image: ResolvableProductImage | null | undefined,
   slot: CloudinaryImageSlot
