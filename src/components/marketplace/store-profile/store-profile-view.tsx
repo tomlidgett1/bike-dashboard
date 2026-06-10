@@ -208,9 +208,21 @@ interface CategoryScrollRowProps {
   storeId: string;
   trackAnalytics?: boolean;
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  onBackgroundRemove?: (product: MarketplaceProduct) => void;
+  backgroundRemovingIds?: Set<string>;
 }
 
-function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, trackAnalytics, scrollRef }: CategoryScrollRowProps) {
+function CategoryScrollRow({
+  products,
+  catSize,
+  rowIndex,
+  isExpanded,
+  storeId,
+  trackAnalytics,
+  scrollRef,
+  onBackgroundRemove,
+  backgroundRemovingIds,
+}: CategoryScrollRowProps) {
   const impressionContext = React.useMemo(
     () => ({ rowIndex, carouselSize: catSize, expanded: isExpanded }),
     [catSize, isExpanded, rowIndex],
@@ -244,6 +256,8 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
               compact={cardCompact}
               featuredMobile={cardFeatured}
               storeId={storeId}
+              onBackgroundRemove={onBackgroundRemove}
+              backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
             />
           </div>
         ))}
@@ -290,6 +304,8 @@ function CategoryScrollRow({ products, catSize, rowIndex, isExpanded, storeId, t
                 featuredMobile={cardFeatured}
                 inCarousel
                 storeId={storeId}
+                onBackgroundRemove={onBackgroundRemove}
+                backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
               />
             </div>
           ))}
@@ -309,6 +325,8 @@ function CarouselRow({
   isOwnProfile,
   storeId,
   trackAnalytics,
+  onBackgroundRemove,
+  backgroundRemovingIds,
 }: {
   cat: { id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; logo_url?: string | null; hide_title?: boolean; source?: string | null };
   rowIndex: number;
@@ -318,6 +336,8 @@ function CarouselRow({
   isOwnProfile?: boolean;
   storeId?: string;
   trackAnalytics?: boolean;
+  onBackgroundRemove?: (product: MarketplaceProduct) => void;
+  backgroundRemovingIds?: Set<string>;
 }) {
   const [logoUrl, setLogoUrl] = React.useState<string | null>(cat.logo_url ?? null);
   const [uploading, setUploading] = React.useState(false);
@@ -504,6 +524,8 @@ function CarouselRow({
         storeId={storeId ?? ''}
         trackAnalytics={trackAnalytics}
         scrollRef={scrollRef}
+        onBackgroundRemove={onBackgroundRemove}
+        backgroundRemovingIds={backgroundRemovingIds}
       />
     </section>
   );
@@ -583,11 +605,15 @@ function ProductSearchResultsGrid({
   compact,
   storeId,
   trackAnalytics,
+  onBackgroundRemove,
+  backgroundRemovingIds,
 }: {
   products: MarketplaceProduct[];
   compact: boolean;
   storeId: string;
   trackAnalytics?: boolean;
+  onBackgroundRemove?: (product: MarketplaceProduct) => void;
+  backgroundRemovingIds?: Set<string>;
 }) {
   const impressionRef = useProductImpressions(
     trackAnalytics ? storeId : null,
@@ -612,6 +638,8 @@ function ProductSearchResultsGrid({
             hideStoreMeta
             compact={compact}
             storeId={storeId}
+            onBackgroundRemove={onBackgroundRemove}
+            backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
           />
         </div>
       ))}
@@ -630,6 +658,8 @@ function ProductsTab({
   isOwnProfile,
   storeId,
   trackAnalytics,
+  onBackgroundRemove,
+  backgroundRemovingIds,
 }: {
   sortedCategories: StoreProductCategory[];
   sections: StoreSectionWithCategories[];
@@ -640,6 +670,8 @@ function ProductsTab({
   isOwnProfile?: boolean;
   storeId?: string;
   trackAnalytics?: boolean;
+  onBackgroundRemove?: (product: MarketplaceProduct) => void;
+  backgroundRemovingIds?: Set<string>;
 }) {
   const productsByCatId = new Map(sortedCategories.map((c) => [c.id, c.products]));
 
@@ -696,6 +728,8 @@ function ProductsTab({
               isOwnProfile={isOwnProfile}
               storeId={storeId}
               trackAnalytics={trackAnalytics}
+              onBackgroundRemove={onBackgroundRemove}
+              backgroundRemovingIds={backgroundRemovingIds}
             />
           );
         })}
@@ -716,6 +750,8 @@ function ProductsTab({
         isOwnProfile={isOwnProfile}
         storeId={storeId}
         trackAnalytics={trackAnalytics}
+        onBackgroundRemove={onBackgroundRemove}
+        backgroundRemovingIds={backgroundRemovingIds}
       />
     );
   };
@@ -786,6 +822,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const [previewMode, setPreviewMode] = React.useState(false);
   const [hoursOpen, setHoursOpen] = React.useState(false);
   const [loadingFullProducts, setLoadingFullProducts] = React.useState(false);
+  const [backgroundRemovingIds, setBackgroundRemovingIds] = React.useState<Set<string>>(new Set());
 
   useStorePageView(isOwnProfile ? null : store.id);
 
@@ -996,6 +1033,62 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     setSelectedCategory(categoryName);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
+
+  const patchStoreProduct = React.useCallback(
+    (productId: string, patch: Partial<MarketplaceProduct>) => {
+      const patchCategories = (categories: StoreCategoryWithProducts[]) =>
+        categories.map((category) => ({
+          ...category,
+          products: category.products.map((product) =>
+            product.id === productId ? { ...product, ...patch } : product,
+          ),
+        }));
+
+      setStore((prev) => ({
+        ...prev,
+        categories: patchCategories(prev.categories),
+        sections: prev.sections.map((section) => ({
+          ...section,
+          categories: patchCategories(section.categories),
+        })),
+      }));
+    },
+    [],
+  );
+
+  const handleBackgroundRemove = React.useCallback(
+    async (product: MarketplaceProduct) => {
+      let alreadyRunning = false;
+      setBackgroundRemovingIds((prev) => {
+        if (prev.has(product.id)) {
+          alreadyRunning = true;
+          return prev;
+        }
+        return new Set([...prev, product.id]);
+      });
+      if (alreadyRunning) return;
+
+      try {
+        const response = await fetch(`/api/products/${product.id}/background-remove`, {
+          method: "POST",
+        });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok || !json.success) {
+          throw new Error(json.error || "Background fix failed");
+        }
+        patchStoreProduct(product.id, json.product ?? {});
+      } catch (error) {
+        console.error("[Store profile] Background fix failed:", error);
+      } finally {
+        setBackgroundRemovingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(product.id);
+          return next;
+        });
+      }
+    },
+    [patchStoreProduct],
+  );
 
   const actionButtons = (
     <>
@@ -1208,6 +1301,8 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                       compact={compact}
                       storeId={store.id}
                       trackAnalytics={!isOwnProfile}
+                      onBackgroundRemove={viewAsOwner ? handleBackgroundRemove : undefined}
+                      backgroundRemovingIds={backgroundRemovingIds}
                     />
                   ) : (
                     <EmptyState
@@ -1227,6 +1322,8 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                     isOwnProfile={viewAsOwner}
                     storeId={store.id}
                     trackAnalytics={!isOwnProfile}
+                    onBackgroundRemove={viewAsOwner ? handleBackgroundRemove : undefined}
+                    backgroundRemovingIds={backgroundRemovingIds}
                   />
                 )
               ) : (

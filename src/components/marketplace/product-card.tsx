@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Package, Plus, Check, Sparkles, Store, BadgeCheck, ShoppingBag } from "lucide-react";
+import { Package, Plus, Check, Sparkles, Store, BadgeCheck, ShoppingBag, Loader2, Wand2 } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -38,6 +38,8 @@ interface ProductCardProps {
   compact?: boolean;
   onNavigate?: () => void;
   onImageDiscoveryClick?: (productId: string) => void;
+  onBackgroundRemove?: (product: MarketplaceProduct) => void;
+  backgroundRemoveBusy?: boolean;
   /** When set, appends ?store={storeId} to the product URL for store-context header */
   storeId?: string;
   /** Fixed-height horizontal carousel — disables the 300px content-visibility placeholder */
@@ -203,6 +205,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   compact = false,
   onNavigate,
   onImageDiscoveryClick,
+  onBackgroundRemove,
+  backgroundRemoveBusy = false,
   storeId,
   inCarousel = false,
 }) {
@@ -426,6 +430,34 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             <BuyNowOverlayButton product={productData} />
           </div>
 
+          {onBackgroundRemove && !isList && (
+            <button
+              type="button"
+              disabled={backgroundRemoveBusy}
+              title={backgroundRemoveBusy ? "Fixing background..." : "Fix background"}
+              aria-label={backgroundRemoveBusy ? "Fixing background" : "Fix background"}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onBackgroundRemove(product);
+              }}
+              className={cn(
+                "absolute left-2 top-2 z-20 inline-flex items-center gap-1.5 rounded-md border border-gray-200/80 bg-white/95 px-2 py-1 text-[11px] font-medium text-gray-700 shadow-sm backdrop-blur-sm transition-all duration-200 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 disabled:cursor-wait",
+                backgroundRemoveBusy
+                  ? "opacity-100"
+                  : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+              )}
+            >
+              {backgroundRemoveBusy ? (
+                <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
+              ) : (
+                <Wand2 className="h-3 w-3 text-gray-500" />
+              )}
+              <span className="hidden sm:inline">Fix BG</span>
+              <span className="sm:hidden">Fix</span>
+            </button>
+          )}
+
           {/* Bottom-left badges: Online Only + Sale stacked */}
           {(productData.listing_source === 'online_catalog' || live.onSale) && (
             <div className="absolute bottom-2 left-2 z-10 pointer-events-none flex flex-col gap-1 items-start">
@@ -608,6 +640,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
          prevProps.hideStoreMeta === nextProps.hideStoreMeta &&
          prevProps.compact === nextProps.compact &&
          prevProps.isAdmin === nextProps.isAdmin &&
+         prevProps.backgroundRemoveBusy === nextProps.backgroundRemoveBusy &&
+         Boolean(prevProps.onBackgroundRemove) === Boolean(nextProps.onBackgroundRemove) &&
          prevProps.storeId === nextProps.storeId &&
          prevProps.inCarousel === nextProps.inCarousel &&
          prevProps.priority === nextProps.priority &&

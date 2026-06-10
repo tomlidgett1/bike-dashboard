@@ -8,6 +8,12 @@ export const OPENAI_ECOMMERCE_IMAGE_MODEL = "gpt-image-2";
 /** Prompt: flat single-colour backdrop + consistent framing; preserve product pixels/condition. */
 export const ECOMMERCE_HERO_PROMPT = `Place this exact product photograph on a single, perfectly FLAT, uniform PURE WHITE background (clean bright white, #FFFFFF). Create a square 1:1 hero product shot for marketplace listings.
 
+ORIENTATION — the AI must decide:
+- Before removing the background, determine the product's correct natural orientation from visible cues such as readable branding/text, wheels, saddles, handlebars, packaging labels, gravity, and the way the item would normally sit in a catalogue photo.
+- If the source photo is incorrectly rotated or sideways, rotate the entire product to the correct upright/catalogue orientation in the final image.
+- If the source photo is already correctly oriented, preserve that orientation.
+- Do not preserve an incorrect camera/EXIF/display rotation just because it appears in the source.
+
 BACKGROUND — it must be ONE seamless white:
 - The background must be a SINGLE flat white filling the ENTIRE frame, edge to edge and corner to corner.
 - Do NOT create a floor and a wall, a horizon line, a tabletop, a platform, or any visible surface or scene.
