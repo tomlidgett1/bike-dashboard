@@ -84,6 +84,7 @@ import {
 } from "@/components/dashboard";
 import type { MarketplaceReadiness } from "@/lib/marketplace/product-readiness";
 import { BULK_OPTIMISE_STORAGE_KEY } from "@/lib/optimize/bulk-optimise-session";
+import { ProductBrandCell } from "@/components/products/product-brand-cell";
 
 // Dialog (lazy — avoids SSR issues)
 const Dialog = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.Dialog), { ssr: false });
@@ -100,7 +101,6 @@ const EditProductPanel = NextDynamic(
   () => import("@/components/products/edit-product-panel").then((m) => m.EditProductPanel),
   { ssr: false }
 );
-
 interface Product {
   id: string;
   lightspeed_item_id: string | null;
@@ -169,7 +169,7 @@ function deriveStatus(p: Product): { label: string; tone: StatusTone } {
     }
     const primary = p.marketplace_readiness.blockers[0];
     if (primary?.id === "no_approved_image") {
-      return { label: "Needs images", tone: "warning" };
+      return { label: "Needs optimisation", tone: "warning" };
     }
     if (primary?.id === "inactive") {
       return { label: "Hidden", tone: "neutral" };
@@ -184,7 +184,7 @@ function deriveStatus(p: Product): { label: string; tone: StatusTone } {
   }
 
   if (!p.is_active) return { label: "Hidden", tone: "neutral" };
-  if (!hasImage(p)) return { label: "Needs images", tone: "warning" };
+  if (!hasImage(p)) return { label: "Needs optimisation", tone: "warning" };
   if (p.listing_status === "draft") return { label: "Draft", tone: "neutral" };
   return { label: "Live", tone: "success" };
 }
@@ -198,7 +198,7 @@ function isCloudinaryUrl(url: string | null | undefined) {
   return !!url && url.includes("res.cloudinary.com");
 }
 
-function ProductThumb({ product, onDiscover }: { product: Product; onDiscover: (p: Product) => void }) {
+function ProductThumb({ product }: { product: Product }) {
   const src = product.resolved_image_url || product.primary_image_url;
 
   if (src) {
@@ -219,18 +219,12 @@ function ProductThumb({ product, onDiscover }: { product: Product; onDiscover: (
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => onDiscover(product)}
-      disabled={!product.canonical_product_id}
-      title={product.canonical_product_id ? "Discover images with AI" : "Needs catalog match first"}
-      className={cn(
-        "flex size-8 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors",
-        product.canonical_product_id && "hover:border-primary hover:text-primary"
-      )}
+    <div
+      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-muted-foreground"
+      title="No image — use Optimise or Manage images from the row menu"
     >
       <ImageOff className="size-3.5" />
-    </button>
+    </div>
   );
 }
 
@@ -295,7 +289,7 @@ function productColumnClassName(columnId: string) {
     case "product":
       return "min-w-[310px]";
     case "brand":
-      return "min-w-[120px]";
+      return "min-w-[180px]";
     case "category":
       return "min-w-[210px]";
     case "source":
@@ -569,6 +563,17 @@ export default function ProductsPage() {
     );
   };
 
+  const handleBrandUpdated = React.useCallback((productId: string, brand: string) => {
+    setProducts((prev) =>
+      prev.map((p) => (p.id === productId ? { ...p, manufacturer_name: brand } : p)),
+    );
+    setBrands((prev) => {
+      const trimmed = brand.trim();
+      if (!trimmed || prev.includes(trimmed)) return prev;
+      return [...prev, trimmed].sort((a, b) => a.localeCompare(b));
+    });
+  }, []);
+
   const handleBulkActive = async (active: boolean) => {
     const ids = [...selected];
     if (ids.length === 0) return;
@@ -793,7 +798,7 @@ export default function ProductsPage() {
   const rangeEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
 
   const statsLine = stats
-    ? `${totalCount.toLocaleString()} products · ${stats.live.toLocaleString()} live on marketplace · ${stats.needsImages.toLocaleString()} need photos`
+    ? `${totalCount.toLocaleString()} products · ${stats.live.toLocaleString()} live on marketplace · ${stats.needsImages.toLocaleString()} need optimisation`
     : `${totalCount.toLocaleString()} products`;
 
   const productColumns: ColumnDef<Product>[] = [
@@ -854,7 +859,7 @@ export default function ProductsPage() {
           const product = row.original;
           return (
             <div className="flex min-w-0 items-center gap-2.5">
-              <ProductThumb product={product} onDiscover={handleDiscoverImages} />
+              <ProductThumb product={product} />
               <div className="min-w-0">
                 <Link
                   href={`/marketplace/product/${product.id}`}
@@ -919,9 +924,11 @@ export default function ProductsPage() {
         accessorFn: (product) => product.manufacturer_name || "",
         header: "Brand",
         cell: ({ row }) => (
-          <span className="block max-w-[130px] truncate text-[11px] text-muted-foreground" title={row.original.manufacturer_name || undefined}>
-            {row.original.manufacturer_name || "—"}
-          </span>
+          <ProductBrandCell
+            productId={row.original.id}
+            brandName={row.original.manufacturer_name}
+            onUpdated={(brand) => handleBrandUpdated(row.original.id, brand)}
+          />
         ),
       },
       {
@@ -1216,7 +1223,7 @@ export default function ProductsPage() {
                 <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
                   <SelectItem value="all">Any images</SelectItem>
                   <SelectItem value="approved">Approved photos</SelectItem>
-                  <SelectItem value="needs-images">Needs images</SelectItem>
+                  <SelectItem value="needs-images">Needs optimisation</SelectItem>
                 </SelectContent>
               </Select>
 
