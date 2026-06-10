@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
@@ -8,6 +9,8 @@ import {
   Loader2,
   Search,
   Package,
+  Tag,
+  Wand2,
   X,
   PenLine,
   Zap,
@@ -16,7 +19,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { BULK_OPTIMISE_STORAGE_KEY } from "@/lib/optimize/bulk-optimise-session";
 import {
   StoreProductContentTable,
   type DescriptionProduct,
@@ -32,9 +43,11 @@ const MODE_CONFIG: Record<GenerateMode, { label: string; icon: React.ReactNode }
 
 // ── Main component ────────────────────────────────────────────────────────
 export function StoreProductDescriptionsManager() {
+  const router = useRouter();
   const [products, setProducts] = React.useState<DescriptionProduct[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
+  const [brandFilter, setBrandFilter] = React.useState('all');
   const [mode, setMode] = React.useState<GenerateMode>('both');
   const [filter, setFilter] = React.useState<'all' | 'needs' | 'has'>('all');
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -89,8 +102,22 @@ export function StoreProductDescriptionsManager() {
     return { total, withBoth, missingDesc, missingSpecs, needsAny };
   }, [products]);
 
+  const brands = React.useMemo(() => {
+    const unique = new Set<string>();
+    for (const product of products) {
+      const brand = product.brand?.trim();
+      if (brand) unique.add(brand);
+    }
+    return [...unique].sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
   const filtered = React.useMemo(() => {
     let list = products;
+    if (brandFilter !== 'all') {
+      list = brandFilter === '__none__'
+        ? list.filter(p => !p.brand?.trim())
+        : list.filter(p => p.brand?.trim() === brandFilter);
+    }
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(p =>
@@ -107,7 +134,7 @@ export function StoreProductDescriptionsManager() {
     if (filter === 'needs') list = list.filter(p => !p.product_description || !p.product_specs);
     if (filter === 'has') list = list.filter(p => !!p.product_description && !!p.product_specs);
     return list;
-  }, [products, search, filter]);
+  }, [products, search, brandFilter, filter]);
 
   // Products that need content based on the current mode
   const needsContentIds = React.useMemo(() => {
@@ -359,6 +386,23 @@ export function StoreProductDescriptionsManager() {
                 className="h-8 rounded-md pl-8 text-xs"
               />
             </div>
+            <Select value={brandFilter} onValueChange={setBrandFilter}>
+              <SelectTrigger size="sm" className="h-8 w-full rounded-md text-xs lg:w-44">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Tag className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <SelectValue placeholder="All brands" />
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All brands</SelectItem>
+                <SelectItem value="__none__">No brand</SelectItem>
+                {brands.map((brand) => (
+                  <SelectItem key={brand} value={brand}>
+                    {brand}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {needsContentIds.length > 0 && !isGenerating ? (
               <Button onClick={() => generateDescriptions(needsContentIds)} size="sm" className="rounded-md whitespace-nowrap">
                 <Zap className="size-4" />
@@ -398,6 +442,20 @@ export function StoreProductDescriptionsManager() {
           >
             <div className="mx-6 my-3 flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2">
               <span className="text-xs font-medium text-foreground">{selected.size} selected</span>
+              <Button
+                size="xs"
+                onClick={() => {
+                  const ids = Array.from(selected);
+                  try {
+                    sessionStorage.setItem(BULK_OPTIMISE_STORAGE_KEY, JSON.stringify(ids));
+                  } catch { /* storage unavailable */ }
+                  router.push('/settings/store/products/optimise');
+                }}
+                className="rounded-md"
+              >
+                <Wand2 className="size-3.5" />
+                Optimise ({selected.size})
+              </Button>
               <Button size="xs" variant="outline" onClick={() => generateDescriptions(Array.from(selected))} className="rounded-md">
                 <Sparkles className="size-3.5" />
                 Generate selected ({MODE_CONFIG[mode].label.toLowerCase()})

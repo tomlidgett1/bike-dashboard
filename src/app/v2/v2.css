@@ -1,0 +1,63 @@
+/* ============================================================
+   /v2 marketplace homepage — page-scoped styles.
+   Only keyframes + textures that Tailwind utilities can't express.
+   ============================================================ */
+
+/* Floating hero collage cards */
+@keyframes v2-float {
+  0%, 100% { transform: translateY(0) rotate(var(--v2-tilt, 0deg)); }
+  50% { transform: translateY(-10px) rotate(var(--v2-tilt, 0deg)); }
+}
+
+/* Brand marquee — track is duplicated, so -50% loops seamlessly */
+@keyframes v2-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* Soft pulse for the "live" indicator dot */
+@keyframes v2-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 222, 89, 0.55); }
+  70% { box-shadow: 0 0 0 7px rgba(255, 222, 89, 0); }
+}
+
+.v2-float { animation: v2-float 7s ease-in-out infinite; }
+.v2-marquee-track { animation: v2-marquee 36s linear infinite; }
+.v2-marquee:hover .v2-marquee-track { animation-play-state: paused; }
+.v2-live-dot { animation: v2-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-float,
+  .v2-marquee-track,
+  .v2-live-dot {
+    animation: none;
+  }
+}
+
+/* Fine film-grain over the dark hero so flat blacks don't band */
+.v2-noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Faint blueprint grid for the hero backdrop */
+.v2-grid-bg {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 90% 75% at 50% 30%, black 35%, transparent 75%);
+}
+
+/* Hide scrollbars on rails without killing scrollability */
+.v2-no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.v2-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

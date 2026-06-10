@@ -78,6 +78,7 @@ export async function GET(request: NextRequest) {
     const statusFilter = searchParams.get('status') || 'all' // all, active, inactive
     const imageFilter = searchParams.get('image') || 'all' // all, approved, needs-images
     const sourceFilter = searchParams.get('source') || 'all' // all, lightspeed, manual
+    const brandFilter = searchParams.get('brand') || '' // brand name, or __none__ for missing brand
     const listingTypeFilter = searchParams.get('listing_type') || '' // e.g. private_listing
     const productIds = (searchParams.get('ids') || '')
       .split(',')
@@ -153,6 +154,13 @@ export async function GET(request: NextRequest) {
       query = query.eq('category_name', categoryFilter)
     }
 
+    // Apply brand filter
+    if (brandFilter === '__none__') {
+      query = query.or('manufacturer_name.is.null,manufacturer_name.eq.')
+    } else if (brandFilter) {
+      query = query.eq('manufacturer_name', brandFilter)
+    }
+
     // Apply stock filter
     if (stockFilter === 'in-stock') {
       query = query.gt('qoh', 0)
@@ -211,6 +219,20 @@ export async function GET(request: NextRequest) {
       .order('category_name')
 
     const uniqueCategories = [...new Set(categories?.map(c => c.category_name).filter(Boolean))]
+
+    // Get unique brands for filter dropdown
+    const { data: brandRows } = await supabase
+      .from('products')
+      .select('manufacturer_name')
+      .eq('user_id', user.id)
+      .not('manufacturer_name', 'is', null)
+      .order('manufacturer_name')
+
+    const uniqueBrands = [...new Set(
+      (brandRows ?? [])
+        .map(row => (row.manufacturer_name ?? '').trim())
+        .filter(Boolean)
+    )]
 
     // Process products to add resolved image URLs from product_images table
     let processedProducts = (data || []).map((product, idx) => {
@@ -332,6 +354,7 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(filteredCount / pageSize),
       },
       categories: uniqueCategories,
+      brands: uniqueBrands,
     })
   } catch (error) {
     console.error('Error fetching products:', error)

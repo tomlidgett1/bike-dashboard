@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search,
@@ -26,7 +27,9 @@ import {
   MoreHorizontal,
   PackageX,
   Package,
+  Tag,
   Trash2,
+  Wand2,
   X,
   Pencil,
   Tags,
@@ -80,6 +83,7 @@ import {
   type StatusTone,
 } from "@/components/dashboard";
 import type { MarketplaceReadiness } from "@/lib/marketplace/product-readiness";
+import { BULK_OPTIMISE_STORAGE_KEY } from "@/lib/optimize/bulk-optimise-session";
 
 // Dialog (lazy — avoids SSR issues)
 const Dialog = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.Dialog), { ssr: false });
@@ -336,6 +340,7 @@ function MiniLabel({
 
 
 export default function ProductsPage() {
+  const router = useRouter();
   const [products, setProducts] = React.useState<Product[]>([]);
   const [stats, setStats] = React.useState<ProductStats | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -347,8 +352,10 @@ export default function ProductsPage() {
     totalPages: 0,
   });
   const [categories, setCategories] = React.useState<string[]>([]);
+  const [brands, setBrands] = React.useState<string[]>([]);
   const [search, setSearch] = React.useState('');
   const [categoryFilter, setCategoryFilter] = React.useState<string>('');
+  const [brandFilter, setBrandFilter] = React.useState<string>('');
   const [stockFilter, setStockFilter] = React.useState<string>('all');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
   const [imageFilter, setImageFilter] = React.useState<string>('all');
@@ -406,8 +413,18 @@ export default function ProductsPage() {
     }
   }, []);
 
-  // Fetch products
+  // Fetch products. Each call cancels the previous in-flight request and stale
+  // responses are discarded, so a slow earlier query can never overwrite the
+  // results of a newer search/filter.
+  const fetchSeqRef = React.useRef(0);
+  const fetchAbortRef = React.useRef<AbortController | null>(null);
+
   const fetchProducts = React.useCallback(async (page: number = 1, isInitialLoad: boolean = false) => {
+    const seq = ++fetchSeqRef.current;
+    fetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
+
     if (isInitialLoad) setLoading(true);
 
     try {
@@ -416,6 +433,7 @@ export default function ProductsPage() {
         pageSize: pagination.pageSize.toString(),
         search: debouncedSearch,
         category: categoryFilter,
+        brand: brandFilter,
         stock: stockFilter,
         status: statusFilter,
         image: imageFilter,
@@ -423,25 +441,33 @@ export default function ProductsPage() {
         sortOrder: sortOrder,
       });
 
-      const response = await fetch(`/api/products?${params}`);
+      const response = await fetch(`/api/products?${params}`, { signal: controller.signal });
       if (!response.ok) throw new Error('Failed to fetch products');
 
       const data = await response.json();
+      if (seq !== fetchSeqRef.current) return; // stale response
+
       setProducts(data.products || []);
       setPagination(data.pagination);
       setCategories(data.categories || []);
+      setBrands(data.brands || []);
     } catch (error) {
+      if ((error as Error).name === 'AbortError') return;
       console.error('Error fetching products:', error);
     } finally {
-      if (isInitialLoad) setLoading(false);
-      setRefreshing(false);
+      if (seq === fetchSeqRef.current) {
+        if (isInitialLoad) setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [pagination.pageSize, debouncedSearch, categoryFilter, stockFilter, statusFilter, imageFilter, sortBy, sortOrder]);
+  }, [pagination.pageSize, debouncedSearch, categoryFilter, brandFilter, stockFilter, statusFilter, imageFilter, sortBy, sortOrder]);
 
   // Initial + filter-change fetch
+  const initialLoadRef = React.useRef(true);
   React.useEffect(() => {
-    fetchProducts(1, loading);
-  }, [debouncedSearch, categoryFilter, stockFilter, statusFilter, imageFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts, loading]);
+    fetchProducts(1, initialLoadRef.current);
+    initialLoadRef.current = false;
+  }, [debouncedSearch, categoryFilter, brandFilter, stockFilter, statusFilter, imageFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts]);
 
   // Load stats once on mount
   React.useEffect(() => { fetchStats(); }, [fetchStats]);
@@ -739,15 +765,26 @@ export default function ProductsPage() {
   const hasFilters =
     search !== '' ||
     categoryFilter !== '' ||
+    brandFilter !== '' ||
     stockFilter !== 'all' ||
     statusFilter !== 'all' ||
     imageFilter !== 'all';
   const clearFilters = () => {
     setSearch('');
     setCategoryFilter('');
+    setBrandFilter('');
     setStockFilter('all');
     setStatusFilter('all');
     setImageFilter('all');
+  };
+
+  const openBulkOptimise = () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    try {
+      sessionStorage.setItem(BULK_OPTIMISE_STORAGE_KEY, JSON.stringify(ids));
+    } catch { /* storage unavailable */ }
+    router.push('/products/optimise');
   };
 
   const totalCount = stats?.total ?? pagination.total;
@@ -825,6 +862,14 @@ export default function ProductsPage() {
                 >
                   {product.display_name || product.description}
                 </Link>
+                {product.display_name?.trim() && product.description?.trim() ? (
+                  <p
+                    className="mt-0.5 max-w-[280px] truncate text-[10px] leading-tight text-muted-foreground"
+                    title={product.description}
+                  >
+                    Lightspeed: {product.description}
+                  </p>
+                ) : null}
                 <p className="mt-0.5 truncate font-mono text-[10px] leading-tight text-muted-foreground">
                   {product.custom_sku || product.system_sku || "No SKU"}
                 </p>
@@ -1127,6 +1172,18 @@ export default function ProductsPage() {
                 </SelectContent>
               </Select>
 
+              <Select value={brandFilter || "all"} onValueChange={(v) => setBrandFilter(v === "all" ? "" : v)}>
+                <SelectTrigger size="sm" className="w-[160px] shrink-0">
+                  <Tag className="size-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="Brand" />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
+                  <SelectItem value="all">All brands</SelectItem>
+                  <SelectItem value="__none__">No brand</SelectItem>
+                  {brands.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger size="sm" className="w-[120px] shrink-0">
                   <Eye className="size-3.5 text-muted-foreground" />
@@ -1183,6 +1240,10 @@ export default function ProductsPage() {
               >
                 <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 md:px-5">
                   <span className="text-sm font-medium text-foreground">{selected.size} selected</span>
+                  <Button size="xs" onClick={openBulkOptimise}>
+                    <Wand2 className="size-3.5" />
+                    Optimise ({selected.size})
+                  </Button>
                   <Button variant="outline" size="xs" onClick={() => handleBulkActive(true)}>
                     <Eye className="size-3.5" />
                     Activate

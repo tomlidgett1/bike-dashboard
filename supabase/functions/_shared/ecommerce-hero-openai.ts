@@ -47,30 +47,45 @@ const EXT_FOR_MIME: Record<string, string> = {
   "image/webp": "webp",
 };
 
-/**
- * Download an image URL and return raw base64 + detected MIME (for OpenAI multipart).
- */
-export async function downloadImageAsBase64(url: string): Promise<DownloadedImage | null> {
+const BROWSER_HEADERS: Record<string, string> = {
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+  "Accept-Language": "en-AU,en;q=0.9",
+};
+
+const DOWNLOAD_TIMEOUT_MS = 20_000;
+
+/** Single fetch attempt → DownloadedImage, or null on any failure (logged). */
+async function tryFetchImage(
+  url: string,
+  headers: Record<string, string>,
+  label: string,
+): Promise<DownloadedImage | null> {
   try {
     const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; BikeMarketplace/1.0)",
-      },
+      headers,
+      redirect: "follow",
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
     });
 
     if (!response.ok) {
-      console.error(`[ECOMMERCE-HERO-AI] Download failed: HTTP ${response.status}`);
+      console.error(`[ECOMMERCE-HERO-AI] ${label} failed: HTTP ${response.status}`);
       return null;
     }
 
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.startsWith("image/")) {
-      console.error(`[ECOMMERCE-HERO-AI] Invalid content type: ${contentType}`);
+      console.error(`[ECOMMERCE-HERO-AI] ${label} invalid content type: ${contentType}`);
       return null;
     }
 
     const mimeType = contentType.split(";")[0].trim().toLowerCase();
     const arrayBuffer = await response.arrayBuffer();
+    if (arrayBuffer.byteLength === 0) {
+      console.error(`[ECOMMERCE-HERO-AI] ${label} returned empty body`);
+      return null;
+    }
     const uint8Array = new Uint8Array(arrayBuffer);
 
     let binary = "";
@@ -82,9 +97,65 @@ export async function downloadImageAsBase64(url: string): Promise<DownloadedImag
 
     return { base64: btoa(binary), mimeType };
   } catch (error) {
-    console.error("[ECOMMERCE-HERO-AI] Download error:", error);
+    console.error(`[ECOMMERCE-HERO-AI] ${label} error:`, error);
     return null;
   }
+}
+
+/**
+ * Download an image URL and return raw base64 + detected MIME (for OpenAI multipart).
+ *
+ * Many retailer CDNs (e.g. ccache.cc, Shopify stores with hotlink protection)
+ * return 403 to non-browser fetches, so this tries multiple strategies in order:
+ *   1. Direct fetch with full browser headers + same-origin Referer
+ *   2. Direct fetch with browser headers, no Referer (some CDNs reject referers)
+ *   3. wsrv.nl image proxy (fetches from its own infra, normalises to jpeg)
+ *   4. Cloudinary remote fetch (if CLOUDINARY_CLOUD_NAME is configured)
+ */
+export async function downloadImageAsBase64(url: string): Promise<DownloadedImage | null> {
+  let origin: string | null = null;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    console.error(`[ECOMMERCE-HERO-AI] Invalid image URL: ${url}`);
+    return null;
+  }
+
+  // Strategy 1: browser-like fetch with same-origin referer
+  let result = await tryFetchImage(
+    url,
+    { ...BROWSER_HEADERS, Referer: `${origin}/` },
+    "Direct download (with referer)",
+  );
+  if (result) return result;
+
+  // Strategy 2: browser-like fetch without referer
+  result = await tryFetchImage(url, BROWSER_HEADERS, "Direct download (no referer)");
+  if (result) return result;
+
+  // Strategy 3: wsrv.nl proxy — fetches server-side and re-encodes, which
+  // bypasses most hotlink protection / bot blocking on retailer CDNs.
+  const wsrvUrl = `https://wsrv.nl/?url=${encodeURIComponent(url)}&output=jpg&n=-1`;
+  result = await tryFetchImage(wsrvUrl, BROWSER_HEADERS, "wsrv.nl proxy download");
+  if (result) {
+    console.log("[ECOMMERCE-HERO-AI] Downloaded via wsrv.nl proxy fallback");
+    return result;
+  }
+
+  // Strategy 4: Cloudinary remote fetch (re-hosts the image through Cloudinary)
+  const cloudName = Deno.env.get("CLOUDINARY_CLOUD_NAME")?.trim();
+  if (cloudName) {
+    const cloudinaryFetchUrl =
+      `https://res.cloudinary.com/${cloudName}/image/fetch/f_jpg/${encodeURIComponent(url)}`;
+    result = await tryFetchImage(cloudinaryFetchUrl, BROWSER_HEADERS, "Cloudinary fetch download");
+    if (result) {
+      console.log("[ECOMMERCE-HERO-AI] Downloaded via Cloudinary fetch fallback");
+      return result;
+    }
+  }
+
+  console.error(`[ECOMMERCE-HERO-AI] All download strategies failed for: ${url.substring(0, 120)}`);
+  return null;
 }
 
 function mimeToBlobFilename(mimeType: string): { type: string; filename: string } {

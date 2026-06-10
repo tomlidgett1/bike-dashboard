@@ -60,7 +60,15 @@ serve(async (req) => {
     const downloaded = await downloadImageAsBase64(imageUrl);
 
     if (!downloaded) {
-      throw new Error("Failed to download source image");
+      console.error(`❌ [ENHANCE-IMAGE] All download strategies failed for: ${imageUrl}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Failed to download source image (blocked by the source site after all retry strategies)",
+          code: "SOURCE_DOWNLOAD_FAILED",
+        }),
+        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
     console.log(
       `✅ [ENHANCE-IMAGE] Downloaded image (${(downloaded.base64.length / 1024).toFixed(0)}KB base64, ${downloaded.mimeType})`,

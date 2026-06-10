@@ -32,10 +32,12 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
   const isEcommerceHero = pathname === '/admin/ecommerce-hero';
   // Settings/products redesign mockup ships its own sidebar-07 shell
   const isMockup = pathname?.startsWith('/mockup') || false;
+  // V2 marketplace homepage ships its own header/footer chrome
+  const isV2 = pathname?.startsWith('/v2') || false;
 
   // Don't wrap marketplace, messages, login, auth, onboarding, ecommerce-hero, or mockup pages with dashboard layout
   // These pages manage their own layout
-  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isEcommerceHero || isMockup) {
+  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isEcommerceHero || isMockup || isV2) {
     return <>{children}</>;
   }
 
