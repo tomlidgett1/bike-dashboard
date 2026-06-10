@@ -198,6 +198,8 @@ serve(async (req) => {
     const cloudinaryForm = new FormData();
     cloudinaryForm.append("file", dataUri);
     cloudinaryForm.append("public_id", publicId);
+    // Keep pixel orientation as downloaded — do not apply EXIF auto-rotate on ingest.
+    cloudinaryForm.append("angle", "ignore");
     cloudinaryForm.append("eager", CLOUDINARY_EAGER_TRANSFORMS);
     cloudinaryForm.append("eager_async", "false");
 

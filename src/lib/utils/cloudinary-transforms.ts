@@ -2,13 +2,14 @@ import { normaliseRotationDegrees } from "@/lib/utils/cloudinary-rotation";
 
 // f_auto lets Cloudinary negotiate AVIF/WebP/JPEG per the browser's Accept header
 // (AVIF is ~20-30% smaller than WebP), so we never hardcode a single format.
+// No a_auto — EXIF auto-orient was rotating some approved product shots incorrectly.
 export const CLOUDINARY_IMAGE_TRANSFORMS = {
-  thumbnail: "a_auto,w_120,c_limit,q_auto:low,f_auto",
-  mobile_card: "a_auto,w_320,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
-  grid_card: "a_auto,w_640,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
-  mobile_hero: "a_auto,w_1000,ar_1:1,c_pad,b_white,q_auto:best,f_auto",
-  web_hero: "a_auto,w_1600,ar_4:3,c_pad,b_white,q_auto:best,f_auto",
-  zoom: "a_auto,w_2000,c_limit,q_auto:best,f_auto",
+  thumbnail: "w_120,c_limit,q_auto:low,f_auto",
+  mobile_card: "w_320,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
+  grid_card: "w_640,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
+  mobile_hero: "w_1000,ar_1:1,c_pad,b_white,q_auto:best,f_auto",
+  web_hero: "w_1600,ar_4:3,c_pad,b_white,q_auto:best,f_auto",
+  zoom: "w_2000,c_limit,q_auto:best,f_auto",
 } as const;
 
 export type CloudinaryImageSlot = keyof typeof CLOUDINARY_IMAGE_TRANSFORMS;
@@ -269,10 +270,7 @@ export function buildCloudinaryImageUrl(
   if (!publicId || !cn) return null;
 
   const parsed = parseTransformPublicId(publicId);
-  const hasManualRotation = parsed.preTransforms.some((t) => /^a_(90|180|270)$/.test(t));
-  const slotTransform = hasManualRotation
-    ? CLOUDINARY_IMAGE_TRANSFORMS[slot].replace(/^a_auto,/, "")
-    : CLOUDINARY_IMAGE_TRANSFORMS[slot];
+  const slotTransform = CLOUDINARY_IMAGE_TRANSFORMS[slot];
   const transforms = [...parsed.preTransforms, slotTransform].join("/");
 
   return `https://res.cloudinary.com/${cn}/image/upload/${transforms}/${parsed.rawId}`;
@@ -308,7 +306,7 @@ export function cloudinaryCardLoader({
   const parsed = parseTransformPublicId(src);
   const transforms = [
     ...parsed.preTransforms,
-    `a_auto,c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto`,
+    `c_fill,g_center,ar_1:1,w_${width},q_auto,f_auto`,
   ].join("/");
 
   return `https://res.cloudinary.com/${cloudName}/image/upload/${transforms}/${parsed.rawId}`;

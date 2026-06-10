@@ -1,10 +1,10 @@
 export const CLOUDINARY_IMAGE_TRANSFORMS = {
-  thumbnail: "a_auto,w_120,c_limit,q_auto:low,f_auto",
-  mobileCard: "a_auto,w_320,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
-  gridCard: "a_auto,w_640,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
-  mobileHero: "a_auto,w_1000,ar_1:1,c_pad,b_white,q_auto:best,f_auto",
-  webHero: "a_auto,w_1600,ar_4:3,c_pad,b_white,q_auto:best,f_auto",
-  zoom: "a_auto,w_2000,c_limit,q_auto:best,f_auto",
+  thumbnail: "w_120,c_limit,q_auto:low,f_auto",
+  mobileCard: "w_320,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
+  gridCard: "w_640,ar_1:1,c_fill,g_center,q_auto:good,f_auto",
+  mobileHero: "w_1000,ar_1:1,c_pad,b_white,q_auto:best,f_auto",
+  webHero: "w_1600,ar_4:3,c_pad,b_white,q_auto:best,f_auto",
+  zoom: "w_2000,c_limit,q_auto:best,f_auto",
 } as const;
 
 export interface CloudinaryListingImage {

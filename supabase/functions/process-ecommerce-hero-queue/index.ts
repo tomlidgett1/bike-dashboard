@@ -380,6 +380,7 @@ async function uploadToCloudinary(
     const formData = new FormData();
     formData.append("file", dataUri);
     formData.append("public_id", publicId);
+    formData.append("angle", "ignore");
     formData.append("eager", CLOUDINARY_EAGER_TRANSFORMS);
     formData.append("eager_async", "false");
 

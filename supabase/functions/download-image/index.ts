@@ -116,6 +116,7 @@ Deno.serve(async (req) => {
     const cloudinaryForm = new FormData()
     cloudinaryForm.append('file', dataUri)
     cloudinaryForm.append('public_id', publicId)
+    cloudinaryForm.append('angle', 'ignore')
     cloudinaryForm.append('eager', CLOUDINARY_EAGER_TRANSFORMS)
     cloudinaryForm.append('eager_async', 'false')
 

@@ -51,22 +51,14 @@ export function applyCloudinaryRotation(url: string | undefined, degrees: unknow
 
   if (!rotation) return `${prefix}${rest}`;
 
+  // Strip legacy a_auto segments from older delivery URLs.
   if (rest.startsWith("a_auto,")) {
-    const slashIndex = rest.indexOf("/");
-    if (slashIndex === -1) return `${prefix}a_auto/a_${rotation}/${rest.replace(/^a_auto,?/, "")}`;
-
-    const firstTransform = rest.slice(0, slashIndex).replace(/^a_auto,?/, "");
-    const remaining = rest.slice(slashIndex + 1);
-    return firstTransform
-      ? `${prefix}a_auto/a_${rotation}/${firstTransform}/${remaining}`
-      : `${prefix}a_auto/a_${rotation}/${remaining}`;
-  }
-
-  if (rest.startsWith("a_auto/")) {
+    rest = rest.replace(/^a_auto,?\/?/, "");
+  } else if (rest.startsWith("a_auto/")) {
     rest = rest.slice("a_auto/".length);
   }
 
-  return `${prefix}a_auto/a_${rotation}/${rest}`;
+  return `${prefix}a_${rotation}/${rest}`;
 }
 
 export function rotateCloudinaryUrlClockwise(url: string | undefined): string | undefined {
