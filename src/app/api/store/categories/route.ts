@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { CreateCategoryRequest, UpdateCategoryRequest } from '@/lib/types/store';
+import { syncDynamicCarouselProductIds } from '@/lib/store/carousel-products';
 import { fetchUberEnabledProductIds } from '@/lib/store/uber-carousel';
 
 /**
@@ -55,7 +56,42 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({ categories: categories || [] });
+    const editableCategories = (categories ?? []).filter(
+      (category) => category.source !== 'display_override',
+    );
+
+    const syncedCategories = await syncDynamicCarouselProductIds(
+      supabase,
+      user.id,
+      editableCategories,
+    );
+
+    const categoriesWithNames = await Promise.all(
+      syncedCategories.map(async (category) => {
+        if (
+          category.source !== 'lightspeed' ||
+          category.lightspeed_category_name ||
+          !category.name
+        ) {
+          return category;
+        }
+
+        const { error } = await supabase
+          .from('store_categories')
+          .update({ lightspeed_category_name: category.name })
+          .eq('id', category.id)
+          .eq('user_id', user.id);
+
+        if (error) {
+          console.error('[store/categories] Failed to backfill lightspeed_category_name:', error);
+          return category;
+        }
+
+        return { ...category, lightspeed_category_name: category.name };
+      }),
+    );
+
+    return NextResponse.json({ categories: categoriesWithNames });
   } catch (error) {
     console.error('Error in GET /api/store/categories:', error);
     return NextResponse.json(
@@ -139,6 +175,11 @@ export async function POST(request: NextRequest) {
     // Insert category
     const storePage = body.store_page === 'bikes' ? 'bikes' : 'products';
 
+    const lightspeedCategoryName =
+      body.source === 'lightspeed'
+        ? body.lightspeed_category_name?.trim() || body.name
+        : null;
+
     const { data: category, error } = await supabase
       .from('store_categories')
       .insert({
@@ -146,6 +187,7 @@ export async function POST(request: NextRequest) {
         name: body.name,
         source: body.source,
         lightspeed_category_id: body.lightspeed_category_id,
+        lightspeed_category_name: lightspeedCategoryName,
         brand_name: body.brand_name ?? null,
         product_ids: uberProductIds ?? body.product_ids ?? [],
         display_order: displayOrder,

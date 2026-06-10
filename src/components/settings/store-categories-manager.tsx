@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import {
   DndContext,
   closestCenter,
@@ -66,8 +67,10 @@ import type {
   StoreCarouselPage,
 } from "@/lib/types/store";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
+import { LightspeedCarouselLogo } from "@/components/marketplace/store-profile/lightspeed-carousel-logo";
 import type { CarouselCreateRequest } from "@/components/settings/store-carousels-new-menu";
 import { cn } from "@/lib/utils";
+import type { BrandLogoSearchResult } from "@/lib/store/brand-logo-serper";
 
 interface BrandOption {
   name: string;
@@ -87,18 +90,152 @@ interface CategoryFormData {
   hideTitle: boolean;
 }
 
-function carouselSummary(category: StoreCategory): string {
+function carouselProductCount(category: StoreCategory): number {
+  return category.resolved_product_count ?? category.product_ids.length;
+}
+
+function CarouselCardMetadata({ category }: { category: StoreCategory }) {
+  const count = carouselProductCount(category);
+  const countLabel = `${count} product${count === 1 ? "" : "s"}`;
+
   if (category.source === "brand") {
-    return `Brand · ${category.brand_name ?? category.name}`;
+    return (
+      <p className="mt-0.5 text-xs text-gray-500">
+        {countLabel} · Brand · {category.brand_name ?? category.name}
+      </p>
+    );
   }
+
   if (category.source === "uber") {
-    return "Uber delivery · automatic products";
+    return <p className="mt-0.5 text-xs text-gray-500">{countLabel} · Uber delivery</p>;
+  }
+
+  if (category.source === "lightspeed") {
+    const originalName =
+      category.lightspeed_category_name &&
+      category.lightspeed_category_name !== category.name
+        ? category.lightspeed_category_name
+        : null;
+
+    return (
+      <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
+        <span>{countLabel}</span>
+        <span aria-hidden className="text-gray-300">
+          ·
+        </span>
+        <LightspeedCarouselLogo variant="badge" />
+        {originalName ? (
+          <>
+            <span aria-hidden className="text-gray-300">
+              ·
+            </span>
+            <span className="truncate">{originalName}</span>
+          </>
+        ) : null}
+      </p>
+    );
+  }
+
+  return <p className="mt-0.5 text-xs text-gray-500">{countLabel} · Custom</p>;
+}
+
+interface CarouselProductPreview {
+  id: string;
+  display_name?: string | null;
+  description?: string | null;
+  resolved_image_url?: string | null;
+  price?: number | null;
+  qoh?: number | null;
+  listing_type?: string | null;
+  uber_delivery_enabled?: boolean | null;
+}
+
+function CarouselProductRow({
+  product,
+  onClick,
+  trailing,
+}: {
+  product: CarouselProductPreview;
+  onClick?: () => void;
+  trailing?: React.ReactNode;
+}) {
+  const isPrivate = product.listing_type === "private_listing";
+  const isUber = product.uber_delivery_enabled === true;
+  const label = product.display_name || product.description || "Untitled product";
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2.5 rounded-md p-2",
+        onClick && "cursor-pointer hover:bg-accent",
+      )}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+    >
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
+        {product.resolved_image_url ? (
+          <img src={product.resolved_image_url} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <Package className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <p className="truncate text-sm font-medium text-foreground">{label}</p>
+          {isPrivate ? (
+            <span className="shrink-0 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
+              Private
+            </span>
+          ) : isUber ? (
+            <span className="shrink-0 rounded-md border border-[#0eb462]/30 bg-[#0eb462]/10 px-1.5 py-0.5 text-xs text-[#087a43]">
+              Uber
+            </span>
+          ) : (
+            <span className="shrink-0 rounded-md border border-blue-300 bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700">
+              Lightspeed
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          ${product.price ?? "—"}
+          {!isPrivate && product.qoh != null ? ` · Stock: ${product.qoh}` : ""}
+        </p>
+      </div>
+      {trailing}
+    </div>
+  );
+}
+
+function carouselProductsSubtitle(category: StoreCategory): string | null {
+  if (category.source === "brand") {
+    return category.brand_name
+      ? `Synced automatically from ${category.brand_name} products in stock`
+      : "Synced automatically from brand products in stock";
   }
   if (category.source === "lightspeed") {
-    return `${category.product_ids.length} products · Lightspeed`;
+    return "Synced from your Lightspeed category — updates when stock changes";
   }
-  return `${category.product_ids.length} products · Custom`;
+  if (category.source === "uber") {
+    return "Synced automatically from Uber-enabled products in stock";
+  }
+  return null;
 }
+
+const PAGE_ORDER_BASE: Record<StoreCarouselPage, number> = {
+  products: 0,
+  bikes: 5000,
+};
 
 /** Fixed-height carousel form dialogs — body scrolls, header/footer stay put. */
 const PRODUCT_PICKER_DIALOG_CLASS =
@@ -161,7 +298,7 @@ function SortableCarouselCard({
 
         <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-50">
           {category.source === "uber" ? (
-            <UberCarouselLogo />
+            <UberCarouselLogo className="h-9 w-9" />
           ) : category.logo_url ? (
             <img
               src={category.logo_url}
@@ -175,7 +312,7 @@ function SortableCarouselCard({
 
         <div className="min-w-0 flex-1">
           <h4 className="truncate text-sm font-medium text-gray-900">{category.name}</h4>
-          <p className="mt-0.5 text-xs text-gray-500">{carouselSummary(category)}</p>
+          <CarouselCardMetadata category={category} />
         </div>
 
         <div className="flex flex-shrink-0 items-center gap-0.5">
@@ -189,8 +326,9 @@ function SortableCarouselCard({
               <RotateCcw className="size-4" />
             </Button>
           ) : null}
-          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
-            <Edit2 className="size-4" />
+          <Button variant="outline" size="sm" onClick={onEdit} className="rounded-md">
+            <Edit2 className="h-3.5 w-3.5" />
+            Edit carousel
           </Button>
           <Button
             variant="ghost"
@@ -222,7 +360,11 @@ export function StoreCategoriesManager({
     createPageRef.current = activePage;
   }, [activePage]);
   const [categories, setCategories] = React.useState<StoreCategory[]>([]);
-  const [products, setProducts] = React.useState<any[]>([]);
+  const [pickerProducts, setPickerProducts] = React.useState<any[]>([]);
+  const [pickerLoading, setPickerLoading] = React.useState(false);
+  const [pickerPage, setPickerPage] = React.useState(1);
+  const [pickerHasMore, setPickerHasMore] = React.useState(false);
+  const [pickerTotal, setPickerTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [scanning, setScanning] = React.useState(false);
@@ -240,6 +382,7 @@ export function StoreCategoriesManager({
     null
   );
   const [deleteConfirmId, setDeleteConfirmId] = React.useState<string | null>(null);
+  const pendingDeleteIdRef = React.useRef<string | null>(null);
   const [formData, setFormData] = React.useState<CategoryFormData>({
     name: '',
     productIds: [],
@@ -256,6 +399,23 @@ export function StoreCategoriesManager({
   const [uploadingLogoId, setUploadingLogoId] = React.useState<string | null>(null);
   const logoInputRef = React.useRef<HTMLInputElement>(null);
   const logoTargetIdRef = React.useRef<string | null>(null);
+  const [logoSearchQuery, setLogoSearchQuery] = React.useState("");
+  const [logoSearchResults, setLogoSearchResults] = React.useState<BrandLogoSearchResult[]>([]);
+  const [logoSearching, setLogoSearching] = React.useState(false);
+  const [logoSearchError, setLogoSearchError] = React.useState<string | null>(null);
+  const [logoImportingUrl, setLogoImportingUrl] = React.useState<string | null>(null);
+  const [carouselMemberProducts, setCarouselMemberProducts] = React.useState<
+    CarouselProductPreview[]
+  >([]);
+  const [carouselMembersLoading, setCarouselMembersLoading] = React.useState(false);
+
+  const resetLogoSearch = React.useCallback(() => {
+    setLogoSearchQuery("");
+    setLogoSearchResults([]);
+    setLogoSearchError(null);
+    setLogoSearching(false);
+    setLogoImportingUrl(null);
+  }, []);
 
   const handleLogoClick = (categoryId: string) => {
     logoTargetIdRef.current = categoryId;
@@ -331,63 +491,23 @@ export function StoreCategoriesManager({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // Fetch categories and auto-generated category names
+  // Fetch categories (product_ids for dynamic carousels are synced server-side)
   const fetchData = React.useCallback(async () => {
     try {
       setLoading(true);
 
-      const [categoriesRes, productsRes, privateListingsRes, categoryNamesRes] = await Promise.all([
-        fetch('/api/store/categories'),
-        fetch('/api/products?pageSize=2000&status=active&stock=in-stock'),
-        fetch('/api/products?pageSize=500&status=active&listing_type=private_listing'),
-        fetch('/api/store/category-names'),
-      ]);
+      const categoriesRes = await fetch('/api/store/categories');
 
       if (categoriesRes.ok) {
         const data = await categoriesRes.json();
         setCategories(data.categories || []);
-      }
-
-      if (productsRes.ok) {
-        const lsData = await productsRes.json();
-        const lsProducts: any[] = lsData.products || [];
-        const lsIds = new Set(lsProducts.map((p: any) => p.id));
-
-        let privateProducts: any[] = [];
-        if (privateListingsRes.ok) {
-          const privateData = await privateListingsRes.json();
-          // Deduplicate — private listings with qoh>0 may already appear in lsProducts
-          privateProducts = (privateData.products || []).filter((p: any) => !lsIds.has(p.id));
-        }
-
-        setProducts([...lsProducts, ...privateProducts]);
-      }
-
-      if (categoryNamesRes.ok) {
-        const data = await categoryNamesRes.json();
-        // Merge with existing categories to show auto-generated ones
-        const existingCategoryNames = new Set(categories.map(c => c.lightspeed_category_id || c.name));
-        const autoCategories = (data.categories || [])
-          .filter((cat: any) => !existingCategoryNames.has(cat.category_name))
-          .map((cat: any, index: number) => ({
-            id: `auto-${cat.category_name}`,
-            name: cat.category_name,
-            display_order: 1000 + index,
-            source: 'auto' as const,
-            lightspeed_category_id: cat.category_name,
-            product_ids: [],
-            is_active: true,
-            product_count: cat.product_count,
-          }));
-        
-        setCategories(prev => [...prev, ...autoCategories]);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     fetchData();
@@ -482,6 +602,7 @@ export function StoreCategoriesManager({
             name: lsCategory.name,
             source: 'lightspeed',
             lightspeed_category_id: lsCategory.id,
+            lightspeed_category_name: lsCategory.name,
             product_ids: categoryProducts.map((p: any) => p.id),
             store_page: getCreatePage(),
           }),
@@ -626,7 +747,81 @@ export function StoreCategoriesManager({
     });
     setProductSearch('');
     setProductSourceFilter('all');
+    resetLogoSearch();
+    setLogoSearchQuery(category.name ? `${category.name} logo` : '');
     setIsEditDialogOpen(true);
+  };
+
+  const handleLogoSearch = async () => {
+    const query =
+      logoSearchQuery.trim() ||
+      (formData.name.trim() ? `${formData.name.trim()} logo` : "");
+    if (!query) {
+      setLogoSearchError("Enter a carousel name or search query first");
+      return;
+    }
+
+    try {
+      setLogoSearching(true);
+      setLogoSearchError(null);
+      setLogoSearchResults([]);
+
+      const response = await fetch("/api/store/categories/search-logo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: logoSearchQuery.trim() || undefined,
+          carouselName: formData.name.trim() || undefined,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setLogoSearchError(data.error || "Logo search failed");
+        return;
+      }
+
+      setLogoSearchResults(Array.isArray(data.results) ? data.results : []);
+      if (!data.results?.length) {
+        setLogoSearchError("No logo images found — try a different search");
+      }
+    } catch (error) {
+      console.error("Error searching carousel logos:", error);
+      setLogoSearchError("Logo search failed");
+    } finally {
+      setLogoSearching(false);
+    }
+  };
+
+  const handleSelectSerperLogo = async (result: BrandLogoSearchResult) => {
+    const categoryId = editingCategory?.id;
+    if (!categoryId) return;
+
+    try {
+      setLogoImportingUrl(result.url);
+      setLogoSearchError(null);
+
+      const response = await fetch("/api/store/categories/import-logo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: result.url, categoryId }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setLogoSearchError(data.error || "Could not import logo");
+        return;
+      }
+
+      setCategories((prev) =>
+        prev.map((c) => (c.id === categoryId ? { ...c, logo_url: data.url } : c)),
+      );
+    } catch (error) {
+      console.error("Error importing carousel logo:", error);
+      setLogoSearchError("Could not import logo");
+    } finally {
+      setLogoImportingUrl(null);
+    }
   };
 
   // Update category
@@ -670,18 +865,28 @@ export function StoreCategoriesManager({
 
       if (response.ok) {
         await fetchData();
+      } else {
+        const error = await response.json().catch(() => ({}));
+        alert(error.error || 'Failed to delete carousel');
       }
     } catch (error) {
       console.error('Error deleting category:', error);
+      alert('Failed to delete carousel');
     } finally {
       setDeleteConfirmId(null);
+      pendingDeleteIdRef.current = null;
     }
   };
 
   const pageCategories = React.useMemo(
     () =>
       categories
-        .filter((category) => categoryPage(category) === activePage)
+        .filter(
+          (category) =>
+            categoryPage(category) === activePage &&
+            category.source !== 'display_override' &&
+            !category.id.startsWith('auto-'),
+        )
         .sort((a, b) => a.display_order - b.display_order),
     [categories, activePage],
   );
@@ -696,28 +901,36 @@ export function StoreCategoriesManager({
 
   // Handle reorder within the active storefront page
   const handleReorder = async (newOrder: StoreCategory[]) => {
+    const orderBase = PAGE_ORDER_BASE[activePage];
+    const reorderedWithOrder = newOrder.map((category, index) => ({
+      ...category,
+      display_order: orderBase + index,
+    }));
     const otherPageCategories = categories.filter(
       (category) => categoryPage(category) !== activePage,
     );
-    const merged = [...otherPageCategories, ...newOrder];
-    setCategories(merged);
+    setCategories([...otherPageCategories, ...reorderedWithOrder]);
 
     try {
-      await Promise.all(
-        newOrder.map((category, index) =>
+      const results = await Promise.all(
+        reorderedWithOrder.map((category, index) =>
           fetch('/api/store/categories', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               id: category.id,
-              display_order: index,
+              display_order: orderBase + index,
             }),
-          })
-        )
+          }),
+        ),
       );
+
+      if (results.some((response) => !response.ok)) {
+        throw new Error('One or more reorder updates failed');
+      }
     } catch (error) {
       console.error('Error updating order:', error);
-      fetchData();
+      await fetchData();
     }
   };
 
@@ -802,23 +1015,141 @@ export function StoreCategoriesManager({
     }));
   };
 
-  const lightspeedCount = products.filter(p => p.listing_type !== 'private_listing').length;
-  const privateCount = products.filter(p => p.listing_type === 'private_listing').length;
-  const uberCount = products.filter(p => p.uber_delivery_enabled === true).length;
+  const fetchPickerProducts = React.useCallback(
+    async (search: string, page: number, append: boolean) => {
+      setPickerLoading(true);
+      try {
+        const params = new URLSearchParams({
+          pageSize: '100',
+          page: String(page),
+          status: 'active',
+          sortBy: 'display_name',
+          sortOrder: 'asc',
+        });
 
-  const filteredProducts = products.filter(p => {
-    const isPrivate = p.listing_type === 'private_listing';
-    if (productSourceFilter === 'lightspeed' && isPrivate) return false;
-    if (productSourceFilter === 'private' && !isPrivate) return false;
-    if (productSourceFilter === 'uber' && p.uber_delivery_enabled !== true) return false;
-    if (productSearch) {
-      const q = productSearch.toLowerCase();
-      if (!(p.display_name || p.description || '').toLowerCase().includes(q)) return false;
+        if (productSourceFilter === 'private') {
+          params.set('listing_type', 'private_listing');
+        } else if (productSourceFilter === 'lightspeed') {
+          params.set('stock', 'in-stock');
+          params.set('source', 'lightspeed');
+        } else if (productSourceFilter === 'uber') {
+          params.set('stock', 'in-stock');
+        } else {
+          params.set('stock', 'in-stock');
+        }
+
+        if (search.trim()) {
+          params.set('search', search.trim());
+        }
+
+        const response = await fetch(`/api/products?${params.toString()}`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        let batch: any[] = data.products || [];
+
+        if (productSourceFilter === 'uber') {
+          batch = batch.filter((product) => product.uber_delivery_enabled === true);
+        }
+
+        setPickerProducts((prev) => (append ? [...prev, ...batch] : batch));
+        setPickerPage(page);
+        setPickerHasMore(page < (data.pagination?.totalPages ?? 1));
+        setPickerTotal(data.pagination?.total ?? batch.length);
+      } catch (error) {
+        console.error('Error fetching picker products:', error);
+      } finally {
+        setPickerLoading(false);
+      }
+    },
+    [productSourceFilter],
+  );
+
+  const pickerOpen = isAddDialogOpen || isEditDialogOpen;
+
+  React.useEffect(() => {
+    if (!isEditDialogOpen || !editingCategory) {
+      setCarouselMemberProducts([]);
+      setCarouselMembersLoading(false);
+      return;
     }
-    return true;
-  });
-  const visibleProductIds = React.useMemo(() => filteredProducts.map((product) => product.id), [filteredProducts]);
-  const allVisibleSelected = visibleProductIds.length > 0 && visibleProductIds.every((id) => formData.productIds.includes(id));
+
+    const ids = formData.productIds;
+    if (ids.length === 0) {
+      setCarouselMemberProducts([]);
+      setCarouselMembersLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadMembers = async () => {
+      setCarouselMembersLoading(true);
+      try {
+        const fetched: CarouselProductPreview[] = [];
+        const chunkSize = 100;
+
+        for (let index = 0; index < ids.length; index += chunkSize) {
+          const chunk = ids.slice(index, index + chunkSize);
+          const params = new URLSearchParams({
+            ids: chunk.join(","),
+            pageSize: String(chunk.length),
+            page: "1",
+            status: "all",
+            sortBy: "display_name",
+            sortOrder: "asc",
+          });
+
+          const response = await fetch(`/api/products?${params.toString()}`);
+          if (!response.ok) continue;
+
+          const data = await response.json();
+          fetched.push(...(data.products || []));
+        }
+
+        if (cancelled) return;
+
+        const byId = new Map(fetched.map((product) => [product.id, product]));
+        setCarouselMemberProducts(
+          ids.map((id) => byId.get(id)).filter(Boolean) as CarouselProductPreview[],
+        );
+      } catch (error) {
+        console.error("Error loading carousel products:", error);
+        if (!cancelled) setCarouselMemberProducts([]);
+      } finally {
+        if (!cancelled) setCarouselMembersLoading(false);
+      }
+    };
+
+    void loadMembers();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditDialogOpen, editingCategory?.id, formData.productIds]);
+
+  React.useEffect(() => {
+    if (!pickerOpen) {
+      setPickerProducts([]);
+      setPickerPage(1);
+      setPickerHasMore(false);
+      setPickerTotal(0);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void fetchPickerProducts(productSearch, 1, false);
+    }, productSearch.trim() ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [pickerOpen, productSearch, productSourceFilter, fetchPickerProducts]);
+
+  const filteredProducts = pickerProducts;
+  const visibleProductIds = React.useMemo(
+    () => filteredProducts.map((product) => product.id),
+    [filteredProducts],
+  );
+  const allVisibleSelected =
+    visibleProductIds.length > 0 &&
+    visibleProductIds.every((id) => formData.productIds.includes(id));
   const toggleVisibleProducts = () => {
     setFormData((prev) => {
       if (allVisibleSelected) {
@@ -829,6 +1160,11 @@ export function StoreCategoriesManager({
       visibleProductIds.forEach((id) => next.add(id));
       return { ...prev, productIds: Array.from(next) };
     });
+  };
+
+  const loadMorePickerProducts = () => {
+    if (pickerLoading || !pickerHasMore) return;
+    void fetchPickerProducts(productSearch, pickerPage + 1, true);
   };
 
   React.useEffect(() => {
@@ -888,7 +1224,10 @@ export function StoreCategoriesManager({
                     key={category.id}
                     category={category}
                     onEdit={() => handleEdit(category)}
-                    onDelete={() => setDeleteConfirmId(category.id)}
+                    onDelete={() => {
+                      pendingDeleteIdRef.current = category.id;
+                      setDeleteConfirmId(category.id);
+                    }}
                     onRefresh={
                       category.source === "lightspeed"
                         ? () => handleRefreshCategoryProducts(category)
@@ -1044,10 +1383,10 @@ export function StoreCategoriesManager({
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {([
-                    { key: 'all', label: `All (${products.length})` },
-                    { key: 'lightspeed', label: `Lightspeed (${lightspeedCount})` },
-                    { key: 'private', label: `Private (${privateCount})` },
-                    { key: 'uber', label: `Uber (${uberCount})` },
+                    { key: 'all', label: 'All' },
+                    { key: 'lightspeed', label: 'Lightspeed' },
+                    { key: 'private', label: 'Private' },
+                    { key: 'uber', label: 'Uber' },
                   ] as const).map(({ key, label }) => (
                     <button
                       key={key}
@@ -1066,12 +1405,19 @@ export function StoreCategoriesManager({
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border">
                 <div className="p-2">
-                  {filteredProducts.length === 0 ? (
+                  {pickerLoading && filteredProducts.length === 0 ? (
+                    <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading products...
+                    </div>
+                  ) : filteredProducts.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
                       {productSourceFilter === 'private'
                         ? 'No private listings yet. Add secondhand items via your Listings page.'
                         : productSourceFilter === 'uber'
                           ? 'No Uber-enabled products yet. Turn on Uber delivery for products in the Uber settings page.'
+                        : productSearch.trim()
+                          ? 'No products match your search.'
                         : 'No products found'}
                     </p>
                   ) : (
@@ -1117,6 +1463,31 @@ export function StoreCategoriesManager({
                           </div>
                         );
                       })}
+                      {pickerHasMore ? (
+                        <div className="pt-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={loadMorePickerProducts}
+                            disabled={pickerLoading}
+                          >
+                            {pickerLoading ? (
+                              <>
+                                <Loader2 className="size-4 animate-spin" />
+                                Loading...
+                              </>
+                            ) : (
+                              `Load more (${filteredProducts.length} of ${pickerTotal})`
+                            )}
+                          </Button>
+                        </div>
+                      ) : filteredProducts.length > 0 ? (
+                        <p className="pt-2 text-center text-xs text-muted-foreground">
+                          Showing {filteredProducts.length} of {pickerTotal} products
+                        </p>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -1152,7 +1523,13 @@ export function StoreCategoriesManager({
       </Dialog>
 
       {/* Edit carousel dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      <Dialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+          if (!open) resetLogoSearch();
+        }}
+      >
         <DialogContent className={EDIT_CAROUSEL_DIALOG_CLASS}>
           <DialogHeader className="shrink-0 space-y-1 px-6 pt-6 pb-2">
             <DialogTitle>Edit carousel</DialogTitle>
@@ -1252,6 +1629,105 @@ export function StoreCategoriesManager({
                       )}
                     </div>
                   </div>
+
+                  <div className="rounded-md border border-gray-200 bg-white p-3">
+                    <p className="text-xs font-medium text-gray-700">Search for a logo</p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      Find logos via Serper, then click one to add it
+                    </p>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        value={logoSearchQuery}
+                        onChange={(e) => setLogoSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void handleLogoSearch();
+                          }
+                        }}
+                        placeholder={
+                          formData.name.trim()
+                            ? `${formData.name.trim()} logo`
+                            : "e.g. Helmets logo"
+                        }
+                        className="h-9 flex-1 rounded-md bg-white text-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleLogoSearch()}
+                        disabled={
+                          logoSearching ||
+                          logoImportingUrl !== null ||
+                          uploadingLogoId === editingCategoryLive.id
+                        }
+                        className="h-9 shrink-0 rounded-md"
+                      >
+                        {logoSearching ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Searching…
+                          </>
+                        ) : (
+                          <>
+                            <Search className="h-4 w-4" />
+                            Search
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    {logoSearchError ? (
+                      <p className="mt-2 text-xs text-destructive">{logoSearchError}</p>
+                    ) : null}
+
+                    {logoSearchResults.length > 0 ? (
+                      <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                        {logoSearchResults.map((result) => {
+                          const isImporting = logoImportingUrl === result.url;
+                          return (
+                            <button
+                              key={result.url}
+                              type="button"
+                              disabled={Boolean(logoImportingUrl || uploadingLogoId)}
+                              onClick={() => void handleSelectSerperLogo(result)}
+                              className={cn(
+                                "overflow-hidden rounded-md border bg-white text-left transition-colors",
+                                isImporting
+                                  ? "border-gray-900 ring-1 ring-gray-900"
+                                  : "border-gray-200 hover:border-gray-400",
+                                (logoImportingUrl || uploadingLogoId) &&
+                                  !isImporting &&
+                                  "opacity-50",
+                              )}
+                            >
+                              <div className="relative flex aspect-square items-center justify-center bg-gray-50 p-2">
+                                <Image
+                                  src={result.thumbnailUrl || result.url}
+                                  alt={result.title || "Logo result"}
+                                  width={80}
+                                  height={80}
+                                  unoptimized
+                                  className="max-h-full max-w-full object-contain"
+                                />
+                                {isImporting ? (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                                    <Loader2 className="h-5 w-5 animate-spin text-gray-600" />
+                                  </div>
+                                ) : null}
+                              </div>
+                              {(result.domain || result.title) && (
+                                <p className="line-clamp-1 px-1.5 py-1 text-[10px] text-gray-500">
+                                  {result.domain || result.title}
+                                </p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               )}
 
@@ -1278,14 +1754,89 @@ export function StoreCategoriesManager({
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
+              {editingCategoryLive?.source === "lightspeed" &&
+              editingCategoryLive.lightspeed_category_name ? (
+                <p className="text-xs text-gray-500">
+                  Lightspeed category: {editingCategoryLive.lightspeed_category_name}
+                </p>
+              ) : null}
             </div>
+
+            {editingCategoryLive ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label>
+                    Products in carousel ({formData.productIds.length})
+                  </Label>
+                  {carouselProductsSubtitle(editingCategoryLive) ? (
+                    <p className="text-xs text-gray-500">
+                      {carouselProductsSubtitle(editingCategoryLive)}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="rounded-md border border-gray-200 bg-white">
+                  <div className="max-h-52 overflow-y-auto p-2">
+                    {carouselMembersLoading ? (
+                      <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading carousel products...
+                      </div>
+                    ) : formData.productIds.length === 0 ? (
+                      <p className="py-8 text-center text-sm text-muted-foreground">
+                        No products in this carousel yet.
+                      </p>
+                    ) : carouselMemberProducts.length === 0 ? (
+                      <p className="py-8 text-center text-sm text-muted-foreground">
+                        {formData.productIds.length} product
+                        {formData.productIds.length === 1 ? "" : "s"} assigned — details could
+                        not be loaded.
+                      </p>
+                    ) : (
+                      <div className="space-y-0.5">
+                        {carouselMemberProducts.map((product) => (
+                          <CarouselProductRow
+                            key={product.id}
+                            product={product}
+                            trailing={
+                              editingCategoryLive.source === "custom" ||
+                              editingCategoryLive.source === "lightspeed" ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 shrink-0 text-gray-400 hover:text-gray-700"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    toggleProduct(product.id);
+                                  }}
+                                  aria-label={`Remove ${product.display_name || product.description || "product"} from carousel`}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              ) : null
+                            }
+                          />
+                        ))}
+                        {formData.productIds.length > carouselMemberProducts.length ? (
+                          <p className="px-2 pt-1 text-xs text-muted-foreground">
+                            + {formData.productIds.length - carouselMemberProducts.length} more
+                            not shown
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {editingCategoryLive &&
             (editingCategoryLive.source === "custom" ||
               editingCategoryLive.source === "lightspeed") ? (
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
-                <Label>Select Products ({formData.productIds.length} selected)</Label>
+                <Label>Add or remove products</Label>
                 {filteredProducts.length > 0 && (
                   <button
                     type="button"
@@ -1308,10 +1859,10 @@ export function StoreCategoriesManager({
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {([
-                    { key: 'all', label: `All (${products.length})` },
-                    { key: 'lightspeed', label: `Lightspeed (${lightspeedCount})` },
-                    { key: 'private', label: `Private (${privateCount})` },
-                    { key: 'uber', label: `Uber (${uberCount})` },
+                    { key: 'all', label: 'All' },
+                    { key: 'lightspeed', label: 'Lightspeed' },
+                    { key: 'private', label: 'Private' },
+                    { key: 'uber', label: 'Uber' },
                   ] as const).map(({ key, label }) => (
                     <button
                       key={key}
@@ -1330,57 +1881,62 @@ export function StoreCategoriesManager({
               </div>
               <div className="rounded-md border border-border">
                 <div className="p-2">
-                  {filteredProducts.length === 0 ? (
+                  {pickerLoading && filteredProducts.length === 0 ? (
+                    <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading products...
+                    </div>
+                  ) : filteredProducts.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
                       {productSourceFilter === 'private'
                         ? 'No private listings yet. Add secondhand items via your Listings page.'
                         : productSourceFilter === 'uber'
                           ? 'No Uber-enabled products yet. Turn on Uber delivery for products in the Uber settings page.'
+                        : productSearch.trim()
+                          ? 'No products match your search.'
                         : 'No products found'}
                     </p>
                   ) : (
                     <div className="space-y-0.5">
-                      {filteredProducts.map((product) => {
-                        const isPrivate = product.listing_type === 'private_listing';
-                        const isUber = product.uber_delivery_enabled === true;
-                        return (
-                          <div
-                            key={product.id}
-                            className="flex items-center gap-2.5 p-2 hover:bg-accent rounded-md cursor-pointer"
-                            onClick={() => toggleProduct(product.id)}
-                          >
+                      {filteredProducts.map((product) => (
+                        <CarouselProductRow
+                          key={product.id}
+                          product={product}
+                          onClick={() => toggleProduct(product.id)}
+                          trailing={
                             <Checkbox
                               checked={formData.productIds.includes(product.id)}
                               onCheckedChange={() => toggleProduct(product.id)}
                               onClick={(e) => e.stopPropagation()}
                             />
-                            <div className="flex-shrink-0 h-9 w-9 rounded overflow-hidden bg-muted flex items-center justify-center">
-                              {product.resolved_image_url ? (
-                                <img src={product.resolved_image_url} alt="" className="h-full w-full object-cover" />
-                              ) : (
-                                <Package className="h-3.5 w-3.5 text-muted-foreground" />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <p className="text-sm font-medium text-foreground truncate">
-                                  {product.display_name || product.description}
-                                </p>
-                                {isPrivate ? (
-                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-md border border-amber-300 text-amber-700 bg-amber-50">Private</span>
-                                ) : isUber ? (
-                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-md border border-[#0eb462]/30 text-[#087a43] bg-[#0eb462]/10">Uber</span>
-                                ) : (
-                                  <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-md border border-blue-300 text-blue-700 bg-blue-50">Lightspeed</span>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground">
-                                ${product.price}{!isPrivate && ` • Stock: ${product.qoh}`}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })}
+                          }
+                        />
+                      ))}
+                      {pickerHasMore ? (
+                        <div className="pt-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={loadMorePickerProducts}
+                            disabled={pickerLoading}
+                          >
+                            {pickerLoading ? (
+                              <>
+                                <Loader2 className="size-4 animate-spin" />
+                                Loading...
+                              </>
+                            ) : (
+                              `Load more (${filteredProducts.length} of ${pickerTotal})`
+                            )}
+                          </Button>
+                        </div>
+                      ) : filteredProducts.length > 0 ? (
+                        <p className="pt-2 text-center text-xs text-muted-foreground">
+                          Showing {filteredProducts.length} of {pickerTotal} products
+                        </p>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -1531,7 +2087,12 @@ export function StoreCategoriesManager({
       {/* Delete Confirmation */}
       <AlertDialog
         open={deleteConfirmId !== null}
-        onOpenChange={() => setDeleteConfirmId(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteConfirmId(null);
+            pendingDeleteIdRef.current = null;
+          }
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1544,7 +2105,10 @@ export function StoreCategoriesManager({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}
+              onClick={() => {
+                const id = pendingDeleteIdRef.current ?? deleteConfirmId;
+                if (id) void handleDelete(id);
+              }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete

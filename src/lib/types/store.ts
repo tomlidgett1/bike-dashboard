@@ -33,8 +33,12 @@ export interface StoreCategory {
   display_order: number;
   source: StoreCategorySource;
   lightspeed_category_id?: string;
+  /** Original Lightspeed category label when the carousel display name is customised. */
+  lightspeed_category_name?: string | null;
   brand_name?: string;
   product_ids: string[];
+  /** Live product count (dynamic sources may differ from stored product_ids length). */
+  resolved_product_count?: number;
   is_active: boolean;
   carousel_size?: CarouselSize;
   logo_url?: string | null;
@@ -303,6 +307,7 @@ export interface CreateCategoryRequest {
   name: string;
   source: EditableStoreCategorySource;
   lightspeed_category_id?: string;
+  lightspeed_category_name?: string;
   brand_name?: string;
   product_ids?: string[];
   display_order?: number;

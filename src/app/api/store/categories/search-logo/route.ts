@@ -1,11 +1,14 @@
 /**
- * POST /api/store/brands/search-logo
- * Serper image search for brand logos (verified bicycle stores only).
+ * POST /api/store/categories/search-logo
+ * Serper image search for carousel logos (verified bicycle stores only).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { buildBrandLogoSearchQuery, searchBrandLogoImages } from '@/lib/store/brand-logo-serper';
+import {
+  buildCarouselLogoSearchQuery,
+  searchBrandLogoImages,
+} from '@/lib/store/brand-logo-serper';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,15 +34,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
-    const body = (await request.json()) as { query?: string; brandName?: string };
-    const query = buildBrandLogoSearchQuery({
+    const body = (await request.json()) as { query?: string; carouselName?: string };
+    const query = buildCarouselLogoSearchQuery({
       query: body.query,
-      brandName: body.brandName,
+      carouselName: body.carouselName,
     });
 
     if (!query) {
       return NextResponse.json(
-        { error: 'Enter a search query or brand name first' },
+        { error: 'Enter a search query or carousel name first' },
         { status: 400 },
       );
     }
@@ -56,7 +59,7 @@ export async function POST(request: NextRequest) {
       total: results.length,
     });
   } catch (err) {
-    console.error('Error in POST /api/store/brands/search-logo:', err);
+    console.error('Error in POST /api/store/categories/search-logo:', err);
     return NextResponse.json({ error: 'Logo search failed' }, { status: 500 });
   }
 }

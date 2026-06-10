@@ -83,19 +83,23 @@ async function searchSerperDirect(query: string, apiKey: string): Promise<Serper
   return data.images ?? [];
 }
 
-async function searchSerperViaEdge(query: string): Promise<SerperImageHit[]> {
+async function searchSerperViaEdge(
+  query: string,
+  accessToken?: string | null,
+): Promise<SerperImageHit[]> {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || process.env.SUPABASE_URL?.trim();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const token =
+    accessToken?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
-  if (!supabaseUrl || !serviceKey) return [];
+  if (!supabaseUrl || !token) return [];
 
   const response = await fetch(
     `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/search-product-images`,
     {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${serviceKey}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ searchQuery: query }),
@@ -120,13 +124,19 @@ async function searchSerperViaEdge(query: string): Promise<SerperImageHit[]> {
   }));
 }
 
-async function runSerperQuery(query: string): Promise<SerperImageHit[]> {
+async function runSerperQuery(
+  query: string,
+  accessToken?: string | null,
+): Promise<SerperImageHit[]> {
+  // Match product optimise image lookup: use the Supabase edge function first
+  // so we always hit the SERPER_API_KEY configured in Supabase secrets, not a
+  // stale local/Vercel SERPER_API_KEY that may still be set in Next.js env.
+  const viaEdge = await searchSerperViaEdge(query, accessToken);
+  if (viaEdge.length > 0) return viaEdge;
+
   const apiKey = process.env.SERPER_API_KEY?.trim();
-  if (apiKey) {
-    const direct = await searchSerperDirect(query, apiKey);
-    if (direct.length > 0) return direct;
-  }
-  return searchSerperViaEdge(query);
+  if (!apiKey) return [];
+  return searchSerperDirect(query, apiKey);
 }
 
 export function buildBrandLogoSearchQuery(options: {
@@ -140,16 +150,27 @@ export function buildBrandLogoSearchQuery(options: {
   return '';
 }
 
+export function buildCarouselLogoSearchQuery(options: {
+  query?: string | null;
+  carouselName?: string | null;
+}): string {
+  return buildBrandLogoSearchQuery({
+    query: options.query,
+    brandName: options.carouselName,
+  });
+}
+
 export async function searchBrandLogoImages(options: {
   query?: string | null;
   brandName?: string | null;
+  accessToken?: string | null;
 }): Promise<{ query: string; results: BrandLogoSearchResult[] }> {
   const query = buildBrandLogoSearchQuery(options);
   if (!query) {
     return { query: '', results: [] };
   }
 
-  const hits = await runSerperQuery(query);
+  const hits = await runSerperQuery(query, options.accessToken);
   const seen = new Set<string>();
   const results: BrandLogoSearchResult[] = [];
 
