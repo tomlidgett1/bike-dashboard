@@ -62,6 +62,17 @@ const GMAIL_ACTION_TOOL_NAMES = [
   'propose_gmail_email',
 ]
 
+export const XERO_TOOL_NAMES = [
+  'get_xero_connection_status',
+  'get_xero_financial_report',
+  'list_xero_invoices',
+  'list_xero_purchase_orders',
+  'list_xero_bank_transactions',
+  'list_xero_payments',
+  'search_xero_contacts',
+  'list_xero_accounts',
+]
+
 export const WEB_RESEARCH_TOOL_NAMES = [
   'search_web_images',
 ]
@@ -116,10 +127,12 @@ export function toolNameSetForRoute(
   const planRequestsStorefrontRead = planRequestsTool(plannedToolNames, /get_store|search_store|list_active_discounts|find_discount_candidates|get_product_costs|brands|categories|products/i)
   const planRequestsStorefrontProposal = planRequestsTool(plannedToolNames, /propose_carousel|propose_create_carousel|propose_rename_carousel|propose_discount|propose_remove_discount|propose_price_update|propose_product_brand_category_update|propose_lightspeed_category_create|\bcarousel\b|\bdiscount\b|\bprice\b|\bbrand\b|\bcategory\b/i)
   const planRequestsImageSearch = planRequestsTool(plannedToolNames, /search_web_images/i)
+  const planRequestsXero = planRequestsTool(plannedToolNames, /\bxero\b|profit_and_loss|balance_sheet|trial_balance|aged_payable|aged_receivable|purchase_order|bank_transaction|chart_of_accounts/i)
   const planRequestsBikeStoreSpecialist = planRequestsTool(plannedToolNames, /consult_bike_store_analyst/i)
 
   if (route === 'lightspeed_sql') {
     add(LIGHTSPEED_READ_TOOL_NAMES)
+    add(XERO_TOOL_NAMES)
     if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     return names
   }
@@ -132,6 +145,7 @@ export function toolNameSetForRoute(
       add(LIGHTSPEED_READ_TOOL_NAMES)
     }
     if (planRequestsBikeStoreSpecialist) add(['consult_bike_store_analyst'])
+    if (planRequestsXero) add(XERO_TOOL_NAMES)
     if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     return names
   }
@@ -146,6 +160,7 @@ export function toolNameSetForRoute(
   if (route === 'business_analysis') {
     add(['record_lightspeed_plan'])
     add(LIGHTSPEED_READ_TOOL_NAMES)
+    add(XERO_TOOL_NAMES)
     add(['find_discount_candidates', 'get_product_costs'])
     add(['consult_bike_store_analyst'])
     if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
@@ -156,6 +171,7 @@ export function toolNameSetForRoute(
     add(CUSTOMER_BIKE_CONTEXT_TOOL_NAMES)
     add(['consult_cycling_compatibility_specialist'])
     if (planRequestsBikeStoreSpecialist) add(['consult_bike_store_analyst'])
+    if (planRequestsXero) add(XERO_TOOL_NAMES)
     if (planRequestsLightspeed) {
       add(['record_lightspeed_plan'])
       add(LIGHTSPEED_READ_TOOL_NAMES)

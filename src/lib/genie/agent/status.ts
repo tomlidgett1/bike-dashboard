@@ -30,6 +30,14 @@ function statusForTool(toolName: string): { phase: string; text: string } {
   if (toolName === 'get_lightspeed_customer_profile') return { phase: 'lightspeed_customers', text: 'Customer profile' }
   if (toolName === 'get_lightspeed_customer_sales') return { phase: 'lightspeed_customers', text: 'Customer sales' }
   if (toolName === 'get_lightspeed_top_customers') return { phase: 'lightspeed_customers', text: 'Top customers' }
+  if (toolName === 'get_xero_connection_status') return { phase: 'xero', text: 'Checking Xero' }
+  if (toolName === 'get_xero_financial_report') return { phase: 'xero', text: 'Xero financial report' }
+  if (toolName === 'list_xero_invoices') return { phase: 'xero', text: 'Xero invoices' }
+  if (toolName === 'list_xero_purchase_orders') return { phase: 'xero', text: 'Xero purchase orders' }
+  if (toolName === 'list_xero_bank_transactions') return { phase: 'xero', text: 'Xero bank transactions' }
+  if (toolName === 'list_xero_payments') return { phase: 'xero', text: 'Xero payments' }
+  if (toolName === 'search_xero_contacts') return { phase: 'xero', text: 'Xero contacts' }
+  if (toolName === 'list_xero_accounts') return { phase: 'xero', text: 'Xero chart of accounts' }
   if (toolName === 'get_store_carousels') return { phase: 'tool', text: 'Carousels' }
   if (toolName === 'search_store_products') return { phase: 'tool', text: 'Products' }
   if (toolName === 'list_active_discounts') return { phase: 'tool', text: 'Discounts' }
@@ -62,6 +70,7 @@ function statusAfterTool(toolName: string): { phase: string; text: string } {
   if (toolName === 'get_lightspeed_customer_profile') return { phase: 'tool_done', text: 'Customer profile ready' }
   if (toolName === 'list_lightspeed_workorders' || toolName === 'get_lightspeed_workorder') return { phase: 'tool_done', text: 'Work order result ready' }
   if (toolName === 'search_gmail' || toolName === 'read_gmail_messages' || toolName === 'get_gmail_connection_status') return { phase: 'gmail_done', text: 'Gmail result ready' }
+  if (toolName.startsWith('get_xero_') || toolName.startsWith('list_xero_') || toolName === 'search_xero_contacts') return { phase: 'xero_done', text: 'Xero result ready' }
   if (toolName === 'search_web_images' || toolName === 'web_search' || toolName === 'web_search_preview' || toolName === 'web_search_call') return { phase: 'web_search_done', text: 'Web result ready' }
   if (toolName === 'verify_question_answered') return { phase: 'responding', text: 'Checking whether the answer is complete' }
   if (toolName === 'record_answer_recheck' || toolName === 'record_lightspeed_recheck') return { phase: 'rechecking', text: 'Recheck strategy ready' }

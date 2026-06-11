@@ -1,0 +1,82 @@
+"use client";
+
+import * as React from "react";
+import { Link2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+interface XeroStatus {
+  configured: boolean;
+  connected: boolean;
+  organisation_name?: string | null;
+  last_error?: string | null;
+}
+
+/**
+ * Small pill prompting the store to connect Xero (accounting) so the Genie
+ * can answer P&L, balance sheet, bills, and purchase-order questions.
+ * Hidden while loading, when Xero isn't configured on the environment,
+ * and renders a subtle connected state once linked.
+ */
+export function XeroConnectPill({ className }: { className?: string }) {
+  const [status, setStatus] = React.useState<XeroStatus | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch("/api/xero/status")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data && typeof data.connected === "boolean") {
+          setStatus(data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!status || !status.configured) return null;
+
+  if (status.connected) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700",
+          className,
+        )}
+        title={status.organisation_name ? `Xero connected — ${status.organisation_name}` : "Xero connected"}
+      >
+        <XeroMark className="h-3.5 w-3.5" />
+        Xero connected
+      </span>
+    );
+  }
+
+  return (
+    <a
+      href="/api/xero/auth/initiate"
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border border-sky-300 bg-white px-2.5 py-1 text-xs font-medium text-sky-700 shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-50",
+        className,
+      )}
+      title="Connect Xero so the Genie can answer P&L, balance sheet, bills, and purchase order questions"
+    >
+      <Link2 className="h-3.5 w-3.5" />
+      Connect Xero
+    </a>
+  );
+}
+
+function XeroMark({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center justify-center rounded-full bg-sky-500 text-[8px] font-bold leading-none text-white",
+        className,
+      )}
+      aria-hidden
+    >
+      X
+    </span>
+  );
+}

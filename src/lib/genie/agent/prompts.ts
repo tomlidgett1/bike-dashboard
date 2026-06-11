@@ -74,6 +74,15 @@ function routeUsesGmail(
   return planMentionsTool(plan, /\bgmail\b|search_gmail|read_gmail|get_gmail_connection_status|propose_gmail/i)
 }
 
+function routeUsesXero(
+  route: GenieOrchestrationDecision['route'],
+  plan: GenieExecutionPlan | null,
+): boolean {
+  return route === 'lightspeed_sql' ||
+    route === 'business_analysis' ||
+    planMentionsTool(plan, /\bxero\b|get_xero|list_xero|search_xero|profit_and_loss|balance_sheet|trial_balance|aged_payable|aged_receivable|purchase_order/i)
+}
+
 function routeUsesLightspeedSql(
   route: GenieOrchestrationDecision['route'],
   plan: GenieExecutionPlan | null,
@@ -105,6 +114,7 @@ function formatCapabilitiesForRoute(args: {
   includeLightspeedSql: boolean
   includeStorefront: boolean
   includeWeb: boolean
+  includeXero: boolean
 }): string {
   const capabilities: string[] = []
 
@@ -136,6 +146,12 @@ function formatCapabilitiesForRoute(args: {
     )
   }
 
+  if (args.includeXero) {
+    capabilities.push(
+      '9. Xero accounting — read the store\'s live accounting data: Profit & Loss, Balance Sheet, Trial Balance, executive summary KPIs, bank summary, aged payables/receivables, sales invoices and supplier bills, payments, bank transactions, purchase orders, contacts, and the chart of accounts. Read-only: you never create, edit, or pay anything in Xero.',
+    )
+  }
+
   if (capabilities.length === 0) {
     capabilities.push('1. Answer directly from conversation context. Do not pretend to use tools that are not available on this route.')
   }
@@ -149,6 +165,7 @@ function formatWorkRulesForRoute(args: {
   includeLightspeedSql: boolean
   includeStorefront: boolean
   includeWeb: boolean
+  includeXero: boolean
 }): string {
   const rules = [
     '- Context first: every request may be a continuation. Read the recent conversation and any private structured context from previous Genie tool results before calling tools. If current context answers the question, answer directly instead of re-running slow tools. Resolve pronouns like "she", "he", "that bike", "those items", "that email", and "reply to them" against the most recent relevant structured context.',
@@ -187,6 +204,19 @@ function formatWorkRulesForRoute(args: {
       '- For compatibility research, prefer official manufacturer pages, service manuals, technical PDFs, standards bodies, or supplier technical pages. Treat retailer listings, forum posts, AI snippets, and generic SEO articles as secondary only. Name the source type in the answer.',
       '- For "our pricing vs competitors/market" questions, first identify the store products/prices with store tools, then use web_search for public comparable prices. Answer with matched examples, confidence, and where the store appears high, low, or in line.',
       '- For product images: use show_product_images:true for specific own-stock visual requests; use search_web_images for external reference photos. Keep image work to a handful of clear matches.',
+    )
+  }
+
+  if (args.includeXero) {
+    rules.push(
+      '- Xero is the store\'s accounting system (the source of truth for financials); Lightspeed is the POS (the source of truth for retail sales lines, inventory, and customers). For P&L, net profit, expenses, overheads, balance sheet, equity, cash position, GST/tax, supplier bills, accounts payable/receivable, invoice payment status, or purchase orders, use the Xero tools. For product-level sales, margins on items sold, stock on hand, and customer purchase history, use Lightspeed. When the user says "profit" ambiguously: gross profit on items sold = Lightspeed; net/bottom-line profit including expenses = Xero P&L. When both are relevant, use both and say which figure came from which system.',
+      '- For P&L questions, call get_xero_financial_report with report "profit_and_loss" and an explicit from_date/to_date computed from STORE CONTEXT today. For trend/comparison questions use periods + timeframe (e.g. periods 12, timeframe MONTH) instead of many separate calls. Default to accrual basis; set payments_only true only when the user asks for cash basis.',
+      '- For balance sheet, trial balance, or "financial position" questions, use report "balance_sheet" or "trial_balance" with the as-at date. For a quick monthly health snapshot (cash, profitability, debtors/creditors), report "executive_summary" is one call.',
+      '- For supplier or customer aged-debt questions ("what do we owe X", "who owes us"), resolve the contact with search_xero_contacts, then run aged_payables / aged_receivables with that contact_id. For overall owed totals, the balance sheet (Accounts Payable / Accounts Receivable lines) or list_xero_invoices with statuses ["AUTHORISED"] also works.',
+      '- For historical transactions: list_xero_invoices (sales invoices ACCREC vs supplier bills ACCPAY), list_xero_bank_transactions (spend/receive money), and list_xero_payments (when invoices were paid). Paginate with page when a date range returns a full page.',
+      '- For purchase orders ("what have we ordered", open POs, incoming stock value), use list_xero_purchase_orders with status/date filters.',
+      '- Report figures are exact strings from Xero in the organisation base currency — quote them as returned, never recompute or invent values. State the basis (accrual/cash) and exact date range used.',
+      '- If any Xero tool returns connected:false, do not guess numbers. Tell the user Xero is not connected and that they can connect it with the "Connect Xero" pill on the Home page, then answer whatever part is possible from Lightspeed.',
     )
   }
 
@@ -258,12 +288,14 @@ function buildSystemPrompt(
   const includeLightspeedSql = routeUsesLightspeedSql(route, executionPlan)
   const includeStorefront = routeUsesStorefront(route, executionPlan)
   const includeWeb = routeUsesWeb(route, executionPlan)
+  const includeXero = routeUsesXero(route, executionPlan)
   const routeCapabilities = formatCapabilitiesForRoute({
     route,
     includeGmail,
     includeLightspeedSql,
     includeStorefront,
     includeWeb,
+    includeXero,
   })
   const routeWorkRules = formatWorkRulesForRoute({
     route,
@@ -271,6 +303,7 @@ function buildSystemPrompt(
     includeLightspeedSql,
     includeStorefront,
     includeWeb,
+    includeXero,
   })
   const gmailPlaybook = includeGmail ? `\n\nGMAIL PLANNING REFERENCE\n${GMAIL_SEARCH_PLAYBOOK}` : ''
   const lightspeedInstructions = includeLightspeedSql
@@ -307,7 +340,7 @@ STYLE
 - For Lightspeed answers, do not include a Plan section in the final answer. Give direct results for narrow questions; reserve planning status/tool output for broad or complex analysis only.
 - For strategic business analysis, produce an executive summary, key findings, ranked opportunities, recommended actions, and the exact data period used. Prefer tables for ranked opportunities and charts for trends when useful.
 - If a non-Lightspeed request is ambiguous or matches nothing, say so in one line and ask a single sharp question. For Lightspeed misses, recheck once with a different SQL strategy before asking.
-- Stay on storefront management, Lightspeed sales/inventory/cost/profit/margin/customer activity, Gmail workflows, and cycling product/market/compatibility research. Politely redirect anything else.
+- Stay on storefront management, Lightspeed sales/inventory/cost/profit/margin/customer activity, Xero accounting/financials, Gmail workflows, and cycling product/market/compatibility research. Politely redirect anything else.
 
 FINAL ANSWER CONTRACT
 ${formatAnswerContractForRoute(route)}
@@ -339,7 +372,7 @@ Decision process:
 
 Routes:
 - casual_chat: greetings, thanks, basic capability questions, or normal chat that does not need store data, Lightspeed data, web search, Gmail, or a storefront proposal. Do not use casual_chat for any customer, bike, work-order, sales, inventory, email, pricing, compatibility, or action request.
-- lightspeed_sql: any request about Lightspeed sales, customers, customer profiles/history/lifetime spend/service history/bikes, sold products, sale transactions, revenue, profit, margin, cost, services sold, product purchasers, current inventory/stock availability, or live/historical work orders, repairs, service jobs, public notes, internal notes, labour lines, parts, statuses, or dates.
+- lightspeed_sql: any request about Lightspeed sales, customers, customer profiles/history/lifetime spend/service history/bikes, sold products, sale transactions, revenue, profit, margin, cost, services sold, product purchasers, current inventory/stock availability, or live/historical work orders, repairs, service jobs, public notes, internal notes, labour lines, parts, statuses, or dates. Also any narrow Xero accounting lookup: P&L / profit and loss / income statement, balance sheet, trial balance, net profit, expenses/overheads, cash position, GST/tax figures, accounts payable/receivable, what we owe a supplier / who owes us, invoices, supplier bills, bill/invoice payment status, bank transactions, payments, purchase orders, or connect/check Xero. The Xero tools are available on this route.
 - storefront_action: requests to read/change Yellow Jersey storefront carousels, discounts, product prices, store product lists, stage Lightspeed product brand/category write-back proposals, create new Lightspeed categories, connect/check Gmail/Composio email, search inbox, draft email, or send email.
 - web_research: requests requiring current public external information, market facts, product compatibility for a known public bike/product, standards, events, suppliers, recalls, MSRP/RRP, manuals, or internet lookup.
 - business_analysis: broad strategy requests about making the bike store more profitable, making more money, improving revenue, improving margin, ranking opportunities, reducing wasted cash, reducing stale stock, or deciding what actions would improve the business.
@@ -361,6 +394,7 @@ Critical routing doctrine:
 - Work orders: any workorder/repair/service-job question, including "open", "finished", "archived", "today", "history", "notes", "internal notes", "what happened", "what did we do", or customer-specific work orders = lightspeed_sql. Use needs_plan=false unless it asks for broad multi-metric analysis.
 - Store reporting: stock, inventory, QOH, on hand, available, sold, sales, revenue, GP, margin, cost, average sale, best customers, top customers, who bought, product purchasers = lightspeed_sql. Use needs_plan=false for a narrow report.
 - Business strategy: "how can we make more money", "how do we improve profit/revenue/margin", "what opportunities should we focus on", "where is cash tied up", "dead/stale stock strategy" = business_analysis with needs_plan=true.
+- Accounting/Xero: a single accounting report or lookup (P&L for a period, balance sheet, net profit, expenses, what do we owe supplier X, outstanding invoices, purchase orders, was bill Y paid, connect/check Xero) = lightspeed_sql with needs_plan=false. Broad financial-health, cash-flow-strategy, or "review our financials" work = business_analysis with needs_plan=true. POS-level product/stock/customer questions stay Lightspeed; Xero covers financial statements, expenses, bills, invoices, payments, and purchase orders.
 - Business report email: requests to email/send/draft a sales, business performance, profit, inventory, customer, or Lightspeed report require both private store data and Gmail. Use route=mixed with needs_plan=true. The executor must gather the store/Lightspeed evidence first, then stage the Gmail email; this is not a Gmail-search-only task.
 - Storefront operations: make/create/rename/reorder/show/hide/move/feature a carousel, collection, homepage section, discount, sale, markdown, retail price, brand, category, product list, or approval proposal = storefront_action. Use needs_plan=false for a concrete single action; true for broad campaigns/homepage strategy.
 - Gmail/email without private store/report data: connect Gmail/Composio, check connection, search/summarise inbox, find supplier/customer emails, earliest/latest contact, invoices, issue/warranty correspondence, draft, reply, respond, write back, follow up, or send a simple message = storefront_action with needs_plan=true. "Respond to {name}" or "reply to {name}" without saying Gmail/email is still a Gmail task.
@@ -394,6 +428,12 @@ Routing examples:
 - "Do we have Shimano chains in stock?" = lightspeed_sql, needs_plan=false, direct_path="none".
 - "Who bought GP5000 tyres last year?" = lightspeed_sql, needs_plan=false, direct_path="none".
 - "How can we make more money this quarter?" = business_analysis, needs_plan=true, direct_path="none".
+- "Show me the P&L for last month" = lightspeed_sql, needs_plan=false, direct_path="none".
+- "What's our net profit this financial year?" = lightspeed_sql, needs_plan=false, direct_path="none".
+- "How much do we owe Shimano?" = lightspeed_sql, needs_plan=false, direct_path="none".
+- "What purchase orders are open?" = lightspeed_sql, needs_plan=false, direct_path="none".
+- "Connect Xero" / "Is Xero connected?" = lightspeed_sql, needs_plan=false, direct_path="none".
+- "Review our financial health and where we're leaking money" = business_analysis, needs_plan=true, direct_path="none".
 - "Send an email of business performance for the last 30 days to tom@example.com" = mixed, needs_plan=true, direct_path="none".
 - "How does our pricing compare to other stores/competitors/market?" = mixed, needs_plan=true, direct_path="none".
 - "Are we overpriced on these products?" = mixed when it references competitors, market, online, or other stores; storefront_action if it only asks about internal cost/margin. direct_path="none".
@@ -483,6 +523,8 @@ Planning rules:
 - For discount-candidate analysis, plan find_discount_candidates first with the requested product count. Do not plan 20-30 candidates for a 10-product request. The discount candidate tool already returns SKU/name/brand/category, current price, unit cost, margin, QOH, stale movement, age, and recent sales. Plan a second SQL check only if the requested answer needs a field that tool does not return. For competitor pricing, plan batched web_search calls for only the final selected products and stop once each item has a good exact/comparable price or a clear "not found quickly" note. Do not plan propose_discount unless the user provided a discount percent and asked to stage/apply it.
 - For customer-specific bike fitment or compatibility questions, plan this exact grounded diagnostic workflow: call resolve_customer_bike_context with the customer/workorder clue and exact compatibility question; inspect its customer_bikes from live Lightspeed Serialized records, likely_bikes, workorders, sales history, part_or_standard_evidence, and official_research_queries; treat Serialized.description as the strongest usual customer-bike clue while remembering it can be incomplete/free text; then use hosted web_search using official_research_queries and prefer official manufacturer manuals, technical PDFs, service docs, standards bodies, or supplier technical pages; optionally call consult_cycling_compatibility_specialist after official source notes are gathered; call verify_question_answered. If multiple plausible bikes remain, final_answer_shape should still be summary: answer conditionally for each plausible bike/model, label confidence, and ask one sharp follow-up only as the final disambiguation check.
 - For "best customers", "top customers", or "highest spenders", plan one SQL query ranked by gross_sales unless the user asks for frequency or average value.
+- Xero accounting tools are available for financial statements and accounting records: get_xero_financial_report (profit_and_loss, balance_sheet, trial_balance, bank_summary, executive_summary, budget_summary, aged_payables, aged_receivables), list_xero_invoices (ACCREC sales invoices / ACCPAY supplier bills), list_xero_bank_transactions, list_xero_payments, list_xero_purchase_orders, search_xero_contacts (resolves contact_id for aged reports), list_xero_accounts, get_xero_connection_status.
+- Use Xero (not Lightspeed SQL) for net profit, expenses/overheads, P&L, balance sheet, cash position, GST, supplier bills, accounts payable/receivable, invoice payment status, and purchase orders. Use Lightspeed for product-level sales, item margins, stock, and customer purchase history. For broad financial-health analysis, plan both: Lightspeed for revenue/margin drivers and Xero P&L + balance sheet + executive_summary for the bottom line, expenses, and cash. Plan compact Xero calls (periods+timeframe comparisons in one call) and include explicit date arguments computed from PLANNING CONTEXT.
 - For "last 3 years" or similar relative ranges, use ${STORE_TIME_ZONE} and set start_date to the same month/day three years before today's store date; set end_date to today's store date (see PLANNING CONTEXT).
 - For customer rankings, the correct grain is: aggregate line rows into distinct sale transactions first, then aggregate those sale totals by customer_id/customer_full_name. Exclude walk-in/unassigned customers unless the user asks to include them.
 - In sql_strategy.joins_needed, use [] when the current SQL table is enough. Mention future customer/contact joins only if the requested answer needs phone/email/address or customer metadata not in the sales report table.
@@ -508,6 +550,7 @@ export {
   formatExecutionPlanForPrompt,
   planMentionsTool,
   routeUsesGmail,
+  routeUsesXero,
   routeUsesLightspeedSql,
   routeUsesStorefront,
   routeUsesWeb,

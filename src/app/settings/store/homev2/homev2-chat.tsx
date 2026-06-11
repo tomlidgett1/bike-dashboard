@@ -14,6 +14,7 @@ import { GenieProposalCard } from "@/components/genie/genie-proposal-card";
 import { LightspeedWorkorderCards } from "@/components/genie/lightspeed-workorder-cards";
 import { LightspeedCustomerProfileCard } from "@/components/genie/lightspeed-customer-profile-card";
 import { GmailConnectCard } from "@/components/genie/gmail-connect-card";
+import { XeroConnectPill } from "@/components/genie/xero-connect-pill";
 import { GenieStoreProductCards } from "@/components/genie/genie-store-product-cards";
 import { GenieWebImageCards } from "@/components/genie/genie-web-image-cards";
 import type { GenieWebImagePreview } from "@/lib/genie/web-image-search";
@@ -140,6 +141,8 @@ const PHASE_LABELS: Record<string, string> = {
   tool: "Working",
   gmail: "Gmail",
   gmail_done: "Gmail",
+  xero: "Xero",
+  xero_done: "Xero",
 };
 
 function normalizeStartupStatusText(text: string, phase?: string): string {
@@ -1185,12 +1188,13 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
           <HomeV2MetricsCards />
 
           <div className="w-full max-w-3xl">
-            <div className="mb-2 flex justify-start">
+            <div className="mb-2 flex items-center justify-between gap-2">
               <ConversationHistoryDropdown
                 conversations={conversations}
                 activeConversationId={activeConversationId}
                 onSelect={loadConversation}
               />
+              <XeroConnectPill />
             </div>
             <PromptQueueList
               items={queuedPrompts}
@@ -1299,7 +1303,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 
           <div className="sticky bottom-0 z-10 shrink-0 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc] to-transparent px-5 pb-4 pt-6">
             <div className="mx-auto w-full max-w-3xl">
-              <div className="mb-2 flex justify-start">
+              <div className="mb-2 flex items-center justify-between gap-2">
                 <ConversationHistoryDropdown
                   conversations={conversations}
                   activeConversationId={activeConversationId}
@@ -1307,6 +1311,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                   showNewChat
                   onNewChat={startNewChat}
                 />
+                <XeroConnectPill />
               </div>
 
               <PromptQueueList
